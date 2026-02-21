@@ -36,6 +36,18 @@ private let baseDelayMs = 1000
 private let maxEmptyStreamRetries = 2
 private let emptyStreamBaseDelayMs = 500
 private let claudeThinkingBetaHeader = "interleaved-thinking-2025-05-14"
+private let googleGeminiCliSessionOverride = LockedState<URLSession?>(nil)
+
+func setGoogleGeminiCliSessionOverrideForTesting(_ session: URLSession?) {
+    googleGeminiCliSessionOverride.withLock { $0 = session }
+}
+
+private func googleGeminiCliSession(for url: URL?) -> URLSession {
+    if let override = googleGeminiCliSessionOverride.withLock({ $0 }) {
+        return override
+    }
+    return proxySession(for: url)
+}
 
 public func streamGoogleGeminiCli(
     model: Model,
@@ -119,7 +131,7 @@ public func streamGoogleGeminiCli(
                         request.setValue(value, forHTTPHeaderField: key)
                     }
 
-                    let session = proxySession(for: request.url)
+                    let session = googleGeminiCliSession(for: request.url)
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else {
                         throw GoogleGeminiCliError.invalidResponse
@@ -335,7 +347,7 @@ public func streamGoogleGeminiCli(
                         request.setValue(value, forHTTPHeaderField: key)
                     }
 
-                    let session = proxySession(for: request.url)
+                    let session = googleGeminiCliSession(for: request.url)
                     let (retryBytes, retryResponse) = try await session.bytes(for: request)
                     guard let retryHttp = retryResponse as? HTTPURLResponse, retryHttp.statusCode >= 200 && retryHttp.statusCode < 300 else {
                         let body = try await collectSseStreamData(from: retryBytes)
@@ -577,7 +589,7 @@ private func parseGeminiCliCredentials(_ raw: String) throws -> (token: String, 
     return (token, projectId)
 }
 
-private func extractRetryDelay(errorText: String, response: HTTPURLResponse?) -> Int? {
+func extractRetryDelay(errorText: String, response: HTTPURLResponse?) -> Int? {
     func normalizeDelay(_ ms: Double) -> Int? {
         ms > 0 ? Int(ceil(ms + 1000)) : nil
     }

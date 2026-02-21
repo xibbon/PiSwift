@@ -120,126 +120,13 @@ private func hasGoogleVertexCredentials(env: [String: String]) -> Bool {
 }
 
 public func stream(model: Model, context: Context, options: StreamOptions? = nil) throws -> AssistantMessageEventStream {
-    if model.api == .bedrockConverseStream {
-        let providerOptions = BedrockOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            cacheRetention: options?.cacheRetention,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamBedrock(model: model, context: context, options: providerOptions)
+    if getApiProvider(model.api) == nil {
+        ensureBuiltInProviders()
     }
-
-    let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider)
-    guard let apiKey else {
-        throw StreamError.missingApiKey(model.provider)
+    guard let provider = getApiProvider(model.api) else {
+        throw StreamError.noApiProvider(model.api.rawValue)
     }
-    let source = options?.apiKey != nil ? "options" : "env"
-    logApiKeyDebug("provider=\(model.provider) source=\(source) \(apiKeyInfo(apiKey))")
-
-    switch model.api {
-    case .bedrockConverseStream:
-        let providerOptions = BedrockOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            cacheRetention: options?.cacheRetention,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamBedrock(model: model, context: context, options: providerOptions)
-    case .openAICompletions:
-        let providerOptions = OpenAICompletionsOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamOpenAICompletions(model: model, context: context, options: providerOptions)
-    case .openAIResponses:
-        let providerOptions = OpenAIResponsesOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            cacheRetention: options?.cacheRetention,
-            sessionId: options?.sessionId,
-            transport: options?.transport,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamOpenAIResponses(model: model, context: context, options: providerOptions)
-    case .openAICodexResponses:
-        let providerOptions = OpenAICodexResponsesOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            sessionId: options?.sessionId,
-            transport: options?.transport,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamOpenAICodexResponses(model: model, context: context, options: providerOptions)
-    case .azureOpenAIResponses:
-        let providerOptions = AzureOpenAIResponsesOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            sessionId: options?.sessionId,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
-    case .anthropicMessages:
-        let providerOptions = AnthropicOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            metadata: options?.metadata,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamAnthropic(model: model, context: context, options: providerOptions)
-    case .googleGenerativeAI:
-        let providerOptions = GoogleOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamGoogle(model: model, context: context, options: providerOptions)
-    case .googleGeminiCli:
-        let providerOptions = GoogleGeminiCliOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            maxRetryDelayMs: options?.maxRetryDelayMs,
-            headers: options?.headers,
-            sessionId: options?.sessionId,
-            onPayload: options?.onPayload
-        )
-        return streamGoogleGeminiCli(model: model, context: context, options: providerOptions)
-    case .googleVertex:
-        let providerOptions = GoogleVertexOptions(
-            temperature: options?.temperature,
-            maxTokens: options?.maxTokens,
-            signal: options?.signal,
-            apiKey: apiKey,
-            headers: options?.headers,
-            onPayload: options?.onPayload
-        )
-        return streamGoogleVertex(model: model, context: context, options: providerOptions)
-    }
+    return provider.stream(model, context, options)
 }
 
 public func complete(model: Model, context: Context, options: StreamOptions? = nil) async throws -> AssistantMessage {
@@ -248,46 +135,13 @@ public func complete(model: Model, context: Context, options: StreamOptions? = n
 }
 
 public func streamSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) throws -> AssistantMessageEventStream {
-    if model.api == .bedrockConverseStream {
-        let providerOptions = mapBedrockSimpleOptions(model: model, options: options)
-        return streamBedrock(model: model, context: context, options: providerOptions)
+    if getApiProvider(model.api) == nil {
+        ensureBuiltInProviders()
     }
-
-    let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider)
-    guard let apiKey else {
-        throw StreamError.missingApiKey(model.provider)
+    guard let provider = getApiProvider(model.api) else {
+        throw StreamError.noApiProvider(model.api.rawValue)
     }
-    let source = options?.apiKey != nil ? "options" : "env"
-    logApiKeyDebug("provider=\(model.provider) source=\(source) \(apiKeyInfo(apiKey))")
-
-    switch model.api {
-    case .bedrockConverseStream:
-        let providerOptions = mapBedrockSimpleOptions(model: model, options: options)
-        return streamBedrock(model: model, context: context, options: providerOptions)
-    case .anthropicMessages:
-        let providerOptions = mapAnthropicSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamAnthropic(model: model, context: context, options: providerOptions)
-    case .openAICompletions:
-        let providerOptions = mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamOpenAICompletions(model: model, context: context, options: providerOptions)
-    case .openAIResponses:
-        let providerOptions = mapOpenAIResponsesSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamOpenAIResponses(model: model, context: context, options: providerOptions)
-    case .openAICodexResponses:
-        let providerOptions = mapOpenAICodexResponsesSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamOpenAICodexResponses(model: model, context: context, options: providerOptions)
-    case .azureOpenAIResponses:
-        let providerOptions = mapAzureOpenAIResponsesSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
-    case .googleGenerativeAI:
-        let providerOptions = mapGoogleSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamGoogle(model: model, context: context, options: providerOptions)
-    case .googleGeminiCli:
-        return streamSimpleGoogleGeminiCli(model: model, context: context, options: options)
-    case .googleVertex:
-        let providerOptions = mapGoogleVertexSimpleOptions(model: model, options: options, apiKey: apiKey)
-        return streamGoogleVertex(model: model, context: context, options: providerOptions)
-    }
+    return provider.streamSimple(model, context, options)
 }
 
 public func completeSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) async throws -> AssistantMessage {
@@ -542,11 +396,14 @@ func mergeThinkingBudgets(_ budgets: ThinkingBudgets?, reasoning: ThinkingLevel,
 
 public enum StreamError: Error, LocalizedError {
     case missingApiKey(String)
+    case noApiProvider(String)
 
     public var errorDescription: String? {
         switch self {
         case .missingApiKey(let provider):
             return "No API key for provider: \(provider)"
+        case .noApiProvider(let api):
+            return "No API provider registered for api: \(api)"
         }
     }
 }

@@ -41,6 +41,37 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+final class GeminiRetryMockURLProtocol: URLProtocol {
+    static let requestHandler = LockedState<(@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        guard request.url?.host == "cloudcode-pa.googleapis.com" else { return false }
+        return requestHandler.withLock { $0 } != nil
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler.withLock({ $0 }) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
 private func codexTestEvent(type: String, payload: [String: Any]) -> String {
     var event = payload
     event["type"] = type
@@ -960,6 +991,172 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     #expect(supportsXhigh(model: opus))
 }
 
+@Test func googleGeminiCliRetryDelayHeaderParsing() {
+    let url = URL(string: "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse")!
+    let nowSeconds = Int(Date().timeIntervalSince1970)
+    let response = HTTPURLResponse(
+        url: url,
+        statusCode: 429,
+        httpVersion: nil,
+        headerFields: [
+            "retry-after": "2",
+            "x-ratelimit-reset": "\(nowSeconds + 10)",
+        ]
+    )
+    let delay = extractRetryDelay(errorText: "", response: response)
+    #expect(delay != nil)
+    #expect((delay ?? 0) >= 2900)
+    #expect((delay ?? 0) <= 3100)
+}
+
+@Test func googleGeminiCliRetriesEmptyStreamWithoutDuplicateStart() async {
+    let requestCount = LockedState(0)
+    GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let count = requestCount.withLock { value -> Int in
+            value += 1
+            return value
+        }
+        guard let url = request.url else { throw URLError(.badURL) }
+        let body: String
+        if count == 1 {
+            body = "\n\n"
+        } else {
+            let payload = """
+            {"response":{"candidates":[{"content":{"parts":[{"text":"pong"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}
+            """
+            body = "data: \(payload)\n\n"
+        }
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["content-type": "text/event-stream"]
+        )!
+        return (response, Data(body.utf8))
+    } }
+    let sessionConfig = URLSessionConfiguration.ephemeral
+    sessionConfig.protocolClasses = [GeminiRetryMockURLProtocol.self]
+    let testSession = URLSession(configuration: sessionConfig)
+    setGoogleGeminiCliSessionOverrideForTesting(testSession)
+    defer {
+        setGoogleGeminiCliSessionOverrideForTesting(nil)
+        testSession.invalidateAndCancel()
+        GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = nil }
+    }
+
+    let baseModel = getModel(provider: .googleGeminiCli, modelId: "gemini-2.5-flash")
+    let model = Model(
+        id: baseModel.id,
+        name: baseModel.name,
+        api: baseModel.api,
+        provider: baseModel.provider,
+        baseUrl: "http://cloudcode-pa.googleapis.com",
+        reasoning: baseModel.reasoning,
+        input: baseModel.input,
+        cost: baseModel.cost,
+        contextWindow: baseModel.contextWindow,
+        maxTokens: baseModel.maxTokens,
+        headers: baseModel.headers,
+        compat: baseModel.compat
+    )
+    let context = Context(messages: [.user(UserMessage(content: .text("say pong")))])
+    let credentials = #"{"token":"tok_test","projectId":"proj_test"}"#
+    let stream = streamGoogleGeminiCli(
+        model: model,
+        context: context,
+        options: GoogleGeminiCliOptions(apiKey: credentials)
+    )
+
+    var startCount = 0
+    for await event in stream {
+        if case .start = event {
+            startCount += 1
+        }
+    }
+    let message = await stream.result()
+
+    #expect(requestCount.withLock { $0 } == 2)
+    #expect(startCount == 1)
+    #expect(message.stopReason == .stop)
+    let text = message.content.compactMap { block -> String? in
+        if case .text(let textContent) = block { return textContent.text }
+        return nil
+    }.joined(separator: "")
+    #expect(text.contains("pong"))
+}
+
+@Test func openAICompletionsToolChoiceAndStrictPayload() async {
+    let capturedPayloadJson = LockedState<String?>(nil)
+    MockURLProtocol.allowedHosts.withLock { $0 = ["zai.example"] }
+    MockURLProtocol.requestHandler.withLock { $0 = { request in
+        guard let url = request.url else { throw URLError(.badURL) }
+        let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
+        return (response, Data("error".utf8))
+    } }
+    URLProtocol.registerClass(MockURLProtocol.self)
+    defer {
+        MockURLProtocol.requestHandler.withLock { $0 = nil }
+        MockURLProtocol.allowedHosts.withLock { $0 = [] }
+        URLProtocol.unregisterClass(MockURLProtocol.self)
+    }
+
+    let model = Model(
+        id: "zai-test-model",
+        name: "zai-test-model",
+        api: .openAICompletions,
+        provider: "zai",
+        baseUrl: "https://zai.example/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 8192,
+        maxTokens: 4096,
+        compat: OpenAICompat(
+            thinkingFormat: .zai,
+            supportsStrictMode: false
+        )
+    )
+    let context = Context(
+        messages: [.user(UserMessage(content: .text("Call ping")))],
+        tools: [
+            AITool(
+                name: "ping",
+                description: "Ping tool",
+                parameters: [
+                    "type": AnyCodable("object"),
+                    "properties": AnyCodable(["ok": ["type": "boolean"] as [String: String]]),
+                ]
+            ),
+        ]
+    )
+
+    let stream = streamOpenAICompletions(
+        model: model,
+        context: context,
+        options: OpenAICompletionsOptions(
+            apiKey: "test-key",
+            toolChoice: .required,
+            onPayload: { snapshot in
+                capturedPayloadJson.withLock { $0 = snapshot.json }
+            }
+        )
+    )
+    _ = await stream.result()
+
+    let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+        guard let data = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: []),
+              let dict = json as? [String: Any] else { return nil }
+        return dict
+    }
+    #expect(payload != nil)
+    #expect(payload?["tool_choice"] as? String == "required")
+    let tools = payload?["tools"] as? [[String: Any]]
+    let function = tools?.first?["function"] as? [String: Any]
+    #expect(function != nil)
+    #expect(function?["strict"] == nil)
+}
+
 // MARK: - JSON Schema Validation Tests
 
 @Suite("JSONSchemaValidator")
@@ -1859,6 +2056,74 @@ struct ApiRegistryTests {
         #expect(!ApiProviderRegistry.shared.has(.anthropicMessages))
 
         // Restore for other tests
+        resetApiProviders()
+    }
+
+    @Test func streamUsesRegisteredProviderDispatch() async throws {
+        resetApiProviders()
+        let invoked = LockedState(false)
+
+        let custom = ApiProvider(
+            api: .openAIResponses,
+            stream: { model, _, _ in
+                invoked.withLock { $0 = true }
+                let stream = createAssistantMessageEventStream()
+                let message = AssistantMessage(
+                    content: [.text(TextContent(text: "custom-provider"))],
+                    api: model.api,
+                    provider: model.provider,
+                    model: model.id,
+                    usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                    stopReason: .stop
+                )
+                stream.push(.start(partial: message))
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+                return stream
+            },
+            streamSimple: { model, _, _ in
+                let stream = createAssistantMessageEventStream()
+                let message = AssistantMessage(
+                    content: [.text(TextContent(text: "custom-provider-simple"))],
+                    api: model.api,
+                    provider: model.provider,
+                    model: model.id,
+                    usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                    stopReason: .stop
+                )
+                stream.push(.start(partial: message))
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+                return stream
+            }
+        )
+        registerApiProvider(custom, sourceId: "test-stream-dispatch")
+
+        let baseModel = getModel(provider: .openai, modelId: "gpt-5-mini")
+        let model = Model(
+            id: baseModel.id,
+            name: baseModel.name,
+            api: .openAIResponses,
+            provider: baseModel.provider,
+            baseUrl: baseModel.baseUrl,
+            reasoning: baseModel.reasoning,
+            input: baseModel.input,
+            cost: baseModel.cost,
+            contextWindow: baseModel.contextWindow,
+            maxTokens: baseModel.maxTokens,
+            headers: baseModel.headers,
+            compat: baseModel.compat
+        )
+        let context = Context(messages: [.user(UserMessage(content: .text("hello")))])
+        let result = try await complete(model: model, context: context)
+
+        #expect(invoked.withLock { $0 })
+        let text = result.content.compactMap { block -> String? in
+            if case .text(let textContent) = block { return textContent.text }
+            return nil
+        }.joined(separator: "")
+        #expect(text == "custom-provider")
+
         resetApiProviders()
     }
 }
