@@ -82,7 +82,7 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
                 let payload = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !payload.isEmpty else { continue }
                 let event = try JSONDecoder().decode(ProxyAssistantMessageEvent.self, from: Data(payload.utf8))
-                if let messageEvent = processProxyEvent(event, partial: &partial, toolCallPartials: &toolCallPartials) {
+                if let messageEvent = try processProxyEvent(event, partial: &partial, toolCallPartials: &toolCallPartials) {
                     stream.push(messageEvent)
                 }
             }
@@ -115,7 +115,7 @@ private func processProxyEvent(
     _ proxyEvent: ProxyAssistantMessageEvent,
     partial: inout AssistantMessage,
     toolCallPartials: inout [Int: String]
-) -> AssistantMessageEvent? {
+) throws -> AssistantMessageEvent? {
     switch proxyEvent {
     case .start:
         return .start(partial: partial)
@@ -126,7 +126,7 @@ private func processProxyEvent(
 
     case .textDelta(let index, let delta):
         guard case .text(var textContent) = contentBlock(partial.content, index: index) else {
-            return nil
+            throw ProxyStreamError.invalidEventPayload("Received text_delta for non-text content")
         }
         textContent.text += delta
         setContentBlock(&partial.content, index: index, block: .text(textContent))
@@ -134,7 +134,7 @@ private func processProxyEvent(
 
     case .textEnd(let index, let signature):
         guard case .text(var textContent) = contentBlock(partial.content, index: index) else {
-            return nil
+            throw ProxyStreamError.invalidEventPayload("Received text_end for non-text content")
         }
         textContent.textSignature = signature
         setContentBlock(&partial.content, index: index, block: .text(textContent))
@@ -146,7 +146,7 @@ private func processProxyEvent(
 
     case .thinkingDelta(let index, let delta):
         guard case .thinking(var thinkingContent) = contentBlock(partial.content, index: index) else {
-            return nil
+            throw ProxyStreamError.invalidEventPayload("Received thinking_delta for non-thinking content")
         }
         thinkingContent.thinking += delta
         setContentBlock(&partial.content, index: index, block: .thinking(thinkingContent))
@@ -154,7 +154,7 @@ private func processProxyEvent(
 
     case .thinkingEnd(let index, let signature):
         guard case .thinking(var thinkingContent) = contentBlock(partial.content, index: index) else {
-            return nil
+            throw ProxyStreamError.invalidEventPayload("Received thinking_end for non-thinking content")
         }
         thinkingContent.thinkingSignature = signature
         setContentBlock(&partial.content, index: index, block: .thinking(thinkingContent))
@@ -168,7 +168,7 @@ private func processProxyEvent(
 
     case .toolCallDelta(let index, let delta):
         guard case .toolCall(var toolCall) = contentBlock(partial.content, index: index) else {
-            return nil
+            throw ProxyStreamError.invalidEventPayload("Received toolcall_delta for non-toolCall content")
         }
         let existing = toolCallPartials[index] ?? ""
         let updated = existing + delta
@@ -576,6 +576,7 @@ private enum ProxyStreamError: Error, LocalizedError, Equatable {
     case invalidResponse
     case httpError(Int)
     case invalidEventType(String)
+    case invalidEventPayload(String)
     case aborted
 
     var errorDescription: String? {
@@ -588,6 +589,8 @@ private enum ProxyStreamError: Error, LocalizedError, Equatable {
             return "Proxy error: HTTP \(status)"
         case .invalidEventType(let type):
             return "Invalid proxy event type: \(type)"
+        case .invalidEventPayload(let message):
+            return message
         case .aborted:
             return "Request aborted"
         }
