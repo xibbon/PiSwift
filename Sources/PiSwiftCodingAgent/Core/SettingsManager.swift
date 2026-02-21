@@ -154,6 +154,7 @@ public final class SettingsManager: Sendable {
 
     private let state: LockedState<State>
     private let persist: Bool
+    private let writeQueue = DispatchQueue(label: "pi.settings.write.queue")
 
     private var settingsPath: String? {
         get { state.withLock { $0.settingsPath } }
@@ -775,42 +776,66 @@ public final class SettingsManager: Sendable {
         guard let projectPath = projectSettingsPath else { return }
         let dir = URL(fileURLWithPath: projectPath).deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        do {
-            let currentJson = try SettingsManager.loadRawJson(projectPath)
-            let encoded = encodeSettingsToJson(settings)
-            var merged = currentJson
+        let modifiedProjectSnapshot = modifiedProjectFields
+        let modifiedProjectNestedSnapshot = modifiedProjectNestedFields
 
-            for field in modifiedProjectFields {
-                if let nestedKeys = modifiedProjectNestedFields[field] {
-                    let baseNested = merged[field] as? [String: Any] ?? [:]
-                    let nextNested = encoded[field] as? [String: Any] ?? [:]
-                    var updated = baseNested
-                    for nestedKey in nestedKeys {
-                        if let value = nextNested[nestedKey] {
-                            updated[nestedKey] = value
+        writeQueue.sync {
+            do {
+                let currentJson = try SettingsManager.loadRawJson(projectPath)
+                let encoded = encodeSettingsToJson(settings)
+                var merged = currentJson
+
+                for field in modifiedProjectSnapshot {
+                    if let nestedKeys = modifiedProjectNestedSnapshot[field] {
+                        let baseNested = merged[field] as? [String: Any] ?? [:]
+                        let nextNested = encoded[field] as? [String: Any] ?? [:]
+                        var updated = baseNested
+                        for nestedKey in nestedKeys {
+                            if let value = nextNested[nestedKey] {
+                                updated[nestedKey] = value
+                            } else {
+                                updated.removeValue(forKey: nestedKey)
+                            }
+                        }
+                        if updated.isEmpty {
+                            merged.removeValue(forKey: field)
                         } else {
-                            updated.removeValue(forKey: nestedKey)
+                            merged[field] = updated
+                        }
+                    } else if encoded.keys.contains(field) {
+                        merged[field] = encoded[field]
+                    } else {
+                        merged.removeValue(forKey: field)
+                    }
+                }
+
+                projectSettings = SettingsManager.decodeSettings(merged)
+                if let data = try? JSONSerialization.data(withJSONObject: merged, options: [.prettyPrinted]) {
+                    try? data.write(to: URL(fileURLWithPath: projectPath))
+                }
+
+                state.withLock { state in
+                    for field in modifiedProjectSnapshot {
+                        state.modifiedProjectFields.remove(field)
+                        if let nestedSnapshot = modifiedProjectNestedSnapshot[field] {
+                            if var currentNested = state.modifiedProjectNestedFields[field] {
+                                for nested in nestedSnapshot {
+                                    currentNested.remove(nested)
+                                }
+                                if currentNested.isEmpty {
+                                    state.modifiedProjectNestedFields.removeValue(forKey: field)
+                                } else {
+                                    state.modifiedProjectNestedFields[field] = currentNested
+                                }
+                            }
                         }
                     }
-                    if updated.isEmpty {
-                        merged.removeValue(forKey: field)
-                    } else {
-                        merged[field] = updated
-                    }
-                } else if encoded.keys.contains(field) {
-                    merged[field] = encoded[field]
-                } else {
-                    merged.removeValue(forKey: field)
                 }
+            } catch {
+                errors.append(SettingsError(scope: "project", message: error.localizedDescription))
             }
-
-            projectSettings = SettingsManager.decodeSettings(merged)
-            if let data = try? JSONSerialization.data(withJSONObject: merged, options: [.prettyPrinted]) {
-                try? data.write(to: URL(fileURLWithPath: projectPath))
-            }
-        } catch {
-            errors.append(SettingsError(scope: "project", message: error.localizedDescription))
         }
+
         self.settings = mergeSettings(globalSettings, projectSettings)
     }
 
@@ -943,46 +968,70 @@ public final class SettingsManager: Sendable {
                 return
             }
 
-            do {
-                let dir = URL(fileURLWithPath: settingsPath).deletingLastPathComponent()
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let modifiedFieldsSnapshot = modifiedFields
+            let modifiedNestedSnapshot = modifiedNestedFields
+            let globalSettingsSnapshot = globalSettings
 
-                let currentJson = try SettingsManager.loadRawJson(settingsPath)
-                let encoded = encodeSettingsToJson(globalSettings)
+            writeQueue.sync {
+                do {
+                    let dir = URL(fileURLWithPath: settingsPath).deletingLastPathComponent()
+                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-                var merged = currentJson
-                for field in modifiedFields {
-                    if let nestedKeys = modifiedNestedFields[field] {
-                        let baseNested = merged[field] as? [String: Any] ?? [:]
-                        let nextNested = encoded[field] as? [String: Any] ?? [:]
-                        var updated = baseNested
-                        for nestedKey in nestedKeys {
-                            if let value = nextNested[nestedKey] {
-                                updated[nestedKey] = value
+                    let currentJson = try SettingsManager.loadRawJson(settingsPath)
+                    let encoded = encodeSettingsToJson(globalSettingsSnapshot)
+
+                    var merged = currentJson
+                    for field in modifiedFieldsSnapshot {
+                        if let nestedKeys = modifiedNestedSnapshot[field] {
+                            let baseNested = merged[field] as? [String: Any] ?? [:]
+                            let nextNested = encoded[field] as? [String: Any] ?? [:]
+                            var updated = baseNested
+                            for nestedKey in nestedKeys {
+                                if let value = nextNested[nestedKey] {
+                                    updated[nestedKey] = value
+                                } else {
+                                    updated.removeValue(forKey: nestedKey)
+                                }
+                            }
+                            if updated.isEmpty {
+                                merged.removeValue(forKey: field)
                             } else {
-                                updated.removeValue(forKey: nestedKey)
+                                merged[field] = updated
+                            }
+                        } else {
+                            if encoded.keys.contains(field) {
+                                merged[field] = encoded[field]
+                            } else {
+                                merged.removeValue(forKey: field)
                             }
                         }
-                        if updated.isEmpty {
-                            merged.removeValue(forKey: field)
-                        } else {
-                            merged[field] = updated
-                        }
-                    } else {
-                        if encoded.keys.contains(field) {
-                            merged[field] = encoded[field]
-                        } else {
-                            merged.removeValue(forKey: field)
+                    }
+
+                    globalSettings = SettingsManager.decodeSettings(merged)
+                    if let data = try? JSONSerialization.data(withJSONObject: merged, options: [.prettyPrinted]) {
+                        try? data.write(to: URL(fileURLWithPath: settingsPath))
+                    }
+
+                    state.withLock { state in
+                        for field in modifiedFieldsSnapshot {
+                            state.modifiedFields.remove(field)
+                            if let nestedSnapshot = modifiedNestedSnapshot[field] {
+                                if var currentNested = state.modifiedNestedFields[field] {
+                                    for nested in nestedSnapshot {
+                                        currentNested.remove(nested)
+                                    }
+                                    if currentNested.isEmpty {
+                                        state.modifiedNestedFields.removeValue(forKey: field)
+                                    } else {
+                                        state.modifiedNestedFields[field] = currentNested
+                                    }
+                                }
+                            }
                         }
                     }
+                } catch {
+                    errors.append(SettingsError(scope: "global", message: error.localizedDescription))
                 }
-
-                globalSettings = SettingsManager.decodeSettings(merged)
-                if let data = try? JSONSerialization.data(withJSONObject: merged, options: [.prettyPrinted]) {
-                    try? data.write(to: URL(fileURLWithPath: settingsPath))
-                }
-            } catch {
-                errors.append(SettingsError(scope: "global", message: error.localizedDescription))
             }
         }
         settings = mergeSettings(globalSettings, projectSettings)
@@ -994,7 +1043,9 @@ public final class SettingsManager: Sendable {
         return drained
     }
 
-    public func flush() async {}
+    public func flush() async {
+        writeQueue.sync {}
+    }
 
     private func encodeSettingsToJson(_ settings: Settings) -> [String: Any] {
         var json: [String: Any] = [:]

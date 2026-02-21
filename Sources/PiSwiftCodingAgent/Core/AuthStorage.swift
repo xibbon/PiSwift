@@ -301,44 +301,46 @@ public final class AuthStorage: Sendable {
         }
 
         do {
-            let url = URL(fileURLWithPath: authPath)
-            let dir = url.deletingLastPathComponent()
-            try? FileManager.default.createDirectory(
-                at: dir,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
+            try withAuthLockSync {
+                let url = URL(fileURLWithPath: authPath)
+                let dir = url.deletingLastPathComponent()
+                try? FileManager.default.createDirectory(
+                    at: dir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
 
-            var merged: [String: AuthCredential] = [:]
-            if let data = try? Data(contentsOf: url) {
-                merged = try parseAuthData(data)
-            }
-            if let credential {
-                merged[provider] = credential
-            } else {
-                merged.removeValue(forKey: provider)
-            }
-
-            var json: [String: Any] = [:]
-            for (providerName, value) in merged {
-                switch value {
-                case .apiKey(let apiKey):
-                    json[providerName] = ["type": "api_key", "key": apiKey.key]
-                case .oauth(let oauth):
-                    var entry: [String: Any] = ["type": "oauth", "access": oauth.access]
-                    if let refresh = oauth.refresh { entry["refresh"] = refresh }
-                    if let expires = oauth.expires { entry["expires"] = expires }
-                    if let enterpriseUrl = oauth.enterpriseUrl { entry["enterpriseUrl"] = enterpriseUrl }
-                    if let projectId = oauth.projectId { entry["projectId"] = projectId }
-                    if let email = oauth.email { entry["email"] = email }
-                    if let accountId = oauth.accountId { entry["accountId"] = accountId }
-                    json[providerName] = entry
+                var merged: [String: AuthCredential] = [:]
+                if let data = try? Data(contentsOf: url) {
+                    merged = try parseAuthData(data)
                 }
-            }
+                if let credential {
+                    merged[provider] = credential
+                } else {
+                    merged.removeValue(forKey: provider)
+                }
 
-            if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
-                try? data.write(to: url)
-                chmod(authPath, 0o600)
+                var json: [String: Any] = [:]
+                for (providerName, value) in merged {
+                    switch value {
+                    case .apiKey(let apiKey):
+                        json[providerName] = ["type": "api_key", "key": apiKey.key]
+                    case .oauth(let oauth):
+                        var entry: [String: Any] = ["type": "oauth", "access": oauth.access]
+                        if let refresh = oauth.refresh { entry["refresh"] = refresh }
+                        if let expires = oauth.expires { entry["expires"] = expires }
+                        if let enterpriseUrl = oauth.enterpriseUrl { entry["enterpriseUrl"] = enterpriseUrl }
+                        if let projectId = oauth.projectId { entry["projectId"] = projectId }
+                        if let email = oauth.email { entry["email"] = email }
+                        if let accountId = oauth.accountId { entry["accountId"] = accountId }
+                        json[providerName] = entry
+                    }
+                }
+
+                if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
+                    try? data.write(to: url)
+                    chmod(authPath, 0o600)
+                }
             }
         } catch {
             state.withLock { state in
@@ -480,6 +482,40 @@ public final class AuthStorage: Sendable {
 
         defer { flock(fd, LOCK_UN) }
         return try await body()
+    }
+
+    private func withAuthLockSync<T>(_ body: () throws -> T) throws -> T {
+        ensureAuthFileExists()
+
+        let fd = open(authPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw OAuthError.refreshFailed("failed to open auth.json")
+        }
+        defer { close(fd) }
+
+        let override = state.withLock { $0.lockOptionsOverride }
+        let maxAttempts = override?.maxAttempts ?? 10
+        let maxDelayMs = override?.maxDelayMs ?? 10_000
+        var delayMs = override?.initialDelayMs ?? 100
+        var locked = false
+        if maxAttempts <= 0 {
+            throw OAuthError.refreshFailed("failed to acquire auth.json lock")
+        }
+        for _ in 0..<maxAttempts {
+            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+                locked = true
+                break
+            }
+            usleep(useconds_t(delayMs) * 1_000)
+            delayMs = min(delayMs * 2, maxDelayMs)
+        }
+
+        guard locked else {
+            throw OAuthError.refreshFailed("failed to acquire auth.json lock")
+        }
+
+        defer { flock(fd, LOCK_UN) }
+        return try body()
     }
 
     private func ensureAuthFileExists() {
