@@ -1,7 +1,7 @@
 import Foundation
 import SwiftAnthropic
 
-private let claudeCodeVersion = "2.1.2"
+private let claudeCodeVersion = "2.1.75"
 
 private let claudeCodeTools: [String] = [
     "Read",
@@ -102,7 +102,8 @@ public func streamAnthropic(
             let betaHeaders = buildAnthropicBetaHeaders(
                 apiKey: apiKey,
                 interleavedThinking: options.interleavedThinking ?? true,
-                provider: model.provider
+                provider: model.provider,
+                modelId: model.id
             )
             if let betaHeaders {
                 logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
@@ -144,6 +145,9 @@ public func streamAnthropic(
 
                 switch event.streamEvent {
                 case .messageStart:
+                    if let messageId = event.message?.id {
+                        output.responseId = messageId
+                    }
                     if let usage = event.message?.usage {
                         let input = usage.inputTokens ?? 0
                         let outputTokens = usage.outputTokens
@@ -171,6 +175,16 @@ public func streamAnthropic(
                         output.content.append(.thinking(thinkingBlock))
                         indexMap[index] = output.content.count - 1
                         stream.push(.thinkingStart(contentIndex: output.content.count - 1, partial: output))
+                    case "redacted_thinking":
+                        let thinkingBlock = ThinkingContent(
+                            thinking: "[Reasoning redacted]",
+                            thinkingSignature: block.data,
+                            redacted: true
+                        )
+                        output.content.append(.thinking(thinkingBlock))
+                        indexMap[index] = output.content.count - 1
+                        stream.push(.thinkingStart(contentIndex: output.content.count - 1, partial: output))
+                        stream.push(.thinkingEnd(contentIndex: output.content.count - 1, content: thinkingBlock.thinking, partial: output))
                     case "tool_use":
                         let toolName = isOAuthToken ? fromClaudeCodeName(block.name ?? "", tools: context.tools) : (block.name ?? "")
                         let tool = ToolCall(id: block.id ?? "", name: toolName, arguments: [:])
@@ -299,9 +313,14 @@ private func buildAnthropicParameters(model: Model, context: Context, options: A
 
     let tools = context.tools.map { convertAnthropicTools($0, isOAuthToken: isOAuthToken) }
 
-    let thinking = (options.thinkingEnabled == true && model.reasoning)
+    let thinkingEnabled = options.thinkingEnabled == true && model.reasoning
+    let thinking = thinkingEnabled
         ? MessageParameter.Thinking(budgetTokens: options.thinkingBudgetTokens ?? 1024)
         : nil
+
+    // Do NOT send temperature when thinking is enabled (incompatible with both
+    // adaptive and budget-based thinking).
+    let temperature = thinkingEnabled ? nil : options.temperature
 
     let toolChoice = options.toolChoice.map { convertAnthropicToolChoice($0, isOAuthToken: isOAuthToken) }
 
@@ -313,7 +332,7 @@ private func buildAnthropicParameters(model: Model, context: Context, options: A
         maxTokens: maxTokens,
         system: system,
         stream: true,
-        temperature: options.temperature,
+        temperature: temperature,
         tools: tools,
         toolChoice: toolChoice,
         thinking: thinking
@@ -329,7 +348,14 @@ private func mapAnthropicModel(_ id: String) -> SwiftAnthropic.Model {
     }
 }
 
-func buildAnthropicBetaHeaders(apiKey: String, interleavedThinking: Bool, provider: String) -> [String]? {
+/// Check if a model supports adaptive thinking (Opus 4.6 and Sonnet 4.6).
+/// These models have interleaved thinking built-in and don't need the beta header.
+private func supportsAdaptiveThinking(_ modelId: String) -> Bool {
+    modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
+    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6")
+}
+
+func buildAnthropicBetaHeaders(apiKey: String, interleavedThinking: Bool, provider: String, modelId: String = "") -> [String]? {
     let env = ProcessInfo.processInfo.environment
     let disableFlag = (env["PI_DISABLE_ANTHROPIC_BETA"] ?? "").lowercased()
     if disableFlag == "1" || disableFlag == "true" || disableFlag == "yes" {
@@ -344,14 +370,18 @@ func buildAnthropicBetaHeaders(apiKey: String, interleavedThinking: Bool, provid
         return items.isEmpty ? nil : items
     }
 
+    // Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
+    // The beta header is deprecated/redundant for these models.
+    let needsInterleavedBeta = interleavedThinking && !supportsAdaptiveThinking(modelId)
+
     var headers: [String] = []
     if provider == "github-copilot" {
-        if interleavedThinking {
+        if needsInterleavedBeta {
             headers.append("interleaved-thinking-2025-05-14")
         }
     } else {
         headers.append("fine-grained-tool-streaming-2025-05-14")
-        if interleavedThinking {
+        if needsInterleavedBeta {
             headers.append("interleaved-thinking-2025-05-14")
         }
     }
@@ -465,6 +495,13 @@ private func convertAssistantContent(_ assistant: AssistantMessage, isOAuthToken
             if trimmed.isEmpty { continue }
             objects.append(.text(sanitizeSurrogates(textBlock.text)))
         case .thinking(let thinkingBlock):
+            // Redacted thinking: pass the opaque payload back as redacted_thinking
+            if thinkingBlock.redacted == true {
+                if let signature = thinkingBlock.thinkingSignature {
+                    objects.append(.redactedThinking(signature))
+                }
+                continue
+            }
             let trimmed = thinkingBlock.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
             if let signature = thinkingBlock.thinkingSignature, !signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

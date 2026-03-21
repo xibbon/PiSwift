@@ -12,6 +12,8 @@ public enum AgentToolError: LocalizedError, Sendable {
     }
 }
 
+// MARK: - Public EventStream API (unchanged signatures)
+
 public func agentLoop(
     prompts: [AgentMessage],
     context: AgentContext,
@@ -20,31 +22,17 @@ public func agentLoop(
     streamFn: StreamFn? = nil
 ) -> EventStream<AgentEvent, [AgentMessage]> {
     let stream = createAgentStream()
-    let streamFnBox = StreamFnBox(streamFn)
 
     Task {
-        let newMessages = prompts
-        let currentContext = AgentContext(
-            systemPrompt: context.systemPrompt,
-            messages: context.messages + prompts,
-            tools: context.tools
-        )
-
-        stream.push(.agentStart)
-        stream.push(.turnStart)
-        for prompt in prompts {
-            stream.push(.messageStart(message: prompt))
-            stream.push(.messageEnd(message: prompt))
-        }
-
-        await runLoop(
-            currentContext: currentContext,
-            newMessages: newMessages,
+        let messages = await runAgentLoop(
+            prompts: prompts,
+            context: context,
             config: config,
+            emit: { event in stream.push(event) },
             signal: signal,
-            stream: stream,
-            streamFn: streamFnBox.value
+            streamFn: streamFn
         )
+        stream.end(messages)
     }
 
     return stream
@@ -65,35 +53,78 @@ public func agentLoopContinue(
     }
 
     let stream = createAgentStream()
-    let streamFnBox = StreamFnBox(streamFn)
 
     Task {
-        let newMessages: [AgentMessage] = []
-        let currentContext = context
-
-        stream.push(.agentStart)
-        stream.push(.turnStart)
-
-        await runLoop(
-            currentContext: currentContext,
-            newMessages: newMessages,
+        let messages = await runAgentLoopContinue(
+            context: context,
             config: config,
+            emit: { event in stream.push(event) },
             signal: signal,
-            stream: stream,
-            streamFn: streamFnBox.value
+            streamFn: streamFn
         )
+        stream.end(messages)
     }
 
     return stream
 }
 
-private final class StreamFnBox: Sendable {
-    let value: StreamFn?
+// MARK: - Public runnable functions (emit callback pattern)
 
-    init(_ value: StreamFn?) {
-        self.value = value
+public func runAgentLoop(
+    prompts: [AgentMessage],
+    context: AgentContext,
+    config: AgentLoopConfig,
+    emit: @escaping AgentEventSink,
+    signal: CancellationToken? = nil,
+    streamFn: StreamFn? = nil
+) async -> [AgentMessage] {
+    let newMessages = prompts
+    let currentContext = AgentContext(
+        systemPrompt: context.systemPrompt,
+        messages: context.messages + prompts,
+        tools: context.tools
+    )
+
+    await emit(.agentStart)
+    await emit(.turnStart)
+    for prompt in prompts {
+        await emit(.messageStart(message: prompt))
+        await emit(.messageEnd(message: prompt))
     }
+
+    return await runLoop(
+        currentContext: currentContext,
+        newMessages: newMessages,
+        config: config,
+        signal: signal,
+        emit: emit,
+        streamFn: streamFn
+    )
 }
+
+public func runAgentLoopContinue(
+    context: AgentContext,
+    config: AgentLoopConfig,
+    emit: @escaping AgentEventSink,
+    signal: CancellationToken? = nil,
+    streamFn: StreamFn? = nil
+) async -> [AgentMessage] {
+    let currentContext = context
+
+    await emit(.agentStart)
+    await emit(.turnStart)
+
+    return await runLoop(
+        currentContext: currentContext,
+        newMessages: [],
+        config: config,
+        signal: signal,
+        emit: emit,
+        streamFn: streamFn
+    )
+}
+
+// MARK: - Errors
 
 public enum AgentLoopError: Error, LocalizedError {
     case emptyContext
@@ -109,6 +140,8 @@ public enum AgentLoopError: Error, LocalizedError {
     }
 }
 
+// MARK: - Private helpers
+
 private func createAgentStream() -> EventStream<AgentEvent, [AgentMessage]> {
     EventStream<AgentEvent, [AgentMessage]>(
         isComplete: { event in
@@ -122,14 +155,16 @@ private func createAgentStream() -> EventStream<AgentEvent, [AgentMessage]> {
     )
 }
 
+// MARK: - Main loop
+
 private func runLoop(
     currentContext: AgentContext,
     newMessages: [AgentMessage],
     config: AgentLoopConfig,
     signal: CancellationToken?,
-    stream: EventStream<AgentEvent, [AgentMessage]>,
+    emit: @escaping AgentEventSink,
     streamFn: StreamFn?
-) async {
+) async -> [AgentMessage] {
     var context = currentContext
     var messages = newMessages
     var firstTurn = true
@@ -137,19 +172,18 @@ private func runLoop(
 
     while true {
         var hasMoreToolCalls = true
-        var steeringAfterTools: [AgentMessage]? = nil
 
         while hasMoreToolCalls || !pendingMessages.isEmpty {
             if !firstTurn {
-                stream.push(.turnStart)
+                await emit(.turnStart)
             } else {
                 firstTurn = false
             }
 
             if !pendingMessages.isEmpty {
                 for message in pendingMessages {
-                    stream.push(.messageStart(message: message))
-                    stream.push(.messageEnd(message: message))
+                    await emit(.messageStart(message: message))
+                    await emit(.messageEnd(message: message))
                     context.messages.append(message)
                     messages.append(message)
                 }
@@ -161,7 +195,7 @@ private func runLoop(
                     context: context,
                     config: config,
                     signal: signal,
-                    stream: stream,
+                    emit: emit,
                     streamFn: streamFn
                 )
                 context = updatedContext
@@ -169,10 +203,9 @@ private func runLoop(
                 messages.append(agentMessage)
 
                 if assistantMessage.stopReason == .error || assistantMessage.stopReason == .aborted {
-                    stream.push(.turnEnd(message: agentMessage, toolResults: []))
-                    stream.push(.agentEnd(messages: messages))
-                    stream.end(messages)
-                    return
+                    await emit(.turnEnd(message: agentMessage, toolResults: []))
+                    await emit(.agentEnd(messages: messages))
+                    return messages
                 }
 
                 let toolCalls = assistantMessage.content.compactMap { block -> ToolCall? in
@@ -183,15 +216,13 @@ private func runLoop(
 
                 var toolResults: [ToolResultMessage] = []
                 if hasMoreToolCalls {
-                    let execution = await executeToolCalls(
-                        tools: context.tools,
+                    toolResults = await executeToolCalls(
+                        context: context,
                         assistantMessage: assistantMessage,
+                        config: config,
                         signal: signal,
-                        stream: stream,
-                        getSteeringMessages: config.getSteeringMessages
+                        emit: emit
                     )
-                    toolResults.append(contentsOf: execution.toolResults)
-                    steeringAfterTools = execution.steeringMessages
 
                     for result in toolResults {
                         let agentResult = AgentMessage.toolResult(result)
@@ -200,7 +231,7 @@ private func runLoop(
                     }
                 }
 
-                stream.push(.turnEnd(message: agentMessage, toolResults: toolResults))
+                await emit(.turnEnd(message: agentMessage, toolResults: toolResults))
             } catch {
                 let errorMessage = AgentMessage.assistant(buildErrorAssistantMessage(
                     model: config.model,
@@ -208,18 +239,13 @@ private func runLoop(
                     message: error.localizedDescription
                 ))
                 messages.append(errorMessage)
-                stream.push(.turnEnd(message: errorMessage, toolResults: []))
-                stream.push(.agentEnd(messages: messages))
-                stream.end(messages)
-                return
+                await emit(.turnEnd(message: errorMessage, toolResults: []))
+                await emit(.agentEnd(messages: messages))
+                return messages
             }
 
-            if let queued = steeringAfterTools, !queued.isEmpty {
-                pendingMessages = queued
-                steeringAfterTools = nil
-            } else {
-                pendingMessages = (await config.getSteeringMessages?()) ?? []
-            }
+            // Steering is now checked AFTER all tool calls complete (not mid-execution)
+            pendingMessages = (await config.getSteeringMessages?()) ?? []
         }
 
         let followUpMessages = (await config.getFollowUpMessages?()) ?? []
@@ -231,15 +257,17 @@ private func runLoop(
         break
     }
 
-    stream.push(.agentEnd(messages: messages))
-    stream.end(messages)
+    await emit(.agentEnd(messages: messages))
+    return messages
 }
+
+// MARK: - Stream assistant response
 
 private func streamAssistantResponse(
     context: AgentContext,
     config: AgentLoopConfig,
     signal: CancellationToken?,
-    stream: EventStream<AgentEvent, [AgentMessage]>,
+    emit: @escaping AgentEventSink,
     streamFn: StreamFn?
 ) async throws -> (AssistantMessage, AgentContext) {
     var updatedContext = context
@@ -275,6 +303,7 @@ private func streamAssistantResponse(
             reasoning: config.reasoning,
             sessionId: config.sessionId,
             thinkingBudgets: config.thinkingBudgets,
+            onPayload: config.onPayload,
             maxRetryDelayMs: config.maxRetryDelayMs
         )
     )
@@ -289,7 +318,7 @@ private func streamAssistantResponse(
             let agentMessage = AgentMessage.assistant(partial)
             updatedContext.messages.append(agentMessage)
             addedPartial = true
-            stream.push(.messageStart(message: agentMessage))
+            await emit(.messageStart(message: agentMessage))
 
         case .textStart(_, let partial),
              .textDelta(_, _, let partial),
@@ -309,31 +338,19 @@ private func streamAssistantResponse(
                     updatedContext.messages.append(agentMessage)
                     addedPartial = true
                 }
-                stream.push(.messageUpdate(message: agentMessage, assistantMessageEvent: event))
+                await emit(.messageUpdate(message: agentMessage, assistantMessageEvent: event))
             }
 
-        case .done:
+        case .done, .error:
             let finalMessage = await response.result()
             let agentMessage = AgentMessage.assistant(finalMessage)
             if addedPartial {
                 updatedContext.messages[updatedContext.messages.count - 1] = agentMessage
             } else {
                 updatedContext.messages.append(agentMessage)
-                stream.push(.messageStart(message: agentMessage))
+                await emit(.messageStart(message: agentMessage))
             }
-            stream.push(.messageEnd(message: agentMessage))
-            return (finalMessage, updatedContext)
-
-        case .error:
-            let finalMessage = await response.result()
-            let agentMessage = AgentMessage.assistant(finalMessage)
-            if addedPartial {
-                updatedContext.messages[updatedContext.messages.count - 1] = agentMessage
-            } else {
-                updatedContext.messages.append(agentMessage)
-                stream.push(.messageStart(message: agentMessage))
-            }
-            stream.push(.messageEnd(message: agentMessage))
+            await emit(.messageEnd(message: agentMessage))
             return (finalMessage, updatedContext)
         }
     }
@@ -344,113 +361,305 @@ private func streamAssistantResponse(
         updatedContext.messages[updatedContext.messages.count - 1] = agentMessage
     } else {
         updatedContext.messages.append(agentMessage)
+        await emit(.messageStart(message: agentMessage))
     }
+    await emit(.messageEnd(message: agentMessage))
     return (finalMessage, updatedContext)
 }
 
+// MARK: - Tool execution dispatcher
+
 private func executeToolCalls(
-    tools: [AgentTool]?,
+    context: AgentContext,
     assistantMessage: AssistantMessage,
+    config: AgentLoopConfig,
     signal: CancellationToken?,
-    stream: EventStream<AgentEvent, [AgentMessage]>,
-    getSteeringMessages: (() async -> [AgentMessage])?
-) async -> (toolResults: [ToolResultMessage], steeringMessages: [AgentMessage]?) {
+    emit: @escaping AgentEventSink
+) async -> [ToolResultMessage] {
     let toolCalls = assistantMessage.content.compactMap { block -> ToolCall? in
         if case .toolCall(let toolCall) = block { return toolCall }
         return nil
     }
 
+    if config.toolExecution == .sequential {
+        return await executeToolCallsSequential(
+            context: context,
+            assistantMessage: assistantMessage,
+            toolCalls: toolCalls,
+            config: config,
+            signal: signal,
+            emit: emit
+        )
+    }
+    return await executeToolCallsParallel(
+        context: context,
+        assistantMessage: assistantMessage,
+        toolCalls: toolCalls,
+        config: config,
+        signal: signal,
+        emit: emit
+    )
+}
+
+// MARK: - Sequential tool execution
+
+private func executeToolCallsSequential(
+    context: AgentContext,
+    assistantMessage: AssistantMessage,
+    toolCalls: [ToolCall],
+    config: AgentLoopConfig,
+    signal: CancellationToken?,
+    emit: @escaping AgentEventSink
+) async -> [ToolResultMessage] {
     var results: [ToolResultMessage] = []
-    var steeringMessages: [AgentMessage]? = nil
 
-    for (index, toolCall) in toolCalls.enumerated() {
-        let tool = tools?.first { $0.name == toolCall.name }
+    for toolCall in toolCalls {
+        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
 
-        stream.push(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
-
-        var result: AgentToolResult
-        var isError = false
-
-        do {
-            guard let tool else { throw AgentToolError.toolNotFound(toolCall.name) }
-            let validatedArgs = try validateToolArguments(tool: tool.aiTool, toolCall: toolCall)
-            result = try await tool.execute(toolCall.id, validatedArgs, signal) { partialResult in
-                stream.push(.toolExecutionUpdate(
-                    toolCallId: toolCall.id,
-                    toolName: toolCall.name,
-                    args: toolCall.arguments,
-                    partialResult: partialResult
-                ))
-            }
-        } catch {
-            let message = error.localizedDescription
-            result = AgentToolResult(
-                content: [.text(TextContent(text: message))],
-                details: AnyCodable([String: Any]())
-            )
-            isError = true
-        }
-
-        stream.push(.toolExecutionEnd(
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            result: result,
-            isError: isError
-        ))
-
-        let toolResultMessage = ToolResultMessage(
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            content: result.content,
-            details: result.details,
-            isError: isError
+        let preparation = await prepareToolCall(
+            context: context,
+            assistantMessage: assistantMessage,
+            toolCall: toolCall,
+            config: config,
+            signal: signal
         )
 
-        results.append(toolResultMessage)
-        stream.push(.messageStart(message: .toolResult(toolResultMessage)))
-        stream.push(.messageEnd(message: .toolResult(toolResultMessage)))
-
-        if let getSteeringMessages {
-            let queued = await getSteeringMessages()
-            if !queued.isEmpty {
-                steeringMessages = queued
-                let remaining = toolCalls[(index + 1)...]
-                for skipped in remaining {
-                    results.append(skipToolCall(skipped, stream: stream))
-                }
-                break
-            }
+        switch preparation {
+        case .immediate(let result, let isError):
+            results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: isError, emit: emit))
+        case .prepared(let prepared):
+            let executed = await executePreparedToolCall(prepared: prepared, signal: signal, emit: emit)
+            results.append(await finalizeExecutedToolCall(
+                context: context,
+                assistantMessage: assistantMessage,
+                prepared: prepared,
+                executed: executed,
+                config: config,
+                signal: signal,
+                emit: emit
+            ))
         }
     }
 
-    return (results, steeringMessages)
+    return results
 }
 
-private func skipToolCall(
-    _ toolCall: ToolCall,
-    stream: EventStream<AgentEvent, [AgentMessage]>
-) -> ToolResultMessage {
-    let result = AgentToolResult(
-        content: [.text(TextContent(text: "Skipped due to queued user message."))],
+// MARK: - Parallel tool execution
+
+private func executeToolCallsParallel(
+    context: AgentContext,
+    assistantMessage: AssistantMessage,
+    toolCalls: [ToolCall],
+    config: AgentLoopConfig,
+    signal: CancellationToken?,
+    emit: @escaping AgentEventSink
+) async -> [ToolResultMessage] {
+    var results: [ToolResultMessage] = []
+    var runnableCalls: [PreparedToolCallInfo] = []
+
+    // Phase 1: prepare all tool calls sequentially
+    for toolCall in toolCalls {
+        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
+
+        let preparation = await prepareToolCall(
+            context: context,
+            assistantMessage: assistantMessage,
+            toolCall: toolCall,
+            config: config,
+            signal: signal
+        )
+
+        switch preparation {
+        case .immediate(let result, let isError):
+            results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: isError, emit: emit))
+        case .prepared(let prepared):
+            runnableCalls.append(prepared)
+        }
+    }
+
+    // Phase 2: execute allowed tools concurrently
+    let runningCalls: [(prepared: PreparedToolCallInfo, execution: Task<ExecutedToolCallOutcome, Never>)] = runnableCalls.map { prepared in
+        let task = Task {
+            await executePreparedToolCall(prepared: prepared, signal: signal, emit: emit)
+        }
+        return (prepared: prepared, execution: task)
+    }
+
+    // Phase 3: finalize in source order
+    for running in runningCalls {
+        let executed = await running.execution.value
+        results.append(await finalizeExecutedToolCall(
+            context: context,
+            assistantMessage: assistantMessage,
+            prepared: running.prepared,
+            executed: executed,
+            config: config,
+            signal: signal,
+            emit: emit
+        ))
+    }
+
+    return results
+}
+
+// MARK: - Tool call preparation, execution, finalization
+
+private struct PreparedToolCallInfo: Sendable {
+    var toolCall: ToolCall
+    var tool: AgentTool
+    var args: [String: AnyCodable]
+}
+
+private enum ToolCallPreparation: Sendable {
+    case prepared(PreparedToolCallInfo)
+    case immediate(result: AgentToolResult, isError: Bool)
+}
+
+private struct ExecutedToolCallOutcome: Sendable {
+    var result: AgentToolResult
+    var isError: Bool
+}
+
+private func prepareToolCall(
+    context: AgentContext,
+    assistantMessage: AssistantMessage,
+    toolCall: ToolCall,
+    config: AgentLoopConfig,
+    signal: CancellationToken?
+) async -> ToolCallPreparation {
+    let tool = context.tools?.first { $0.name == toolCall.name }
+    guard let tool else {
+        return .immediate(
+            result: createErrorToolResult("Tool \(toolCall.name) not found"),
+            isError: true
+        )
+    }
+
+    do {
+        let validatedArgs = try validateToolArguments(tool: tool.aiTool, toolCall: toolCall)
+
+        if let beforeToolCall = config.beforeToolCall {
+            let beforeResult = await beforeToolCall(
+                BeforeToolCallContext(
+                    assistantMessage: assistantMessage,
+                    toolCall: toolCall,
+                    args: validatedArgs,
+                    context: context
+                ),
+                signal
+            )
+            if beforeResult?.block == true {
+                return .immediate(
+                    result: createErrorToolResult(beforeResult?.reason ?? "Tool execution was blocked"),
+                    isError: true
+                )
+            }
+        }
+
+        return .prepared(PreparedToolCallInfo(toolCall: toolCall, tool: tool, args: validatedArgs))
+    } catch {
+        return .immediate(
+            result: createErrorToolResult(error.localizedDescription),
+            isError: true
+        )
+    }
+}
+
+private func executePreparedToolCall(
+    prepared: PreparedToolCallInfo,
+    signal: CancellationToken?,
+    emit: @escaping AgentEventSink
+) async -> ExecutedToolCallOutcome {
+    do {
+        let result = try await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal) { partialResult in
+            Task {
+                await emit(.toolExecutionUpdate(
+                    toolCallId: prepared.toolCall.id,
+                    toolName: prepared.toolCall.name,
+                    args: prepared.toolCall.arguments,
+                    partialResult: partialResult
+                ))
+            }
+        }
+        return ExecutedToolCallOutcome(result: result, isError: false)
+    } catch {
+        return ExecutedToolCallOutcome(
+            result: createErrorToolResult(error.localizedDescription),
+            isError: true
+        )
+    }
+}
+
+private func finalizeExecutedToolCall(
+    context: AgentContext,
+    assistantMessage: AssistantMessage,
+    prepared: PreparedToolCallInfo,
+    executed: ExecutedToolCallOutcome,
+    config: AgentLoopConfig,
+    signal: CancellationToken?,
+    emit: @escaping AgentEventSink
+) async -> ToolResultMessage {
+    var result = executed.result
+    var isError = executed.isError
+
+    if let afterToolCall = config.afterToolCall {
+        let afterResult = await afterToolCall(
+            AfterToolCallContext(
+                assistantMessage: assistantMessage,
+                toolCall: prepared.toolCall,
+                args: prepared.args,
+                result: result,
+                isError: isError,
+                context: context
+            ),
+            signal
+        )
+        if let afterResult {
+            result = AgentToolResult(
+                content: afterResult.content ?? result.content,
+                details: afterResult.details ?? result.details
+            )
+            isError = afterResult.isError ?? isError
+        }
+    }
+
+    return await emitToolCallOutcome(toolCall: prepared.toolCall, result: result, isError: isError, emit: emit)
+}
+
+private func createErrorToolResult(_ message: String) -> AgentToolResult {
+    AgentToolResult(
+        content: [.text(TextContent(text: message))],
         details: AnyCodable([String: Any]())
     )
+}
 
-    stream.push(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
-    stream.push(.toolExecutionEnd(toolCallId: toolCall.id, toolName: toolCall.name, result: result, isError: true))
+private func emitToolCallOutcome(
+    toolCall: ToolCall,
+    result: AgentToolResult,
+    isError: Bool,
+    emit: @escaping AgentEventSink
+) async -> ToolResultMessage {
+    await emit(.toolExecutionEnd(
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        result: result,
+        isError: isError
+    ))
 
     let toolResultMessage = ToolResultMessage(
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         content: result.content,
         details: result.details,
-        isError: true
+        isError: isError
     )
 
-    stream.push(.messageStart(message: .toolResult(toolResultMessage)))
-    stream.push(.messageEnd(message: .toolResult(toolResultMessage)))
-
+    await emit(.messageStart(message: .toolResult(toolResultMessage)))
+    await emit(.messageEnd(message: .toolResult(toolResultMessage)))
     return toolResultMessage
 }
+
+// MARK: - Helpers
 
 private func buildErrorAssistantMessage(model: Model, reason: StopReason, message: String) -> AssistantMessage {
     AssistantMessage(

@@ -1,7 +1,100 @@
 import Foundation
 import PiSwiftAI
 
+/// Stream function used by the agent loop.
+///
+/// Contract: must not throw or return a rejected promise for request/model/runtime failures.
+/// Must return an `AssistantMessageEventStream`. Failures must be encoded in the returned stream
+/// via protocol events and a final `AssistantMessage` with `stopReason` `.error` or `.aborted`.
 public typealias StreamFn = @Sendable (Model, Context, SimpleStreamOptions) async throws -> AssistantMessageEventStream
+
+/// Callback for emitting agent events. Supports both sync and async handlers.
+public typealias AgentEventSink = @Sendable (AgentEvent) async -> Void
+
+/// Configuration for how tool calls from a single assistant message are executed.
+///
+/// - `sequential`: each tool call is prepared, executed, and finalized before the next one starts.
+/// - `parallel`: tool calls are prepared sequentially, then allowed tools execute concurrently.
+///   Final tool results are still emitted in assistant source order.
+public enum ToolExecutionMode: String, Sendable {
+    case sequential
+    case parallel
+}
+
+/// A single tool call content block emitted by an assistant message.
+public typealias AgentToolCall = ToolCall
+
+/// Result returned from `beforeToolCall`.
+///
+/// Returning `BeforeToolCallResult(block: true)` prevents the tool from executing.
+/// The loop emits an error tool result instead. `reason` becomes the text shown in that error result.
+public struct BeforeToolCallResult: Sendable {
+    public var block: Bool?
+    public var reason: String?
+
+    public init(block: Bool? = nil, reason: String? = nil) {
+        self.block = block
+        self.reason = reason
+    }
+}
+
+/// Partial override returned from `afterToolCall`.
+///
+/// Merge semantics are field-by-field:
+/// - `content`: if provided, replaces the tool result content array in full
+/// - `details`: if provided, replaces the tool result details value in full
+/// - `isError`: if provided, replaces the tool result error flag
+///
+/// Omitted fields keep the original executed tool result values.
+public struct AfterToolCallResult: Sendable {
+    public var content: [ContentBlock]?
+    public var details: AnyCodable?
+    public var isError: Bool?
+
+    public init(content: [ContentBlock]? = nil, details: AnyCodable? = nil, isError: Bool? = nil) {
+        self.content = content
+        self.details = details
+        self.isError = isError
+    }
+}
+
+/// Context passed to `beforeToolCall`.
+public struct BeforeToolCallContext: Sendable {
+    public var assistantMessage: AssistantMessage
+    public var toolCall: AgentToolCall
+    public var args: [String: AnyCodable]
+    public var context: AgentContext
+
+    public init(assistantMessage: AssistantMessage, toolCall: AgentToolCall, args: [String: AnyCodable], context: AgentContext) {
+        self.assistantMessage = assistantMessage
+        self.toolCall = toolCall
+        self.args = args
+        self.context = context
+    }
+}
+
+/// Context passed to `afterToolCall`.
+public struct AfterToolCallContext: Sendable {
+    public var assistantMessage: AssistantMessage
+    public var toolCall: AgentToolCall
+    public var args: [String: AnyCodable]
+    public var result: AgentToolResult
+    public var isError: Bool
+    public var context: AgentContext
+
+    public init(assistantMessage: AssistantMessage, toolCall: AgentToolCall, args: [String: AnyCodable], result: AgentToolResult, isError: Bool, context: AgentContext) {
+        self.assistantMessage = assistantMessage
+        self.toolCall = toolCall
+        self.args = args
+        self.result = result
+        self.isError = isError
+        self.context = context
+    }
+}
+
+public typealias BeforeToolCallFn = @Sendable (BeforeToolCallContext, CancellationToken?) async -> BeforeToolCallResult?
+public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async -> AfterToolCallResult?
+public typealias OnPayloadFn = PayloadHandler
 
 public enum ThinkingLevel: String, Sendable {
     case off
@@ -160,10 +253,45 @@ public struct AgentLoopConfig: Sendable {
     public var sessionId: String?
     public var thinkingBudgets: ThinkingBudgets?
     public var maxRetryDelayMs: Int?
+    public var onPayload: OnPayloadFn?
+
+    /// Tool execution mode. Default: `.parallel`
+    public var toolExecution: ToolExecutionMode?
+
+    /// Called before a tool is executed, after arguments have been validated.
+    /// Return `BeforeToolCallResult(block: true)` to prevent execution.
+    public var beforeToolCall: BeforeToolCallFn?
+
+    /// Called after a tool finishes executing, before final tool events are emitted.
+    /// Return an `AfterToolCallResult` to override parts of the executed tool result.
+    public var afterToolCall: AfterToolCallFn?
+
+    /// Converts `[AgentMessage]` to LLM-compatible `[Message]` before each LLM call.
+    ///
+    /// Contract: must not throw or reject. Return a safe fallback value instead.
     public var convertToLlm: @Sendable ([AgentMessage]) async throws -> [Message]
+
+    /// Optional transform applied to the context before `convertToLlm`.
+    ///
+    /// Contract: must not throw or reject. Return the original messages or a safe fallback.
     public var transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])?
+
+    /// Resolves an API key dynamically for each LLM call.
+    ///
+    /// Contract: must not throw or reject. Return nil when no key is available.
     public var getApiKey: (@Sendable (String) async -> String?)?
+
+    /// Returns steering messages to inject into the conversation mid-run.
+    ///
+    /// Called after the current assistant turn finishes executing its tool calls.
+    /// Tool calls from the current assistant message are not skipped.
+    ///
+    /// Contract: must not throw or reject. Return `[]` when no steering messages are available.
     public var getSteeringMessages: (@Sendable () async -> [AgentMessage])?
+
+    /// Returns follow-up messages to process after the agent would otherwise stop.
+    ///
+    /// Contract: must not throw or reject. Return `[]` when no follow-up messages are available.
     public var getFollowUpMessages: (@Sendable () async -> [AgentMessage])?
 
     public init(
@@ -176,6 +304,10 @@ public struct AgentLoopConfig: Sendable {
         sessionId: String? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
+        onPayload: OnPayloadFn? = nil,
+        toolExecution: ToolExecutionMode? = nil,
+        beforeToolCall: BeforeToolCallFn? = nil,
+        afterToolCall: AfterToolCallFn? = nil,
         convertToLlm: @escaping @Sendable ([AgentMessage]) async throws -> [Message],
         transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? = nil,
         getApiKey: (@Sendable (String) async -> String?)? = nil,
@@ -191,6 +323,10 @@ public struct AgentLoopConfig: Sendable {
         self.sessionId = sessionId
         self.thinkingBudgets = thinkingBudgets
         self.maxRetryDelayMs = maxRetryDelayMs
+        self.onPayload = onPayload
+        self.toolExecution = toolExecution
+        self.beforeToolCall = beforeToolCall
+        self.afterToolCall = afterToolCall
         self.convertToLlm = convertToLlm
         self.transformContext = transformContext
         self.getApiKey = getApiKey

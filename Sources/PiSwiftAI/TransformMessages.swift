@@ -23,6 +23,10 @@ public func transformMessages(
             let transformedContent: [ContentBlock] = assistant.content.compactMap { block in
                 switch block {
                 case .thinking(let thinking):
+                    // Redacted thinking must be dropped on cross-model replay for safety
+                    if thinking.redacted == true && !isSameModel {
+                        return nil
+                    }
                     let trimmed = thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
                     if isSameModel {
                         if trimmed.isEmpty && thinking.thinkingSignature == nil {

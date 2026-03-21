@@ -10,6 +10,7 @@ public enum Api: String, Sendable {
     case googleGenerativeAI = "google-generative-ai"
     case googleGeminiCli = "google-gemini-cli"
     case googleVertex = "google-vertex"
+    case mistralConversations = "mistral-conversations"
 }
 
 public enum KnownProvider: String, Sendable {
@@ -35,6 +36,7 @@ public enum KnownProvider: String, Sendable {
     case zai
     case mistral
     case opencode
+    case opencodeGo = "opencode-go"
 }
 
 public typealias Provider = String
@@ -361,10 +363,15 @@ public struct ThinkingContent: Sendable {
     public let type: String = "thinking"
     public var thinking: String
     public var thinkingSignature: String?
+    /// When true, the thinking content was redacted by safety filters. The opaque
+    /// encrypted payload is stored in `thinkingSignature` so it can be passed back
+    /// to the API for multi-turn continuity.
+    public var redacted: Bool?
 
-    public init(thinking: String, thinkingSignature: String? = nil) {
+    public init(thinking: String, thinkingSignature: String? = nil, redacted: Bool? = nil) {
         self.thinking = thinking
         self.thinkingSignature = thinkingSignature
+        self.redacted = redacted
     }
 }
 
@@ -423,6 +430,8 @@ public struct AssistantMessage: Sendable {
     public var api: Api
     public var provider: Provider
     public var model: String
+    /// Provider-specific response/message identifier when the upstream API exposes one.
+    public var responseId: String?
     public var usage: Usage
     public var stopReason: StopReason
     public var errorMessage: String?
@@ -433,6 +442,7 @@ public struct AssistantMessage: Sendable {
         api: Api,
         provider: Provider,
         model: String,
+        responseId: String? = nil,
         usage: Usage,
         stopReason: StopReason,
         errorMessage: String? = nil,
@@ -442,6 +452,7 @@ public struct AssistantMessage: Sendable {
         self.api = api
         self.provider = provider
         self.model = model
+        self.responseId = responseId
         self.usage = usage
         self.stopReason = stopReason
         self.errorMessage = errorMessage

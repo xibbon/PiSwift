@@ -4,7 +4,8 @@ private let geminiCliToolCallCounter = LockedState(0)
 
 private let defaultGeminiCliEndpoint = "https://cloudcode-pa.googleapis.com"
 private let antigravityDailyEndpoint = "https://daily-cloudcode-pa.sandbox.googleapis.com"
-private let antigravityEndpointFallbacks = [antigravityDailyEndpoint, defaultGeminiCliEndpoint]
+private let antigravityAutopushEndpoint = "https://autopush-cloudcode-pa.sandbox.googleapis.com"
+private let antigravityEndpointFallbacks = [antigravityDailyEndpoint, antigravityAutopushEndpoint, defaultGeminiCliEndpoint]
 
 private let geminiCliHeaders: [String: String] = [
     "User-Agent": "google-cloud-sdk vscode_cloudshelleditor/0.1",
@@ -12,12 +13,10 @@ private let geminiCliHeaders: [String: String] = [
     "Client-Metadata": #"{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}"#,
 ]
 
-private let antigravityHeaders: [String: String] = [
-    "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-    "Client-Metadata": #"{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}"#,
-]
+// Antigravity: minimal headers only (stripped extra headers per upstream v0.61.1)
+private let antigravityHeaders: [String: String] = [:]
 
-private let defaultAntigravityVersion = "1.15.8"
+private let defaultAntigravityVersion = "1.18.4"
 
 private func antigravityUserAgent() -> String {
     let env = ProcessInfo.processInfo.environment

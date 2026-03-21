@@ -71,6 +71,11 @@ public func streamOpenAICompletions(
                     throw OpenAICompletionsStreamError.aborted
                 }
 
+                // Capture response ID from chunk
+                if output.responseId == nil, !chunk.id.isEmpty {
+                    output.responseId = chunk.id
+                }
+
                 if let usage = chunk.usage {
                     let cachedTokens = usage.promptTokensDetails?.cachedTokens ?? 0
                     let input = usage.promptTokens - cachedTokens

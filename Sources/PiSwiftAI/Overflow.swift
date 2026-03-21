@@ -17,6 +17,7 @@ private let overflowPatterns: [NSRegularExpression] = [
     try! NSRegularExpression(pattern: "context[_ ]length[_ ]exceeded", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "too many tokens", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "token limit exceeded", options: [.caseInsensitive]),
+    try! NSRegularExpression(pattern: "model_context_window_exceeded", options: [.caseInsensitive]),
 ]
 
 public func isContextOverflow(_ message: AssistantMessage, contextWindow: Int? = nil) -> Bool {

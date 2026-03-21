@@ -179,7 +179,9 @@ import PiSwiftAgent
     }
 }
 
-@Test func steeringMessagesSkipRemainingTools() async {
+/// v0.61.1 behavior: steering messages are delivered AFTER all tool calls
+/// complete in the current turn (they no longer skip remaining tools).
+@Test func steeringMessagesDeliveredAfterAllToolCalls() async {
     let executed = LockedState<[String]>([])
     let tool = AgentTool(
         label: "Echo",
@@ -204,9 +206,10 @@ import PiSwiftAgent
         model: createModel(),
         convertToLlm: identityConverter,
         getSteeringMessages: {
+            // Deliver steering after first turn's tools complete
             let executedCount = executed.withLock { $0.count }
             let shouldDeliver = steeringDelivered.withLock { delivered in
-                if executedCount == 1 && !delivered {
+                if executedCount >= 1 && !delivered {
                     delivered = true
                     return true
                 }
@@ -253,7 +256,8 @@ import PiSwiftAgent
         events.append(event)
     }
 
-    #expect(executed.withLock { $0 } == ["first"])
+    // Both tools should execute (steering no longer skips remaining tools)
+    #expect(executed.withLock { $0 } == ["first", "second"])
 
     let toolEnds = events.compactMap { event -> (AgentToolResult, Bool)? in
         if case .toolExecutionEnd(_, _, let result, let isError) = event {
@@ -263,12 +267,9 @@ import PiSwiftAgent
     }
     #expect(toolEnds.count == 2)
     #expect(toolEnds[0].1 == false)
-    #expect(toolEnds[1].1 == true)
+    #expect(toolEnds[1].1 == false) // second tool also succeeds
 
-    if case .text(let text) = toolEnds[1].0.content.first {
-        #expect(text.text.contains("Skipped due to queued user message"))
-    }
-
+    // Steering message should still appear in next turn's context
     let steeringEvent = events.first { event in
         if case .messageStart(let message) = event {
             if case .user(let user) = message, case .text(let text) = user.content {

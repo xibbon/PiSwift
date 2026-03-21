@@ -781,16 +781,23 @@ private func convertAssistantContent(_ blocks: [ContentBlock], model: Model) -> 
         case .thinking(let thinking):
             let trimmed = thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
-            var reasoningText: [String: Any] = ["text": sanitizeSurrogates(thinking.thinking)]
-            if supportsThinkingSignature(model: model), let signature = thinking.thinkingSignature {
-                reasoningText["signature"] = signature
+            // If thinking signature is missing/empty, fall back to plain text block
+            // to prevent API rejection on replayed messages.
+            if supportsThinkingSignature(model: model),
+               let signature = thinking.thinkingSignature,
+               !signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let reasoningText: [String: Any] = ["text": sanitizeSurrogates(thinking.thinking), "signature": signature]
+                let payload: [String: Any] = [
+                    "reasoningContent": [
+                        "reasoningText": reasoningText,
+                    ],
+                ]
+                converted.append(BedrockContentBlock(payload: AnyCodable(payload)))
+            } else {
+                // Fallback: emit as plain text when no valid signature
+                let textPayload: [String: Any] = ["text": sanitizeSurrogates(thinking.thinking)]
+                converted.append(BedrockContentBlock(payload: AnyCodable(textPayload)))
             }
-            let payload: [String: Any] = [
-                "reasoningContent": [
-                    "reasoningText": reasoningText,
-                ],
-            ]
-            converted.append(BedrockContentBlock(payload: AnyCodable(payload)))
         default:
             break
         }

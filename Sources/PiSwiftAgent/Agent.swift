@@ -17,6 +17,10 @@ public struct AgentOptions: Sendable {
     public var thinkingBudgets: ThinkingBudgets?
     public var maxRetryDelayMs: Int?
     public var getApiKey: (@Sendable (String) async -> String?)?
+    public var onPayload: OnPayloadFn?
+    public var toolExecution: ToolExecutionMode?
+    public var beforeToolCall: BeforeToolCallFn?
+    public var afterToolCall: AfterToolCallFn?
 
     public init(
         initialState: AgentState? = nil,
@@ -29,7 +33,11 @@ public struct AgentOptions: Sendable {
         transport: Transport? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
-        getApiKey: (@Sendable (String) async -> String?)? = nil
+        getApiKey: (@Sendable (String) async -> String?)? = nil,
+        onPayload: OnPayloadFn? = nil,
+        toolExecution: ToolExecutionMode? = nil,
+        beforeToolCall: BeforeToolCallFn? = nil,
+        afterToolCall: AfterToolCallFn? = nil
     ) {
         self.initialState = initialState
         self.convertToLlm = convertToLlm
@@ -42,6 +50,10 @@ public struct AgentOptions: Sendable {
         self.thinkingBudgets = thinkingBudgets
         self.maxRetryDelayMs = maxRetryDelayMs
         self.getApiKey = getApiKey
+        self.onPayload = onPayload
+        self.toolExecution = toolExecution
+        self.beforeToolCall = beforeToolCall
+        self.afterToolCall = afterToolCall
     }
 }
 
@@ -62,6 +74,10 @@ public final class Agent: Sendable {
         var thinkingBudgets: ThinkingBudgets?
         var maxRetryDelayMs: Int?
         var getApiKey: (@Sendable (String) async -> String?)?
+        var onPayload: OnPayloadFn?
+        var toolExecution: ToolExecutionMode
+        var beforeToolCall: BeforeToolCallFn?
+        var afterToolCall: AfterToolCallFn?
         var runningTask: Task<Void, Never>?
     }
 
@@ -142,6 +158,26 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.getApiKey = newValue } }
     }
 
+    public var toolExecution: ToolExecutionMode {
+        get { stateBox.withLock { $0.toolExecution } }
+        set { stateBox.withLock { $0.toolExecution = newValue } }
+    }
+
+    private var onPayload: OnPayloadFn? {
+        get { stateBox.withLock { $0.onPayload } }
+        set { stateBox.withLock { $0.onPayload = newValue } }
+    }
+
+    private var beforeToolCall: BeforeToolCallFn? {
+        get { stateBox.withLock { $0.beforeToolCall } }
+        set { stateBox.withLock { $0.beforeToolCall = newValue } }
+    }
+
+    private var afterToolCall: AfterToolCallFn? {
+        get { stateBox.withLock { $0.afterToolCall } }
+        set { stateBox.withLock { $0.afterToolCall = newValue } }
+    }
+
     private var runningTask: Task<Void, Never>? {
         get { stateBox.withLock { $0.runningTask } }
         set { stateBox.withLock { $0.runningTask = newValue } }
@@ -171,6 +207,10 @@ public final class Agent: Sendable {
             thinkingBudgets: options.thinkingBudgets,
             maxRetryDelayMs: options.maxRetryDelayMs,
             getApiKey: options.getApiKey,
+            onPayload: options.onPayload,
+            toolExecution: options.toolExecution ?? .parallel,
+            beforeToolCall: options.beforeToolCall,
+            afterToolCall: options.afterToolCall,
             runningTask: nil
         ))
     }
@@ -223,6 +263,18 @@ public final class Agent: Sendable {
         _state.tools = tools
     }
 
+    public func setToolExecution(_ mode: ToolExecutionMode) {
+        toolExecution = mode
+    }
+
+    public func setBeforeToolCall(_ value: BeforeToolCallFn?) {
+        beforeToolCall = value
+    }
+
+    public func setAfterToolCall(_ value: AfterToolCallFn?) {
+        afterToolCall = value
+    }
+
     public func replaceMessages(_ messages: [AgentMessage]) {
         _state.messages = messages
     }
@@ -231,6 +283,9 @@ public final class Agent: Sendable {
         _state.messages.append(message)
     }
 
+    /// Queue a steering message while the agent is running.
+    /// Delivered after the current assistant turn finishes executing its tool calls,
+    /// before the next LLM call.
     public func steer(_ message: AgentMessage) {
         steeringQueue.append(message)
     }
@@ -371,6 +426,48 @@ public final class Agent: Sendable {
         runningTask = nil
     }
 
+    // MARK: - Event processing (centralized)
+
+    private func processLoopEvent(_ event: AgentEvent) {
+        switch event {
+        case .messageStart(let message):
+            _state.streamMessage = message
+
+        case .messageUpdate(let message, _):
+            _state.streamMessage = message
+
+        case .messageEnd(let message):
+            _state.streamMessage = nil
+            appendMessage(message)
+
+        case .toolExecutionStart(let toolCallId, _, _):
+            var pending = _state.pendingToolCalls
+            pending.insert(toolCallId)
+            _state.pendingToolCalls = pending
+
+        case .toolExecutionEnd(let toolCallId, _, _, _):
+            var pending = _state.pendingToolCalls
+            pending.remove(toolCallId)
+            _state.pendingToolCalls = pending
+
+        case .turnEnd(let message, _):
+            if case .assistant(let assistantMessage) = message, let error = assistantMessage.errorMessage {
+                _state.error = error
+            }
+
+        case .agentEnd:
+            _state.isStreaming = false
+            _state.streamMessage = nil
+
+        default:
+            break
+        }
+
+        emit(event)
+    }
+
+    // MARK: - Loop implementation
+
     private func runLoopInternal(messages: [AgentMessage]?, options: RunLoopOptions?) async {
         let model = _state.model
 
@@ -395,6 +492,10 @@ public final class Agent: Sendable {
             sessionId: sessionId,
             thinkingBudgets: thinkingBudgets,
             maxRetryDelayMs: maxRetryDelayMs,
+            onPayload: onPayload,
+            toolExecution: toolExecution,
+            beforeToolCall: beforeToolCall,
+            afterToolCall: afterToolCall,
             convertToLlm: convertToLlm,
             transformContext: transformContext,
             getApiKey: getApiKey,
@@ -418,92 +519,27 @@ public final class Agent: Sendable {
             }
         )
 
-        var partial: AgentMessage? = nil
-
-        do {
-            let stream: EventStream<AgentEvent, [AgentMessage]>
-            if let messages {
-                stream = agentLoop(
-                    prompts: messages,
-                    context: context,
-                    config: config,
-                    signal: abortToken,
-                    streamFn: streamFn
-                )
-            } else {
-                stream = try agentLoopContinue(
-                    context: context,
-                    config: config,
-                    signal: abortToken,
-                    streamFn: streamFn
-                )
-            }
-
-            for await event in stream {
-                switch event {
-                case .messageStart(let message):
-                    partial = message
-                    _state.streamMessage = message
-
-                case .messageUpdate(let message, _):
-                    partial = message
-                    _state.streamMessage = message
-
-                case .messageEnd(let message):
-                    partial = nil
-                    _state.streamMessage = nil
-                    appendMessage(message)
-
-                case .toolExecutionStart(let toolCallId, _, _):
-                    var pending = _state.pendingToolCalls
-                    pending.insert(toolCallId)
-                    _state.pendingToolCalls = pending
-
-                case .toolExecutionEnd(let toolCallId, _, _, _):
-                    var pending = _state.pendingToolCalls
-                    pending.remove(toolCallId)
-                    _state.pendingToolCalls = pending
-
-                case .turnEnd(let message, _):
-                    if case .assistant(let assistantMessage) = message, let error = assistantMessage.errorMessage {
-                        _state.error = error
-                    }
-
-                case .agentEnd:
-                    _state.isStreaming = false
-                    _state.streamMessage = nil
-
-                default:
-                    break
-                }
-
-                emit(event)
-            }
-
-            if let partial = partial, case .assistant(let assistantMessage) = partial {
-                let hasContent = assistantMessage.content.contains { block in
-                    switch block {
-                    case .thinking(let thinking):
-                        return !thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    case .text(let text):
-                        return !text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    case .toolCall(let call):
-                        return !call.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    case .image:
-                        return true
-                    }
-                }
-
-                if hasContent {
-                    appendMessage(partial)
-                } else if abortToken?.isCancelled == true {
-                    appendErrorMessage("Request was aborted")
-                }
-            }
-        } catch {
-            let errorMessage = error.localizedDescription
-            appendErrorMessage(errorMessage)
-            emit(.agentEnd(messages: _state.messages))
+        if let messages {
+            _ = await runAgentLoop(
+                prompts: messages,
+                context: context,
+                config: config,
+                emit: { [weak self] event in
+                    self?.processLoopEvent(event)
+                },
+                signal: abortToken,
+                streamFn: streamFn
+            )
+        } else {
+            _ = await runAgentLoopContinue(
+                context: context,
+                config: config,
+                emit: { [weak self] event in
+                    self?.processLoopEvent(event)
+                },
+                signal: abortToken,
+                streamFn: streamFn
+            )
         }
 
         _state.isStreaming = false
