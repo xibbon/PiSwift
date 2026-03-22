@@ -446,10 +446,12 @@ private func generateSummary(
         .user(UserMessage(content: .blocks([.text(TextContent(text: promptText))])))
     ]
 
+    // Only use reasoning for models that support it; non-reasoning models skip the parameter
+    let reasoning: PiSwiftAI.ThinkingLevel? = model.reasoning ? .high : nil
     let response = try await completeSimple(
         model: model,
         context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages),
-        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, reasoning: .high)
+        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, reasoning: reasoning)
     )
 
     if response.stopReason == .error {

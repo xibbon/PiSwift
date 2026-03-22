@@ -2127,3 +2127,142 @@ struct ApiRegistryTests {
         resetApiProviders()
     }
 }
+
+// MARK: - v0.54.0→v0.61.1 new tests
+
+@Test func contextOverflowDetectionZaiPattern() {
+    let usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
+    let message = AssistantMessage(
+        content: [.text(TextContent(text: ""))],
+        api: .openAICompletions,
+        provider: "zai",
+        model: "glm-5",
+        usage: usage,
+        stopReason: .error,
+        errorMessage: "model_context_window_exceeded"
+    )
+    #expect(isContextOverflow(message))
+}
+
+@Test func assistantMessageResponseIdField() {
+    let message = AssistantMessage(
+        content: [.text(TextContent(text: "hello"))],
+        api: .anthropicMessages,
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        responseId: "msg_01ABC123",
+        usage: Usage(input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15),
+        stopReason: .stop
+    )
+    #expect(message.responseId == "msg_01ABC123")
+
+    // Default should be nil
+    let noId = AssistantMessage(
+        content: [],
+        api: .openAICompletions,
+        provider: "openai",
+        model: "gpt-4o-mini",
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .stop
+    )
+    #expect(noId.responseId == nil)
+}
+
+@Test func thinkingContentRedactedField() {
+    let redacted = ThinkingContent(
+        thinking: "[Reasoning redacted]",
+        thinkingSignature: "opaque-encrypted-payload",
+        redacted: true
+    )
+    #expect(redacted.redacted == true)
+    #expect(redacted.thinkingSignature == "opaque-encrypted-payload")
+
+    let normal = ThinkingContent(thinking: "some reasoning", thinkingSignature: "sig")
+    #expect(normal.redacted == nil)
+}
+
+@Test func transformMessagesDropsRedactedThinkingOnCrossModelReplay() {
+    let targetModel = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let redactedThinking = ThinkingContent(
+        thinking: "[Reasoning redacted]",
+        thinkingSignature: "opaque-payload",
+        redacted: true
+    )
+    let normalText = TextContent(text: "visible response")
+    let assistant = AssistantMessage(
+        content: [.thinking(redactedThinking), .text(normalText)],
+        api: .anthropicMessages,
+        provider: "anthropic",
+        model: "claude-opus-4-6",
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .stop
+    )
+
+    let transformed = transformMessages([.assistant(assistant)], model: targetModel)
+    guard case .assistant(let transformedAssistant) = transformed.first else {
+        #expect(Bool(false), "Expected assistant message")
+        return
+    }
+
+    // Redacted thinking should be dropped on cross-model replay
+    let hasThinking = transformedAssistant.content.contains { block in
+        if case .thinking = block { return true }
+        return false
+    }
+    #expect(!hasThinking)
+
+    // Normal text should be preserved
+    let hasText = transformedAssistant.content.contains { block in
+        if case .text(let text) = block { return text.text == "visible response" }
+        return false
+    }
+    #expect(hasText)
+}
+
+@Test func transformMessagesPreservesRedactedThinkingForSameModel() {
+    let model = getModel(provider: .anthropic, modelId: "claude-opus-4-6")
+    let redactedThinking = ThinkingContent(
+        thinking: "[Reasoning redacted]",
+        thinkingSignature: "opaque-payload",
+        redacted: true
+    )
+    let assistant = AssistantMessage(
+        content: [.thinking(redactedThinking)],
+        api: .anthropicMessages,
+        provider: "anthropic",
+        model: "claude-opus-4-6",
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .stop
+    )
+
+    let transformed = transformMessages([.assistant(assistant)], model: model)
+    guard case .assistant(let transformedAssistant) = transformed.first else {
+        #expect(Bool(false), "Expected assistant message")
+        return
+    }
+
+    // Redacted thinking should be preserved for same model
+    guard case .thinking(let thinking) = transformedAssistant.content.first else {
+        #expect(Bool(false), "Expected thinking content block")
+        return
+    }
+    #expect(thinking.redacted == true)
+    #expect(thinking.thinkingSignature == "opaque-payload")
+}
+
+@Test func adaptiveThinkingModelSkipsInterleavedBetaHeader() {
+    // Opus 4.6 should not get interleaved-thinking header
+    let headers = buildAnthropicBetaHeaders(apiKey: "sk-ant-test", interleavedThinking: true, provider: "anthropic", modelId: "claude-opus-4-6")
+    let hasInterleaved = headers?.contains("interleaved-thinking-2025-05-14") ?? false
+    #expect(!hasInterleaved)
+
+    // Sonnet 4.6 should not get interleaved-thinking header
+    let headers2 = buildAnthropicBetaHeaders(apiKey: "sk-ant-test", interleavedThinking: true, provider: "anthropic", modelId: "claude-sonnet-4-6")
+    let hasInterleaved2 = headers2?.contains("interleaved-thinking-2025-05-14") ?? false
+    #expect(!hasInterleaved2)
+
+    // Older model should still get the header
+    let headers3 = buildAnthropicBetaHeaders(apiKey: "sk-ant-test", interleavedThinking: true, provider: "anthropic", modelId: "claude-sonnet-4-5")
+    let hasInterleaved3 = headers3?.contains("interleaved-thinking-2025-05-14") ?? false
+    #expect(hasInterleaved3)
+}

@@ -164,13 +164,14 @@ import Testing
 
 // MARK: - Environment info tests
 
-@Test func buildSystemPromptIncludesDateTime() {
+@Test func buildSystemPromptIncludesDate() {
     let prompt = buildSystemPrompt(BuildSystemPromptOptions(
         contextFiles: [],
         skills: []
     ))
 
-    #expect(prompt.contains("Current date and time:"))
+    // v0.61.1: ISO date only, no time component
+    #expect(prompt.contains("Current date:"))
 }
 
 @Test func buildSystemPromptIncludesCwd() {

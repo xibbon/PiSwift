@@ -506,6 +506,221 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(followUpEvent != nil)
 }
 
+// MARK: - v0.54.0→v0.61.1 new tests
+
+/// Parallel tool execution: tools execute concurrently but results emit in source order.
+@Test func parallelToolExecutionEmitsResultsInSourceOrder() async {
+    let firstReleased = LockedState(false)
+    let parallelObserved = LockedState(false)
+    let firstContinuation = LockedState<CheckedContinuation<Void, Never>?>(nil)
+
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, params, _, _ in
+        let value = params["value"]?.value as? String ?? ""
+        if value == "first" {
+            // Block first tool until released
+            await withCheckedContinuation { continuation in
+                firstContinuation.withLock { $0 = continuation }
+            }
+            firstReleased.withLock { $0 = true }
+        }
+        if value == "second" && !firstReleased.withLock({ $0 }) {
+            parallelObserved.withLock { $0 = true }
+        }
+        return AgentToolResult(content: [.text(TextContent(text: "echoed:\(value)"))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("go")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        toolExecution: .parallel,
+        convertToLlm: identityConverter
+    )
+
+    let callIndex = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = callIndex.withLock { $0 }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 0 {
+                let first = ToolCall(id: "tool-1", name: "echo", arguments: ["value": AnyCodable("first")])
+                let second = ToolCall(id: "tool-2", name: "echo", arguments: ["value": AnyCodable("second")])
+                let message = createAssistantMessage(content: [.toolCall(first), .toolCall(second)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+                // Release first tool after a brief delay to let parallel execution start
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                firstContinuation.withLock { $0?.resume() }
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+            callIndex.withLock { $0 += 1 }
+        }
+        return stream
+    }
+
+    var events: [AgentEvent] = []
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        events.append(event)
+    }
+
+    // Second tool should have started while first was blocked (parallel execution)
+    #expect(parallelObserved.withLock { $0 })
+
+    // Tool results should be emitted in source order (tool-1 before tool-2)
+    let toolResultIds = events.compactMap { event -> String? in
+        if case .messageEnd(let message) = event, case .toolResult(let tr) = message {
+            return tr.toolCallId
+        }
+        return nil
+    }
+    #expect(toolResultIds == ["tool-1", "tool-2"])
+}
+
+/// beforeToolCall hook can block tool execution.
+@Test func beforeToolCallBlocksExecution() async {
+    let executed = LockedState<[String]>([])
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, params, _, _ in
+        let value = params["value"]?.value as? String ?? ""
+        executed.withLock { $0.append(value) }
+        return AgentToolResult(content: [.text(TextContent(text: "ok:\(value)"))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        toolExecution: .sequential,
+        beforeToolCall: { context, _ in
+            // Block "dangerous" tool calls
+            if let value = context.args["value"]?.value as? String, value == "blocked" {
+                return BeforeToolCallResult(block: true, reason: "This tool call was blocked")
+            }
+            return nil
+        },
+        convertToLlm: identityConverter
+    )
+
+    let callIndex = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = callIndex.withLock { $0 }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 0 {
+                let allowed = ToolCall(id: "t-1", name: "echo", arguments: ["value": AnyCodable("allowed")])
+                let blocked = ToolCall(id: "t-2", name: "echo", arguments: ["value": AnyCodable("blocked")])
+                let message = createAssistantMessage(content: [.toolCall(allowed), .toolCall(blocked)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+            callIndex.withLock { $0 += 1 }
+        }
+        return stream
+    }
+
+    var events: [AgentEvent] = []
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        events.append(event)
+    }
+
+    // Only "allowed" should have executed
+    #expect(executed.withLock { $0 } == ["allowed"])
+
+    // Blocked tool should show error
+    let toolEnds = events.compactMap { event -> (String, Bool)? in
+        if case .toolExecutionEnd(let id, _, _, let isError) = event {
+            return (id, isError)
+        }
+        return nil
+    }
+    #expect(toolEnds.count == 2)
+    #expect(toolEnds[0] == ("t-1", false))
+    #expect(toolEnds[1] == ("t-2", true))
+}
+
+/// afterToolCall hook can override tool result content.
+@Test func afterToolCallOverridesResult() async {
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, params, _, _ in
+        let value = params["value"]?.value as? String ?? ""
+        return AgentToolResult(content: [.text(TextContent(text: "original:\(value)"))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        afterToolCall: { context, _ in
+            // Override content for all tool results
+            return AfterToolCallResult(
+                content: [.text(TextContent(text: "overridden"))],
+                isError: nil
+            )
+        },
+        convertToLlm: identityConverter
+    )
+
+    let callIndex = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = callIndex.withLock { $0 }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 0 {
+                let call = ToolCall(id: "t-1", name: "echo", arguments: ["value": AnyCodable("hello")])
+                let message = createAssistantMessage(content: [.toolCall(call)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+            callIndex.withLock { $0 += 1 }
+        }
+        return stream
+    }
+
+    var events: [AgentEvent] = []
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        events.append(event)
+    }
+
+    // Tool result should have overridden content
+    let toolEnd = events.compactMap { event -> AgentToolResult? in
+        if case .toolExecutionEnd(_, _, let result, _) = event { return result }
+        return nil
+    }.first
+    #expect(toolEnd != nil)
+    if case .text(let text) = toolEnd?.content.first {
+        #expect(text.text == "overridden")
+    } else {
+        #expect(Bool(false), "Expected text content in tool result")
+    }
+}
+
 @Test func steeringMessagesAtLoopStart() async {
     // Test that steering messages are checked at the start of the loop
     let context = AgentContext(systemPrompt: "", messages: [], tools: [])

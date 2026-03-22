@@ -183,7 +183,10 @@ func handlePackageCommand(_ args: [String]) async -> Bool {
 }
 
 private func parsePackageCommand(_ args: [String]) -> PackageCommandOptions? {
-    guard let command = args.first, let parsed = PackageCommand(rawValue: command) else {
+    guard let command = args.first else { return nil }
+    // "uninstall" is an alias for "remove"
+    let normalizedCommand = command == "uninstall" ? "remove" : command
+    guard let parsed = PackageCommand(rawValue: normalizedCommand) else {
         return nil
     }
 
