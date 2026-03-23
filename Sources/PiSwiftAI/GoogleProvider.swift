@@ -79,6 +79,10 @@ public func streamGoogle(
                 guard let data = payload.data(using: .utf8) else { continue }
                 guard let chunk = try? JSONDecoder().decode(GoogleStreamChunk.self, from: data) else { continue }
 
+                if output.responseId == nil, let rid = chunk.responseId, !rid.isEmpty {
+                    output.responseId = rid
+                }
+
                 if let candidate = chunk.candidates?.first, let parts = candidate.content?.parts {
                     for part in parts {
                         if let text = part.text {

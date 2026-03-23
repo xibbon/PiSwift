@@ -631,6 +631,11 @@ private func buildSystemPrompt(_ systemPrompt: String?, model: Model, cacheReten
 }
 
 private func supportsPromptCaching(model: Model) -> Bool {
+    // Force cache for all models via env var (useful for application inference profiles
+    // that don't have "claude" in the ARN)
+    if ProcessInfo.processInfo.environment["AWS_BEDROCK_FORCE_CACHE"] == "1" {
+        return true
+    }
     if model.cost.cacheRead > 0 || model.cost.cacheWrite > 0 {
         return true
     }

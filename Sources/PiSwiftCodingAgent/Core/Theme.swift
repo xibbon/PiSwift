@@ -226,13 +226,17 @@ private let grayValues: [Int] = (0..<24).map { 8 + $0 * 10 }
 
 private func detectColorMode() -> ColorMode {
     let env = ProcessInfo.processInfo.environment
+    let term = env["TERM"] ?? ""
+    // GNU Screen sets TERM to "screen" or "screen-256color"; downgrade to 256color
+    if term == "screen" || term.hasPrefix("screen-") {
+        return .color256
+    }
     if let colorterm = env["COLORTERM"], colorterm == "truecolor" || colorterm == "24bit" {
         return .truecolor
     }
     if env["WT_SESSION"] != nil {
         return .truecolor
     }
-    let term = env["TERM"] ?? ""
     if term.contains("256color") {
         return .color256
     }

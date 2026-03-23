@@ -80,6 +80,10 @@ public func streamGoogleVertex(
                 guard let data = payload.data(using: .utf8) else { continue }
                 guard let chunk = try? JSONDecoder().decode(GoogleStreamChunk.self, from: data) else { continue }
 
+                if output.responseId == nil, let rid = chunk.responseId, !rid.isEmpty {
+                    output.responseId = rid
+                }
+
                 if let candidate = chunk.candidates?.first, let parts = candidate.content?.parts {
                     for part in parts {
                         if let text = part.text {
@@ -256,11 +260,22 @@ private func resolveVertexLocation(options: GoogleVertexOptions) throws -> Strin
     throw GoogleVertexError.missingLocation
 }
 
+/// Checks whether an API key is a placeholder like `<your-api-key>`.
+private func isPlaceholderApiKey(_ key: String) -> Bool {
+    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.hasPrefix("<") && trimmed.hasSuffix(">")
+}
+
 private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> String {
-    if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>" {
+    if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>", !isPlaceholderApiKey(apiKey) {
         return apiKey
     }
     let env = ProcessInfo.processInfo.environment
+    // Support GOOGLE_CLOUD_API_KEY for API key auth
+    if let apiKey = env["GOOGLE_CLOUD_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !apiKey.isEmpty, !isPlaceholderApiKey(apiKey) {
+        return apiKey
+    }
     if let token = env["GOOGLE_ACCESS_TOKEN"] ?? env["GCLOUD_ACCESS_TOKEN"] ?? env["GOOGLE_OAUTH_ACCESS_TOKEN"] {
         if !token.isEmpty {
             return token

@@ -15,6 +15,7 @@ public struct CompactionSettingsOverrides: Sendable {
 
 public struct BranchSummarySettings: Sendable {
     public var reserveTokens: Int?
+    public var skipPrompt: Bool?
 }
 
 public struct RetrySettings: Sendable {
@@ -121,6 +122,8 @@ public struct Settings: Sendable {
     public var doubleEscapeAction: String?
     public var autocompleteMaxVisible: Int?
     public var thinkingBudgets: ThinkingBudgetsSettings?
+    public var treeFilterMode: String?
+    public var promptSnippetsEnabled: Bool?
 
     public init() {}
 }
@@ -441,7 +444,7 @@ public final class SettingsManager: Sendable {
 
     public func getBranchSummarySettings() -> BranchSummarySettings {
         let branch = settings.branchSummary ?? BranchSummarySettings()
-        return BranchSummarySettings(reserveTokens: branch.reserveTokens ?? 16384)
+        return BranchSummarySettings(reserveTokens: branch.reserveTokens ?? 16384, skipPrompt: branch.skipPrompt)
     }
 
     public func getRetrySettings() -> RetrySettings {
@@ -873,6 +876,8 @@ public final class SettingsManager: Sendable {
         settings.enabledModels = json["enabledModels"] as? [String]
         settings.doubleEscapeAction = json["doubleEscapeAction"] as? String
         settings.autocompleteMaxVisible = json["autocompleteMaxVisible"] as? Int
+        settings.treeFilterMode = json["treeFilterMode"] as? String
+        settings.promptSnippetsEnabled = json["promptSnippetsEnabled"] as? Bool
 
         if let compaction = json["compaction"] as? [String: Any] {
             settings.compaction = CompactionSettingsOverrides(
@@ -883,7 +888,7 @@ public final class SettingsManager: Sendable {
         }
 
         if let branch = json["branchSummary"] as? [String: Any] {
-            settings.branchSummary = BranchSummarySettings(reserveTokens: branch["reserveTokens"] as? Int)
+            settings.branchSummary = BranchSummarySettings(reserveTokens: branch["reserveTokens"] as? Int, skipPrompt: branch["skipPrompt"] as? Bool)
         }
 
         if let retry = json["retry"] as? [String: Any] {
@@ -1077,6 +1082,7 @@ public final class SettingsManager: Sendable {
         json["enabledModels"] = settings.enabledModels
         json["doubleEscapeAction"] = settings.doubleEscapeAction
         json["autocompleteMaxVisible"] = settings.autocompleteMaxVisible
+        json["treeFilterMode"] = settings.treeFilterMode
 
         if let compaction = settings.compaction {
             json["compaction"] = [
@@ -1087,7 +1093,10 @@ public final class SettingsManager: Sendable {
         }
 
         if let branch = settings.branchSummary {
-            json["branchSummary"] = ["reserveTokens": branch.reserveTokens as Any]
+            json["branchSummary"] = [
+                "reserveTokens": branch.reserveTokens as Any,
+                "skipPrompt": branch.skipPrompt as Any,
+            ]
         }
 
         if let retry = settings.retry {
@@ -1185,6 +1194,8 @@ public final class SettingsManager: Sendable {
         if override.doubleEscapeAction != nil { result.doubleEscapeAction = override.doubleEscapeAction }
         if override.autocompleteMaxVisible != nil { result.autocompleteMaxVisible = override.autocompleteMaxVisible }
         if override.thinkingBudgets != nil { result.thinkingBudgets = override.thinkingBudgets }
+        if override.treeFilterMode != nil { result.treeFilterMode = override.treeFilterMode }
+        if override.promptSnippetsEnabled != nil { result.promptSnippetsEnabled = override.promptSnippetsEnabled }
         return result
     }
 }

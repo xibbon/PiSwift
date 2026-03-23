@@ -84,6 +84,16 @@ public final class FooterDataProvider: @unchecked Sendable, FooterDataProviding 
             return nil
         }
 
+        // Check if this is a reftable repo (newer git storage format).
+        // In reftable repos, .git/HEAD may not contain the branch ref in the
+        // traditional format, so fall back to `git branch --show-current`.
+        let gitDir = URL(fileURLWithPath: gitHeadPath).deletingLastPathComponent().path
+        let reftablePath = URL(fileURLWithPath: gitDir).appendingPathComponent("reftable").path
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: reftablePath, isDirectory: &isDir), isDir.boolValue {
+            return resolveGitBranchViaCommand()
+        }
+
         do {
             let content = try String(contentsOfFile: gitHeadPath, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,6 +101,28 @@ public final class FooterDataProvider: @unchecked Sendable, FooterDataProviding 
                 return String(content.dropFirst("ref: refs/heads/".count))
             }
             return "detached"
+        } catch {
+            return nil
+        }
+    }
+
+    private func resolveGitBranchViaCommand() -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["branch", "--show-current"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let output, !output.isEmpty {
+                return output
+            }
+            return process.terminationStatus == 0 ? "detached" : nil
         } catch {
             return nil
         }

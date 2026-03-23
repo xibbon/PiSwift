@@ -110,7 +110,12 @@ public func streamAnthropic(
             } else {
                 logAnthropicDebug("anthropic betaHeaders=none")
             }
-            let mergedHeaders = mergeHeaders(model.headers, options.headers)
+            var mergedHeaders = mergeHeaders(model.headers, options.headers)
+            // Copilot: add dynamic headers for vision and initiator
+            if model.provider == "github-copilot" {
+                let copilotHeaders = buildCopilotDynamicHeaders(messages: context.messages)
+                mergedHeaders = mergeHeaders(mergedHeaders, copilotHeaders)
+            }
             let httpClient = buildAnthropicHttpClient(
                 isOAuthToken: isOAuthToken,
                 extraHeaders: mergedHeaders,
@@ -604,6 +609,44 @@ private func mergeHeaders(_ base: [String: String]?, _ extra: [String: String]?)
         }
     }
     return merged
+}
+
+// MARK: - Copilot dynamic headers
+
+/// Checks if any messages contain image content (for Copilot-Vision-Request header).
+private func hasCopilotVisionInput(_ messages: [Message]) -> Bool {
+    messages.contains { msg in
+        switch msg {
+        case .user(let user):
+            if case .blocks(let blocks) = user.content {
+                return blocks.contains { if case .image = $0 { return true } else { return false } }
+            }
+            return false
+        case .toolResult(let toolResult):
+            return toolResult.content.contains { if case .image = $0 { return true } else { return false } }
+        case .assistant:
+            return false
+        }
+    }
+}
+
+/// Infers X-Initiator value for Copilot requests.
+private func inferCopilotInitiator(_ messages: [Message]) -> String {
+    guard let last = messages.last else { return "user" }
+    if case .user = last { return "user" }
+    return "agent"
+}
+
+/// Builds dynamic headers for GitHub Copilot requests.
+private func buildCopilotDynamicHeaders(messages: [Message]) -> [String: String] {
+    var headers: [String: String] = [
+        "X-Initiator": inferCopilotInitiator(messages),
+        "Openai-Intent": "conversation-edits",
+    ]
+    if hasCopilotVisionInput(messages) {
+        headers["Copilot-Vision-Request"] = "true"
+    }
+    return headers
 }
 
 private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {

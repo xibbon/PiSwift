@@ -13,7 +13,7 @@ public func formatKeys(_ keys: [KeyId]) -> String {
 
 /// Get display string for an editor action.
 public func editorKey(_ action: EditorAction) -> String {
-    return formatKeys(getEditorKeybindings().getKeys(action))
+    return formatKeys(getKeybindings().getKeys(action.keybinding))
 }
 
 /// Get display string for an app action.

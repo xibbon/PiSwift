@@ -78,6 +78,8 @@ public func readFilePreservingBom(_ path: String) throws -> (bom: String, text: 
 /// - Normalize special Unicode spaces to regular space
 public func normalizeForFuzzyMatch(_ text: String) -> String {
     var result = text
+        // NFKC normalization for consistent Unicode matching
+        .precomposedStringWithCompatibilityMapping
         // Strip trailing whitespace per line
         .split(separator: "\n", omittingEmptySubsequences: false)
         .map { line in

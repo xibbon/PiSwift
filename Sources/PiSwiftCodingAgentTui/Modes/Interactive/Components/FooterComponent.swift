@@ -7,10 +7,15 @@ public final class FooterComponent: Component {
     private let session: AgentSession
     private var autoCompactEnabled = true
     private let footerData: FooterDataProviding
+    private var bashToolStartDate: Date?
 
     public init(session: AgentSession, footerData: FooterDataProviding) {
         self.session = session
         self.footerData = footerData
+    }
+
+    public func setBashToolRunning(_ running: Bool) {
+        bashToolStartDate = running ? Date() : nil
     }
 
     public func setAutoCompactEnabled(_ enabled: Bool) {
@@ -70,15 +75,8 @@ public final class FooterComponent: Component {
             pwd += " (\(branch))"
         }
 
-        if pwd.count > width {
-            let half = max(0, (width / 2) - 2)
-            if half > 0 {
-                let start = pwd.prefix(half)
-                let end = pwd.suffix(max(0, half - 1))
-                pwd = "\(start)...\(end)"
-            } else {
-                pwd = String(pwd.prefix(max(1, width)))
-            }
+        if visibleWidth(pwd) > width {
+            pwd = truncateToWidth(pwd, maxWidth: width, ellipsis: "...")
         }
 
         var statsParts: [String] = []
@@ -152,6 +150,12 @@ public final class FooterComponent: Component {
             }
             let statusLine = sortedStatuses.joined(separator: " ")
             lines.append(truncateToWidth(statusLine, maxWidth: width, ellipsis: theme.fg(.dim, "...")))
+        }
+
+        if let startDate = bashToolStartDate {
+            let elapsed = Int(Date().timeIntervalSince(startDate))
+            let elapsedText = theme.fg(.bashMode, "bash \(elapsed)s")
+            lines.append(elapsedText)
         }
 
         return lines

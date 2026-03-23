@@ -92,7 +92,11 @@ public func streamOpenAICompletions(
 
                 guard let choice = chunk.choices.first else { continue }
                 if let finishReason = choice.finishReason {
-                    output.stopReason = mapStopReason(finishReason)
+                    let result = mapStopReason(finishReason)
+                    output.stopReason = result.stopReason
+                    if let errorMessage = result.errorMessage {
+                        output.errorMessage = errorMessage
+                    }
                 }
 
                 let delta = choice.delta
@@ -193,18 +197,23 @@ public func streamOpenAICompletions(
     return stream
 }
 
-private func mapStopReason(_ reason: ChatStreamResult.Choice.FinishReason) -> StopReason {
+private struct StopReasonResult {
+    var stopReason: StopReason
+    var errorMessage: String?
+}
+
+private func mapStopReason(_ reason: ChatStreamResult.Choice.FinishReason) -> StopReasonResult {
     switch reason {
     case .stop:
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case .length:
-        return .length
+        return StopReasonResult(stopReason: .length)
     case .toolCalls, .functionCall:
-        return .toolUse
+        return StopReasonResult(stopReason: .toolUse)
     case .contentFilter:
-        return .error
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider finish_reason: content_filter")
     default:
-        return .stop
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider finish_reason: \(reason)")
     }
 }
 
@@ -354,12 +363,17 @@ private func buildCompletionsQuery(
         return nil
     }()
 
-    let reasoningEffort = (options.reasoningEffort != nil &&
-        model.reasoning &&
-        compat.supportsReasoningEffort &&
-        compat.thinkingFormat == .openai)
-        ? mapChatReasoningEffort(options.reasoningEffort!)
-        : nil
+    let reasoningEffort: ChatQuery.ReasoningEffort? = {
+        guard let effort = options.reasoningEffort,
+              model.reasoning,
+              compat.supportsReasoningEffort,
+              compat.thinkingFormat == .openai else { return nil }
+        // Use provider-specific reasoning effort map if available
+        if let mapped = model.compat?.reasoningEffortMap?[effort] {
+            return .customValue(mapped)
+        }
+        return mapChatReasoningEffort(effort)
+    }()
 
     let maxCompletionTokens = options.maxTokens
     let streamOptions: ChatQuery.StreamOptions? = compat.supportsUsageInStreaming ? .init(includeUsage: true) : nil

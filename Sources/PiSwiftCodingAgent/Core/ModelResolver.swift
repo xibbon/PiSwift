@@ -4,10 +4,10 @@ import PiSwiftAgent
 
 public struct ScopedModel: Sendable {
     public var model: Model
-    public var thinkingLevel: ThinkingLevel
+    public var thinkingLevel: ThinkingLevel?
     public var isThinkingExplicit: Bool
 
-    public init(model: Model, thinkingLevel: ThinkingLevel, isThinkingExplicit: Bool = true) {
+    public init(model: Model, thinkingLevel: ThinkingLevel? = nil, isThinkingExplicit: Bool = true) {
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.isThinkingExplicit = isThinkingExplicit
@@ -47,8 +47,13 @@ private func tryMatchModel(_ modelPattern: String, availableModels: [Model]) -> 
         }
     }
 
-    if let exact = availableModels.first(where: { $0.id.lowercased() == modelPattern.lowercased() }) {
-        return exact
+    let exactMatches = availableModels.filter { $0.id.lowercased() == modelPattern.lowercased() }
+    if !exactMatches.isEmpty {
+        let providers = Set(exactMatches.map { $0.provider })
+        if providers.count > 1 {
+            return nil  // Ambiguous: same modelId in multiple providers
+        }
+        return exactMatches.first
     }
 
     let matches: [Model]

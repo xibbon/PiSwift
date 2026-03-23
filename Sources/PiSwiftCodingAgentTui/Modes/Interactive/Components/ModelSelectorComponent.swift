@@ -49,7 +49,7 @@ public final class ModelSelectorComponent: Container, SystemCursorAware {
         self.currentModel = currentModel
         self.settingsManager = settingsManager
         self.modelRegistry = modelRegistry
-        self.scopedModels = scopedModels.map { ScopedModelItem(model: $0.model, thinkingLevel: $0.thinkingLevel.rawValue) }
+        self.scopedModels = scopedModels.map { ScopedModelItem(model: $0.model, thinkingLevel: ($0.thinkingLevel ?? .off).rawValue) }
         self.onSelectCallback = onSelect
         self.onCancelCallback = onCancel
         self.initialSearchInput = initialSearchInput
@@ -173,26 +173,26 @@ public final class ModelSelectorComponent: Container, SystemCursorAware {
     }
 
     public override func handleInput(_ keyData: String) {
-        let kb = getEditorKeybindings()
-        if kb.matches(keyData, .selectUp) {
+        let kb = getKeybindings()
+        if kb.matches(keyData, TUIKeybinding.selectUp) {
             guard !filteredModels.isEmpty else { return }
             selectedIndex = selectedIndex == 0 ? filteredModels.count - 1 : selectedIndex - 1
             updateList()
             return
         }
-        if kb.matches(keyData, .selectDown) {
+        if kb.matches(keyData, TUIKeybinding.selectDown) {
             guard !filteredModels.isEmpty else { return }
             selectedIndex = selectedIndex == filteredModels.count - 1 ? 0 : selectedIndex + 1
             updateList()
             return
         }
-        if kb.matches(keyData, .selectConfirm) {
+        if kb.matches(keyData, TUIKeybinding.selectConfirm) {
             if let selected = filteredModels[safe: selectedIndex] {
                 handleSelect(selected.model)
             }
             return
         }
-        if kb.matches(keyData, .selectCancel) {
+        if kb.matches(keyData, TUIKeybinding.selectCancel) {
             onCancelCallback()
             return
         }

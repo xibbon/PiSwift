@@ -593,6 +593,7 @@ public final class InteractiveMode {
                 case .name(let name):
                     let result = setTheme(name, enableWatcher: true)
                     if result.success {
+                        self.session?.settingsManager.setTheme(name)
                         self.ui.requestRender()
                         return HookThemeResult(success: true)
                     }
@@ -1410,6 +1411,9 @@ public final class InteractiveMode {
                 component.setExpanded(toolOutputExpanded)
                 chatContainer.addChild(component)
                 pendingTools[toolCallId] = component
+                if toolName == "bash" {
+                    footer?.setBashToolRunning(true)
+                }
                 scheduleRender()
             }
 
@@ -1437,6 +1441,9 @@ public final class InteractiveMode {
                 )
                 component.updateResult(message, isPartial: false)
                 pendingTools.removeValue(forKey: toolCallId)
+                if toolName == "bash" {
+                    footer?.setBashToolRunning(false)
+                }
                 scheduleRender()
             }
 
@@ -1450,6 +1457,7 @@ public final class InteractiveMode {
                 streamingMessage = nil
             }
             pendingTools.removeAll()
+            footer?.setBashToolRunning(false)
             scheduleRender()
 
         case .turnStart, .turnEnd:
@@ -1564,7 +1572,7 @@ public final class InteractiveMode {
 
     private func buildHeaderText() -> String {
         let logo = theme.bold(theme.fg(.accent, APP_NAME)) + theme.fg(.dim, " v\(version)")
-        let deleteToLineEnd = formatKeyDisplay(getEditorKeybindings().getKeys(.deleteToLineEnd))
+        let deleteToLineEnd = formatKeyDisplay(getKeybindings().getKeys(TUIKeybinding.editorDeleteToLineEnd))
         let interrupt = formatKeyDisplay(keybindings.getDisplayString(.interrupt))
         let clear = formatKeyDisplay(keybindings.getDisplayString(.clear))
         let exit = formatKeyDisplay(keybindings.getDisplayString(.exit))
@@ -2585,6 +2593,7 @@ public final class InteractiveMode {
 
         let abortToken = CancellationToken()
         bashAbort = abortToken
+        footer?.setBashToolRunning(true)
 
         do {
             let result = try await executeBashWithOperations(
@@ -2627,6 +2636,7 @@ public final class InteractiveMode {
 
         bashComponent = nil
         bashAbort = nil
+        footer?.setBashToolRunning(false)
         scheduleRender()
     }
 
@@ -2946,7 +2956,7 @@ public final class InteractiveMode {
                 let currentThinkingLevel = session.agent.state.thinkingLevel
                 let scoped = await resolveModelScope(enabledIds, session.modelRegistry)
                 let resolved = scoped.map { scopedModel in
-                    let level = scopedModel.isThinkingExplicit ? scopedModel.thinkingLevel : currentThinkingLevel
+                    let level = scopedModel.isThinkingExplicit ? (scopedModel.thinkingLevel ?? .off) : currentThinkingLevel
                     return ScopedModel(model: scopedModel.model, thinkingLevel: level, isThinkingExplicit: scopedModel.isThinkingExplicit)
                 }
                 session.setScopedModels(resolved)
@@ -3227,7 +3237,7 @@ public final class InteractiveMode {
         case .login:
             await handleOAuthLogin(provider, authStorage: session.modelRegistry.authStorage)
         case .logout:
-            handleOAuthLogout(provider, authStorage: session.modelRegistry.authStorage)
+            await handleOAuthLogout(provider, authStorage: session.modelRegistry.authStorage)
         }
     }
 
@@ -3302,6 +3312,7 @@ public final class InteractiveMode {
         do {
             try await authStorage.login(provider, callbacks: callbacks)
             session?.modelRegistry.refresh()
+            await session?.refreshActiveModel()
             restoreEditor()
             showStatus("Logged in to \(providerName). Credentials saved to \(getAuthPath())")
         } catch {
@@ -3314,10 +3325,11 @@ public final class InteractiveMode {
     }
 
     @MainActor
-    private func handleOAuthLogout(_ provider: OAuthProvider, authStorage: AuthStorage) {
+    private func handleOAuthLogout(_ provider: OAuthProvider, authStorage: AuthStorage) async {
         let providerName = getOAuthProviders().first { $0.id == provider }?.name ?? provider.rawValue
         authStorage.logout(provider)
         session?.modelRegistry.refresh()
+        await session?.refreshActiveModel()
         showStatus("Logged out of \(providerName)")
     }
 
@@ -3632,6 +3644,7 @@ public final class InteractiveMode {
         }
 
         await session.reload()
+        keybindings = KeybindingsManager.create()
         skills = session.resourceLoader.getSkills().skills
         setRegisteredThemes(session.resourceLoader.getThemes().themes)
         rebuildAutocomplete()
@@ -3642,7 +3655,7 @@ public final class InteractiveMode {
         chatContainer.clear()
         renderInitialMessages()
         restoreEditor(previousEditor)
-        showStatus("Reloaded skills, prompts, themes")
+        showStatus("Reloaded skills, prompts, themes, keybindings")
     }
 
     private func formatKeyDisplay(_ keys: [KeyId]) -> String {
@@ -3661,7 +3674,7 @@ public final class InteractiveMode {
     }
 
     private func getEditorKeyDisplay(_ action: EditorAction) -> String {
-        return formatKeyDisplay(getEditorKeybindings().getKeys(action))
+        return formatKeyDisplay(getKeybindings().getKeys(action.keybinding))
     }
 
     @MainActor

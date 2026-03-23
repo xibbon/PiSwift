@@ -208,15 +208,15 @@ public final class ScopedModelsSelectorComponent: Container, SystemCursorAware {
     }
 
     public override func handleInput(_ data: String) {
-        let kb = getEditorKeybindings()
+        let kb = getKeybindings()
 
-        if kb.matches(data, .selectUp) {
+        if kb.matches(data, TUIKeybinding.selectUp) {
             guard !filteredItems.isEmpty else { return }
             selectedIndex = selectedIndex == 0 ? filteredItems.count - 1 : selectedIndex - 1
             updateList()
             return
         }
-        if kb.matches(data, .selectDown) {
+        if kb.matches(data, TUIKeybinding.selectDown) {
             guard !filteredItems.isEmpty else { return }
             selectedIndex = selectedIndex == filteredItems.count - 1 ? 0 : selectedIndex + 1
             updateList()
@@ -237,7 +237,7 @@ public final class ScopedModelsSelectorComponent: Container, SystemCursorAware {
             return
         }
 
-        if kb.matches(data, .selectConfirm) {
+        if kb.matches(data, TUIKeybinding.selectConfirm) {
             guard let item = filteredItems[safe: selectedIndex] else { return }
             let wasAllEnabled = enabledIds == nil
             enabledIds = toggle(enabledIds, item.fullId)

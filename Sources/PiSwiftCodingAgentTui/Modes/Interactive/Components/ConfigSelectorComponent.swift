@@ -443,21 +443,21 @@ private final class ResourceList: Component, SystemCursorAware {
     }
 
     func handleInput(_ data: String) {
-        let kb = getEditorKeybindings()
+        let kb = getKeybindings()
 
         if matchesKey(data, Key.ctrl("c")) {
             onExit?()
             return
         }
-        if kb.matches(data, .selectUp) {
+        if kb.matches(data, TUIKeybinding.selectUp) {
             selectedIndex = findNextItem(fromIndex: selectedIndex, direction: -1)
             return
         }
-        if kb.matches(data, .selectDown) {
+        if kb.matches(data, TUIKeybinding.selectDown) {
             selectedIndex = findNextItem(fromIndex: selectedIndex, direction: 1)
             return
         }
-        if kb.matches(data, .selectPageUp) {
+        if kb.matches(data, TUIKeybinding.selectPageUp) {
             var target = max(0, selectedIndex - maxVisible)
             while target < filteredItems.count, !filteredItems[target].isItem {
                 target += 1
@@ -467,7 +467,7 @@ private final class ResourceList: Component, SystemCursorAware {
             }
             return
         }
-        if kb.matches(data, .selectPageDown) {
+        if kb.matches(data, TUIKeybinding.selectPageDown) {
             var target = min(filteredItems.count - 1, selectedIndex + maxVisible)
             while target >= 0, !filteredItems[target].isItem {
                 target -= 1
@@ -477,11 +477,11 @@ private final class ResourceList: Component, SystemCursorAware {
             }
             return
         }
-        if kb.matches(data, .selectCancel) {
+        if kb.matches(data, TUIKeybinding.selectCancel) {
             onCancel?()
             return
         }
-        if data == " " || kb.matches(data, .selectConfirm) {
+        if data == " " || kb.matches(data, TUIKeybinding.selectConfirm) {
             guard selectedIndex >= 0, selectedIndex < filteredItems.count else { return }
             guard case .item(let item) = filteredItems[selectedIndex] else { return }
             let newEnabled = !item.enabled

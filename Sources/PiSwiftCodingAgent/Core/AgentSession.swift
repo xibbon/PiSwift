@@ -277,6 +277,9 @@ public final class AgentSession: Sendable {
         var bashAbort: CancellationToken?
         var pendingBashMessages: [BashExecutionMessage]
         var isCompactingInternal: Bool
+        var overflowRecoveryAttempted: Bool
+        var lastSuccessfulUsage: Usage?
+        var isBranchSummarizing: Bool
         var turnIndex: Int
         var baseSystemPrompt: String
         var toolRegistry: [String: AgentTool]
@@ -386,6 +389,25 @@ public final class AgentSession: Sendable {
         set { state.withLock { $0.isCompactingInternal = newValue } }
     }
 
+    /// Prevents stale pre-compaction usage from retriggering auto-compaction (4D-3).
+    private var overflowRecoveryAttempted: Bool {
+        get { state.withLock { $0.overflowRecoveryAttempted } }
+        set { state.withLock { $0.overflowRecoveryAttempted = newValue } }
+    }
+
+    /// Tracks the last *successful* assistant usage so threshold checks after
+    /// error responses don't compare against zero-token stale values (4D-4).
+    private var lastSuccessfulUsage: Usage? {
+        get { state.withLock { $0.lastSuccessfulUsage } }
+        set { state.withLock { $0.lastSuccessfulUsage = newValue } }
+    }
+
+    /// Guards message submission during branch summarization (4D-6).
+    private var isBranchSummarizing: Bool {
+        get { state.withLock { $0.isBranchSummarizing } }
+        set { state.withLock { $0.isBranchSummarizing = newValue } }
+    }
+
     private var turnIndex: Int {
         get { state.withLock { $0.turnIndex } }
         set { state.withLock { $0.turnIndex = newValue } }
@@ -445,6 +467,9 @@ public final class AgentSession: Sendable {
             bashAbort: nil,
             pendingBashMessages: [],
             isCompactingInternal: false,
+            overflowRecoveryAttempted: false,
+            lastSuccessfulUsage: nil,
+            isBranchSummarizing: false,
             turnIndex: 0,
             baseSystemPrompt: config.agent.state.systemPrompt,
             toolRegistry: config.toolRegistry ?? [:],
@@ -568,6 +593,10 @@ public final class AgentSession: Sendable {
 
             if case .assistant(let assistant) = message {
                 lastAssistantMessage = assistant
+                // Track last successful usage for threshold checks after errors (4D-4).
+                if assistant.stopReason != .error {
+                    lastSuccessfulUsage = assistant.usage
+                }
                 if assistant.stopReason != .error, retryAttempt > 0 {
                     let attempt = retryAttempt
                     retryAttempt = 0
@@ -612,6 +641,7 @@ public final class AgentSession: Sendable {
                     let didRetry = await self.handleRetryableError(lastAssistantMessage)
                     if didRetry { return }
                 }
+                await self.checkAutoCompaction(lastAssistantMessage)
             }
         }
     }
@@ -661,6 +691,49 @@ public final class AgentSession: Sendable {
         }
 
         return true
+    }
+
+    /// Checks whether auto-compaction should be triggered after an assistant
+    /// message completes.  Handles both overflow errors and threshold-based
+    /// compaction.  Uses `lastSuccessfulUsage` for threshold checks after
+    /// error responses (4D-4) and sets `overflowRecoveryAttempted` so stale
+    /// pre-compaction usage doesn't retrigger (4D-3).
+    private func checkAutoCompaction(_ message: AssistantMessage) async {
+        guard autoCompactionEnabled, !isCompactingInternal else { return }
+
+        let contextWindow = agent.state.model.contextWindow
+        guard contextWindow > 0 else { return }
+
+        // Overflow-based compaction (error says context too large).
+        if isContextOverflow(message, contextWindow: contextWindow) {
+            guard !overflowRecoveryAttempted else { return }
+            overflowRecoveryAttempted = true
+            await runAutoCompaction(reason: .overflow, willRetry: true)
+            // After compaction succeeds, clear the flag so a *new* overflow
+            // (at a genuinely larger context) can still trigger.
+            overflowRecoveryAttempted = false
+            return
+        }
+
+        // Threshold-based compaction (context usage exceeds 90%).
+        // For error responses use the last successful usage, not the error's
+        // potentially-zero token counts (4D-4).
+        let usage: Usage
+        if message.stopReason == .error, let lastGood = lastSuccessfulUsage {
+            usage = lastGood
+        } else {
+            usage = message.usage
+        }
+
+        let inputTokens = usage.input + usage.cacheRead
+        let threshold = Double(contextWindow) * 0.9
+        if Double(inputTokens) >= threshold {
+            // Prevent stale pre-compaction usage from retriggering (4D-3).
+            guard !overflowRecoveryAttempted else { return }
+            overflowRecoveryAttempted = true
+            await runAutoCompaction(reason: .threshold, willRetry: false)
+            overflowRecoveryAttempted = false
+        }
     }
 
     func runAutoCompaction(
@@ -807,7 +880,7 @@ public final class AgentSession: Sendable {
     }
 
     public func prompt(_ text: String, options: PromptOptions? = nil) async throws {
-        if isStreaming {
+        if isStreaming || isBranchSummarizing {
             throw AgentSessionError.alreadyProcessingQueue
         }
 
@@ -1065,6 +1138,24 @@ public final class AgentSession: Sendable {
         await modelRegistry.getAvailable()
     }
 
+    /// Re-resolve the active model after provider registration changes (e.g. login/logout).
+    /// If the current model is no longer available, switch to the best available model.
+    public func refreshActiveModel() async {
+        let current = agent.state.model
+        // Check if current model still has a valid API key
+        if await modelRegistry.getApiKey(current.provider) != nil {
+            return
+        }
+        // Current model lost its API key — find a fallback
+        let available = await modelRegistry.getAvailable()
+        if let fallback = available.first {
+            agent.setModel(fallback)
+            sessionManager.appendModelChange(fallback.provider, fallback.id)
+            settingsManager.setDefaultModelAndProvider(fallback.provider, fallback.id)
+            setThinkingLevel(agent.state.thinkingLevel)
+        }
+    }
+
     private func emitModelSelect(
         nextModel: Model,
         previousModel: Model?,
@@ -1105,10 +1196,13 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.missingApiKeyForModel(provider: next.model.provider, modelId: next.model.id)
         }
         let previousModel = agent.state.model
+        let currentThinkingLevel = agent.state.thinkingLevel
         agent.setModel(next.model)
         sessionManager.appendModelChange(next.model.provider, next.model.id)
         settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id)
-        setThinkingLevel(next.thinkingLevel)
+        // Preserve the user's current thinking level across model switches rather than
+        // resetting to the scoped model's default.
+        setThinkingLevel(currentThinkingLevel)
         await emitModelSelect(nextModel: next.model, previousModel: previousModel, source: .cycle)
         return ModelCycleResult(model: next.model, thinkingLevel: agent.state.thinkingLevel, isScoped: true)
     }
@@ -1315,6 +1409,8 @@ public final class AgentSession: Sendable {
         )
 
         branchSummaryAbort = CancellationToken()
+        isBranchSummarizing = true
+        defer { isBranchSummarizing = false }
         var summaryText: String?
         var summaryDetails: AnyCodable?
         var fromHook = false

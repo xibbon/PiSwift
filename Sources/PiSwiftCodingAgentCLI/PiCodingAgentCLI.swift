@@ -91,6 +91,21 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         initTheme(themeName, enableWatcher: parsed.print != true && parsed.mode == nil)
         time("initTheme")
 
+        // If stdin is a pipe, read all of it and prepend to the initial message
+        if isatty(STDIN_FILENO) == 0 {
+            var stdinContent = ""
+            while let line = readLine(strippingNewline: false) {
+                stdinContent += line
+            }
+            if !stdinContent.isEmpty {
+                if parsed.messages.isEmpty {
+                    parsed.messages.append(stdinContent)
+                } else {
+                    parsed.messages[0] = stdinContent + parsed.messages[0]
+                }
+            }
+        }
+
         let initialMessageResult = try prepareInitialMessage(
             &parsed,
             autoResizeImages: settingsManager.getAutoResizeImages(),
@@ -137,7 +152,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
 
         if !scopedModels.isEmpty {
             scopedModels = scopedModels.map { scoped in
-                let resolvedThinking = scoped.isThinkingExplicit ? scoped.thinkingLevel : defaultThinkingLevel
+                let resolvedThinking = scoped.isThinkingExplicit ? (scoped.thinkingLevel ?? .off) : defaultThinkingLevel
                 return ScopedModel(model: scoped.model, thinkingLevel: resolvedThinking, isThinkingExplicit: scoped.isThinkingExplicit)
             }
         }
@@ -157,7 +172,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         }
         if let scopedModel = initialSelection.scopedModel {
             if scopedModel.isThinkingExplicit || !hasExistingSession {
-                initialThinking = scopedModel.thinkingLevel
+                initialThinking = scopedModel.thinkingLevel ?? initialThinking
             }
         }
         if let cliThinking = initialSelection.cliThinkingLevel {
@@ -431,7 +446,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
 
             if !scopedModels.isEmpty {
                 let modelList = scopedModels.map { scoped in
-                    let thinking = scoped.isThinkingExplicit ? ":\(scoped.thinkingLevel.rawValue)" : ""
+                    let thinking = scoped.isThinkingExplicit ? ":\((scoped.thinkingLevel ?? .off).rawValue)" : ""
                     return "\(scoped.model.id)\(thinking)"
                 }.joined(separator: ", ")
                 print("Model scope: \(modelList) (Ctrl+P to cycle)")

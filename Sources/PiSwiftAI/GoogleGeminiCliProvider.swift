@@ -144,6 +144,12 @@ public func streamGoogleGeminiCli(
 
                     let body = try await collectSseStreamData(from: bytes)
                     let errorText = String(data: body, encoding: .utf8) ?? ""
+
+                    // 403/404: immediately try next endpoint (no delay)
+                    if (http.statusCode == 403 || http.statusCode == 404) && attempt < maxRetries {
+                        continue
+                    }
+
                     if attempt < maxRetries && isRetryableError(status: http.statusCode, errorText: errorText) {
                         let serverDelay = extractRetryDelay(errorText: errorText, response: http)
                         let delay = serverDelay ?? (baseDelayMs * (1 << attempt))
@@ -218,6 +224,11 @@ public func streamGoogleGeminiCli(
                     guard let data = payload.data(using: .utf8) else { continue }
                     guard let chunk = try? JSONDecoder().decode(GeminiCliStreamChunk.self, from: data),
                           let response = chunk.response else { continue }
+
+                    // Capture responseId from Cloud Code Assist (mirrors Gemini's responseId)
+                    if output.responseId == nil, let rid = response.responseId, !rid.isEmpty {
+                        output.responseId = rid
+                    }
 
                     if let candidate = response.candidates?.first, let parts = candidate.content?.parts {
                         for part in parts {

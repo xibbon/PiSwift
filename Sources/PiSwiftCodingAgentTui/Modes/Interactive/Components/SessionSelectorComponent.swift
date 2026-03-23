@@ -188,34 +188,34 @@ private final class SessionList: Component, SystemCursorAware {
     }
 
     func handleInput(_ keyData: String) {
-        let kb = getEditorKeybindings()
-        if kb.matches(keyData, .tab) {
+        let kb = getKeybindings()
+        if kb.matches(keyData, TUIKeybinding.inputTab) {
             onToggleScope?()
             return
         }
-        if kb.matches(keyData, .selectUp) {
+        if kb.matches(keyData, TUIKeybinding.selectUp) {
             selectedIndex = max(0, selectedIndex - 1)
             return
         }
-        if kb.matches(keyData, .selectDown) {
+        if kb.matches(keyData, TUIKeybinding.selectDown) {
             selectedIndex = min(filteredSessions.count - 1, selectedIndex + 1)
             return
         }
-        if kb.matches(keyData, .selectPageUp) {
+        if kb.matches(keyData, TUIKeybinding.selectPageUp) {
             selectedIndex = max(0, selectedIndex - maxVisible)
             return
         }
-        if kb.matches(keyData, .selectPageDown) {
+        if kb.matches(keyData, TUIKeybinding.selectPageDown) {
             selectedIndex = min(filteredSessions.count - 1, selectedIndex + maxVisible)
             return
         }
-        if kb.matches(keyData, .selectConfirm) {
+        if kb.matches(keyData, TUIKeybinding.selectConfirm) {
             if let selected = filteredSessions[safe: selectedIndex] {
                 onSelect?(selected.path)
             }
             return
         }
-        if kb.matches(keyData, .selectCancel) {
+        if kb.matches(keyData, TUIKeybinding.selectCancel) {
             onCancel?()
             return
         }

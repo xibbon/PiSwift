@@ -35,7 +35,7 @@ public func createWriteTool(cwd: String) -> AgentTool {
         guard let path = params["path"]?.value as? String else {
             throw WriteToolError.missingPath
         }
-        let content = params["content"]?.value as? String ?? ""
+        let content = (params["content"]?.value as? String ?? "").replacingOccurrences(of: "\r\n", with: "\n")
 
         let absolutePath = resolveToCwd(path, cwd: cwd)
         let dir = URL(fileURLWithPath: absolutePath).deletingLastPathComponent().path

@@ -100,10 +100,13 @@ public func serializeConversation(_ messages: [Message]) -> String {
                 parts.append("[Assistant tool calls]: \(toolCalls.joined(separator: "; "))")
             }
         case .toolResult(let result):
-            let text = result.content.compactMap { block -> String? in
+            var text = result.content.compactMap { block -> String? in
                 if case .text(let t) = block { return t.text }
                 return nil
             }.joined()
+            if text.count > 10000 {
+                text = String(text.prefix(10000)) + "\n[...truncated]"
+            }
             if !text.isEmpty {
                 parts.append("[Tool result]: \(text)")
             }

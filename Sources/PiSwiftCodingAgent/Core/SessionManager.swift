@@ -2,6 +2,14 @@ import Foundation
 import PiSwiftAI
 import PiSwiftAgent
 
+/// Strip all control characters (C0/C1) from text for safe display.
+private func stripControlCharacters(_ text: String) -> String {
+    text.unicodeScalars.filter { scalar in
+        // Keep printable characters, spaces, and common whitespace (tab, newline)
+        scalar.value >= 0x20 || scalar.value == 0x09 || scalar.value == 0x0A || scalar.value == 0x0D
+    }.map { String($0) }.joined()
+}
+
 enum SessionManagerError: LocalizedError, Sendable {
     case entryNotFound(String)
 
@@ -35,9 +43,11 @@ public struct SessionHeader: Sendable {
 
 public struct NewSessionOptions: Sendable {
     public var parentSession: String?
+    public var id: String?
 
-    public init(parentSession: String? = nil) {
+    public init(parentSession: String? = nil, id: String? = nil) {
         self.parentSession = parentSession
+        self.id = id
     }
 }
 
@@ -951,7 +961,7 @@ public final class SessionManager: Sendable {
 
     @discardableResult
     public func newSession(_ options: NewSessionOptions? = nil) -> String? {
-        let newSessionId = UUID().uuidString
+        let newSessionId = options?.id ?? UUID().uuidString
         let timestamp = isoNow()
         sessionId = newSessionId
         header = SessionHeader(
@@ -1060,7 +1070,7 @@ public final class SessionManager: Sendable {
     @discardableResult
     public func appendSessionInfo(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let entry = SessionInfoEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), name: trimmed)
+        let entry = SessionInfoEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), name: trimmed.isEmpty ? nil : trimmed)
         appendEntry(.sessionInfo(entry))
         return entry.id
     }
@@ -1242,15 +1252,20 @@ private func generateId(existing: Set<String>) -> String {
     return UUID().uuidString
 }
 
-private func defaultSessionDir(cwd: String, sessionDir: String? = nil) -> String {
+public func getDefaultSessionDir(cwd: String, sessionDir: String? = nil, agentDir: String? = nil) -> String {
     if let sessionDir, !sessionDir.isEmpty {
         try? FileManager.default.createDirectory(atPath: sessionDir, withIntermediateDirectories: true)
         return sessionDir
     }
+    let resolvedAgentDir = agentDir ?? getAgentDir()
     let safePath = "--" + cwd.replacingOccurrences(of: "\\", with: "-").replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-") + "--"
-    let dir = URL(fileURLWithPath: getAgentDir()).appendingPathComponent("sessions").appendingPathComponent(safePath).path
+    let dir = URL(fileURLWithPath: resolvedAgentDir).appendingPathComponent("sessions").appendingPathComponent(safePath).path
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     return dir
+}
+
+private func defaultSessionDir(cwd: String, sessionDir: String? = nil) -> String {
+    getDefaultSessionDir(cwd: cwd, sessionDir: sessionDir)
 }
 
 private func appendLine(_ path: String, _ line: String) {
@@ -1355,7 +1370,7 @@ private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {
         let label = dict["label"] as? String
         return .label(LabelEntry(id: id, parentId: parentId, timestamp: timestamp, targetId: targetId, label: label))
     case "session_info":
-        let name = dict["name"] as? String
+        let name = (dict["name"] as? String).map { stripControlCharacters($0) }
         return .sessionInfo(SessionInfoEntry(id: id, parentId: parentId, timestamp: timestamp, name: name))
     default:
         return nil

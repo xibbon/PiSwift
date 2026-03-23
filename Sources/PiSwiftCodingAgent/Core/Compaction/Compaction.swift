@@ -562,6 +562,8 @@ private func findValidCutPoints(_ entries: [SessionEntry], _ startIndex: Int, _ 
             }
         case .branchSummary, .customMessage:
             cutPoints.append(i)
+        case .sessionInfo:
+            break
         default:
             break
         }

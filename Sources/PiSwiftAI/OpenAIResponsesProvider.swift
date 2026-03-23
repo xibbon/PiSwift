@@ -292,6 +292,10 @@ public func streamOpenAIResponses(
                         }
                     }
                 case .completed(let completed):
+                    // Capture responseId from response.completed event
+                    if output.responseId == nil {
+                        output.responseId = completed.response.id
+                    }
                     if let usage = completed.response.usage {
                         let cached = usage.inputTokensDetails.cachedTokens
                         output.usage = Usage(

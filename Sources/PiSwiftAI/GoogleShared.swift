@@ -108,7 +108,11 @@ func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
                 case .toolCall(let toolCall):
                     let thoughtSignature = resolveThoughtSignature(isSameProviderAndModel: isSameProviderAndModel, signature: toolCall.thoughtSignature)
                     let isGemini3 = model.id.lowercased().contains("gemini-3")
-                    if isGemini3 && thoughtSignature == nil {
+                    // For Gemini 3 unsigned tool calls, use skip_thought_signature_validator sentinel
+                    // to tell the API to skip signature validation instead of rejecting the function call
+                    let effectiveSignature = thoughtSignature ?? (isGemini3 ? "skip_thought_signature_validator" : nil)
+                    if effectiveSignature == nil && isGemini3 {
+                        // No signature and not Gemini 3 — shouldn't happen but fallback to text
                         let argsData = (try? JSONSerialization.data(withJSONObject: toolCall.arguments.mapValues { $0.jsonValue }, options: [.prettyPrinted])) ?? Data()
                         let argsStr = String(data: argsData, encoding: .utf8) ?? "{}"
                         parts.append([
@@ -123,8 +127,8 @@ func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
                             functionCall["id"] = toolCall.id
                         }
                         var part: [String: Any] = ["functionCall": functionCall]
-                        if let thoughtSignature {
-                            part["thoughtSignature"] = thoughtSignature
+                        if let effectiveSignature {
+                            part["thoughtSignature"] = effectiveSignature
                         }
                         parts.append(part)
                     }
@@ -309,6 +313,7 @@ struct GoogleStreamChunk: Decodable {
 
     var candidates: [Candidate]?
     var usageMetadata: UsageMetadata?
+    var responseId: String?
 }
 
 struct GeminiCliStreamChunk: Decodable {

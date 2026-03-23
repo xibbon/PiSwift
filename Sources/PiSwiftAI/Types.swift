@@ -205,6 +205,9 @@ public struct OpenAICompat: Sendable {
     public var openRouterRouting: OpenRouterRouting?
     public var vercelGatewayRouting: VercelGatewayRouting?
     public var supportsStrictMode: Bool?
+    /// Maps thinking levels to provider-specific reasoning effort values.
+    /// When set, the mapped value is sent instead of the standard level string.
+    public var reasoningEffortMap: [ThinkingLevel: String]?
 
     public init(
         supportsStore: Bool? = nil,
@@ -219,7 +222,8 @@ public struct OpenAICompat: Sendable {
         thinkingFormat: OpenAICompatThinkingFormat? = nil,
         openRouterRouting: OpenRouterRouting? = nil,
         vercelGatewayRouting: VercelGatewayRouting? = nil,
-        supportsStrictMode: Bool? = nil
+        supportsStrictMode: Bool? = nil,
+        reasoningEffortMap: [ThinkingLevel: String]? = nil
     ) {
         self.supportsStore = supportsStore
         self.supportsDeveloperRole = supportsDeveloperRole
@@ -234,6 +238,7 @@ public struct OpenAICompat: Sendable {
         self.openRouterRouting = openRouterRouting
         self.vercelGatewayRouting = vercelGatewayRouting
         self.supportsStrictMode = supportsStrictMode
+        self.reasoningEffortMap = reasoningEffortMap
     }
 }
 

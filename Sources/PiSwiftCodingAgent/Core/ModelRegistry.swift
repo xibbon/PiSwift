@@ -71,6 +71,7 @@ private struct ProviderOverride: Sendable {
 
 private struct ModelOverride: Sendable {
     var name: String?
+    var baseUrl: String?
     var reasoning: Bool?
     var input: [String]?
     var cost: ModelCostOverride?
@@ -138,6 +139,9 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
 private func applyModelOverride(model: Model, override: ModelOverride) -> Model {
     var updated = model
     if let name = override.name { updated = Model(id: updated.id, name: name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, headers: updated.headers, compat: updated.compat) }
+    if let baseUrl = override.baseUrl {
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, headers: updated.headers, compat: updated.compat)
+    }
     if let reasoning = override.reasoning {
         updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, headers: updated.headers, compat: updated.compat)
     }
@@ -296,7 +300,24 @@ public final class ModelRegistry: Sendable {
         var merged = builtInModels
         for custom in customModels {
             if let index = merged.firstIndex(where: { $0.provider == custom.provider && $0.id == custom.id }) {
-                merged[index] = custom
+                // Merge compat from built-in defaults so user models.json entries
+                // don't lose provider compat fields they didn't explicitly set.
+                let mergedCompat = mergeCompat(merged[index].compat, custom.compat)
+                let withCompat = Model(
+                    id: custom.id,
+                    name: custom.name,
+                    api: custom.api,
+                    provider: custom.provider,
+                    baseUrl: custom.baseUrl,
+                    reasoning: custom.reasoning,
+                    input: custom.input,
+                    cost: custom.cost,
+                    contextWindow: custom.contextWindow,
+                    maxTokens: custom.maxTokens,
+                    headers: custom.headers,
+                    compat: mergedCompat
+                )
+                merged[index] = withCompat
             } else {
                 merged.append(custom)
             }
@@ -392,8 +413,15 @@ public final class ModelRegistry: Sendable {
 
             if let overridesDict {
                 var parsed: [String: ModelOverride] = [:]
-                for (modelId, value) in overridesDict {
+                for (rawModelId, value) in overridesDict {
                     guard let dict = value as? [String: Any] else { continue }
+                    // Support provider/modelId format; strip the provider prefix
+                    let modelId: String
+                    if let slashIndex = rawModelId.firstIndex(of: "/") {
+                        modelId = String(rawModelId[rawModelId.index(after: slashIndex)...])
+                    } else {
+                        modelId = rawModelId
+                    }
             let costOverride: ModelCostOverride? = {
                 guard let cost = dict["cost"] as? [String: Any] else { return nil }
                 return ModelCostOverride(
@@ -406,6 +434,7 @@ public final class ModelRegistry: Sendable {
 
             parsed[modelId] = ModelOverride(
                 name: dict["name"] as? String,
+                baseUrl: dict["baseUrl"] as? String,
                 reasoning: dict["reasoning"] as? Bool,
                 input: dict["input"] as? [String],
                 cost: costOverride,
@@ -423,7 +452,16 @@ public final class ModelRegistry: Sendable {
             }
 
             for modelDef in models {
-                guard let id = modelDef["id"] as? String else { continue }
+                guard let rawId = modelDef["id"] as? String else { continue }
+                let modelProvider: String
+                let id: String
+                if let slashIndex = rawId.firstIndex(of: "/") {
+                    modelProvider = String(rawId[rawId.startIndex..<slashIndex])
+                    id = String(rawId[rawId.index(after: slashIndex)...])
+                } else {
+                    modelProvider = providerName
+                    id = rawId
+                }
                 let name = modelDef["name"] as? String ?? id
                 let reasoning = modelDef["reasoning"] as? Bool ?? false
                 let input = modelDef["input"] as? [String] ?? ["text"]
@@ -452,13 +490,14 @@ public final class ModelRegistry: Sendable {
                     cacheWrite: cost["cacheWrite"] as? Double ?? 0
                 )
 
-                guard let baseUrl else { continue }
+                let modelBaseUrl = modelDef["baseUrl"] as? String ?? baseUrl
+                guard let modelBaseUrl else { continue }
                 let model = Model(
                     id: id,
                     name: name,
                     api: api,
-                    provider: providerName,
-                    baseUrl: baseUrl,
+                    provider: modelProvider,
+                    baseUrl: modelBaseUrl,
                     reasoning: reasoning,
                     input: input.compactMap { ModelInput(rawValue: $0) },
                     cost: costModel,
