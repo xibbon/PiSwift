@@ -6,6 +6,20 @@ import PiSwiftAgent
 import Darwin
 import PiSwiftCodingAgent
 
+// MARK: - OSC 133 semantic prompt markers
+
+/// Emit an OSC 133 marker to stdout for terminal shell integration.
+/// - `;A` — prompt start (ready for input)
+/// - `;B` — command start (user submitted)
+/// - `;C` — command executed (processing started)
+/// - `;D` — command finished (output complete)
+private func emitOsc133(_ marker: String) {
+    let sequence = "\u{001B}]133;\(marker)\u{0007}"
+    if let data = sequence.data(using: .utf8) {
+        FileHandle.standardOutput.write(data)
+    }
+}
+
 @MainActor
 public protocol RenderRequesting: AnyObject {
     func requestRender()
@@ -307,6 +321,7 @@ public final class InteractiveMode {
             )
         }
         renderInitialMessages()
+        emitOsc133("A") // initial prompt start
 
         if let initialMessage {
             await prompt(initialMessage, images: initialImages)
@@ -1458,6 +1473,8 @@ public final class InteractiveMode {
             }
             pendingTools.removeAll()
             footer?.setBashToolRunning(false)
+            emitOsc133("D") // command finished
+            emitOsc133("A") // prompt start — ready for next input
             scheduleRender()
 
         case .turnStart, .turnEnd:
@@ -2488,6 +2505,8 @@ public final class InteractiveMode {
 
     private func prompt(_ text: String, images: [ImageContent]?) async {
         guard let session else { return }
+        emitOsc133("B") // command start — user submitted
+        emitOsc133("C") // command executed — processing started
         do {
             try await session.prompt(text, options: PromptOptions(expandSlashCommands: nil, images: images))
         } catch {
