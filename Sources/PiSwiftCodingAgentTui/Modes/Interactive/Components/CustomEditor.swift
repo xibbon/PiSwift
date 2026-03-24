@@ -54,6 +54,10 @@ public final class CustomEditor: Component, SystemCursorAware, EditorComponent {
         editor.getText()
     }
 
+    public func getExpandedText() -> String {
+        editor.getExpandedText()
+    }
+
     public func insertTextAtCursor(_ text: String) {
         editor.insertTextAtCursor(text)
     }

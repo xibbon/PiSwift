@@ -658,7 +658,8 @@ private func supportsThinkingSignature(model: Model) -> Bool {
 }
 
 private func supportsAdaptiveThinking(modelId: String) -> Bool {
-    modelId.contains("opus-4-6") || modelId.contains("opus-4.6")
+    modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
+    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6")
 }
 
 private func mapThinkingLevelToEffort(_ level: ThinkingLevel) -> String {

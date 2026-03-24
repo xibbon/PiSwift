@@ -261,7 +261,7 @@ func googleThinkingLevel(for effort: ThinkingLevel, modelId: String) -> GoogleTh
     } else {
         clamped = effort
     }
-    if modelId.contains("3-pro") {
+    if modelId.contains("3-pro") || modelId.contains("3.1-pro") {
         switch clamped {
         case .minimal, .low:
             return .low

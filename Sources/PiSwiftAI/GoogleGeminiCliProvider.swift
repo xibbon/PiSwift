@@ -445,7 +445,7 @@ public func streamSimpleGoogleGeminiCli(
     }
 
     let effort = clampGeminiThinkingLevel(reasoning)
-    if model.id.contains("3-pro") || model.id.contains("3-flash") {
+    if model.id.contains("3-pro") || model.id.contains("3-flash") || model.id.contains("3.1-pro") || model.id.contains("3.1-flash") {
         let updated = GoogleGeminiCliOptions(
             temperature: base.temperature,
             maxTokens: base.maxTokens,
@@ -694,7 +694,14 @@ private func firstRegexGroups(in text: String, pattern: String) -> [String]? {
 
 private func isClaudeThinkingModel(_ modelId: String) -> Bool {
     let normalized = modelId.lowercased()
-    return normalized.contains("claude") && normalized.contains("thinking")
+    if normalized.contains("claude") && normalized.contains("thinking") {
+        return true
+    }
+    // Claude models on Antigravity (e.g. claude-sonnet-4-6) need the thinking beta header
+    if normalized.hasPrefix("claude-") {
+        return true
+    }
+    return false
 }
 
 private func isRetryableError(status: Int, errorText: String) -> Bool {
@@ -728,7 +735,7 @@ private func sleepMillis(_ ms: Int, signal: CancellationToken?) async throws {
 
 private func getGeminiCliThinkingLevel(effort: ThinkingLevel, modelId: String) -> GoogleThinkingLevel {
     let clamped = effort == .xhigh ? .high : effort
-    if modelId.contains("3-pro") {
+    if modelId.contains("3-pro") || modelId.contains("3.1-pro") {
         switch clamped {
         case .minimal, .low:
             return .low

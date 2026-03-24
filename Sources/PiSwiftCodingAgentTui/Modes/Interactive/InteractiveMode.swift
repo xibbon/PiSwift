@@ -629,7 +629,8 @@ public final class InteractiveMode {
             },
             getEditorText: { [weak self] in
                 guard let self else { return "" }
-                return self.editor?.getText() ?? ""
+                // Return expanded text so extensions get actual content, not paste markers
+                return self.editor?.getExpandedText() ?? ""
             },
             editor: { [weak self] title, prefill in
                 guard let self else { return nil }

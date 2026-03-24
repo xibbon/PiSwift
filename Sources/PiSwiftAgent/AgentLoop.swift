@@ -109,6 +109,13 @@ public func runAgentLoopContinue(
     signal: CancellationToken? = nil,
     streamFn: StreamFn? = nil
 ) async -> [AgentMessage] {
+    guard !context.messages.isEmpty else {
+        fatalError("Cannot continue: no messages in context")
+    }
+    if let last = context.messages.last, last.role == "assistant" {
+        fatalError("Cannot continue from message role: assistant")
+    }
+
     let currentContext = context
 
     await emit(.agentStart)
@@ -570,9 +577,13 @@ private func executePreparedToolCall(
     signal: CancellationToken?,
     emit: @escaping AgentEventSink
 ) async -> ExecutedToolCallOutcome {
+    // Collect update event tasks so we can await them all before returning,
+    // matching upstream behavior that guarantees all update emissions complete.
+    let pendingUpdates = LockedState<[Task<Void, Never>]>([])
+
     do {
         let result = try await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal) { partialResult in
-            Task {
+            let task = Task {
                 await emit(.toolExecutionUpdate(
                     toolCallId: prepared.toolCall.id,
                     toolName: prepared.toolCall.name,
@@ -580,9 +591,18 @@ private func executePreparedToolCall(
                     partialResult: partialResult
                 ))
             }
+            pendingUpdates.withLock { $0.append(task) }
+        }
+        // Await all pending update emissions before returning
+        for task in pendingUpdates.withLock({ $0 }) {
+            await task.value
         }
         return ExecutedToolCallOutcome(result: result, isError: false)
     } catch {
+        // Await pending updates even on error path
+        for task in pendingUpdates.withLock({ $0 }) {
+            await task.value
+        }
         return ExecutedToolCallOutcome(
             result: createErrorToolResult(error.localizedDescription),
             isError: true

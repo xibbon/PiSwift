@@ -9,6 +9,7 @@ public protocol EditorComponent: AnyObject {
     var borderColor: @Sendable (String) -> String { get set }
     func setText(_ text: String)
     func getText() -> String
+    func getExpandedText() -> String
     func insertTextAtCursor(_ text: String)
     func addToHistory(_ text: String)
     func setAutocompleteProvider(_ provider: AutocompleteProvider)

@@ -180,8 +180,11 @@ public func streamOpenAICompletions(
                 throw OpenAICompletionsStreamError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw OpenAICompletionsStreamError.unknown
+            if output.stopReason == .aborted {
+                throw OpenAICompletionsStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw OpenAICompletionsStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -204,7 +207,7 @@ private struct StopReasonResult {
 
 private func mapStopReason(_ reason: ChatStreamResult.Choice.FinishReason) -> StopReasonResult {
     switch reason {
-    case .stop:
+    case .stop, .end:
         return StopReasonResult(stopReason: .stop)
     case .length:
         return StopReasonResult(stopReason: .length)
