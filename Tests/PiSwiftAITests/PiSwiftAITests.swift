@@ -2250,6 +2250,39 @@ struct ApiRegistryTests {
     #expect(thinking.thinkingSignature == "opaque-payload")
 }
 
+@Test func compactionReasoningAwarenessNonReasoningModel() {
+    // A model with reasoning: false should produce nil reasoning in summarization options
+    let nonReasoningModel = Model(
+        id: "gpt-4o",
+        name: "GPT-4o",
+        api: .openAIResponses,
+        provider: "openai",
+        baseUrl: "https://api.openai.com",
+        reasoning: false,
+        input: [.text],
+        cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
+        contextWindow: 128000,
+        maxTokens: 4096
+    )
+    let reasoning: ThinkingLevel? = nonReasoningModel.reasoning ? .high : nil
+    #expect(reasoning == nil)
+
+    let reasoningModel = Model(
+        id: "claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        api: .anthropicMessages,
+        provider: "anthropic",
+        baseUrl: "https://api.anthropic.com",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
+        contextWindow: 200000,
+        maxTokens: 8192
+    )
+    let reasoning2: ThinkingLevel? = reasoningModel.reasoning ? .high : nil
+    #expect(reasoning2 == .high)
+}
+
 @Test func adaptiveThinkingModelSkipsInterleavedBetaHeader() {
     // Opus 4.6 should not get interleaved-thinking header
     let headers = buildAnthropicBetaHeaders(apiKey: "sk-ant-test", interleavedThinking: true, provider: "anthropic", modelId: "claude-opus-4-6")

@@ -29,9 +29,8 @@ public func transformMessages(
                     }
                     let trimmed = thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
                     if isSameModel {
-                        if trimmed.isEmpty && thinking.thinkingSignature == nil {
-                            return nil
-                        }
+                        // Preserve empty thinking blocks to maintain reasoning structure
+                        // continuity during same-model replay.
                         return .thinking(thinking)
                     }
                     if trimmed.isEmpty {

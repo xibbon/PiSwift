@@ -214,4 +214,10 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
     )
 }
 
+/// Create a `BashOperations` instance that executes commands locally.
+/// Extensions can use this to compose bash behavior without duplicating execution logic.
+public func createLocalBashOperations() -> BashOperations {
+    DefaultBashOperations()
+}
+
 public let bashTool = createBashTool(cwd: FileManager.default.currentDirectoryPath)

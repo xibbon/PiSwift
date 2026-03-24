@@ -253,3 +253,60 @@ private func mockModels() -> [Model] {
     #expect(result?.provider == "vercel-ai-gateway")
     #expect(result?.id == "anthropic/claude-opus-4.5")
 }
+
+@Test func resolveCliModelSlashDelimitedRef() {
+    var models = mockModels()
+    // Add a model with slash-delimited ID to simulate "openai/gpt-5.4"
+    models.append(Model(
+        id: "gpt-5.4",
+        name: "GPT-5.4",
+        api: .openAIResponses,
+        provider: "openai",
+        baseUrl: "https://api.openai.com",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
+        contextWindow: 128000,
+        maxTokens: 4096
+    ))
+
+    // "openai/gpt-5.4" should resolve via provider/id split
+    let result = resolveCliModel(cliModel: "openai/gpt-5.4", availableModels: models)
+    #expect(result.error == nil)
+    #expect(result.model?.id == "gpt-5.4")
+    #expect(result.model?.provider == "openai")
+}
+
+@Test func resolveCliModelAmbiguousBareIdReturnsNil() {
+    // When the same bare model ID exists in multiple providers, resolution should fail
+    let models = [
+        Model(
+            id: "shared-model",
+            name: "Shared Model A",
+            api: .openAIResponses,
+            provider: "openai",
+            baseUrl: "https://api.openai.com",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
+            contextWindow: 128000,
+            maxTokens: 4096
+        ),
+        Model(
+            id: "shared-model",
+            name: "Shared Model B",
+            api: .anthropicMessages,
+            provider: "anthropic",
+            baseUrl: "https://api.anthropic.com",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
+            contextWindow: 200000,
+            maxTokens: 8192
+        ),
+    ]
+
+    // Bare ambiguous ID should not resolve
+    let result = parseModelPattern("shared-model", models)
+    #expect(result.model == nil)
+}
