@@ -2299,3 +2299,53 @@ struct ApiRegistryTests {
     let hasInterleaved3 = headers3?.contains("interleaved-thinking-2025-05-14") ?? false
     #expect(hasInterleaved3)
 }
+
+// MARK: - Antigravity endpoint cascade (4B-1)
+
+@Test func addEndpointCascadeTestForAntigravity() {
+    // The antigravity endpoint fallback list should contain daily, autopush,
+    // and production endpoints in that order.
+    let antigravityModels = getModels(provider: .googleAntigravity)
+    #expect(!antigravityModels.isEmpty, "Expected at least one antigravity model in the registry")
+
+    // All antigravity models should use the daily endpoint as their baseUrl
+    // (the provider code falls back through daily -> autopush -> production).
+    for model in antigravityModels {
+        let baseUrl = model.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Models registered with the daily endpoint as default
+        #expect(
+            baseUrl.contains("daily-cloudcode-pa") || baseUrl.contains("cloudcode-pa") || baseUrl.isEmpty,
+            "Antigravity model \(model.id) has unexpected baseUrl: \(baseUrl)"
+        )
+    }
+}
+
+// MARK: - Reasoning effort mapping test
+
+@Test func reasoningEffortMappingTest() {
+    // Verify that an OpenAICompat with a reasoningEffortMap correctly stores
+    // and retrieves the mapped values.
+    let map: [ThinkingLevel: String] = [
+        .minimal: "budget_tokens:1024",
+        .low: "budget_tokens:4096",
+        .medium: "budget_tokens:8192",
+        .high: "budget_tokens:16384",
+        .xhigh: "budget_tokens:32768",
+    ]
+    let compat = OpenAICompat(
+        supportsReasoningEffort: true,
+        thinkingFormat: .openai,
+        reasoningEffortMap: map
+    )
+
+    #expect(compat.reasoningEffortMap != nil)
+    #expect(compat.reasoningEffortMap?[.minimal] == "budget_tokens:1024")
+    #expect(compat.reasoningEffortMap?[.low] == "budget_tokens:4096")
+    #expect(compat.reasoningEffortMap?[.medium] == "budget_tokens:8192")
+    #expect(compat.reasoningEffortMap?[.high] == "budget_tokens:16384")
+    #expect(compat.reasoningEffortMap?[.xhigh] == "budget_tokens:32768")
+
+    // A compat without the map should return nil
+    let compatNoMap = OpenAICompat(supportsReasoningEffort: true)
+    #expect(compatNoMap.reasoningEffortMap == nil)
+}

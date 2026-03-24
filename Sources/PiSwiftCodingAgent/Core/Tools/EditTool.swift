@@ -65,58 +65,60 @@ public func createEditTool(cwd: String) -> AgentTool {
             throw EditToolError.fileNotFound(path: path)
         }
 
-        // Read file preserving BOM - Swift's String(contentsOfFile:) strips BOM automatically
-        let (bom, content) = try readFilePreservingBom(absolutePath)
+        return try await FileMutationQueue.shared.withFileLock(absolutePath) {
+            // Read file preserving BOM - Swift's String(contentsOfFile:) strips BOM automatically
+            let (bom, content) = try readFilePreservingBom(absolutePath)
 
-        let originalEnding = detectLineEnding(content)
-        let normalizedContent = normalizeToLF(content)
-        let normalizedOldText = normalizeToLF(oldText)
-        let normalizedNewText = normalizeToLF(newText)
+            let originalEnding = detectLineEnding(content)
+            let normalizedContent = normalizeToLF(content)
+            let normalizedOldText = normalizeToLF(oldText)
+            let normalizedNewText = normalizeToLF(newText)
 
-        // Find the old text using fuzzy matching (tries exact match first, then fuzzy)
-        let matchResult = fuzzyFindText(normalizedContent, normalizedOldText)
+            // Find the old text using fuzzy matching (tries exact match first, then fuzzy)
+            let matchResult = fuzzyFindText(normalizedContent, normalizedOldText)
 
-        guard matchResult.found else {
-            throw EditToolError.exactTextNotFoundDetailed(path: path)
+            guard matchResult.found else {
+                throw EditToolError.exactTextNotFoundDetailed(path: path)
+            }
+
+            // Count occurrences using fuzzy-normalized content for consistency
+            let fuzzyContent = normalizeForFuzzyMatch(normalizedContent)
+            let fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText)
+            let occurrences = fuzzyContent.components(separatedBy: fuzzyOldText).count - 1
+
+            if occurrences > 1 {
+                throw EditToolError.textNotUnique(path: path, occurrences: occurrences)
+            }
+
+            // Perform replacement using the matched text position
+            // When fuzzy matching was used, contentForReplacement is the normalized version
+            let baseContent = matchResult.contentForReplacement
+            let startIndex = baseContent.index(baseContent.startIndex, offsetBy: matchResult.index)
+            let endIndex = baseContent.index(startIndex, offsetBy: matchResult.matchLength)
+            let normalizedNewContent = baseContent.replacingCharacters(
+                in: startIndex..<endIndex,
+                with: normalizedNewText
+            )
+
+            if baseContent == normalizedNewContent {
+                throw EditToolError.noChanges(path: path)
+            }
+
+            let finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding)
+            try finalContent.write(toFile: absolutePath, atomically: true, encoding: .utf8)
+
+            let diffResult = generateDiffString(normalizedContent, normalizedNewContent)
+            let firstChanged: Any = diffResult.firstChangedLine != nil ? diffResult.firstChangedLine! : NSNull()
+            let details = AnyCodable([
+                "diff": diffResult.diff,
+                "firstChangedLine": firstChanged,
+            ])
+
+            return AgentToolResult(
+                content: [.text(TextContent(text: "Successfully replaced text in \(path)."))],
+                details: details
+            )
         }
-
-        // Count occurrences using fuzzy-normalized content for consistency
-        let fuzzyContent = normalizeForFuzzyMatch(normalizedContent)
-        let fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText)
-        let occurrences = fuzzyContent.components(separatedBy: fuzzyOldText).count - 1
-
-        if occurrences > 1 {
-            throw EditToolError.textNotUnique(path: path, occurrences: occurrences)
-        }
-
-        // Perform replacement using the matched text position
-        // When fuzzy matching was used, contentForReplacement is the normalized version
-        let baseContent = matchResult.contentForReplacement
-        let startIndex = baseContent.index(baseContent.startIndex, offsetBy: matchResult.index)
-        let endIndex = baseContent.index(startIndex, offsetBy: matchResult.matchLength)
-        let normalizedNewContent = baseContent.replacingCharacters(
-            in: startIndex..<endIndex,
-            with: normalizedNewText
-        )
-
-        if baseContent == normalizedNewContent {
-            throw EditToolError.noChanges(path: path)
-        }
-
-        let finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding)
-        try finalContent.write(toFile: absolutePath, atomically: true, encoding: .utf8)
-
-        let diffResult = generateDiffString(normalizedContent, normalizedNewContent)
-        let firstChanged: Any = diffResult.firstChangedLine != nil ? diffResult.firstChangedLine! : NSNull()
-        let details = AnyCodable([
-            "diff": diffResult.diff,
-            "firstChangedLine": firstChanged,
-        ])
-
-        return AgentToolResult(
-            content: [.text(TextContent(text: "Successfully replaced text in \(path)."))],
-            details: details
-        )
     }
 }
 

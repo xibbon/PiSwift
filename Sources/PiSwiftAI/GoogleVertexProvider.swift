@@ -257,6 +257,11 @@ private func resolveVertexLocation(options: GoogleVertexOptions) throws -> Strin
     if let location = options.location ?? env["GOOGLE_CLOUD_LOCATION"], !location.isEmpty {
         return location
     }
+    // Respect region from AWS profile config when AWS_PROFILE is set
+    if let profile = env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"],
+       let region = loadAwsProfileRegion(profile: profile), !region.isEmpty {
+        return region
+    }
     throw GoogleVertexError.missingLocation
 }
 

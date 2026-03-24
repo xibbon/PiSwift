@@ -38,11 +38,14 @@ public func createWriteTool(cwd: String) -> AgentTool {
         let content = (params["content"]?.value as? String ?? "").replacingOccurrences(of: "\r\n", with: "\n")
 
         let absolutePath = resolveToCwd(path, cwd: cwd)
-        let dir = URL(fileURLWithPath: absolutePath).deletingLastPathComponent().path
-        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        try content.write(toFile: absolutePath, atomically: true, encoding: .utf8)
 
-        return AgentToolResult(content: [.text(TextContent(text: "Successfully wrote \(content.utf8.count) bytes to \(path)"))])
+        return try await FileMutationQueue.shared.withFileLock(absolutePath) {
+            let dir = URL(fileURLWithPath: absolutePath).deletingLastPathComponent().path
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            try content.write(toFile: absolutePath, atomically: true, encoding: .utf8)
+
+            return AgentToolResult(content: [.text(TextContent(text: "Successfully wrote \(content.utf8.count) bytes to \(path)"))])
+        }
     }
 }
 

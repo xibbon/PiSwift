@@ -652,6 +652,35 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         return filtered.messages
     }
 
+    // Wire agent-level beforeToolCall/afterToolCall from hook runner (extensions + hooks)
+    let beforeToolCallHook: BeforeToolCallFn?
+    let afterToolCallHook: AfterToolCallFn?
+    if let hookRunnerForAgent = hookRunner, hookRunnerForAgent.hasHandlers("tool_call") {
+        beforeToolCallHook = { context, _ in
+            let event = ToolCallEvent(toolName: context.toolCall.name, toolCallId: context.toolCall.id, input: context.args)
+            if let result = await hookRunnerForAgent.emitToolCall(event), result.block {
+                return BeforeToolCallResult(block: true, reason: result.reason)
+            }
+            return nil
+        }
+    } else {
+        beforeToolCallHook = nil
+    }
+    afterToolCallHook = nil // No hook runner method for after-tool-call results yet
+
+    // Wire onPayload to emit BeforeProviderRequestEvent to extensions
+    let onPayloadHook: OnPayloadFn?
+    if let hookRunnerForPayload = hookRunner, hookRunnerForPayload.hasHandlers("before_provider_request") {
+        onPayloadHook = { snapshot in
+            let event = BeforeProviderRequestEvent(payload: snapshot.json)
+            Task {
+                _ = await hookRunnerForPayload.emit(event)
+            }
+        }
+    } else {
+        onPayloadHook = nil
+    }
+
     let createdAgent = Agent(AgentOptions(
         initialState: AgentState(
             systemPrompt: systemPrompt,
@@ -670,7 +699,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         thinkingBudgets: settingsManager.getThinkingBudgets(),
         getApiKey: { provider in
             await modelRegistry.getApiKey(provider)
-        }
+        },
+        onPayload: onPayloadHook,
+        beforeToolCall: beforeToolCallHook,
+        afterToolCall: afterToolCallHook
     ))
     time("createAgent")
     agentBox.withLock { $0 = createdAgent }

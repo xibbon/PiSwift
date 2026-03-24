@@ -744,6 +744,15 @@ public struct SessionTreeEvent: HookEvent, Sendable {
     }
 }
 
+public struct BeforeProviderRequestEvent: HookEvent, Sendable {
+    public let type: String = "before_provider_request"
+    public var payload: String
+
+    public init(payload: String) {
+        self.payload = payload
+    }
+}
+
 public struct ToolCallEvent: HookEvent, Sendable {
     public let type: String = "tool_call"
     public var toolName: String

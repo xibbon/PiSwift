@@ -969,7 +969,7 @@ private func loadAwsProfileCredentials(profile: String) -> AwsCredentials? {
     return AwsCredentials(accessKeyId: accessKey, secretAccessKey: secretKey, sessionToken: token)
 }
 
-private func loadAwsProfileRegion(profile: String) -> String? {
+func loadAwsProfileRegion(profile: String) -> String? {
     let env = ProcessInfo.processInfo.environment
     let configPath = env["AWS_CONFIG_FILE"] ?? "~/.aws/config"
     guard let sections = parseIniFile(path: configPath) else {
@@ -986,7 +986,7 @@ private func loadAwsProfileRegion(profile: String) -> String? {
     return sections[profileKey]?["region"]
 }
 
-private func parseIniFile(path: String) -> [String: [String: String]]? {
+func parseIniFile(path: String) -> [String: [String: String]]? {
     let resolvedPath = (path as NSString).expandingTildeInPath
     guard let data = FileManager.default.contents(atPath: resolvedPath),
           let content = String(data: data, encoding: .utf8) else {

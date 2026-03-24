@@ -256,6 +256,10 @@ public final class AgentSession: Sendable {
     public let eventBus: EventBus
     private let state: LockedState<State>
 
+    /// Serial queue for agent event processing.
+    /// Ensures tool call/result interception from extensions happens in order.
+    private let _agentEventQueue = LockedState<Task<Void, Never>?>(nil)
+
     private struct State: Sendable {
         var hookRunner: HookRunner?
         var customToolsInternal: [LoadedCustomTool]
@@ -284,6 +288,7 @@ public final class AgentSession: Sendable {
         var baseSystemPrompt: String
         var toolRegistry: [String: AgentTool]
         var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
+        var toolPromptSnippets: [String: String]
     }
 
     private var _hookRunner: HookRunner? {
@@ -428,6 +433,19 @@ public final class AgentSession: Sendable {
         set { state.withLock { $0.rebuildSystemPrompt = newValue } }
     }
 
+    private var toolPromptSnippets: [String: String] {
+        get { state.withLock { $0.toolPromptSnippets } }
+        set { state.withLock { $0.toolPromptSnippets = newValue } }
+    }
+
+    /// Register a prompt snippet that tools can contribute to the system prompt.
+    /// Snippets are keyed by name so they can be replaced or removed.
+    public func registerToolPromptSnippet(name: String, text: String) {
+        toolPromptSnippets[name] = text
+        // Rebuild the system prompt to include the new snippet
+        agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
+    }
+
     private func expandPromptText(_ text: String, expandSlashCommands: Bool = true, expandPromptTemplates: Bool = true) -> String {
         var expanded = text
         if expandPromptTemplates {
@@ -473,7 +491,8 @@ public final class AgentSession: Sendable {
             turnIndex: 0,
             baseSystemPrompt: config.agent.state.systemPrompt,
             toolRegistry: config.toolRegistry ?? [:],
-            rebuildSystemPrompt: config.rebuildSystemPrompt
+            rebuildSystemPrompt: config.rebuildSystemPrompt,
+            toolPromptSnippets: [:]
         ))
 
         self._hookRunner?.initialize(
@@ -559,6 +578,17 @@ public final class AgentSession: Sendable {
         }
     }
 
+    /// Enqueue work on the serial agent-event queue so that hook interception
+    /// for tool calls/results is processed in order.
+    private func enqueueOnEventQueue(_ work: @escaping @Sendable () async -> Void) {
+        let previous = _agentEventQueue.withLock { $0 }
+        let task = Task<Void, Never> {
+            _ = await previous?.value
+            await work()
+        }
+        _agentEventQueue.withLock { $0 = task }
+    }
+
     private func handleAgentEvent(_ event: AgentEvent) {
         if case .messageStart(let message) = event, message.role == "user" {
             let text = extractUserMessageText(message)
@@ -615,17 +645,17 @@ public final class AgentSession: Sendable {
             switch event {
             case .agentStart:
                 turnIndex = 0
-                Task { _ = await hookRunner.emit(AgentStartEvent()) }
+                enqueueOnEventQueue { _ = await hookRunner.emit(AgentStartEvent()) }
             case .agentEnd(let messages):
-                Task { _ = await hookRunner.emit(AgentEndEvent(messages: messages)) }
+                enqueueOnEventQueue { _ = await hookRunner.emit(AgentEndEvent(messages: messages)) }
             case .turnStart:
-                let currentIndex = turnIndex
+                let currentIndex = self.turnIndex
                 let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
-                Task { _ = await hookRunner.emit(TurnStartEvent(turnIndex: currentIndex, timestamp: timestamp)) }
+                enqueueOnEventQueue { _ = await hookRunner.emit(TurnStartEvent(turnIndex: currentIndex, timestamp: timestamp)) }
             case .turnEnd(let message, let toolResults):
-                let currentIndex = turnIndex
-                turnIndex += 1
-                Task { _ = await hookRunner.emit(TurnEndEvent(turnIndex: currentIndex, message: message, toolResults: toolResults)) }
+                let currentIndex = self.turnIndex
+                self.turnIndex += 1
+                enqueueOnEventQueue { _ = await hookRunner.emit(TurnEndEvent(turnIndex: currentIndex, message: message, toolResults: toolResults)) }
             default:
                 break
             }
@@ -852,6 +882,14 @@ public final class AgentSession: Sendable {
         toolRegistry.values.map { ToolInfo(name: $0.name, description: $0.description) }
     }
 
+    /// Build the effective system prompt by appending any registered tool prompt snippets.
+    private func effectiveSystemPrompt(_ base: String) -> String {
+        let snippets = toolPromptSnippets
+        guard !snippets.isEmpty else { return base }
+        let combined = snippets.values.sorted().joined(separator: "\n\n")
+        return base + "\n\n" + combined
+    }
+
     public func setActiveToolsByName(_ toolNames: [String]) {
         var tools: [AgentTool] = []
         var validNames: [String] = []
@@ -865,7 +903,7 @@ public final class AgentSession: Sendable {
 
         if let rebuildSystemPrompt {
             baseSystemPrompt = rebuildSystemPrompt(validNames)
-            agent.setSystemPrompt(baseSystemPrompt)
+            agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
         }
     }
 
@@ -875,7 +913,7 @@ public final class AgentSession: Sendable {
         if let rebuildSystemPrompt {
             let activeToolNames = getActiveToolNames()
             baseSystemPrompt = rebuildSystemPrompt(activeToolNames)
-            agent.setSystemPrompt(baseSystemPrompt)
+            agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
         }
     }
 
@@ -928,9 +966,9 @@ public final class AgentSession: Sendable {
             }
         }
         if let systemPromptAppend, !systemPromptAppend.isEmpty {
-            agent.setSystemPrompt("\(baseSystemPrompt)\n\n\(systemPromptAppend)")
+            agent.setSystemPrompt(effectiveSystemPrompt("\(baseSystemPrompt)\n\n\(systemPromptAppend)"))
         } else {
-            agent.setSystemPrompt(baseSystemPrompt)
+            agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
         }
         try await agent.prompt(messages)
     }

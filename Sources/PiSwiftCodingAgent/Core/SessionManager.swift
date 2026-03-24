@@ -1133,7 +1133,10 @@ public final class SessionManager: Sendable {
             let newSessionFile = URL(fileURLWithPath: sessionDir).appendingPathComponent("\(fileTimestamp)_\(newSessionId).jsonl").path
 
             let header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: newSessionId, timestamp: timestamp, cwd: cwd, parentSession: sessionFile)
-            appendLine(newSessionFile, encodeSessionHeader(header))
+            // Guard against duplicate header if the target file already exists
+            if !FileManager.default.fileExists(atPath: newSessionFile) {
+                appendLine(newSessionFile, encodeSessionHeader(header))
+            }
             for entry in pathWithoutLabels {
                 appendLine(newSessionFile, encodeSessionEntry(entry))
             }
@@ -1170,7 +1173,36 @@ public final class SessionManager: Sendable {
             labelsById[labelEntry.targetId] = labelEntry.label
         }
         if persist, let sessionFile {
-            appendLine(sessionFile, encodeSessionEntry(entry))
+            // Defer writing the session file until we have at least one assistant message.
+            // This prevents creating empty/useless session files for abandoned prompts.
+            let isAssistant: Bool
+            if case .message(let msg) = entry, case .assistant = msg.message {
+                isAssistant = true
+            } else {
+                isAssistant = false
+            }
+            if isAssistant && !FileManager.default.fileExists(atPath: sessionFile) {
+                // First assistant message: flush the header and all buffered entries
+                if let header {
+                    appendLine(sessionFile, encodeSessionHeader(header))
+                }
+                for buffered in entries {
+                    appendLine(sessionFile, encodeSessionEntry(buffered))
+                }
+            } else if FileManager.default.fileExists(atPath: sessionFile) {
+                appendLine(sessionFile, encodeSessionEntry(entry))
+            }
+            // Otherwise (no file yet and not an assistant message): skip writing
+        }
+    }
+
+    /// Returns true when the entries contain at least one assistant message.
+    private func hasAssistantMessage() -> Bool {
+        entries.contains { entry in
+            if case .message(let msg) = entry, case .assistant = msg.message {
+                return true
+            }
+            return false
         }
     }
 
@@ -1184,9 +1216,7 @@ public final class SessionManager: Sendable {
             let newSessionFile = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(sessionId).jsonl").path
             sessionFile = newSessionFile
             header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: sessionId, timestamp: timestamp, cwd: cwd, parentSession: nil)
-            if let header {
-                appendLine(newSessionFile, encodeSessionHeader(header))
-            }
+            // Don't write to disk yet — deferred until the first assistant message arrives.
         }
     }
 
