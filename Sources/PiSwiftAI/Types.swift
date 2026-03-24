@@ -170,6 +170,7 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     case zai
     case qwen
     case qwenChatTemplate = "qwen-chat-template"
+    case openrouter
 }
 
 public struct OpenRouterRouting: Sendable {
@@ -888,6 +889,10 @@ public struct AnthropicOptions: Sendable {
     public var apiKey: String?
     public var thinkingEnabled: Bool?
     public var thinkingBudgetTokens: Int?
+    /// Adaptive thinking effort level. When set on models that support adaptive
+    /// thinking (e.g. Opus 4.6, Sonnet 4.6), this takes precedence over
+    /// `thinkingBudgetTokens` and maps to an appropriate token budget.
+    public var effort: ThinkingLevel?
     public var interleavedThinking: Bool?
     public var toolChoice: AnthropicToolChoice?
     public var metadata: [String: AnyCodable]?
@@ -901,6 +906,7 @@ public struct AnthropicOptions: Sendable {
         apiKey: String? = nil,
         thinkingEnabled: Bool? = nil,
         thinkingBudgetTokens: Int? = nil,
+        effort: ThinkingLevel? = nil,
         interleavedThinking: Bool? = nil,
         toolChoice: AnthropicToolChoice? = nil,
         metadata: [String: AnyCodable]? = nil,
@@ -913,6 +919,7 @@ public struct AnthropicOptions: Sendable {
         self.apiKey = apiKey
         self.thinkingEnabled = thinkingEnabled
         self.thinkingBudgetTokens = thinkingBudgetTokens
+        self.effort = effort
         self.interleavedThinking = interleavedThinking
         self.toolChoice = toolChoice
         self.metadata = metadata

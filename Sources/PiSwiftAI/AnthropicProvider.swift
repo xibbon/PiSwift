@@ -319,9 +319,15 @@ private func buildAnthropicParameters(model: Model, context: Context, options: A
     let tools = context.tools.map { convertAnthropicTools($0, isOAuthToken: isOAuthToken) }
 
     let thinkingEnabled = options.thinkingEnabled == true && model.reasoning
-    let thinking = thinkingEnabled
-        ? MessageParameter.Thinking(budgetTokens: options.thinkingBudgetTokens ?? 1024)
-        : nil
+    let thinking: MessageParameter.Thinking? = {
+        guard thinkingEnabled else { return nil }
+        // For adaptive thinking models, map effort level to a token budget
+        if supportsAdaptiveThinking(model.id), let effort = options.effort {
+            let budgetTokens = adaptiveThinkingBudget(effort: effort, maxTokens: maxTokens)
+            return MessageParameter.Thinking(budgetTokens: budgetTokens)
+        }
+        return MessageParameter.Thinking(budgetTokens: options.thinkingBudgetTokens ?? 1024)
+    }()
 
     // Do NOT send temperature when thinking is enabled (incompatible with both
     // adaptive and budget-based thinking).
@@ -358,6 +364,22 @@ private func mapAnthropicModel(_ id: String) -> SwiftAnthropic.Model {
 private func supportsAdaptiveThinking(_ modelId: String) -> Bool {
     modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
     modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6")
+}
+
+/// Maps an adaptive thinking effort level to a token budget.
+private func adaptiveThinkingBudget(effort: ThinkingLevel, maxTokens: Int) -> Int {
+    switch effort {
+    case .minimal:
+        return max(1024, maxTokens / 8)
+    case .low:
+        return max(1024, maxTokens / 4)
+    case .medium:
+        return max(2048, maxTokens / 2)
+    case .high:
+        return max(4096, maxTokens)
+    case .xhigh:
+        return max(8192, maxTokens * 2)
+    }
 }
 
 func buildAnthropicBetaHeaders(apiKey: String, interleavedThinking: Bool, provider: String, modelId: String = "") -> [String]? {

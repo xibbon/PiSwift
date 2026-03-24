@@ -338,8 +338,13 @@ public func streamOpenAIResponses(
                             output.content[index] = .toolCall(tool)
                         }
                     }
+                case .created(let created):
+                    // Capture responseId early from response.created event
+                    if output.responseId == nil {
+                        output.responseId = created.response.id
+                    }
                 case .completed(let completed):
-                    // Capture responseId from response.completed event
+                    // Capture responseId from response.completed event (fallback)
                     if output.responseId == nil {
                         output.responseId = completed.response.id
                     }
@@ -359,8 +364,14 @@ public func streamOpenAIResponses(
                     if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) && output.stopReason == .stop {
                         output.stopReason = .toolUse
                     }
-                case .failed:
-                    throw OpenAIResponsesStreamError.unknown
+                case .failed(let failed):
+                    let errorDetail: String
+                    if let responseError = failed.response.error {
+                        errorDetail = "[\(responseError.code.rawValue)] \(responseError.message)"
+                    } else {
+                        errorDetail = "Response failed with status: \(failed.response.status)"
+                    }
+                    throw OpenAIResponsesStreamError.apiError(errorDetail)
                 case .error(let errorEvent):
                     throw OpenAIResponsesStreamError.apiError(errorEvent.message)
                 default:

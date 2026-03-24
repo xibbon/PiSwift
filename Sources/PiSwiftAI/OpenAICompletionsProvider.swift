@@ -244,9 +244,19 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let isZai = provider == "zai" || baseUrl.contains("z.ai")
     let isDeepSeek = baseUrl.contains("deepseek.com")
     let isOpencode = provider == "opencode" || baseUrl.contains("opencode.ai")
+    let isOpenRouter = provider == "openrouter" || baseUrl.contains("openrouter.ai")
 
-    let isNonStandard = isCerebras || isGrok || isMistral || isChutes || isDeepSeek || isZai || isOpencode
+    let isNonStandard = isCerebras || isGrok || isMistral || isChutes || isDeepSeek || isZai || isOpencode || isOpenRouter
     let useMaxTokens = isMistral || isChutes
+
+    let thinkingFormat: OpenAICompatThinkingFormat
+    if isZai {
+        thinkingFormat = .zai
+    } else if isOpenRouter {
+        thinkingFormat = .openrouter
+    } else {
+        thinkingFormat = .openai
+    }
 
     return ResolvedOpenAICompat(
         supportsStore: !isNonStandard,
@@ -258,7 +268,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         requiresAssistantAfterToolResult: false,
         requiresThinkingAsText: isMistral,
         requiresMistralToolIds: isMistral,
-        thinkingFormat: isZai ? .zai : .openai,
+        thinkingFormat: thinkingFormat,
         supportsStrictMode: true
     )
 }
@@ -643,6 +653,11 @@ private func buildCompletionsMiddlewares(
         let enabled = options.reasoningEffort != nil
         middlewares.append(OpenAICompletionsChatTemplateMiddleware(enableThinking: enabled))
     }
+    if compat.thinkingFormat == .openrouter, model.reasoning {
+        let enabled = options.reasoningEffort != nil
+        let effort = options.reasoningEffort
+        middlewares.append(OpenAICompletionsOpenRouterReasoningMiddleware(enableReasoning: enabled, effort: effort))
+    }
     if model.compat?.openRouterRouting != nil || model.compat?.vercelGatewayRouting != nil {
         middlewares.append(OpenAICompletionsRoutingMiddleware(
             baseUrl: model.baseUrl,
@@ -702,6 +717,51 @@ private struct OpenAICompletionsChatTemplateMiddleware: OpenAIMiddleware {
         updated.httpBodyStream = nil
         updated.httpBody = updatedBody
         return updated
+    }
+}
+
+/// Middleware for OpenRouter models that injects reasoning effort via the `provider` object.
+/// OpenRouter uses `{ "provider": { "reasoning_effort": "<level>" } }` in the request body.
+private struct OpenAICompletionsOpenRouterReasoningMiddleware: OpenAIMiddleware {
+    let enableReasoning: Bool
+    let effort: ThinkingLevel?
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = readRequestBody(request) else { return request }
+        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+
+        if enableReasoning, let effort {
+            var provider = payload["provider"] as? [String: Any] ?? [:]
+            provider["reasoning_effort"] = effort.rawValue
+            payload["provider"] = provider
+        }
+
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
     }
 }
 
