@@ -58,7 +58,8 @@ public func processFileArguments(_ fileArgs: [String], options: ProcessFileOptio
                 }
                 continue
             }
-            let data = try Data(contentsOf: URL(fileURLWithPath: absolutePath))
+            let rawImageData = try Data(contentsOf: URL(fileURLWithPath: absolutePath))
+            let data = applyExifOrientation(rawImageData)
             let base64 = data.base64EncodedString()
 
             let attachment: ImageContent

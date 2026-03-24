@@ -486,6 +486,50 @@ public final class InteractiveMode {
         }
 
         isInitialized = true
+
+        if let tmuxWarning = await checkTmuxKeyboardSetup() {
+            showWarning(tmuxWarning)
+        }
+    }
+
+    private func checkTmuxKeyboardSetup() async -> String? {
+        guard ProcessInfo.processInfo.environment["TMUX"] != nil else { return nil }
+
+        async let extKeys = runTmuxShow("extended-keys")
+        async let extFormat = runTmuxShow("extended-keys-format")
+
+        let (keys, format) = await (extKeys, extFormat)
+
+        guard let keys else { return nil }
+        if keys != "on" && keys != "always" {
+            return "tmux extended-keys is off. Run: tmux set -g extended-keys on"
+        }
+        if format == "xterm" {
+            return "tmux extended-keys-format is xterm. For best results: tmux set -g extended-keys-format csi-u"
+        }
+        return nil
+    }
+
+    private func runTmuxShow(_ option: String) async -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["tmux", "show", "-gv", option]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            // Simple timeout: if process doesn't exit in 2 seconds, terminate
+            let task = Task {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                if process.isRunning { process.terminate() }
+            }
+            process.waitUntilExit()
+            task.cancel()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch { return nil }
     }
 
     @MainActor
