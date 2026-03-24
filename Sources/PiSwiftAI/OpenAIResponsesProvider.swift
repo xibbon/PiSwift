@@ -71,6 +71,52 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     }
 }
 
+/// Middleware that rewrites function_call_output items containing inline image markers
+/// into the proper array format (ResponseFunctionCallOutputItemList).
+private let inlineImageMarker = "__INLINE_IMAGES__"
+
+struct OpenAIResponsesInlineImagesMiddleware: OpenAIMiddleware {
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = request.httpBody ?? readStream(request.httpBodyStream) else { return request }
+        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+        guard var input = payload["input"] as? [[String: Any]] else { return request }
+
+        var modified = false
+        for i in input.indices {
+            guard let type = input[i]["type"] as? String, type == "function_call_output" else { continue }
+            guard let output = input[i]["output"] as? String, output.hasPrefix(inlineImageMarker) else { continue }
+
+            let json = String(output.dropFirst(inlineImageMarker.count))
+            guard let data = json.data(using: .utf8),
+                  let parts = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
+
+            input[i]["output"] = parts
+            modified = true
+        }
+
+        guard modified else { return request }
+        payload["input"] = input
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readStream(_ stream: InputStream?) -> Data? {
+        guard let stream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read > 0 { data.append(buffer, count: read) } else { break }
+        }
+        return data.isEmpty ? nil : data
+    }
+}
+
 public func streamOpenAIResponses(
     model: Model,
     context: Context,
@@ -114,11 +160,12 @@ public func streamOpenAIResponses(
                 cacheRetention: cacheRetention,
                 promptCacheRetention: promptCacheRetention
             )
+            let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let builtClient = try makeOpenAIClient(
                 model: model,
                 apiKey: options.apiKey,
                 headers: options.headers,
-                middlewares: [middleware]
+                middlewares: [middleware, inlineImagesMiddleware]
             )
             let builtQuery = try buildResponsesQuery(model: model, context: context, options: options)
             emitPayload(options.onPayload, payload: builtQuery)
@@ -587,23 +634,46 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
             }
 
             let callId = toolResult.toolCallId.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? toolResult.toolCallId
-            let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
-                callId: callId,
-                _type: .functionCallOutput,
-                output: sanitizeSurrogates(textResult.isEmpty ? "(see attached image)" : textResult)
-            )
-            messages.append(.item(.functionCallOutputItemParam(toolOutput)))
 
             if hasImages && model.input.contains(.image) {
-                var contentParts: [InputContent] = [
-                    .inputText(Components.Schemas.InputTextContent(_type: .inputText, text: "Attached image(s) from tool result:"))
-                ]
+                // Inline images in function_call_output via middleware rewrite.
+                // We encode a JSON placeholder that the middleware will expand into
+                // the proper ResponseFunctionCallOutputItemList array format.
+                var inlineParts: [[String: Any]] = []
+                if !textResult.isEmpty {
+                    inlineParts.append(["type": "input_text", "text": sanitizeSurrogates(textResult)])
+                }
                 for block in toolResult.content {
                     if case .image(let image) = block {
-                        contentParts.append(.inputImage(InputImage(_type: .inputImage, imageUrl: "data:\(image.mimeType);base64,\(image.data)", detail: .auto)))
+                        inlineParts.append(["type": "input_image", "detail": "auto", "image_url": "data:\(image.mimeType);base64,\(image.data)"])
                     }
                 }
-                messages.append(.inputMessage(EasyInputMessage(role: .user, content: .inputItemContentList(contentParts))))
+                // Encode as JSON string — the middleware will parse and inline it
+                let marker = "__INLINE_IMAGES__"
+                if let partsData = try? JSONSerialization.data(withJSONObject: inlineParts),
+                   let partsJson = String(data: partsData, encoding: .utf8) {
+                    let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
+                        callId: callId,
+                        _type: .functionCallOutput,
+                        output: "\(marker)\(partsJson)"
+                    )
+                    messages.append(.item(.functionCallOutputItemParam(toolOutput)))
+                } else {
+                    // Fallback: send as text + separate user message
+                    let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
+                        callId: callId,
+                        _type: .functionCallOutput,
+                        output: sanitizeSurrogates(textResult.isEmpty ? "(see attached image)" : textResult)
+                    )
+                    messages.append(.item(.functionCallOutputItemParam(toolOutput)))
+                }
+            } else {
+                let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
+                    callId: callId,
+                    _type: .functionCallOutput,
+                    output: sanitizeSurrogates(textResult.isEmpty ? "(no output)" : textResult)
+                )
+                messages.append(.item(.functionCallOutputItemParam(toolOutput)))
             }
         }
         messageIndex += 1

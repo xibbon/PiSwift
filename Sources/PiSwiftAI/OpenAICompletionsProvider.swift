@@ -636,6 +636,10 @@ private func buildCompletionsMiddlewares(
         let enabled = options.reasoningEffort != nil
         middlewares.append(OpenAICompletionsThinkingMiddleware(enableThinking: enabled))
     }
+    if compat.thinkingFormat == .qwenChatTemplate, model.reasoning {
+        let enabled = options.reasoningEffort != nil
+        middlewares.append(OpenAICompletionsChatTemplateMiddleware(enableThinking: enabled))
+    }
     if model.compat?.openRouterRouting != nil || model.compat?.vercelGatewayRouting != nil {
         middlewares.append(OpenAICompletionsRoutingMiddleware(
             baseUrl: model.baseUrl,
@@ -679,6 +683,22 @@ private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
             }
         }
         return data.isEmpty ? nil : data
+    }
+}
+
+/// Middleware for Qwen models that use chat-template format for thinking control.
+private struct OpenAICompletionsChatTemplateMiddleware: OpenAIMiddleware {
+    let enableThinking: Bool
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = request.httpBody else { return request }
+        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+        payload["chat_template_kwargs"] = ["enable_thinking": enableThinking]
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
     }
 }
 

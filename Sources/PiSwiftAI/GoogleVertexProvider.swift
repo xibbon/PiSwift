@@ -271,6 +271,34 @@ private func isPlaceholderApiKey(_ key: String) -> Bool {
     return trimmed.hasPrefix("<") && trimmed.hasSuffix(">")
 }
 
+/// Cache for ADC token resolution to avoid concurrent gcloud subprocess races.
+private final class VertexTokenCache: @unchecked Sendable {
+    static let shared = VertexTokenCache()
+    private let lock = NSLock()
+    private var cachedToken: String?
+    private var cacheTime: Date?
+    private let ttl: TimeInterval = 50 * 60 // 50 minutes (OAuth tokens expire at 60m)
+
+    func get() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let token = cachedToken, let time = cacheTime else { return nil }
+        if Date().timeIntervalSince(time) > ttl {
+            cachedToken = nil
+            cacheTime = nil
+            return nil
+        }
+        return token
+    }
+
+    func set(_ token: String) {
+        lock.lock()
+        cachedToken = token
+        cacheTime = Date()
+        lock.unlock()
+    }
+}
+
 private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> String {
     if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>", !isPlaceholderApiKey(apiKey) {
         return apiKey
@@ -286,7 +314,12 @@ private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> St
             return token
         }
     }
+    // Use cached ADC token to avoid concurrent gcloud subprocess races
+    if let cached = VertexTokenCache.shared.get() {
+        return cached
+    }
     if let token = runCommandCapture("gcloud", ["auth", "application-default", "print-access-token"]) {
+        VertexTokenCache.shared.set(token)
         return token
     }
     throw GoogleVertexError.missingToken

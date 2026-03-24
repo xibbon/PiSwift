@@ -169,6 +169,7 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     case openai
     case zai
     case qwen
+    case qwenChatTemplate = "qwen-chat-template"
 }
 
 public struct OpenRouterRouting: Sendable {
