@@ -142,7 +142,7 @@ public func streamOpenAICompletions(
                             currentToolCallId: currentToolCallId,
                             currentToolCallIndex: currentToolCallIndex,
                             toolCallIdByIndex: &toolCallIdByIndex,
-                            requiresMistral: compat.requiresMistralToolIds
+                            requiresMistral: false
                         )
                         let index = resolved.index
                         let normalizedId = resolved.id
@@ -232,6 +232,7 @@ private struct ResolvedOpenAICompat {
     let requiresMistralToolIds: Bool
     let thinkingFormat: OpenAICompatThinkingFormat
     let supportsStrictMode: Bool
+    let reasoningEffortMap: [ThinkingLevel: String]?
 }
 
 private func detectCompat(model: Model) -> ResolvedOpenAICompat {
@@ -239,15 +240,15 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let provider = model.provider.lowercased()
     let isCerebras = provider == "cerebras" || baseUrl.contains("cerebras.ai")
     let isGrok = provider == "xai" || baseUrl.contains("api.x.ai")
-    let isMistral = provider == "mistral" || baseUrl.contains("mistral.ai")
+    let isGroq = provider == "groq" || baseUrl.contains("groq.com")
     let isChutes = baseUrl.contains("chutes.ai")
     let isZai = provider == "zai" || baseUrl.contains("z.ai")
     let isDeepSeek = baseUrl.contains("deepseek.com")
     let isOpencode = provider == "opencode" || baseUrl.contains("opencode.ai")
     let isOpenRouter = provider == "openrouter" || baseUrl.contains("openrouter.ai")
 
-    let isNonStandard = isCerebras || isGrok || isMistral || isChutes || isDeepSeek || isZai || isOpencode || isOpenRouter
-    let useMaxTokens = isMistral || isChutes
+    let isNonStandard = isCerebras || isGrok || isChutes || isDeepSeek || isZai || isOpencode || isOpenRouter
+    let useMaxTokens = isChutes
 
     let thinkingFormat: OpenAICompatThinkingFormat
     if isZai {
@@ -258,18 +259,27 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         thinkingFormat = .openai
     }
 
+    let groqReasoningEffortMap: [ThinkingLevel: String]? = isGroq ? [
+        .minimal: "default",
+        .low: "default",
+        .medium: "default",
+        .high: "default",
+        .xhigh: "default",
+    ] : nil
+
     return ResolvedOpenAICompat(
         supportsStore: !isNonStandard,
         supportsDeveloperRole: !isNonStandard,
         supportsReasoningEffort: !isGrok && !isZai,
         supportsUsageInStreaming: true,
         maxTokensField: useMaxTokens ? .maxTokens : .maxCompletionTokens,
-        requiresToolResultName: isMistral,
+        requiresToolResultName: false,
         requiresAssistantAfterToolResult: false,
-        requiresThinkingAsText: isMistral,
-        requiresMistralToolIds: isMistral,
+        requiresThinkingAsText: false,
+        requiresMistralToolIds: false,
         thinkingFormat: thinkingFormat,
-        supportsStrictMode: true
+        supportsStrictMode: true,
+        reasoningEffortMap: groqReasoningEffortMap
     )
 }
 
@@ -288,21 +298,9 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         requiresThinkingAsText: compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
         requiresMistralToolIds: compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
         thinkingFormat: compat.thinkingFormat ?? detected.thinkingFormat,
-        supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode
+        supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
+        reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap
     )
-}
-
-private func normalizeMistralToolId(_ id: String, requiresMistral: Bool) -> String {
-    guard requiresMistral else { return id }
-    let filtered = id.filter { $0.isLetter || $0.isNumber }
-    if filtered.count == 9 {
-        return filtered
-    }
-    if filtered.count < 9 {
-        let padding = "ABCDEFGHI"
-        return filtered + padding.prefix(9 - filtered.count)
-    }
-    return String(filtered.prefix(9))
 }
 
 func resolveToolCallIdentity(
@@ -310,13 +308,12 @@ func resolveToolCallIdentity(
     currentToolCallId: String?,
     currentToolCallIndex: Int?,
     toolCallIdByIndex: inout [Int: String],
-    requiresMistral: Bool
+    requiresMistral: Bool = false
 ) -> (id: String, index: Int) {
     let index = toolCall.index ?? currentToolCallIndex ?? 0
     if let id = toolCall.id, !id.isEmpty {
-        let resolved = normalizeMistralToolId(id, requiresMistral: requiresMistral)
-        toolCallIdByIndex[index] = resolved
-        return (resolved, index)
+        toolCallIdByIndex[index] = id
+        return (id, index)
     }
     if let existing = toolCallIdByIndex[index] {
         return (existing, index)
@@ -324,7 +321,7 @@ func resolveToolCallIdentity(
     if let current = currentToolCallId, currentToolCallIndex == index {
         return (current, index)
     }
-    let fallback = normalizeMistralToolId("toolcall_\(index)", requiresMistral: requiresMistral)
+    let fallback = "toolcall_\(index)"
     toolCallIdByIndex[index] = fallback
     return (fallback, index)
 }
@@ -382,7 +379,7 @@ private func buildCompletionsQuery(
               compat.supportsReasoningEffort,
               compat.thinkingFormat == .openai else { return nil }
         // Use provider-specific reasoning effort map if available
-        if let mapped = model.compat?.reasoningEffortMap?[effort] {
+        if let mapped = compat.reasoningEffortMap?[effort] {
             return .customValue(mapped)
         }
         return mapChatReasoningEffort(effort)
@@ -428,10 +425,6 @@ private func convertCompletionsMessages(
     var params: [ChatQuery.ChatCompletionMessageParam] = []
 
     let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, _ in
-        if compat.requiresMistralToolIds {
-            return normalizeMistralToolId(id, requiresMistral: true)
-        }
-
         if id.contains("|") {
             let callId = id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? id
             let sanitized = callId.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
@@ -533,7 +526,7 @@ private func convertCompletionsMessages(
                     content: compat.requiresAssistantAfterToolResult ? .textContent("") : (contentText.isEmpty ? nil : .textContent(contentText)),
                     toolCalls: toolCalls.map {
                         .init(
-                            id: normalizeMistralToolId($0.id, requiresMistral: compat.requiresMistralToolIds),
+                            id: $0.id,
                             function: .init(arguments: jsonString(from: $0.arguments), name: $0.name)
                         )
                     }
@@ -557,7 +550,7 @@ private func convertCompletionsMessages(
             let toolText = sanitizeSurrogates(text.isEmpty ? "(see attached image)" : text)
             let toolMessage = ChatQuery.ChatCompletionMessageParam.ToolMessageParam(
                 content: .textContent(toolText),
-                toolCallId: normalizeMistralToolId(toolResult.toolCallId, requiresMistral: compat.requiresMistralToolIds)
+                toolCallId: toolResult.toolCallId
             )
             params.append(.tool(toolMessage))
 

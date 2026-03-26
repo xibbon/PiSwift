@@ -254,7 +254,7 @@ public func streamOpenAIResponses(
                             }
                         case .outputMessage(let message):
                             if currentBlockKind == "text", let index = currentBlockIndex, case .text(var text) = output.content[index] {
-                                text.textSignature = message.id
+                                text.textSignature = encodeTextSignatureV1(id: message.id)
                                 output.content[index] = .text(text)
                                 stream.push(.textEnd(contentIndex: index, content: text.text, partial: output))
                                 currentBlockIndex = nil
@@ -523,26 +523,32 @@ private func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAISe
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
 }
 
+func normalizeIdPart(_ raw: String) -> String {
+    let sanitized = raw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
+    let truncated = sanitized.count > 64 ? String(sanitized.prefix(64)) : sanitized
+    return truncated.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
+}
+
 func convertResponsesMessages(model: Model, context: Context, allowedToolCallProviders: Set<String>) -> [InputItem] {
     var messages: [InputItem] = []
 
     let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, _ in
         guard allowedToolCallProviders.contains(model.provider) else { return id }
-        guard id.contains("|") else { return id }
-        let parts = id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
-        let callIdRaw = parts.first.map(String.init) ?? id
-        let itemIdRaw = parts.count > 1 ? String(parts[1]) : ""
+        if id.contains("|") {
+            let parts = id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            let callIdRaw = parts.first.map(String.init) ?? id
+            let itemIdRaw = parts.count > 1 ? String(parts[1]) : ""
 
-        let sanitizedCallId = callIdRaw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
-        var sanitizedItemId = itemIdRaw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
-        if !sanitizedItemId.hasPrefix("fc") {
-            sanitizedItemId = "fc_\(sanitizedItemId)"
+            let normalizedCallId = normalizeIdPart(callIdRaw)
+            var sanitizedItemId = itemIdRaw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
+            if !sanitizedItemId.hasPrefix("fc") {
+                sanitizedItemId = "fc_\(sanitizedItemId)"
+            }
+            var normalizedItemId = sanitizedItemId.count > 64 ? String(sanitizedItemId.prefix(64)) : sanitizedItemId
+            normalizedItemId = normalizedItemId.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
+            return "\(normalizedCallId)|\(normalizedItemId)"
         }
-        var normalizedCallId = sanitizedCallId.count > 64 ? String(sanitizedCallId.prefix(64)) : sanitizedCallId
-        var normalizedItemId = sanitizedItemId.count > 64 ? String(sanitizedItemId.prefix(64)) : sanitizedItemId
-        normalizedCallId = normalizedCallId.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
-        normalizedItemId = normalizedItemId.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
-        return "\(normalizedCallId)|\(normalizedItemId)"
+        return normalizeIdPart(id)
     }
 
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
@@ -588,7 +594,9 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
             for block in assistant.content {
                 switch block {
                 case .text(let textBlock):
-                    let id = normalizeResponseItemId(textBlock.textSignature, fallbackIndex: messageIndex)
+                    let parsed = parseTextSignature(textBlock.textSignature)
+                    let resolvedId = parsed?.id
+                    let id = normalizeResponseItemId(resolvedId, fallbackIndex: messageIndex)
                     let content = Components.Schemas.OutputTextContent(_type: .outputText, text: sanitizeSurrogates(textBlock.text), annotations: [])
                     let outputMessage = Components.Schemas.OutputMessage(
                         id: id,
@@ -803,6 +811,25 @@ func parseJSONStringArguments(_ json: String) -> [String: AnyCodable] {
         return [:]
     }
     return object.mapValues { AnyCodable($0) }
+}
+
+func encodeTextSignatureV1(id: String, phase: String? = nil) -> String {
+    var payload: [String: Any] = ["v": 1, "id": id]
+    if let phase { payload["phase"] = phase }
+    if let data = try? JSONSerialization.data(withJSONObject: payload),
+       let str = String(data: data, encoding: .utf8) { return str }
+    return id
+}
+
+func parseTextSignature(_ signature: String?) -> (id: String, phase: String?)? {
+    guard let sig = signature, !sig.isEmpty else { return nil }
+    if sig.hasPrefix("{"), let data = sig.data(using: .utf8),
+       let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let v = parsed["v"] as? Int, v == 1,
+       let id = parsed["id"] as? String {
+        return (id, parsed["phase"] as? String)
+    }
+    return (sig, nil)
 }
 
 func mapResponsesStopReason(_ status: String) -> StopReason {
