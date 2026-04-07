@@ -415,34 +415,28 @@ public final class ModelRegistry: Sendable {
                 var parsed: [String: ModelOverride] = [:]
                 for (rawModelId, value) in overridesDict {
                     guard let dict = value as? [String: Any] else { continue }
-                    // Support provider/modelId format; strip the provider prefix
-                    let modelId: String
-                    if let slashIndex = rawModelId.firstIndex(of: "/") {
-                        modelId = String(rawModelId[rawModelId.index(after: slashIndex)...])
-                    } else {
-                        modelId = rawModelId
-                    }
-            let costOverride: ModelCostOverride? = {
-                guard let cost = dict["cost"] as? [String: Any] else { return nil }
-                return ModelCostOverride(
-                    input: cost["input"] as? Double,
-                    output: cost["output"] as? Double,
-                    cacheRead: cost["cacheRead"] as? Double,
-                    cacheWrite: cost["cacheWrite"] as? Double
-                )
-            }()
+                    let modelId = rawModelId
+                    let costOverride: ModelCostOverride? = {
+                        guard let cost = dict["cost"] as? [String: Any] else { return nil }
+                        return ModelCostOverride(
+                            input: cost["input"] as? Double,
+                            output: cost["output"] as? Double,
+                            cacheRead: cost["cacheRead"] as? Double,
+                            cacheWrite: cost["cacheWrite"] as? Double
+                        )
+                    }()
 
-            parsed[modelId] = ModelOverride(
-                name: dict["name"] as? String,
-                baseUrl: dict["baseUrl"] as? String,
-                reasoning: dict["reasoning"] as? Bool,
-                input: dict["input"] as? [String],
-                cost: costOverride,
-                contextWindow: dict["contextWindow"] as? Int,
-                maxTokens: dict["maxTokens"] as? Int,
-                headers: dict["headers"] as? [String: String],
-                compat: parseCompat(dict["compat"])
-            )
+                    parsed[modelId] = ModelOverride(
+                        name: dict["name"] as? String,
+                        baseUrl: dict["baseUrl"] as? String,
+                        reasoning: dict["reasoning"] as? Bool,
+                        input: dict["input"] as? [String],
+                        cost: costOverride,
+                        contextWindow: dict["contextWindow"] as? Int,
+                        maxTokens: dict["maxTokens"] as? Int,
+                        headers: dict["headers"] as? [String: String],
+                        compat: parseCompat(dict["compat"])
+                    )
                 }
                 modelOverrides[providerName] = parsed
             }
@@ -453,15 +447,8 @@ public final class ModelRegistry: Sendable {
 
             for modelDef in models {
                 guard let rawId = modelDef["id"] as? String else { continue }
-                let modelProvider: String
-                let id: String
-                if let slashIndex = rawId.firstIndex(of: "/") {
-                    modelProvider = String(rawId[rawId.startIndex..<slashIndex])
-                    id = String(rawId[rawId.index(after: slashIndex)...])
-                } else {
-                    modelProvider = providerName
-                    id = rawId
-                }
+                let modelProvider = providerName
+                let id = rawId
                 let name = modelDef["name"] as? String ?? id
                 let reasoning = modelDef["reasoning"] as? Bool ?? false
                 let input = modelDef["input"] as? [String] ?? ["text"]
