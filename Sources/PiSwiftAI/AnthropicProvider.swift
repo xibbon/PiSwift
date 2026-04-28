@@ -359,11 +359,13 @@ private func mapAnthropicModel(_ id: String) -> SwiftAnthropic.Model {
     }
 }
 
-/// Check if a model supports adaptive thinking (Opus 4.6 and Sonnet 4.6).
+/// Check if a model supports adaptive thinking (Opus 4.6, Sonnet 4.6, Opus 4.7).
 /// These models have interleaved thinking built-in and don't need the beta header.
+/// v0.67.5 added Opus 4.7 to this list.
 private func supportsAdaptiveThinking(_ modelId: String) -> Bool {
     modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
-    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6")
+    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6") ||
+    modelId.contains("opus-4-7") || modelId.contains("opus-4.7")
 }
 
 /// Maps an adaptive thinking effort level to a token budget.
@@ -763,6 +765,18 @@ func injectAnthropicRequestBody(body: Data?, ttl: String?, metadataUserId: Strin
             }
             messages[lastIndex] = last
             payload["messages"] = messages
+        }
+    }
+
+    // v0.67.4: add a cache_control breakpoint on the last tool definition so tool schemas
+    // can be cached independently from transcript updates while preserving existing cache
+    // retention behavior.
+    if var tools = payload["tools"] as? [[String: Any]],
+       let lastToolIndex = tools.indices.last {
+        let lastTool = tools[lastToolIndex]
+        if lastTool["cache_control"] == nil {
+            tools[lastToolIndex] = ensureCacheControl(in: lastTool, ttl: ttl)
+            payload["tools"] = tools
         }
     }
 

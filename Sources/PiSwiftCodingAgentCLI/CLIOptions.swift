@@ -16,8 +16,9 @@ struct CLIOptions: ParsableArguments {
     @Option(name: .customLong("system-prompt"), help: "System prompt")
     var systemPrompt: String?
 
-    @Option(name: .customLong("append-system-prompt"), help: "Append text or file contents to the system prompt")
-    var appendSystemPrompt: String?
+    /// v0.67.2: accepts multiple values; each is appended to the system prompt joined by \n\n.
+    @Option(name: .customLong("append-system-prompt"), help: "Append text or file contents to the system prompt (can be used multiple times)")
+    var appendSystemPrompt: [String] = []
 
     @Option(help: "Output mode: text (default), json, or rpc")
     var mode: String?
@@ -48,6 +49,16 @@ struct CLIOptions: ParsableArguments {
 
     @Flag(name: .customLong("no-tools"), help: "Disable all built-in tools")
     var noTools: Bool = false
+
+    /// v0.68.0 / v0.70.0: disable only built-in default tools, keep extension/custom tools.
+    @Flag(name: .customLong("no-builtin-tools"), help: "Disable only built-in tools (keep extension/custom tools)")
+    var noBuiltinTools: Bool = false
+
+    /// v0.67.4: skip AGENTS.md / CLAUDE.md auto-discovery for clean runs.
+    /// Upstream short alias `-nc` is exposed as a long form here (Swift ArgumentParser short
+    /// flags must be a single character).
+    @Flag(name: [.customLong("nc"), .customLong("no-context-files")], help: "Disable AGENTS.md / CLAUDE.md context discovery")
+    var noContextFiles: Bool = false
 
     @Option(name: .customLong("hook"), help: "Load a hook file (can be used multiple times)")
     var hooks: [String] = []
@@ -94,7 +105,9 @@ extension CLIOptions {
         result.model = model
         result.apiKey = apiKey
         result.systemPrompt = systemPrompt
-        result.appendSystemPrompt = appendSystemPrompt
+        if !appendSystemPrompt.isEmpty {
+            result.appendSystemPrompts = appendSystemPrompt
+        }
         if let mode, let parsedMode = Mode(rawValue: mode) {
             result.mode = parsedMode
         }
@@ -133,6 +146,12 @@ extension CLIOptions {
         }
         if noTools {
             result.noTools = true
+        }
+        if noBuiltinTools {
+            result.noBuiltinTools = true
+        }
+        if noContextFiles {
+            result.noContextFiles = true
         }
         if !hooks.isEmpty {
             result.hooks = hooks

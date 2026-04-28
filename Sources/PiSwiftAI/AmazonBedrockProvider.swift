@@ -26,6 +26,8 @@ private struct BedrockRequest: Encodable {
     let inferenceConfig: BedrockInferenceConfig?
     let toolConfig: BedrockToolConfig?
     let additionalModelRequestFields: [String: AnyCodable]?
+    /// v0.62.0: AWS Cost Explorer split cost allocation tags forwarded to Converse.
+    let requestMetadata: [String: String]?
 }
 
 private struct BedrockMessage: Encodable {
@@ -605,7 +607,8 @@ private func buildBedrockRequest(
         system: system,
         inferenceConfig: inferenceConfig,
         toolConfig: toolConfig,
-        additionalModelRequestFields: additional
+        additionalModelRequestFields: additional,
+        requestMetadata: options.requestMetadata
     )
 
     let encoder = JSONEncoder()
@@ -630,6 +633,17 @@ private func buildSystemPrompt(_ systemPrompt: String?, model: Model, cacheReten
     return blocks
 }
 
+/// v0.70.3: when the Bedrock `model.id` is an inference-profile ARN (no "claude" in the ARN),
+/// fall back to `model.name` for capability detection so prompt-caching and adaptive-thinking
+/// checks still match the underlying Claude model.
+private func bedrockCapabilityIdentifier(_ model: Model) -> String {
+    let id = model.id.lowercased()
+    if id.hasPrefix("arn:") || id.contains("inference-profile") {
+        return model.name.lowercased()
+    }
+    return id
+}
+
 private func supportsPromptCaching(model: Model) -> Bool {
     // Force cache for all models via env var (useful for application inference profiles
     // that don't have "claude" in the ARN)
@@ -639,7 +653,7 @@ private func supportsPromptCaching(model: Model) -> Bool {
     if model.cost.cacheRead > 0 || model.cost.cacheWrite > 0 {
         return true
     }
-    let id = model.id.lowercased()
+    let id = bedrockCapabilityIdentifier(model)
     if id.contains("claude") && (id.contains("-4-") || id.contains("-4.")) {
         return true
     }
@@ -653,13 +667,15 @@ private func supportsPromptCaching(model: Model) -> Bool {
 }
 
 private func supportsThinkingSignature(model: Model) -> Bool {
-    let id = model.id.lowercased()
-    return id.contains("anthropic.claude") || id.contains("anthropic/claude")
+    let id = bedrockCapabilityIdentifier(model)
+    return id.contains("anthropic.claude") || id.contains("anthropic/claude") || id.contains("claude")
 }
 
 private func supportsAdaptiveThinking(modelId: String) -> Bool {
     modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
-    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6")
+    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6") ||
+    // v0.67.5: Opus 4.7 joins adaptive-thinking model set on Bedrock as well.
+    modelId.contains("opus-4-7") || modelId.contains("opus-4.7")
 }
 
 private func mapThinkingLevelToEffort(_ level: ThinkingLevel) -> String {
@@ -883,12 +899,14 @@ private func convertToolConfig(
 
 func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) -> [String: AnyCodable]? {
     guard let reasoning = options.reasoning, model.reasoning else { return nil }
-    let isAnthropicClaude = model.id.hasPrefix("anthropic.claude") || model.id.hasPrefix("anthropic/claude")
+    // v0.70.3: use capability identifier so inference-profile ARNs still detect Claude.
+    let capabilityId = bedrockCapabilityIdentifier(model)
+    let isAnthropicClaude = capabilityId.hasPrefix("anthropic.claude") || capabilityId.hasPrefix("anthropic/claude") || capabilityId.contains("claude")
     guard isAnthropicClaude else { return nil }
 
     var result: [String: Any] = [:]
 
-    if supportsAdaptiveThinking(modelId: model.id) {
+    if supportsAdaptiveThinking(modelId: capabilityId) {
         result["thinking"] = ["type": "adaptive"]
         result["output_config"] = ["effort": mapThinkingLevelToEffort(reasoning)]
     } else {

@@ -443,7 +443,7 @@ public final class AgentSession: Sendable {
     public func registerToolPromptSnippet(name: String, text: String) {
         toolPromptSnippets[name] = text
         // Rebuild the system prompt to include the new snippet
-        agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
+        agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
     }
 
     private func expandPromptText(_ text: String, expandSlashCommands: Bool = true, expandPromptTemplates: Bool = true) -> String {
@@ -510,7 +510,7 @@ public final class AgentSession: Sendable {
             hasUI: false
         )
 
-        self.unsubscribeAgent = agent.subscribe { [weak self] event in
+        self.unsubscribeAgent = agent.subscribe { [weak self] event, _ in
             self?.handleAgentEvent(event)
         }
     }
@@ -680,7 +680,11 @@ public final class AgentSession: Sendable {
         guard message.stopReason == .error, let errorMessage = message.errorMessage else { return false }
         let contextWindow = agent.state.model.contextWindow
         if isContextOverflow(message, contextWindow: contextWindow) { return false }
-        let pattern = "overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|network.?error|provider.?returned.?error|socket hang up|timed?.?out|timeout|retry.?delay"
+        // Pattern accumulated across upstream releases:
+        //   v0.66.0: `request ended without sending any chunks` (broken upstream connection)
+        //   v0.67.67: `Network connection lost.` (dropped provider connection)
+        //   v0.70.0: `http2 request did not get a response` (Bedrock/Smithy HTTP/2 transport failure)
+        let pattern = "overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|network.?error|provider.?returned.?error|socket hang up|timed?.?out|timeout|retry.?delay|request ended without sending any chunks|network connection lost|http2 request did not get a response|http/2 request did not get a response"
         return errorMessage.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
@@ -710,7 +714,7 @@ public final class AgentSession: Sendable {
 
         let messages = agent.state.messages
         if let last = messages.last, last.role == "assistant" {
-            agent.replaceMessages(Array(messages.dropLast()))
+            agent.messages = Array(messages.dropLast())
         }
 
         let token = CancellationToken()
@@ -899,11 +903,11 @@ public final class AgentSession: Sendable {
                 validNames.append(name)
             }
         }
-        agent.setTools(tools)
+        agent.tools = tools
 
         if let rebuildSystemPrompt {
             baseSystemPrompt = rebuildSystemPrompt(validNames)
-            agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
+            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
         }
     }
 
@@ -913,7 +917,7 @@ public final class AgentSession: Sendable {
         if let rebuildSystemPrompt {
             let activeToolNames = getActiveToolNames()
             baseSystemPrompt = rebuildSystemPrompt(activeToolNames)
-            agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
+            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
         }
     }
 
@@ -966,9 +970,9 @@ public final class AgentSession: Sendable {
             }
         }
         if let systemPromptAppend, !systemPromptAppend.isEmpty {
-            agent.setSystemPrompt(effectiveSystemPrompt("\(baseSystemPrompt)\n\n\(systemPromptAppend)"))
+            agent.systemPrompt = effectiveSystemPrompt("\(baseSystemPrompt)\n\n\(systemPromptAppend)")
         } else {
-            agent.setSystemPrompt(effectiveSystemPrompt(baseSystemPrompt))
+            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
         }
         try await agent.prompt(messages)
     }
@@ -1107,11 +1111,11 @@ public final class AgentSession: Sendable {
     }
 
     public var steeringMode: String {
-        agent.getSteeringMode().rawValue
+        agent.steeringMode.rawValue
     }
 
     public var followUpMode: String {
-        agent.getFollowUpMode().rawValue
+        agent.followUpMode.rawValue
     }
 
     public func setAutoCompactionEnabled(_ enabled: Bool) {
@@ -1187,7 +1191,7 @@ public final class AgentSession: Sendable {
         // Current model lost its API key — find a fallback
         let available = await modelRegistry.getAvailable()
         if let fallback = available.first {
-            agent.setModel(fallback)
+            agent.model = fallback
             sessionManager.appendModelChange(fallback.provider, fallback.id)
             settingsManager.setDefaultModelAndProvider(fallback.provider, fallback.id)
             setThinkingLevel(agent.state.thinkingLevel)
@@ -1209,7 +1213,7 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.missingApiKeyForModel(provider: model.provider, modelId: model.id)
         }
         let previousModel = agent.state.model
-        agent.setModel(model)
+        agent.model = model
         sessionManager.appendModelChange(model.provider, model.id)
         settingsManager.setDefaultModelAndProvider(model.provider, model.id)
         setThinkingLevel(agent.state.thinkingLevel)
@@ -1235,7 +1239,7 @@ public final class AgentSession: Sendable {
         }
         let previousModel = agent.state.model
         let currentThinkingLevel = agent.state.thinkingLevel
-        agent.setModel(next.model)
+        agent.model = next.model
         sessionManager.appendModelChange(next.model.provider, next.model.id)
         settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id)
         // Preserve the user's current thinking level across model switches rather than
@@ -1257,7 +1261,7 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.missingApiKeyForModel(provider: next.provider, modelId: next.id)
         }
         let previousModel = agent.state.model
-        agent.setModel(next)
+        agent.model = next
         sessionManager.appendModelChange(next.provider, next.id)
         settingsManager.setDefaultModelAndProvider(next.provider, next.id)
         setThinkingLevel(agent.state.thinkingLevel)
@@ -1272,7 +1276,7 @@ public final class AgentSession: Sendable {
         } else if level == .xhigh && !supportsXhigh(model: agent.state.model) {
             effective = .high
         }
-        agent.setThinkingLevel(effective)
+        agent.thinkingLevel = effective
         sessionManager.appendThinkingLevelChange(effective.rawValue)
         settingsManager.setDefaultThinkingLevel(effective.rawValue)
     }
@@ -1289,12 +1293,12 @@ public final class AgentSession: Sendable {
     }
 
     public func setSteeringMode(_ mode: AgentSteeringMode) {
-        agent.setSteeringMode(mode)
+        agent.steeringMode = mode
         settingsManager.setSteeringMode(mode.rawValue)
     }
 
     public func setFollowUpMode(_ mode: AgentFollowUpMode) {
-        agent.setFollowUpMode(mode)
+        agent.followUpMode = mode
         settingsManager.setFollowUpMode(mode.rawValue)
     }
 
@@ -1627,14 +1631,14 @@ public final class AgentSession: Sendable {
     private func syncAgentContext() async {
         let context = sessionManager.buildSessionContext()
         let previousModel = agent.state.model
-        agent.replaceMessages(context.messages)
+        agent.messages = context.messages
         if let modelInfo = context.model {
             if let model = modelRegistry.find(modelInfo.provider, modelInfo.modelId) {
-                agent.setModel(model)
+                agent.model = model
                 await emitModelSelect(nextModel: model, previousModel: previousModel, source: .restore)
             }
         }
-        agent.setThinkingLevel(ThinkingLevel(rawValue: context.thinkingLevel) ?? .off)
+        agent.thinkingLevel = ThinkingLevel(rawValue: context.thinkingLevel) ?? .off
     }
 
     private func buildUserMessage(text: String, images: [ImageContent]?) -> AgentMessage {

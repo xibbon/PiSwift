@@ -364,8 +364,16 @@ private func buildCompletionsQuery(
     }
 
     let tools: [ChatQuery.ChatCompletionToolParam]? = {
+        // v0.70.3: omit `tools` field entirely when no tools are active. DashScope/Aliyun Qwen
+        // reject `"tools": []` with HTTP 400 `"[] is too short - 'tools'"`. The legacy LiteLLM/
+        // Anthropic-proxy workaround (sending `[]` to keep tool history coherent) is preserved
+        // only when the conversation actually contains tool history.
         if let tools = context.tools {
-            return convertCompletionsTools(tools, compat: compat)
+            let converted = convertCompletionsTools(tools, compat: compat)
+            if converted.isEmpty {
+                return hasToolHistory(context.messages) ? [] : nil
+            }
+            return converted
         }
         if hasToolHistory(context.messages) {
             return []

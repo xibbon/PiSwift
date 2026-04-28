@@ -5,6 +5,14 @@ private func defaultConvertToLlm(messages: [AgentMessage]) async -> [Message] {
     messages.compactMap { $0.asMessage }
 }
 
+/// Listener signature for `Agent.subscribe(_:)`.
+///
+/// Listeners are awaited in registration order and receive the active turn's cancellation token
+/// so they can forward cancellation into nested async work. `agent.prompt(_:)`, `agent.continue()`,
+/// and `agent.waitForIdle()` settle only after all `agent_end` listeners finish; `state.isStreaming`
+/// remains `true` until that settlement completes.
+public typealias AgentEventListener = @Sendable (AgentEvent, CancellationToken?) async -> Void
+
 public struct AgentOptions: Sendable {
     public var initialState: AgentState?
     public var convertToLlm: (@Sendable ([AgentMessage]) async throws -> [Message])?
@@ -60,7 +68,7 @@ public struct AgentOptions: Sendable {
 public final class Agent: Sendable {
     private struct State: Sendable {
         var agentState: AgentState
-        var listeners: [UUID: @Sendable (AgentEvent) -> Void]
+        var listeners: [UUID: AgentEventListener]
         var abortToken: CancellationToken?
         var convertToLlm: @Sendable ([AgentMessage]) async throws -> [Message]
         var transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])?
@@ -88,7 +96,11 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.agentState = newValue } }
     }
 
-    private var listeners: [UUID: @Sendable (AgentEvent) -> Void] {
+    private func mutateState(_ body: (inout AgentState) -> Void) {
+        stateBox.withLock { body(&$0.agentState) }
+    }
+
+    private var listeners: [UUID: AgentEventListener] {
         get { stateBox.withLock { $0.listeners } }
         set { stateBox.withLock { $0.listeners = newValue } }
     }
@@ -118,12 +130,12 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.followUpQueue = newValue } }
     }
 
-    private var steeringMode: AgentSteeringMode {
+    public var steeringMode: AgentSteeringMode {
         get { stateBox.withLock { $0.steeringMode } }
         set { stateBox.withLock { $0.steeringMode = newValue } }
     }
 
-    private var followUpMode: AgentFollowUpMode {
+    public var followUpMode: AgentFollowUpMode {
         get { stateBox.withLock { $0.followUpMode } }
         set { stateBox.withLock { $0.followUpMode = newValue } }
     }
@@ -163,17 +175,17 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.toolExecution = newValue } }
     }
 
-    private var onPayload: OnPayloadFn? {
+    public var onPayload: OnPayloadFn? {
         get { stateBox.withLock { $0.onPayload } }
         set { stateBox.withLock { $0.onPayload = newValue } }
     }
 
-    private var beforeToolCall: BeforeToolCallFn? {
+    public var beforeToolCall: BeforeToolCallFn? {
         get { stateBox.withLock { $0.beforeToolCall } }
         set { stateBox.withLock { $0.beforeToolCall = newValue } }
     }
 
-    private var afterToolCall: AfterToolCallFn? {
+    public var afterToolCall: AfterToolCallFn? {
         get { stateBox.withLock { $0.afterToolCall } }
         set { stateBox.withLock { $0.afterToolCall = newValue } }
     }
@@ -215,72 +227,66 @@ public final class Agent: Sendable {
         ))
     }
 
+    /// Read-only snapshot of the current agent state.
+    ///
+    /// To mutate writable fields, use the dedicated property setters: `systemPrompt`, `model`,
+    /// `thinkingLevel`, `tools`, `messages`, plus convenience helpers `appendMessage(_:)` and
+    /// `clearMessages()`. Runtime-owned fields (`isStreaming`, `streamingMessage`,
+    /// `pendingToolCalls`, `errorMessage`) are read-only and updated only by the loop.
     public var state: AgentState {
         _state
     }
 
-    public func subscribe(_ fn: @escaping @Sendable (AgentEvent) -> Void) -> @Sendable () -> Void {
-        let id = UUID()
-        listeners[id] = fn
-        return { [weak self] in
-            self?.listeners[id] = nil
-        }
+    /// Active turn's cancellation token, or `nil` when the agent is idle.
+    ///
+    /// Forward this into nested async work to propagate cancellation when the turn aborts.
+    public var signal: CancellationToken? {
+        abortToken
     }
 
-    public func setSystemPrompt(_ value: String) {
-        _state.systemPrompt = value
+    // MARK: - Mutable writable-field properties (replaces removed mutator methods)
+
+    public var systemPrompt: String {
+        get { _state.systemPrompt }
+        set { mutateState { $0.systemPrompt = newValue } }
     }
 
-    public func setModel(_ model: Model) {
-        _state.model = model
+    public var model: Model {
+        get { _state.model }
+        set { mutateState { $0.model = newValue } }
     }
 
-    public func setThinkingLevel(_ level: ThinkingLevel) {
-        _state.thinkingLevel = level
+    public var thinkingLevel: ThinkingLevel {
+        get { _state.thinkingLevel }
+        set { mutateState { $0.thinkingLevel = newValue } }
     }
 
-    public func setSteeringMode(_ mode: AgentSteeringMode) {
-        steeringMode = mode
+    public var tools: [AgentTool] {
+        get { _state.tools }
+        set { mutateState { $0.tools = newValue } }
     }
 
-    public func setFollowUpMode(_ mode: AgentFollowUpMode) {
-        followUpMode = mode
+    public var messages: [AgentMessage] {
+        get { _state.messages }
+        set { mutateState { $0.messages = newValue } }
     }
 
-    public func getSteeringMode() -> AgentSteeringMode {
-        steeringMode
-    }
-
-    public func getFollowUpMode() -> AgentFollowUpMode {
-        followUpMode
-    }
-
-    public func setTransport(_ transport: Transport) {
-        self.transport = transport
-    }
-
-    public func setTools(_ tools: [AgentTool]) {
-        _state.tools = tools
-    }
-
-    public func setToolExecution(_ mode: ToolExecutionMode) {
-        toolExecution = mode
-    }
-
-    public func setBeforeToolCall(_ value: BeforeToolCallFn?) {
-        beforeToolCall = value
-    }
-
-    public func setAfterToolCall(_ value: AfterToolCallFn?) {
-        afterToolCall = value
-    }
-
-    public func replaceMessages(_ messages: [AgentMessage]) {
-        _state.messages = messages
-    }
-
+    /// Convenience: append a single message to `state.messages`.
     public func appendMessage(_ message: AgentMessage) {
-        _state.messages.append(message)
+        mutateState { $0.messages.append(message) }
+    }
+
+    /// Convenience: clear `state.messages`.
+    public func clearMessages() {
+        mutateState { $0.messages = [] }
+    }
+
+    public func subscribe(_ fn: @escaping AgentEventListener) -> @Sendable () -> Void {
+        let id = UUID()
+        stateBox.withLock { $0.listeners[id] = fn }
+        return { [weak self] in
+            self?.stateBox.withLock { $0.listeners[id] = nil }
+        }
     }
 
     /// Queue a steering message while the agent is running.
@@ -345,10 +351,6 @@ public final class Agent: Sendable {
         }
     }
 
-    public func clearMessages() {
-        _state.messages.removeAll()
-    }
-
     public func abort() {
         abortToken?.cancel()
     }
@@ -360,11 +362,13 @@ public final class Agent: Sendable {
     }
 
     public func reset() {
-        _state.messages.removeAll()
-        _state.isStreaming = false
-        _state.streamMessage = nil
-        _state.pendingToolCalls = Set<String>()
-        _state.error = nil
+        mutateState {
+            $0.messages.removeAll()
+            $0._setStreaming(false)
+            $0._setStreamingMessage(nil)
+            $0._setPendingToolCalls([])
+            $0._setErrorMessage(nil)
+        }
         steeringQueue.removeAll()
         followUpQueue.removeAll()
     }
@@ -428,42 +432,46 @@ public final class Agent: Sendable {
 
     // MARK: - Event processing (centralized)
 
-    private func processLoopEvent(_ event: AgentEvent) {
+    /// Centralized loop event handler.
+    ///
+    /// State mutations and listener emission are awaited so subscribers can perform async work
+    /// (model calls, IO, cancellation propagation) before the loop advances. The runtime-owned
+    /// `isStreaming` flag is intentionally NOT flipped here on `.agentEnd` — it stays `true`
+    /// until `runLoopInternal` clears it after the loop and all listeners have settled.
+    private func processLoopEvent(_ event: AgentEvent) async {
         switch event {
         case .messageStart(let message):
-            _state.streamMessage = message
+            mutateState { $0._setStreamingMessage(message) }
 
         case .messageUpdate(let message, _):
-            _state.streamMessage = message
+            mutateState { $0._setStreamingMessage(message) }
 
         case .messageEnd(let message):
-            _state.streamMessage = nil
-            appendMessage(message)
+            mutateState {
+                $0._setStreamingMessage(nil)
+                $0.messages.append(message)
+            }
 
         case .toolExecutionStart(let toolCallId, _, _):
-            var pending = _state.pendingToolCalls
-            pending.insert(toolCallId)
-            _state.pendingToolCalls = pending
+            mutateState { $0._insertPendingToolCall(toolCallId) }
 
         case .toolExecutionEnd(let toolCallId, _, _, _):
-            var pending = _state.pendingToolCalls
-            pending.remove(toolCallId)
-            _state.pendingToolCalls = pending
+            mutateState { $0._removePendingToolCall(toolCallId) }
 
         case .turnEnd(let message, _):
             if case .assistant(let assistantMessage) = message, let error = assistantMessage.errorMessage {
-                _state.error = error
+                mutateState { $0._setErrorMessage(error) }
             }
 
         case .agentEnd:
-            _state.isStreaming = false
-            _state.streamMessage = nil
+            // isStreaming stays true until runLoopInternal flips it after listeners drain.
+            mutateState { $0._setStreamingMessage(nil) }
 
         default:
             break
         }
 
-        emit(event)
+        await emit(event)
     }
 
     // MARK: - Loop implementation
@@ -471,10 +479,13 @@ public final class Agent: Sendable {
     private func runLoopInternal(messages: [AgentMessage]?, options: RunLoopOptions?) async {
         let model = _state.model
 
-        abortToken = CancellationToken()
-        _state.isStreaming = true
-        _state.streamMessage = nil
-        _state.error = nil
+        let token = CancellationToken()
+        abortToken = token
+        mutateState {
+            $0._setStreaming(true)
+            $0._setStreamingMessage(nil)
+            $0._setErrorMessage(nil)
+        }
 
         let reasoning = mapThinkingLevel(_state.thinkingLevel)
 
@@ -525,9 +536,9 @@ public final class Agent: Sendable {
                 context: context,
                 config: config,
                 emit: { [weak self] event in
-                    self?.processLoopEvent(event)
+                    await self?.processLoopEvent(event)
                 },
-                signal: abortToken,
+                signal: token,
                 streamFn: streamFn
             )
         } else {
@@ -535,38 +546,28 @@ public final class Agent: Sendable {
                 context: context,
                 config: config,
                 emit: { [weak self] event in
-                    self?.processLoopEvent(event)
+                    await self?.processLoopEvent(event)
                 },
-                signal: abortToken,
+                signal: token,
                 streamFn: streamFn
             )
         }
 
-        _state.isStreaming = false
-        _state.streamMessage = nil
-        _state.pendingToolCalls = Set<String>()
+        // Settle: clear isStreaming AFTER all listeners (including agent_end) have drained.
+        mutateState {
+            $0._setStreaming(false)
+            $0._setStreamingMessage(nil)
+            $0._setPendingToolCalls([])
+        }
         abortToken = nil
     }
 
-    private func emit(_ event: AgentEvent) {
-        for listener in listeners.values {
-            listener(event)
+    private func emit(_ event: AgentEvent) async {
+        let snapshot = stateBox.withLock { $0.listeners }
+        let token = abortToken
+        for listener in snapshot.values {
+            await listener(event, token)
         }
-    }
-
-    private func appendErrorMessage(_ message: String) {
-        let assistant = AssistantMessage(
-            content: [.text(TextContent(text: ""))],
-            api: _state.model.api,
-            provider: _state.model.provider,
-            model: _state.model.id,
-            usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: abortToken?.isCancelled == true ? .aborted : .error,
-            errorMessage: message
-        )
-        let agentMessage = AgentMessage.assistant(assistant)
-        appendMessage(agentMessage)
-        _state.error = message
     }
 
     private func mapThinkingLevel(_ level: ThinkingLevel) -> ReasoningEffort? {

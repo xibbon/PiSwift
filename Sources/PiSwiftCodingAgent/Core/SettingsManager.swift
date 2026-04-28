@@ -69,6 +69,21 @@ public struct SkillsSettings: Sendable {
 
 public struct TerminalSettings: Sendable {
     public var showImages: Bool?
+    /// v0.68.1: configurable inline tool image width (cells). Default 60.
+    public var imageWidthCells: Int?
+    /// v0.70.0: opt-in OSC 9;4 progress indicator during streaming/compaction.
+    /// Default `false` — emit progress only when explicitly enabled.
+    public var showTerminalProgress: Bool?
+}
+
+/// v0.70.3: opt-out warnings (currently used for the Anthropic third-party-usage billing
+/// notice on subscription auth).
+public struct WarningsSettings: Sendable {
+    public var anthropicExtraUsage: Bool?
+
+    public init(anthropicExtraUsage: Bool? = nil) {
+        self.anthropicExtraUsage = anthropicExtraUsage
+    }
 }
 
 public struct ImageSettings: Sendable {
@@ -124,6 +139,14 @@ public struct Settings: Sendable {
     public var thinkingBudgets: ThinkingBudgetsSettings?
     public var treeFilterMode: String?
     public var promptSnippetsEnabled: Bool?
+    /// v0.70.3: per-warning opt-outs. Currently controls the Anthropic third-party-usage
+    /// billing notice when subscription auth is active.
+    public var warnings: WarningsSettings?
+    /// v0.67.1: install telemetry ping. Defaults to true (interactive mode); set false to
+    /// disable. Also disabled by env vars `PI_OFFLINE=1` / `PI_TELEMETRY=0`.
+    public var enableInstallTelemetry: Bool?
+    /// v0.63.0 / v0.68.1: portable session directory. `~` expansion handled at resolution time.
+    public var sessionDir: String?
 
     public init() {}
 }
@@ -689,6 +712,69 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    /// v0.68.1: configurable inline tool image width (cells). Default 60.
+    public func getImageWidthCells() -> Int {
+        settings.terminal?.imageWidthCells ?? 60
+    }
+
+    public func setImageWidthCells(_ cells: Int) {
+        if globalSettings.terminal == nil { globalSettings.terminal = TerminalSettings() }
+        globalSettings.terminal?.imageWidthCells = cells
+        markModified("terminal", "imageWidthCells")
+        save()
+    }
+
+    /// v0.70.0: OSC 9;4 progress indicator is opt-in. Default false.
+    public func getShowTerminalProgress() -> Bool {
+        settings.terminal?.showTerminalProgress ?? false
+    }
+
+    public func setShowTerminalProgress(_ show: Bool) {
+        if globalSettings.terminal == nil { globalSettings.terminal = TerminalSettings() }
+        globalSettings.terminal?.showTerminalProgress = show
+        markModified("terminal", "showTerminalProgress")
+        save()
+    }
+
+    /// v0.70.3: per-warning opt-outs. Returns true (warning enabled) by default.
+    public func getAnthropicExtraUsageWarning() -> Bool {
+        settings.warnings?.anthropicExtraUsage ?? true
+    }
+
+    public func setAnthropicExtraUsageWarning(_ enabled: Bool) {
+        if globalSettings.warnings == nil { globalSettings.warnings = WarningsSettings() }
+        globalSettings.warnings?.anthropicExtraUsage = enabled
+        markModified("warnings", "anthropicExtraUsage")
+        save()
+    }
+
+    /// v0.67.1: install telemetry ping. Default true.
+    public func getInstallTelemetryEnabled() -> Bool {
+        // Env-var overrides (PI_OFFLINE, PI_TELEMETRY=0) take precedence.
+        let env = ProcessInfo.processInfo.environment
+        if env["PI_OFFLINE"] == "1" { return false }
+        if env["PI_TELEMETRY"] == "0" { return false }
+        return settings.enableInstallTelemetry ?? true
+    }
+
+    public func setInstallTelemetryEnabled(_ enabled: Bool) {
+        globalSettings.enableInstallTelemetry = enabled
+        markModified("enableInstallTelemetry")
+        save()
+    }
+
+    /// v0.63.0 / v0.68.1: portable session directory. `~` expansion happens in
+    /// `getDefaultSessionDir()`; this returns the raw stored value.
+    public func getSessionDir() -> String? {
+        settings.sessionDir
+    }
+
+    public func setSessionDir(_ dir: String?) {
+        globalSettings.sessionDir = dir
+        markModified("sessionDir")
+        save()
+    }
+
     public func getAutoResizeImages() -> Bool {
         settings.images?.autoResize ?? true
     }
@@ -924,7 +1010,25 @@ public final class SettingsManager: Sendable {
         }
 
         if let terminal = json["terminal"] as? [String: Any] {
-            settings.terminal = TerminalSettings(showImages: terminal["showImages"] as? Bool)
+            settings.terminal = TerminalSettings(
+                showImages: terminal["showImages"] as? Bool,
+                imageWidthCells: terminal["imageWidthCells"] as? Int,
+                showTerminalProgress: terminal["showTerminalProgress"] as? Bool
+            )
+        }
+
+        if let warnings = json["warnings"] as? [String: Any] {
+            settings.warnings = WarningsSettings(
+                anthropicExtraUsage: warnings["anthropicExtraUsage"] as? Bool
+            )
+        }
+
+        if let telemetry = json["enableInstallTelemetry"] as? Bool {
+            settings.enableInstallTelemetry = telemetry
+        }
+
+        if let dir = json["sessionDir"] as? String, !dir.isEmpty {
+            settings.sessionDir = dir
         }
 
         if let images = json["images"] as? [String: Any] {
@@ -1123,7 +1227,28 @@ public final class SettingsManager: Sendable {
         }
 
         if let terminal = settings.terminal {
-            json["terminal"] = ["showImages": terminal.showImages as Any]
+            var entry: [String: Any] = ["showImages": terminal.showImages as Any]
+            if let widthCells = terminal.imageWidthCells {
+                entry["imageWidthCells"] = widthCells
+            }
+            if let progress = terminal.showTerminalProgress {
+                entry["showTerminalProgress"] = progress
+            }
+            json["terminal"] = entry
+        }
+
+        if let warnings = settings.warnings {
+            json["warnings"] = [
+                "anthropicExtraUsage": warnings.anthropicExtraUsage as Any,
+            ]
+        }
+
+        if let telemetry = settings.enableInstallTelemetry {
+            json["enableInstallTelemetry"] = telemetry
+        }
+
+        if let dir = settings.sessionDir {
+            json["sessionDir"] = dir
         }
 
         if let images = settings.images {

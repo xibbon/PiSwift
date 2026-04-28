@@ -1284,8 +1284,11 @@ private func generateId(existing: Set<String>) -> String {
 
 public func getDefaultSessionDir(cwd: String, sessionDir: String? = nil, agentDir: String? = nil) -> String {
     if let sessionDir, !sessionDir.isEmpty {
-        try? FileManager.default.createDirectory(atPath: sessionDir, withIntermediateDirectories: true)
-        return sessionDir
+        // v0.68.1: expand `~` in `sessionDir` so portable settings.json values
+        // (e.g., `"sessionDir": "~/sessions"`) work without a shell wrapper.
+        let expanded = (sessionDir as NSString).expandingTildeInPath
+        try? FileManager.default.createDirectory(atPath: expanded, withIntermediateDirectories: true)
+        return expanded
     }
     let resolvedAgentDir = agentDir ?? getAgentDir()
     let safePath = "--" + cwd.replacingOccurrences(of: "\\", with: "-").replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-") + "--"

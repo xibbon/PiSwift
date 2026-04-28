@@ -196,6 +196,11 @@ private func loadSkillsFromDirInternal(dir: String, source: String, includeRootF
         return LoadSkillsResult(skills: [], warnings: [])
     }
 
+    // v0.63.1: if this directory contains a SKILL.md, treat the entire directory as one skill
+    // and DO NOT recurse into subdirectories. This prevents nested SKILL.md from being picked
+    // up as separate skills under a top-level skill.
+    let hasSkillMdAtRoot = entries.contains { $0.lastPathComponent == "SKILL.md" }
+
     for entry in entries {
         let name = entry.lastPathComponent
         if name.hasPrefix(".") { continue }
@@ -217,6 +222,8 @@ private func loadSkillsFromDirInternal(dir: String, source: String, includeRootF
         }
 
         if isDir {
+            // v0.63.1: don't recurse if the parent directory already declared itself a skill.
+            if hasSkillMdAtRoot { continue }
             let sub = loadSkillsFromDirInternal(dir: entry.path, source: source, includeRootFiles: false)
             skills.append(contentsOf: sub.skills)
             warnings.append(contentsOf: sub.warnings)
@@ -226,7 +233,9 @@ private func loadSkillsFromDirInternal(dir: String, source: String, includeRootF
         guard isFile else { continue }
         let isRootMd = includeRootFiles && name.hasSuffix(".md")
         let isSkillMd = !includeRootFiles && name == "SKILL.md"
-        guard isRootMd || isSkillMd else { continue }
+        // v0.63.1: also pick up SKILL.md at the root when this directory itself is a skill.
+        let isRootSkillMd = includeRootFiles && hasSkillMdAtRoot && name == "SKILL.md"
+        guard isRootMd || isSkillMd || isRootSkillMd else { continue }
 
         let result = loadSkillFromFile(entry.path, source: source)
         if let skill = result.skill {

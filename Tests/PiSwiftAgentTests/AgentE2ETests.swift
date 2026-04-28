@@ -79,7 +79,7 @@ private func hasBedrockCredentials() -> Bool {
         usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
         stopReason: .stop
     )
-    agent.replaceMessages([.assistant(assistant)])
+    agent.messages = [.assistant(assistant)]
     await assertThrowsAsync({ try await agent.continue() }, message: "Cannot continue from message role: assistant")
 }
 
@@ -96,7 +96,7 @@ private func hasBedrockCredentials() -> Bool {
     )))
 
     let user = AgentMessage.user(UserMessage(content: .blocks([.text(TextContent(text: "Say exactly: HELLO WORLD"))])))
-    agent.replaceMessages([user])
+    agent.messages = [user]
     try await agent.continue()
 
     #expect(!agent.state.isStreaming)
@@ -207,7 +207,7 @@ private func abortExecution(model: Model) async throws {
     }
 
     #expect(assistant.errorMessage != nil)
-    #expect(agent.state.error == assistant.errorMessage)
+    #expect(agent.state.errorMessage == assistant.errorMessage)
 }
 
 private func stateUpdates(model: Model) async throws {
@@ -219,7 +219,7 @@ private func stateUpdates(model: Model) async throws {
     )))
 
     let events = LockedState<[AgentEvent]>([])
-    _ = agent.subscribe { event in
+    _ = agent.subscribe { event, _ in
         events.withLock { $0.append(event) }
     }
 

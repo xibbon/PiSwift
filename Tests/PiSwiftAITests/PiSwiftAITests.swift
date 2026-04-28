@@ -799,7 +799,7 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     request.httpMethod = "POST"
     request.httpBody = body
 
-    let middleware = OpenAIResponsesCacheMiddleware(sessionId: "session-123", cacheRetention: .long, promptCacheRetention: "24h")
+    let middleware = OpenAIResponsesCacheMiddleware(sessionId: "session-123", cacheRetention: .long, promptCacheRetention: "24h", sendSessionIdHeader: true)
     let updated = middleware.intercept(request: request)
     let updatedBody = updated.httpBody.flatMap { String(data: $0, encoding: .utf8) }
     #expect(updatedBody?.contains("\"prompt_cache_key\":\"session-123\"") == true)
@@ -816,7 +816,7 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     request.httpMethod = "POST"
     request.httpBody = body
 
-    let middleware = OpenAIResponsesCacheMiddleware(sessionId: "session-123", cacheRetention: .none, promptCacheRetention: nil)
+    let middleware = OpenAIResponsesCacheMiddleware(sessionId: "session-123", cacheRetention: .none, promptCacheRetention: nil, sendSessionIdHeader: true)
     let updated = middleware.intercept(request: request)
     let updatedBody = updated.httpBody.flatMap { String(data: $0, encoding: .utf8) }
     #expect(updatedBody?.contains("\"prompt_cache_key\"") == false)
@@ -2349,3 +2349,200 @@ struct ApiRegistryTests {
     let compatNoMap = OpenAICompat(supportsReasoningEffort: true)
     #expect(compatNoMap.reasoningEffortMap == nil)
 }
+
+// MARK: - Phase 2 (v0.61.1 → v0.70.5) tests
+
+/// v0.65.0: Anthropic HTTP 413 surfaces as `request_too_large` and counts as context overflow.
+@Test func contextOverflowDetectsRequestTooLarge() {
+    let model = getModel(provider: .anthropic, modelId: "claude-3-5-haiku-20241022")
+    let message = AssistantMessage(
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .error,
+        errorMessage: "request_too_large: 413 Payload Too Large"
+    )
+    #expect(isContextOverflow(message))
+}
+
+/// v0.63.1: Ollama explicit overflow detection.
+@Test func contextOverflowDetectsOllamaPattern() {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let message = AssistantMessage(
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .error,
+        errorMessage: "prompt too long; exceeded max context length 8192"
+    )
+    #expect(isContextOverflow(message))
+}
+
+/// v0.69.0: transformMessages synthesizes trailing tool results when the transcript ends
+/// with unresolved assistant tool calls (no following user/assistant message).
+@Test func transformMessagesSynthesizesTrailingToolResults() {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let toolCall = ToolCall(id: "trailing-call", name: "stop", arguments: [:])
+    let assistant = AssistantMessage(
+        content: [.toolCall(toolCall)],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .toolUse
+    )
+    let transformed = transformMessages([.assistant(assistant)], model: model)
+    #expect(transformed.count == 2)
+    guard case .toolResult(let toolResult) = transformed[1] else {
+        #expect(Bool(false), "Expected synthetic trailing tool result")
+        return
+    }
+    #expect(toolResult.toolCallId == "trailing-call")
+    #expect(toolResult.isError)
+}
+
+/// v0.67.5: Opus 4.7 supports xhigh on both anthropic-messages and bedrock-converse-stream.
+@Test func supportsXhighRecognizesOpus47() {
+    let opus47Anthropic = Model(
+        id: "claude-opus-4-7",
+        name: "Claude Opus 4.7",
+        api: .anthropicMessages,
+        provider: "anthropic",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 200000,
+        maxTokens: 8192
+    )
+    #expect(supportsXhigh(model: opus47Anthropic))
+
+    let opus47Bedrock = Model(
+        id: "anthropic.claude-opus-4-7",
+        name: "Claude Opus 4.7 (Bedrock)",
+        api: .bedrockConverseStream,
+        provider: "amazon-bedrock",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 200000,
+        maxTokens: 8192
+    )
+    #expect(supportsXhigh(model: opus47Bedrock))
+}
+
+/// v0.70.0: GPT-5.5 codex supports xhigh.
+@Test func supportsXhighRecognizesGpt55() {
+    let model = Model(
+        id: "gpt-5.5",
+        name: "GPT-5.5",
+        api: .openAICodexResponses,
+        provider: "openai-codex",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 272000,
+        maxTokens: 8192
+    )
+    #expect(supportsXhigh(model: model))
+}
+
+/// v0.68.0: JSON Schema meta-declaration keys (`$schema`, `$defs`, etc.) are stripped from
+/// tool parameters before sending to Cloud Code Assist / Gemini.
+@Test func googleToolsStripsJsonSchemaMetaKeys() {
+    let tool = AITool(
+        name: "search",
+        description: "Search",
+        parameters: [
+            "$schema": AnyCodable("http://json-schema.org/draft-07/schema#"),
+            "$defs": AnyCodable(["x": "y"]),
+            "type": AnyCodable("object"),
+            "properties": AnyCodable([
+                "query": ["type": "string"]
+            ])
+        ]
+    )
+    let result = convertGoogleTools([tool], useParameters: true)
+    guard let result, let group = result.first,
+          let declarations = group["functionDeclarations"] as? [[String: Any]],
+          let first = declarations.first,
+          let parameters = first["parameters"] as? [String: Any] else {
+        #expect(Bool(false), "Expected functionDeclarations with parameters")
+        return
+    }
+    #expect(parameters["$schema"] == nil)
+    #expect(parameters["$defs"] == nil)
+    #expect(parameters["type"] as? String == "object")
+}
+
+/// v0.67.6: OpenAI Responses cache middleware sends aligned `session_id` and `x-client-request-id`
+/// headers when sessionId is provided. v0.70.0 lets `compat.sendSessionIdHeader: false` opt out
+/// of just the `session_id` header (other affinity headers still flow).
+@Test func openAIResponsesCacheMiddlewareSendsAffinityHeaders() throws {
+    let payload: [String: Any] = ["model": "gpt-4o-mini", "input": []]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
+    request.httpMethod = "POST"
+    request.httpBody = body
+
+    let middleware = OpenAIResponsesCacheMiddleware(
+        sessionId: "session-xyz",
+        cacheRetention: .none,
+        promptCacheRetention: nil,
+        sendSessionIdHeader: true
+    )
+    let updated = middleware.intercept(request: request)
+    #expect(updated.value(forHTTPHeaderField: "session_id") == "session-xyz")
+    #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+}
+
+@Test func openAIResponsesCacheMiddlewareCanOmitSessionIdHeader() throws {
+    let payload: [String: Any] = ["model": "gpt-4o-mini", "input": []]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
+    request.httpMethod = "POST"
+    request.httpBody = body
+
+    // sendSessionIdHeader: false (strict OpenAI-compatible proxies that reject session_id)
+    let middleware = OpenAIResponsesCacheMiddleware(
+        sessionId: "session-xyz",
+        cacheRetention: .none,
+        promptCacheRetention: nil,
+        sendSessionIdHeader: false
+    )
+    let updated = middleware.intercept(request: request)
+    #expect(updated.value(forHTTPHeaderField: "session_id") == nil)
+    // x-client-request-id still flows even when session_id is suppressed.
+    #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+}
+
+/// v0.70.0 / v0.68.0: new compat flags are exposed and round-trip through OpenAICompat.
+@Test func openAICompatNewFlags() {
+    let compat = OpenAICompat(
+        supportsLongCacheRetention: false,
+        sendSessionIdHeader: false,
+        supportsEagerToolInputStreaming: false,
+        cacheControlFormat: .anthropic,
+        sendSessionAffinityHeaders: true,
+        requiresReasoningContentOnAssistantMessages: true
+    )
+    #expect(compat.supportsLongCacheRetention == false)
+    #expect(compat.sendSessionIdHeader == false)
+    #expect(compat.supportsEagerToolInputStreaming == false)
+    #expect(compat.cacheControlFormat == .anthropic)
+    #expect(compat.sendSessionAffinityHeaders == true)
+    #expect(compat.requiresReasoningContentOnAssistantMessages == true)
+}
+
+/// v0.70.1: DeepSeek thinking format added to compat enum.
+@Test func openAICompatDeepSeekThinkingFormat() {
+    let compat = OpenAICompat(thinkingFormat: .deepseek)
+    #expect(compat.thinkingFormat == .deepseek)
+}
+

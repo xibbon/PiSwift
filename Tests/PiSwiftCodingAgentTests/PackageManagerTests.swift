@@ -34,6 +34,7 @@ private final class PackageManagerTestFixture {
     let agentDir: String
     let settingsManager: SettingsManager
     let packageManager: DefaultPackageManager
+    let previousHome: String?
 
     init() throws {
         let uuid = UUID().uuidString
@@ -46,12 +47,23 @@ private final class PackageManagerTestFixture {
         try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
 
+        // Isolate `$HOME` to the temp dir so the package manager's auto-discovery of
+        // `~/.agents/skills` doesn't leak the developer's locally-installed skills into
+        // tests. Mirrors upstream `process.env.HOME` isolation in vitest setup.
+        previousHome = ProcessInfo.processInfo.environment["HOME"]
+        setenv("HOME", tempDir, 1)
+
         settingsManager = SettingsManager.inMemory()
         packageManager = DefaultPackageManager(cwd: tempDir, agentDir: agentDir, settingsManager: settingsManager)
     }
 
     deinit {
         try? FileManager.default.removeItem(atPath: tempDir)
+        if let previousHome {
+            setenv("HOME", previousHome, 1)
+        } else {
+            unsetenv("HOME")
+        }
     }
 
     func createDir(_ relativePath: String) throws -> String {

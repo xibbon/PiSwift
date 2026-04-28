@@ -431,7 +431,7 @@ private func runSingleAgent(
         step: step
     ))
 
-    let unsubscribe = agentInstance.subscribe { event in
+    let unsubscribe = agentInstance.subscribe { event, _ in
         guard let onUpdate else { return }
         switch event {
         case .messageUpdate(let message, _), .messageEnd(let message):

@@ -36,8 +36,18 @@ public func supportsXhigh(model: Model) -> Bool {
     if model.id.contains("gpt-5.2") || model.id.contains("gpt-5.3") {
         return true
     }
-    if model.api == .anthropicMessages {
+    // v0.70.0: GPT-5.5 Codex supports xhigh and must not be downgraded to high.
+    if model.id.contains("gpt-5.5") {
+        return true
+    }
+    // v0.70.3: DeepSeek V4 Pro supports xhigh; map to provider's `max` effort via reasoningEffortMap.
+    if model.id.contains("deepseek") && (model.id.contains("v4-pro") || model.id.contains("v4.pro")) {
+        return true
+    }
+    if model.api == .anthropicMessages || model.api == .bedrockConverseStream {
+        // v0.67.5: Opus 4.7 joins Opus 4.6 as adaptive-thinking models with xhigh support.
         return model.id.contains("opus-4-6") || model.id.contains("opus-4.6")
+            || model.id.contains("opus-4-7") || model.id.contains("opus-4.7")
     }
     return false
 }

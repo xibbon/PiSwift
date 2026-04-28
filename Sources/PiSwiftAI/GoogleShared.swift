@@ -215,6 +215,27 @@ func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
     return contents
 }
 
+/// v0.68.0: strip JSON Schema meta-declaration keys before passing OpenAPI parameters to Cloud
+/// Code Assist / Gemini. Provider rejects `$schema`, `$defs`, `definitions` etc. with validation
+/// errors for tool-enabled requests.
+private let jsonSchemaMetaKeys: Set<String> = [
+    "$schema", "$defs", "definitions", "$id", "$ref", "$comment"
+]
+
+private func stripJsonSchemaMeta(_ value: Any) -> Any {
+    if let dict = value as? [String: Any] {
+        var cleaned: [String: Any] = [:]
+        for (k, v) in dict where !jsonSchemaMetaKeys.contains(k) {
+            cleaned[k] = stripJsonSchemaMeta(v)
+        }
+        return cleaned
+    }
+    if let array = value as? [Any] {
+        return array.map { stripJsonSchemaMeta($0) }
+    }
+    return value
+}
+
 func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false) -> [[String: Any]]? {
     guard !tools.isEmpty else { return nil }
     let declarations: [[String: Any]] = tools.map { tool in
@@ -222,10 +243,12 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false) -> [[Str
             "name": tool.name,
             "description": tool.description,
         ]
+        let rawParameters = tool.parameters.mapValues { $0.jsonValue }
+        let cleanedParameters = stripJsonSchemaMeta(rawParameters) as? [String: Any] ?? rawParameters
         if useParameters {
-            declaration["parameters"] = tool.parameters.mapValues { $0.jsonValue }
+            declaration["parameters"] = cleanedParameters
         } else {
-            declaration["parametersJsonSchema"] = tool.parameters.mapValues { $0.jsonValue }
+            declaration["parametersJsonSchema"] = cleanedParameters
         }
         return declaration
     }

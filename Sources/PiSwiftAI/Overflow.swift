@@ -19,6 +19,10 @@ private let overflowPatterns: [NSRegularExpression] = [
     try! NSRegularExpression(pattern: "token limit exceeded", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "model_context_window_exceeded", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "too large for model with \\d+ maximum context length", options: [.caseInsensitive]),
+    // v0.65.0: Anthropic HTTP 413 surfaces as `request_too_large`.
+    try! NSRegularExpression(pattern: "request_too_large", options: [.caseInsensitive]),
+    // v0.63.1: Ollama explicit overflow when prompt exceeds max context length.
+    try! NSRegularExpression(pattern: "prompt too long; exceeded max context length", options: [.caseInsensitive]),
 ]
 
 public func isContextOverflow(_ message: AssistantMessage, contextWindow: Int? = nil) -> Bool {

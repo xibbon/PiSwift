@@ -256,8 +256,9 @@ import PiSwiftAgent
         events.append(event)
     }
 
-    // Both tools should execute (steering no longer skips remaining tools)
-    #expect(executed.withLock { $0 } == ["first", "second"])
+    // Both tools should execute (steering no longer skips remaining tools).
+    // Parallel execution order is non-deterministic, so check membership instead of order.
+    #expect(executed.withLock { Set($0) } == ["first", "second"])
 
     let toolEnds = events.compactMap { event -> (AgentToolResult, Bool)? in
         if case .toolExecutionEnd(_, _, let result, let isError) = event {
@@ -770,4 +771,173 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 
     // Steering message should have been included in context for the LLM call
     #expect(sawSteeringInContext.withLock { $0 })
+}
+
+/// v0.64.0: AgentTool.prepareArguments runs before schema validation and can rewrite raw args.
+@Test func prepareArgumentsRewritesArgsBeforeValidation() async {
+    let receivedValue = LockedState<String?>(nil)
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: [
+            "type": AnyCodable("object"),
+            "properties": AnyCodable([
+                "value": ["type": "string"]
+            ]),
+            "required": AnyCodable(["value"])
+        ],
+        execute: { _, params, _, _ in
+            let value = params["value"]?.value as? String ?? ""
+            receivedValue.withLock { $0 = value }
+            return AgentToolResult(content: [.text(TextContent(text: "ok:\(value)"))])
+        },
+        prepareArguments: { raw in
+            // Legacy single-edit shape: rewrite "oldValue" → "value" before validation runs.
+            if let legacy = raw["oldValue"]?.value as? String {
+                return ["value": AnyCodable(legacy)]
+            }
+            return nil
+        }
+    )
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
+
+    let callIndex = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = callIndex.withLock { $0 }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 0 {
+                let call = ToolCall(id: "t-1", name: "echo", arguments: ["oldValue": AnyCodable("hello")])
+                let message = createAssistantMessage(content: [.toolCall(call)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+            callIndex.withLock { $0 += 1 }
+        }
+        return stream
+    }
+
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await _ in stream {}
+
+    // Tool received the rewritten argument, not the legacy key.
+    #expect(receivedValue.withLock { $0 } == "hello")
+}
+
+/// v0.69.0: when every finalized result in a tool batch sets terminate=true,
+/// the loop skips the automatic follow-up LLM turn.
+@Test func terminateHintSkipsFollowUpTurn() async {
+    let tool = AgentTool(
+        label: "Final",
+        name: "final",
+        description: "Terminating tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, _, _, _ in
+        AgentToolResult(content: [.text(TextContent(text: "ok"))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        afterToolCall: { _, _ in
+            AfterToolCallResult(terminate: true)
+        },
+        convertToLlm: identityConverter
+    )
+
+    let llmCallCount = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = llmCallCount.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 1 {
+                let call = ToolCall(id: "t-1", name: "final", arguments: [:])
+                let message = createAssistantMessage(content: [.toolCall(call)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                // This branch must NOT run if terminate works correctly.
+                let message = createAssistantMessage(content: [.text(TextContent(text: "should-not-run"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+        }
+        return stream
+    }
+
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await _ in stream {}
+
+    // Exactly one LLM call: the initial turn that emitted the tool call.
+    // No follow-up turn after the terminating tool batch.
+    #expect(llmCallCount.withLock { $0 } == 1)
+}
+
+/// v0.69.0: terminate is only honored when EVERY finalized result opts in.
+/// One non-terminating result keeps the follow-up turn.
+@Test func terminateRequiresAllResultsToOptIn() async {
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { id, _, _, _ in
+        AgentToolResult(content: [.text(TextContent(text: id))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        afterToolCall: { ctx, _ in
+            // Only the second tool call opts in to terminate.
+            if ctx.toolCall.id == "t-2" {
+                return AfterToolCallResult(terminate: true)
+            }
+            return nil
+        },
+        convertToLlm: identityConverter
+    )
+
+    let llmCallCount = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = llmCallCount.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 1 {
+                let call1 = ToolCall(id: "t-1", name: "echo", arguments: [:])
+                let call2 = ToolCall(id: "t-2", name: "echo", arguments: [:])
+                let message = createAssistantMessage(content: [.toolCall(call1), .toolCall(call2)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                // Follow-up turn must run because at least one result did not terminate.
+                let message = createAssistantMessage(content: [.text(TextContent(text: "follow-up"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+        }
+        return stream
+    }
+
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await _ in stream {}
+
+    // Two LLM calls: initial tool-emitting turn + the follow-up turn.
+    #expect(llmCallCount.withLock { $0 } == 2)
 }

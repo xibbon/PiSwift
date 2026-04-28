@@ -10,6 +10,18 @@ public struct ProxyStreamOptions: Sendable {
     public var authToken: String
     public var proxyUrl: String
 
+    // v0.68.1: preserve the proxy-safe serializable subset of stream options when forwarding
+    // to the remote streamSimple. These reach the remote unchanged so cache affinity, transport
+    // choice, retry behavior, header overrides, metadata tagging, and thinking budgets all
+    // continue to work end-to-end through the proxy.
+    public var sessionId: String?
+    public var transport: Transport?
+    public var cacheRetention: CacheRetention?
+    public var thinkingBudgets: ThinkingBudgets?
+    public var maxRetryDelayMs: Int?
+    public var headers: [String: String]?
+    public var metadata: [String: AnyCodable]?
+
     public init(
         temperature: Double? = nil,
         maxTokens: Int? = nil,
@@ -17,7 +29,14 @@ public struct ProxyStreamOptions: Sendable {
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         authToken: String,
-        proxyUrl: String
+        proxyUrl: String,
+        sessionId: String? = nil,
+        transport: Transport? = nil,
+        cacheRetention: CacheRetention? = nil,
+        thinkingBudgets: ThinkingBudgets? = nil,
+        maxRetryDelayMs: Int? = nil,
+        headers: [String: String]? = nil,
+        metadata: [String: AnyCodable]? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -26,6 +45,13 @@ public struct ProxyStreamOptions: Sendable {
         self.apiKey = apiKey
         self.authToken = authToken
         self.proxyUrl = proxyUrl
+        self.sessionId = sessionId
+        self.transport = transport
+        self.cacheRetention = cacheRetention
+        self.thinkingBudgets = thinkingBudgets
+        self.maxRetryDelayMs = maxRetryDelayMs
+        self.headers = headers
+        self.metadata = metadata
     }
 }
 
@@ -61,7 +87,14 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
                 options: ProxyRequestOptions(
                     temperature: options.temperature,
                     maxTokens: options.maxTokens,
-                    reasoning: options.reasoning
+                    reasoning: options.reasoning,
+                    sessionId: options.sessionId,
+                    transport: options.transport,
+                    cacheRetention: options.cacheRetention,
+                    thinkingBudgets: options.thinkingBudgets,
+                    maxRetryDelayMs: options.maxRetryDelayMs,
+                    headers: options.headers,
+                    metadata: options.metadata
                 )
             )
             request.httpBody = try JSONEncoder().encode(body)
@@ -226,11 +259,25 @@ private struct ProxyRequestOptions: Encodable {
     let temperature: Double?
     let maxTokens: Int?
     let reasoning: ReasoningEffort?
+    let sessionId: String?
+    let transport: Transport?
+    let cacheRetention: CacheRetention?
+    let thinkingBudgets: ThinkingBudgets?
+    let maxRetryDelayMs: Int?
+    let headers: [String: String]?
+    let metadata: [String: AnyCodable]?
 
     private enum CodingKeys: String, CodingKey {
         case temperature
         case maxTokens
         case reasoning
+        case sessionId
+        case transport
+        case cacheRetention
+        case thinkingBudgets
+        case maxRetryDelayMs
+        case headers
+        case metadata
     }
 
     func encode(to encoder: Encoder) throws {
@@ -240,6 +287,21 @@ private struct ProxyRequestOptions: Encodable {
         if let reasoning {
             try container.encode(reasoning.rawValue, forKey: .reasoning)
         }
+        try container.encodeIfPresent(sessionId, forKey: .sessionId)
+        if let transport {
+            try container.encode(transport.rawValue, forKey: .transport)
+        }
+        if let cacheRetention {
+            try container.encode(cacheRetention.rawValue, forKey: .cacheRetention)
+        }
+        if let thinkingBudgets {
+            // Serialize as { "off": 0, "low": ..., ... } so the remote can rehydrate.
+            let serialized = Dictionary(uniqueKeysWithValues: thinkingBudgets.map { ($0.key.rawValue, $0.value) })
+            try container.encode(serialized, forKey: .thinkingBudgets)
+        }
+        try container.encodeIfPresent(maxRetryDelayMs, forKey: .maxRetryDelayMs)
+        try container.encodeIfPresent(headers, forKey: .headers)
+        try container.encodeIfPresent(metadata, forKey: .metadata)
     }
 }
 

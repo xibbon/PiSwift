@@ -25,10 +25,26 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let sessionId: String?
     let cacheRetention: CacheRetention
     let promptCacheRetention: String?
+    /// v0.70.0 / v0.67.6: when false, omit the underscore-containing `session_id` HTTP header
+    /// (some strict OpenAI-compatible proxies reject it). Other affinity headers still flow.
+    /// Default `true` matches official Codex CLI behavior.
+    let sendSessionIdHeader: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+        var updated = request
+
+        // v0.67.2 / v0.67.6: send aligned `session_id` and `x-client-request-id` headers
+        // unconditionally when sessionId is provided. This improves prompt cache affinity
+        // for non-`api.openai.com` base URLs (litellm, theclawbay, etc.).
+        if let sessionId, !sessionId.isEmpty {
+            if sendSessionIdHeader {
+                updated.setValue(sessionId, forHTTPHeaderField: "session_id")
+            }
+            updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
+        }
+
+        guard let body = readRequestBody(request) else { return updated }
+        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return updated }
 
         if cacheRetention != .none, let sessionId, !sessionId.isEmpty {
             payload["prompt_cache_key"] = sessionId
@@ -41,8 +57,7 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
             payload.removeValue(forKey: "prompt_cache_retention")
         }
 
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return updated }
         updated.httpBodyStream = nil
         updated.httpBody = updatedBody
         return updated
@@ -158,7 +173,8 @@ public func streamOpenAIResponses(
             let middleware = OpenAIResponsesCacheMiddleware(
                 sessionId: options.sessionId,
                 cacheRetention: cacheRetention,
-                promptCacheRetention: promptCacheRetention
+                promptCacheRetention: promptCacheRetention,
+                sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let builtClient = try makeOpenAIClient(

@@ -132,7 +132,13 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             }
         }
 
-        let sessionManager = createSessionManager(parsed, cwd: cwd, resumeSession: resumeSession)
+        // v0.63.0 / v0.68.1: CLI --session-dir takes precedence; otherwise fall back to
+        // the settings.json sessionDir (with `~` expansion happening inside SessionManager).
+        var resolvedSessionDirArgs = parsed
+        if resolvedSessionDirArgs.sessionDir == nil, let settingsDir = settingsManager.getSessionDir(), !settingsDir.isEmpty {
+            resolvedSessionDirArgs.sessionDir = settingsDir
+        }
+        let sessionManager = createSessionManager(resolvedSessionDirArgs, cwd: cwd, resumeSession: resumeSession)
         time("createSessionManager")
 
         var scopedModels: [ScopedModel] = []
@@ -226,6 +232,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             noExtensions: parsed.noExtensions ?? false,
             noSkills: parsed.noSkills ?? false,
             noPromptTemplates: parsed.noPromptTemplates ?? false,
+            noContextFiles: parsed.noContextFiles ?? false,
             systemPrompt: parsed.systemPrompt,
             appendSystemPrompt: parsed.appendSystemPrompt
         ))
@@ -239,8 +246,16 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
                 blockImages: settingsManager.getBlockImages()
             ))
         )
+        // v0.68.0 / v0.70.0: tool selection is layered:
+        //   --no-tools         → disable everything (no built-ins, no extension/custom tools)
+        //   --no-builtin-tools → keep extension/custom tools, disable only the default built-in set
+        //   --tools <names>    → explicit allowlist (overrides above defaults)
+        //   (default)          → enable read/bash/edit/write built-ins
         let selectedToolNames: [ToolName]
         if parsed.noTools == true {
+            selectedToolNames = parsed.tools ?? []
+        } else if parsed.noBuiltinTools == true {
+            // Keep only explicitly-named tools (extension / custom tools added separately below).
             selectedToolNames = parsed.tools ?? []
         } else {
             selectedToolNames = parsed.tools ?? [.read, .bash, .edit, .write]
@@ -382,14 +397,14 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         agentBox.withLock { $0 = createdAgent }
 
         if initialThinking != .off && !createdAgent.state.model.reasoning {
-            createdAgent.setThinkingLevel(.off)
+            createdAgent.thinkingLevel = .off
         } else if initialThinking == .xhigh && !supportsXhigh(model: createdAgent.state.model) {
-            createdAgent.setThinkingLevel(.high)
+            createdAgent.thinkingLevel = .high
         }
 
         if parsed.continue == true || parsed.resume == true {
             if !sessionContext.messages.isEmpty {
-                createdAgent.replaceMessages(sessionContext.messages)
+                createdAgent.messages = sessionContext.messages
             }
         }
 

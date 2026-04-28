@@ -119,5 +119,12 @@ public func transformMessages(
         }
     }
 
+    // v0.69.0: synthesize trailing tool results when the transcript ends with unresolved
+    // assistant tool calls (e.g., direct low-level history replay where the user terminated
+    // mid-batch). Providers reject transcripts that end on unresolved tool_use blocks.
+    if !pendingToolCalls.isEmpty {
+        insertSyntheticToolResults()
+    }
+
     return result
 }

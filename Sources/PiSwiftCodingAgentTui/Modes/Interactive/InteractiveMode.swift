@@ -791,7 +791,7 @@ public final class InteractiveMode {
         statusContainer?.clear()
 
         _ = session.sessionManager.newSession(NewSessionOptions(parentSession: options?.parentSession))
-        session.agent.replaceMessages([])
+        session.agent.messages = []
 
         if let setup = options?.setup {
             await setup(session.sessionManager)
@@ -2783,18 +2783,18 @@ public final class InteractiveMode {
                 },
                 onSteeringModeChange: { mode in
                     settingsManager.setSteeringMode(mode)
-                    session.agent.setSteeringMode(AgentSteeringMode(rawValue: mode) ?? .oneAtATime)
+                    session.agent.steeringMode = AgentSteeringMode(rawValue: mode) ?? .oneAtATime
                 },
                 onFollowUpModeChange: { mode in
                     settingsManager.setFollowUpMode(mode)
-                    session.agent.setFollowUpMode(AgentFollowUpMode(rawValue: mode) ?? .oneAtATime)
+                    session.agent.followUpMode = AgentFollowUpMode(rawValue: mode) ?? .oneAtATime
                 },
                 onTransportChange: { transport in
                     settingsManager.setTransport(transport)
-                    session.agent.setTransport(transport)
+                    session.agent.transport = transport
                 },
                 onThinkingLevelChange: { [weak self] level in
-                    session.agent.setThinkingLevel(level)
+                    session.agent.thinkingLevel = level
                     settingsManager.setDefaultThinkingLevel(level.rawValue)
                     self?.updateEditorBorderColor()
                 },
@@ -3745,7 +3745,7 @@ public final class InteractiveMode {
     private func handleNewSessionCommand() {
         guard let session else { return }
         _ = session.sessionManager.newSession()
-        session.agent.replaceMessages([])
+        session.agent.messages = []
         chatContainer.clear()
         showStatus("New session started")
         scheduleRender()

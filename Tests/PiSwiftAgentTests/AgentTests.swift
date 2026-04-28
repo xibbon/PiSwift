@@ -10,9 +10,9 @@ import PiSwiftAgent
     #expect(agent.state.tools.isEmpty)
     #expect(agent.state.messages.isEmpty)
     #expect(!agent.state.isStreaming)
-    #expect(agent.state.streamMessage == nil)
+    #expect(agent.state.streamingMessage == nil)
     #expect(agent.state.pendingToolCalls.isEmpty)
-    #expect(agent.state.error == nil)
+    #expect(agent.state.errorMessage == nil)
 }
 
 @Test func customInitialState() {
@@ -28,30 +28,30 @@ import PiSwiftAgent
 @Test func subscribe() {
     let agent = Agent()
     let eventCount = LockedState(0)
-    let unsubscribe = agent.subscribe { _ in
+    let unsubscribe = agent.subscribe { _, _ in
         eventCount.withLock { $0 += 1 }
     }
 
     #expect(eventCount.withLock { $0 } == 0)
-    agent.setSystemPrompt("Test prompt")
+    agent.systemPrompt = "Test prompt"
     #expect(eventCount.withLock { $0 } == 0)
     #expect(agent.state.systemPrompt == "Test prompt")
 
     unsubscribe()
-    agent.setSystemPrompt("Another prompt")
+    agent.systemPrompt = "Another prompt"
     #expect(eventCount.withLock { $0 } == 0)
 }
 
 @Test func stateMutators() {
     let agent = Agent()
-    agent.setSystemPrompt("Custom prompt")
+    agent.systemPrompt = "Custom prompt"
     #expect(agent.state.systemPrompt == "Custom prompt")
 
     let newModel = getModel(provider: .openai, modelId: "gpt-5-mini")
-    agent.setModel(newModel)
+    agent.model = newModel
     #expect(agent.state.model.id == newModel.id)
 
-    agent.setThinkingLevel(.high)
+    agent.thinkingLevel = .high
     #expect(agent.state.thinkingLevel == .high)
 
     let tool = AgentTool(
@@ -62,12 +62,12 @@ import PiSwiftAgent
     ) { _, _, _, _ in
         AgentToolResult(content: [.text(TextContent(text: "ok"))])
     }
-    agent.setTools([tool])
+    agent.tools = [tool]
     #expect(agent.state.tools.count == 1)
     #expect(agent.state.tools.first?.name == "test")
 
     let userMessage = AgentMessage.user(UserMessage(content: .text("Hello")))
-    agent.replaceMessages([userMessage])
+    agent.messages = [userMessage]
     #expect(agent.state.messages.count == 1)
     #expect(agent.state.messages.first?.role == "user")
 
@@ -218,7 +218,7 @@ import PiSwiftAgent
     try await agent.prompt("Hello")
     #expect(receivedTransport.withLock { $0 } == .websocket)
 
-    agent.setTransport(.auto)
+    agent.transport = .auto
     try await agent.prompt("Hello again")
     #expect(receivedTransport.withLock { $0 } == .auto)
 }
@@ -383,4 +383,94 @@ import PiSwiftAgent
 
     #expect(providerRequested.withLock { $0 } == "openai")
     #expect(receivedApiKey.withLock { $0 } == "dynamic-api-key-openai")
+}
+
+/// v0.63.2: Agent.signal exposes the active turn's cancellation token so subscribers
+/// and extensions can forward cancellation into nested async work.
+@Test func agentSignalExposesTurnCancellationToken() async throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let signalDuringTurn = LockedState<CancellationToken?>(nil)
+
+    let streamFn: StreamFn = { _, _, _ in
+        let stream = AssistantMessageEventStream()
+        Task {
+            let message = AssistantMessage(
+                content: [.text(TextContent(text: "hi"))],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .stop
+            )
+            stream.push(.done(reason: .stop, message: message))
+            stream.end(message)
+        }
+        return stream
+    }
+
+    let agent = Agent(AgentOptions(initialState: AgentState(model: model), streamFn: streamFn))
+
+    // Before any turn runs, signal is nil.
+    #expect(agent.signal == nil)
+
+    _ = agent.subscribe { event, signal in
+        if case .turnStart = event {
+            signalDuringTurn.withLock { $0 = signal }
+        }
+    }
+
+    try await agent.prompt("Hello")
+
+    // The subscriber observed a non-nil token during the turn.
+    #expect(signalDuringTurn.withLock { $0 } != nil)
+
+    // After the turn settles, signal is nil again.
+    #expect(agent.signal == nil)
+}
+
+/// v0.65.0: subscribe listeners are awaited; agent.prompt() does not return until every
+/// agent_end listener finishes, and state.isStreaming stays true until that settlement.
+@Test func subscribeListenersAreAwaitedBeforePromptReturns() async throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+
+    let streamFn: StreamFn = { _, _, _ in
+        let stream = AssistantMessageEventStream()
+        Task {
+            let message = AssistantMessage(
+                content: [.text(TextContent(text: "hi"))],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .stop
+            )
+            stream.push(.done(reason: .stop, message: message))
+            stream.end(message)
+        }
+        return stream
+    }
+
+    let agent = Agent(AgentOptions(initialState: AgentState(model: model), streamFn: streamFn))
+
+    let agentEndProcessed = LockedState(false)
+    let isStreamingDuringAgentEnd = LockedState(false)
+
+    _ = agent.subscribe { event, _ in
+        if case .agentEnd = event {
+            // isStreaming must still be true while this handler runs.
+            isStreamingDuringAgentEnd.withLock { $0 = agent.state.isStreaming }
+            // Simulate slow async work in the listener.
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            agentEndProcessed.withLock { $0 = true }
+        }
+    }
+
+    try await agent.prompt("Hello")
+
+    // prompt() returned only after the listener finished its async work.
+    #expect(agentEndProcessed.withLock { $0 })
+    // While the listener was running, isStreaming was still true.
+    #expect(isStreamingDuringAgentEnd.withLock { $0 })
+    // After settlement, isStreaming is false.
+    #expect(!agent.state.isStreaming)
 }

@@ -271,6 +271,13 @@ private func isPlaceholderApiKey(_ key: String) -> Bool {
     return trimmed.hasPrefix("<") && trimmed.hasSuffix(">")
 }
 
+/// v0.67.3: `gcp-vertex-credentials` is a marker telling Vertex to use Application Default
+/// Credentials, not a literal API key. Treat it like the `<authenticated>` placeholder.
+private func isAdcMarker(_ key: String) -> Bool {
+    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed == "gcp-vertex-credentials"
+}
+
 /// Cache for ADC token resolution to avoid concurrent gcloud subprocess races.
 private final class VertexTokenCache: @unchecked Sendable {
     static let shared = VertexTokenCache()
@@ -300,13 +307,13 @@ private final class VertexTokenCache: @unchecked Sendable {
 }
 
 private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> String {
-    if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>", !isPlaceholderApiKey(apiKey) {
+    if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>", !isPlaceholderApiKey(apiKey), !isAdcMarker(apiKey) {
         return apiKey
     }
     let env = ProcessInfo.processInfo.environment
     // Support GOOGLE_CLOUD_API_KEY for API key auth
     if let apiKey = env["GOOGLE_CLOUD_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !apiKey.isEmpty, !isPlaceholderApiKey(apiKey) {
+       !apiKey.isEmpty, !isPlaceholderApiKey(apiKey), !isAdcMarker(apiKey) {
         return apiKey
     }
     if let token = env["GOOGLE_ACCESS_TOKEN"] ?? env["GCLOUD_ACCESS_TOKEN"] ?? env["GOOGLE_OAUTH_ACCESS_TOKEN"] {

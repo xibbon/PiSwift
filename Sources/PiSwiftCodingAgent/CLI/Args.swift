@@ -16,7 +16,8 @@ public struct Args: Sendable {
     public var model: String?
     public var apiKey: String?
     public var systemPrompt: String?
-    public var appendSystemPrompt: String?
+    /// v0.67.2: now an array. Multiple `--append-system-prompt` values are joined by `\n\n`.
+    public var appendSystemPrompts: [String]?
     public var thinking: ThinkingLevel?
     public var `continue`: Bool?
     public var resume: Bool?
@@ -31,11 +32,16 @@ public struct Args: Sendable {
     public var hooks: [String]?
     public var customTools: [String]?
     public var noTools: Bool?
+    /// v0.68.0 / v0.70.0: disable only built-in default tools while keeping extension/custom tools
+    /// active. Distinct from `noTools` (which disables everything).
+    public var noBuiltinTools: Bool?
     public var noExtensions: Bool?
     public var print: Bool?
     public var export: String?
     public var noSkills: Bool?
     public var noPromptTemplates: Bool?
+    /// v0.67.4: `--no-context-files` (`-nc`) disables AGENTS.md / CLAUDE.md auto-discovery.
+    public var noContextFiles: Bool?
     public var skills: [String]?
     public var listModels: ListModelsOption?
     public var verbose: Bool?
@@ -47,6 +53,13 @@ public struct Args: Sendable {
     public init() {
         self.messages = []
         self.fileArgs = []
+    }
+
+    /// v0.67.2: convenience accessor that joins multiple `--append-system-prompt` values
+    /// with double newlines, matching upstream behavior.
+    public var appendSystemPrompt: String? {
+        guard let prompts = appendSystemPrompts, !prompts.isEmpty else { return nil }
+        return prompts.joined(separator: "\n\n")
     }
 }
 

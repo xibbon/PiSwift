@@ -44,17 +44,26 @@ public struct BeforeToolCallResult: Sendable {
 /// - `content`: if provided, replaces the tool result content array in full
 /// - `details`: if provided, replaces the tool result details value in full
 /// - `isError`: if provided, replaces the tool result error flag
+/// - `terminate`: if every finalized tool result in the current batch sets `terminate == true`,
+///   the loop skips the automatic follow-up LLM turn after this batch (v0.69.0).
 ///
 /// Omitted fields keep the original executed tool result values.
 public struct AfterToolCallResult: Sendable {
     public var content: [ContentBlock]?
     public var details: AnyCodable?
     public var isError: Bool?
+    public var terminate: Bool?
 
-    public init(content: [ContentBlock]? = nil, details: AnyCodable? = nil, isError: Bool? = nil) {
+    public init(
+        content: [ContentBlock]? = nil,
+        details: AnyCodable? = nil,
+        isError: Bool? = nil,
+        terminate: Bool? = nil
+    ) {
         self.content = content
         self.details = details
         self.isError = isError
+        self.terminate = terminate
     }
 }
 
@@ -192,25 +201,36 @@ public typealias AgentToolExecute = @Sendable (
     _ onUpdate: AgentToolUpdateCallback?
 ) async throws -> AgentToolResult
 
+/// Optional preprocessor invoked before schema validation on raw tool-call arguments.
+///
+/// Use this for compatibility shims when tool argument shapes change across versions:
+/// the hook can rewrite legacy payloads into the current shape before validation runs.
+/// Throwing produces a tool-result error with the thrown error's localized description;
+/// returning `nil` keeps the raw arguments unchanged.
+public typealias AgentToolPrepareArguments = @Sendable (_ args: [String: AnyCodable]) async throws -> [String: AnyCodable]?
+
 public struct AgentTool: Sendable {
     public var label: String
     public var name: String
     public var description: String
     public var parameters: [String: AnyCodable]
     public var execute: AgentToolExecute
+    public var prepareArguments: AgentToolPrepareArguments?
 
     public init(
         label: String,
         name: String,
         description: String,
         parameters: [String: AnyCodable],
-        execute: @escaping AgentToolExecute
+        execute: @escaping AgentToolExecute,
+        prepareArguments: AgentToolPrepareArguments? = nil
     ) {
         self.label = label
         self.name = name
         self.description = description
         self.parameters = parameters
         self.execute = execute
+        self.prepareArguments = prepareArguments
     }
 
     public var aiTool: AITool {
@@ -345,27 +365,63 @@ public enum AgentFollowUpMode: String, Sendable {
     case oneAtATime = "one-at-a-time"
 }
 
+/// Public agent state snapshot.
+///
+/// Reshape (v0.65.0):
+/// - `streamMessage` was renamed to `streamingMessage`.
+/// - `error` was renamed to `errorMessage`.
+/// - `isStreaming`, `streamingMessage`, `pendingToolCalls`, and `errorMessage` are runtime-owned
+///   and readonly to external callers (`private(set)`). The agent loop is the only writer.
+/// - `tools` and `messages` are mutable from outside; assigning copies the input array (Swift
+///   value semantics already guarantee no shared identity).
+///
+/// Construct an initial state via the public initializer, which accepts only the writable fields
+/// (no runtime-owned values are accepted at construction time).
 public struct AgentState: Sendable {
     public var systemPrompt: String
     public var model: Model
     public var thinkingLevel: ThinkingLevel
     public var tools: [AgentTool]
     public var messages: [AgentMessage]
-    public var isStreaming: Bool
-    public var streamMessage: AgentMessage?
-    public var pendingToolCalls: Set<String>
-    public var error: String?
+    public private(set) var isStreaming: Bool
+    public private(set) var streamingMessage: AgentMessage?
+    public private(set) var pendingToolCalls: Set<String>
+    public private(set) var errorMessage: String?
 
+    /// Public initializer for caller-provided initial state.
+    /// Runtime-owned fields (`isStreaming`, `streamingMessage`, `pendingToolCalls`, `errorMessage`)
+    /// always start at their default values and cannot be set by callers.
     public init(
         systemPrompt: String = "",
         model: Model = getModel(provider: .openai, modelId: "gpt-4o-mini"),
         thinkingLevel: ThinkingLevel = .off,
         tools: [AgentTool] = [],
-        messages: [AgentMessage] = [],
-        isStreaming: Bool = false,
-        streamMessage: AgentMessage? = nil,
-        pendingToolCalls: Set<String> = [],
-        error: String? = nil
+        messages: [AgentMessage] = []
+    ) {
+        self.systemPrompt = systemPrompt
+        self.model = model
+        self.thinkingLevel = thinkingLevel
+        self.tools = tools
+        self.messages = messages
+        self.isStreaming = false
+        self.streamingMessage = nil
+        self.pendingToolCalls = []
+        self.errorMessage = nil
+    }
+
+    // MARK: - Internal mutators (loop-owned)
+
+    /// Internal initializer for full state construction (used by the agent loop and tests within the module).
+    internal init(
+        systemPrompt: String,
+        model: Model,
+        thinkingLevel: ThinkingLevel,
+        tools: [AgentTool],
+        messages: [AgentMessage],
+        isStreaming: Bool,
+        streamingMessage: AgentMessage?,
+        pendingToolCalls: Set<String>,
+        errorMessage: String?
     ) {
         self.systemPrompt = systemPrompt
         self.model = model
@@ -373,8 +429,15 @@ public struct AgentState: Sendable {
         self.tools = tools
         self.messages = messages
         self.isStreaming = isStreaming
-        self.streamMessage = streamMessage
+        self.streamingMessage = streamingMessage
         self.pendingToolCalls = pendingToolCalls
-        self.error = error
+        self.errorMessage = errorMessage
     }
+
+    internal mutating func _setStreaming(_ value: Bool) { self.isStreaming = value }
+    internal mutating func _setStreamingMessage(_ value: AgentMessage?) { self.streamingMessage = value }
+    internal mutating func _setPendingToolCalls(_ value: Set<String>) { self.pendingToolCalls = value }
+    internal mutating func _insertPendingToolCall(_ id: String) { self.pendingToolCalls.insert(id) }
+    internal mutating func _removePendingToolCall(_ id: String) { self.pendingToolCalls.remove(id) }
+    internal mutating func _setErrorMessage(_ value: String?) { self.errorMessage = value }
 }

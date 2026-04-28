@@ -76,6 +76,14 @@ public struct StreamOptions: Sendable {
     public var onPayload: PayloadHandler?
     public var maxRetryDelayMs: Int?
     public var metadata: [String: AnyCodable]?
+    /// v0.67.6: invoked after each provider response is received and before stream
+    /// consumption begins. Use for status/header inspection (telemetry, extension hooks).
+    public var onResponse: ResponseHandler?
+    /// v0.70.1: provider SDK request timeout (milliseconds). Forwarded to OpenAI/Azure/Anthropic
+    /// SDK request options so long-running local inference isn't capped at SDK defaults.
+    public var timeoutMs: Int?
+    /// v0.70.1: provider SDK max retries. Forwarded to provider SDK retry config.
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -88,7 +96,10 @@ public struct StreamOptions: Sendable {
         headers: [String: String]? = nil,
         onPayload: PayloadHandler? = nil,
         maxRetryDelayMs: Int? = nil,
-        metadata: [String: AnyCodable]? = nil
+        metadata: [String: AnyCodable]? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -101,6 +112,9 @@ public struct StreamOptions: Sendable {
         self.onPayload = onPayload
         self.maxRetryDelayMs = maxRetryDelayMs
         self.metadata = metadata
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -118,6 +132,12 @@ public struct SimpleStreamOptions: Sendable {
     public var onPayload: PayloadHandler?
     public var maxRetryDelayMs: Int?
     public var metadata: [String: AnyCodable]?
+    /// v0.67.6: invoked after each provider response is received and before stream consumption.
+    public var onResponse: ResponseHandler?
+    /// v0.70.1: provider SDK request timeout (ms).
+    public var timeoutMs: Int?
+    /// v0.70.1: provider SDK max retries.
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -132,7 +152,10 @@ public struct SimpleStreamOptions: Sendable {
         headers: [String: String]? = nil,
         onPayload: PayloadHandler? = nil,
         maxRetryDelayMs: Int? = nil,
-        metadata: [String: AnyCodable]? = nil
+        metadata: [String: AnyCodable]? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -147,6 +170,9 @@ public struct SimpleStreamOptions: Sendable {
         self.onPayload = onPayload
         self.maxRetryDelayMs = maxRetryDelayMs
         self.metadata = metadata
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -160,6 +186,29 @@ public struct PayloadSnapshot: Sendable {
 
 public typealias PayloadHandler = @Sendable (PayloadSnapshot) -> Void
 
+/// v0.67.6: snapshot of the provider HTTP response surfaced via `onResponse`.
+/// Exposes status and headers so callers (e.g., extensions, telemetry) can inspect
+/// transport-level signals before stream consumption begins.
+public struct ResponseSnapshot: Sendable {
+    public let statusCode: Int
+    public let headers: [String: String]
+
+    public init(statusCode: Int, headers: [String: String]) {
+        self.statusCode = statusCode
+        self.headers = headers
+    }
+}
+
+public typealias ResponseHandler = @Sendable (ResponseSnapshot) -> Void
+
+/// v0.67.6: thinking display mode for Anthropic and Bedrock. Defaults to `summarized`
+/// so Opus 4.7 / Mythos Preview keep returning thinking text. Set to `omitted` to skip
+/// thinking streaming for faster time-to-first-text-token.
+public enum ThinkingDisplay: String, Sendable {
+    case summarized
+    case omitted
+}
+
 public enum OpenAICompatMaxTokensField: String, Sendable {
     case maxCompletionTokens = "max_completion_tokens"
     case maxTokens = "max_tokens"
@@ -171,6 +220,16 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     case qwen
     case qwenChatTemplate = "qwen-chat-template"
     case openrouter
+    /// v0.70.1: DeepSeek V4 sends `thinking: { type: "enabled" }` plus `reasoning_effort` and
+    /// expects `reasoning_content` on replayed assistant messages.
+    case deepseek
+}
+
+/// v0.68.0: opt-in cache_control formats for OpenAI-compatible providers that expose
+/// Anthropic-style prompt caching via `cache_control` markers (e.g., OpenCode/OpenCode Go
+/// Qwen 3.5/3.6 Plus).
+public enum OpenAICompatCacheControlFormat: String, Sendable {
+    case anthropic
 }
 
 public struct OpenRouterRouting: Sendable {
@@ -210,6 +269,25 @@ public struct OpenAICompat: Sendable {
     /// Maps thinking levels to provider-specific reasoning effort values.
     /// When set, the mapped value is sent instead of the standard level string.
     public var reasoningEffortMap: [ThinkingLevel: String]?
+    /// v0.70.0: when false, the provider opts out of long-retention cache fields
+    /// (e.g., `prompt_cache_retention: "24h"`) even when long retention is requested.
+    /// Default behavior (nil) is to send long-retention fields when requested.
+    public var supportsLongCacheRetention: Bool?
+    /// v0.70.0: when false, strict OpenAI-compatible proxies omit the underscore-containing
+    /// `session_id` header while still sending other session-affinity headers.
+    public var sendSessionIdHeader: Bool?
+    /// v0.70.0: when false, Anthropic-compatible providers omit per-tool `eager_input_streaming`
+    /// and use the legacy fine-grained-tool-streaming beta header instead.
+    public var supportsEagerToolInputStreaming: Bool?
+    /// v0.68.0: cache-control marker format for Anthropic-style prompt caching exposed by
+    /// OpenAI-compatible providers (e.g., OpenCode Qwen 3.5/3.6 Plus).
+    public var cacheControlFormat: OpenAICompatCacheControlFormat?
+    /// v0.68.0: when true, OpenAI-compatible Chat Completions sends aligned session-affinity
+    /// headers (`session_id`, `x-client-request-id`, `x-session-affinity`) derived from `sessionId`.
+    public var sendSessionAffinityHeaders: Bool?
+    /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
+    /// (DeepSeek V4 requirement). Empty `reasoning_content` is injected if no thinking content exists.
+    public var requiresReasoningContentOnAssistantMessages: Bool?
 
     public init(
         supportsStore: Bool? = nil,
@@ -225,7 +303,13 @@ public struct OpenAICompat: Sendable {
         openRouterRouting: OpenRouterRouting? = nil,
         vercelGatewayRouting: VercelGatewayRouting? = nil,
         supportsStrictMode: Bool? = nil,
-        reasoningEffortMap: [ThinkingLevel: String]? = nil
+        reasoningEffortMap: [ThinkingLevel: String]? = nil,
+        supportsLongCacheRetention: Bool? = nil,
+        sendSessionIdHeader: Bool? = nil,
+        supportsEagerToolInputStreaming: Bool? = nil,
+        cacheControlFormat: OpenAICompatCacheControlFormat? = nil,
+        sendSessionAffinityHeaders: Bool? = nil,
+        requiresReasoningContentOnAssistantMessages: Bool? = nil
     ) {
         self.supportsStore = supportsStore
         self.supportsDeveloperRole = supportsDeveloperRole
@@ -241,6 +325,12 @@ public struct OpenAICompat: Sendable {
         self.vercelGatewayRouting = vercelGatewayRouting
         self.supportsStrictMode = supportsStrictMode
         self.reasoningEffortMap = reasoningEffortMap
+        self.supportsLongCacheRetention = supportsLongCacheRetention
+        self.sendSessionIdHeader = sendSessionIdHeader
+        self.supportsEagerToolInputStreaming = supportsEagerToolInputStreaming
+        self.cacheControlFormat = cacheControlFormat
+        self.sendSessionAffinityHeaders = sendSessionAffinityHeaders
+        self.requiresReasoningContentOnAssistantMessages = requiresReasoningContentOnAssistantMessages
     }
 }
 
@@ -890,7 +980,7 @@ public struct AnthropicOptions: Sendable {
     public var thinkingEnabled: Bool?
     public var thinkingBudgetTokens: Int?
     /// Adaptive thinking effort level. When set on models that support adaptive
-    /// thinking (e.g. Opus 4.6, Sonnet 4.6), this takes precedence over
+    /// thinking (e.g. Opus 4.6, Sonnet 4.6, Opus 4.7), this takes precedence over
     /// `thinkingBudgetTokens` and maps to an appropriate token budget.
     public var effort: ThinkingLevel?
     public var interleavedThinking: Bool?
@@ -898,6 +988,15 @@ public struct AnthropicOptions: Sendable {
     public var metadata: [String: AnyCodable]?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    /// v0.67.6: thinking display mode. `summarized` (default) returns thinking text;
+    /// `omitted` skips thinking streaming for faster time-to-first-text-token.
+    public var thinkingDisplay: ThinkingDisplay?
+    /// v0.67.6: invoked after the provider response is received and before stream consumption.
+    public var onResponse: ResponseHandler?
+    /// v0.70.1: SDK request timeout (ms).
+    public var timeoutMs: Int?
+    /// v0.70.1: SDK max retries.
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -911,7 +1010,11 @@ public struct AnthropicOptions: Sendable {
         toolChoice: AnthropicToolChoice? = nil,
         metadata: [String: AnyCodable]? = nil,
         headers: [String: String]? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        thinkingDisplay: ThinkingDisplay? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -925,6 +1028,10 @@ public struct AnthropicOptions: Sendable {
         self.metadata = metadata
         self.headers = headers
         self.onPayload = onPayload
+        self.thinkingDisplay = thinkingDisplay
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -948,6 +1055,17 @@ public struct BedrockOptions: Sendable {
     public var cacheRetention: CacheRetention?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    /// v0.62.0: AWS Cost Explorer split cost allocation tags forwarded as Converse `requestMetadata`.
+    public var requestMetadata: [String: String]?
+    /// v0.67.6: thinking display mode. `summarized` (default) returns thinking text;
+    /// `omitted` skips thinking streaming for faster time-to-first-text-token.
+    public var thinkingDisplay: ThinkingDisplay?
+    /// v0.67.6: invoked after the provider response is received and before stream consumption.
+    public var onResponse: ResponseHandler?
+    /// v0.70.1: SDK request timeout (ms).
+    public var timeoutMs: Int?
+    /// v0.70.1: SDK max retries.
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -961,7 +1079,12 @@ public struct BedrockOptions: Sendable {
         interleavedThinking: Bool? = nil,
         cacheRetention: CacheRetention? = nil,
         headers: [String: String]? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        requestMetadata: [String: String]? = nil,
+        thinkingDisplay: ThinkingDisplay? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -975,6 +1098,11 @@ public struct BedrockOptions: Sendable {
         self.cacheRetention = cacheRetention
         self.headers = headers
         self.onPayload = onPayload
+        self.requestMetadata = requestMetadata
+        self.thinkingDisplay = thinkingDisplay
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 

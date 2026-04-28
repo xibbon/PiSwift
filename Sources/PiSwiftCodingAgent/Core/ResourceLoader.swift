@@ -35,6 +35,8 @@ public struct DefaultResourceLoaderOptions: Sendable {
     public var noSkills: Bool?
     public var noPromptTemplates: Bool?
     public var noThemes: Bool?
+    /// v0.67.4: skip AGENTS.md / CLAUDE.md auto-discovery for clean runs.
+    public var noContextFiles: Bool?
     public var systemPrompt: String?
     public var appendSystemPrompt: String?
 
@@ -50,6 +52,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         noSkills: Bool? = nil,
         noPromptTemplates: Bool? = nil,
         noThemes: Bool? = nil,
+        noContextFiles: Bool? = nil,
         systemPrompt: String? = nil,
         appendSystemPrompt: String? = nil
     ) {
@@ -64,6 +67,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         self.noSkills = noSkills
         self.noPromptTemplates = noPromptTemplates
         self.noThemes = noThemes
+        self.noContextFiles = noContextFiles
         self.systemPrompt = systemPrompt
         self.appendSystemPrompt = appendSystemPrompt
     }
@@ -83,6 +87,7 @@ public final class DefaultResourceLoader: ResourceLoader {
     private let noSkills: Bool
     private let noPromptTemplates: Bool
     private let noThemes: Bool
+    private let noContextFiles: Bool
     private let systemPromptSource: String?
     private let appendSystemPromptSource: String?
 
@@ -170,6 +175,7 @@ public final class DefaultResourceLoader: ResourceLoader {
         self.noSkills = options.noSkills ?? false
         self.noPromptTemplates = options.noPromptTemplates ?? false
         self.noThemes = options.noThemes ?? false
+        self.noContextFiles = options.noContextFiles ?? false
         self.systemPromptSource = options.systemPrompt
         self.appendSystemPromptSource = options.appendSystemPrompt
     }
@@ -316,7 +322,10 @@ public final class DefaultResourceLoader: ResourceLoader {
             addDefaultMetadataForPath(path)
         }
 
-        agentsFiles = loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: agentDir))
+        // v0.67.4: --no-context-files / noContextFiles option skips AGENTS.md / CLAUDE.md discovery.
+        agentsFiles = noContextFiles
+            ? []
+            : loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: agentDir))
 
         let baseSystemPrompt = resolvePromptInput(systemPromptSource ?? discoverSystemPromptFile(), "system prompt")
         systemPrompt = baseSystemPrompt

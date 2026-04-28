@@ -955,7 +955,10 @@ public final class DefaultPackageManager: PackageManager {
             prompts: [URL(fileURLWithPath: standardProjectBaseDir).appendingPathComponent("prompts").path],
             themes: [URL(fileURLWithPath: standardProjectBaseDir).appendingPathComponent("themes").path]
         )
-        let userAgentsSkillsDir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".agents").appendingPathComponent("skills").path
+        // Match upstream: prefer `$HOME` env var over `homedir()` so tests can isolate
+        // `~/.agents/skills` against the test's own temp HOME. (pi-mono: `getHomeDir()`.)
+        let homeDir = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+        let userAgentsSkillsDir = URL(fileURLWithPath: homeDir).appendingPathComponent(".agents").appendingPathComponent("skills").path
         let projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(startDir: cwd)
 
         func addResources(

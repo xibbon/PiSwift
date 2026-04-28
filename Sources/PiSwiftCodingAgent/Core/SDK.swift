@@ -708,7 +708,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     agentBox.withLock { $0 = createdAgent }
 
     if hasExistingSession {
-        createdAgent.replaceMessages(existingSession.messages)
+        createdAgent.messages = existingSession.messages
     } else {
         sessionManager.appendModelChange(resolvedModel.provider, resolvedModel.id)
         sessionManager.appendThinkingLevelChange((thinkingLevel ?? .off).rawValue)
