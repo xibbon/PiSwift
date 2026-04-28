@@ -4,15 +4,62 @@ public struct PromptTemplate: Sendable {
     public var name: String
     public var description: String
     public var content: String
-    public var source: String
     public var filePath: String
+    /// v0.67.6: optional argument hint shown before the description in the autocomplete dropdown.
+    /// Convention: `<required>` for required args, `[optional]` for optional.
+    public var argumentHint: String?
+    /// v0.62.0: structured provenance for autocomplete / RPC / SDK introspection.
+    public var sourceInfo: SourceInfo
 
-    public init(name: String, description: String, content: String, source: String, filePath: String) {
+    public init(
+        name: String,
+        description: String,
+        content: String,
+        source: String,
+        filePath: String,
+        argumentHint: String? = nil
+    ) {
         self.name = name
         self.description = description
         self.content = content
-        self.source = source
         self.filePath = filePath
+        self.argumentHint = argumentHint
+        self.sourceInfo = SourceInfo(
+            path: filePath,
+            source: source,
+            scope: promptScopeFromSource(source)
+        )
+    }
+
+    public init(
+        name: String,
+        description: String,
+        content: String,
+        filePath: String,
+        sourceInfo: SourceInfo,
+        argumentHint: String? = nil
+    ) {
+        self.name = name
+        self.description = description
+        self.content = content
+        self.filePath = filePath
+        self.argumentHint = argumentHint
+        self.sourceInfo = sourceInfo
+    }
+}
+
+private func promptScopeFromSource(_ source: String) -> String {
+    switch source {
+    case "user", "claude-user", "codex-user", "pi-user":
+        return "user"
+    case "project", "claude-project", "pi-project":
+        return "project"
+    case "package":
+        return "package"
+    case "core", "":
+        return "core"
+    default:
+        return source
     }
 }
 

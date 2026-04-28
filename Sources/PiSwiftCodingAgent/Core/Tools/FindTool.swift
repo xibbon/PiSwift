@@ -122,8 +122,6 @@ public func createFindTool(cwd: String) -> AgentTool {
     }
 }
 
-public let findTool = createFindTool(cwd: FileManager.default.currentDirectoryPath)
-
 private func loadGitignorePatterns(root: String) -> [String] {
     let gitignorePath = URL(fileURLWithPath: root).appendingPathComponent(".gitignore").path
     guard let content = try? String(contentsOfFile: gitignorePath, encoding: .utf8) else {

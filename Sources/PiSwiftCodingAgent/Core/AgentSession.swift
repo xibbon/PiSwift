@@ -930,7 +930,7 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.noModelSelected(authPath: getAuthPath())
         }
 
-        let apiKey = await modelRegistry.getApiKey(agent.state.model.provider)
+        let apiKey = await modelRegistry.getApiKeyForProvider(agent.state.model.provider)
         if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             throw AgentSessionError.missingApiKeyForProvider(
                 provider: agent.state.model.provider,
@@ -1147,7 +1147,7 @@ public final class AgentSession: Sendable {
         followUpMessages.removeAll()
         pendingNextTurnMessages.removeAll()
         if let hookRunner = _hookRunner {
-            _ = await hookRunner.emit(SessionSwitchEvent(reason: .new, previousSessionFile: previousSession))
+            _ = await hookRunner.emit(SessionStartEvent(reason: .new, previousSessionFile: previousSession))
         }
         await emitCustomToolSessionEvent(.switch, previousSessionFile: previousSession)
         return true
@@ -1169,7 +1169,7 @@ public final class AgentSession: Sendable {
         sessionManager.setSessionFile(sessionPath)
         agent.sessionId = sessionManager.getSessionId()
         if let hookRunner = _hookRunner {
-            _ = await hookRunner.emit(SessionSwitchEvent(reason: .resume, previousSessionFile: previousSession))
+            _ = await hookRunner.emit(SessionStartEvent(reason: .resume, previousSessionFile: previousSession))
         }
         await syncAgentContext()
         await emitCustomToolSessionEvent(.switch, previousSessionFile: previousSession)
@@ -1185,7 +1185,7 @@ public final class AgentSession: Sendable {
     public func refreshActiveModel() async {
         let current = agent.state.model
         // Check if current model still has a valid API key
-        if await modelRegistry.getApiKey(current.provider) != nil {
+        if await modelRegistry.getApiKeyForProvider(current.provider) != nil {
             return
         }
         // Current model lost its API key — find a fallback
@@ -1209,7 +1209,7 @@ public final class AgentSession: Sendable {
     }
 
     public func setModel(_ model: Model) async throws {
-        guard await modelRegistry.getApiKey(model.provider) != nil else {
+        guard await modelRegistry.getApiKeyForProvider(model.provider) != nil else {
             throw AgentSessionError.missingApiKeyForModel(provider: model.provider, modelId: model.id)
         }
         let previousModel = agent.state.model
@@ -1234,7 +1234,7 @@ public final class AgentSession: Sendable {
         let count = scopedModelsInternal.count
         let nextIndex = direction == .forward ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count
         let next = scopedModelsInternal[nextIndex]
-        guard await modelRegistry.getApiKey(next.model.provider) != nil else {
+        guard await modelRegistry.getApiKeyForProvider(next.model.provider) != nil else {
             throw AgentSessionError.missingApiKeyForModel(provider: next.model.provider, modelId: next.model.id)
         }
         let previousModel = agent.state.model
@@ -1257,7 +1257,7 @@ public final class AgentSession: Sendable {
         let count = models.count
         let nextIndex = direction == .forward ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count
         let next = models[nextIndex]
-        guard await modelRegistry.getApiKey(next.provider) != nil else {
+        guard await modelRegistry.getApiKeyForProvider(next.provider) != nil else {
             throw AgentSessionError.missingApiKeyForModel(provider: next.provider, modelId: next.id)
         }
         let previousModel = agent.state.model
@@ -1414,7 +1414,7 @@ public final class AgentSession: Sendable {
         agent.sessionId = sessionManager.getSessionId()
 
         if let hookRunner = _hookRunner {
-            _ = await hookRunner.emit(SessionForkEvent(previousSessionFile: previousSession))
+            _ = await hookRunner.emit(SessionStartEvent(reason: .fork, previousSessionFile: previousSession))
         }
 
         await emitCustomToolSessionEvent(.fork, previousSessionFile: previousSession)
@@ -1477,7 +1477,7 @@ public final class AgentSession: Sendable {
             guard let model = agent.state.model as Model? else {
                 return (nil, true, nil, nil)
             }
-            if let apiKey = await modelRegistry.getApiKey(model.provider) {
+            if let apiKey = await modelRegistry.getApiKeyForProvider(model.provider) {
                 let options = GenerateBranchSummaryOptions(
                     model: model,
                     apiKey: apiKey,
@@ -1562,7 +1562,7 @@ public final class AgentSession: Sendable {
         defer { compactionAbort = nil }
 
         let model = agent.state.model
-        let apiKey = await modelRegistry.getApiKey(model.provider)
+        let apiKey = await modelRegistry.getApiKeyForProvider(model.provider)
         if apiKey == nil {
             throw AgentSessionError.missingApiKey(provider: model.provider)
         }

@@ -149,5 +149,3 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
         return AgentToolResult(content: [.text(TextContent(text: outputText))], details: details)
     }
 }
-
-public let readTool = createReadTool(cwd: FileManager.default.currentDirectoryPath)

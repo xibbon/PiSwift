@@ -807,6 +807,10 @@ public struct OpenAICodexResponsesOptions: Sendable {
     public var transport: Transport?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    /// v0.67.1: forward configured serviceTier to Codex Responses requests so users can choose
+    /// flex / priority pricing tiers. v0.67.67: trust the explicitly requested tier when the API
+    /// echoes the default — keeps cost accounting aligned with the caller-selected tier.
+    public var serviceTier: OpenAIServiceTier?
 
     public init(
         temperature: Double? = nil,
@@ -820,7 +824,8 @@ public struct OpenAICodexResponsesOptions: Sendable {
         sessionId: String? = nil,
         transport: Transport? = nil,
         headers: [String: String]? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        serviceTier: OpenAIServiceTier? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -834,6 +839,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         self.transport = transport
         self.headers = headers
         self.onPayload = onPayload
+        self.serviceTier = serviceTier
     }
 }
 

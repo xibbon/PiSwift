@@ -566,7 +566,7 @@ private func handleRpcCommand(
                 "name": template.name,
                 "description": template.description,
                 "source": "template",
-                "location": template.source,
+                "location": template.sourceInfo.source,
                 "path": template.filePath,
             ])
         }
@@ -575,7 +575,7 @@ private func handleRpcCommand(
                 "name": "skill:\(skill.name)",
                 "description": skill.description,
                 "source": "skill",
-                "location": skill.source,
+                "location": skill.sourceInfo.source,
                 "path": skill.filePath,
             ])
         }

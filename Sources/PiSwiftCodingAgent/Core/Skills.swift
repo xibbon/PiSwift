@@ -18,8 +18,9 @@ public struct Skill: Sendable {
     public var description: String
     public var filePath: String
     public var baseDir: String
-    public var source: String
     public var disableModelInvocation: Bool
+    /// v0.62.0: structured provenance for autocomplete / RPC / SDK introspection.
+    public var sourceInfo: SourceInfo
 
     public init(
         name: String,
@@ -33,8 +34,45 @@ public struct Skill: Sendable {
         self.description = description
         self.filePath = filePath
         self.baseDir = baseDir
-        self.source = source
         self.disableModelInvocation = disableModelInvocation
+        self.sourceInfo = SourceInfo(
+            path: filePath,
+            source: source,
+            scope: skillScopeFromSource(source),
+            baseDir: baseDir
+        )
+    }
+
+    public init(
+        name: String,
+        description: String,
+        filePath: String,
+        baseDir: String,
+        sourceInfo: SourceInfo,
+        disableModelInvocation: Bool = false
+    ) {
+        self.name = name
+        self.description = description
+        self.filePath = filePath
+        self.baseDir = baseDir
+        self.disableModelInvocation = disableModelInvocation
+        self.sourceInfo = sourceInfo
+    }
+}
+
+/// Map the legacy `source` string to the upstream `scope` taxonomy ("user" / "project" / "package" / "core").
+private func skillScopeFromSource(_ source: String) -> String {
+    switch source {
+    case "user", "claude-user", "codex-user", "pi-user":
+        return "user"
+    case "project", "claude-project", "pi-project":
+        return "project"
+    case "package":
+        return "package"
+    case "core", "":
+        return "core"
+    default:
+        return source
     }
 }
 

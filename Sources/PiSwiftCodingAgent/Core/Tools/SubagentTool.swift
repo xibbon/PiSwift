@@ -349,7 +349,7 @@ private func runSingleAgent(
         )
     }
 
-    let apiKey = await dependencies.modelRegistry.getApiKey(resolved.model.provider)
+    let apiKey = await dependencies.modelRegistry.getApiKeyForProvider(resolved.model.provider)
     if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
         let message = AgentSessionError.missingApiKeyForProvider(provider: resolved.model.provider, authPath: agentAuthPath(dependencies.agentDir)).localizedDescription
         return SubagentRunResult(
@@ -414,7 +414,7 @@ private func runSingleAgent(
         },
         thinkingBudgets: dependencies.settingsManager.getThinkingBudgets(),
         getApiKey: { provider in
-            await dependencies.modelRegistry.getApiKey(provider)
+            await dependencies.modelRegistry.getApiKeyForProvider(provider)
         }
     ))
 

@@ -48,5 +48,3 @@ public func createWriteTool(cwd: String) -> AgentTool {
         }
     }
 }
-
-public let writeTool = createWriteTool(cwd: FileManager.default.currentDirectoryPath)

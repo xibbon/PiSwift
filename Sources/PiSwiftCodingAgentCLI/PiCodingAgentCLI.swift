@@ -754,7 +754,7 @@ private func findInitialModelForSession(
         let restored = modelRegistry.find(modelInfo.provider, modelInfo.modelId)
         var hasApiKey = false
         if let restored {
-            hasApiKey = await modelRegistry.getApiKey(restored.provider) != nil
+            hasApiKey = await modelRegistry.getApiKeyForProvider(restored.provider) != nil
         }
         if let restored, hasApiKey {
             if shouldPrintMessages {

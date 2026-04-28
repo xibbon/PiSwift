@@ -15,9 +15,14 @@ private func normalizeUnicodeSpaces(_ str: String) -> String {
     return result
 }
 
+/// v0.67.3: also handle lowercase "am"/"pm" in macOS screenshot filenames. Some locales
+/// (e.g. some Asian English variants) produce "Screenshot ... at 3.14.15 pm.png" instead of
+/// "PM". The narrow-no-break-space substitution must apply to both casings.
 private func tryMacOSScreenshotPath(_ path: String) -> String {
     path.replacingOccurrences(of: " AM.", with: "\(narrowNoBreakSpace)AM.")
         .replacingOccurrences(of: " PM.", with: "\(narrowNoBreakSpace)PM.")
+        .replacingOccurrences(of: " am.", with: "\(narrowNoBreakSpace)am.")
+        .replacingOccurrences(of: " pm.", with: "\(narrowNoBreakSpace)pm.")
 }
 
 private func tryNFDVariant(_ path: String) -> String {

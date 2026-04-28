@@ -1,6 +1,22 @@
 import Foundation
 import PiSwiftAI
 
+/// v0.63.0: result of model-aware auth lookup. Carries the API key plus any per-model headers
+/// (re-resolved on each call, so `!cmd` values pick up fresh tokens).
+public struct ModelAuth: Sendable {
+    public let ok: Bool
+    public let apiKey: String?
+    public let headers: [String: String]?
+    public let error: String?
+
+    public init(ok: Bool, apiKey: String?, headers: [String: String]?, error: String?) {
+        self.ok = ok
+        self.apiKey = apiKey
+        self.headers = headers
+        self.error = error
+    }
+}
+
 private func parseRouting(_ value: Any?) -> (only: [String]?, order: [String]?)? {
     guard let dict = value as? [String: Any] else { return nil }
     let only = dict["only"] as? [String]
@@ -30,6 +46,15 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
     let openRouterRouting = openRouterRoutingValue.map { OpenRouterRouting(only: $0.only, order: $0.order) }
     let vercelGatewayRouting = vercelGatewayRoutingValue.map { VercelGatewayRouting(only: $0.only, order: $0.order) }
 
+    // v0.68.0 / v0.70.0 / v0.70.1: new compat fields read from models.json so proxies and
+    // custom-provider entries can opt in/out without recompiling.
+    let supportsLongCacheRetention = dict["supportsLongCacheRetention"] as? Bool
+    let sendSessionIdHeader = dict["sendSessionIdHeader"] as? Bool
+    let supportsEagerToolInputStreaming = dict["supportsEagerToolInputStreaming"] as? Bool
+    let cacheControlFormat = (dict["cacheControlFormat"] as? String).flatMap(OpenAICompatCacheControlFormat.init(rawValue:))
+    let sendSessionAffinityHeaders = dict["sendSessionAffinityHeaders"] as? Bool
+    let requiresReasoningContentOnAssistantMessages = dict["requiresReasoningContentOnAssistantMessages"] as? Bool
+
     if supportsStore == nil,
        supportsDeveloperRole == nil,
        supportsReasoningEffort == nil,
@@ -42,7 +67,13 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
        thinkingFormat == nil,
        supportsStrictMode == nil,
        openRouterRouting == nil,
-       vercelGatewayRouting == nil {
+       vercelGatewayRouting == nil,
+       supportsLongCacheRetention == nil,
+       sendSessionIdHeader == nil,
+       supportsEagerToolInputStreaming == nil,
+       cacheControlFormat == nil,
+       sendSessionAffinityHeaders == nil,
+       requiresReasoningContentOnAssistantMessages == nil {
         return nil
     }
 
@@ -59,7 +90,13 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
         thinkingFormat: thinkingFormat,
         openRouterRouting: openRouterRouting,
         vercelGatewayRouting: vercelGatewayRouting,
-        supportsStrictMode: supportsStrictMode
+        supportsStrictMode: supportsStrictMode,
+        supportsLongCacheRetention: supportsLongCacheRetention,
+        sendSessionIdHeader: sendSessionIdHeader,
+        supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
+        cacheControlFormat: cacheControlFormat,
+        sendSessionAffinityHeaders: sendSessionAffinityHeaders,
+        requiresReasoningContentOnAssistantMessages: requiresReasoningContentOnAssistantMessages
     )
 }
 
@@ -132,7 +169,14 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
         thinkingFormat: override.thinkingFormat ?? base.thinkingFormat,
         openRouterRouting: mergedOpenRouter,
         vercelGatewayRouting: mergedVercel,
-        supportsStrictMode: override.supportsStrictMode ?? base.supportsStrictMode
+        supportsStrictMode: override.supportsStrictMode ?? base.supportsStrictMode,
+        // v0.68.0 / v0.70.0 / v0.70.1: new compat fields preserved from base when not overridden.
+        supportsLongCacheRetention: override.supportsLongCacheRetention ?? base.supportsLongCacheRetention,
+        sendSessionIdHeader: override.sendSessionIdHeader ?? base.sendSessionIdHeader,
+        supportsEagerToolInputStreaming: override.supportsEagerToolInputStreaming ?? base.supportsEagerToolInputStreaming,
+        cacheControlFormat: override.cacheControlFormat ?? base.cacheControlFormat,
+        sendSessionAffinityHeaders: override.sendSessionAffinityHeaders ?? base.sendSessionAffinityHeaders,
+        requiresReasoningContentOnAssistantMessages: override.requiresReasoningContentOnAssistantMessages ?? base.requiresReasoningContentOnAssistantMessages
     )
 }
 
@@ -230,8 +274,34 @@ public final class ModelRegistry: Sendable {
         state.withLock { $0.models }
     }
 
-    public func getApiKey(_ provider: String) async -> String? {
+    /// v0.63.0: provider-only API-key lookup. Use this only when you explicitly want
+    /// provider-level lookup without model headers or `authHeader` handling.
+    /// For model-aware auth (which includes per-model `headers` and `compat.authHeader`
+    /// resolution), call `getApiKeyAndHeaders(_ model:)` instead.
+    public func getApiKeyForProvider(_ provider: String) async -> String? {
         await authStorage.getApiKey(provider)
+    }
+
+    /// v0.63.0: model-aware auth lookup. Resolves the API key from the auth store AND
+    /// the model's headers (which may include per-request shell-command resolution).
+    ///
+    /// Header resolution runs through `resolveHeaders` on each call so values like
+    /// `"Authorization": "!my-token-cmd"` re-execute their underlying command instead
+    /// of returning a long-lived stale token. Pi leaves caching/TTL/recovery to the
+    /// user-provided wrapper command.
+    public func getApiKeyAndHeaders(_ model: Model) async -> ModelAuth {
+        let apiKey = await authStorage.getApiKey(model.provider)
+        // Re-resolve model.headers each time so `!cmd` values pick up fresh tokens.
+        let resolvedHeaders = resolveHeaders(model.headers)
+        if apiKey == nil && (resolvedHeaders?.isEmpty ?? true) {
+            return ModelAuth(
+                ok: false,
+                apiKey: nil,
+                headers: nil,
+                error: "No API key or headers configured for provider \"\(model.provider)\""
+            )
+        }
+        return ModelAuth(ok: true, apiKey: apiKey, headers: resolvedHeaders, error: nil)
     }
 
     private func loadModels() {

@@ -706,13 +706,19 @@ private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
 }
 
 /// Middleware for Qwen models that use chat-template format for thinking control.
+/// v0.67.67: also sets `preserve_thinking: true` so multi-turn tool-call arguments survive
+/// across turns. Without this, Qwen chat-template models lose prior thinking state and
+/// degrade to empty `{}` tool-call payloads on the second turn.
 private struct OpenAICompletionsChatTemplateMiddleware: OpenAIMiddleware {
     let enableThinking: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
         guard let body = request.httpBody else { return request }
         guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-        payload["chat_template_kwargs"] = ["enable_thinking": enableThinking]
+        payload["chat_template_kwargs"] = [
+            "enable_thinking": enableThinking,
+            "preserve_thinking": true,
+        ]
         guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
         var updated = request
         updated.httpBodyStream = nil

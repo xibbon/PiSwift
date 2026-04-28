@@ -167,8 +167,6 @@ public func createGrepTool(cwd: String) -> AgentTool {
     }
 }
 
-public let grepTool = createGrepTool(cwd: FileManager.default.currentDirectoryPath)
-
 private func formatPath(for file: URL, searchPath: String, isDirectory: Bool) -> String {
     if isDirectory {
         let basePrefix = searchPath.hasSuffix("/") ? searchPath : searchPath + "/"

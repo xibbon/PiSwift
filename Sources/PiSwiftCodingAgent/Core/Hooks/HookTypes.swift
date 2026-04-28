@@ -289,10 +289,23 @@ public struct RegisteredCommand: Sendable {
     public var name: String
     public var description: String?
     public var handler: @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void
+    /// v0.62.0: structured provenance — replaces the legacy `extensionPath` and `location` fields.
+    /// Should be set by the loader to the extension's source info.
+    public var sourceInfo: SourceInfo?
+    /// v0.67.6: optional argument hint rendered before the description.
+    public var argumentHint: String?
 
-    public init(name: String, description: String? = nil, handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
+    public init(
+        name: String,
+        description: String? = nil,
+        sourceInfo: SourceInfo? = nil,
+        argumentHint: String? = nil,
+        handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void
+    ) {
         self.name = name
         self.description = description
+        self.sourceInfo = sourceInfo
+        self.argumentHint = argumentHint
         self.handler = handler
     }
 }
@@ -539,10 +552,31 @@ public enum SessionSwitchReason: String, Sendable {
     case resume
 }
 
+/// v0.65.0 + v0.69.0: discriminator on `session_start` events.
+/// Replaces the separate `session_switch` and `session_fork` events.
+public enum SessionStartReason: String, Sendable {
+    case startup
+    case reload
+    case new
+    case resume
+    case fork
+}
+
 public struct SessionStartEvent: HookEvent, Sendable {
     public let type: String = "session_start"
+    /// v0.65.0: distinguishes the lifecycle phase that triggered the event.
+    /// `.startup` and `.reload` are emitted by the host on initial load / reload;
+    /// `.new` / `.resume` / `.fork` are emitted by `AgentSession` (and `AgentSessionRuntime`)
+    /// on session-replacement operations.
+    public var reason: SessionStartReason
+    /// v0.65.0: previous session's file path. Set for `.new`, `.resume`, `.fork`.
+    /// Nil for `.startup` and `.reload`.
+    public var previousSessionFile: String?
 
-    public init() {}
+    public init(reason: SessionStartReason = .startup, previousSessionFile: String? = nil) {
+        self.reason = reason
+        self.previousSessionFile = previousSessionFile
+    }
 }
 
 public struct SessionBeforeSwitchEvent: HookEvent, Sendable {
@@ -556,21 +590,31 @@ public struct SessionBeforeSwitchEvent: HookEvent, Sendable {
     }
 }
 
-public struct SessionSwitchEvent: HookEvent, Sendable {
-    public let type: String = "session_switch"
-    public var reason: SessionSwitchReason
-    public var previousSessionFile: String?
+// v0.65.0: SessionSwitchEvent removed. Use SessionStartEvent(reason: .new | .resume).
 
-    public init(reason: SessionSwitchReason, previousSessionFile: String?) {
-        self.reason = reason
-        self.previousSessionFile = previousSessionFile
-    }
+/// v0.68.0: discriminator on `session_shutdown` events. Tells extensions which lifecycle
+/// path triggered the shutdown so they can run targeted cleanup (e.g., release resources
+/// permanently on quit, but not on reload).
+public enum SessionShutdownReason: String, Sendable {
+    case quit
+    case reload
+    case new
+    case resume
+    case fork
 }
 
 public struct SessionShutdownEvent: HookEvent, Sendable {
     public let type: String = "session_shutdown"
+    /// v0.68.0: shutdown lifecycle phase.
+    public var reason: SessionShutdownReason
+    /// v0.68.0: target session file when the shutdown is followed by a switch.
+    /// Set for `.new`, `.resume`, `.fork`. Nil for `.quit` / `.reload`.
+    public var targetSessionFile: String?
 
-    public init() {}
+    public init(reason: SessionShutdownReason = .quit, targetSessionFile: String? = nil) {
+        self.reason = reason
+        self.targetSessionFile = targetSessionFile
+    }
 }
 
 public struct ContextEvent: HookEvent, Sendable {
@@ -709,14 +753,7 @@ public struct SessionBeforeForkEvent: HookEvent, Sendable {
     }
 }
 
-public struct SessionForkEvent: HookEvent, Sendable {
-    public let type: String = "session_fork"
-    public var previousSessionFile: String?
-
-    public init(previousSessionFile: String?) {
-        self.previousSessionFile = previousSessionFile
-    }
-}
+// v0.65.0: SessionForkEvent removed. Use SessionStartEvent(reason: .fork).
 
 public struct SessionBeforeTreeEvent: HookEvent, Sendable {
     public let type: String = "session_before_tree"

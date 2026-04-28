@@ -15,8 +15,12 @@ func resolveCacheRetention(_ cacheRetention: CacheRetention?) -> CacheRetention 
     return .short
 }
 
-func getPromptCacheRetention(baseUrl: String, cacheRetention: CacheRetention) -> String? {
+/// v0.70.0: opt-out via `compat.supportsLongCacheRetention == false` for proxies that
+/// reject the `prompt_cache_retention` field. Long retention is on by default for direct
+/// `api.openai.com` requests when `cacheRetention == .long`.
+func getPromptCacheRetention(baseUrl: String, cacheRetention: CacheRetention, compat: OpenAICompat? = nil) -> String? {
     guard cacheRetention == .long else { return nil }
+    if compat?.supportsLongCacheRetention == false { return nil }
     guard baseUrl.contains("api.openai.com") else { return nil }
     return "24h"
 }
@@ -169,7 +173,7 @@ public func streamOpenAIResponses(
 
         do {
             let cacheRetention = resolveCacheRetention(options.cacheRetention)
-            let promptCacheRetention = getPromptCacheRetention(baseUrl: model.baseUrl, cacheRetention: cacheRetention)
+            let promptCacheRetention = getPromptCacheRetention(baseUrl: model.baseUrl, cacheRetention: cacheRetention, compat: model.compat)
             let middleware = OpenAIResponsesCacheMiddleware(
                 sessionId: options.sessionId,
                 cacheRetention: cacheRetention,
@@ -374,7 +378,7 @@ public func streamOpenAIResponses(
                             totalTokens: usage.totalTokens
                         )
                         calculateCost(model: model, usage: &output.usage)
-                        applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier)
+                        applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier, model: model)
                     }
                     output.stopReason = mapResponsesStopReason(completed.response.status)
                     if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) && output.stopReason == .stop {
@@ -518,19 +522,24 @@ private func mapResponsesServiceTier(_ tier: OpenAIServiceTier?) -> ServiceTier?
     }
 }
 
-private func serviceTierMultiplier(_ tier: OpenAIServiceTier?) -> Double {
+/// v0.70.0: GPT-5.5 Codex applies a 2.5x priority service-tier multiplier (vs 2x for older
+/// Codex models). Pass the model so we can pick the right rate.
+private func serviceTierMultiplier(_ tier: OpenAIServiceTier?, model: Model? = nil) -> Double {
     switch tier {
     case .flex:
         return 0.5
     case .priority, .onDemand:
+        if let modelId = model?.id, modelId.contains("gpt-5.5") {
+            return 2.5
+        }
         return 2
     default:
         return 1
     }
 }
 
-private func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAIServiceTier?) {
-    let multiplier = serviceTierMultiplier(serviceTier)
+private func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAIServiceTier?, model: Model? = nil) {
+    let multiplier = serviceTierMultiplier(serviceTier, model: model)
     guard multiplier != 1 else { return }
     usage.cost.input *= multiplier
     usage.cost.output *= multiplier

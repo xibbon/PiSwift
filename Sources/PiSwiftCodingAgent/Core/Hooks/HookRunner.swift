@@ -198,10 +198,26 @@ public final class HookRunner: Sendable {
         return nil
     }
 
+    /// v0.62.0: when multiple extensions register commands with the same name, conflicting
+    /// commands receive numeric invocation suffixes in load order — e.g., the first wins
+    /// the bare name, the second becomes `<name>:1`, the third `<name>:2`, etc. This
+    /// disambiguates extension command names so users can still invoke each one explicitly.
     public func getRegisteredCommands() -> [RegisteredCommand] {
         var commands: [RegisteredCommand] = []
+        var nameCount: [String: Int] = [:]
         for hook in hooks {
-            commands.append(contentsOf: hook.commands.values)
+            for command in hook.commands.values {
+                let baseName = command.name
+                let count = nameCount[baseName] ?? 0
+                if count == 0 {
+                    commands.append(command)
+                } else {
+                    var renamed = command
+                    renamed.name = "\(baseName):\(count)"
+                    commands.append(renamed)
+                }
+                nameCount[baseName] = count + 1
+            }
         }
         return commands
     }

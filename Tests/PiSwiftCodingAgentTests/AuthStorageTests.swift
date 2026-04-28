@@ -22,7 +22,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageLiteralApiKeyReturned() async {
     let tempDir = makeTempDir("auth-storage-literal")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "sk-ant-literal-key"]])
@@ -35,7 +34,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeyUsesStdout() async {
     let tempDir = makeTempDir("auth-storage-command")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!echo test-api-key-from-command"]])
@@ -48,7 +46,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeyTrimsWhitespace() async {
     let tempDir = makeTempDir("auth-storage-trim")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!echo '  spaced-key  '"]])
@@ -61,7 +58,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeyHandlesMultilineOutput() async {
     let tempDir = makeTempDir("auth-storage-multiline")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!printf 'line1\\nline2'"]])
@@ -74,7 +70,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeyFailureReturnsNil() async {
     let tempDir = makeTempDir("auth-storage-fail")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!exit 1"]])
@@ -87,7 +82,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeyNonexistentCommandReturnsNil() async {
     let tempDir = makeTempDir("auth-storage-missing")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!nonexistent-command-12345"]])
@@ -100,7 +94,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeyEmptyOutputReturnsNil() async {
     let tempDir = makeTempDir("auth-storage-empty")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!printf ''"]])
@@ -113,7 +106,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageEnvVarNameResolves() async {
     let tempDir = makeTempDir("auth-storage-env")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let envName = "TEST_AUTH_API_KEY_12345"
     let previous = ProcessInfo.processInfo.environment[envName]
@@ -137,7 +129,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageLiteralValueUsedWhenNotEnv() async {
     let tempDir = makeTempDir("auth-storage-literal-env")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     unsetenv("literal_api_key_value")
 
@@ -152,7 +143,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageCommandApiKeySupportsPipes() async {
     let tempDir = makeTempDir("auth-storage-pipes")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!echo 'hello world' | tr ' ' '-'"]])
@@ -162,10 +152,13 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
     #expect(apiKey == "hello-world")
 }
 
-@Test func authStorageCommandCachingExecutesOnce() async {
+/// v0.63.0: shell-command auth resolves at request time. The previous in-process cache
+/// was removed because it caused expiring tokens (OAuth, AWS STS) to be returned stale.
+/// Each call to `getApiKey` re-executes the underlying command. Caching policy is the
+/// responsibility of the user-provided wrapper command.
+@Test func authStorageCommandExecutesEveryCall() async {
     let tempDir = makeTempDir("auth-storage-cache")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let counterFile = URL(fileURLWithPath: tempDir).appendingPathComponent("counter").path
     try? "0".write(toFile: counterFile, atomically: true, encoding: .utf8)
@@ -180,13 +173,13 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
     _ = await storage.getApiKey("anthropic")
 
     let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
-    #expect(count == 1)
+    // v0.63.0: 3 calls → 3 executions (no caching).
+    #expect(count == 3)
 }
 
-@Test func authStorageCommandCachingPersistsAcrossInstances() async {
+@Test func authStorageCommandExecutesPerInstance() async {
     let tempDir = makeTempDir("auth-storage-cache-instances")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let counterFile = URL(fileURLWithPath: tempDir).appendingPathComponent("counter").path
     try? "0".write(toFile: counterFile, atomically: true, encoding: .utf8)
@@ -202,34 +195,13 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
     _ = await storage2.getApiKey("anthropic")
 
     let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
-    #expect(count == 1)
-}
-
-@Test func authStorageClearCacheAllowsCommandToRunAgain() async {
-    let tempDir = makeTempDir("auth-storage-clear-cache")
-    defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
-
-    let counterFile = URL(fileURLWithPath: tempDir).appendingPathComponent("counter").path
-    try? "0".write(toFile: counterFile, atomically: true, encoding: .utf8)
-
-    let command = "!sh -c 'count=$(cat \(counterFile)); echo $((count + 1)) > \(counterFile); echo key-value'"
-    let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
-    writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": command]])
-
-    let storage = AuthStorage(authPath)
-    _ = await storage.getApiKey("anthropic")
-    clearConfigValueCache()
-    _ = await storage.getApiKey("anthropic")
-
-    let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
+    // v0.63.0: each call re-executes (no persistent cache across calls or instances).
     #expect(count == 2)
 }
 
 @Test func authStorageCachesDifferentCommandsSeparately() async {
     let tempDir = makeTempDir("auth-storage-cache-separate")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: [
@@ -245,10 +217,11 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
     #expect(keyB == "key-openai")
 }
 
-@Test func authStorageFailedCommandsAreCached() async {
+/// v0.63.0: failures are no longer cached either — each call re-executes, giving the
+/// wrapper command a fresh chance to recover.
+@Test func authStorageFailedCommandsRetry() async {
     let tempDir = makeTempDir("auth-storage-cache-fail")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let counterFile = URL(fileURLWithPath: tempDir).appendingPathComponent("counter").path
     try? "0".write(toFile: counterFile, atomically: true, encoding: .utf8)
@@ -265,13 +238,13 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
     #expect(key2 == nil)
 
     let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
-    #expect(count == 1)
+    // Each call re-executes; both attempts ran the failing command.
+    #expect(count == 2)
 }
 
 @Test func authStorageEnvVarsNotCached() async {
     let tempDir = makeTempDir("auth-storage-env-cache")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let envVarName = "TEST_AUTH_KEY_CACHE_TEST_98765"
     let previous = ProcessInfo.processInfo.environment[envVarName]
@@ -299,7 +272,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageOAuthLockFailureAllowsLaterRetry() async {
     let tempDir = makeTempDir("auth-storage-oauth-lock")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let now = Int64(Date().timeIntervalSince1970 * 1000)
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
@@ -337,7 +309,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageRuntimeOverrideTakesPriority() async {
     let tempDir = makeTempDir("auth-storage-runtime")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!echo stored-key"]])
@@ -351,7 +322,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageRuntimeOverrideRemovalFallsBack() async {
     let tempDir = makeTempDir("auth-storage-runtime-fallback")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "!echo stored-key"]])
@@ -366,7 +336,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageSetPreservesUnrelatedExternalEdits() async {
     let tempDir = makeTempDir("auth-storage-preserve-set")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: [
@@ -395,7 +364,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageRemovePreservesUnrelatedExternalEdits() async {
     let tempDir = makeTempDir("auth-storage-preserve-remove")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: [
@@ -421,7 +389,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageDoesNotOverwriteMalformedFileAfterReloadError() async throws {
     let tempDir = makeTempDir("auth-storage-malformed")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "anthropic-key"]])
@@ -438,7 +405,6 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
 @Test func authStorageDrainErrorsClearsAfterRead() async throws {
     let tempDir = makeTempDir("auth-storage-errors")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
-    defer { clearConfigValueCache() }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "anthropic-key"]])

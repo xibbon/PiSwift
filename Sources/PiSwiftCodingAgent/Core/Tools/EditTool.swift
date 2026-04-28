@@ -121,5 +121,3 @@ public func createEditTool(cwd: String) -> AgentTool {
         }
     }
 }
-
-public let editTool = createEditTool(cwd: FileManager.default.currentDirectoryPath)

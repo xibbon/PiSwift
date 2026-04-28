@@ -14,38 +14,17 @@ public enum ToolName: String, CaseIterable, Sendable {
     case subagent
 }
 
-private func shouldIncludeBashTool() -> Bool {
+/// v0.68.0: built-in tools are factory-only. The cwd-bound singletons (`readTool`, `bashTool`,
+/// etc.) and the global `codingTools` / `allTools` / `readOnlyTools` accessors were removed.
+/// Use the factory exports — `createReadTool(cwd:)`, `createCodingTools(cwd:)`,
+/// `createAllTools(cwd:)`, `createReadOnlyTools(cwd:)` — and pass an explicit cwd.
+internal func shouldIncludeBashTool() -> Bool {
     #if canImport(UIKit)
     return BashExecutorRegistry.isAvailable()
     #else
     return true
     #endif
 }
-
-public var codingTools: [Tool] {
-    var tools: [Tool] = [readTool]
-    if shouldIncludeBashTool() {
-        tools.append(bashTool)
-    }
-    tools.append(contentsOf: [editTool, writeTool])
-    return tools
-}
-
-public var allTools: [ToolName: Tool] {
-    var tools: [ToolName: Tool] = [
-        .read: readTool,
-        .edit: editTool,
-        .write: writeTool,
-        .grep: grepTool,
-        .find: findTool,
-        .ls: lsTool,
-    ]
-    if shouldIncludeBashTool() {
-        tools[.bash] = bashTool
-    }
-    return tools
-}
-public let readOnlyTools: [Tool] = [readTool, grepTool, findTool, lsTool]
 
 public struct ToolsOptions: Sendable {
     public var read: ReadToolOptions?

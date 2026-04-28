@@ -49,7 +49,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
         initialState: AgentState(
             systemPrompt: "You are a helpful assistant. Be concise.",
             model: model,
-            tools: codingTools
+            tools: createCodingTools(cwd: tempDir)
         ),
         convertToLlm: { messages in
             convertToLlm(messages)
@@ -278,7 +278,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
         #expect(capturedEvent?.preparation.firstKeptEntryId.isEmpty == false)
         #expect(capturedEvent?.preparation.tokensBefore ?? 0 >= 0)
         #expect(capturedEvent?.branchEntries.isEmpty == false)
-        let apiKey = await ctx.session.modelRegistry.getApiKey("anthropic")
+        let apiKey = await ctx.session.modelRegistry.getApiKeyForProvider("anthropic")
         #expect(apiKey != nil)
     }
 }

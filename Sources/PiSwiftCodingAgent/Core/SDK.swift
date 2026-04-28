@@ -20,6 +20,14 @@ public enum SystemPromptInput: Sendable {
     case builder(@Sendable (String) -> String)
 }
 
+/// v0.68.0 / v0.70.0: NoToolsMode controls scope of `--no-tools` / `noTools` SDK option.
+/// `.all` disables every tool (built-in + extension + custom). `.builtin` disables only
+/// the default built-in set, keeping extension/custom tools active.
+public enum NoToolsMode: String, Sendable {
+    case all
+    case builtin
+}
+
 public struct CreateAgentSessionOptions: Sendable {
     public var cwd: String?
     public var agentDir: String?
@@ -29,7 +37,14 @@ public struct CreateAgentSessionOptions: Sendable {
     public var thinkingLevel: ThinkingLevel?
     public var scopedModels: [ScopedModel]?
     public var systemPrompt: SystemPromptInput?
-    public var tools: [Tool]?
+    /// v0.68.0: tool-name allowlist for built-in tools. When set, only the named tools are
+    /// activated. Names match `ToolName.rawValue` (e.g., "read", "bash", "edit", "write",
+    /// "grep", "find", "ls", "subagent").
+    public var toolNames: [String]?
+    /// v0.68.0 / v0.70.0: disable tools in batch.
+    /// `.all`: disable everything (no built-ins, no extensions, no custom tools).
+    /// `.builtin`: keep extension/custom tools, disable only the default built-in set.
+    public var noTools: NoToolsMode?
     public var customTools: [CustomToolDefinition]?
     public var additionalCustomToolPaths: [String]?
     public var resourceLoader: ResourceLoader?
@@ -53,7 +68,8 @@ public struct CreateAgentSessionOptions: Sendable {
         thinkingLevel: ThinkingLevel? = nil,
         scopedModels: [ScopedModel]? = nil,
         systemPrompt: SystemPromptInput? = nil,
-        tools: [Tool]? = nil,
+        toolNames: [String]? = nil,
+        noTools: NoToolsMode? = nil,
         customTools: [CustomToolDefinition]? = nil,
         additionalCustomToolPaths: [String]? = nil,
         resourceLoader: ResourceLoader? = nil,
@@ -76,7 +92,8 @@ public struct CreateAgentSessionOptions: Sendable {
         self.thinkingLevel = thinkingLevel
         self.scopedModels = scopedModels
         self.systemPrompt = systemPrompt
-        self.tools = tools
+        self.toolNames = toolNames
+        self.noTools = noTools
         self.customTools = customTools
         self.additionalCustomToolPaths = additionalCustomToolPaths
         self.resourceLoader = resourceLoader
@@ -206,7 +223,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
 package func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
     for (provider, modelId) in defaultModelPerProvider {
         if let match = available.first(where: { $0.provider == provider.rawValue && $0.id == modelId }),
-           await registry.getApiKey(match.provider) != nil {
+           await registry.getApiKeyForProvider(match.provider) != nil {
             return match
         }
     }
@@ -419,7 +436,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     if model == nil, hasExistingSession, let existingModel = existingSession.model {
         if let restored = modelRegistry.find(existingModel.provider, existingModel.modelId),
-           await modelRegistry.getApiKey(restored.provider) != nil {
+           await modelRegistry.getApiKeyForProvider(restored.provider) != nil {
             model = restored
         }
         if model == nil {
@@ -431,7 +448,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         if let provider = settingsManager.getDefaultProvider(),
            let modelId = settingsManager.getDefaultModel(),
            let settingsModel = modelRegistry.find(provider, modelId),
-           await modelRegistry.getApiKey(settingsModel.provider) != nil {
+           await modelRegistry.getApiKeyForProvider(settingsModel.provider) != nil {
             model = settingsModel
         }
     }
@@ -442,7 +459,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             model = preferred
         } else {
             for candidate in available {
-                if await modelRegistry.getApiKey(candidate.provider) != nil {
+                if await modelRegistry.getApiKeyForProvider(candidate.provider) != nil {
                     model = candidate
                     break
                 }
@@ -497,11 +514,29 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         autoResizeImages: settingsManager.getAutoResizeImages(),
         blockImages: blockImages
     ))
-    let builtInTools = options.tools ?? createCodingTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
+    // v0.68.0 / v0.70.0: tool selection layered logic.
+    //   noTools == .all       → no built-ins, no extension/custom tools.
+    //   noTools == .builtin   → no built-ins, BUT keep extension/custom tools.
+    //   toolNames non-nil     → allowlist by name (intersected with built-ins).
+    //   default               → all built-ins (createCodingTools).
+    let builtInTools: [Tool] = {
+        if options.noTools == .all || options.noTools == .builtin { return [] }
+        if let names = options.toolNames {
+            let allByName = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
+            return names.compactMap { name -> Tool? in
+                guard let toolName = ToolName(rawValue: name) else { return nil }
+                return allByName[toolName]
+            }
+        }
+        return createCodingTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
+    }()
     time("createCodingTools")
 
     var customToolsResult: CustomToolsLoadResult
-    if let customTools = options.customTools {
+    if options.noTools == .all {
+        // v0.68.0/v0.70.0: --no-tools disables extension/custom tools too. Don't load any.
+        customToolsResult = CustomToolsLoadResult(tools: [], errors: [])
+    } else if let customTools = options.customTools {
         let loadedTools = customTools.map { definition in
             let path = definition.path ?? "<inline>"
             return LoadedCustomTool(path: path, resolvedPath: path, tool: definition.tool)
@@ -698,7 +733,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         transport: settingsManager.getTransport(),
         thinkingBudgets: settingsManager.getThinkingBudgets(),
         getApiKey: { provider in
-            await modelRegistry.getApiKey(provider)
+            await modelRegistry.getApiKeyForProvider(provider)
         },
         onPayload: onPayloadHook,
         beforeToolCall: beforeToolCallHook,

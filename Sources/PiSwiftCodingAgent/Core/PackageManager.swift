@@ -40,6 +40,37 @@ public struct PathMetadata: Sendable, Hashable {
     }
 }
 
+/// v0.62.0: structured provenance attached to resources, commands, tools, skills, and prompt
+/// templates. Visible in autocomplete, RPC discovery, and SDK introspection. Mirrors upstream
+/// `SourceInfo` shape (`path` + `scope` + `source`).
+///
+/// In the Swift port this is a typealias to `PathMetadata` plus a `path` field, since the
+/// existing `PathMetadata` already carries the same fields. New code should construct
+/// `SourceInfo(path:metadata:)` to match upstream usage.
+public struct SourceInfo: Sendable, Hashable {
+    public var path: String
+    public var source: String
+    public var scope: String
+    public var origin: String?
+    public var baseDir: String?
+
+    public init(path: String, source: String, scope: String, origin: String? = nil, baseDir: String? = nil) {
+        self.path = path
+        self.source = source
+        self.scope = scope
+        self.origin = origin
+        self.baseDir = baseDir
+    }
+
+    public init(path: String, metadata: PathMetadata) {
+        self.path = path
+        self.source = metadata.source
+        self.scope = metadata.scope
+        self.origin = metadata.origin
+        self.baseDir = metadata.baseDir
+    }
+}
+
 public struct ResolvedResource: Sendable, Hashable {
     public var path: String
     public var enabled: Bool

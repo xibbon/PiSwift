@@ -47,11 +47,15 @@ private final class PackageManagerTestFixture {
         try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
 
-        // Isolate `$HOME` to the temp dir so the package manager's auto-discovery of
-        // `~/.agents/skills` doesn't leak the developer's locally-installed skills into
-        // tests. Mirrors upstream `process.env.HOME` isolation in vitest setup.
+        // Isolate `$HOME` so the package manager's auto-discovery of `~/.agents/skills`
+        // doesn't leak the developer's locally-installed skills into tests. Mirrors upstream
+        // `process.env.HOME` isolation in vitest setup. Use a dedicated `home` subdirectory
+        // (NOT `tempDir` itself) so tests that create `tempDir/.agents/skills/` for ancestor-
+        // walk fixtures don't accidentally double as the fake user home.
         previousHome = ProcessInfo.processInfo.environment["HOME"]
-        setenv("HOME", tempDir, 1)
+        let fakeHome = URL(fileURLWithPath: tempDir).appendingPathComponent("home").path
+        try FileManager.default.createDirectory(atPath: fakeHome, withIntermediateDirectories: true)
+        setenv("HOME", fakeHome, 1)
 
         settingsManager = SettingsManager.inMemory()
         packageManager = DefaultPackageManager(cwd: tempDir, agentDir: agentDir, settingsManager: settingsManager)

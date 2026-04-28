@@ -16,7 +16,7 @@ private func fixturesRoot() -> String {
     #expect(result.skills.count == 1)
     #expect(result.skills.first?.name == "valid-skill")
     #expect(result.skills.first?.description == "A valid skill for testing purposes.")
-    #expect(result.skills.first?.source == "test")
+    #expect(result.skills.first?.sourceInfo.source == "test")
     #expect(result.warnings.isEmpty)
 }
 
@@ -149,7 +149,7 @@ private func fixturesRoot() -> String {
         customDirectories: [dir]
     ))
     #expect(result.skills.count > 0)
-    #expect(result.skills.allSatisfy { $0.source == "custom" })
+    #expect(result.skills.allSatisfy { $0.sourceInfo.source == "custom" })
 }
 
 @Test func loadSkillsIgnoredSkills() {

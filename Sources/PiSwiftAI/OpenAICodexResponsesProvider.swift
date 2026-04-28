@@ -63,10 +63,12 @@ public func streamOpenAICodexResponses(
                 body["instructions"] = instructions
             }
 
+            // v0.70.3: default Codex Responses verbosity to .low when caller didn't specify.
+            // Matches upstream default and produces shorter / faster responses.
             let requestOptions = OpenAICodexRequestOptions(
                 reasoningEffort: options.reasoningEffort,
                 reasoningSummary: options.reasoningSummary,
-                textVerbosity: options.textVerbosity,
+                textVerbosity: options.textVerbosity ?? .low,
                 include: options.include
             )
             transformCodexRequestBody(&body, options: requestOptions, prompt: nil)

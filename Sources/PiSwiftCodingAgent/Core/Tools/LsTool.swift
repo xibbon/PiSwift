@@ -98,5 +98,3 @@ public func createLsTool(cwd: String) -> AgentTool {
         return AgentToolResult(content: [.text(TextContent(text: output))], details: details)
     }
 }
-
-public let lsTool = createLsTool(cwd: FileManager.default.currentDirectoryPath)

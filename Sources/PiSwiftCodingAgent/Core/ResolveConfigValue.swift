@@ -1,12 +1,10 @@
 import Foundation
 import PiSwiftAI
 
-private let commandResultCache = LockedState<[String: String?]>([:])
-
-public func clearConfigValueCache() {
-    commandResultCache.withLock { $0 = [:] }
-}
-
+/// v0.63.0: shell-command auth and headers resolve at request time. There is no in-process
+/// cache. Expiring tokens (OAuth, AWS STS, etc.) refresh naturally on every call. Caching,
+/// TTL, and recovery policy are the responsibility of the user-provided wrapper command —
+/// arbitrary shell commands need provider-specific strategies that pi has no way to know.
 public func resolveConfigValue(_ config: String) -> String? {
     if config.hasPrefix("!") {
         return executeCommand(config)
@@ -30,13 +28,6 @@ public func resolveHeaders(_ headers: [String: String]?) -> [String: String]? {
 }
 
 private func executeCommand(_ commandConfig: String) -> String? {
-    if let cached = commandResultCache.withLock({ $0[commandConfig] }) {
-        return cached
-    }
-    if commandResultCache.withLock({ $0.keys.contains(commandConfig) }) {
-        return nil
-    }
-
     let command = String(commandConfig.dropFirst())
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -46,7 +37,6 @@ private func executeCommand(_ commandConfig: String) -> String? {
     process.standardOutput = stdout
     process.standardError = FileHandle.nullDevice
 
-    var result: String? = nil
     do {
         try process.run()
         let group = DispatchGroup()
@@ -61,12 +51,10 @@ private func executeCommand(_ commandConfig: String) -> String? {
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
         if let output = String(data: data, encoding: .utf8) {
             let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            result = trimmed.isEmpty ? nil : trimmed
+            return trimmed.isEmpty ? nil : trimmed
         }
     } catch {
-        result = nil
+        return nil
     }
-
-    commandResultCache.withLock { $0[commandConfig] = result }
-    return result
+    return nil
 }

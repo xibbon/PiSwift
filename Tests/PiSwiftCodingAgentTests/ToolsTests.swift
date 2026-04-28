@@ -30,7 +30,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let content = "Hello, world!\nLine 2\nLine 3"
         try content.write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(readTool, "test-call-1", ["path": AnyCodable(testFile)])
+        let result = try await runTool(createReadTool(cwd: dir), "test-call-1", ["path": AnyCodable(testFile)])
         #expect(textOutput(result) == content)
         #expect(result.details == nil)
     }
@@ -40,7 +40,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     await withTempDir { dir in
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("missing.txt").path
         do {
-            _ = try await runTool(readTool, "test-call-2", ["path": AnyCodable(testFile)])
+            _ = try await runTool(createReadTool(cwd: dir), "test-call-2", ["path": AnyCodable(testFile)])
             #expect(Bool(false), "Expected read to throw")
         } catch {
             #expect(error.localizedDescription.lowercased().contains("not found") || error.localizedDescription.lowercased().contains("no such file"))
@@ -54,7 +54,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let lines = (0..<2500).map { "Line \($0 + 1)" }.joined(separator: "\n")
         try lines.write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(readTool, "test-call-3", ["path": AnyCodable(testFile)])
+        let result = try await runTool(createReadTool(cwd: dir), "test-call-3", ["path": AnyCodable(testFile)])
         let output = textOutput(result)
         #expect(output.contains("Line 1"))
         #expect(output.contains("Line 2000"))
@@ -76,7 +76,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let lines = (0..<500).map { "Line \($0 + 1): " + String(repeating: "x", count: 200) }.joined(separator: "\n")
         try lines.write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(readTool, "test-call-4", ["path": AnyCodable(testFile)])
+        let result = try await runTool(createReadTool(cwd: dir), "test-call-4", ["path": AnyCodable(testFile)])
         let output = textOutput(result)
         #expect(output.contains("Line 1:"))
         #expect(output.contains("limit"))
@@ -89,19 +89,19 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let lines = (0..<100).map { "Line \($0 + 1)" }.joined(separator: "\n")
         try lines.write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(readTool, "test-call-5", ["path": AnyCodable(testFile), "offset": AnyCodable(51)])
+        let result = try await runTool(createReadTool(cwd: dir), "test-call-5", ["path": AnyCodable(testFile), "offset": AnyCodable(51)])
         let output = textOutput(result)
         #expect(!output.contains("Line 50"))
         #expect(output.contains("Line 51"))
         #expect(output.contains("Line 100"))
 
-        let limited = try await runTool(readTool, "test-call-6", ["path": AnyCodable(testFile), "limit": AnyCodable(10)])
+        let limited = try await runTool(createReadTool(cwd: dir), "test-call-6", ["path": AnyCodable(testFile), "limit": AnyCodable(10)])
         let limitedOutput = textOutput(limited)
         #expect(limitedOutput.contains("Line 10"))
         #expect(!limitedOutput.contains("Line 11"))
         #expect(limitedOutput.contains("Use offset=11"))
 
-        let offsetLimit = try await runTool(readTool, "test-call-7", [
+        let offsetLimit = try await runTool(createReadTool(cwd: dir), "test-call-7", [
             "path": AnyCodable(testFile),
             "offset": AnyCodable(41),
             "limit": AnyCodable(20),
@@ -120,7 +120,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try? "Line 1\nLine 2\nLine 3".write(toFile: testFile, atomically: true, encoding: .utf8)
 
         do {
-            _ = try await runTool(readTool, "test-call-8", ["path": AnyCodable(testFile), "offset": AnyCodable(100)])
+            _ = try await runTool(createReadTool(cwd: dir), "test-call-8", ["path": AnyCodable(testFile), "offset": AnyCodable(100)])
             #expect(Bool(false), "Expected offset error")
         } catch {
             #expect(error.localizedDescription.contains("Offset 100"))
@@ -135,7 +135,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("image.txt").path
         try pngData.write(to: URL(fileURLWithPath: testFile))
 
-        let result = try await runTool(readTool, "test-call-img-1", ["path": AnyCodable(testFile)])
+        let result = try await runTool(createReadTool(cwd: dir), "test-call-img-1", ["path": AnyCodable(testFile)])
         if let first = result.content.first {
             if case .text = first {
                 #expect(true)
@@ -157,7 +157,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("not-an-image.png").path
         try "definitely not a png".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(readTool, "test-call-img-2", ["path": AnyCodable(testFile)])
+        let result = try await runTool(createReadTool(cwd: dir), "test-call-img-2", ["path": AnyCodable(testFile)])
         #expect(textOutput(result).contains("definitely not a png"))
         let hasImage = result.content.contains { block in
             if case .image = block { return true }
@@ -170,7 +170,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 @Test func writeToolWritesFile() async throws {
     try await withTempDir { dir in
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("write-test.txt").path
-        let result = try await runTool(writeTool, "test-call-3", ["path": AnyCodable(testFile), "content": AnyCodable("Test content")])
+        let result = try await runTool(createWriteTool(cwd: dir), "test-call-3", ["path": AnyCodable(testFile), "content": AnyCodable("Test content")])
         let output = textOutput(result)
         #expect(output.contains("Successfully wrote"))
         #expect(output.contains(testFile))
@@ -180,7 +180,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 @Test func writeToolCreatesParents() async throws {
     try await withTempDir { dir in
         let nested = URL(fileURLWithPath: dir).appendingPathComponent("nested/dir/test.txt").path
-        let result = try await runTool(writeTool, "test-call-4", ["path": AnyCodable(nested), "content": AnyCodable("Nested content")])
+        let result = try await runTool(createWriteTool(cwd: dir), "test-call-4", ["path": AnyCodable(nested), "content": AnyCodable("Nested content")])
         #expect(textOutput(result).contains("Successfully wrote"))
     }
 }
@@ -190,7 +190,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("edit-test.txt").path
         try "Hello, world!".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-call-5", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-call-5", [
             "path": AnyCodable(testFile),
             "oldText": AnyCodable("world"),
             "newText": AnyCodable("testing"),
@@ -207,7 +207,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try? "Hello, world!".write(toFile: testFile, atomically: true, encoding: .utf8)
 
         do {
-            _ = try await runTool(editTool, "test-call-6", [
+            _ = try await runTool(createEditTool(cwd: dir), "test-call-6", [
                 "path": AnyCodable(testFile),
                 "oldText": AnyCodable("nonexistent"),
                 "newText": AnyCodable("testing"),
@@ -225,7 +225,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try? "foo foo foo".write(toFile: testFile, atomically: true, encoding: .utf8)
 
         do {
-            _ = try await runTool(editTool, "test-call-7", [
+            _ = try await runTool(createEditTool(cwd: dir), "test-call-7", [
                 "path": AnyCodable(testFile),
                 "oldText": AnyCodable("foo"),
                 "newText": AnyCodable("bar"),
@@ -238,13 +238,15 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func bashToolExecutes() async throws {
-    let result = try await runTool(bashTool, "test-call-8", ["command": AnyCodable("echo 'test output'")])
+    let cwd = FileManager.default.currentDirectoryPath
+    let result = try await runTool(createBashTool(cwd: cwd), "test-call-8", ["command": AnyCodable("echo 'test output'")])
     #expect(textOutput(result).contains("test output"))
 }
 
 @Test func bashToolErrors() async {
+    let cwd = FileManager.default.currentDirectoryPath
     do {
-        _ = try await runTool(bashTool, "test-call-9", ["command": AnyCodable("exit 1")])
+        _ = try await runTool(createBashTool(cwd: cwd), "test-call-9", ["command": AnyCodable("exit 1")])
         #expect(Bool(false), "Expected bash failure")
     } catch {
         #expect(error.localizedDescription.contains("code 1") || error.localizedDescription.contains("Command"))
@@ -252,8 +254,9 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func bashToolTimeout() async {
+    let cwd = FileManager.default.currentDirectoryPath
     do {
-        _ = try await runTool(bashTool, "test-call-10", ["command": AnyCodable("sleep 5"), "timeout": AnyCodable(1)])
+        _ = try await runTool(createBashTool(cwd: cwd), "test-call-10", ["command": AnyCodable("sleep 5"), "timeout": AnyCodable(1)])
         #expect(Bool(false), "Expected timeout")
     } catch {
         #expect(error.localizedDescription.lowercased().contains("timed out"))
@@ -265,7 +268,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("example.txt").path
         try "first line\nmatch line\nlast line".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(grepTool, "test-call-11", [
+        let result = try await runTool(createGrepTool(cwd: dir), "test-call-11", [
             "pattern": AnyCodable("match"),
             "path": AnyCodable(testFile),
         ])
@@ -279,7 +282,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let content = ["before", "match one", "after", "middle", "match two", "after two"].joined(separator: "\n")
         try content.write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(grepTool, "test-call-12", [
+        let result = try await runTool(createGrepTool(cwd: dir), "test-call-12", [
             "pattern": AnyCodable("match"),
             "path": AnyCodable(testFile),
             "limit": AnyCodable(1),
@@ -301,7 +304,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try "hidden".write(to: hiddenDir.appendingPathComponent("hidden.txt"), atomically: true, encoding: .utf8)
         try "visible".write(to: URL(fileURLWithPath: dir).appendingPathComponent("visible.txt"), atomically: true, encoding: .utf8)
 
-        let result = try await runTool(findTool, "test-call-13", [
+        let result = try await runTool(createFindTool(cwd: dir), "test-call-13", [
             "pattern": AnyCodable("**/*.txt"),
             "path": AnyCodable(dir),
         ])
@@ -317,7 +320,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try "ignored".write(to: URL(fileURLWithPath: dir).appendingPathComponent("ignored.txt"), atomically: true, encoding: .utf8)
         try "kept".write(to: URL(fileURLWithPath: dir).appendingPathComponent("kept.txt"), atomically: true, encoding: .utf8)
 
-        let result = try await runTool(findTool, "test-call-14", [
+        let result = try await runTool(createFindTool(cwd: dir), "test-call-14", [
             "pattern": AnyCodable("**/*.txt"),
             "path": AnyCodable(dir),
         ])
@@ -332,7 +335,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try "secret".write(to: URL(fileURLWithPath: dir).appendingPathComponent(".hidden-file"), atomically: true, encoding: .utf8)
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: dir).appendingPathComponent(".hidden-dir"), withIntermediateDirectories: true)
 
-        let result = try await runTool(lsTool, "test-call-15", ["path": AnyCodable(dir)])
+        let result = try await runTool(createLsTool(cwd: dir), "test-call-15", ["path": AnyCodable(dir)])
         let output = textOutput(result)
         #expect(output.contains(".hidden-file"))
         #expect(output.contains(".hidden-dir/"))
@@ -344,7 +347,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("crlf-test.txt").path
         try "line one\r\nline two\r\nline three\r\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-crlf-1", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-crlf-1", [
             "path": AnyCodable(testFile),
             "oldText": AnyCodable("line two\n"),
             "newText": AnyCodable("replaced line\n"),
@@ -361,7 +364,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("lf-test.txt").path
         try "first\nsecond\nthird\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        _ = try await runTool(editTool, "test-lf-1", [
+        _ = try await runTool(createEditTool(cwd: dir), "test-lf-1", [
             "path": AnyCodable(testFile),
             "oldText": AnyCodable("second\n"),
             "newText": AnyCodable("REPLACED\n"),
@@ -380,7 +383,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         // File has both exact and fuzzy-matchable content
         try "const x = 'exact';\nconst y = 'other';\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-fuzzy-6", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-fuzzy-6", [
             "path": AnyCodable(testFile),
             "oldText": AnyCodable("const x = 'exact';"),
             "newText": AnyCodable("const x = 'changed';"),
@@ -398,7 +401,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try? "completely different content\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
         do {
-            _ = try await runTool(editTool, "test-fuzzy-7", [
+            _ = try await runTool(createEditTool(cwd: dir), "test-fuzzy-7", [
                 "path": AnyCodable(testFile),
                 "oldText": AnyCodable("this does not exist"),
                 "newText": AnyCodable("replacement"),
@@ -417,7 +420,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try? "hello world   \nhello world\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
         do {
-            _ = try await runTool(editTool, "test-fuzzy-8", [
+            _ = try await runTool(createEditTool(cwd: dir), "test-fuzzy-8", [
                 "path": AnyCodable(testFile),
                 "oldText": AnyCodable("hello world"),
                 "newText": AnyCodable("replaced"),
@@ -435,7 +438,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         try? "hello\r\nworld\r\n---\r\nhello\nworld\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
         do {
-            _ = try await runTool(editTool, "test-crlf-dup", [
+            _ = try await runTool(createEditTool(cwd: dir), "test-crlf-dup", [
                 "path": AnyCodable(testFile),
                 "oldText": AnyCodable("hello\nworld\n"),
                 "newText": AnyCodable("replaced\n"),
@@ -459,7 +462,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         data.append(content.data(using: .utf8)!)
         try data.write(to: URL(fileURLWithPath: testFile))
 
-        let result = try await runTool(editTool, "test-bom-1", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-bom-1", [
             "path": AnyCodable(testFile),
             "oldText": AnyCodable("first line"),
             "newText": AnyCodable("modified line"),
@@ -483,7 +486,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         // File contains smart quotes (U+2018, U+2019)
         try "const msg = \u{2018}hello world\u{2019};\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-smart-quotes", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-smart-quotes", [
             "path": AnyCodable(testFile),
             // User provides straight quotes
             "oldText": AnyCodable("const msg = 'hello world';"),
@@ -502,7 +505,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         // File contains smart double quotes (U+201C, U+201D)
         try "const msg = \u{201C}hello world\u{201D};\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-smart-dquotes", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-smart-dquotes", [
             "path": AnyCodable(testFile),
             // User provides straight double quotes
             "oldText": AnyCodable("const msg = \"hello world\";"),
@@ -518,7 +521,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         // File contains en-dash (U+2013)
         try "range: 1\u{2013}10\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-unicode-dash", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-unicode-dash", [
             "path": AnyCodable(testFile),
             // User provides regular hyphen
             "oldText": AnyCodable("range: 1-10"),
@@ -537,7 +540,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         // File contains narrow no-break space (U+202F) before AM
         try "Time: 10:00\u{202F}AM\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-nbsp", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-nbsp", [
             "path": AnyCodable(testFile),
             // User provides regular space
             "oldText": AnyCodable("Time: 10:00 AM"),
@@ -556,7 +559,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         // File has trailing whitespace that user doesn't include
         try "hello world   \ngoodbye\n".write(toFile: testFile, atomically: true, encoding: .utf8)
 
-        let result = try await runTool(editTool, "test-trailing-ws", [
+        let result = try await runTool(createEditTool(cwd: dir), "test-trailing-ws", [
             "path": AnyCodable(testFile),
             // User doesn't include trailing whitespace
             "oldText": AnyCodable("hello world\ngoodbye"),

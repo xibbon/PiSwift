@@ -219,5 +219,3 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
 public func createLocalBashOperations() -> BashOperations {
     DefaultBashOperations()
 }
-
-public let bashTool = createBashTool(cwd: FileManager.default.currentDirectoryPath)

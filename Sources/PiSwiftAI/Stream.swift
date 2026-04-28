@@ -194,6 +194,17 @@ func clampThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel? {
     return effort
 }
 
+/// v0.70.0: GPT-5.5 Codex doesn't support `.minimal` reasoning effort — the API rejects it.
+/// Clamp `.minimal` to `.low` for that model family. Other clamping (xhigh→high) still flows
+/// through `supportsXhigh` / `clampThinkingLevel` callers.
+func clampForCodexCapability(model: Model, _ effort: ThinkingLevel?) -> ThinkingLevel? {
+    guard let effort else { return nil }
+    if model.id.contains("gpt-5.5") && effort == .minimal {
+        return .low
+    }
+    return effort
+}
+
 func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAICompletionsOptions {
     let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
     let reasoningEffort = supportsXhigh(model: model) ? options?.reasoning : clampThinkingLevel(options?.reasoning)
