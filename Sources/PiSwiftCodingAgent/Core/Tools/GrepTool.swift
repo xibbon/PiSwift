@@ -92,6 +92,12 @@ public func createGrepTool(cwd: String) -> AgentTool {
 
             for (index, line) in lines.enumerated() {
                 if matchCount >= limit { break }
+                // v0.70.5: long files (multi-MB minified, generated, etc.) can hold the inner
+                // loop for many ms — poll the cancellation signal periodically so an aborted
+                // search stops promptly instead of waiting on the next file boundary.
+                if index % 1024 == 0, signal?.isCancelled == true {
+                    throw GrepToolError.operationAborted
+                }
                 let lineNumber = index + 1
                 let matches: Bool
                 if literal {

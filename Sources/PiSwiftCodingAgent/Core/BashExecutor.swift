@@ -115,6 +115,12 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
 
     try process.run()
 
+    // v0.67.4: track the spawned PID so `killTrackedDetachedChildren()` (called from session
+    // teardown / signal handlers) can reap orphans if the user's command spawned detached
+    // children that survive the parent.
+    let spawnedPid = process.processIdentifier
+    trackDetachedChildPid(spawnedPid)
+
     let cancelledFlag = ManagedAtomic(false)
 
     let cancellationTimer = DispatchSource.makeTimerSource()
@@ -148,6 +154,7 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
     let timeoutTimerRef = timeoutTimer
     return try await withCheckedThrowingContinuation { continuation in
         process.terminationHandler = { proc in
+            untrackDetachedChildPid(spawnedPid)
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
             stderrPipe.fileHandleForReading.readabilityHandler = nil
             let stdoutRemainder = stdoutPipe.fileHandleForReading.readDataToEndOfFile()

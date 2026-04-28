@@ -231,6 +231,12 @@ public final class InteractiveMode {
     private var defaultEditor: CustomEditor?
     private var editor: EditorComponentView?
     private var autocompleteProvider: CombinedAutocompleteProvider?
+    /// v0.70.5: extension-registered wrapper factories. Each receives the current provider and
+    /// returns a wrapped replacement. Stacks in registration order.
+    private var autocompleteProviderWrappers: [@MainActor @Sendable (AutocompleteProvider) -> AutocompleteProvider] = []
+    /// Final stacked provider applied to the editor (the base CombinedAutocompleteProvider
+    /// possibly wrapped one or more times).
+    private var stackedAutocompleteProvider: AutocompleteProvider?
     private var editorContainer: Container?
     private var footer: FooterComponent?
     private var footerContainer: Container?
@@ -279,6 +285,9 @@ public final class InteractiveMode {
     private var exitContinuation: CheckedContinuation<Void, Never>?
     private var unsubscribe: (() -> Void)?
     private var sigcontSource: DispatchSourceSignal?
+    /// v0.70.5: signal sources for SIGHUP/SIGTERM that drive a clean shutdown so extensions
+    /// receive `session_shutdown` and detached children get killed before the process exits.
+    private var shutdownSignalSources: [DispatchSourceSignal] = []
 
     public init(chatContainer: Container = Container(), ui: RenderRequesting) {
         self.chatContainer = chatContainer
@@ -314,6 +323,7 @@ public final class InteractiveMode {
         initialImages: [ImageContent]? = nil
     ) async {
         await initializeIfNeeded()
+        registerShutdownSignalHandlers()
         if let session {
             pendingResourceDisplayOptions = ResourceDisplayOptions(
                 extensionPaths: session.resourceLoader.getExtensions().paths,
@@ -419,6 +429,7 @@ public final class InteractiveMode {
             SlashCommand(name: "hotkeys", description: "Show shortcuts"),
             SlashCommand(name: "debug", description: "Show theme diagnostics"),
             SlashCommand(name: "fork", description: "Create a new fork from a previous message"),
+            SlashCommand(name: "clone", description: "Duplicate the current branch into a new session"),
             SlashCommand(name: "tree", description: "Navigate session tree"),
             SlashCommand(name: "new", description: "Start a new session"),
             SlashCommand(name: "compact", description: "Compact session"),
@@ -542,7 +553,30 @@ public final class InteractiveMode {
             fdPath: fdPath
         )
         autocompleteProvider = provider
-        defaultEditor.setAutocompleteProvider(provider)
+        let stacked = applyAutocompleteWrappers(to: provider)
+        stackedAutocompleteProvider = stacked
+        defaultEditor.setAutocompleteProvider(stacked)
+    }
+
+    @MainActor
+    private func applyAutocompleteWrappers(to base: AutocompleteProvider) -> AutocompleteProvider {
+        var current: AutocompleteProvider = base
+        for wrap in autocompleteProviderWrappers {
+            current = wrap(current)
+        }
+        return current
+    }
+
+    /// v0.70.5: register an autocomplete provider wrapper from an extension. The factory
+    /// receives the current provider and returns a wrapped replacement. Wrappers stack in
+    /// registration order on top of the base CombinedAutocompleteProvider.
+    @MainActor
+    func addAutocompleteProvider(_ factory: @escaping @MainActor @Sendable (AutocompleteProvider) -> AutocompleteProvider) {
+        autocompleteProviderWrappers.append(factory)
+        guard let base = autocompleteProvider, let defaultEditor else { return }
+        let stacked = applyAutocompleteWrappers(to: base)
+        stackedAutocompleteProvider = stacked
+        defaultEditor.setAutocompleteProvider(stacked)
     }
 
     @MainActor
@@ -1177,8 +1211,8 @@ public final class InteractiveMode {
                 newEditor.setText(currentText)
                 newEditor.borderColor = defaultEditor.borderColor
 
-                if let autocompleteProvider {
-                    newEditor.setAutocompleteProvider(autocompleteProvider)
+                if let provider = stackedAutocompleteProvider ?? autocompleteProvider {
+                    newEditor.setAutocompleteProvider(provider)
                 }
                 if let settingsManager = session?.settingsManager {
                     newEditor.setAutocompleteMaxVisible(settingsManager.getAutocompleteMaxVisible())
@@ -2148,6 +2182,7 @@ public final class InteractiveMode {
 
     @MainActor
     private func shutdown() {
+        unregisterShutdownSignalHandlers()
         if let session {
             Task { [session] in
                 if let hookRunner = session.hookRunner {
@@ -2167,6 +2202,34 @@ public final class InteractiveMode {
             exitContinuation = nil
             continuation.resume()
         }
+    }
+
+    /// v0.70.5: register SIGHUP/SIGTERM handlers so extensions receive `session_shutdown` and
+    /// tracked detached children are killed before the process exits.
+    @MainActor
+    private func registerShutdownSignalHandlers() {
+        unregisterShutdownSignalHandlers()
+        let signals: [Int32] = [SIGTERM, SIGHUP]
+        for sig in signals {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                killTrackedDetachedChildren()
+                Task { @MainActor in
+                    self?.shutdown()
+                }
+            }
+            source.resume()
+            shutdownSignalSources.append(source)
+        }
+    }
+
+    @MainActor
+    private func unregisterShutdownSignalHandlers() {
+        for source in shutdownSignalSources {
+            source.cancel()
+        }
+        shutdownSignalSources.removeAll()
     }
 
     @MainActor
@@ -2464,6 +2527,15 @@ public final class InteractiveMode {
         }
         if trimmed == "/fork" {
             showUserMessageSelector()
+            editor.setText("")
+            return
+        }
+        if trimmed == "/clone" {
+            // v0.68.0: /clone duplicates the current active branch into a new session
+            // (snapshots the messages and metadata, then forks from the most recent
+            // assistant entry — equivalent to fork-at-current-position rather than
+            // fork-from-a-previous-user-message).
+            handleCloneCommand()
             editor.setText("")
             return
         }
@@ -3749,6 +3821,26 @@ public final class InteractiveMode {
         chatContainer.clear()
         showStatus("New session started")
         scheduleRender()
+    }
+
+    /// v0.68.0: /clone — duplicate the current branch into a new session at the latest
+    /// position. Distinct from /fork (forks BEFORE a chosen previous user message).
+    @MainActor
+    private func handleCloneCommand() {
+        guard let session else { return }
+        Task {
+            do {
+                let success = try await session.cloneAtLeaf()
+                if success {
+                    chatContainer.clear()
+                    renderInitialMessages()
+                    showStatus("Cloned to new session")
+                    scheduleRender()
+                }
+            } catch {
+                showError(error.localizedDescription)
+            }
+        }
     }
 
     @MainActor

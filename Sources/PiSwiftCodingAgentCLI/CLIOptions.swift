@@ -87,6 +87,10 @@ struct CLIOptions: ParsableArguments {
     @Option(name: .customLong("skills"), help: "Comma-separated skill file paths or directories")
     var skills: String?
 
+    /// v0.65.0: explicit theme file paths or directories. Repeatable.
+    @Option(name: .customLong("theme"), help: "Theme file path or directory (can be used multiple times)")
+    var themes: [String] = []
+
     @Flag(name: .customLong("list-models"), help: "List available models (with optional fuzzy search)")
     var listModels: Bool = false
 
@@ -177,6 +181,9 @@ extension CLIOptions {
         }
         if let skills {
             result.skills = skills.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        }
+        if !themes.isEmpty {
+            result.themes = themes
         }
         if let listModelsSearch {
             result.listModels = .search(listModelsSearch)

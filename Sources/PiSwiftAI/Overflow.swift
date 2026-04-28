@@ -25,9 +25,31 @@ private let overflowPatterns: [NSRegularExpression] = [
     try! NSRegularExpression(pattern: "prompt too long; exceeded max context length", options: [.caseInsensitive]),
 ]
 
+/// v0.65.0: error patterns that LOOK like overflow on a casual regex match (e.g.,
+/// AWS Bedrock prefixes "Throttling error: Too many tokens...") but are actually transient
+/// failures. Without this exclusion, retry/compaction logic incorrectly treats rate-limit
+/// errors as context overflow and gives up instead of backing off.
+private let nonOverflowPatterns: [NSRegularExpression] = [
+    // AWS Bedrock human-readable error prefixes from formatBedrockError().
+    try! NSRegularExpression(pattern: "^(Throttling error|Service unavailable):", options: [.caseInsensitive]),
+    // Generic rate limiting (e.g., upstream provider returning a 429 wrapped).
+    try! NSRegularExpression(pattern: "rate limit", options: [.caseInsensitive]),
+    try! NSRegularExpression(pattern: "too many requests", options: [.caseInsensitive]),
+]
+
 public func isContextOverflow(_ message: AssistantMessage, contextWindow: Int? = nil) -> Bool {
     if message.stopReason == .error, let errorMessage = message.errorMessage {
         let range = NSRange(errorMessage.startIndex..., in: errorMessage)
+
+        // v0.65.0: bail out of overflow detection when the error matches a known non-overflow
+        // pattern (rate-limit, throttling). Otherwise the generic "too many tokens" wording
+        // would false-positive and trigger compaction instead of a retry.
+        for pattern in nonOverflowPatterns {
+            if pattern.firstMatch(in: errorMessage, options: [], range: range) != nil {
+                return false
+            }
+        }
+
         for pattern in overflowPatterns {
             if pattern.firstMatch(in: errorMessage, options: [], range: range) != nil {
                 return true

@@ -17,12 +17,76 @@ public struct ModelAuth: Sendable {
     }
 }
 
-private func parseRouting(_ value: Any?) -> (only: [String]?, order: [String]?)? {
+private struct ParsedRouting {
+    var allowFallbacks: Bool?
+    var requireParameters: Bool?
+    var dataCollection: String?
+    var zdr: Bool?
+    var enforceDistillableText: Bool?
+    var only: [String]?
+    var order: [String]?
+    var ignore: [String]?
+    var quantizations: [String]?
+    var sort: OpenRouterRoutingSort?
+    var maxPrice: OpenRouterRoutingPrice?
+    var preferredMinThroughput: OpenRouterRoutingPercentile?
+    var preferredMaxLatency: OpenRouterRoutingPercentile?
+}
+
+private func parseRouting(_ value: Any?) -> ParsedRouting? {
     guard let dict = value as? [String: Any] else { return nil }
-    let only = dict["only"] as? [String]
-    let order = dict["order"] as? [String]
-    if only == nil && order == nil { return nil }
-    return (only, order)
+    var r = ParsedRouting()
+    r.allowFallbacks = dict["allow_fallbacks"] as? Bool
+    r.requireParameters = dict["require_parameters"] as? Bool
+    r.dataCollection = dict["data_collection"] as? String
+    r.zdr = dict["zdr"] as? Bool
+    r.enforceDistillableText = dict["enforce_distillable_text"] as? Bool
+    r.only = dict["only"] as? [String]
+    r.order = dict["order"] as? [String]
+    r.ignore = dict["ignore"] as? [String]
+    r.quantizations = dict["quantizations"] as? [String]
+    if let s = dict["sort"] as? String {
+        r.sort = .named(s)
+    } else if let s = dict["sort"] as? [String: Any] {
+        r.sort = .structured(by: s["by"] as? String, partition: s["partition"] as? String)
+    }
+    if let mp = dict["max_price"] as? [String: Any] {
+        func num(_ key: String) -> Double? {
+            if let v = mp[key] as? Double { return v }
+            if let v = mp[key] as? Int { return Double(v) }
+            if let v = mp[key] as? String, let d = Double(v) { return d }
+            return nil
+        }
+        r.maxPrice = OpenRouterRoutingPrice(
+            prompt: num("prompt"),
+            completion: num("completion"),
+            image: num("image"),
+            audio: num("audio"),
+            request: num("request")
+        )
+    }
+    r.preferredMinThroughput = parseRoutingPercentile(dict["preferred_min_throughput"])
+    r.preferredMaxLatency = parseRoutingPercentile(dict["preferred_max_latency"])
+
+    let allEmpty = r.allowFallbacks == nil && r.requireParameters == nil && r.dataCollection == nil &&
+        r.zdr == nil && r.enforceDistillableText == nil && r.only == nil && r.order == nil &&
+        r.ignore == nil && r.quantizations == nil && r.sort == nil && r.maxPrice == nil &&
+        r.preferredMinThroughput == nil && r.preferredMaxLatency == nil
+    return allEmpty ? nil : r
+}
+
+private func parseRoutingPercentile(_ value: Any?) -> OpenRouterRoutingPercentile? {
+    if let n = value as? Double { return .scalar(n) }
+    if let n = value as? Int { return .scalar(Double(n)) }
+    if let dict = value as? [String: Any] {
+        func num(_ key: String) -> Double? {
+            if let v = dict[key] as? Double { return v }
+            if let v = dict[key] as? Int { return Double(v) }
+            return nil
+        }
+        return .percentiles(p50: num("p50"), p75: num("p75"), p90: num("p90"), p99: num("p99"))
+    }
+    return nil
 }
 
 private func parseCompat(_ value: Any?) -> OpenAICompat? {
@@ -43,8 +107,26 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
     let openRouterRoutingValue = parseRouting(dict["openRouterRouting"])
     let vercelGatewayRoutingValue = parseRouting(dict["vercelGatewayRouting"])
 
-    let openRouterRouting = openRouterRoutingValue.map { OpenRouterRouting(only: $0.only, order: $0.order) }
-    let vercelGatewayRouting = vercelGatewayRoutingValue.map { VercelGatewayRouting(only: $0.only, order: $0.order) }
+    let openRouterRouting = openRouterRoutingValue.map { r in
+        OpenRouterRouting(
+            allowFallbacks: r.allowFallbacks,
+            requireParameters: r.requireParameters,
+            dataCollection: r.dataCollection,
+            zdr: r.zdr,
+            enforceDistillableText: r.enforceDistillableText,
+            order: r.order,
+            only: r.only,
+            ignore: r.ignore,
+            quantizations: r.quantizations,
+            sort: r.sort,
+            maxPrice: r.maxPrice,
+            preferredMinThroughput: r.preferredMinThroughput,
+            preferredMaxLatency: r.preferredMaxLatency
+        )
+    }
+    let vercelGatewayRouting = vercelGatewayRoutingValue.map { r in
+        VercelGatewayRouting(only: r.only, order: r.order, allowFallbacks: r.allowFallbacks)
+    }
 
     // v0.68.0 / v0.70.0 / v0.70.1: new compat fields read from models.json so proxies and
     // custom-provider entries can opt in/out without recompiling.
@@ -142,17 +224,33 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
 
     let mergedOpenRouter: OpenRouterRouting? = {
         if base.openRouterRouting == nil && override.openRouterRouting == nil { return nil }
+        let b = base.openRouterRouting
+        let o = override.openRouterRouting
         return OpenRouterRouting(
-            only: override.openRouterRouting?.only ?? base.openRouterRouting?.only,
-            order: override.openRouterRouting?.order ?? base.openRouterRouting?.order
+            allowFallbacks: o?.allowFallbacks ?? b?.allowFallbacks,
+            requireParameters: o?.requireParameters ?? b?.requireParameters,
+            dataCollection: o?.dataCollection ?? b?.dataCollection,
+            zdr: o?.zdr ?? b?.zdr,
+            enforceDistillableText: o?.enforceDistillableText ?? b?.enforceDistillableText,
+            order: o?.order ?? b?.order,
+            only: o?.only ?? b?.only,
+            ignore: o?.ignore ?? b?.ignore,
+            quantizations: o?.quantizations ?? b?.quantizations,
+            sort: o?.sort ?? b?.sort,
+            maxPrice: o?.maxPrice ?? b?.maxPrice,
+            preferredMinThroughput: o?.preferredMinThroughput ?? b?.preferredMinThroughput,
+            preferredMaxLatency: o?.preferredMaxLatency ?? b?.preferredMaxLatency
         )
     }()
 
     let mergedVercel: VercelGatewayRouting? = {
         if base.vercelGatewayRouting == nil && override.vercelGatewayRouting == nil { return nil }
+        let b = base.vercelGatewayRouting
+        let o = override.vercelGatewayRouting
         return VercelGatewayRouting(
-            only: override.vercelGatewayRouting?.only ?? base.vercelGatewayRouting?.only,
-            order: override.vercelGatewayRouting?.order ?? base.vercelGatewayRouting?.order
+            only: o?.only ?? b?.only,
+            order: o?.order ?? b?.order,
+            allowFallbacks: o?.allowFallbacks ?? b?.allowFallbacks
         )
     }()
 

@@ -37,6 +37,8 @@ public enum KnownProvider: String, Sendable {
     case mistral
     case opencode
     case opencodeGo = "opencode-go"
+    case fireworks
+    case deepseek
 }
 
 public typealias Provider = String
@@ -232,23 +234,108 @@ public enum OpenAICompatCacheControlFormat: String, Sendable {
     case anthropic
 }
 
+/// v0.67.0: full OpenRouter provider-selection routing.
+///
+/// See https://openrouter.ai/docs/guides/routing/provider-selection for upstream docs.
+/// All fields map directly to the JSON payload OpenRouter expects under `provider: { ... }`.
 public struct OpenRouterRouting: Sendable {
-    public var only: [String]?
+    /// Whether to allow backup providers to serve requests. Default: true.
+    public var allowFallbacks: Bool?
+    /// Whether to filter providers to only those that support all parameters in the request.
+    public var requireParameters: Bool?
+    /// "allow" (default): permit providers that may store/train on data.
+    /// "deny": only use providers that don't collect user data.
+    public var dataCollection: String?
+    /// Restrict routing to only ZDR (Zero Data Retention) endpoints.
+    public var zdr: Bool?
+    /// Restrict routing to only models that allow text distillation.
+    public var enforceDistillableText: Bool?
+    /// Ordered list of provider names/slugs to try in sequence, falling back if unavailable.
     public var order: [String]?
+    /// List of provider names/slugs exclusively allowed for this request.
+    public var only: [String]?
+    /// List of provider names/slugs to skip.
+    public var ignore: [String]?
+    /// Quantization levels to filter by (e.g., "fp16", "bf16", "fp8", "int8", "int4").
+    public var quantizations: [String]?
+    /// Sorting strategy. String form ("price" / "throughput" / "latency") or structured.
+    public var sort: OpenRouterRoutingSort?
+    /// Maximum price per million tokens (USD).
+    public var maxPrice: OpenRouterRoutingPrice?
+    /// Preferred minimum throughput (tokens/second). Number → applies to p50.
+    public var preferredMinThroughput: OpenRouterRoutingPercentile?
+    /// Preferred maximum latency (seconds). Number → applies to p50.
+    public var preferredMaxLatency: OpenRouterRoutingPercentile?
 
-    public init(only: [String]? = nil, order: [String]? = nil) {
-        self.only = only
+    public init(
+        allowFallbacks: Bool? = nil,
+        requireParameters: Bool? = nil,
+        dataCollection: String? = nil,
+        zdr: Bool? = nil,
+        enforceDistillableText: Bool? = nil,
+        order: [String]? = nil,
+        only: [String]? = nil,
+        ignore: [String]? = nil,
+        quantizations: [String]? = nil,
+        sort: OpenRouterRoutingSort? = nil,
+        maxPrice: OpenRouterRoutingPrice? = nil,
+        preferredMinThroughput: OpenRouterRoutingPercentile? = nil,
+        preferredMaxLatency: OpenRouterRoutingPercentile? = nil
+    ) {
+        self.allowFallbacks = allowFallbacks
+        self.requireParameters = requireParameters
+        self.dataCollection = dataCollection
+        self.zdr = zdr
+        self.enforceDistillableText = enforceDistillableText
         self.order = order
+        self.only = only
+        self.ignore = ignore
+        self.quantizations = quantizations
+        self.sort = sort
+        self.maxPrice = maxPrice
+        self.preferredMinThroughput = preferredMinThroughput
+        self.preferredMaxLatency = preferredMaxLatency
     }
+}
+
+/// Sorting metric. Either a bare string ("price"/"throughput"/"latency") or a structured
+/// object with `by` and `partition`.
+public enum OpenRouterRoutingSort: Sendable {
+    case named(String)
+    case structured(by: String?, partition: String?)
+}
+
+public struct OpenRouterRoutingPrice: Sendable {
+    public var prompt: Double?
+    public var completion: Double?
+    public var image: Double?
+    public var audio: Double?
+    public var request: Double?
+
+    public init(prompt: Double? = nil, completion: Double? = nil, image: Double? = nil, audio: Double? = nil, request: Double? = nil) {
+        self.prompt = prompt
+        self.completion = completion
+        self.image = image
+        self.audio = audio
+        self.request = request
+    }
+}
+
+/// Numeric value applies to p50; structured form lets callers set per-percentile cutoffs.
+public enum OpenRouterRoutingPercentile: Sendable {
+    case scalar(Double)
+    case percentiles(p50: Double?, p75: Double?, p90: Double?, p99: Double?)
 }
 
 public struct VercelGatewayRouting: Sendable {
     public var only: [String]?
     public var order: [String]?
+    public var allowFallbacks: Bool?
 
-    public init(only: [String]? = nil, order: [String]? = nil) {
+    public init(only: [String]? = nil, order: [String]? = nil, allowFallbacks: Bool? = nil) {
         self.only = only
         self.order = order
+        self.allowFallbacks = allowFallbacks
     }
 }
 
@@ -1109,6 +1196,46 @@ public struct BedrockOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+    }
+}
+
+public struct MistralOptions: Sendable {
+    public var temperature: Double?
+    public var maxTokens: Int?
+    public var signal: CancellationToken?
+    public var apiKey: String?
+    /// "auto" | "none" | "any" | "required" | { type: function, name: ... }
+    public var toolChoice: AnyCodable?
+    /// "reasoning" for Magistral models that use prompt-mode reasoning.
+    public var promptMode: String?
+    /// "high" | "none" for mistral-small-2603 / mistral-small-latest.
+    public var reasoningEffort: String?
+    public var sessionId: String?
+    public var headers: [String: String]?
+    public var onPayload: PayloadHandler?
+
+    public init(
+        temperature: Double? = nil,
+        maxTokens: Int? = nil,
+        signal: CancellationToken? = nil,
+        apiKey: String? = nil,
+        toolChoice: AnyCodable? = nil,
+        promptMode: String? = nil,
+        reasoningEffort: String? = nil,
+        sessionId: String? = nil,
+        headers: [String: String]? = nil,
+        onPayload: PayloadHandler? = nil
+    ) {
+        self.temperature = temperature
+        self.maxTokens = maxTokens
+        self.signal = signal
+        self.apiKey = apiKey
+        self.toolChoice = toolChoice
+        self.promptMode = promptMode
+        self.reasoningEffort = reasoningEffort
+        self.sessionId = sessionId
+        self.headers = headers
+        self.onPayload = onPayload
     }
 }
 

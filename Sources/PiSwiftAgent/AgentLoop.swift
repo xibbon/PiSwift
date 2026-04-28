@@ -316,10 +316,16 @@ private func streamAssistantResponse(
             apiKey: resolvedApiKey,
             transport: config.transport,
             reasoning: config.reasoning,
+            cacheRetention: config.cacheRetention,
             sessionId: config.sessionId,
             thinkingBudgets: config.thinkingBudgets,
+            headers: config.headers,
             onPayload: config.onPayload,
-            maxRetryDelayMs: config.maxRetryDelayMs
+            maxRetryDelayMs: config.maxRetryDelayMs,
+            metadata: config.metadata,
+            onResponse: config.onResponse,
+            timeoutMs: config.timeoutMs,
+            maxRetries: config.maxRetries
         )
     )
 

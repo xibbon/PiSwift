@@ -26,6 +26,19 @@ public struct AgentOptions: Sendable {
     public var maxRetryDelayMs: Int?
     public var getApiKey: (@Sendable (String) async -> String?)?
     public var onPayload: OnPayloadFn?
+    /// v0.67.6: invoked after each provider HTTP response is received and before the stream
+    /// begins consuming. Use for header / status inspection at the Agent level.
+    public var onResponse: ResponseHandler?
+    /// v0.68.0: prompt cache retention preference forwarded into provider stream options.
+    public var cacheRetention: CacheRetention?
+    /// HTTP headers forwarded into provider stream options.
+    public var headers: [String: String]?
+    /// Provider request metadata forwarded into provider stream options.
+    public var metadata: [String: AnyCodable]?
+    /// v0.70.1: provider SDK request timeout (ms).
+    public var timeoutMs: Int?
+    /// v0.70.1: provider SDK max retries.
+    public var maxRetries: Int?
     public var toolExecution: ToolExecutionMode?
     public var beforeToolCall: BeforeToolCallFn?
     public var afterToolCall: AfterToolCallFn?
@@ -43,6 +56,12 @@ public struct AgentOptions: Sendable {
         maxRetryDelayMs: Int? = nil,
         getApiKey: (@Sendable (String) async -> String?)? = nil,
         onPayload: OnPayloadFn? = nil,
+        onResponse: ResponseHandler? = nil,
+        cacheRetention: CacheRetention? = nil,
+        headers: [String: String]? = nil,
+        metadata: [String: AnyCodable]? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil,
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
         afterToolCall: AfterToolCallFn? = nil
@@ -59,6 +78,12 @@ public struct AgentOptions: Sendable {
         self.maxRetryDelayMs = maxRetryDelayMs
         self.getApiKey = getApiKey
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.cacheRetention = cacheRetention
+        self.headers = headers
+        self.metadata = metadata
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall
@@ -83,6 +108,12 @@ public final class Agent: Sendable {
         var maxRetryDelayMs: Int?
         var getApiKey: (@Sendable (String) async -> String?)?
         var onPayload: OnPayloadFn?
+        var onResponse: ResponseHandler?
+        var cacheRetention: CacheRetention?
+        var headers: [String: String]?
+        var metadata: [String: AnyCodable]?
+        var timeoutMs: Int?
+        var maxRetries: Int?
         var toolExecution: ToolExecutionMode
         var beforeToolCall: BeforeToolCallFn?
         var afterToolCall: AfterToolCallFn?
@@ -180,6 +211,36 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.onPayload = newValue } }
     }
 
+    public var onResponse: ResponseHandler? {
+        get { stateBox.withLock { $0.onResponse } }
+        set { stateBox.withLock { $0.onResponse = newValue } }
+    }
+
+    public var cacheRetention: CacheRetention? {
+        get { stateBox.withLock { $0.cacheRetention } }
+        set { stateBox.withLock { $0.cacheRetention = newValue } }
+    }
+
+    public var headers: [String: String]? {
+        get { stateBox.withLock { $0.headers } }
+        set { stateBox.withLock { $0.headers = newValue } }
+    }
+
+    public var metadata: [String: AnyCodable]? {
+        get { stateBox.withLock { $0.metadata } }
+        set { stateBox.withLock { $0.metadata = newValue } }
+    }
+
+    public var timeoutMs: Int? {
+        get { stateBox.withLock { $0.timeoutMs } }
+        set { stateBox.withLock { $0.timeoutMs = newValue } }
+    }
+
+    public var maxRetries: Int? {
+        get { stateBox.withLock { $0.maxRetries } }
+        set { stateBox.withLock { $0.maxRetries = newValue } }
+    }
+
     public var beforeToolCall: BeforeToolCallFn? {
         get { stateBox.withLock { $0.beforeToolCall } }
         set { stateBox.withLock { $0.beforeToolCall = newValue } }
@@ -220,6 +281,12 @@ public final class Agent: Sendable {
             maxRetryDelayMs: options.maxRetryDelayMs,
             getApiKey: options.getApiKey,
             onPayload: options.onPayload,
+            onResponse: options.onResponse,
+            cacheRetention: options.cacheRetention,
+            headers: options.headers,
+            metadata: options.metadata,
+            timeoutMs: options.timeoutMs,
+            maxRetries: options.maxRetries,
             toolExecution: options.toolExecution ?? .parallel,
             beforeToolCall: options.beforeToolCall,
             afterToolCall: options.afterToolCall,
@@ -504,6 +571,12 @@ public final class Agent: Sendable {
             thinkingBudgets: thinkingBudgets,
             maxRetryDelayMs: maxRetryDelayMs,
             onPayload: onPayload,
+            onResponse: onResponse,
+            cacheRetention: cacheRetention,
+            headers: headers,
+            metadata: metadata,
+            timeoutMs: timeoutMs,
+            maxRetries: maxRetries,
             toolExecution: toolExecution,
             beforeToolCall: beforeToolCall,
             afterToolCall: afterToolCall,

@@ -229,6 +229,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             agentDir: getAgentDir(),
             settingsManager: settingsManager,
             additionalSkillPaths: parsed.skills ?? [],
+            additionalThemePaths: parsed.themes ?? [],
             noExtensions: parsed.noExtensions ?? false,
             noSkills: parsed.noSkills ?? false,
             noPromptTemplates: parsed.noPromptTemplates ?? false,
@@ -564,6 +565,8 @@ Environment Variables:
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
   ZAI_API_KEY             - ZAI API key
+  DEEPSEEK_API_KEY        - DeepSeek API key
+  FIREWORKS_API_KEY       - Fireworks AI API key
   \(ENV_AGENT_DIR) - Session storage directory (default: ~/\(CONFIG_DIR_NAME)/agent)
 
 Available Tools (default: read, bash, edit, write):

@@ -185,6 +185,134 @@ public func fuzzyFindText(_ content: String, _ oldText: String) -> EditFuzzyMatc
     )
 }
 
+// MARK: - Multi-Edit Application
+
+/// One targeted text replacement, used by the v0.70.5 multi-edit form of the edit tool.
+public struct EditReplacement: Sendable {
+    public var oldText: String
+    public var newText: String
+
+    public init(oldText: String, newText: String) {
+        self.oldText = oldText
+        self.newText = newText
+    }
+}
+
+/// Outcome of applying a batch of edits against a single normalized base content. The
+/// `baseContent` is either the LF-normalized content (when all matches were exact) or its
+/// fuzzy-normalized form (when at least one edit needed fuzzy matching).
+public struct AppliedEditsResult: Sendable {
+    public var baseContent: String
+    public var newContent: String
+
+    public init(baseContent: String, newContent: String) {
+        self.baseContent = baseContent
+        self.newContent = newContent
+    }
+}
+
+public enum ApplyEditsError: LocalizedError, Sendable {
+    case emptyOldText(path: String, editIndex: Int, totalEdits: Int)
+    case notFound(path: String, editIndex: Int, totalEdits: Int)
+    case duplicate(path: String, editIndex: Int, totalEdits: Int, occurrences: Int)
+    case overlap(path: String, prevIndex: Int, currentIndex: Int)
+    case noChange(path: String, totalEdits: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .emptyOldText(path, editIndex, totalEdits):
+            return totalEdits == 1
+                ? "oldText must not be empty in \(path)."
+                : "edits[\(editIndex)].oldText must not be empty in \(path)."
+        case let .notFound(path, editIndex, totalEdits):
+            return totalEdits == 1
+                ? "Could not find the exact text in \(path). The old text must match exactly including all whitespace and newlines."
+                : "Could not find edits[\(editIndex)] in \(path). The oldText must match exactly including all whitespace and newlines."
+        case let .duplicate(path, editIndex, totalEdits, occurrences):
+            return totalEdits == 1
+                ? "Found \(occurrences) occurrences of the text in \(path). The text must be unique. Please provide more context to make it unique."
+                : "Found \(occurrences) occurrences of edits[\(editIndex)] in \(path). Each oldText must be unique. Please provide more context to make it unique."
+        case let .overlap(path, prevIndex, currentIndex):
+            return "edits[\(prevIndex)] and edits[\(currentIndex)] overlap in \(path). Merge them into one edit or target disjoint regions."
+        case let .noChange(path, totalEdits):
+            return totalEdits == 1
+                ? "No changes made to \(path). The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected."
+                : "No changes made to \(path). The replacements produced identical content."
+        }
+    }
+}
+
+/// Apply one or more exact-text replacements to LF-normalized content. All edits are matched
+/// against the same base content. If any edit needs fuzzy matching, the entire batch runs in
+/// fuzzy-normalized space. Overlapping edits are rejected. Replacements are applied right-to-left
+/// so earlier offsets remain valid.
+public func applyEditsToNormalizedContent(
+    _ normalizedContent: String,
+    edits: [EditReplacement],
+    path: String
+) throws -> AppliedEditsResult {
+    let normalizedEdits: [EditReplacement] = edits.map {
+        EditReplacement(oldText: normalizeToLF($0.oldText), newText: normalizeToLF($0.newText))
+    }
+    for (i, edit) in normalizedEdits.enumerated() {
+        if edit.oldText.isEmpty {
+            throw ApplyEditsError.emptyOldText(path: path, editIndex: i, totalEdits: normalizedEdits.count)
+        }
+    }
+
+    let initialMatches = normalizedEdits.map { fuzzyFindText(normalizedContent, $0.oldText) }
+    let needsFuzzy = initialMatches.contains { $0.usedFuzzyMatch }
+    let baseContent = needsFuzzy ? normalizeForFuzzyMatch(normalizedContent) : normalizedContent
+
+    struct MatchedEdit {
+        var editIndex: Int
+        var matchIndex: Int
+        var matchLength: Int
+        var newText: String
+    }
+
+    var matchedEdits: [MatchedEdit] = []
+    for (i, edit) in normalizedEdits.enumerated() {
+        let matchResult = fuzzyFindText(baseContent, edit.oldText)
+        guard matchResult.found else {
+            throw ApplyEditsError.notFound(path: path, editIndex: i, totalEdits: normalizedEdits.count)
+        }
+        let fuzzyContent = normalizeForFuzzyMatch(baseContent)
+        let fuzzyOldText = normalizeForFuzzyMatch(edit.oldText)
+        let occurrences = fuzzyContent.components(separatedBy: fuzzyOldText).count - 1
+        if occurrences > 1 {
+            throw ApplyEditsError.duplicate(path: path, editIndex: i, totalEdits: normalizedEdits.count, occurrences: occurrences)
+        }
+        matchedEdits.append(MatchedEdit(
+            editIndex: i,
+            matchIndex: matchResult.index,
+            matchLength: matchResult.matchLength,
+            newText: edit.newText
+        ))
+    }
+
+    matchedEdits.sort { $0.matchIndex < $1.matchIndex }
+    for i in 1..<matchedEdits.count {
+        let prev = matchedEdits[i - 1]
+        let cur = matchedEdits[i]
+        if prev.matchIndex + prev.matchLength > cur.matchIndex {
+            throw ApplyEditsError.overlap(path: path, prevIndex: prev.editIndex, currentIndex: cur.editIndex)
+        }
+    }
+
+    var newContent = baseContent
+    for edit in matchedEdits.reversed() {
+        let start = newContent.index(newContent.startIndex, offsetBy: edit.matchIndex)
+        let end = newContent.index(start, offsetBy: edit.matchLength)
+        newContent.replaceSubrange(start..<end, with: edit.newText)
+    }
+
+    if baseContent == newContent {
+        throw ApplyEditsError.noChange(path: path, totalEdits: normalizedEdits.count)
+    }
+    return AppliedEditsResult(baseContent: baseContent, newContent: newContent)
+}
+
 // MARK: - Line Diff Algorithm
 
 /// Represents a part of a diff result

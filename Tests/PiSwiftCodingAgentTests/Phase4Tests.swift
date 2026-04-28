@@ -350,6 +350,59 @@ import PiSwiftAI
     // present in the overflow set).
 }
 
+// MARK: - Phase 4 H4 — RPC SessionStats.contextUsage (v0.70.0)
+
+/// v0.70.0: SessionStats now carries a ContextUsage struct so RPC clients can read
+/// token-budget percentages without recomputing from raw usage.
+@Test func sessionStatsContextUsageRoundTrip() {
+    let usage = ContextUsage(tokens: 4096, contextWindow: 200000, percent: 2.048)
+    let stats = SessionStats(
+        sessionFile: nil,
+        sessionId: "test",
+        userMessages: 1,
+        assistantMessages: 1,
+        toolCalls: 0,
+        toolResults: 0,
+        totalMessages: 2,
+        tokens: SessionStats.TokenStats(input: 4000, output: 96, cacheRead: 0, cacheWrite: 0, total: 4096),
+        cost: 0.001,
+        contextUsage: usage
+    )
+    #expect(stats.contextUsage?.tokens == 4096)
+    #expect(stats.contextUsage?.contextWindow == 200000)
+    #expect(abs((stats.contextUsage?.percent ?? 0) - 2.048) < 0.0001)
+}
+
+@Test func sessionStatsContextUsageNilWhenUnknown() {
+    let usage = ContextUsage(tokens: nil, contextWindow: 200000, percent: nil)
+    #expect(usage.tokens == nil)
+    #expect(usage.percent == nil)
+    #expect(usage.contextWindow == 200000)
+}
+
+// MARK: - Phase 4 H3 — Bash detached PID tracking (v0.67.4)
+
+/// v0.67.4: detached bash children registered via `trackDetachedChildPid` should appear in
+/// the snapshot, then disappear after `untrackDetachedChildPid`.
+@Test func detachedChildPidTrackingRoundTrip() {
+    let pid: pid_t = 99999
+    trackDetachedChildPid(pid)
+    #expect(getTrackedDetachedChildPids().contains(pid))
+    untrackDetachedChildPid(pid)
+    #expect(!getTrackedDetachedChildPids().contains(pid))
+}
+
+/// `killTrackedDetachedChildren()` clears the registry even when the PIDs are stale (e.g.,
+/// already-exited processes). The kill itself is best-effort — we just verify the registry
+/// is cleared so subsequent calls don't try to kill the same stale PIDs again.
+@Test func killTrackedDetachedChildrenClearsRegistry() {
+    trackDetachedChildPid(88888)
+    trackDetachedChildPid(88889)
+    #expect(getTrackedDetachedChildPids().count >= 2)
+    killTrackedDetachedChildren()
+    #expect(getTrackedDetachedChildPids().isEmpty)
+}
+
 // MARK: - Helpers
 
 private func makeTempDir() -> String {

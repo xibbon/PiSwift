@@ -197,3 +197,36 @@ public func killProcessTree(_ pid: pid_t) {
     }
     #endif
 }
+
+/// v0.67.4: registry of detached child PIDs spawned by long-running tools (e.g., bash with `&`).
+/// On normal session shutdown / signal-driven exit (SIGINT, SIGTERM), `killTrackedDetachedChildren()`
+/// reaps them so the user doesn't end up with orphans.
+///
+/// Mirrors upstream `coding-agent/src/utils/shell.ts:trackedDetachedChildPids`.
+private let trackedDetachedChildPids = LockedState<Set<pid_t>>([])
+
+public func trackDetachedChildPid(_ pid: pid_t) {
+    trackedDetachedChildPids.withLock { $0.insert(pid) }
+}
+
+public func untrackDetachedChildPid(_ pid: pid_t) {
+    trackedDetachedChildPids.withLock { $0.remove(pid) }
+}
+
+/// Snapshot of currently tracked PIDs. Useful for tests / diagnostics.
+public func getTrackedDetachedChildPids() -> Set<pid_t> {
+    trackedDetachedChildPids.withLock { $0 }
+}
+
+/// Kill every tracked detached child and clear the registry. Call from `dispose()` /
+/// signal handlers / `/quit` shutdown.
+public func killTrackedDetachedChildren() {
+    let pids = trackedDetachedChildPids.withLock { snap -> Set<pid_t> in
+        let result = snap
+        snap.removeAll()
+        return result
+    }
+    for pid in pids {
+        killProcessTree(pid)
+    }
+}

@@ -534,17 +534,28 @@ public final class DefaultPackageManager: PackageManager {
         return (spec, nil)
     }
 
+    /// v0.62.0: resolve the configured npm command (`["mise", "exec", "node@20", "--", "npm"]`,
+    /// `["pnpm"]`, etc.) and split into `(executable, prefixArgs)`. Falls back to `("npm", [])`
+    /// when settings.npmCommand is unset.
+    private func resolvedNpmCommand() -> (executable: String, prefixArgs: [String]) {
+        guard let cmd = settingsManager.getNpmCommand(), let head = cmd.first else {
+            return ("npm", [])
+        }
+        return (head, Array(cmd.dropFirst()))
+    }
+
     private func installNpm(_ source: NpmSource, scope: String, temporary: Bool) async throws {
         #if canImport(UIKit)
         throw PackageManagerError.unsupported("npm install not available")
         #else
+        let (npmExe, npmPrefix) = resolvedNpmCommand()
         if scope == "user" && !temporary {
-            _ = try await runCommand("npm", ["install", "-g", source.spec], cwd: cwd)
+            _ = try await runCommand(npmExe, npmPrefix + ["install", "-g", source.spec], cwd: cwd)
             return
         }
         let installRoot = getNpmInstallRoot(scope: scope, temporary: temporary)
         try ensureNpmProject(installRoot)
-        _ = try await runCommand("npm", ["install", source.spec, "--prefix", installRoot], cwd: cwd)
+        _ = try await runCommand(npmExe, npmPrefix + ["install", source.spec, "--prefix", installRoot], cwd: cwd)
         #endif
     }
 
@@ -552,13 +563,14 @@ public final class DefaultPackageManager: PackageManager {
         #if canImport(UIKit)
         throw PackageManagerError.unsupported("npm uninstall not available")
         #else
+        let (npmExe, npmPrefix) = resolvedNpmCommand()
         if scope == "user" {
-            _ = try await runCommand("npm", ["uninstall", "-g", source.name], cwd: cwd)
+            _ = try await runCommand(npmExe, npmPrefix + ["uninstall", "-g", source.name], cwd: cwd)
             return
         }
         let installRoot = getNpmInstallRoot(scope: scope, temporary: false)
         guard FileManager.default.fileExists(atPath: installRoot) else { return }
-        _ = try await runCommand("npm", ["uninstall", source.name, "--prefix", installRoot], cwd: cwd)
+        _ = try await runCommand(npmExe, npmPrefix + ["uninstall", source.name, "--prefix", installRoot], cwd: cwd)
         #endif
     }
 
@@ -586,7 +598,8 @@ public final class DefaultPackageManager: PackageManager {
         }
         let packageJsonPath = URL(fileURLWithPath: targetDir).appendingPathComponent("package.json").path
         if FileManager.default.fileExists(atPath: packageJsonPath) {
-            _ = try await runCommand("npm", ["install"], cwd: targetDir)
+            let (npmExe, npmPrefix) = resolvedNpmCommand()
+            _ = try await runCommand(npmExe, npmPrefix + ["install"], cwd: targetDir)
         }
         #endif
     }
@@ -610,7 +623,8 @@ public final class DefaultPackageManager: PackageManager {
         _ = try await runCommand("git", ["clean", "-fdx"], cwd: targetDir)
         let packageJsonPath = URL(fileURLWithPath: targetDir).appendingPathComponent("package.json").path
         if FileManager.default.fileExists(atPath: packageJsonPath) {
-            _ = try await runCommand("npm", ["install"], cwd: targetDir)
+            let (npmExe, npmPrefix) = resolvedNpmCommand()
+            _ = try await runCommand(npmExe, npmPrefix + ["install"], cwd: targetDir)
         }
         #endif
     }

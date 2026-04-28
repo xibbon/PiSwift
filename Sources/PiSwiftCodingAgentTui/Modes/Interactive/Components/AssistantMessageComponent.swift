@@ -3,10 +3,15 @@ import MiniTui
 import PiSwiftAI
 import PiSwiftCodingAgent
 
+private let OSC133_ZONE_START = "\u{001B}]133;A\u{0007}"
+private let OSC133_ZONE_END = "\u{001B}]133;B\u{0007}"
+private let OSC133_ZONE_FINAL = "\u{001B}]133;C\u{0007}"
+
 public final class AssistantMessageComponent: Container {
     private let contentContainer: Container
     private var hideThinkingBlock: Bool
     private var lastMessage: AssistantMessage?
+    private var hasToolCalls: Bool = false
 
     public init(message: AssistantMessage? = nil, hideThinkingBlock: Bool = false) {
         self.contentContainer = Container()
@@ -23,6 +28,16 @@ public final class AssistantMessageComponent: Container {
         if let lastMessage {
             updateContent(lastMessage)
         }
+    }
+
+    public override func render(width: Int) -> [String] {
+        var lines = super.render(width: width)
+        if hasToolCalls || lines.isEmpty {
+            return lines
+        }
+        lines[0] = OSC133_ZONE_START + lines[0]
+        lines[lines.count - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.count - 1]
+        return lines
     }
 
     public func setHideThinkingBlock(_ hide: Bool) {
@@ -85,6 +100,7 @@ public final class AssistantMessageComponent: Container {
             }
             return false
         }
+        self.hasToolCalls = hasToolCalls
 
         if !hasToolCalls {
             switch message.stopReason {

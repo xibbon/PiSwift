@@ -5,6 +5,7 @@ import PiSwiftAgent
 enum EditToolError: LocalizedError, Sendable {
     case operationAborted
     case missingPath
+    case invalidInput
     case fileNotFound(path: String)
     case exactTextNotFoundDetailed(path: String)
     case textNotUnique(path: String, occurrences: Int)
@@ -17,6 +18,8 @@ enum EditToolError: LocalizedError, Sendable {
             return "Operation aborted"
         case .missingPath:
             return "Missing path"
+        case .invalidInput:
+            return "Edit tool input is invalid. edits must contain at least one replacement."
         case let .fileNotFound(path):
             return "File not found: \(path)"
         case let .exactTextNotFoundDetailed(path):
@@ -40,24 +43,39 @@ public func createEditTool(cwd: String) -> AgentTool {
     AgentTool(
         label: "edit",
         name: "edit",
-        description: "Edit a file by replacing exact text. The oldText must match exactly (including whitespace).",
+        description: "Edit a file with one or more targeted text replacements.",
         parameters: [
             "type": AnyCodable("object"),
             "properties": AnyCodable([
                 "path": ["type": "string", "description": "Path to the file to edit (relative or absolute)"],
-                "oldText": ["type": "string", "description": "Exact text to find and replace"],
-                "newText": ["type": "string", "description": "New text to replace the old text with"],
+                "edits": [
+                    "type": "array",
+                    "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits.",
+                    "items": [
+                        "type": "object",
+                        "properties": [
+                            "oldText": ["type": "string", "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."],
+                            "newText": ["type": "string", "description": "Replacement text for this targeted edit."],
+                        ],
+                        "required": ["oldText", "newText"],
+                        "additionalProperties": false,
+                    ],
+                ],
             ]),
+            "required": AnyCodable(["path", "edits"]),
         ]
     ) { _, params, signal, _ in
         if signal?.isCancelled == true {
             throw EditToolError.operationAborted
         }
-        guard let path = params["path"]?.value as? String else {
+        let prepared = prepareEditArguments(params)
+        guard let path = prepared["path"]?.value as? String else {
             throw EditToolError.missingPath
         }
-        let oldText = params["oldText"]?.value as? String ?? ""
-        let newText = params["newText"]?.value as? String ?? ""
+        let edits = parseEdits(from: prepared["edits"])
+        guard !edits.isEmpty else {
+            throw EditToolError.invalidInput
+        }
 
         let absolutePath = resolveToCwd(path, cwd: cwd)
         guard FileManager.default.isReadableFile(atPath: absolutePath),
@@ -66,48 +84,14 @@ public func createEditTool(cwd: String) -> AgentTool {
         }
 
         return try await FileMutationQueue.shared.withFileLock(absolutePath) {
-            // Read file preserving BOM - Swift's String(contentsOfFile:) strips BOM automatically
             let (bom, content) = try readFilePreservingBom(absolutePath)
-
             let originalEnding = detectLineEnding(content)
             let normalizedContent = normalizeToLF(content)
-            let normalizedOldText = normalizeToLF(oldText)
-            let normalizedNewText = normalizeToLF(newText)
-
-            // Find the old text using fuzzy matching (tries exact match first, then fuzzy)
-            let matchResult = fuzzyFindText(normalizedContent, normalizedOldText)
-
-            guard matchResult.found else {
-                throw EditToolError.exactTextNotFoundDetailed(path: path)
-            }
-
-            // Count occurrences using fuzzy-normalized content for consistency
-            let fuzzyContent = normalizeForFuzzyMatch(normalizedContent)
-            let fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText)
-            let occurrences = fuzzyContent.components(separatedBy: fuzzyOldText).count - 1
-
-            if occurrences > 1 {
-                throw EditToolError.textNotUnique(path: path, occurrences: occurrences)
-            }
-
-            // Perform replacement using the matched text position
-            // When fuzzy matching was used, contentForReplacement is the normalized version
-            let baseContent = matchResult.contentForReplacement
-            let startIndex = baseContent.index(baseContent.startIndex, offsetBy: matchResult.index)
-            let endIndex = baseContent.index(startIndex, offsetBy: matchResult.matchLength)
-            let normalizedNewContent = baseContent.replacingCharacters(
-                in: startIndex..<endIndex,
-                with: normalizedNewText
-            )
-
-            if baseContent == normalizedNewContent {
-                throw EditToolError.noChanges(path: path)
-            }
-
-            let finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding)
+            let applied = try applyEditsToNormalizedContent(normalizedContent, edits: edits, path: path)
+            let finalContent = bom + restoreLineEndings(applied.newContent, originalEnding)
             try finalContent.write(toFile: absolutePath, atomically: true, encoding: .utf8)
 
-            let diffResult = generateDiffString(normalizedContent, normalizedNewContent)
+            let diffResult = generateDiffString(applied.baseContent, applied.newContent)
             let firstChanged: Any = diffResult.firstChangedLine != nil ? diffResult.firstChangedLine! : NSNull()
             let details = AnyCodable([
                 "diff": diffResult.diff,
@@ -120,4 +104,45 @@ public func createEditTool(cwd: String) -> AgentTool {
             )
         }
     }
+}
+
+/// Normalizes inputs the model produces. Some models (Opus 4.6, GLM-5.1) send `edits` as a
+/// JSON-encoded string. Older callers send a single `oldText`/`newText` pair without `edits[]`
+/// — fold those into a one-element `edits` array and drop the legacy fields from the args.
+private func prepareEditArguments(_ params: [String: AnyCodable]) -> [String: AnyCodable] {
+    var args = params
+
+    if let editsValue = args["edits"]?.value, let editsString = editsValue as? String {
+        if let data = editsString.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: data, options: []) as? [Any] {
+            args["edits"] = AnyCodable(parsed)
+        }
+    }
+
+    let legacyOld = args["oldText"]?.value as? String
+    let legacyNew = args["newText"]?.value as? String
+    if let legacyOld, let legacyNew {
+        var existing: [Any] = (args["edits"]?.value as? [Any]) ?? []
+        existing.append([
+            "oldText": legacyOld,
+            "newText": legacyNew,
+        ])
+        args["edits"] = AnyCodable(existing)
+        args.removeValue(forKey: "oldText")
+        args.removeValue(forKey: "newText")
+    }
+    return args
+}
+
+private func parseEdits(from value: AnyCodable?) -> [EditReplacement] {
+    guard let raw = value?.value else { return [] }
+    guard let array = raw as? [Any] else { return [] }
+    var result: [EditReplacement] = []
+    for item in array {
+        guard let dict = item as? [String: Any] else { continue }
+        let oldText = dict["oldText"] as? String ?? ""
+        let newText = dict["newText"] as? String ?? ""
+        result.append(EditReplacement(oldText: oldText, newText: newText))
+    }
+    return result
 }

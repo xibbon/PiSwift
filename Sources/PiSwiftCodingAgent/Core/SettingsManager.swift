@@ -147,6 +147,11 @@ public struct Settings: Sendable {
     public var enableInstallTelemetry: Bool?
     /// v0.63.0 / v0.68.1: portable session directory. `~` expansion handled at resolution time.
     public var sessionDir: String?
+    /// v0.62.0: command used for npm package lookup/install operations. Argv-style (e.g.,
+    /// `["mise", "exec", "node@20", "--", "npm"]`). When nil, falls back to `["npm"]`.
+    /// Lets users wrap npm with version managers (mise/nvm/asdf/pnpm) without breaking
+    /// pi's package install flow.
+    public var npmCommand: [String]?
 
     public init() {}
 }
@@ -775,6 +780,18 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    /// v0.62.0: configurable npm command for package lookup/install operations.
+    /// Returns nil when unset (callers should fall back to `["npm"]`).
+    public func getNpmCommand() -> [String]? {
+        settings.npmCommand
+    }
+
+    public func setNpmCommand(_ command: [String]?) {
+        globalSettings.npmCommand = command
+        markModified("npmCommand")
+        save()
+    }
+
     public func getAutoResizeImages() -> Bool {
         settings.images?.autoResize ?? true
     }
@@ -1031,6 +1048,10 @@ public final class SettingsManager: Sendable {
             settings.sessionDir = dir
         }
 
+        if let npmCmd = json["npmCommand"] as? [String], !npmCmd.isEmpty {
+            settings.npmCommand = npmCmd
+        }
+
         if let images = json["images"] as? [String: Any] {
             settings.images = ImageSettings(
                 autoResize: images["autoResize"] as? Bool,
@@ -1249,6 +1270,10 @@ public final class SettingsManager: Sendable {
 
         if let dir = settings.sessionDir {
             json["sessionDir"] = dir
+        }
+
+        if let npmCmd = settings.npmCommand {
+            json["npmCommand"] = npmCmd
         }
 
         if let images = settings.images {

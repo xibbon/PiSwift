@@ -43,6 +43,10 @@ public struct Args: Sendable {
     /// v0.67.4: `--no-context-files` (`-nc`) disables AGENTS.md / CLAUDE.md auto-discovery.
     public var noContextFiles: Bool?
     public var skills: [String]?
+    /// v0.65.0: explicit theme file paths or directories. Repeatable on the CLI as
+    /// `--theme path1.json --theme path2.json`. Plumbed to `DefaultResourceLoader` as
+    /// `additionalThemePaths` so they merge with discovered themes.
+    public var themes: [String]?
     public var listModels: ListModelsOption?
     public var verbose: Bool?
     public var fork: String?

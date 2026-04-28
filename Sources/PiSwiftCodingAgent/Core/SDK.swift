@@ -716,6 +716,21 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         onPayloadHook = nil
     }
 
+    // v0.68.0: wire onResponse to emit AfterProviderResponseEvent so extensions can
+    // inspect provider HTTP status / headers immediately after the response arrives
+    // and before the stream is consumed.
+    let onResponseHook: ResponseHandler?
+    if let hookRunnerForResponse = hookRunner, hookRunnerForResponse.hasHandlers("after_provider_response") {
+        onResponseHook = { snapshot in
+            let event = AfterProviderResponseEvent(status: snapshot.statusCode, headers: snapshot.headers)
+            Task {
+                _ = await hookRunnerForResponse.emit(event)
+            }
+        }
+    } else {
+        onResponseHook = nil
+    }
+
     let createdAgent = Agent(AgentOptions(
         initialState: AgentState(
             systemPrompt: systemPrompt,
@@ -736,6 +751,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             await modelRegistry.getApiKeyForProvider(provider)
         },
         onPayload: onPayloadHook,
+        onResponse: onResponseHook,
         beforeToolCall: beforeToolCallHook,
         afterToolCall: afterToolCallHook
     ))

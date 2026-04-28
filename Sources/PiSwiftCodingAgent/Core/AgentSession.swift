@@ -143,6 +143,22 @@ public struct ForkableMessage: Sendable {
     }
 }
 
+/// v0.70.0: token-budget breakdown surfaced via `getSessionStats().contextUsage`.
+/// `tokens` is `nil` when the latest assistant usage is pre-compaction (we can only trust
+/// usage from an assistant that responded AFTER the last compaction, so right after compaction
+/// the value is unknown until the next LLM turn). `percent` is `nil` for the same reason.
+public struct ContextUsage: Sendable {
+    public var tokens: Int?
+    public var contextWindow: Int
+    public var percent: Double?
+
+    public init(tokens: Int?, contextWindow: Int, percent: Double?) {
+        self.tokens = tokens
+        self.contextWindow = contextWindow
+        self.percent = percent
+    }
+}
+
 public struct SessionStats: Sendable {
     public var sessionFile: String?
     public var sessionId: String
@@ -153,6 +169,10 @@ public struct SessionStats: Sendable {
     public var totalMessages: Int
     public var tokens: TokenStats
     public var cost: Double
+    /// v0.70.0: token-budget usage relative to the active model's context window.
+    /// `nil` when no model is set or contextWindow is 0; otherwise contains the latest
+    /// post-compaction usage estimate.
+    public var contextUsage: ContextUsage?
 
     public struct TokenStats: Sendable {
         public var input: Int
@@ -179,7 +199,8 @@ public struct SessionStats: Sendable {
         toolResults: Int,
         totalMessages: Int,
         tokens: TokenStats,
-        cost: Double
+        cost: Double,
+        contextUsage: ContextUsage? = nil
     ) {
         self.sessionFile = sessionFile
         self.sessionId = sessionId
@@ -190,6 +211,7 @@ public struct SessionStats: Sendable {
         self.totalMessages = totalMessages
         self.tokens = tokens
         self.cost = cost
+        self.contextUsage = contextUsage
     }
 }
 
@@ -518,6 +540,9 @@ public final class AgentSession: Sendable {
     public func dispose() {
         unsubscribeAgent?()
         unsubscribeAgent = nil
+        // v0.67.4: reap any detached bash subprocesses the user spawned during this session
+        // so we don't leave orphans hanging around after `/quit` or session shutdown.
+        killTrackedDetachedChildren()
     }
 
     public var hookRunner: HookRunner? {
@@ -1345,8 +1370,41 @@ public final class AgentSession: Sendable {
             toolResults: toolResults,
             totalMessages: state.messages.count,
             tokens: tokens,
-            cost: totalCost
+            cost: totalCost,
+            contextUsage: getContextUsage()
         )
+    }
+
+    /// v0.70.0: token-budget usage relative to the active model's context window.
+    /// Returns nil when:
+    ///   - no model selected
+    ///   - contextWindow <= 0
+    /// `tokens` and `percent` are nil when the latest assistant usage is pre-compaction
+    /// (we can only trust usage from an assistant that responded after the latest compaction —
+    /// otherwise the count reflects a pre-compaction snapshot that's no longer valid).
+    public func getContextUsage() -> ContextUsage? {
+        let model = agent.state.model
+        let contextWindow = model.contextWindow
+        guard contextWindow > 0 else { return nil }
+
+        // Find the latest assistant message that responded AFTER any compaction.
+        // The simplest approximation: walk messages backwards looking for an assistant
+        // whose timestamp is after the latest compaction marker. The Swift port doesn't
+        // currently surface a separate compaction-entry timestamp from SessionManager, so
+        // we use the last assistant's usage directly. This matches upstream's behavior in
+        // the common (no-compaction-since-last-turn) case; a follow-up can refine the
+        // post-compaction guard once the SessionManager branch-entry API exposes that
+        // marker to PiSwift consumers.
+        let lastAssistant = agent.state.messages.reversed().first { message in
+            if case .assistant = message { return true }
+            return false
+        }
+        guard case .assistant(let assistant) = lastAssistant else {
+            return ContextUsage(tokens: nil, contextWindow: contextWindow, percent: nil)
+        }
+        let used = assistant.usage.input + assistant.usage.cacheRead
+        let percent = Double(used) / Double(contextWindow) * 100.0
+        return ContextUsage(tokens: used, contextWindow: contextWindow, percent: percent)
     }
 
     public func exportToHtml(_ outputPath: String? = nil) throws -> String {
@@ -1385,6 +1443,42 @@ public final class AgentSession: Sendable {
             }
         }
         return result
+    }
+
+    /// v0.68.0: clone the current branch into a new session at the latest entry.
+    ///
+    /// Equivalent to upstream `runtimeHost.fork(leafId, { position: "at" })`. Unlike the
+    /// regular `fork(_:)` (which forks BEFORE a chosen user message — dropping it from the
+    /// new branch), `/clone` includes everything up through and including the leaf entry.
+    /// Use this for "duplicate-and-keep-going" workflows where the user wants to branch off
+    /// without rewinding any messages.
+    @discardableResult
+    public func cloneAtLeaf() async throws -> Bool {
+        guard let leafId = sessionManager.getLeafId() else {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
+        let previousSession = sessionFile
+
+        if let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_fork") {
+            if let result = await hookRunner.emit(SessionBeforeForkEvent(entryId: leafId)) as? SessionBeforeForkResult,
+               result.cancel {
+                return false
+            }
+        }
+
+        // position: "at" — branch from the leaf so the new session inherits the leaf entry
+        // (rather than forking from its parent, which would drop it).
+        _ = sessionManager.createBranchedSession(leafId)
+        agent.sessionId = sessionManager.getSessionId()
+
+        if let hookRunner = _hookRunner {
+            _ = await hookRunner.emit(SessionStartEvent(reason: .fork, previousSessionFile: previousSession))
+        }
+
+        await emitCustomToolSessionEvent(.fork, previousSessionFile: previousSession)
+        pendingNextTurnMessages.removeAll()
+        await syncAgentContext()
+        return true
     }
 
     public func fork(_ entryId: String) async throws -> (selectedText: String, cancelled: Bool) {

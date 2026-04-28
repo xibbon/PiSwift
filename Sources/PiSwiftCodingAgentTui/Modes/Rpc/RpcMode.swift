@@ -647,7 +647,7 @@ private func bashResultToDict(_ result: BashResult) -> [String: Any] {
 }
 
 private func sessionStatsToDict(_ stats: SessionStats) -> [String: Any] {
-    [
+    var dict: [String: Any] = [
         "sessionFile": stats.sessionFile as Any,
         "sessionId": stats.sessionId,
         "userMessages": stats.userMessages,
@@ -664,4 +664,15 @@ private func sessionStatsToDict(_ stats: SessionStats) -> [String: Any] {
         ],
         "cost": stats.cost,
     ]
+    // v0.70.0: surface contextUsage so RPC clients can read token-budget percentages
+    // without computing them from raw usage + model.contextWindow. Matches upstream's
+    // ContextUsage shape: { tokens: Int|null, contextWindow: Int, percent: Double|null }.
+    if let usage = stats.contextUsage {
+        dict["contextUsage"] = [
+            "tokens": usage.tokens as Any,
+            "contextWindow": usage.contextWindow,
+            "percent": usage.percent as Any,
+        ]
+    }
+    return dict
 }

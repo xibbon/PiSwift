@@ -85,6 +85,8 @@ public func getEnvApiKey(provider: String) -> String? {
         "huggingface": "HF_TOKEN",
         "opencode": "OPENCODE_API_KEY",
         "kimi-coding": "KIMI_API_KEY",
+        "fireworks": "FIREWORKS_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
     ]
 
     if provider == "google-vertex" {

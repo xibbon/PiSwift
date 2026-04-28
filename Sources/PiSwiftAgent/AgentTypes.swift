@@ -275,6 +275,31 @@ public struct AgentLoopConfig: Sendable {
     public var maxRetryDelayMs: Int?
     public var onPayload: OnPayloadFn?
 
+    /// v0.67.6: invoked after the provider HTTP response is received and before the stream
+    /// begins consuming. Forwarded as `SimpleStreamOptions.onResponse`. Use for header /
+    /// status inspection (telemetry, after_provider_response extension hook, etc.).
+    public var onResponse: ResponseHandler?
+
+    /// v0.68.0: prompt cache retention preference. Forwarded to providers that support it
+    /// (OpenAI Chat Completions / OpenAI Responses with `prompt_cache_retention: "24h"` for
+    /// long retention; Anthropic Messages with `cache_control.ttl`).
+    public var cacheRetention: CacheRetention?
+
+    /// HTTP headers to include on every provider request (auth tokens, custom routing,
+    /// instrumentation correlation IDs, etc.). Forwarded as `SimpleStreamOptions.headers`.
+    public var headers: [String: String]?
+
+    /// Provider-specific request metadata. Forwarded as `SimpleStreamOptions.metadata`.
+    /// Anthropic uses this for `metadata.user_id`; Bedrock for cost-allocation tags; etc.
+    public var metadata: [String: AnyCodable]?
+
+    /// v0.70.1: provider SDK request timeout (ms). Forwarded as `SimpleStreamOptions.timeoutMs`
+    /// so long-running local-LLM SSE streams don't hit the SDK default cap.
+    public var timeoutMs: Int?
+
+    /// v0.70.1: provider SDK max retries. Forwarded as `SimpleStreamOptions.maxRetries`.
+    public var maxRetries: Int?
+
     /// Tool execution mode. Default: `.parallel`
     public var toolExecution: ToolExecutionMode?
 
@@ -325,6 +350,12 @@ public struct AgentLoopConfig: Sendable {
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
         onPayload: OnPayloadFn? = nil,
+        onResponse: ResponseHandler? = nil,
+        cacheRetention: CacheRetention? = nil,
+        headers: [String: String]? = nil,
+        metadata: [String: AnyCodable]? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil,
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
         afterToolCall: AfterToolCallFn? = nil,
@@ -344,6 +375,12 @@ public struct AgentLoopConfig: Sendable {
         self.thinkingBudgets = thinkingBudgets
         self.maxRetryDelayMs = maxRetryDelayMs
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.cacheRetention = cacheRetention
+        self.headers = headers
+        self.metadata = metadata
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall

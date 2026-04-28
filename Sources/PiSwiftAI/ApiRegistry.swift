@@ -287,6 +287,28 @@ public func registerBuiltInProviders() {
     ), sourceId: "built-in")
 
     registerApiProvider(ApiProvider(
+        api: .mistralConversations,
+        stream: { model, context, options in
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let providerOptions = MistralOptions(
+                temperature: options?.temperature,
+                maxTokens: options?.maxTokens,
+                signal: options?.signal,
+                apiKey: apiKey,
+                sessionId: options?.sessionId,
+                headers: options?.headers,
+                onPayload: options?.onPayload
+            )
+            return streamMistral(model: model, context: context, options: providerOptions)
+        },
+        streamSimple: { model, context, options in
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let providerOptions = mapMistralSimpleOptions(model: model, options: options, apiKey: apiKey)
+            return streamMistral(model: model, context: context, options: providerOptions)
+        }
+    ), sourceId: "built-in")
+
+    registerApiProvider(ApiProvider(
         api: .bedrockConverseStream,
         stream: { model, context, options in
             let providerOptions = BedrockOptions(

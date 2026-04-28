@@ -763,6 +763,40 @@
             }
             break;
           }
+          case 'ls': {
+            const dirPath = args.path || '.';
+            const limit = args.limit;
+            let pathHtml = escapeHtml(shortenPath(String(dirPath)));
+            if (limit !== undefined) {
+              pathHtml += ` <span class="line-count">(limit ${escapeHtml(String(limit))})</span>`;
+            }
+            html += `<div class="tool-header"><span class="tool-name">ls</span> <span class="tool-path">${pathHtml}</span></div>`;
+            if (result) {
+              const output = getResultText().trim();
+              if (output) html += formatExpandableOutput(output, 20);
+            }
+            break;
+          }
+          case 'find': {
+            const pattern = args.pattern || '';
+            const dirPath = args.path || '.';
+            html += `<div class="tool-header"><span class="tool-name">find</span> <span class="tool-path">${escapeHtml(String(pattern))} in ${escapeHtml(shortenPath(String(dirPath)))}</span></div>`;
+            if (result) {
+              const output = getResultText().trim();
+              if (output) html += formatExpandableOutput(output, 20);
+            }
+            break;
+          }
+          case 'grep': {
+            const pattern = args.pattern || '';
+            const dirPath = args.path || '.';
+            html += `<div class="tool-header"><span class="tool-name">grep</span> <span class="tool-path">/${escapeHtml(String(pattern))}/ in ${escapeHtml(shortenPath(String(dirPath)))}</span></div>`;
+            if (result) {
+              const output = getResultText().trim();
+              if (output) html += formatExpandableOutput(output, 20);
+            }
+            break;
+          }
           default: {
             html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
             html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;

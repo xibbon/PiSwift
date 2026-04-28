@@ -2382,6 +2382,89 @@ struct ApiRegistryTests {
     #expect(isContextOverflow(message))
 }
 
+/// v0.70.3: Azure Cognitive Services endpoints get the same `/openai/v1` path normalization
+/// as `.openai.azure.com` endpoints. Without this, the AzureOpenAI SDK can't resolve
+/// `/deployments/<model>/...` routes correctly.
+@Test func azureNormalizeCognitiveServicesBareHost() throws {
+    let normalized = try normalizeAzureBaseUrl("https://my-resource.cognitiveservices.azure.com")
+    #expect(normalized == "https://my-resource.cognitiveservices.azure.com/openai/v1")
+}
+
+@Test func azureNormalizeCognitiveServicesTrailingSlash() throws {
+    let normalized = try normalizeAzureBaseUrl("https://my-resource.cognitiveservices.azure.com/")
+    #expect(normalized == "https://my-resource.cognitiveservices.azure.com/openai/v1")
+}
+
+@Test func azureNormalizeCognitiveServicesPartialPath() throws {
+    let normalized = try normalizeAzureBaseUrl("https://my-resource.cognitiveservices.azure.com/openai")
+    #expect(normalized == "https://my-resource.cognitiveservices.azure.com/openai/v1")
+}
+
+@Test func azureNormalizeOpenAIAzureHost() throws {
+    let normalized = try normalizeAzureBaseUrl("https://res.openai.azure.com")
+    #expect(normalized == "https://res.openai.azure.com/openai/v1")
+}
+
+@Test func azureNormalizePreservesNonAzureUrls() throws {
+    let normalized = try normalizeAzureBaseUrl("https://proxy.example.com/api/v3/")
+    // Non-Azure host: trim trailing slashes, leave path alone.
+    #expect(normalized == "https://proxy.example.com/api/v3")
+}
+
+@Test func azureNormalizeRejectsInvalidUrl() {
+    #expect(throws: AzureOpenAIResponsesError.self) {
+        _ = try normalizeAzureBaseUrl("not a url")
+    }
+}
+
+/// v0.65.0: Bedrock throttling errors must NOT be classified as context overflow.
+/// AWS Bedrock formats throttling as `"Throttling error: Too many tokens..."` — without
+/// the non-overflow exclusion, the generic "too many tokens" pattern would false-positive
+/// and trigger compaction instead of a retry.
+@Test func contextOverflowExcludesBedrockThrottling() {
+    let model = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-3-5-haiku-20241022-v1:0")
+    let message = AssistantMessage(
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .error,
+        errorMessage: "Throttling error: Too many tokens, please wait before trying again."
+    )
+    #expect(!isContextOverflow(message))
+}
+
+/// v0.65.0: rate-limit errors must NOT be classified as context overflow.
+@Test func contextOverflowExcludesRateLimit() {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let message = AssistantMessage(
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .error,
+        errorMessage: "Rate limit reached for gpt-4o-mini in organization org-x. Too many requests."
+    )
+    #expect(!isContextOverflow(message))
+}
+
+/// v0.65.0: "Service unavailable:" prefix from Bedrock formatBedrockError() also bypasses overflow.
+@Test func contextOverflowExcludesBedrockServiceUnavailable() {
+    let model = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-3-5-haiku-20241022-v1:0")
+    let message = AssistantMessage(
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .error,
+        errorMessage: "Service unavailable: too many requests on this endpoint"
+    )
+    #expect(!isContextOverflow(message))
+}
+
 /// v0.69.0: transformMessages synthesizes trailing tool results when the transcript ends
 /// with unresolved assistant tool calls (no following user/assistant message).
 @Test func transformMessagesSynthesizesTrailingToolResults() {

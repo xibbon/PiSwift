@@ -350,6 +350,25 @@ public struct HookThemeResult: Sendable {
     }
 }
 
+/// Configuration for the interactive streaming loader animation surfaced to extensions via
+/// `ctx.ui.setWorkingIndicator(_:)`.
+public struct WorkingIndicatorOptions: Sendable {
+    /// Animation frames. Use an empty array to hide the indicator entirely. Custom frames
+    /// are rendered verbatim.
+    public var frames: [String]?
+    /// Frame interval in milliseconds for animated indicators.
+    public var intervalMs: Int?
+
+    public init(frames: [String]? = nil, intervalMs: Int? = nil) {
+        self.frames = frames
+        self.intervalMs = intervalMs
+    }
+}
+
+/// v0.70.0+: extensions can stack autocomplete providers by wrapping the current one. Each
+/// factory receives the live provider and returns a wrapped replacement.
+public typealias HookAutocompleteProviderFactory = @MainActor @Sendable (Any) -> Any
+
 @MainActor
 public protocol HookUIContext: Sendable {
     func select(_ title: String, _ options: [String]) async -> String?
@@ -380,6 +399,22 @@ public extension HookUIContext {
     func setWidget(_ key: String, _ factory: @escaping HookWidgetFactory) {
         setWidget(key, .component(factory))
     }
+
+    /// v0.70.0+: control whether the working/loading indicator is rendered. Default no-op.
+    /// Concrete implementations (interactive mode) override this to drive the loader.
+    func setWorkingVisible(_ visible: Bool) {}
+
+    /// v0.70.0+: configure the working indicator's animation frames and interval. Pass `nil`
+    /// to restore defaults. Default no-op.
+    func setWorkingIndicator(_ options: WorkingIndicatorOptions?) {}
+
+    /// v0.70.0+: customize the label shown in place of streaming thinking content. Pass `nil`
+    /// to restore the default. Default no-op.
+    func setHiddenThinkingLabel(_ label: String?) {}
+
+    /// v0.70.0+: register a wrapper that decorates the current autocomplete provider.
+    /// Multiple factories stack in registration order. Default no-op.
+    func addAutocompleteProvider(_ factory: @escaping HookAutocompleteProviderFactory) {}
 }
 
 public final class NoOpHookUIContext: HookUIContext {
@@ -787,6 +822,20 @@ public struct BeforeProviderRequestEvent: HookEvent, Sendable {
 
     public init(payload: String) {
         self.payload = payload
+    }
+}
+
+/// v0.68.0: emitted after a provider HTTP response is received and BEFORE the stream begins
+/// consuming. Lets extensions inspect status / headers — useful for tracing, debugging
+/// rate-limit/auth failures, surfacing provider-specific telemetry.
+public struct AfterProviderResponseEvent: HookEvent, Sendable {
+    public let type: String = "after_provider_response"
+    public var status: Int
+    public var headers: [String: String]
+
+    public init(status: Int, headers: [String: String]) {
+        self.status = status
+        self.headers = headers
     }
 }
 

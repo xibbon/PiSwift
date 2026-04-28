@@ -233,6 +233,9 @@ private struct ResolvedOpenAICompat {
     let thinkingFormat: OpenAICompatThinkingFormat
     let supportsStrictMode: Bool
     let reasoningEffortMap: [ThinkingLevel: String]?
+    /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
+    /// (DeepSeek V4 requirement). Empty string is injected when no thinking content exists.
+    let requiresReasoningContentOnAssistantMessages: Bool
 }
 
 private func detectCompat(model: Model) -> ResolvedOpenAICompat {
@@ -243,7 +246,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let isGroq = provider == "groq" || baseUrl.contains("groq.com")
     let isChutes = baseUrl.contains("chutes.ai")
     let isZai = provider == "zai" || baseUrl.contains("z.ai")
-    let isDeepSeek = baseUrl.contains("deepseek.com")
+    let isDeepSeek = provider == "deepseek" || baseUrl.contains("deepseek.com")
     let isOpencode = provider == "opencode" || baseUrl.contains("opencode.ai")
     let isOpenRouter = provider == "openrouter" || baseUrl.contains("openrouter.ai")
 
@@ -253,19 +256,34 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let thinkingFormat: OpenAICompatThinkingFormat
     if isZai {
         thinkingFormat = .zai
+    } else if isDeepSeek {
+        thinkingFormat = .deepseek
     } else if isOpenRouter {
         thinkingFormat = .openrouter
     } else {
         thinkingFormat = .openai
     }
 
-    let groqReasoningEffortMap: [ThinkingLevel: String]? = isGroq ? [
-        .minimal: "default",
-        .low: "default",
-        .medium: "default",
-        .high: "default",
-        .xhigh: "default",
-    ] : nil
+    let reasoningEffortMap: [ThinkingLevel: String]?
+    if isDeepSeek {
+        reasoningEffortMap = [
+            .minimal: "high",
+            .low: "high",
+            .medium: "high",
+            .high: "high",
+            .xhigh: "max",
+        ]
+    } else if isGroq {
+        reasoningEffortMap = [
+            .minimal: "default",
+            .low: "default",
+            .medium: "default",
+            .high: "default",
+            .xhigh: "default",
+        ]
+    } else {
+        reasoningEffortMap = nil
+    }
 
     return ResolvedOpenAICompat(
         supportsStore: !isNonStandard,
@@ -279,7 +297,8 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         requiresMistralToolIds: false,
         thinkingFormat: thinkingFormat,
         supportsStrictMode: true,
-        reasoningEffortMap: groqReasoningEffortMap
+        reasoningEffortMap: reasoningEffortMap,
+        requiresReasoningContentOnAssistantMessages: isDeepSeek
     )
 }
 
@@ -299,7 +318,8 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         requiresMistralToolIds: compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
         thinkingFormat: compat.thinkingFormat ?? detected.thinkingFormat,
         supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
-        reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap
+        reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap,
+        requiresReasoningContentOnAssistantMessages: compat.requiresReasoningContentOnAssistantMessages ?? detected.requiresReasoningContentOnAssistantMessages
     )
 }
 
@@ -659,6 +679,19 @@ private func buildCompletionsMiddlewares(
         let effort = options.reasoningEffort
         middlewares.append(OpenAICompletionsOpenRouterReasoningMiddleware(enableReasoning: enabled, effort: effort))
     }
+    if compat.thinkingFormat == .deepseek, model.reasoning {
+        let enabled = options.reasoningEffort != nil
+        let mappedEffort: String?
+        if let effort = options.reasoningEffort {
+            mappedEffort = compat.reasoningEffortMap?[effort] ?? effort.rawValue
+        } else {
+            mappedEffort = nil
+        }
+        middlewares.append(OpenAICompletionsDeepSeekMiddleware(enableThinking: enabled, mappedEffort: mappedEffort))
+    }
+    if compat.requiresReasoningContentOnAssistantMessages {
+        middlewares.append(OpenAICompletionsReasoningContentInjectionMiddleware())
+    }
     if model.compat?.openRouterRouting != nil || model.compat?.vercelGatewayRouting != nil {
         middlewares.append(OpenAICompletionsRoutingMiddleware(
             baseUrl: model.baseUrl,
@@ -727,6 +760,96 @@ private struct OpenAICompletionsChatTemplateMiddleware: OpenAIMiddleware {
     }
 }
 
+/// v0.70.1: Middleware for DeepSeek V4 models. Sets `thinking: { type: "enabled"|"disabled" }`
+/// and, when reasoning is enabled, `reasoning_effort` mapped via the compat reasoning effort map.
+private struct OpenAICompletionsDeepSeekMiddleware: OpenAIMiddleware {
+    let enableThinking: Bool
+    let mappedEffort: String?
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = readRequestBody(request) else { return request }
+        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+        payload["thinking"] = ["type": enableThinking ? "enabled" : "disabled"]
+        if enableThinking, let mappedEffort {
+            payload["reasoning_effort"] = mappedEffort
+        }
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
+    }
+}
+
+/// v0.70.1: Injects an empty `reasoning_content` field into replayed assistant messages that
+/// don't already carry one. DeepSeek V4 rejects assistant turns missing this field even when
+/// no thinking content was produced.
+private struct OpenAICompletionsReasoningContentInjectionMiddleware: OpenAIMiddleware {
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = readRequestBody(request) else { return request }
+        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+        guard var messages = payload["messages"] as? [[String: Any]] else { return request }
+        var changed = false
+        for index in messages.indices {
+            let message = messages[index]
+            guard let role = message["role"] as? String, role == "assistant" else { continue }
+            if message["reasoning_content"] == nil {
+                messages[index]["reasoning_content"] = ""
+                changed = true
+            }
+        }
+        guard changed else { return request }
+        payload["messages"] = messages
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
+    }
+}
+
 /// Middleware for OpenRouter models that injects reasoning effort via the `provider` object.
 /// OpenRouter uses `{ "provider": { "reasoning_effort": "<level>" } }` in the request body.
 private struct OpenAICompletionsOpenRouterReasoningMiddleware: OpenAIMiddleware {
@@ -772,6 +895,20 @@ private struct OpenAICompletionsOpenRouterReasoningMiddleware: OpenAIMiddleware 
     }
 }
 
+private func encodeRoutingPercentile(_ value: OpenRouterRoutingPercentile) -> Any {
+    switch value {
+    case .scalar(let n):
+        return n
+    case .percentiles(let p50, let p75, let p90, let p99):
+        var dict: [String: Any] = [:]
+        if let v = p50 { dict["p50"] = v }
+        if let v = p75 { dict["p75"] = v }
+        if let v = p90 { dict["p90"] = v }
+        if let v = p99 { dict["p99"] = v }
+        return dict
+    }
+}
+
 private struct OpenAICompletionsRoutingMiddleware: OpenAIMiddleware {
     let baseUrl: String
     let openRouterRouting: OpenRouterRouting?
@@ -782,9 +919,43 @@ private struct OpenAICompletionsRoutingMiddleware: OpenAIMiddleware {
         guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
 
         if baseUrl.contains("openrouter.ai"), let routing = openRouterRouting {
+            // v0.67.0: full OpenRouter routing field set. Only emit fields the caller set.
             var provider: [String: Any] = [:]
+            if let v = routing.allowFallbacks { provider["allow_fallbacks"] = v }
+            if let v = routing.requireParameters { provider["require_parameters"] = v }
+            if let v = routing.dataCollection { provider["data_collection"] = v }
+            if let v = routing.zdr { provider["zdr"] = v }
+            if let v = routing.enforceDistillableText { provider["enforce_distillable_text"] = v }
             if let only = routing.only { provider["only"] = only }
             if let order = routing.order { provider["order"] = order }
+            if let ignore = routing.ignore { provider["ignore"] = ignore }
+            if let q = routing.quantizations { provider["quantizations"] = q }
+            if let sort = routing.sort {
+                switch sort {
+                case .named(let s):
+                    provider["sort"] = s
+                case .structured(let by, let partition):
+                    var dict: [String: Any] = [:]
+                    if let by { dict["by"] = by }
+                    if let partition { dict["partition"] = partition }
+                    if !dict.isEmpty { provider["sort"] = dict }
+                }
+            }
+            if let mp = routing.maxPrice {
+                var price: [String: Any] = [:]
+                if let v = mp.prompt { price["prompt"] = v }
+                if let v = mp.completion { price["completion"] = v }
+                if let v = mp.image { price["image"] = v }
+                if let v = mp.audio { price["audio"] = v }
+                if let v = mp.request { price["request"] = v }
+                if !price.isEmpty { provider["max_price"] = price }
+            }
+            if let tp = routing.preferredMinThroughput {
+                provider["preferred_min_throughput"] = encodeRoutingPercentile(tp)
+            }
+            if let lat = routing.preferredMaxLatency {
+                provider["preferred_max_latency"] = encodeRoutingPercentile(lat)
+            }
             payload["provider"] = provider
         }
 
@@ -792,6 +963,7 @@ private struct OpenAICompletionsRoutingMiddleware: OpenAIMiddleware {
             var gateway: [String: Any] = [:]
             if let only = routing.only { gateway["only"] = only }
             if let order = routing.order { gateway["order"] = order }
+            if let v = routing.allowFallbacks { gateway["allow_fallbacks"] = v }
             if !gateway.isEmpty {
                 payload["providerOptions"] = ["gateway": gateway]
             }
