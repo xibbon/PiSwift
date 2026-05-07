@@ -988,6 +988,9 @@ public struct LoadedHook: Sendable {
     public var commands: [String: RegisteredCommand]
     public var flags: [String: HookFlag]
     public var shortcuts: [KeyId: HookShortcut]
+    /// Custom tools registered by the extension via `pi.registerTool(_:)`. Empty for
+    /// settings-defined hooks (which use the legacy `--tool` flag pathway instead).
+    public var tools: [String: CustomTool]
     public var setSendMessageHandler: HookSendMessageSetter
     public var setAppendEntryHandler: HookAppendEntrySetter
     public var setSetSessionNameHandler: (@Sendable (@escaping HookSetSessionNameHandler) -> Void)
@@ -996,6 +999,9 @@ public struct LoadedHook: Sendable {
     public var setGetAllToolsHandler: HookGetAllToolsSetter
     public var setSetActiveToolsHandler: HookSetActiveToolsSetter
     public var setFlagValue: HookSetFlagValue
+    /// True when this hook was loaded from a `.swift`/SPM extension (vs a settings-defined hook).
+    /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
+    public var isExtension: Bool
 
     public init(
         path: String,
@@ -1005,6 +1011,7 @@ public struct LoadedHook: Sendable {
         commands: [String: RegisteredCommand] = [:],
         flags: [String: HookFlag] = [:],
         shortcuts: [KeyId: HookShortcut] = [:],
+        tools: [String: CustomTool] = [:],
         setSendMessageHandler: @escaping HookSendMessageSetter = { _ in },
         setAppendEntryHandler: @escaping HookAppendEntrySetter = { _ in },
         setSetSessionNameHandler: @escaping (@Sendable (@escaping HookSetSessionNameHandler) -> Void) = { _ in },
@@ -1012,7 +1019,8 @@ public struct LoadedHook: Sendable {
         setGetActiveToolsHandler: @escaping HookGetActiveToolsSetter = { _ in },
         setGetAllToolsHandler: @escaping HookGetAllToolsSetter = { _ in },
         setSetActiveToolsHandler: @escaping HookSetActiveToolsSetter = { _ in },
-        setFlagValue: @escaping HookSetFlagValue = { _, _ in }
+        setFlagValue: @escaping HookSetFlagValue = { _, _ in },
+        isExtension: Bool = false
     ) {
         self.path = path
         self.resolvedPath = resolvedPath
@@ -1021,6 +1029,7 @@ public struct LoadedHook: Sendable {
         self.commands = commands
         self.flags = flags
         self.shortcuts = shortcuts
+        self.tools = tools
         self.setSendMessageHandler = setSendMessageHandler
         self.setAppendEntryHandler = setAppendEntryHandler
         self.setSetSessionNameHandler = setSetSessionNameHandler
@@ -1029,6 +1038,7 @@ public struct LoadedHook: Sendable {
         self.setGetAllToolsHandler = setGetAllToolsHandler
         self.setSetActiveToolsHandler = setSetActiveToolsHandler
         self.setFlagValue = setFlagValue
+        self.isExtension = isExtension
     }
 }
 
@@ -1058,6 +1068,9 @@ public final class HookAPI: Sendable {
         var commands: [String: RegisteredCommand]
         var flags: [String: HookFlag]
         var shortcuts: [KeyId: HookShortcut]
+        /// Custom tools registered by the extension via `pi.registerTool(_:)`.
+        /// Keyed by tool name; collisions overwrite (last write wins).
+        var tools: [String: CustomTool]
         var sendMessageHandler: HookSendMessageHandler
         var appendEntryHandler: HookAppendEntryHandler
         var setSessionNameHandler: HookSetSessionNameHandler
@@ -1093,6 +1106,11 @@ public final class HookAPI: Sendable {
     public private(set) var shortcuts: [KeyId: HookShortcut] {
         get { state.withLock { $0.shortcuts } }
         set { state.withLock { $0.shortcuts = newValue } }
+    }
+
+    public private(set) var tools: [String: CustomTool] {
+        get { state.withLock { $0.tools } }
+        set { state.withLock { $0.tools = newValue } }
     }
 
     private var sendMessageHandler: HookSendMessageHandler {
@@ -1154,6 +1172,7 @@ public final class HookAPI: Sendable {
             commands: [:],
             flags: [:],
             shortcuts: [:],
+            tools: [:],
             sendMessageHandler: { _, _ in },
             appendEntryHandler: { _, _ in },
             setSessionNameHandler: { _ in },
@@ -1280,6 +1299,14 @@ public final class HookAPI: Sendable {
 
     public func registerCommand(_ name: String, description: String? = nil, handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
         commands[name] = RegisteredCommand(name: name, description: description, handler: handler)
+    }
+
+    /// Register a custom tool callable by the LLM. Mirrors pi-mono's `pi.registerTool(_)`.
+    /// The tool's `name` must be unique across the session (collisions overwrite). The
+    /// extension that registered the tool owns its lifetime — when the extension is
+    /// dropped via `/reload`, its tools are removed from the agent's roster.
+    public func registerTool(_ tool: CustomTool) {
+        tools[tool.name] = tool
     }
 
 #if !canImport(UIKit)

@@ -3763,7 +3763,7 @@ public final class InteractiveMode {
             return
         }
 
-        let loader = BorderedLoader(tui: tui, theme: theme, message: "Reloading skills, prompts, themes...")
+        let loader = BorderedLoader(tui: tui, theme: theme, message: "Reloading skills, prompts, themes, extensions...")
         let previousEditor = currentEditor
 
         editorContainer.clear()
@@ -3780,10 +3780,22 @@ public final class InteractiveMode {
         }
 
         await session.reload()
+        let extensionResult = await session.reloadExtensions()
         keybindings = KeybindingsManager.create()
         skills = session.resourceLoader.getSkills().skills
         setRegisteredThemes(session.resourceLoader.getThemes().themes)
+
+        // Refresh hook-derived UI state so dropped extensions disappear and freshly-loaded
+        // ones become reachable. setupHookShortcuts replaces the entire shortcut map.
+        if let hookRunner = session.hookRunner {
+            setupHookShortcuts(hookRunner)
+        }
         rebuildAutocomplete()
+
+        for error in extensionResult.errors {
+            showHookError("extension", error.errorDescription ?? "\(error)")
+        }
+
         pendingResourceDisplayOptions = ResourceDisplayOptions(
             extensionPaths: session.resourceLoader.getExtensions().paths,
             force: true
@@ -3791,7 +3803,19 @@ public final class InteractiveMode {
         chatContainer.clear()
         renderInitialMessages()
         restoreEditor(previousEditor)
-        showStatus("Reloaded skills, prompts, themes, keybindings")
+
+        let extDelta = extensionResult.loadedPaths.count - extensionResult.droppedPaths.count
+        let extSummary: String
+        if extensionResult.loadedPaths.isEmpty && extensionResult.droppedPaths.isEmpty {
+            extSummary = ""
+        } else if extDelta == 0 {
+            extSummary = ", \(extensionResult.loadedPaths.count) extension\(extensionResult.loadedPaths.count == 1 ? "" : "s") refreshed"
+        } else if extDelta > 0 {
+            extSummary = ", +\(extDelta) extension\(extDelta == 1 ? "" : "s")"
+        } else {
+            extSummary = ", \(extDelta) extension\(extDelta == -1 ? "" : "s")"
+        }
+        showStatus("Reloaded skills, prompts, themes, keybindings\(extSummary)")
     }
 
     private func formatKeyDisplay(_ keys: [KeyId]) -> String {

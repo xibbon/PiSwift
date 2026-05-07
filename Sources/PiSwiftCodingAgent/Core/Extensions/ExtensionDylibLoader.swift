@@ -57,6 +57,7 @@ public struct ExtensionDylibLoader {
             commands: api.commands,
             flags: api.flags,
             shortcuts: api.shortcuts,
+            tools: api.tools,
             setSendMessageHandler: api.setSendMessageHandler,
             setAppendEntryHandler: api.setAppendEntryHandler,
             setSetSessionNameHandler: api.setSetSessionNameHandler,
@@ -64,7 +65,8 @@ public struct ExtensionDylibLoader {
             setGetActiveToolsHandler: api.setGetActiveToolsHandler,
             setGetAllToolsHandler: api.setGetAllToolsHandler,
             setSetActiveToolsHandler: api.setSetActiveToolsHandler,
-            setFlagValue: api.setFlagValue
+            setFlagValue: api.setFlagValue,
+            isExtension: true
         )
     }
 }

@@ -117,6 +117,8 @@ let package = Package(
         .target(
             name: "PiExtensionSDK",
             dependencies: [
+                "PiSwiftAI",
+                "PiSwiftAgent",
                 "PiSwiftCodingAgent",
             ],
             swiftSettings: strictConcurrencySettings

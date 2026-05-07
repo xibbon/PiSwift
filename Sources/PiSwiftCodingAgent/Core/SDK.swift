@@ -576,10 +576,19 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     }
     allLoadedHooks += extensionResult.hooks
 
-    var hookRunner: HookRunner? = nil
-    if !allLoadedHooks.isEmpty {
-        hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry)
+    // Closure used by AgentSession.reloadExtensions() so /reload can swap extensions live.
+    // Captures the same paths/cwd/agentDir/eventBus the initial load used. SDK extension
+    // resolution is repeated inside discoverAndLoadExtensions so it picks up newly-installed
+    // SDKs too.
+    let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
+        await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus)
     }
+
+    // Always create a HookRunner — even with zero hooks at startup, /reload can add
+    // extensions later, and the agent's beforeToolCall/onPayload/onResponse closures need
+    // a runner instance to forward events to. The closures gate at call-time on
+    // `hasHandlers(...)`, so empty runners cost nothing.
+    let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry)
 
     let agentBox = LockedState<Agent?>(nil)
     let sessionBox = LockedState<AgentSession?>(nil)
@@ -602,6 +611,15 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         )
     }
     let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, getCustomToolContext)
+
+    // Tools registered by extensions via `pi.registerTool(_:)`. Wrapped through the same
+    // CustomTool→AgentTool bridge as settings-defined custom tools.
+    let extensionTools = hookRunner.getExtensionTools()
+    let extensionToolDefinitions = extensionTools.map { tool in
+        LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
+    }
+    let wrappedExtensionTools = wrapCustomTools(extensionToolDefinitions, getCustomToolContext)
+
     let allBuiltInToolsMap = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
     var toolRegistry: [String: AgentTool] = [:]
     for (name, tool) in allBuiltInToolsMap {
@@ -610,15 +628,16 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     for tool in wrappedCustomTools {
         toolRegistry[tool.name] = tool
     }
-
-    var allTools = builtInTools + wrappedCustomTools
-    time("combineTools")
-    if let hookRunner {
-        allTools = wrapToolsWithHooks(allTools, hookRunner)
-        let registryTools = Array(toolRegistry.values)
-        let wrappedRegistry = wrapToolsWithHooks(registryTools, hookRunner)
-        toolRegistry = Dictionary(uniqueKeysWithValues: wrappedRegistry.map { ($0.name, $0) })
+    for tool in wrappedExtensionTools {
+        toolRegistry[tool.name] = tool
     }
+
+    var allTools = builtInTools + wrappedCustomTools + wrappedExtensionTools
+    time("combineTools")
+    allTools = wrapToolsWithHooks(allTools, hookRunner)
+    let registryTools = Array(toolRegistry.values)
+    let wrappedRegistry = wrapToolsWithHooks(registryTools, hookRunner)
+    toolRegistry = Dictionary(uniqueKeysWithValues: wrappedRegistry.map { ($0.name, $0) })
 
     let rebuildSystemPrompt: @Sendable ([String]) -> String = { toolNames in
         let validToolNames = toolNames.compactMap { ToolName(rawValue: $0) }
@@ -666,13 +685,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let promptTemplates = options.promptTemplates ?? loaderPrompts
     time("discoverPromptTemplates")
 
-    let transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])?
-    if let hookRunnerSnapshot = hookRunner {
-        transformContext = { messages, signal in
-            await hookRunnerSnapshot.emitContext(messages, signal: signal)
-        }
-    } else {
-        transformContext = nil
+    let transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? = { [hookRunner] messages, signal in
+        await hookRunner.emitContext(messages, signal: signal)
     }
 
     let convertToLlmWithBlockImages: @Sendable ([AgentMessage]) -> [Message] = { messages in
@@ -687,48 +701,37 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         return filtered.messages
     }
 
-    // Wire agent-level beforeToolCall/afterToolCall from hook runner (extensions + hooks)
-    let beforeToolCallHook: BeforeToolCallFn?
-    let afterToolCallHook: AfterToolCallFn?
-    if let hookRunnerForAgent = hookRunner, hookRunnerForAgent.hasHandlers("tool_call") {
-        beforeToolCallHook = { context, _ in
-            let event = ToolCallEvent(toolName: context.toolCall.name, toolCallId: context.toolCall.id, input: context.args)
-            if let result = await hookRunnerForAgent.emitToolCall(event), result.block {
-                return BeforeToolCallResult(block: true, reason: result.reason)
-            }
-            return nil
+    // Wire agent-level beforeToolCall/afterToolCall from hook runner (extensions + hooks).
+    // The closures are always installed; they cheaply gate on `hasHandlers(...)` at call
+    // time so a `/reload` that introduces new tool_call hooks Just Works.
+    let beforeToolCallHook: BeforeToolCallFn? = { [hookRunner] context, _ in
+        guard hookRunner.hasHandlers("tool_call") else { return nil }
+        let event = ToolCallEvent(toolName: context.toolCall.name, toolCallId: context.toolCall.id, input: context.args)
+        if let result = await hookRunner.emitToolCall(event), result.block {
+            return BeforeToolCallResult(block: true, reason: result.reason)
         }
-    } else {
-        beforeToolCallHook = nil
+        return nil
     }
-    afterToolCallHook = nil // No hook runner method for after-tool-call results yet
+    let afterToolCallHook: AfterToolCallFn? = nil // No hook runner method for after-tool-call results yet
 
-    // Wire onPayload to emit BeforeProviderRequestEvent to extensions
-    let onPayloadHook: OnPayloadFn?
-    if let hookRunnerForPayload = hookRunner, hookRunnerForPayload.hasHandlers("before_provider_request") {
-        onPayloadHook = { snapshot in
-            let event = BeforeProviderRequestEvent(payload: snapshot.json)
-            Task {
-                _ = await hookRunnerForPayload.emit(event)
-            }
+    // Wire onPayload to emit BeforeProviderRequestEvent to extensions.
+    let onPayloadHook: OnPayloadFn? = { [hookRunner] snapshot in
+        guard hookRunner.hasHandlers("before_provider_request") else { return }
+        let event = BeforeProviderRequestEvent(payload: snapshot.json)
+        Task {
+            _ = await hookRunner.emit(event)
         }
-    } else {
-        onPayloadHook = nil
     }
 
     // v0.68.0: wire onResponse to emit AfterProviderResponseEvent so extensions can
     // inspect provider HTTP status / headers immediately after the response arrives
     // and before the stream is consumed.
-    let onResponseHook: ResponseHandler?
-    if let hookRunnerForResponse = hookRunner, hookRunnerForResponse.hasHandlers("after_provider_response") {
-        onResponseHook = { snapshot in
-            let event = AfterProviderResponseEvent(status: snapshot.statusCode, headers: snapshot.headers)
-            Task {
-                _ = await hookRunnerForResponse.emit(event)
-            }
+    let onResponseHook: ResponseHandler? = { [hookRunner] snapshot in
+        guard hookRunner.hasHandlers("after_provider_response") else { return }
+        let event = AfterProviderResponseEvent(status: snapshot.statusCode, headers: snapshot.headers)
+        Task {
+            _ = await hookRunner.emit(event)
         }
-    } else {
-        onResponseHook = nil
     }
 
     let createdAgent = Agent(AgentOptions(
@@ -779,7 +782,15 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         skillsSettings: settingsManager.getSkillsSettings(),
         eventBus: eventBus,
         toolRegistry: toolRegistry,
-        rebuildSystemPrompt: rebuildSystemPrompt
+        rebuildSystemPrompt: rebuildSystemPrompt,
+        reloadExtensionsHook: reloadExtensionsHook,
+        wrapExtensionTools: { [hookRunner] tools in
+            let definitions = tools.map { tool in
+                LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
+            }
+            let wrapped = wrapCustomTools(definitions, getCustomToolContext)
+            return wrapToolsWithHooks(wrapped, hookRunner)
+        }
     ))
     time("createAgentSession")
     sessionBox.withLock { $0 = createdSession }

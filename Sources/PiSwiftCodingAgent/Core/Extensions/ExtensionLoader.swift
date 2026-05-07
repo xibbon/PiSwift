@@ -175,8 +175,24 @@ public func discoverAndLoadExtensions(
     _ agentDir: String = getAgentDir(),
     _ eventBus: EventBus
 ) async -> LoadExtensionsResult {
-    // Resolve SDK paths -- if not available, skip extension loading entirely.
+    // Resolve SDK paths -- if not available, skip extension loading. We log a warning
+    // when extensions exist on disk but can't be compiled, so the failure is visible
+    // (silent skipping had been confusing users on installed builds where the SDK
+    // hadn't been shipped alongside the binary).
     guard let sdkPaths = ExtensionCompiler.resolveSDKPaths() else {
+        let globalDir = URL(fileURLWithPath: agentDir).appendingPathComponent("extensions").path
+        let localDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
+        let totalCount = configuredPaths.count
+            + ExtensionLoader.discover(in: globalDir).count
+            + ExtensionLoader.discover(in: localDir).count
+        if totalCount > 0 {
+            FileHandle.standardError.write(Data((
+                "warning: found \(totalCount) extension(s) but PiExtensionSDK is not "
+                + "installed (set PI_EXTENSION_SDK_PATH, place the SDK in "
+                + "~/.pi/agent/sdk/, or install via `make install`). "
+                + "Extensions skipped.\n"
+            ).utf8))
+        }
         return LoadExtensionsResult()
     }
 

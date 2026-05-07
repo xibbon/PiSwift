@@ -45,6 +45,15 @@ public struct AgentSessionConfig: Sendable {
     public var eventBus: EventBus?
     public var toolRegistry: [String: AgentTool]?
     public var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
+    /// Re-discover and re-load extension dylibs. Wired by `createAgentSession()` so it
+    /// uses the same paths/cwd/agentDir as the initial load. Invoked by
+    /// `AgentSession.reloadExtensions()` (driven by `/reload`).
+    public var reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)?
+    /// Bridge that wraps extension-registered `CustomTool`s into agent-ready
+    /// `AgentTool`s (applying the wrapCustomTools + wrapToolsWithHooks pipeline). Wired
+    /// by `createAgentSession()`. Invoked by `reloadExtensions()` to add freshly-loaded
+    /// extension tools to the agent's roster.
+    public var wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])?
 
     public init(
         agent: Agent,
@@ -60,7 +69,9 @@ public struct AgentSessionConfig: Sendable {
         skillsSettings: SkillsSettings? = nil,
         eventBus: EventBus? = nil,
         toolRegistry: [String: AgentTool]? = nil,
-        rebuildSystemPrompt: (@Sendable ([String]) -> String)? = nil
+        rebuildSystemPrompt: (@Sendable ([String]) -> String)? = nil,
+        reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)? = nil,
+        wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])? = nil
     ) {
         self.agent = agent
         self.sessionManager = sessionManager
@@ -76,6 +87,8 @@ public struct AgentSessionConfig: Sendable {
         self.eventBus = eventBus
         self.toolRegistry = toolRegistry
         self.rebuildSystemPrompt = rebuildSystemPrompt
+        self.reloadExtensionsHook = reloadExtensionsHook
+        self.wrapExtensionTools = wrapExtensionTools
     }
 }
 
@@ -311,6 +324,8 @@ public final class AgentSession: Sendable {
         var toolRegistry: [String: AgentTool]
         var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
         var toolPromptSnippets: [String: String]
+        var reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)?
+        var wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])?
     }
 
     private var _hookRunner: HookRunner? {
@@ -460,6 +475,16 @@ public final class AgentSession: Sendable {
         set { state.withLock { $0.toolPromptSnippets = newValue } }
     }
 
+    private var reloadExtensionsHookInternal: (@Sendable () async -> LoadExtensionsResult)? {
+        get { state.withLock { $0.reloadExtensionsHook } }
+        set { state.withLock { $0.reloadExtensionsHook = newValue } }
+    }
+
+    private var wrapExtensionToolsInternal: (@Sendable ([CustomTool]) -> [AgentTool])? {
+        get { state.withLock { $0.wrapExtensionTools } }
+        set { state.withLock { $0.wrapExtensionTools = newValue } }
+    }
+
     /// Register a prompt snippet that tools can contribute to the system prompt.
     /// Snippets are keyed by name so they can be replaced or removed.
     public func registerToolPromptSnippet(name: String, text: String) {
@@ -514,7 +539,9 @@ public final class AgentSession: Sendable {
             baseSystemPrompt: config.agent.state.systemPrompt,
             toolRegistry: config.toolRegistry ?? [:],
             rebuildSystemPrompt: config.rebuildSystemPrompt,
-            toolPromptSnippets: [:]
+            toolPromptSnippets: [:],
+            reloadExtensionsHook: config.reloadExtensionsHook,
+            wrapExtensionTools: config.wrapExtensionTools
         ))
 
         self._hookRunner?.initialize(
@@ -944,6 +971,99 @@ public final class AgentSession: Sendable {
             baseSystemPrompt = rebuildSystemPrompt(activeToolNames)
             agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
         }
+    }
+
+    /// Result of a `/reload`-triggered extension swap.
+    public struct ReloadExtensionsResult: Sendable {
+        public var droppedPaths: [String]
+        public var loadedPaths: [String]
+        public var errors: [ExtensionLoadError]
+
+        public init(droppedPaths: [String], loadedPaths: [String], errors: [ExtensionLoadError]) {
+            self.droppedPaths = droppedPaths
+            self.loadedPaths = loadedPaths
+            self.errors = errors
+        }
+    }
+
+    /// Re-discover, re-compile, and swap extension dylibs while the session is live.
+    ///
+    /// 1. Emits `session_shutdown(reason: .reload)` to currently-loaded extensions so they can
+    ///    release UI widgets, status entries, footers, etc.
+    /// 2. Calls the closure provided by `createAgentSession()` to discover and compile fresh
+    ///    extensions from disk.
+    /// 3. Replaces extension hooks on the runner (settings hooks are preserved).
+    /// 4. Emits `session_start(reason: .reload)` to the new extension instances.
+    ///
+    /// Settings-defined hooks are not touched. Old extension dylibs remain loaded in the
+    /// process (RTLD_LOCAL prevents collisions with the new ones), but their handlers are
+    /// detached from the runner so they no longer receive events.
+    @discardableResult
+    public func reloadExtensions() async -> ReloadExtensionsResult {
+        guard let hookRunner = _hookRunner, let reloadHook = reloadExtensionsHookInternal else {
+            return ReloadExtensionsResult(droppedPaths: [], loadedPaths: [], errors: [])
+        }
+
+        // 1. Notify currently-loaded extensions before they're swapped out.
+        await hookRunner.emitToExtensions(SessionShutdownEvent(reason: .reload))
+
+        // 2. Snapshot the current extension-tool roster so we can diff after the swap.
+        let oldExtensionToolNames = hookRunner.getExtensionToolNames()
+
+        // 3. Re-discover and re-compile.
+        let result = await reloadHook()
+
+        // 4. Swap. Returns the paths that were dropped so the caller can log them.
+        let dropped = hookRunner.replaceExtensionHooks(result.hooks)
+
+        // 5. Refresh extension tools on the agent: drop the old, add the new.
+        if let wrap = wrapExtensionToolsInternal {
+            let newExtensionTools = hookRunner.getExtensionTools()
+            let newExtensionToolNames = Set(newExtensionTools.map { $0.name })
+            let removedToolNames = oldExtensionToolNames.subtracting(newExtensionToolNames)
+
+            if !removedToolNames.isEmpty || !newExtensionTools.isEmpty {
+                let wrappedNew = wrap(newExtensionTools)
+                var registry = toolRegistry
+                for name in removedToolNames {
+                    registry.removeValue(forKey: name)
+                }
+                for tool in wrappedNew {
+                    registry[tool.name] = tool
+                }
+                toolRegistry = registry
+
+                // Apply to agent.tools too: drop removed tools, replace surviving extension
+                // tools with their re-wrapped versions, leave built-ins/custom-tools alone.
+                let wrappedByName = Dictionary(uniqueKeysWithValues: wrappedNew.map { ($0.name, $0) })
+                var newActive: [AgentTool] = []
+                for tool in agent.tools {
+                    if removedToolNames.contains(tool.name) {
+                        continue
+                    }
+                    if let replacement = wrappedByName[tool.name] {
+                        newActive.append(replacement)
+                    } else {
+                        newActive.append(tool)
+                    }
+                }
+                // Add brand-new extension tools that weren't already active.
+                let activeNames = Set(newActive.map { $0.name })
+                for tool in wrappedNew where !activeNames.contains(tool.name) {
+                    newActive.append(tool)
+                }
+                agent.tools = newActive
+            }
+        }
+
+        // 6. Notify the freshly-loaded extensions.
+        await hookRunner.emitToExtensions(SessionStartEvent(reason: .reload))
+
+        return ReloadExtensionsResult(
+            droppedPaths: dropped,
+            loadedPaths: result.hooks.map { $0.path },
+            errors: result.errors
+        )
     }
 
     public func prompt(_ text: String, options: PromptOptions? = nil) async throws {

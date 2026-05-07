@@ -124,38 +124,65 @@ public struct ExtensionCompiler {
         if let sdkDir = ProcessInfo.processInfo.environment["PI_EXTENSION_SDK_PATH"],
            !sdkDir.isEmpty,
            FileManager.default.fileExists(atPath: sdkDir) {
-            return SDKPaths(modulePath: sdkDir, libPath: sdkDir)
+            // Honor a `Modules/` subdir if present so callers can ship one tree.
+            let modulesSubdir = (sdkDir as NSString).appendingPathComponent("Modules")
+            let moduleDir = FileManager.default.fileExists(atPath: (modulesSubdir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule"))
+                ? modulesSubdir : sdkDir
+            return SDKPaths(modulePath: moduleDir, libPath: sdkDir)
         }
 
-        // 2. ~/.pi/agent/sdk/
+        // 2. ~/.pi/agent/sdk/  (per-user install — no root required).
+        //    Supports a flat layout (everything in sdk/) or sdk/Modules/ for the modules.
         let agentSDK = (getAgentDir() as NSString).appendingPathComponent("sdk")
-        if FileManager.default.fileExists(atPath: (agentSDK as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule")) {
-            return SDKPaths(modulePath: agentSDK, libPath: agentSDK)
+        if let paths = sdkPathsAt(agentSDK) {
+            return paths
         }
 
-        // 3. Relative to current executable (for development / installed builds)
+        // 3. Relative to the current executable (handles both `swift run` SPM build dir
+        //    and "installed next to binary" layouts where the dylib + Modules/ live in
+        //    the same directory as the executable).
         let execURL = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0]).deletingLastPathComponent()
         let execDir = execURL.path
-        if FileManager.default.fileExists(atPath: (execDir as NSString).appendingPathComponent("libPiExtensionSDK.dylib")) {
-            // Check for Modules subdirectory (SPM layout) or same directory (installed layout)
-            let modulesSubdir = (execDir as NSString).appendingPathComponent("Modules")
-            let moduleDir = FileManager.default.fileExists(atPath: (modulesSubdir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule"))
-                ? modulesSubdir : execDir
-            return SDKPaths(modulePath: moduleDir, libPath: execDir)
+        if let paths = sdkPathsAt(execDir) {
+            return paths
         }
 
-        // 4. SPM build artifacts (debug then release)
+        // 4. FHS-style install: `<bin>/../lib/pi/` next to the binary, e.g.
+        //    `~/.local/bin/pi-coding-agent` + `~/.local/lib/pi/{libPiExtensionSDK.dylib,Modules/...}`.
+        let fhsLib = execURL.deletingLastPathComponent().appendingPathComponent("lib").appendingPathComponent("pi").path
+        if let paths = sdkPathsAt(fhsLib) {
+            return paths
+        }
+
+        // 5. SPM build artifacts (debug then release) — falls through when running tests
+        //    or `swift run` from a sibling directory.
         for config in ["debug", "release"] {
-            let buildDir = findSPMBuildDir(config: config)
-            if let buildDir,
-               FileManager.default.fileExists(atPath: (buildDir as NSString).appendingPathComponent("libPiExtensionSDK.dylib")) {
-                let modulesDir = (buildDir as NSString).appendingPathComponent("Modules")
-                let moduleDir = FileManager.default.fileExists(atPath: (modulesDir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule"))
-                    ? modulesDir : buildDir
-                return SDKPaths(modulePath: moduleDir, libPath: buildDir)
+            if let buildDir = findSPMBuildDir(config: config),
+               let paths = sdkPathsAt(buildDir) {
+                return paths
             }
         }
 
+        return nil
+    }
+
+    /// Probe a candidate directory for the SDK artifacts. Returns nil when the dylib or
+    /// the swiftmodule isn't present. Accepts either flat (everything in `dir`) or
+    /// `dir/Modules/` layouts.
+    /// Internal for testing: lets `compilerResolvesSDKPathsFromInstalledFHSLayout`
+    /// verify layout detection without mutating `PI_EXTENSION_SDK_PATH` (which would
+    /// race against parallel tests).
+    static func sdkPathsAt(_ dir: String) -> SDKPaths? {
+        let dylib = (dir as NSString).appendingPathComponent("libPiExtensionSDK.dylib")
+        guard FileManager.default.fileExists(atPath: dylib) else { return nil }
+
+        let modulesSubdir = (dir as NSString).appendingPathComponent("Modules")
+        if FileManager.default.fileExists(atPath: (modulesSubdir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule")) {
+            return SDKPaths(modulePath: modulesSubdir, libPath: dir)
+        }
+        if FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule")) {
+            return SDKPaths(modulePath: dir, libPath: dir)
+        }
         return nil
     }
 

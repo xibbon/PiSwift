@@ -40,6 +40,31 @@ public final class HookRunner: Sendable {
         var uiContext: HookUIContext
         var hasUI: Bool
         var errorListeners: [UUID: @Sendable (HookError) -> Void]
+        /// Per-hook setters captured at initialize() so they can be re-applied to hooks
+        /// added via `replaceExtensionHooks(_:)` without re-plumbing the whole TUI.
+        var wiring: HookWiring?
+    }
+
+    /// Captures the setter closures that `initialize(...)` plumbs into each LoadedHook.
+    /// Stored on State so the same wiring can be re-applied to hooks loaded later by `/reload`.
+    private struct HookWiring: Sendable {
+        var sendMessageHandler: HookSendMessageHandler
+        var appendEntryHandler: HookAppendEntryHandler
+        var setSessionNameHandler: HookSetSessionNameHandler
+        var getSessionNameHandler: HookGetSessionNameHandler
+        var getActiveToolsHandler: HookGetActiveToolsHandler
+        var getAllToolsHandler: HookGetAllToolsHandler
+        var setActiveToolsHandler: HookSetActiveToolsHandler
+
+        func apply(to hook: LoadedHook) {
+            hook.setSendMessageHandler(sendMessageHandler)
+            hook.setAppendEntryHandler(appendEntryHandler)
+            hook.setSetSessionNameHandler(setSessionNameHandler)
+            hook.setGetSessionNameHandler(getSessionNameHandler)
+            hook.setGetActiveToolsHandler(getActiveToolsHandler)
+            hook.setGetAllToolsHandler(getAllToolsHandler)
+            hook.setSetActiveToolsHandler(setActiveToolsHandler)
+        }
     }
 
     private var hooks: [LoadedHook] {
@@ -124,7 +149,8 @@ public final class HookRunner: Sendable {
             navigateTreeHandler: { _, _ in HookCommandResult(cancelled: false) },
             uiContext: NoOpHookUIContext(),
             hasUI: false,
-            errorListeners: [:]
+            errorListeners: [:],
+            wiring: nil
         ))
     }
 
@@ -166,14 +192,18 @@ public final class HookRunner: Sendable {
         self.uiContext = uiContext ?? NoOpHookUIContext()
         self.hasUI = hasUI
 
+        let wiring = HookWiring(
+            sendMessageHandler: sendMessageHandler,
+            appendEntryHandler: appendEntryHandler,
+            setSessionNameHandler: setSessionNameHandler,
+            getSessionNameHandler: getSessionNameHandler,
+            getActiveToolsHandler: getActiveToolsHandler ?? { [] },
+            getAllToolsHandler: getAllToolsHandler ?? { [] },
+            setActiveToolsHandler: setActiveToolsHandler ?? { _ in }
+        )
+        state.withLock { $0.wiring = wiring }
         for hook in hooks {
-            hook.setSendMessageHandler(sendMessageHandler)
-            hook.setAppendEntryHandler(appendEntryHandler)
-            hook.setSetSessionNameHandler(setSessionNameHandler)
-            hook.setGetSessionNameHandler(getSessionNameHandler)
-            hook.setGetActiveToolsHandler(getActiveToolsHandler ?? { [] })
-            hook.setGetAllToolsHandler(getAllToolsHandler ?? { [] })
-            hook.setSetActiveToolsHandler(setActiveToolsHandler ?? { _ in })
+            wiring.apply(to: hook)
         }
     }
 
@@ -187,6 +217,72 @@ public final class HookRunner: Sendable {
 
     public func getHookPaths() -> [String] {
         hooks.map { $0.path }
+    }
+
+    /// Paths of currently-loaded hooks that originated from extensions (not settings hooks).
+    public func getExtensionHookPaths() -> [String] {
+        hooks.filter { $0.isExtension }.map { $0.path }
+    }
+
+    /// All custom tools registered by extensions (across every loaded extension hook).
+    /// On name collision the last hook in iteration order wins; this matches the
+    /// command-collision policy in `getRegisteredCommands()`.
+    public func getExtensionTools() -> [CustomTool] {
+        var byName: [String: CustomTool] = [:]
+        for hook in hooks where hook.isExtension {
+            for (name, tool) in hook.tools {
+                byName[name] = tool
+            }
+        }
+        return Array(byName.values)
+    }
+
+    /// Names of every extension-registered tool currently loaded. Used by
+    /// `AgentSession.reloadExtensions()` to drop stale tools before adding new ones.
+    public func getExtensionToolNames() -> Set<String> {
+        var names: Set<String> = []
+        for hook in hooks where hook.isExtension {
+            for name in hook.tools.keys { names.insert(name) }
+        }
+        return names
+    }
+
+    /// Replace the extension-sourced hooks while preserving settings-defined hooks.
+    /// Re-applies the wiring captured at `initialize(...)` to the new extension hooks
+    /// so their `sendMessage` / `appendEntry` / etc. callbacks are connected.
+    /// Returns the paths of extension hooks that were dropped (caller may want to log them).
+    @discardableResult
+    public func replaceExtensionHooks(_ newExtensionHooks: [LoadedHook]) -> [String] {
+        let droppedPaths: [String] = state.withLock { state in
+            let dropped = state.hooks.filter { $0.isExtension }.map { $0.path }
+            let kept = state.hooks.filter { !$0.isExtension }
+            state.hooks = kept + newExtensionHooks
+            return dropped
+        }
+        if let wiring = state.withLock({ $0.wiring }) {
+            for hook in newExtensionHooks {
+                wiring.apply(to: hook)
+            }
+        }
+        return droppedPaths
+    }
+
+    /// Emit an event only to hooks loaded from extensions (skips settings-defined hooks).
+    /// Used by the reload lifecycle to fire `session_shutdown` / `session_start(reason: .reload)`
+    /// at the extensions being swapped, without disturbing built-in hooks.
+    public func emitToExtensions(_ event: HookEvent) async {
+        let context = createContext()
+        let extensionHooks = hooks.filter { $0.isExtension }
+        for hook in extensionHooks {
+            guard let handlers = hook.handlers[event.type] else { continue }
+            for handler in handlers {
+                do {
+                    _ = try await handler(event, context)
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
+                }
+            }
+        }
     }
 
     public func getMessageRenderer(_ customType: String) -> HookMessageRenderer? {

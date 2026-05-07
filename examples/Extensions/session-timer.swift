@@ -7,6 +7,7 @@
 // - Using the status bar API
 // - Registering a /timer command
 
+import Foundation
 import PiExtensionSDK
 
 /// Thread-safe state for the timer.
