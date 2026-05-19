@@ -263,7 +263,6 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         }
         let eventBus = createEventBus()
 
-        var hookRunner: HookRunner? = nil
         let baseHookPaths = parsed.noExtensions == true ? [] : settingsManager.getHooks()
         let hookPaths = baseHookPaths + (parsed.hooks ?? [])
         let hookLoadResult = parsed.noExtensions == true
@@ -272,10 +271,6 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         time("discoverAndLoadHooks")
         for error in hookLoadResult.errors {
             fputs("Failed to load hook \"\(error.path)\": \(error.error)\n", stderr)
-        }
-        if !hookLoadResult.hooks.isEmpty {
-            let runner = HookRunner(hookLoadResult.hooks, cwd, sessionManager, modelRegistry)
-            hookRunner = runner
         }
 
         let baseCustomToolPaths = parsed.noExtensions == true ? [] : settingsManager.getCustomTools()
@@ -289,10 +284,23 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             fputs("Failed to load custom tool \"\(error.path)\": \(error.error)\n", stderr)
         }
 
+        let extensionPaths = parsed.noExtensions == true ? [] : settingsManager.getExtensionPaths()
+        let extensionResult = parsed.noExtensions == true
+            ? LoadExtensionsResult()
+            : await discoverAndLoadExtensions(extensionPaths, cwd, getAgentDir(), eventBus)
+        time("discoverAndLoadExtensions")
+        for error in extensionResult.errors {
+            fputs("Failed to load extension: \(error.localizedDescription)\n", stderr)
+        }
+
+        let allHooks = hookLoadResult.hooks + extensionResult.hooks
+        let hookRunner: HookRunner? = allHooks.isEmpty ? nil : HookRunner(allHooks, cwd, sessionManager, modelRegistry)
+
         let agentBox = LockedState<Agent?>(nil)
         let sessionBox = LockedState<AgentSession?>(nil)
         let sendMessageHandlerBox = LockedState<HookSendMessageHandler>({ _, _ in })
-        let wrappedCustomTools = wrapCustomTools(customToolsResult.tools) {
+
+        let getCustomToolContext: @Sendable () -> CustomToolContext = {
             let agent = agentBox.withLock { $0 }
             let session = sessionBox.withLock { $0 }
             let handler = sendMessageHandlerBox.withLock { $0 }
@@ -300,21 +308,20 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
                 sessionManager: sessionManager,
                 modelRegistry: modelRegistry,
                 model: agent?.state.model,
-                isIdle: {
-                    !(session?.isStreaming ?? true)
-                },
-                hasPendingMessages: {
-                    (session?.pendingMessageCount ?? 0) > 0
-                },
-                abort: {
-                    Task { await session?.abort() }
-                },
+                isIdle: { !(session?.isStreaming ?? true) },
+                hasPendingMessages: { (session?.pendingMessageCount ?? 0) > 0 },
+                abort: { Task { await session?.abort() } },
                 events: eventBus,
-                sendMessage: { message, options in
-                    handler(message, options)
-                }
+                sendMessage: { message, options in handler(message, options) }
             )
         }
+
+        let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, getCustomToolContext)
+
+        let extDefs = (hookRunner?.getExtensionTools() ?? []).map {
+            LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: $0)
+        }
+        let wrappedExtensionTools = wrapCustomTools(extDefs, getCustomToolContext)
 
         let selectedToolNameSet = Set(selectedToolNames.map { $0.rawValue })
         let customToolsByName = Dictionary(uniqueKeysWithValues: wrappedCustomTools.map { ($0.name, $0) })
@@ -327,12 +334,12 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         for (name, tool) in allBuiltInToolsMap {
             toolRegistry[name.rawValue] = tool
         }
-        for tool in wrappedCustomTools {
+        for tool in wrappedCustomTools + wrappedExtensionTools {
             toolRegistry[tool.name] = tool
         }
 
-        let initialActiveToolNames = selectedToolNames.map { $0.rawValue } + extraCustomTools.map { $0.name }
-        var allTools = selectedTools + extraCustomTools
+        let initialActiveToolNames = selectedToolNames.map { $0.rawValue } + extraCustomTools.map { $0.name } + wrappedExtensionTools.map { $0.name }
+        var allTools = selectedTools + extraCustomTools + wrappedExtensionTools
         if let hookRunner {
             allTools = wrapToolsWithHooks(allTools, hookRunner)
             let registryTools = Array(toolRegistry.values)
@@ -419,6 +426,10 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             }
         }
 
+        let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
+            await discoverAndLoadExtensions(extensionPaths, cwd, getAgentDir(), eventBus)
+        }
+
         let fileCommands = loadSlashCommands(LoadSlashCommandsOptions(cwd: cwd, agentDir: getAgentDir()))
         let promptTemplates = resourceLoader.getPrompts().prompts
         let createdSession = AgentSession(config: AgentSessionConfig(
@@ -435,7 +446,13 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             skillsSettings: skillsSettings,
             eventBus: eventBus,
             toolRegistry: toolRegistry,
-            rebuildSystemPrompt: rebuildSystemPrompt
+            rebuildSystemPrompt: rebuildSystemPrompt,
+            reloadExtensionsHook: reloadExtensionsHook,
+            wrapExtensionTools: { tools in
+                let defs = tools.map { LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: $0) }
+                let wrapped = wrapCustomTools(defs, getCustomToolContext)
+                return hookRunner.map { wrapToolsWithHooks(wrapped, $0) } ?? wrapped
+            }
         ))
         sessionBox.withLock { $0 = createdSession }
         let sendMessageHandler: HookSendMessageHandler = { [weak createdSession] message, options in
