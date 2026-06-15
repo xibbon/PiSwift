@@ -507,6 +507,50 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(followUpEvent != nil)
 }
 
+@Test func shouldStopAfterTurnSkipsQueuedFollowUps() async {
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [])
+    let userPrompt = createUserMessage("start")
+
+    let followUpPolled = LockedState(false)
+    let config = AgentLoopConfig(
+        model: createModel(),
+        convertToLlm: identityConverter,
+        getFollowUpMessages: {
+            followUpPolled.withLock { $0 = true }
+            return [createUserMessage("follow-up")]
+        },
+        shouldStopAfterTurn: {
+            true
+        }
+    )
+
+    let llmCallCount = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        llmCallCount.withLock { $0 += 1 }
+        let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+        return makeStream(done: message)
+    }
+
+    var events: [AgentEvent] = []
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        events.append(event)
+    }
+
+    #expect(llmCallCount.withLock { $0 } == 1)
+    #expect(!followUpPolled.withLock { $0 })
+
+    let followUpEvent = events.first { event in
+        if case .messageStart(let message) = event,
+           case .user(let user) = message,
+           case .text(let text) = user.content {
+            return text == "follow-up"
+        }
+        return false
+    }
+    #expect(followUpEvent == nil)
+}
+
 // MARK: - v0.54.0→v0.61.1 new tests
 
 /// Parallel tool execution: tools execute concurrently but results emit in source order.
@@ -584,6 +628,65 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         return nil
     }
     #expect(toolResultIds == ["tool-1", "tool-2"])
+}
+
+@Test func lateToolProgressAfterResultIsSuppressed() async {
+    let capturedUpdate = LockedState<AgentToolUpdateCallback?>(nil)
+    let tool = AgentTool(
+        label: "Reporter",
+        name: "reporter",
+        description: "Reports progress",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, _, _, onUpdate in
+        capturedUpdate.withLock { $0 = onUpdate }
+        onUpdate?(AgentToolResult(content: [.text(TextContent(text: "during"))]))
+        return AgentToolResult(content: [.text(TextContent(text: "final"))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        toolExecution: .sequential,
+        afterToolCall: { _, _ in
+            capturedUpdate.withLock { $0 }?(AgentToolResult(content: [.text(TextContent(text: "late"))]))
+            return nil
+        },
+        convertToLlm: identityConverter
+    )
+
+    let callIndex = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = callIndex.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 1 {
+                let call = ToolCall(id: "tool-1", name: "reporter", arguments: [:])
+                let message = createAssistantMessage(content: [.toolCall(call)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+        }
+        return stream
+    }
+
+    var updates: [String] = []
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        if case .toolExecutionUpdate(_, _, _, let partialResult) = event,
+           case .text(let text)? = partialResult.content.first {
+            updates.append(text.text)
+        }
+    }
+
+    #expect(updates == ["during"])
 }
 
 /// beforeToolCall hook can block tool execution.

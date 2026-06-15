@@ -263,6 +263,10 @@ private func runLoop(
             pendingMessages = (await config.getSteeringMessages?()) ?? []
         }
 
+        if await config.shouldStopAfterTurn?() == true {
+            break
+        }
+
         let followUpMessages = (await config.getFollowUpMessages?()) ?? []
         if !followUpMessages.isEmpty {
             pendingMessages = followUpMessages
@@ -620,9 +624,11 @@ private func executePreparedToolCall(
     // Collect update event tasks so we can await them all before returning,
     // matching upstream behavior that guarantees all update emissions complete.
     let pendingUpdates = LockedState<[Task<Void, Never>]>([])
+    let finalized = LockedState(false)
 
     do {
         let result = try await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal) { partialResult in
+            guard !finalized.withLock({ $0 }) else { return }
             let task = Task {
                 await emit(.toolExecutionUpdate(
                     toolCallId: prepared.toolCall.id,
@@ -633,12 +639,14 @@ private func executePreparedToolCall(
             }
             pendingUpdates.withLock { $0.append(task) }
         }
+        finalized.withLock { $0 = true }
         // Await all pending update emissions before returning
         for task in pendingUpdates.withLock({ $0 }) {
             await task.value
         }
         return ExecutedToolCallOutcome(result: result, isError: false)
     } catch {
+        finalized.withLock { $0 = true }
         // Await pending updates even on error path
         for task in pendingUpdates.withLock({ $0 }) {
             await task.value

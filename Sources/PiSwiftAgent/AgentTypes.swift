@@ -104,6 +104,7 @@ public struct AfterToolCallContext: Sendable {
 public typealias BeforeToolCallFn = @Sendable (BeforeToolCallContext, CancellationToken?) async -> BeforeToolCallResult?
 public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async -> AfterToolCallResult?
 public typealias OnPayloadFn = PayloadHandler
+public typealias ShouldStopAfterTurnFn = @Sendable () async -> Bool
 
 public enum ThinkingLevel: String, Sendable {
     case off
@@ -339,6 +340,12 @@ public struct AgentLoopConfig: Sendable {
     /// Contract: must not throw or reject. Return `[]` when no follow-up messages are available.
     public var getFollowUpMessages: (@Sendable () async -> [AgentMessage])?
 
+    /// Returns whether the loop should stop after the current complete turn.
+    ///
+    /// Called after tool-call follow-up handling completes and before queued follow-up messages
+    /// are fetched. Return `false` to continue normal steering/follow-up processing.
+    public var shouldStopAfterTurn: ShouldStopAfterTurnFn?
+
     public init(
         model: Model,
         temperature: Double? = nil,
@@ -363,7 +370,8 @@ public struct AgentLoopConfig: Sendable {
         transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? = nil,
         getApiKey: (@Sendable (String) async -> String?)? = nil,
         getSteeringMessages: (@Sendable () async -> [AgentMessage])? = nil,
-        getFollowUpMessages: (@Sendable () async -> [AgentMessage])? = nil
+        getFollowUpMessages: (@Sendable () async -> [AgentMessage])? = nil,
+        shouldStopAfterTurn: ShouldStopAfterTurnFn? = nil
     ) {
         self.model = model
         self.temperature = temperature
@@ -389,6 +397,7 @@ public struct AgentLoopConfig: Sendable {
         self.getApiKey = getApiKey
         self.getSteeringMessages = getSteeringMessages
         self.getFollowUpMessages = getFollowUpMessages
+        self.shouldStopAfterTurn = shouldStopAfterTurn
     }
 }
 
