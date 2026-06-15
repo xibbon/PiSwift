@@ -26,9 +26,11 @@ public struct Args: Sendable {
     public var mode: Mode?
     public var noSession: Bool?
     public var session: String?
+    public var sessionId: String?
     public var sessionDir: String?
     public var models: [String]?
     public var tools: [ToolName]?
+    public var excludeTools: [String]?
     public var hooks: [String]?
     public var customTools: [String]?
     public var noTools: Bool?

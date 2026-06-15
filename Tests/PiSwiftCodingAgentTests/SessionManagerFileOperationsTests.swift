@@ -254,6 +254,33 @@ import Testing
     #expect(sm.getSessionFile() == explicitPath.path)
 }
 
+@Test func createUsesExplicitSessionIdForPersistedHeader() throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("session-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let sm = SessionManager.create(tempDir.path, tempDir.path, sessionId: "fixed-session-id")
+    sm.appendMessage(userMsg("hello"))
+    sm.appendMessage(assistantMsg("hi"))
+
+    #expect(sm.getSessionId() == "fixed-session-id")
+    guard let sessionFile = sm.getSessionFile() else {
+        Issue.record("expected persisted session file")
+        return
+    }
+    let content = try String(contentsOfFile: sessionFile, encoding: .utf8)
+    let firstLine = content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+    let header = try JSONSerialization.jsonObject(with: Data(firstLine.utf8)) as? [String: Any]
+    #expect(header?["id"] as? String == "fixed-session-id")
+}
+
+@Test func sessionDirEnvironmentOverrideExpandsTilde() {
+    let resolved = getSessionDirEnvironmentOverride([
+        ENV_CODING_AGENT_SESSION_DIR: "~/pi-sessions"
+    ])
+    #expect(resolved == URL(fileURLWithPath: getHomeDir()).appendingPathComponent("pi-sessions").path)
+}
+
 @Test func openRecoveredFileLoadsCorrectly() throws {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("session-test-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)

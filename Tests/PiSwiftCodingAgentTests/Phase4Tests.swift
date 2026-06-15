@@ -292,6 +292,49 @@ import PiSwiftAI
     }
 }
 
+@Test func excludeToolsRoundTripsThroughCreateAgentSessionOptions() {
+    var options = CreateAgentSessionOptions()
+    options.excludeTools = ["bash", "write", "custom-tool"]
+    options.sessionId = "session-123"
+    #expect(options.excludeTools == ["bash", "write", "custom-tool"])
+    #expect(options.sessionId == "session-123")
+}
+
+@Test func createAgentSessionExcludesBuiltInAndCustomTools() async throws {
+    let dir = makeTempDir()
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+
+    let authStorage = AuthStorage(URL(fileURLWithPath: dir).appendingPathComponent("auth.json").path)
+    let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
+    authStorage.setRuntimeApiKey(model.provider, "test-key")
+
+    let customTool = CustomTool(
+        name: "custom-tool",
+        label: "Custom",
+        description: "Custom tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, _, _, _, _ in
+        CustomToolResult(content: [.text(TextContent(text: "ok"))])
+    }
+
+    let result = await createAgentSession(CreateAgentSessionOptions(
+        cwd: dir,
+        agentDir: dir,
+        authStorage: authStorage,
+        model: model,
+        toolNames: ["read", "bash"],
+        excludeTools: ["bash", "custom-tool"],
+        customTools: [CustomToolDefinition(tool: customTool)],
+        resourceLoader: TestResourceLoader(),
+        sessionManager: SessionManager.inMemory(dir),
+        settingsManager: SettingsManager.create(dir, dir)
+    ))
+
+    #expect(result.session.getActiveToolNames() == ["read"])
+    #expect(!result.session.getAllToolNames().contains("bash"))
+    #expect(!result.session.getAllToolNames().contains("custom-tool"))
+}
+
 // MARK: - Phase 4 numeric command-suffix conflict (v0.62.0)
 
 // (RegisteredCommand suffix logic is exercised by the HookRunner in production;

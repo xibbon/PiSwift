@@ -38,6 +38,9 @@ struct CLIOptions: ParsableArguments {
     @Option(name: .customLong("session"), help: "Use specific session file")
     var session: String?
 
+    @Option(name: .customLong("session-id"), help: "Use a specific ID for a new session")
+    var sessionId: String?
+
     @Option(name: .customLong("session-dir"), help: "Directory for session storage and lookup")
     var sessionDir: String?
 
@@ -46,6 +49,9 @@ struct CLIOptions: ParsableArguments {
 
     @Option(name: .customLong("tools"), help: "Comma-separated list of tools to enable")
     var tools: String?
+
+    @Option(name: .customLong("exclude-tools"), help: "Comma-separated list of tools to disable after loading")
+    var excludeTools: String?
 
     @Flag(name: .customLong("no-tools"), help: "Disable all built-in tools")
     var noTools: Bool = false
@@ -132,6 +138,7 @@ extension CLIOptions {
             result.noSession = true
         }
         result.session = session
+        result.sessionId = sessionId
         result.sessionDir = sessionDir
         if let models {
             result.models = models.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -147,6 +154,12 @@ extension CLIOptions {
                 }
             }
             result.tools = valid
+        }
+        if let excludeTools {
+            result.excludeTools = excludeTools
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
         }
         if noTools {
             result.noTools = true

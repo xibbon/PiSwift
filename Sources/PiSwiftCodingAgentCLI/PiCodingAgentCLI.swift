@@ -117,13 +117,19 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         if parsed.resume == true {
             _ = KeybindingsManager.create()
             let sessionDir = parsed.sessionDir
+                ?? getSessionDirEnvironmentOverride()
+                ?? settingsManager.getSessionDir()
             let cwdValue = cwd
             resumeSession = await selectSession(
                 currentSessionsLoader: { onProgress in
                     await SessionManager.list(cwdValue, sessionDir, onProgress)
                 },
                 allSessionsLoader: { onProgress in
-                    await SessionManager.listAll(onProgress)
+                    if let sessionDir, !sessionDir.isEmpty {
+                        await SessionManager.list(cwdValue, sessionDir, onProgress)
+                    } else {
+                        await SessionManager.listAll(onProgress)
+                    }
                 }
             )
             if resumeSession == nil {
@@ -132,11 +138,15 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             }
         }
 
-        // v0.63.0 / v0.68.1: CLI --session-dir takes precedence; otherwise fall back to
-        // the settings.json sessionDir (with `~` expansion happening inside SessionManager).
+        // v0.63.0 / v0.68.1 / v0.79.4: CLI --session-dir takes precedence; otherwise use
+        // PI_CODING_AGENT_SESSION_DIR, then settings.json sessionDir.
         var resolvedSessionDirArgs = parsed
-        if resolvedSessionDirArgs.sessionDir == nil, let settingsDir = settingsManager.getSessionDir(), !settingsDir.isEmpty {
-            resolvedSessionDirArgs.sessionDir = settingsDir
+        if resolvedSessionDirArgs.sessionDir == nil {
+            if let envDir = getSessionDirEnvironmentOverride() {
+                resolvedSessionDirArgs.sessionDir = envDir
+            } else if let settingsDir = settingsManager.getSessionDir(), !settingsDir.isEmpty {
+                resolvedSessionDirArgs.sessionDir = settingsDir
+            }
         }
         let sessionManager = createSessionManager(resolvedSessionDirArgs, cwd: cwd, resumeSession: resumeSession)
         time("createSessionManager")
@@ -252,6 +262,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         //   --no-builtin-tools → keep extension/custom tools, disable only the default built-in set
         //   --tools <names>    → explicit allowlist (overrides above defaults)
         //   (default)          → enable read/bash/edit/write built-ins
+        let excludedToolNames = Set(parsed.excludeTools ?? [])
         let selectedToolNames: [ToolName]
         if parsed.noTools == true {
             selectedToolNames = parsed.tools ?? []
@@ -261,6 +272,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         } else {
             selectedToolNames = parsed.tools ?? [.read, .bash, .edit, .write]
         }
+        let filteredSelectedToolNames = selectedToolNames.filter { !excludedToolNames.contains($0.rawValue) }
         let eventBus = createEventBus()
 
         let baseHookPaths = parsed.noExtensions == true ? [] : settingsManager.getHooks()
@@ -317,15 +329,17 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         }
 
         let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, getCustomToolContext)
+            .filter { !excludedToolNames.contains($0.name) }
 
         let extDefs = (hookRunner?.getExtensionTools() ?? []).map {
             LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: $0)
         }
         let wrappedExtensionTools = wrapCustomTools(extDefs, getCustomToolContext)
+            .filter { !excludedToolNames.contains($0.name) }
 
-        let selectedToolNameSet = Set(selectedToolNames.map { $0.rawValue })
+        let selectedToolNameSet = Set(filteredSelectedToolNames.map { $0.rawValue })
         let customToolsByName = Dictionary(uniqueKeysWithValues: wrappedCustomTools.map { ($0.name, $0) })
-        let selectedTools = selectedToolNames.compactMap { name in
+        let selectedTools = filteredSelectedToolNames.compactMap { name in
             customToolsByName[name.rawValue] ?? allBuiltInToolsMap[name]
         }
         let extraCustomTools = wrappedCustomTools.filter { !selectedToolNameSet.contains($0.name) }
@@ -337,8 +351,11 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         for tool in wrappedCustomTools + wrappedExtensionTools {
             toolRegistry[tool.name] = tool
         }
+        for name in excludedToolNames {
+            toolRegistry.removeValue(forKey: name)
+        }
 
-        let initialActiveToolNames = selectedToolNames.map { $0.rawValue } + extraCustomTools.map { $0.name } + wrappedExtensionTools.map { $0.name }
+        let initialActiveToolNames = filteredSelectedToolNames.map { $0.rawValue } + extraCustomTools.map { $0.name } + wrappedExtensionTools.map { $0.name }
         var allTools = selectedTools + extraCustomTools + wrappedExtensionTools
         if let hookRunner {
             allTools = wrapToolsWithHooks(allTools, hookRunner)
@@ -451,6 +468,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             wrapExtensionTools: { tools in
                 let defs = tools.map { LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: $0) }
                 let wrapped = wrapCustomTools(defs, getCustomToolContext)
+                    .filter { !excludedToolNames.contains($0.name) }
                 return hookRunner.map { wrapToolsWithHooks(wrapped, $0) } ?? wrapped
             }
         ))
@@ -585,6 +603,7 @@ Environment Variables:
   DEEPSEEK_API_KEY        - DeepSeek API key
   FIREWORKS_API_KEY       - Fireworks AI API key
   \(ENV_AGENT_DIR) - Session storage directory (default: ~/\(CONFIG_DIR_NAME)/agent)
+  \(ENV_CODING_AGENT_SESSION_DIR) - Override session file directory
 
 Available Tools (default: read, bash, edit, write):
   \(toolNames)
@@ -608,6 +627,11 @@ Available Tools (default: read, bash, edit, write):
             }
             if arg == "-np" {
                 result.append("--no-prompt-templates")
+                i += 1
+                continue
+            }
+            if arg == "-xt" {
+                result.append("--exclude-tools")
                 i += 1
                 continue
             }
@@ -716,9 +740,9 @@ private func createSessionManager(_ parsed: Args, cwd: String, resumeSession: St
         return SessionManager.continueRecent(cwd, parsed.sessionDir)
     }
     if let sessionDir = parsed.sessionDir {
-        return SessionManager.create(cwd, sessionDir)
+        return SessionManager.create(cwd, sessionDir, sessionId: parsed.sessionId)
     }
-    return SessionManager.create(cwd, nil)
+    return SessionManager.create(cwd, nil, sessionId: parsed.sessionId)
 }
 
 private struct InitialModelSelection {

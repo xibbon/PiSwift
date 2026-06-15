@@ -4,6 +4,7 @@ public let APP_NAME = "pi"
 public let CONFIG_DIR_NAME = ".pi"
 public let VERSION = "0.0.0"
 public let ENV_AGENT_DIR = "\(APP_NAME.uppercased())_CODING_AGENT_DIR"
+public let ENV_CODING_AGENT_SESSION_DIR = "\(APP_NAME.uppercased())_CODING_AGENT_SESSION_DIR"
 public let ENV_PACKAGE_DIR = "PI_PACKAGE_DIR"
 
 public func getPackageDir() -> String {

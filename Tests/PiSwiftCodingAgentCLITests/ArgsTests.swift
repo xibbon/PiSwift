@@ -41,6 +41,7 @@ private func parseCLI(_ args: [String]) throws -> Args {
     #expect(try parseCLI(["--mode", "json"]).mode == .json)
     #expect(try parseCLI(["--mode", "rpc"]).mode == .rpc)
     #expect(try parseCLI(["--session", "/path/session.jsonl"]).session == "/path/session.jsonl")
+    #expect(try parseCLI(["--session-id", "session-123"]).sessionId == "session-123")
     #expect(try parseCLI(["--export", "session.jsonl"]).export == "session.jsonl")
     #expect(try parseCLI(["--thinking", "high"]).thinking == .high)
 
@@ -94,6 +95,12 @@ private func parseCLI(_ args: [String]) throws -> Args {
 @Test func parseArgsToolsAndSkills() throws {
     let tools = try parseCLI(["--tools", "read,grep"])
     #expect(tools.tools == [.read, .grep])
+
+    let excluded = try parseCLI(["--exclude-tools", "bash,write,custom-tool"])
+    #expect(excluded.excludeTools == ["bash", "write", "custom-tool"])
+
+    let shortExcluded = try parseCLI(["-xt", "edit"])
+    #expect(shortExcluded.excludeTools == ["edit"])
 
     let skills = try parseCLI(["--skills", "git-*,docker"])
     #expect(skills.skills == ["git-*", "docker"])

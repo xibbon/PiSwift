@@ -36,11 +36,16 @@ public struct CreateAgentSessionOptions: Sendable {
     public var model: Model?
     public var thinkingLevel: ThinkingLevel?
     public var scopedModels: [ScopedModel]?
+    public var sessionId: String?
     public var systemPrompt: SystemPromptInput?
     /// v0.68.0: tool-name allowlist for built-in tools. When set, only the named tools are
     /// activated. Names match `ToolName.rawValue` (e.g., "read", "bash", "edit", "write",
     /// "grep", "find", "ls", "subagent").
     public var toolNames: [String]?
+    /// v0.79.4: tool-name denylist applied after built-in, custom, and extension tools
+    /// are resolved. Names match the final tool names, so custom/extension tools can be
+    /// excluded as well as built-ins.
+    public var excludeTools: [String]?
     /// v0.68.0 / v0.70.0: disable tools in batch.
     /// `.all`: disable everything (no built-ins, no extensions, no custom tools).
     /// `.builtin`: keep extension/custom tools, disable only the default built-in set.
@@ -67,8 +72,10 @@ public struct CreateAgentSessionOptions: Sendable {
         model: Model? = nil,
         thinkingLevel: ThinkingLevel? = nil,
         scopedModels: [ScopedModel]? = nil,
+        sessionId: String? = nil,
         systemPrompt: SystemPromptInput? = nil,
         toolNames: [String]? = nil,
+        excludeTools: [String]? = nil,
         noTools: NoToolsMode? = nil,
         customTools: [CustomToolDefinition]? = nil,
         additionalCustomToolPaths: [String]? = nil,
@@ -91,8 +98,10 @@ public struct CreateAgentSessionOptions: Sendable {
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.scopedModels = scopedModels
+        self.sessionId = sessionId
         self.systemPrompt = systemPrompt
         self.toolNames = toolNames
+        self.excludeTools = excludeTools
         self.noTools = noTools
         self.customTools = customTools
         self.additionalCustomToolPaths = additionalCustomToolPaths
@@ -409,7 +418,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     let settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir)
     time("settingsManager")
-    let sessionManager = options.sessionManager ?? SessionManager.create(cwd, nil)
+    let sessionManager = options.sessionManager ?? SessionManager.create(cwd, nil, sessionId: options.sessionId)
     time("sessionManager")
 
     if resourceLoader == nil {
@@ -514,6 +523,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         autoResizeImages: settingsManager.getAutoResizeImages(),
         blockImages: blockImages
     ))
+    let excludedToolNames = Set(options.excludeTools ?? [])
     // v0.68.0 / v0.70.0: tool selection layered logic.
     //   noTools == .all       → no built-ins, no extension/custom tools.
     //   noTools == .builtin   → no built-ins, BUT keep extension/custom tools.
@@ -524,11 +534,13 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         if let names = options.toolNames {
             let allByName = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
             return names.compactMap { name -> Tool? in
+                guard !excludedToolNames.contains(name) else { return nil }
                 guard let toolName = ToolName(rawValue: name) else { return nil }
                 return allByName[toolName]
             }
         }
         return createCodingTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
+            .filter { !excludedToolNames.contains($0.name) }
     }()
     time("createCodingTools")
 
@@ -611,6 +623,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         )
     }
     let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, getCustomToolContext)
+        .filter { !excludedToolNames.contains($0.name) }
 
     // Tools registered by extensions via `pi.registerTool(_:)`. Wrapped through the same
     // CustomTool→AgentTool bridge as settings-defined custom tools.
@@ -619,6 +632,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
     }
     let wrappedExtensionTools = wrapCustomTools(extensionToolDefinitions, getCustomToolContext)
+        .filter { !excludedToolNames.contains($0.name) }
 
     let allBuiltInToolsMap = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
     var toolRegistry: [String: AgentTool] = [:]
@@ -630,6 +644,9 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     }
     for tool in wrappedExtensionTools {
         toolRegistry[tool.name] = tool
+    }
+    for name in excludedToolNames {
+        toolRegistry.removeValue(forKey: name)
     }
 
     var allTools = builtInTools + wrappedCustomTools + wrappedExtensionTools
@@ -789,6 +806,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
                 LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
             }
             let wrapped = wrapCustomTools(definitions, getCustomToolContext)
+                .filter { !excludedToolNames.contains($0.name) }
             return wrapToolsWithHooks(wrapped, hookRunner)
         }
     ))

@@ -752,7 +752,7 @@ public final class SessionManager: Sendable {
         set { state.withLock { $0.sessionId = newValue } }
     }
 
-    private init(_ cwd: String, _ sessionDir: String, _ sessionFile: String?, _ persist: Bool) {
+    private init(_ cwd: String, _ sessionDir: String, _ sessionFile: String?, _ persist: Bool, _ sessionId: String? = nil) {
         self.persist = persist
         self.state = LockedState(State(
             cwd: cwd,
@@ -763,16 +763,16 @@ public final class SessionManager: Sendable {
             byId: [:],
             labelsById: [:],
             leafId: nil,
-            sessionId: UUID().uuidString
+            sessionId: sessionId ?? UUID().uuidString
         ))
         if let sessionFile {
             loadFromFile(sessionFile)
         }
     }
 
-    public static func create(_ cwd: String, _ sessionDir: String? = nil) -> SessionManager {
+    public static func create(_ cwd: String, _ sessionDir: String? = nil, sessionId: String? = nil) -> SessionManager {
         let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
-        return SessionManager(cwd, dir, nil, true)
+        return SessionManager(cwd, dir, nil, true, sessionId)
     }
 
     public static func open(_ path: String, _ sessionDir: String? = nil) -> SessionManager {
@@ -835,6 +835,10 @@ public final class SessionManager: Sendable {
     }
 
     public static func listAll(_ onProgress: SessionListProgress? = nil) async -> [SessionInfo] {
+        if let sessionDir = getSessionDirEnvironmentOverride() {
+            return await list(FileManager.default.currentDirectoryPath, sessionDir, onProgress)
+        }
+
         let sessionsDir = getSessionsDir()
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: URL(fileURLWithPath: sessionsDir),
@@ -993,7 +997,7 @@ public final class SessionManager: Sendable {
 
     public func startSession(_ initialState: AgentState) {
         if header != nil { return }
-        let sessionId = UUID().uuidString
+        let sessionId = self.sessionId
         let timestamp = isoNow()
         header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: sessionId, timestamp: timestamp, cwd: cwd, parentSession: nil)
         self.sessionId = sessionId
@@ -1210,7 +1214,7 @@ public final class SessionManager: Sendable {
         guard persist else { return }
         if sessionFile == nil {
             let dir = defaultSessionDir(cwd: cwd, sessionDir: sessionDir.isEmpty ? nil : sessionDir)
-            let sessionId = UUID().uuidString
+            let sessionId = self.sessionId
             let timestamp = isoNow()
             let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
             let newSessionFile = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(sessionId).jsonl").path
@@ -1282,6 +1286,11 @@ private func generateId(existing: Set<String>) -> String {
     return UUID().uuidString
 }
 
+public func getSessionDirEnvironmentOverride(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+    guard let value = environment[ENV_CODING_AGENT_SESSION_DIR], !value.isEmpty else { return nil }
+    return (value as NSString).expandingTildeInPath
+}
+
 public func getDefaultSessionDir(cwd: String, sessionDir: String? = nil, agentDir: String? = nil) -> String {
     if let sessionDir, !sessionDir.isEmpty {
         // v0.68.1: expand `~` in `sessionDir` so portable settings.json values
@@ -1289,6 +1298,10 @@ public func getDefaultSessionDir(cwd: String, sessionDir: String? = nil, agentDi
         let expanded = (sessionDir as NSString).expandingTildeInPath
         try? FileManager.default.createDirectory(atPath: expanded, withIntermediateDirectories: true)
         return expanded
+    }
+    if let sessionDir = getSessionDirEnvironmentOverride() {
+        try? FileManager.default.createDirectory(atPath: sessionDir, withIntermediateDirectories: true)
+        return sessionDir
     }
     let resolvedAgentDir = agentDir ?? getAgentDir()
     let safePath = "--" + cwd.replacingOccurrences(of: "\\", with: "-").replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-") + "--"
