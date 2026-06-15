@@ -245,27 +245,6 @@ public func registerBuiltInProviders() {
     ), sourceId: "built-in")
 
     registerApiProvider(ApiProvider(
-        api: .googleGeminiCli,
-        stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
-            let providerOptions = GoogleGeminiCliOptions(
-                temperature: options?.temperature,
-                maxTokens: options?.maxTokens,
-                signal: options?.signal,
-                apiKey: apiKey,
-                maxRetryDelayMs: options?.maxRetryDelayMs,
-                headers: options?.headers,
-                sessionId: options?.sessionId,
-                onPayload: options?.onPayload
-            )
-            return streamGoogleGeminiCli(model: model, context: context, options: providerOptions)
-        },
-        streamSimple: { model, context, options in
-            return streamSimpleGoogleGeminiCli(model: model, context: context, options: options)
-        }
-    ), sourceId: "built-in")
-
-    registerApiProvider(ApiProvider(
         api: .googleVertex,
         stream: { model, context, options in
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""

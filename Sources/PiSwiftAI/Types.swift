@@ -51,8 +51,50 @@ public enum ThinkingLevel: String, Sendable {
     case xhigh
 }
 
+public enum ModelThinkingLevel: String, Sendable, CaseIterable {
+    case off
+    case minimal
+    case low
+    case medium
+    case high
+    case xhigh
+
+    public init(_ level: ThinkingLevel) {
+        switch level {
+        case .minimal:
+            self = .minimal
+        case .low:
+            self = .low
+        case .medium:
+            self = .medium
+        case .high:
+            self = .high
+        case .xhigh:
+            self = .xhigh
+        }
+    }
+
+    public var thinkingLevel: ThinkingLevel? {
+        switch self {
+        case .off:
+            return nil
+        case .minimal:
+            return .minimal
+        case .low:
+            return .low
+        case .medium:
+            return .medium
+        case .high:
+            return .high
+        case .xhigh:
+            return .xhigh
+        }
+    }
+}
+
 public typealias ReasoningEffort = ThinkingLevel
 public typealias ThinkingBudgets = [ThinkingLevel: Int]
+public typealias ThinkingLevelMap = [ModelThinkingLevel: String?]
 
 public enum CacheRetention: String, Sendable {
     case none
@@ -63,6 +105,7 @@ public enum CacheRetention: String, Sendable {
 public enum Transport: String, Sendable {
     case sse
     case websocket
+    case websocketCached = "websocket-cached"
     case auto
 }
 
@@ -453,6 +496,7 @@ public struct Model: Sendable {
     public let maxTokens: Int
     public let headers: [String: String]?
     public let compat: OpenAICompat?
+    public let thinkingLevelMap: ThinkingLevelMap?
 
     public init(
         id: String,
@@ -466,7 +510,8 @@ public struct Model: Sendable {
         contextWindow: Int,
         maxTokens: Int,
         headers: [String: String]? = nil,
-        compat: OpenAICompat? = nil
+        compat: OpenAICompat? = nil,
+        thinkingLevelMap: ThinkingLevelMap? = nil
     ) {
         self.id = id
         self.name = name
@@ -480,6 +525,7 @@ public struct Model: Sendable {
         self.maxTokens = maxTokens
         self.headers = headers
         self.compat = compat
+        self.thinkingLevelMap = thinkingLevelMap
     }
 }
 

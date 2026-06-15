@@ -167,7 +167,7 @@ func mapAnthropicSimpleOptions(model: Model, options: SimpleStreamOptions?, apiK
         )
     }
 
-    let effort = clampThinkingLevel(options?.reasoning) ?? .medium
+    let effort = clampThinkingLevel(model: model, requested: options?.reasoning) ?? .medium
     let adjusted = adjustMaxTokensForThinking(
         baseMaxTokens: baseMaxTokens,
         modelMaxTokens: model.maxTokens,
@@ -209,7 +209,7 @@ func clampForCodexCapability(model: Model, _ effort: ThinkingLevel?) -> Thinking
 
 func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAICompletionsOptions {
     let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
-    let reasoningEffort = supportsXhigh(model: model) ? options?.reasoning : clampThinkingLevel(options?.reasoning)
+    let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICompletionsOptions(
         temperature: options?.temperature,
         maxTokens: maxTokens,
@@ -223,7 +223,7 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
 
 func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAIResponsesOptions {
     let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
-    let reasoningEffort = supportsXhigh(model: model) ? options?.reasoning : clampThinkingLevel(options?.reasoning)
+    let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAIResponsesOptions(
         temperature: options?.temperature,
         maxTokens: maxTokens,
@@ -240,7 +240,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
 
 func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAICodexResponsesOptions {
     let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
-    let reasoningEffort = supportsXhigh(model: model) ? options?.reasoning : clampThinkingLevel(options?.reasoning)
+    let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICodexResponsesOptions(
         temperature: options?.temperature,
         maxTokens: maxTokens,
@@ -256,7 +256,7 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
 
 func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> AzureOpenAIResponsesOptions {
     let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
-    let reasoningEffort = supportsXhigh(model: model) ? options?.reasoning : clampThinkingLevel(options?.reasoning)
+    let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return AzureOpenAIResponsesOptions(
         temperature: options?.temperature,
         maxTokens: maxTokens,
@@ -300,7 +300,7 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
 func buildGoogleThinkingConfig(model: Model, options: SimpleStreamOptions?) -> GoogleOptions.ThinkingConfig? {
     guard model.reasoning else { return nil }
     guard let reasoning = options?.reasoning else { return nil }
-    let clamped = supportsXhigh(model: model) ? reasoning : clampThinkingLevel(reasoning) ?? reasoning
+    let clamped = clampThinkingLevel(model: model, requested: reasoning) ?? reasoning
     if model.id.contains("3-pro") || model.id.contains("3-flash") {
         return GoogleOptions.ThinkingConfig(
             enabled: true,
@@ -344,7 +344,7 @@ func googleThinkingBudget(modelId: String, effort: ThinkingLevel, customBudgets:
 
 func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> BedrockOptions {
     let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
-    let reasoning = supportsXhigh(model: model) ? options?.reasoning : clampThinkingLevel(options?.reasoning)
+    let reasoning = clampThinkingLevel(model: model, requested: options?.reasoning)
 
     if let reasoning, (model.id.contains("anthropic.claude") || model.id.contains("anthropic/claude")) {
         let adjusted = adjustMaxTokensForThinking(

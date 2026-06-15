@@ -147,8 +147,6 @@ public func getOAuthProviders() -> [OAuthProviderInfo] {
         OAuthProviderInfo(id: .anthropic, name: "Anthropic (Claude Pro/Max)", available: true),
         OAuthProviderInfo(id: .openAICodex, name: "ChatGPT Plus/Pro (Codex Subscription)", available: networkAvailable),
         OAuthProviderInfo(id: .githubCopilot, name: "GitHub Copilot", available: true),
-        OAuthProviderInfo(id: .googleGeminiCli, name: "Google Cloud Code Assist (Gemini CLI)", available: networkAvailable),
-        OAuthProviderInfo(id: .googleAntigravity, name: "Antigravity (Gemini 3, Claude, GPT-OSS)", available: networkAvailable),
     ]
 }
 

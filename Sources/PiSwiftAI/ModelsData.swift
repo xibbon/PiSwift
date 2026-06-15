@@ -9,8 +9,6 @@ internal let ModelsData: [String: [String: Model]] = [
     "fireworks": providerModels_fireworks,
     "github-copilot": providerModels_github_copilot,
     "google": providerModels_google,
-    "google-antigravity": providerModels_google_antigravity,
-    "google-gemini-cli": providerModels_google_gemini_cli,
     "google-vertex": providerModels_google_vertex,
     "groq": providerModels_groq,
     "huggingface": providerModels_huggingface,
@@ -1984,7 +1982,8 @@ private let providerModels_deepseek: [String: Model] = [
         cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.028, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 384000,
-        compat: OpenAICompat(thinkingFormat: .deepseek, reasoningEffortMap: [.minimal: "high", .low: "high", .medium: "high", .high: "high", .xhigh: "max"], requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(thinkingFormat: .deepseek, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.minimal: "high", .low: "high", .medium: "high", .high: "high", .xhigh: "max"],
     ),
     "deepseek-v4-pro": Model(
         id: "deepseek-v4-pro",
@@ -1997,7 +1996,8 @@ private let providerModels_deepseek: [String: Model] = [
         cost: ModelCost(input: 1.74, output: 3.48, cacheRead: 0.145, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 384000,
-        compat: OpenAICompat(thinkingFormat: .deepseek, reasoningEffortMap: [.minimal: "high", .low: "high", .medium: "high", .high: "high", .xhigh: "max"], requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(thinkingFormat: .deepseek, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.minimal: "high", .low: "high", .medium: "high", .high: "high", .xhigh: "max"],
     ),
 ]
 
@@ -10940,4 +10940,3 @@ private let providerModels_zai: [String: Model] = [
         // TODO: requires zaiToolStream
     ),
 ]
-

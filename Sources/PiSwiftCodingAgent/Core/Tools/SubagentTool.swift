@@ -162,10 +162,9 @@ private func resolveThinkingLevel(_ level: ThinkingLevel, model: Model) -> Think
     if !model.reasoning {
         return .off
     }
-    if level == .xhigh && !supportsXhigh(model: model) {
-        return .high
-    }
-    return level
+    let requested = PiSwiftAI.ModelThinkingLevel(rawValue: level.rawValue) ?? .off
+    let clamped = PiSwiftAI.clampThinkingLevel(model: model, requested: requested)
+    return ThinkingLevel(rawValue: clamped.rawValue) ?? .off
 }
 
 private func resolveModel(

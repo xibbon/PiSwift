@@ -407,7 +407,7 @@ private func buildCompletionsQuery(
               compat.supportsReasoningEffort,
               compat.thinkingFormat == .openai else { return nil }
         // Use provider-specific reasoning effort map if available
-        if let mapped = compat.reasoningEffortMap?[effort] {
+        if let mapped = mappedThinkingLevel(model: model, level: effort) ?? compat.reasoningEffortMap?[effort] {
             return .customValue(mapped)
         }
         return mapChatReasoningEffort(effort)
@@ -683,7 +683,7 @@ private func buildCompletionsMiddlewares(
         let enabled = options.reasoningEffort != nil
         let mappedEffort: String?
         if let effort = options.reasoningEffort {
-            mappedEffort = compat.reasoningEffortMap?[effort] ?? effort.rawValue
+            mappedEffort = mappedThinkingLevel(model: model, level: effort) ?? compat.reasoningEffortMap?[effort] ?? effort.rawValue
         } else {
             mappedEffort = nil
         }

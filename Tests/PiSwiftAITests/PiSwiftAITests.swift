@@ -1044,20 +1044,17 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
         GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = nil }
     }
 
-    let baseModel = getModel(provider: .googleGeminiCli, modelId: "gemini-2.5-flash")
     let model = Model(
-        id: baseModel.id,
-        name: baseModel.name,
-        api: baseModel.api,
-        provider: baseModel.provider,
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
+        api: .googleGeminiCli,
+        provider: "google-gemini-cli",
         baseUrl: "http://cloudcode-pa.googleapis.com",
-        reasoning: baseModel.reasoning,
-        input: baseModel.input,
-        cost: baseModel.cost,
-        contextWindow: baseModel.contextWindow,
-        maxTokens: baseModel.maxTokens,
-        headers: baseModel.headers,
-        compat: baseModel.compat
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1_000_000,
+        maxTokens: 65_536
     )
     let context = Context(messages: [.user(UserMessage(content: .text("say pong")))])
     let credentials = #"{"token":"tok_test","projectId":"proj_test"}"#
@@ -1817,14 +1814,14 @@ struct OAuthTests {
 
     @Test func oauthProviderListReturnsAllProviders() {
         let providers = getOAuthProviders()
-        #expect(providers.count == 5)
+        #expect(providers.count == 3)
 
         let ids = providers.map { $0.id }
         #expect(ids.contains(.anthropic))
         #expect(ids.contains(.openAICodex))
         #expect(ids.contains(.githubCopilot))
-        #expect(ids.contains(.googleGeminiCli))
-        #expect(ids.contains(.googleAntigravity))
+        #expect(!ids.contains(.googleGeminiCli))
+        #expect(!ids.contains(.googleAntigravity))
     }
 
     @Test func oauthProviderNamesAreSet() {
@@ -1958,7 +1955,7 @@ struct ApiRegistryTests {
         resetApiProviders()
 
         let providers = getApiProviders()
-        #expect(providers.count >= 8)
+        #expect(providers.count >= 7)
 
         // Check specific providers exist
         #expect(getApiProvider(.anthropicMessages) != nil)
@@ -1966,7 +1963,7 @@ struct ApiRegistryTests {
         #expect(getApiProvider(.openAIResponses) != nil)
         #expect(getApiProvider(.azureOpenAIResponses) != nil)
         #expect(getApiProvider(.googleGenerativeAI) != nil)
-        #expect(getApiProvider(.googleGeminiCli) != nil)
+        #expect(getApiProvider(.googleGeminiCli) == nil)
         #expect(getApiProvider(.googleVertex) != nil)
         #expect(getApiProvider(.bedrockConverseStream) != nil)
     }
@@ -2300,54 +2297,50 @@ struct ApiRegistryTests {
     #expect(hasInterleaved3)
 }
 
-// MARK: - Antigravity endpoint cascade (4B-1)
+// MARK: - Removed Google CLI providers
 
-@Test func addEndpointCascadeTestForAntigravity() {
-    // The antigravity endpoint fallback list should contain daily, autopush,
-    // and production endpoints in that order.
+@Test func googleCliProvidersAreNotInDefaultModelRegistry() {
     let antigravityModels = getModels(provider: .googleAntigravity)
-    #expect(!antigravityModels.isEmpty, "Expected at least one antigravity model in the registry")
-
-    // All antigravity models should use the daily endpoint as their baseUrl
-    // (the provider code falls back through daily -> autopush -> production).
-    for model in antigravityModels {
-        let baseUrl = model.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Models registered with the daily endpoint as default
-        #expect(
-            baseUrl.contains("daily-cloudcode-pa") || baseUrl.contains("cloudcode-pa") || baseUrl.isEmpty,
-            "Antigravity model \(model.id) has unexpected baseUrl: \(baseUrl)"
-        )
-    }
+    let geminiCliModels = getModels(provider: .googleGeminiCli)
+    #expect(antigravityModels.isEmpty)
+    #expect(geminiCliModels.isEmpty)
+    #expect(!getProviders().contains(.googleAntigravity))
+    #expect(!getProviders().contains(.googleGeminiCli))
 }
 
-// MARK: - Reasoning effort mapping test
+// MARK: - Thinking level mapping test
 
-@Test func reasoningEffortMappingTest() {
-    // Verify that an OpenAICompat with a reasoningEffortMap correctly stores
-    // and retrieves the mapped values.
-    let map: [ThinkingLevel: String] = [
+@Test func modelThinkingLevelMapTest() {
+    let map: ThinkingLevelMap = [
+        .off: nil,
         .minimal: "budget_tokens:1024",
         .low: "budget_tokens:4096",
         .medium: "budget_tokens:8192",
         .high: "budget_tokens:16384",
         .xhigh: "budget_tokens:32768",
     ]
-    let compat = OpenAICompat(
-        supportsReasoningEffort: true,
-        thinkingFormat: .openai,
-        reasoningEffortMap: map
+    let model = Model(
+        id: "mapped-thinking",
+        name: "Mapped Thinking",
+        api: .openAICompletions,
+        provider: "test",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000,
+        maxTokens: 1000,
+        thinkingLevelMap: map
     )
 
-    #expect(compat.reasoningEffortMap != nil)
-    #expect(compat.reasoningEffortMap?[.minimal] == "budget_tokens:1024")
-    #expect(compat.reasoningEffortMap?[.low] == "budget_tokens:4096")
-    #expect(compat.reasoningEffortMap?[.medium] == "budget_tokens:8192")
-    #expect(compat.reasoningEffortMap?[.high] == "budget_tokens:16384")
-    #expect(compat.reasoningEffortMap?[.xhigh] == "budget_tokens:32768")
+    #expect(getSupportedThinkingLevels(model) == [.minimal, .low, .medium, .high, .xhigh])
+    #expect(clampThinkingLevel(model: model, requested: .off) == .minimal)
+    #expect(mappedThinkingLevel(model: model, level: .xhigh) == "budget_tokens:32768")
+    #expect(mappedOffThinkingLevel(model: model) == nil)
+}
 
-    // A compat without the map should return nil
-    let compatNoMap = OpenAICompat(supportsReasoningEffort: true)
-    #expect(compatNoMap.reasoningEffortMap == nil)
+@Test func codexTransportSupportsWebSocketCached() {
+    #expect(Transport.websocketCached.rawValue == "websocket-cached")
 }
 
 // MARK: - Phase 2 (v0.61.1 → v0.70.5) tests
@@ -2628,4 +2621,3 @@ struct ApiRegistryTests {
     let compat = OpenAICompat(thinkingFormat: .deepseek)
     #expect(compat.thinkingFormat == .deepseek)
 }
-

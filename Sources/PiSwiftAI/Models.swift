@@ -32,24 +32,123 @@ public func calculateCost(model: Model, usage: inout Usage) -> UsageCost {
     return usage.cost
 }
 
-public func supportsXhigh(model: Model) -> Bool {
+private let extendedThinkingLevels: [ModelThinkingLevel] = [.off, .minimal, .low, .medium, .high, .xhigh]
+
+private enum ThinkingLevelMapLookup {
+    case missing
+    case unsupported
+    case mapped(String)
+}
+
+private func lookupThinkingLevelMap(_ map: ThinkingLevelMap?, level: ModelThinkingLevel) -> ThinkingLevelMapLookup {
+    guard let map else { return .missing }
+    switch map[level] {
+    case nil:
+        return .missing
+    case .some(nil):
+        return .unsupported
+    case .some(.some(let value)):
+        return .mapped(value)
+    }
+}
+
+private func inferredThinkingLevelMap(model: Model) -> ThinkingLevelMap? {
     if model.id.contains("gpt-5.2") || model.id.contains("gpt-5.3") {
-        return true
+        return [.xhigh: "xhigh"]
     }
-    // v0.70.0: GPT-5.5 Codex supports xhigh and must not be downgraded to high.
     if model.id.contains("gpt-5.5") {
-        return true
+        return [.minimal: "low", .xhigh: "xhigh"]
     }
-    // v0.70.3: DeepSeek V4 Pro supports xhigh; map to provider's `max` effort via reasoningEffortMap.
     if model.id.contains("deepseek") && (model.id.contains("v4-pro") || model.id.contains("v4.pro")) {
-        return true
+        return [.xhigh: "max"]
     }
     if model.api == .anthropicMessages || model.api == .bedrockConverseStream {
-        // v0.67.5: Opus 4.7 joins Opus 4.6 as adaptive-thinking models with xhigh support.
-        return model.id.contains("opus-4-6") || model.id.contains("opus-4.6")
-            || model.id.contains("opus-4-7") || model.id.contains("opus-4.7")
+        if model.id.contains("opus-4-6") || model.id.contains("opus-4.6")
+            || model.id.contains("opus-4-7") || model.id.contains("opus-4.7") {
+            return [.xhigh: "xhigh"]
+        }
     }
-    return false
+    return nil
+}
+
+private func effectiveThinkingLevelMap(model: Model) -> ThinkingLevelMap? {
+    model.thinkingLevelMap ?? inferredThinkingLevelMap(model: model)
+}
+
+public func getSupportedThinkingLevels(_ model: Model) -> [ModelThinkingLevel] {
+    if !model.reasoning {
+        return [.off]
+    }
+
+    let map = effectiveThinkingLevelMap(model: model)
+    return extendedThinkingLevels.filter { level in
+        switch lookupThinkingLevelMap(map, level: level) {
+        case .unsupported:
+            return false
+        case .missing:
+            return level != .xhigh
+        case .mapped:
+            return true
+        }
+    }
+}
+
+public func clampThinkingLevel(model: Model, requested level: ModelThinkingLevel) -> ModelThinkingLevel {
+    let availableLevels = getSupportedThinkingLevels(model)
+    if availableLevels.contains(level) {
+        return level
+    }
+
+    guard let requestedIndex = extendedThinkingLevels.firstIndex(of: level) else {
+        return availableLevels.first ?? .off
+    }
+
+    for candidate in extendedThinkingLevels[requestedIndex...] {
+        if availableLevels.contains(candidate) {
+            return candidate
+        }
+    }
+
+    if requestedIndex > 0 {
+        for candidate in extendedThinkingLevels[..<requestedIndex].reversed() {
+            if availableLevels.contains(candidate) {
+                return candidate
+            }
+        }
+    }
+
+    return availableLevels.first ?? .off
+}
+
+public func clampThinkingLevel(model: Model, requested level: ThinkingLevel?) -> ThinkingLevel? {
+    guard let level else { return nil }
+    return clampThinkingLevel(model: model, requested: ModelThinkingLevel(level)).thinkingLevel
+}
+
+public func mappedThinkingLevel(model: Model, level: ThinkingLevel) -> String? {
+    let map = effectiveThinkingLevelMap(model: model)
+    switch lookupThinkingLevelMap(map, level: ModelThinkingLevel(level)) {
+    case .mapped(let value):
+        return value
+    case .missing, .unsupported:
+        return nil
+    }
+}
+
+public func mappedOffThinkingLevel(model: Model) -> String? {
+    let map = effectiveThinkingLevelMap(model: model)
+    switch lookupThinkingLevelMap(map, level: .off) {
+    case .mapped(let value):
+        return value
+    case .missing:
+        return "none"
+    case .unsupported:
+        return nil
+    }
+}
+
+public func supportsXhigh(model: Model) -> Bool {
+    getSupportedThinkingLevels(model).contains(.xhigh)
 }
 
 public func modelsAreEqual(_ a: Model?, _ b: Model?) -> Bool {

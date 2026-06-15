@@ -1418,8 +1418,10 @@ public final class AgentSession: Sendable {
         var effective = level
         if !agent.state.model.reasoning {
             effective = .off
-        } else if level == .xhigh && !supportsXhigh(model: agent.state.model) {
-            effective = .high
+        } else {
+            let requested = PiSwiftAI.ModelThinkingLevel(rawValue: level.rawValue) ?? .off
+            let clamped = PiSwiftAI.clampThinkingLevel(model: agent.state.model, requested: requested)
+            effective = ThinkingLevel(rawValue: clamped.rawValue) ?? .off
         }
         agent.thinkingLevel = effective
         sessionManager.appendThinkingLevelChange(effective.rawValue)
@@ -1428,9 +1430,8 @@ public final class AgentSession: Sendable {
 
     public func cycleThinkingLevel() -> ThinkingLevel? {
         guard agent.state.model.reasoning else { return nil }
-        let levels: [ThinkingLevel] = supportsXhigh(model: agent.state.model)
-            ? [.off, .minimal, .low, .medium, .high, .xhigh]
-            : [.off, .minimal, .low, .medium, .high]
+        let levels = PiSwiftAI.getSupportedThinkingLevels(agent.state.model).compactMap { ThinkingLevel(rawValue: $0.rawValue) }
+        guard !levels.isEmpty else { return nil }
         let currentIndex = levels.firstIndex(of: agent.state.thinkingLevel) ?? 0
         let next = levels[(currentIndex + 1) % levels.count]
         setThinkingLevel(next)

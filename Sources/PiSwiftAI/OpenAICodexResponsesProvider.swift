@@ -261,7 +261,7 @@ public func streamOpenAICodexResponses(
                 }
             }
 
-            let transport = options.transport ?? .sse
+            let transport = options.transport ?? .auto
             if transport != .sse {
                 var websocketStarted = false
                 do {

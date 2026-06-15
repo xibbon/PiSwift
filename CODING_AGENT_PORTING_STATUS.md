@@ -39,10 +39,9 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
   - OpenAI Codex OAuth (PKCE + local callback server + manual paste fallback + accountId extraction) (done).
   - Shared helpers (`getOAuthApiKey`, token refresh, provider list) and CLI `/login` + OAuth selector (done).
   - GitHub Copilot device-code flow + model enablement.
-  - Google Gemini CLI OAuth (local callback server + manual redirect paste fallback + project discovery).
-  - Google Antigravity OAuth (local callback server + manual redirect paste fallback + project discovery).
 
 ## Not required
+- Google Gemini CLI and Google Antigravity built-in OAuth/model/default registration: removed upstream after v0.70.5, so Swift no longer lists them as default providers. Legacy helper code remains in `PiSwiftAI` for source compatibility.
 - Config + package detection/versioning: `pi-mono/packages/coding-agent/src/config.ts` -> `Sources/PiSwiftCodingAgent/Config.swift` (no package.json-driven name/version, bun/tsx detection, theme/export path resolution logic)
 
 ## Task Queue (next in order)
@@ -56,5 +55,5 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Tool registry/tool control parity (full registry even when scoped, wrap all tools).
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).
 - [x] Image handling parity (auto-resize toggle, read tool resize + dimension note, consistent placeholders, clipboard paste).
-- [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot + Google flows.
+- [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot flow.
 - [ ] Gemini provider parity (Google Generative AI + Vertex support, including tests where applicable).

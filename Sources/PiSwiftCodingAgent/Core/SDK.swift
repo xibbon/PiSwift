@@ -202,8 +202,6 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.azureOpenAIResponses, "gpt-5.2"),
     (.openaiCodex, "gpt-5.4"),
     (.google, "gemini-2.5-pro"),
-    (.googleGeminiCli, "gemini-2.5-pro"),
-    (.googleAntigravity, "gemini-3.1-pro-high"),
     (.googleVertex, "gemini-3-pro-preview"),
     (.githubCopilot, "gpt-4o"),
     (.openrouter, "openai/gpt-5.1-codex"),
@@ -486,8 +484,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     if !resolvedModel.reasoning {
         thinkingLevel = .off
-    } else if thinkingLevel == .xhigh && !supportsXhigh(model: resolvedModel) {
-        thinkingLevel = .high
+    } else if let requested = thinkingLevel {
+        let modelLevel = PiSwiftAI.ModelThinkingLevel(rawValue: requested.rawValue) ?? .off
+        let clamped = PiSwiftAI.clampThinkingLevel(model: resolvedModel, requested: modelLevel)
+        thinkingLevel = ThinkingLevel(rawValue: clamped.rawValue) ?? .off
     }
 
     let resolvedThinkingLevel = thinkingLevel ?? .off

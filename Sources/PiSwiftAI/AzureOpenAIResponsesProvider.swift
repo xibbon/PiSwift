@@ -413,7 +413,7 @@ public func streamSimpleAzureOpenAIResponses(
     }
 
     let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
-    let reasoningEffort = supportsXhigh(model: model) ? options?.reasoning : clampAzureThinkingLevel(options?.reasoning)
+    let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
 
     let providerOptions = AzureOpenAIResponsesOptions(
         temperature: options?.temperature,
