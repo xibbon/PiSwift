@@ -760,6 +760,80 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     #expect(calls.withLock { $0 } == ["undecided", "yes"])
 }
 
+@Test func emitProjectTrustEventHelperEvaluatesLoadedHooks() async throws {
+    let observedMode = LockedState<HookMode?>(nil)
+    let handler: HookHandler = { _, ctx in
+        observedMode.withLock { $0 = ctx.mode }
+        return ProjectTrustEventResult(trusted: .no)
+    }
+    let hook = LoadedHook(
+        path: "/fake/trust-helper-hook",
+        resolvedPath: "/fake/trust-helper-hook",
+        handlers: ["project_trust": [handler]]
+    )
+
+    let result = await emitProjectTrustEvent(
+        extensionsResult: LoadExtensionsResult(hooks: [hook]),
+        cwd: "/tmp/project",
+        sessionManager: SessionManager.inMemory("/tmp/project"),
+        modelRegistry: ModelRegistry(AuthStorage(":memory:")),
+        mode: .json,
+        hasUI: false
+    )
+
+    #expect(result.decision?.trusted == .no)
+    #expect(result.errors.isEmpty)
+    #expect(observedMode.withLock { $0 } == .json)
+}
+
+@Test func discoverAndLoadExtensionsCanSkipProjectExtensions() async throws {
+    _ = _seedExtensionSDK
+    guard testSDKPaths() != nil else {
+        Issue.record("SDK paths not available")
+        return
+    }
+
+    try await withTempDir { tempDir in
+        let cwd = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+        let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+        let globalExtDir = URL(fileURLWithPath: agentDir).appendingPathComponent("extensions").path
+        let projectExtDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
+        try FileManager.default.createDirectory(atPath: globalExtDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: projectExtDir, withIntermediateDirectories: true)
+
+        let globalExt = URL(fileURLWithPath: globalExtDir).appendingPathComponent("hello-extension.swift").path
+        let projectExt = URL(fileURLWithPath: projectExtDir).appendingPathComponent("event-counter.swift").path
+        try FileManager.default.copyItem(atPath: extensionFixture("hello-extension.swift"), toPath: globalExt)
+        try FileManager.default.copyItem(atPath: extensionFixture("event-counter.swift"), toPath: projectExt)
+        let normalizedGlobalExt = URL(fileURLWithPath: globalExt).resolvingSymlinksInPath().path
+        let normalizedProjectExt = URL(fileURLWithPath: projectExt).resolvingSymlinksInPath().path
+
+        let withoutProject = await discoverAndLoadExtensions(
+            [],
+            cwd,
+            agentDir,
+            createEventBus(),
+            includeProjectExtensions: false
+        )
+        #expect(withoutProject.errors.isEmpty)
+        let withoutProjectPaths = withoutProject.hooks.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path }
+        #expect(withoutProjectPaths.contains(normalizedGlobalExt))
+        #expect(!withoutProjectPaths.contains(normalizedProjectExt))
+
+        let withProject = await discoverAndLoadExtensions(
+            [],
+            cwd,
+            agentDir,
+            createEventBus(),
+            includeProjectExtensions: true
+        )
+        #expect(withProject.errors.isEmpty)
+        let withProjectPaths = withProject.hooks.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path }
+        #expect(withProjectPaths.contains(normalizedGlobalExt))
+        #expect(withProjectPaths.contains(normalizedProjectExt))
+    }
+}
+
 @Test func extensionHooksWorkWithHookRunner() async throws {
     guard let sdkPaths = testSDKPaths() else {
         Issue.record("SDK paths not available")

@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftAI
 
 public enum ProjectTrustChoice: String, Sendable {
     case trusted
@@ -12,6 +13,16 @@ public struct ProjectTrustResolution: Sendable {
     public init(trusted: Bool, source: String) {
         self.trusted = trusted
         self.source = source
+    }
+}
+
+public struct ProjectTrustExtensionEvaluation: Sendable {
+    public var decision: ProjectTrustEventResult?
+    public var errors: [HookError]
+
+    public init(decision: ProjectTrustEventResult? = nil, errors: [HookError] = []) {
+        self.decision = decision
+        self.errors = errors
     }
 }
 
@@ -59,4 +70,50 @@ public final class ProjectTrustManager: Sendable {
 
         return ProjectTrustResolution(trusted: defaultTrusted, source: "default")
     }
+}
+
+public func hasTrustRequiringProjectResources(_ cwd: String) -> Bool {
+    let projectConfigDir = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME)
+    let resourceNames = [
+        "settings.json",
+        "extensions",
+        "skills",
+        "prompts",
+        "themes",
+        "SYSTEM.md",
+        "APPEND_SYSTEM.md",
+    ]
+    for name in resourceNames {
+        if FileManager.default.fileExists(atPath: projectConfigDir.appendingPathComponent(name).path) {
+            return true
+        }
+    }
+    return false
+}
+
+public func emitProjectTrustEvent(
+    extensionsResult: LoadExtensionsResult,
+    cwd: String,
+    sessionManager: SessionManager,
+    modelRegistry: ModelRegistry,
+    mode: HookMode = .print,
+    hasUI: Bool = false
+) async -> ProjectTrustExtensionEvaluation {
+    guard !extensionsResult.hooks.isEmpty else {
+        return ProjectTrustExtensionEvaluation()
+    }
+
+    let runner = HookRunner(extensionsResult.hooks, cwd, sessionManager, modelRegistry)
+    let errors = LockedState<[HookError]>([])
+    _ = runner.onError { error in
+        errors.withLock { $0.append(error) }
+    }
+    runner.initialize(
+        getModel: { nil },
+        isProjectTrusted: { false },
+        mode: mode,
+        hasUI: hasUI
+    )
+    let decision = await runner.emitProjectTrust(ProjectTrustEvent(cwd: cwd))
+    return ProjectTrustExtensionEvaluation(decision: decision, errors: errors.withLock { $0 })
 }

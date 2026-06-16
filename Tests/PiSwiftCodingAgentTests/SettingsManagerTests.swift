@@ -341,6 +341,27 @@ import PiSwiftAI
     #expect(ProjectTrustManager(settingsManager: reloaded).resolve(cwd: projectDir).trusted == true)
 }
 
+@Test func hasTrustRequiringProjectResourcesDetectsPiResources() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-resources-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let piDir = URL(fileURLWithPath: projectDir).appendingPathComponent(".pi").path
+    try FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    #expect(hasTrustRequiringProjectResources(projectDir) == false)
+
+    try FileManager.default.createDirectory(atPath: piDir, withIntermediateDirectories: true)
+    try "{}".write(
+        toFile: URL(fileURLWithPath: piDir).appendingPathComponent("settings.json").path,
+        atomically: true,
+        encoding: .utf8
+    )
+
+    #expect(hasTrustRequiringProjectResources(projectDir) == true)
+}
+
 @Test func settingsPreserveExternalProjectEditWhenChangingUnrelatedProjectField() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-settings-project-preserve-\(UUID().uuidString)")

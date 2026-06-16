@@ -173,7 +173,8 @@ public func discoverAndLoadExtensions(
     _ configuredPaths: [String],
     _ cwd: String,
     _ agentDir: String = getAgentDir(),
-    _ eventBus: EventBus
+    _ eventBus: EventBus,
+    includeProjectExtensions: Bool = true
 ) async -> LoadExtensionsResult {
     // Resolve SDK paths -- if not available, skip extension loading. We log a warning
     // when extensions exist on disk but can't be compiled, so the failure is visible
@@ -184,7 +185,7 @@ public func discoverAndLoadExtensions(
         let localDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
         let totalCount = configuredPaths.count
             + ExtensionLoader.discover(in: globalDir).count
-            + ExtensionLoader.discover(in: localDir).count
+            + (includeProjectExtensions ? ExtensionLoader.discover(in: localDir).count : 0)
         if totalCount > 0 {
             FileHandle.standardError.write(Data((
                 "warning: found \(totalCount) extension(s) but PiExtensionSDK is not "
@@ -220,10 +221,11 @@ public func discoverAndLoadExtensions(
         addPath(path)
     }
 
-    // Discover local project extensions
-    let localDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
-    for path in ExtensionLoader.discover(in: localDir) {
-        addPath(path)
+    if includeProjectExtensions {
+        let localDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
+        for path in ExtensionLoader.discover(in: localDir) {
+            addPath(path)
+        }
     }
 
     return await loadExtensions(allPaths, cwd: cwd, eventBus: eventBus, cacheDir: cacheDir, sdkPaths: sdkPaths)

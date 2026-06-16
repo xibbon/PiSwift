@@ -58,6 +58,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         let cwd = FileManager.default.currentDirectoryPath
         let authStorage = AuthStorage.create(getAuthPath())
         let modelRegistry = ModelRegistry(authStorage, getAgentDir())
+        let eventBus = createEventBus()
         time("discoverModels")
 
         if let listModelsOption = parsed.listModels {
@@ -95,10 +96,46 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             if parsed.noApprove == true { return .untrusted }
             return nil
         }()
+        let extensionDecision: ProjectTrustEventResult?
+        if parsed.noExtensions != true,
+           trustChoice == nil,
+           hasTrustRequiringProjectResources(cwd) {
+            let preTrustExtensions = await discoverAndLoadExtensions(
+                trustSettingsManager.getExtensionPaths(),
+                cwd,
+                agentDir,
+                eventBus,
+                includeProjectExtensions: false
+            )
+            for error in preTrustExtensions.errors {
+                fputs("Failed to load extension: \(error.localizedDescription)\n", stderr)
+            }
+            let trustMode: HookMode = {
+                if parsed.mode == .rpc { return .rpc }
+                if parsed.mode == .json { return .json }
+                if parsed.print == true || parsed.mode != nil { return .print }
+                return .tui
+            }()
+            let evaluation = await emitProjectTrustEvent(
+                extensionsResult: preTrustExtensions,
+                cwd: cwd,
+                sessionManager: SessionManager.inMemory(cwd),
+                modelRegistry: modelRegistry,
+                mode: trustMode,
+                hasUI: trustMode == .tui
+            )
+            for error in evaluation.errors {
+                fputs("Extension \"\(error.hookPath)\" project_trust error: \(error.error)\n", stderr)
+            }
+            extensionDecision = evaluation.decision
+        } else {
+            extensionDecision = nil
+        }
         let trust = ProjectTrustManager(settingsManager: trustSettingsManager).resolve(
             cwd: cwd,
             choice: trustChoice,
-            persistChoice: trustChoice != nil
+            persistChoice: trustChoice != nil,
+            extensionDecision: extensionDecision
         )
         let settingsManager = trust.trusted
             ? SettingsManager.create(cwd, agentDir, projectTrusted: true)
@@ -292,8 +329,6 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             selectedToolNames = parsed.tools ?? [.read, .bash, .edit, .write]
         }
         let filteredSelectedToolNames = selectedToolNames.filter { !excludedToolNames.contains($0.rawValue) }
-        let eventBus = createEventBus()
-
         let baseHookPaths = parsed.noExtensions == true ? [] : settingsManager.getHooks()
         let hookPaths = baseHookPaths + (parsed.hooks ?? [])
         let hookLoadResult = parsed.noExtensions == true
@@ -318,7 +353,13 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         let extensionPaths = parsed.noExtensions == true ? [] : settingsManager.getExtensionPaths()
         let extensionResult = parsed.noExtensions == true
             ? LoadExtensionsResult()
-            : await discoverAndLoadExtensions(extensionPaths, cwd, getAgentDir(), eventBus)
+            : await discoverAndLoadExtensions(
+                extensionPaths,
+                cwd,
+                getAgentDir(),
+                eventBus,
+                includeProjectExtensions: trust.trusted
+            )
         time("discoverAndLoadExtensions")
         for error in extensionResult.errors {
             fputs("Failed to load extension: \(error.localizedDescription)\n", stderr)
@@ -466,7 +507,13 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         }
 
         let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
-            await discoverAndLoadExtensions(extensionPaths, cwd, getAgentDir(), eventBus)
+            await discoverAndLoadExtensions(
+                extensionPaths,
+                cwd,
+                getAgentDir(),
+                eventBus,
+                includeProjectExtensions: trust.trusted
+            )
         }
 
         let fileCommands = loadSlashCommands(LoadSlashCommandsOptions(cwd: cwd, agentDir: getAgentDir()))

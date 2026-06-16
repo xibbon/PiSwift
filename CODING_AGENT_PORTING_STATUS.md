@@ -24,7 +24,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - CLI orchestration + TUI: `pi-mono/packages/coding-agent/src/main.ts` + `cli.ts` -> `Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (interactive mode wiring)
 - SDK: `pi-mono/packages/coding-agent/src/core/sdk.ts` -> `Sources/PiSwiftCodingAgent/Core/SDK.swift` (custom tools discovery + wrapping, hook discovery supports bundles)
 - Hook loader + tool wrapper: `pi-mono/packages/coding-agent/src/core/hooks/loader.ts`, `pi-mono/packages/coding-agent/src/core/hooks/tool-wrapper.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookLoader.swift`, `Sources/PiSwiftCodingAgent/Core/Hooks/ToolWrapper.swift` (bundle-based hooks)
-- Hook runtime: `pi-mono/packages/coding-agent/src/core/hooks/runner.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookRunner.swift` (context/before_agent_start/session/agent/turn/project_trust events; `ctx.mode`, trust, tool metadata, and system-prompt option context)
+- Hook runtime: `pi-mono/packages/coding-agent/src/core/hooks/runner.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookRunner.swift` (context/before_agent_start/session/agent/turn/project_trust events; `ctx.mode`, trust, tool metadata, system-prompt option context, and pre-trust global-extension evaluation)
 - Custom tools pipeline: `pi-mono/packages/coding-agent/src/core/custom-tools/*` -> `Sources/PiSwiftCodingAgent/Core/CustomTools/*` + CLI/TUI wiring
 - RPC mode: `pi-mono/packages/coding-agent/src/modes/rpc/*` -> `Sources/PiSwiftCodingAgent/Modes/RpcMode.swift` (JSON protocol + hook UI + command handling)
 - RPC mode tests: `pi-mono/packages/coding-agent/test/rpc.test.ts` -> `Tests/PiSwiftCodingAgentTests/RpcModeTests.swift` + `Tests/PiSwiftCodingAgentTests/RpcTestClient.swift` (live-gated RPC client)
@@ -54,6 +54,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Plan-mode hook parity (todo extraction, widget + final list, tool_result/turn_end tracking).
 - [x] Tool registry/tool control parity (full registry even when scoped, wrap all tools).
 - [x] Extension context surfaces (`ctx.mode`, `ctx.isProjectTrusted()`, `ctx.getSystemPromptOptions()`) and `project_trust` event/result types.
+- [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, and project extension/resource gating when untrusted.
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).
 - [x] Image handling parity (auto-resize toggle, read tool resize + dimension note, consistent placeholders, clipboard paste).
 - [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot flow.

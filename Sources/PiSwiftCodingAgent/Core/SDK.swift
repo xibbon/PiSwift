@@ -586,7 +586,13 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     // Load extensions (plain .swift files) and merge into hooks
     let extensionPaths = settingsManager.getExtensionPaths() + (options.additionalExtensionPaths ?? [])
-    let extensionResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus)
+    let extensionResult = await discoverAndLoadExtensions(
+        extensionPaths,
+        cwd,
+        agentDir,
+        eventBus,
+        includeProjectExtensions: projectTrusted
+    )
     time("discoverAndLoadExtensions")
     for error in extensionResult.errors {
         writeStderr("Failed to load extension: \(error.localizedDescription)\n")
@@ -598,7 +604,13 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     // resolution is repeated inside discoverAndLoadExtensions so it picks up newly-installed
     // SDKs too.
     let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
-        await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus)
+        await discoverAndLoadExtensions(
+            extensionPaths,
+            cwd,
+            agentDir,
+            eventBus,
+            includeProjectExtensions: projectTrusted
+        )
     }
 
     // Always create a HookRunner — even with zero hooks at startup, /reload can add
