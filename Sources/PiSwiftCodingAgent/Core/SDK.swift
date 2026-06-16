@@ -37,6 +37,7 @@ public struct CreateAgentSessionOptions: Sendable {
     public var thinkingLevel: ThinkingLevel?
     public var scopedModels: [ScopedModel]?
     public var sessionId: String?
+    public var projectTrusted: Bool?
     public var systemPrompt: SystemPromptInput?
     /// v0.68.0: tool-name allowlist for built-in tools. When set, only the named tools are
     /// activated. Names match `ToolName.rawValue` (e.g., "read", "bash", "edit", "write",
@@ -73,6 +74,7 @@ public struct CreateAgentSessionOptions: Sendable {
         thinkingLevel: ThinkingLevel? = nil,
         scopedModels: [ScopedModel]? = nil,
         sessionId: String? = nil,
+        projectTrusted: Bool? = nil,
         systemPrompt: SystemPromptInput? = nil,
         toolNames: [String]? = nil,
         excludeTools: [String]? = nil,
@@ -99,6 +101,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.thinkingLevel = thinkingLevel
         self.scopedModels = scopedModels
         self.sessionId = sessionId
+        self.projectTrusted = projectTrusted
         self.systemPrompt = systemPrompt
         self.toolNames = toolNames
         self.excludeTools = excludeTools
@@ -416,7 +419,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let modelRegistry = options.modelRegistry ?? discoverModels(authStorage: authStorage, agentDir: agentDir)
     time("discoverModels")
 
-    let settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir)
+    let projectTrusted = options.projectTrusted ?? true
+    let settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir, projectTrusted: projectTrusted)
     time("settingsManager")
     let sessionManager = options.sessionManager ?? SessionManager.create(cwd, nil, sessionId: options.sessionId)
     time("sessionManager")
@@ -425,7 +429,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         let loader = DefaultResourceLoader(DefaultResourceLoaderOptions(
             cwd: cwd,
             agentDir: agentDir,
-            settingsManager: settingsManager
+            settingsManager: settingsManager,
+            projectTrusted: projectTrusted
         ))
         await loader.reload()
         time("resourceLoader.reload")
@@ -656,15 +661,14 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let wrappedRegistry = wrapToolsWithHooks(registryTools, hookRunner)
     toolRegistry = Dictionary(uniqueKeysWithValues: wrappedRegistry.map { ($0.name, $0) })
 
-    let rebuildSystemPrompt: @Sendable ([String]) -> String = { toolNames in
+    let makeSystemPromptOptions: @Sendable ([String]) -> BuildSystemPromptOptions = { toolNames in
         let validToolNames = toolNames.compactMap { ToolName(rawValue: $0) }
         let loaderSystemPrompt = resolvedResourceLoader.getSystemPrompt()
         let loaderAppend = resolvedResourceLoader.getAppendSystemPrompt()
         let appendSystemPrompt = loaderAppend.isEmpty ? nil : loaderAppend.joined(separator: "\n\n")
         let activeSkills = options.skills ?? resolvedResourceLoader.getSkills().skills
         let activeContextFiles = options.contextFiles ?? resolvedResourceLoader.getAgentsFiles()
-
-        let defaultPrompt = buildSystemPrompt(BuildSystemPromptOptions(
+        return BuildSystemPromptOptions(
             customPrompt: loaderSystemPrompt,
             selectedTools: validToolNames,
             appendSystemPrompt: appendSystemPrompt,
@@ -672,19 +676,18 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             agentDir: agentDir,
             contextFiles: activeContextFiles,
             skills: activeSkills
-        ))
+        )
+    }
+
+    let rebuildSystemPrompt: @Sendable ([String]) -> String = { toolNames in
+        let promptOptions = makeSystemPromptOptions(toolNames)
+        let defaultPrompt = buildSystemPrompt(promptOptions)
         if let systemPromptInput = options.systemPrompt {
             switch systemPromptInput {
             case .text(let text):
-                return buildSystemPrompt(BuildSystemPromptOptions(
-                    customPrompt: text,
-                    selectedTools: validToolNames,
-                    appendSystemPrompt: appendSystemPrompt,
-                    cwd: cwd,
-                    agentDir: agentDir,
-                    contextFiles: activeContextFiles,
-                    skills: activeSkills
-                ))
+                var customOptions = promptOptions
+                customOptions.customPrompt = text
+                return buildSystemPrompt(customOptions)
             case .builder(let builder):
                 return builder(defaultPrompt)
             }
@@ -790,6 +793,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         sessionManager: sessionManager,
         settingsManager: settingsManager,
         resourceLoader: resolvedResourceLoader,
+        projectTrusted: projectTrusted,
+        systemPromptOptions: makeSystemPromptOptions(initialActiveToolNames),
         scopedModels: options.scopedModels,
         fileCommands: slashCommands,
         promptTemplates: promptTemplates,

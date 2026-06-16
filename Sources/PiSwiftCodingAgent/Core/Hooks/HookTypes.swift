@@ -369,6 +369,13 @@ public struct WorkingIndicatorOptions: Sendable {
 /// factory receives the live provider and returns a wrapped replacement.
 public typealias HookAutocompleteProviderFactory = @MainActor @Sendable (Any) -> Any
 
+public enum HookMode: String, Sendable {
+    case tui
+    case rpc
+    case json
+    case print
+}
+
 @MainActor
 public protocol HookUIContext: Sendable {
     func select(_ title: String, _ options: [String]) async -> String?
@@ -444,35 +451,44 @@ public final class NoOpHookUIContext: HookUIContext {
 
 public struct HookContext: Sendable {
     public var ui: HookUIContext
+    public var mode: HookMode
     public var hasUI: Bool
     public var cwd: String
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
     private var getModelHandler: @Sendable () -> Model?
     private var getSystemPromptHandler: @Sendable () -> String?
+    private var isProjectTrustedHandler: @Sendable () -> Bool
+    private var getSystemPromptOptionsHandler: @Sendable () -> BuildSystemPromptOptions
     public var isIdle: @Sendable () -> Bool
     public var abort: @Sendable () -> Void
     public var hasPendingMessages: @Sendable () -> Bool
 
     public init(
         ui: HookUIContext,
+        mode: HookMode = .print,
         hasUI: Bool,
         cwd: String,
         sessionManager: SessionManager,
         modelRegistry: ModelRegistry,
         model: @escaping @Sendable () -> Model?,
         systemPrompt: @escaping @Sendable () -> String?,
+        isProjectTrusted: @escaping @Sendable () -> Bool = { true },
+        systemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
         isIdle: @escaping @Sendable () -> Bool,
         abort: @escaping @Sendable () -> Void,
         hasPendingMessages: @escaping @Sendable () -> Bool
     ) {
         self.ui = ui
+        self.mode = mode
         self.hasUI = hasUI
         self.cwd = cwd
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
         self.getModelHandler = model
         self.getSystemPromptHandler = systemPrompt
+        self.isProjectTrustedHandler = isProjectTrusted
+        self.getSystemPromptOptionsHandler = systemPromptOptions ?? { BuildSystemPromptOptions(cwd: cwd) }
         self.isIdle = isIdle
         self.abort = abort
         self.hasPendingMessages = hasPendingMessages
@@ -500,16 +516,27 @@ public struct HookContext: Sendable {
     public func getSystemPrompt() -> String? {
         getSystemPromptHandler()
     }
+
+    public func isProjectTrusted() -> Bool {
+        isProjectTrustedHandler()
+    }
+
+    public func getSystemPromptOptions() -> BuildSystemPromptOptions {
+        getSystemPromptOptionsHandler()
+    }
 }
 
 public struct HookCommandContext: Sendable {
     public var ui: HookUIContext
+    public var mode: HookMode
     public var hasUI: Bool
     public var cwd: String
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
     private var getModelHandler: @Sendable () -> Model?
     private var getSystemPromptHandler: @Sendable () -> String?
+    private var isProjectTrustedHandler: @Sendable () -> Bool
+    private var getSystemPromptOptionsHandler: @Sendable () -> BuildSystemPromptOptions
     public var isIdle: @Sendable () -> Bool
     public var abort: @Sendable () -> Void
     public var hasPendingMessages: @Sendable () -> Bool
@@ -520,12 +547,15 @@ public struct HookCommandContext: Sendable {
 
     public init(
         ui: HookUIContext,
+        mode: HookMode = .print,
         hasUI: Bool,
         cwd: String,
         sessionManager: SessionManager,
         modelRegistry: ModelRegistry,
         model: @escaping @Sendable () -> Model?,
         systemPrompt: @escaping @Sendable () -> String?,
+        isProjectTrusted: @escaping @Sendable () -> Bool = { true },
+        systemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
         isIdle: @escaping @Sendable () -> Bool,
         abort: @escaping @Sendable () -> Void,
         hasPendingMessages: @escaping @Sendable () -> Bool,
@@ -535,12 +565,15 @@ public struct HookCommandContext: Sendable {
         navigateTree: @escaping HookNavigateTreeHandler
     ) {
         self.ui = ui
+        self.mode = mode
         self.hasUI = hasUI
         self.cwd = cwd
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
         self.getModelHandler = model
         self.getSystemPromptHandler = systemPrompt
+        self.isProjectTrustedHandler = isProjectTrusted
+        self.getSystemPromptOptionsHandler = systemPromptOptions ?? { BuildSystemPromptOptions(cwd: cwd) }
         self.isIdle = isIdle
         self.abort = abort
         self.hasPendingMessages = hasPendingMessages
@@ -556,6 +589,14 @@ public struct HookCommandContext: Sendable {
 
     public func getSystemPrompt() -> String? {
         getSystemPromptHandler()
+    }
+
+    public func isProjectTrusted() -> Bool {
+        isProjectTrustedHandler()
+    }
+
+    public func getSystemPromptOptions() -> BuildSystemPromptOptions {
+        getSystemPromptOptionsHandler()
     }
 }
 
@@ -622,6 +663,31 @@ public struct SessionBeforeSwitchEvent: HookEvent, Sendable {
     public init(reason: SessionSwitchReason, targetSessionFile: String? = nil) {
         self.reason = reason
         self.targetSessionFile = targetSessionFile
+    }
+}
+
+public struct ProjectTrustEvent: HookEvent, Sendable {
+    public let type: String = "project_trust"
+    public var cwd: String
+
+    public init(cwd: String) {
+        self.cwd = cwd
+    }
+}
+
+public enum ProjectTrustEventDecision: String, Sendable {
+    case yes
+    case no
+    case undecided
+}
+
+public struct ProjectTrustEventResult: Sendable {
+    public var trusted: ProjectTrustEventDecision
+    public var remember: Bool?
+
+    public init(trusted: ProjectTrustEventDecision, remember: Bool? = nil) {
+        self.trusted = trusted
+        self.remember = remember
     }
 }
 

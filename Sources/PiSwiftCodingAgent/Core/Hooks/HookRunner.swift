@@ -30,6 +30,8 @@ public final class HookRunner: Sendable {
         var hooks: [LoadedHook]
         var getModel: @Sendable () -> Model?
         var getSystemPrompt: @Sendable () -> String?
+        var getSystemPromptOptions: @Sendable () -> BuildSystemPromptOptions
+        var isProjectTrusted: @Sendable () -> Bool
         var isIdle: @Sendable () -> Bool
         var waitForIdle: @Sendable () async -> Void
         var abort: @Sendable () -> Void
@@ -38,6 +40,7 @@ public final class HookRunner: Sendable {
         var forkHandler: HookForkHandler
         var navigateTreeHandler: HookNavigateTreeHandler
         var uiContext: HookUIContext
+        var mode: HookMode
         var hasUI: Bool
         var errorListeners: [UUID: @Sendable (HookError) -> Void]
         /// Per-hook setters captured at initialize() so they can be re-applied to hooks
@@ -140,6 +143,8 @@ public final class HookRunner: Sendable {
             hooks: hooks,
             getModel: { nil },
             getSystemPrompt: { nil },
+            getSystemPromptOptions: { BuildSystemPromptOptions(cwd: cwd) },
+            isProjectTrusted: { true },
             isIdle: { true },
             waitForIdle: {},
             abort: {},
@@ -148,6 +153,7 @@ public final class HookRunner: Sendable {
             forkHandler: { _ in HookCommandResult(cancelled: false) },
             navigateTreeHandler: { _, _ in HookCommandResult(cancelled: false) },
             uiContext: NoOpHookUIContext(),
+            mode: .print,
             hasUI: false,
             errorListeners: [:],
             wiring: nil
@@ -157,6 +163,8 @@ public final class HookRunner: Sendable {
     public func initialize(
         getModel: @escaping @Sendable () -> Model?,
         getSystemPrompt: @escaping @Sendable () -> String? = { nil },
+        getSystemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
+        isProjectTrusted: (@Sendable () -> Bool)? = nil,
         sendMessageHandler: @escaping HookSendMessageHandler = { _, _ in },
         appendEntryHandler: @escaping HookAppendEntryHandler = { _, _ in },
         setSessionNameHandler: @escaping HookSetSessionNameHandler = { _ in },
@@ -172,10 +180,16 @@ public final class HookRunner: Sendable {
         abort: (@Sendable () -> Void)? = nil,
         hasPendingMessages: (@Sendable () -> Bool)? = nil,
         uiContext: HookUIContext? = nil,
+        mode: HookMode = .print,
         hasUI: Bool = false
     ) {
         self.getModel = getModel
         self.getSystemPrompt = getSystemPrompt
+        self.state.withLock { state in
+            state.getSystemPromptOptions = getSystemPromptOptions ?? { BuildSystemPromptOptions(cwd: self.cwd) }
+            state.isProjectTrusted = isProjectTrusted ?? { true }
+            state.mode = mode
+        }
         self.isIdle = isIdle ?? { true }
         self.waitForIdle = waitForIdle ?? {}
         self.abort = abort ?? {}
@@ -389,6 +403,7 @@ public final class HookRunner: Sendable {
     private func createContext() -> HookContext {
         HookContext(
             ui: uiContext,
+            mode: state.withLock { $0.mode },
             hasUI: hasUI,
             cwd: cwd,
             sessionManager: sessionManager,
@@ -398,6 +413,12 @@ public final class HookRunner: Sendable {
             },
             systemPrompt: { [weak self] in
                 self?.getSystemPrompt()
+            },
+            isProjectTrusted: { [weak self] in
+                self?.state.withLock { $0.isProjectTrusted() } ?? true
+            },
+            systemPromptOptions: { [weak self] in
+                self?.state.withLock { $0.getSystemPromptOptions() } ?? BuildSystemPromptOptions(cwd: self?.cwd)
             },
             isIdle: { [weak self] in self?.isIdle() ?? true },
             abort: { [weak self] in self?.abort() },
@@ -412,6 +433,7 @@ public final class HookRunner: Sendable {
     public func createCommandContext() -> HookCommandContext {
         HookCommandContext(
             ui: uiContext,
+            mode: state.withLock { $0.mode },
             hasUI: hasUI,
             cwd: cwd,
             sessionManager: sessionManager,
@@ -421,6 +443,12 @@ public final class HookRunner: Sendable {
             },
             systemPrompt: { [weak self] in
                 self?.getSystemPrompt()
+            },
+            isProjectTrusted: { [weak self] in
+                self?.state.withLock { $0.isProjectTrusted() } ?? true
+            },
+            systemPromptOptions: { [weak self] in
+                self?.state.withLock { $0.getSystemPromptOptions() } ?? BuildSystemPromptOptions(cwd: self?.cwd)
             },
             isIdle: { [weak self] in self?.isIdle() ?? true },
             abort: { [weak self] in self?.abort() },
@@ -471,6 +499,30 @@ public final class HookRunner: Sendable {
         }
 
         return lastResult
+    }
+
+    public func emitProjectTrust(_ event: ProjectTrustEvent) async -> ProjectTrustEventResult? {
+        let context = createContext()
+
+        for hook in hooks {
+            guard let handlers = hook.handlers[event.type] else { continue }
+            for handler in handlers {
+                do {
+                    if let result = try await handler(event, context) as? ProjectTrustEventResult {
+                        switch result.trusted {
+                        case .yes, .no:
+                            return result
+                        case .undecided:
+                            continue
+                        }
+                    }
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
+                }
+            }
+        }
+
+        return nil
     }
 
     public func emitToolCall(_ event: ToolCallEvent) async -> ToolCallEventResult? {

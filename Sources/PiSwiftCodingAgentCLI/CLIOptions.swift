@@ -35,6 +35,12 @@ struct CLIOptions: ParsableArguments {
     @Flag(name: .customLong("no-session"), help: "Don't save session (ephemeral)")
     var noSession: Bool = false
 
+    @Flag(name: .customLong("approve"), help: "Trust the current project and load project-local configuration")
+    var approve: Bool = false
+
+    @Flag(name: .customLong("no-approve"), help: "Do not trust the current project; skip project-local configuration")
+    var noApprove: Bool = false
+
     @Option(name: .customLong("session"), help: "Use specific session file")
     var session: String?
 
@@ -136,6 +142,12 @@ extension CLIOptions {
         }
         if noSession {
             result.noSession = true
+        }
+        if approve {
+            result.approve = true
+        }
+        if noApprove {
+            result.noApprove = true
         }
         result.session = session
         result.sessionId = sessionId

@@ -275,6 +275,72 @@ import PiSwiftAI
     #expect(manager.drainErrors().isEmpty)
 }
 
+@Test func settingsManagerSkipsProjectSettingsWhenUntrusted() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-untrusted-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let globalPath = URL(fileURLWithPath: agentDir).appendingPathComponent("settings.json").path
+    let projectPath = URL(fileURLWithPath: projectDir).appendingPathComponent(".pi").appendingPathComponent("settings.json").path
+    try? FileManager.default.createDirectory(
+        atPath: URL(fileURLWithPath: projectPath).deletingLastPathComponent().path,
+        withIntermediateDirectories: true
+    )
+    try #"{"defaultModel":"global-model"}"#.write(toFile: globalPath, atomically: true, encoding: .utf8)
+    try #"{"defaultModel":"project-model","extensions":["extensions/project.swift"]}"#.write(toFile: projectPath, atomically: true, encoding: .utf8)
+
+    let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+
+    #expect(manager.getDefaultModel() == "global-model")
+    #expect(manager.getProjectSettings().extensions == nil)
+    #expect(manager.drainErrors().isEmpty)
+}
+
+@Test func projectTrustManagerPersistsDecisionInGlobalSettings() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+    let trustManager = ProjectTrustManager(settingsManager: manager)
+    let denied = trustManager.resolve(cwd: projectDir, choice: .untrusted, persistChoice: true)
+    #expect(!denied.trusted)
+
+    let reloaded = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+    #expect(ProjectTrustManager(settingsManager: reloaded).resolve(cwd: projectDir).trusted == false)
+}
+
+@Test func projectTrustManagerCanPersistExtensionDecision() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-extension-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+    let decision = ProjectTrustEventResult(trusted: .yes, remember: true)
+    let resolved = ProjectTrustManager(settingsManager: manager).resolve(cwd: projectDir, extensionDecision: decision)
+
+    #expect(resolved.trusted == true)
+    #expect(resolved.source == "extension-saved")
+
+    let reloaded = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+    #expect(ProjectTrustManager(settingsManager: reloaded).resolve(cwd: projectDir).trusted == true)
+}
+
 @Test func settingsPreserveExternalProjectEditWhenChangingUnrelatedProjectField() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-settings-project-preserve-\(UUID().uuidString)")

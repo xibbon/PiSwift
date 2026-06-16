@@ -37,6 +37,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
     public var noThemes: Bool?
     /// v0.67.4: skip AGENTS.md / CLAUDE.md auto-discovery for clean runs.
     public var noContextFiles: Bool?
+    public var projectTrusted: Bool?
     public var systemPrompt: String?
     public var appendSystemPrompt: String?
 
@@ -53,6 +54,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         noPromptTemplates: Bool? = nil,
         noThemes: Bool? = nil,
         noContextFiles: Bool? = nil,
+        projectTrusted: Bool? = nil,
         systemPrompt: String? = nil,
         appendSystemPrompt: String? = nil
     ) {
@@ -68,6 +70,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         self.noPromptTemplates = noPromptTemplates
         self.noThemes = noThemes
         self.noContextFiles = noContextFiles
+        self.projectTrusted = projectTrusted
         self.systemPrompt = systemPrompt
         self.appendSystemPrompt = appendSystemPrompt
     }
@@ -88,6 +91,7 @@ public final class DefaultResourceLoader: ResourceLoader {
     private let noPromptTemplates: Bool
     private let noThemes: Bool
     private let noContextFiles: Bool
+    private let projectTrusted: Bool
     private let systemPromptSource: String?
     private let appendSystemPromptSource: String?
 
@@ -165,8 +169,9 @@ public final class DefaultResourceLoader: ResourceLoader {
     public init(_ options: DefaultResourceLoaderOptions = DefaultResourceLoaderOptions()) {
         self.cwd = options.cwd ?? FileManager.default.currentDirectoryPath
         self.agentDir = options.agentDir ?? getAgentDir()
-        self.settingsManager = options.settingsManager ?? SettingsManager.create(self.cwd, self.agentDir)
-        self.packageManager = DefaultPackageManager(cwd: self.cwd, agentDir: self.agentDir, settingsManager: self.settingsManager)
+        self.projectTrusted = options.projectTrusted ?? true
+        self.settingsManager = options.settingsManager ?? SettingsManager.create(self.cwd, self.agentDir, projectTrusted: self.projectTrusted)
+        self.packageManager = DefaultPackageManager(cwd: self.cwd, agentDir: self.agentDir, settingsManager: self.settingsManager, projectTrusted: self.projectTrusted)
         self.additionalExtensionPaths = options.additionalExtensionPaths ?? []
         self.additionalSkillPaths = options.additionalSkillPaths ?? []
         self.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? []
@@ -325,7 +330,7 @@ public final class DefaultResourceLoader: ResourceLoader {
         // v0.67.4: --no-context-files / noContextFiles option skips AGENTS.md / CLAUDE.md discovery.
         agentsFiles = noContextFiles
             ? []
-            : loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: agentDir))
+            : (projectTrusted ? loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: agentDir)) : [])
 
         let baseSystemPrompt = resolvePromptInput(systemPromptSource ?? discoverSystemPromptFile(), "system prompt")
         systemPrompt = baseSystemPrompt
@@ -491,9 +496,11 @@ public final class DefaultResourceLoader: ResourceLoader {
     }
 
     private func discoverSystemPromptFile() -> String? {
-        let projectPath = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("SYSTEM.md").path
-        if FileManager.default.fileExists(atPath: projectPath) {
-            return projectPath
+        if projectTrusted {
+            let projectPath = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("SYSTEM.md").path
+            if FileManager.default.fileExists(atPath: projectPath) {
+                return projectPath
+            }
         }
         let globalPath = URL(fileURLWithPath: agentDir).appendingPathComponent("SYSTEM.md").path
         if FileManager.default.fileExists(atPath: globalPath) {
@@ -503,9 +510,11 @@ public final class DefaultResourceLoader: ResourceLoader {
     }
 
     private func discoverAppendSystemPromptFile() -> String? {
-        let projectPath = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("APPEND_SYSTEM.md").path
-        if FileManager.default.fileExists(atPath: projectPath) {
-            return projectPath
+        if projectTrusted {
+            let projectPath = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("APPEND_SYSTEM.md").path
+            if FileManager.default.fileExists(atPath: projectPath) {
+                return projectPath
+            }
         }
         let globalPath = URL(fileURLWithPath: agentDir).appendingPathComponent("APPEND_SYSTEM.md").path
         if FileManager.default.fileExists(atPath: globalPath) {

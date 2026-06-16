@@ -62,6 +62,8 @@ private func parseCLI(_ args: [String]) throws -> Args {
 
 @Test func parseArgsNoSessionFlag() throws {
     #expect(try parseCLI(["--no-session"]).noSession == true)
+    #expect(try parseCLI(["--approve"]).approve == true)
+    #expect(try parseCLI(["--no-approve"]).noApprove == true)
 }
 
 @Test func parseArgsHookFlags() throws {

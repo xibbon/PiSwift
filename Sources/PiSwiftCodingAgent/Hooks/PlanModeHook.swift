@@ -211,12 +211,15 @@ private func renderStatus(_ ctx: HookContext, snapshot: PlanModeSnapshot) async 
 private func hookContext(from ctx: HookCommandContext) -> HookContext {
     HookContext(
         ui: ctx.ui,
+        mode: ctx.mode,
         hasUI: ctx.hasUI,
         cwd: ctx.cwd,
         sessionManager: ctx.sessionManager,
         modelRegistry: ctx.modelRegistry,
         model: { ctx.model },
         systemPrompt: { ctx.getSystemPrompt() },
+        isProjectTrusted: { ctx.isProjectTrusted() },
+        systemPromptOptions: { ctx.getSystemPromptOptions() },
         isIdle: ctx.isIdle,
         abort: ctx.abort,
         hasPendingMessages: ctx.hasPendingMessages

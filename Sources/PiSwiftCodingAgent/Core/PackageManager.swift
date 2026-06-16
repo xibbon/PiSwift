@@ -197,6 +197,7 @@ public final class DefaultPackageManager: PackageManager {
     private let cwd: String
     private let agentDir: String
     private let settingsManager: SettingsManager
+    private let projectTrusted: Bool
     private struct State: Sendable {
         var globalNpmRoot: String?
         var progressCallback: ProgressCallback?
@@ -214,10 +215,11 @@ public final class DefaultPackageManager: PackageManager {
         set { state.withLock { $0.progressCallback = newValue } }
     }
 
-    public init(cwd: String, agentDir: String, settingsManager: SettingsManager) {
+    public init(cwd: String, agentDir: String, settingsManager: SettingsManager, projectTrusted: Bool = true) {
         self.cwd = cwd
         self.agentDir = agentDir
         self.settingsManager = settingsManager
+        self.projectTrusted = projectTrusted
     }
 
     public func setProgressCallback(_ callback: ProgressCallback?) {
@@ -249,7 +251,7 @@ public final class DefaultPackageManager: PackageManager {
     public func resolve(onMissing: (@Sendable (String) async -> MissingSourceAction)? = nil) async throws -> ResolvedPaths {
         let accumulator = ResourceAccumulator()
         let globalSettings = settingsManager.getGlobalSettings()
-        let projectSettings = settingsManager.getProjectSettings()
+        let projectSettings = projectTrusted ? settingsManager.getProjectSettings() : Settings()
 
         var allPackages: [(PackageSource, String)] = []
         for pkg in globalSettings.packages ?? [] {
@@ -343,7 +345,7 @@ public final class DefaultPackageManager: PackageManager {
 
     public func update(_ source: String?) async throws {
         let globalSettings = settingsManager.getGlobalSettings()
-        let projectSettings = settingsManager.getProjectSettings()
+        let projectSettings = projectTrusted ? settingsManager.getProjectSettings() : Settings()
 
         let identity = source.map { getPackageIdentity($0) }
 
@@ -1048,34 +1050,36 @@ public final class DefaultPackageManager: PackageManager {
             baseDir: standardGlobalBaseDir
         )
 
-        addResources(
-            resourceType: .extensions,
-            paths: collectAutoExtensionEntries(dir: projectDirs.extensions.first ?? ""),
-            metadata: projectMetadata,
-            overrides: projectOverrides.extensions,
-            baseDir: standardProjectBaseDir
-        )
-        addResources(
-            resourceType: .skills,
-            paths: collectAutoSkillEntries(dir: projectDirs.skills.first ?? "") + projectAgentsSkillDirs.flatMap { collectAutoSkillEntries(dir: $0) },
-            metadata: projectMetadata,
-            overrides: projectOverrides.skills,
-            baseDir: standardProjectBaseDir
-        )
-        addResources(
-            resourceType: .prompts,
-            paths: collectAutoPromptEntries(dir: projectDirs.prompts.first ?? ""),
-            metadata: projectMetadata,
-            overrides: projectOverrides.prompts,
-            baseDir: standardProjectBaseDir
-        )
-        addResources(
-            resourceType: .themes,
-            paths: collectAutoThemeEntries(dir: projectDirs.themes.first ?? ""),
-            metadata: projectMetadata,
-            overrides: projectOverrides.themes,
-            baseDir: standardProjectBaseDir
-        )
+        if projectTrusted {
+            addResources(
+                resourceType: .extensions,
+                paths: collectAutoExtensionEntries(dir: projectDirs.extensions.first ?? ""),
+                metadata: projectMetadata,
+                overrides: projectOverrides.extensions,
+                baseDir: standardProjectBaseDir
+            )
+            addResources(
+                resourceType: .skills,
+                paths: collectAutoSkillEntries(dir: projectDirs.skills.first ?? "") + projectAgentsSkillDirs.flatMap { collectAutoSkillEntries(dir: $0) },
+                metadata: projectMetadata,
+                overrides: projectOverrides.skills,
+                baseDir: standardProjectBaseDir
+            )
+            addResources(
+                resourceType: .prompts,
+                paths: collectAutoPromptEntries(dir: projectDirs.prompts.first ?? ""),
+                metadata: projectMetadata,
+                overrides: projectOverrides.prompts,
+                baseDir: standardProjectBaseDir
+            )
+            addResources(
+                resourceType: .themes,
+                paths: collectAutoThemeEntries(dir: projectDirs.themes.first ?? ""),
+                metadata: projectMetadata,
+                overrides: projectOverrides.themes,
+                baseDir: standardProjectBaseDir
+            )
+        }
     }
 
     private func collectFilesFromPaths(paths: [String], resourceType: ResourceType) -> [String] {

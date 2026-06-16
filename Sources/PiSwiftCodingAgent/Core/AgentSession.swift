@@ -35,6 +35,8 @@ public struct AgentSessionConfig: Sendable {
     public var sessionManager: SessionManager
     public var settingsManager: SettingsManager
     public var resourceLoader: ResourceLoader
+    public var projectTrusted: Bool
+    public var systemPromptOptions: BuildSystemPromptOptions?
     public var scopedModels: [ScopedModel]?
     public var fileCommands: [FileSlashCommand]?
     public var promptTemplates: [PromptTemplate]?
@@ -60,6 +62,8 @@ public struct AgentSessionConfig: Sendable {
         sessionManager: SessionManager,
         settingsManager: SettingsManager,
         resourceLoader: ResourceLoader,
+        projectTrusted: Bool = true,
+        systemPromptOptions: BuildSystemPromptOptions? = nil,
         scopedModels: [ScopedModel]? = nil,
         fileCommands: [FileSlashCommand]? = nil,
         promptTemplates: [PromptTemplate]? = nil,
@@ -77,6 +81,8 @@ public struct AgentSessionConfig: Sendable {
         self.sessionManager = sessionManager
         self.settingsManager = settingsManager
         self.resourceLoader = resourceLoader
+        self.projectTrusted = projectTrusted
+        self.systemPromptOptions = systemPromptOptions
         self.scopedModels = scopedModels
         self.fileCommands = fileCommands
         self.promptTemplates = promptTemplates
@@ -289,6 +295,7 @@ public final class AgentSession: Sendable {
     public let settingsManager: SettingsManager
     public let modelRegistry: ModelRegistry
     public let eventBus: EventBus
+    public let projectTrusted: Bool
     private let state: LockedState<State>
 
     /// Serial queue for agent event processing.
@@ -321,6 +328,7 @@ public final class AgentSession: Sendable {
         var isBranchSummarizing: Bool
         var turnIndex: Int
         var baseSystemPrompt: String
+        var systemPromptOptions: BuildSystemPromptOptions
         var toolRegistry: [String: AgentTool]
         var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
         var toolPromptSnippets: [String: String]
@@ -510,6 +518,7 @@ public final class AgentSession: Sendable {
         self.settingsManager = config.settingsManager
         self.modelRegistry = config.modelRegistry
         self.eventBus = config.eventBus ?? createEventBus()
+        self.projectTrusted = config.projectTrusted
         self.agent.sessionId = config.sessionManager.getSessionId()
         self.state = LockedState(State(
             hookRunner: config.hookRunner,
@@ -537,6 +546,7 @@ public final class AgentSession: Sendable {
             isBranchSummarizing: false,
             turnIndex: 0,
             baseSystemPrompt: config.agent.state.systemPrompt,
+            systemPromptOptions: config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()),
             toolRegistry: config.toolRegistry ?? [:],
             rebuildSystemPrompt: config.rebuildSystemPrompt,
             toolPromptSnippets: [:],
@@ -547,6 +557,8 @@ public final class AgentSession: Sendable {
         self._hookRunner?.initialize(
             getModel: { [weak agent] in agent?.state.model },
             getSystemPrompt: { [weak agent] in agent?.state.systemPrompt },
+            getSystemPromptOptions: { config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()) },
+            isProjectTrusted: { config.projectTrusted },
             setSessionNameHandler: { [weak self] name in
                 self?.sessionManager.appendSessionInfo(name)
             },
@@ -574,6 +586,12 @@ public final class AgentSession: Sendable {
 
     public var hookRunner: HookRunner? {
         _hookRunner
+    }
+
+    public func getCurrentSystemPromptOptions() -> BuildSystemPromptOptions {
+        var options = state.withLock { $0.systemPromptOptions }
+        options.selectedTools = getActiveToolNames().compactMap { ToolName(rawValue: $0) }
+        return options
     }
 
     public var customTools: [LoadedCustomTool] {

@@ -27,6 +27,11 @@ public func runPrintMode(
     if let hookRunner = session.hookRunner {
         hookRunner.initialize(
             getModel: { [weak session] in session?.agent.state.model },
+            getSystemPrompt: { [weak session] in session?.agent.state.systemPrompt },
+            getSystemPromptOptions: { [weak session] in
+                session?.getCurrentSystemPromptOptions() ?? BuildSystemPromptOptions()
+            },
+            isProjectTrusted: { [weak session] in session?.projectTrusted ?? true },
             sendMessageHandler: { [weak session] message, options in
                 Task {
                     await session?.sendHookMessage(message, options: options)
@@ -65,6 +70,7 @@ public func runPrintMode(
             hasPendingMessages: { [weak session] in
                 (session?.pendingMessageCount ?? 0) > 0
             },
+            mode: mode == .json ? .json : .print,
             hasUI: false
         )
 

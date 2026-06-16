@@ -139,6 +139,8 @@ public struct Settings: Sendable {
     public var thinkingBudgets: ThinkingBudgetsSettings?
     public var treeFilterMode: String?
     public var promptSnippetsEnabled: Bool?
+    /// v0.79.4: per-project trust decisions keyed by standardized cwd path.
+    public var projectTrust: [String: Bool]?
     /// v0.70.3: per-warning opt-outs. Currently controls the Anthropic third-party-usage
     /// billing notice when subscription auth is active.
     public var warnings: WarningsSettings?
@@ -281,7 +283,11 @@ public final class SettingsManager: Sendable {
         self.settings = mergeSettings(globalSettings, initialProject)
     }
 
-    public static func create(_ cwd: String = FileManager.default.currentDirectoryPath, _ agentDir: String = getAgentDir()) -> SettingsManager {
+    public static func create(
+        _ cwd: String = FileManager.default.currentDirectoryPath,
+        _ agentDir: String = getAgentDir(),
+        projectTrusted: Bool = true
+    ) -> SettingsManager {
         let settingsPath = URL(fileURLWithPath: agentDir).appendingPathComponent("settings.json").path
         let projectSettingsPath = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("settings.json").path
         var loadError: String?
@@ -296,11 +302,15 @@ public final class SettingsManager: Sendable {
             globalSettings = Settings()
         }
         let projectSettings: Settings
-        do {
-            projectSettings = try loadFromFile(projectSettingsPath)
-        } catch {
-            projectLoadError = error.localizedDescription
-            errors.append(SettingsError(scope: "project", message: error.localizedDescription))
+        if projectTrusted {
+            do {
+                projectSettings = try loadFromFile(projectSettingsPath)
+            } catch {
+                projectLoadError = error.localizedDescription
+                errors.append(SettingsError(scope: "project", message: error.localizedDescription))
+                projectSettings = Settings()
+            }
+        } else {
             projectSettings = Settings()
         }
         return SettingsManager(
@@ -351,6 +361,18 @@ public final class SettingsManager: Sendable {
 
     public func getProjectSettings() -> Settings {
         projectSettings
+    }
+
+    public func getProjectTrust(_ cwd: String) -> Bool? {
+        globalSettings.projectTrust?[normalizeProjectTrustPath(cwd)]
+    }
+
+    public func setProjectTrust(_ cwd: String, trusted: Bool) {
+        var trust = globalSettings.projectTrust ?? [:]
+        trust[normalizeProjectTrustPath(cwd)] = trusted
+        globalSettings.projectTrust = trust
+        markModified("projectTrust")
+        save()
     }
 
     public func getLastChangelogVersion() -> String? {
@@ -981,6 +1003,7 @@ public final class SettingsManager: Sendable {
         settings.autocompleteMaxVisible = json["autocompleteMaxVisible"] as? Int
         settings.treeFilterMode = json["treeFilterMode"] as? String
         settings.promptSnippetsEnabled = json["promptSnippetsEnabled"] as? Bool
+        settings.projectTrust = json["projectTrust"] as? [String: Bool]
 
         if let compaction = json["compaction"] as? [String: Any] {
             settings.compaction = CompactionSettingsOverrides(
@@ -1208,6 +1231,8 @@ public final class SettingsManager: Sendable {
         json["doubleEscapeAction"] = settings.doubleEscapeAction
         json["autocompleteMaxVisible"] = settings.autocompleteMaxVisible
         json["treeFilterMode"] = settings.treeFilterMode
+        json["promptSnippetsEnabled"] = settings.promptSnippetsEnabled
+        json["projectTrust"] = settings.projectTrust
 
         if let compaction = settings.compaction {
             json["compaction"] = [
@@ -1346,6 +1371,11 @@ public final class SettingsManager: Sendable {
         if override.thinkingBudgets != nil { result.thinkingBudgets = override.thinkingBudgets }
         if override.treeFilterMode != nil { result.treeFilterMode = override.treeFilterMode }
         if override.promptSnippetsEnabled != nil { result.promptSnippetsEnabled = override.promptSnippetsEnabled }
+        if override.projectTrust != nil { result.projectTrust = override.projectTrust }
         return result
     }
+}
+
+private func normalizeProjectTrustPath(_ path: String) -> String {
+    URL(fileURLWithPath: path).standardized.path
 }

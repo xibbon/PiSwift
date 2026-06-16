@@ -31,9 +31,13 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         if cli.rawMessages.first == "config" {
             let cwd = FileManager.default.currentDirectoryPath
             let agentDir = getAgentDir()
-            let settingsManager = SettingsManager.create(cwd, agentDir)
+            let baseSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
+            let trust = ProjectTrustManager(settingsManager: baseSettingsManager).resolve(cwd: cwd)
+            let settingsManager = trust.trusted
+                ? SettingsManager.create(cwd, agentDir, projectTrusted: true)
+                : baseSettingsManager
             reportSettingsErrors(settingsManager, context: "config command")
-            let packageManager = DefaultPackageManager(cwd: cwd, agentDir: agentDir, settingsManager: settingsManager)
+            let packageManager = DefaultPackageManager(cwd: cwd, agentDir: agentDir, settingsManager: settingsManager, projectTrusted: trust.trusted)
             let resolvedPaths = try await packageManager.resolve()
             await selectConfig(
                 resolvedPaths: resolvedPaths,
@@ -84,7 +88,21 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             Darwin.exit(1)
         }
 
-        let settingsManager = SettingsManager.create(cwd, getAgentDir())
+        let agentDir = getAgentDir()
+        let trustSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
+        let trustChoice: ProjectTrustChoice? = {
+            if parsed.approve == true { return .trusted }
+            if parsed.noApprove == true { return .untrusted }
+            return nil
+        }()
+        let trust = ProjectTrustManager(settingsManager: trustSettingsManager).resolve(
+            cwd: cwd,
+            choice: trustChoice,
+            persistChoice: trustChoice != nil
+        )
+        let settingsManager = trust.trusted
+            ? SettingsManager.create(cwd, agentDir, projectTrusted: true)
+            : trustSettingsManager
         reportSettingsErrors(settingsManager, context: "startup")
         time("SettingsManager.create")
         let themeName = settingsManager.getTheme()
@@ -244,6 +262,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             noSkills: parsed.noSkills ?? false,
             noPromptTemplates: parsed.noPromptTemplates ?? false,
             noContextFiles: parsed.noContextFiles ?? false,
+            projectTrusted: trust.trusted,
             systemPrompt: parsed.systemPrompt,
             appendSystemPrompt: parsed.appendSystemPrompt
         ))
@@ -367,9 +386,9 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         let loaderSystemPrompt = resourceLoader.getSystemPrompt()
         let loaderAppend = resourceLoader.getAppendSystemPrompt()
         let appendSystemPrompt = loaderAppend.isEmpty ? nil : loaderAppend.joined(separator: "\n\n")
-        let rebuildSystemPrompt: @Sendable ([String]) -> String = { toolNames in
+        let makeSystemPromptOptions: @Sendable ([String]) -> BuildSystemPromptOptions = { toolNames in
             let validToolNames = toolNames.compactMap { ToolName(rawValue: $0) }
-            return buildSystemPrompt(BuildSystemPromptOptions(
+            return BuildSystemPromptOptions(
                 customPrompt: loaderSystemPrompt,
                 selectedTools: validToolNames,
                 appendSystemPrompt: appendSystemPrompt,
@@ -377,7 +396,10 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
                 agentDir: getAgentDir(),
                 contextFiles: resourceLoader.getAgentsFiles(),
                 skills: resourceLoader.getSkills().skills
-            ))
+            )
+        }
+        let rebuildSystemPrompt: @Sendable ([String]) -> String = { toolNames in
+            buildSystemPrompt(makeSystemPromptOptions(toolNames))
         }
 
         let systemPrompt = rebuildSystemPrompt(initialActiveToolNames)
@@ -454,6 +476,8 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             sessionManager: sessionManager,
             settingsManager: settingsManager,
             resourceLoader: resourceLoader,
+            projectTrusted: trust.trusted,
+            systemPromptOptions: makeSystemPromptOptions(initialActiveToolNames),
             scopedModels: scopedModels,
             fileCommands: fileCommands,
             promptTemplates: promptTemplates,

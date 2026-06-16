@@ -270,6 +270,11 @@ public func runRpcMode(_ session: AgentSession) async {
     if let hookRunner = session.hookRunner {
         hookRunner.initialize(
             getModel: { [weak session] in session?.agent.state.model },
+            getSystemPrompt: { [weak session] in session?.agent.state.systemPrompt },
+            getSystemPromptOptions: { [weak session] in
+                session?.getCurrentSystemPromptOptions() ?? BuildSystemPromptOptions()
+            },
+            isProjectTrusted: { [weak session] in session?.projectTrusted ?? true },
             sendMessageHandler: { [weak session] message, options in
                 Task {
                     await session?.sendHookMessage(message, options: options)
@@ -294,6 +299,7 @@ public func runRpcMode(_ session: AgentSession) async {
                 session?.setActiveToolsByName(toolNames)
             },
             uiContext: uiContext,
+            mode: .rpc,
             hasUI: false
         )
         _ = hookRunner.onError { error in

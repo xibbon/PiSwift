@@ -25,6 +25,8 @@ public struct Args: Sendable {
     public var version: Bool?
     public var mode: Mode?
     public var noSession: Bool?
+    public var approve: Bool?
+    public var noApprove: Bool?
     public var session: String?
     public var sessionId: String?
     public var sessionDir: String?

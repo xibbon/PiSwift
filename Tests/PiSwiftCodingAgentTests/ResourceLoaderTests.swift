@@ -55,13 +55,19 @@ private final class ResourceLoaderTestFixture {
         try content.write(toFile: fullPath, atomically: true, encoding: .utf8)
     }
 
-    func createLoader(settingsManager: SettingsManager? = nil, noSkills: Bool = false, additionalSkillPaths: [String]? = nil) -> DefaultResourceLoader {
+    func createLoader(
+        settingsManager: SettingsManager? = nil,
+        noSkills: Bool = false,
+        additionalSkillPaths: [String]? = nil,
+        projectTrusted: Bool = true
+    ) -> DefaultResourceLoader {
         DefaultResourceLoader(DefaultResourceLoaderOptions(
             cwd: cwd,
             agentDir: agentDir,
             settingsManager: settingsManager,
             additionalSkillPaths: additionalSkillPaths,
-            noSkills: noSkills
+            noSkills: noSkills,
+            projectTrusted: projectTrusted
         ))
     }
 }
@@ -128,6 +134,37 @@ private final class ResourceLoaderTestFixture {
 
     let (prompts, _) = loader.getPrompts()
     #expect(prompts.contains { $0.name == "test-prompt" })
+}
+
+@Test func resourceLoaderSkipsProjectResourcesWhenUntrusted() async throws {
+    let fixture = try ResourceLoaderTestFixture()
+    try fixture.writeAgentFile("SYSTEM.md", content: "global system")
+    try fixture.writeAgentFile("skills/user-skill/SKILL.md", content: """
+        ---
+        name: user-skill
+        description: User skill
+        ---
+        User skill content.
+        """)
+    try fixture.writeCwdFile("AGENTS.md", content: "project context")
+    try fixture.writeCwdFile(".pi/SYSTEM.md", content: "project system")
+    try fixture.writeCwdFile(".pi/skills/project-skill/SKILL.md", content: """
+        ---
+        name: project-skill
+        description: Project skill
+        ---
+        Project skill content.
+        """)
+
+    let settingsManager = SettingsManager.create(fixture.cwd, fixture.agentDir, projectTrusted: false)
+    let loader = fixture.createLoader(settingsManager: settingsManager, projectTrusted: false)
+    await loader.reload()
+
+    let (skills, _) = loader.getSkills()
+    #expect(skills.contains { $0.name == "user-skill" })
+    #expect(!skills.contains { $0.name == "project-skill" })
+    #expect(loader.getAgentsFiles().isEmpty)
+    #expect(loader.getSystemPrompt() == "global system")
 }
 
 @Test func resourceLoaderHonorsOverridesForAutoDiscoveredResources() async throws {

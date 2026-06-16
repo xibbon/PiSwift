@@ -732,6 +732,11 @@ public final class InteractiveMode {
 
         hookRunner.initialize(
             getModel: { [weak session] in session?.agent.state.model },
+            getSystemPrompt: { [weak session] in session?.agent.state.systemPrompt },
+            getSystemPromptOptions: { [weak session] in
+                session?.getCurrentSystemPromptOptions() ?? BuildSystemPromptOptions()
+            },
+            isProjectTrusted: { [weak session] in session?.projectTrusted ?? true },
             sendMessageHandler: { [weak session, weak self] message, options in
                 guard let session else { return }
                 let shouldRefresh = !session.isStreaming
@@ -792,6 +797,7 @@ public final class InteractiveMode {
                 (session?.pendingMessageCount ?? 0) > 0
             },
             uiContext: uiContext,
+            mode: .tui,
             hasUI: true
         )
 

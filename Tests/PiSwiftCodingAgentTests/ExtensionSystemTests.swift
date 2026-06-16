@@ -662,6 +662,104 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 
 // MARK: - HookRunner Integration
 
+@Test func hookRunnerContextExposesModeTrustAndSystemPromptOptions() async throws {
+    let observedMode = LockedState<HookMode?>(nil)
+    let observedTrust = LockedState<Bool?>(nil)
+    let observedCwd = LockedState<String?>(nil)
+    let observedPromptCwd = LockedState<String?>(nil)
+    let observedTools = LockedState<[ToolName]?>(nil)
+
+    let handler: HookHandler = { _, ctx in
+        observedMode.withLock { $0 = ctx.mode }
+        observedTrust.withLock { $0 = ctx.isProjectTrusted() }
+        observedCwd.withLock { $0 = ctx.cwd }
+        let options = ctx.getSystemPromptOptions()
+        observedPromptCwd.withLock { $0 = options.cwd }
+        observedTools.withLock { $0 = options.selectedTools }
+        return nil
+    }
+    let hook = LoadedHook(
+        path: "/fake/context-hook",
+        resolvedPath: "/fake/context-hook",
+        handlers: ["session_start": [handler]]
+    )
+
+    let sessionManager = SessionManager.inMemory()
+    let modelRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let runner = HookRunner([hook], "/tmp/project", sessionManager, modelRegistry)
+    runner.initialize(
+        getModel: { nil },
+        getSystemPromptOptions: {
+            BuildSystemPromptOptions(selectedTools: [.read, .bash], cwd: "/tmp/project")
+        },
+        isProjectTrusted: { false },
+        mode: .rpc,
+        hasUI: false
+    )
+
+    _ = await runner.emit(SessionStartEvent())
+
+    #expect(observedMode.withLock { $0 } == .rpc)
+    #expect(observedTrust.withLock { $0 } == false)
+    #expect(observedCwd.withLock { $0 } == "/tmp/project")
+    #expect(observedPromptCwd.withLock { $0 } == "/tmp/project")
+    #expect(observedTools.withLock { $0 } == [.read, .bash])
+}
+
+@Test func hookCommandContextExposesModeTrustAndSystemPromptOptions() async throws {
+    let sessionManager = SessionManager.inMemory()
+    let modelRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let runner = HookRunner([], "/tmp/command-project", sessionManager, modelRegistry)
+    runner.initialize(
+        getModel: { nil },
+        getSystemPromptOptions: {
+            BuildSystemPromptOptions(selectedTools: [.edit], cwd: "/tmp/command-project")
+        },
+        isProjectTrusted: { false },
+        mode: .tui,
+        hasUI: true
+    )
+
+    let ctx = runner.createCommandContext()
+
+    #expect(ctx.mode == .tui)
+    #expect(ctx.isProjectTrusted() == false)
+    #expect(ctx.getSystemPromptOptions().cwd == "/tmp/command-project")
+    #expect(ctx.getSystemPromptOptions().selectedTools == [.edit])
+}
+
+@Test func projectTrustEventUsesFirstDefinitiveDecision() async throws {
+    let calls = LockedState<[String]>([])
+    let undecided: HookHandler = { _, _ in
+        calls.withLock { $0.append("undecided") }
+        return ProjectTrustEventResult(trusted: .undecided)
+    }
+    let accepted: HookHandler = { _, _ in
+        calls.withLock { $0.append("yes") }
+        return ProjectTrustEventResult(trusted: .yes, remember: true)
+    }
+    let skipped: HookHandler = { _, _ in
+        calls.withLock { $0.append("skipped") }
+        return ProjectTrustEventResult(trusted: .no)
+    }
+    let hook = LoadedHook(
+        path: "/fake/trust-hook",
+        resolvedPath: "/fake/trust-hook",
+        handlers: ["project_trust": [undecided, accepted, skipped]]
+    )
+
+    let sessionManager = SessionManager.inMemory()
+    let modelRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let runner = HookRunner([hook], "/tmp/project", sessionManager, modelRegistry)
+    runner.initialize(getModel: { nil }, mode: .print, hasUI: false)
+
+    let result = await runner.emitProjectTrust(ProjectTrustEvent(cwd: "/tmp/project"))
+
+    #expect(result?.trusted == .yes)
+    #expect(result?.remember == true)
+    #expect(calls.withLock { $0 } == ["undecided", "yes"])
+}
+
 @Test func extensionHooksWorkWithHookRunner() async throws {
     guard let sdkPaths = testSDKPaths() else {
         Issue.record("SDK paths not available")
