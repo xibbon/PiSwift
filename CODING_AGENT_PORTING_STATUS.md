@@ -54,7 +54,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Plan-mode hook parity (todo extraction, widget + final list, tool_result/turn_end tracking).
 - [x] Tool registry/tool control parity (full registry even when scoped, wrap all tools).
 - [x] Extension context surfaces (`ctx.mode`, `ctx.isProjectTrusted()`, `ctx.getSystemPromptOptions()`) and `project_trust` event/result types.
-- [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, and project extension/resource gating when untrusted.
+- [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, project extension/resource gating when untrusted, and shared config/package command trust resolution.
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).
 - [x] Image handling parity (auto-resize toggle, read tool resize + dimension note, consistent placeholders, clipboard paste).
 - [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot flow.

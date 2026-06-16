@@ -63,7 +63,12 @@ private func printPackageCommandHelp(_ command: PackageCommand) {
     print("  \(packageCommandUsage(command))")
 }
 
-func handlePackageCommand(_ args: [String]) async -> Bool {
+func handlePackageCommand(
+    _ args: [String],
+    approve: Bool = false,
+    noApprove: Bool = false,
+    noExtensions: Bool = false
+) async -> Bool {
     _ = consumePackageCommandExitCode()
     guard let options = parsePackageCommand(args) else { return false }
 
@@ -89,11 +94,35 @@ func handlePackageCommand(_ args: [String]) async -> Bool {
 
     let cwd = FileManager.default.currentDirectoryPath
     let agentDir = getAgentDir()
-    let settingsManager = SettingsManager.create(cwd, agentDir)
+    let authStorage = AuthStorage.create(getAuthPath())
+    let modelRegistry = ModelRegistry(authStorage, agentDir)
+    let trustChoice = projectTrustChoice(approve: approve, noApprove: noApprove)
+    let trustContext = await resolveProjectTrustForCLI(
+        cwd: cwd,
+        agentDir: agentDir,
+        modelRegistry: modelRegistry,
+        eventBus: createEventBus(),
+        choice: trustChoice,
+        persistChoice: trustChoice != nil,
+        noExtensions: noExtensions,
+        mode: .print,
+        hasUI: false
+    )
+    let settingsManager = trustContext.settingsManager
     for error in settingsManager.drainErrors() {
         fputs("Warning (package command, \(error.scope) settings): \(error.message)\n", stderr)
     }
-    let packageManager = DefaultPackageManager(cwd: cwd, agentDir: agentDir, settingsManager: settingsManager)
+    if options.local && !trustContext.trust.trusted {
+        fputs("Project package changes require a trusted project. Re-run with --approve to allow project-local package settings.\n", stderr)
+        setPackageCommandExitCode(1)
+        return true
+    }
+    let packageManager = DefaultPackageManager(
+        cwd: cwd,
+        agentDir: agentDir,
+        settingsManager: settingsManager,
+        projectTrusted: trustContext.trust.trusted
+    )
 
     packageManager.setProgressCallback { event in
         switch event.type {

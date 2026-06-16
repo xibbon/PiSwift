@@ -21,7 +21,12 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         time("start")
         if cli.rawMessages.first == "package" {
             let args = Array(cli.rawMessages.dropFirst())
-            if await handlePackageCommand(args) {
+            if await handlePackageCommand(
+                args,
+                approve: cli.approve,
+                noApprove: cli.noApprove,
+                noExtensions: cli.noExtensions
+            ) {
                 if let exitCode = consumePackageCommandExitCode() {
                     Darwin.exit(exitCode)
                 }
@@ -31,13 +36,28 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         if cli.rawMessages.first == "config" {
             let cwd = FileManager.default.currentDirectoryPath
             let agentDir = getAgentDir()
-            let baseSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
-            let trust = ProjectTrustManager(settingsManager: baseSettingsManager).resolve(cwd: cwd)
-            let settingsManager = trust.trusted
-                ? SettingsManager.create(cwd, agentDir, projectTrusted: true)
-                : baseSettingsManager
+            let authStorage = AuthStorage.create(getAuthPath())
+            let modelRegistry = ModelRegistry(authStorage, agentDir)
+            let trustChoice = projectTrustChoice(approve: cli.approve, noApprove: cli.noApprove)
+            let trustContext = await resolveProjectTrustForCLI(
+                cwd: cwd,
+                agentDir: agentDir,
+                modelRegistry: modelRegistry,
+                eventBus: createEventBus(),
+                choice: trustChoice,
+                persistChoice: trustChoice != nil,
+                noExtensions: cli.noExtensions,
+                mode: .tui,
+                hasUI: true
+            )
+            let settingsManager = trustContext.settingsManager
             reportSettingsErrors(settingsManager, context: "config command")
-            let packageManager = DefaultPackageManager(cwd: cwd, agentDir: agentDir, settingsManager: settingsManager, projectTrusted: trust.trusted)
+            let packageManager = DefaultPackageManager(
+                cwd: cwd,
+                agentDir: agentDir,
+                settingsManager: settingsManager,
+                projectTrusted: trustContext.trust.trusted
+            )
             let resolvedPaths = try await packageManager.resolve()
             await selectConfig(
                 resolvedPaths: resolvedPaths,
@@ -90,56 +110,29 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         }
 
         let agentDir = getAgentDir()
-        let trustSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
-        let trustChoice: ProjectTrustChoice? = {
-            if parsed.approve == true { return .trusted }
-            if parsed.noApprove == true { return .untrusted }
-            return nil
+        let trustChoice = projectTrustChoice(
+            approve: parsed.approve == true,
+            noApprove: parsed.noApprove == true
+        )
+        let trustMode: HookMode = {
+            if parsed.mode == .rpc { return .rpc }
+            if parsed.mode == .json { return .json }
+            if parsed.print == true || parsed.mode != nil { return .print }
+            return .tui
         }()
-        let extensionDecision: ProjectTrustEventResult?
-        if parsed.noExtensions != true,
-           trustChoice == nil,
-           hasTrustRequiringProjectResources(cwd) {
-            let preTrustExtensions = await discoverAndLoadExtensions(
-                trustSettingsManager.getExtensionPaths(),
-                cwd,
-                agentDir,
-                eventBus,
-                includeProjectExtensions: false
-            )
-            for error in preTrustExtensions.errors {
-                fputs("Failed to load extension: \(error.localizedDescription)\n", stderr)
-            }
-            let trustMode: HookMode = {
-                if parsed.mode == .rpc { return .rpc }
-                if parsed.mode == .json { return .json }
-                if parsed.print == true || parsed.mode != nil { return .print }
-                return .tui
-            }()
-            let evaluation = await emitProjectTrustEvent(
-                extensionsResult: preTrustExtensions,
-                cwd: cwd,
-                sessionManager: SessionManager.inMemory(cwd),
-                modelRegistry: modelRegistry,
-                mode: trustMode,
-                hasUI: trustMode == .tui
-            )
-            for error in evaluation.errors {
-                fputs("Extension \"\(error.hookPath)\" project_trust error: \(error.error)\n", stderr)
-            }
-            extensionDecision = evaluation.decision
-        } else {
-            extensionDecision = nil
-        }
-        let trust = ProjectTrustManager(settingsManager: trustSettingsManager).resolve(
+        let trustContext = await resolveProjectTrustForCLI(
             cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: modelRegistry,
+            eventBus: eventBus,
             choice: trustChoice,
             persistChoice: trustChoice != nil,
-            extensionDecision: extensionDecision
+            noExtensions: parsed.noExtensions == true,
+            mode: trustMode,
+            hasUI: trustMode == .tui
         )
-        let settingsManager = trust.trusted
-            ? SettingsManager.create(cwd, agentDir, projectTrusted: true)
-            : trustSettingsManager
+        let trust = trustContext.trust
+        let settingsManager = trustContext.settingsManager
         reportSettingsErrors(settingsManager, context: "startup")
         time("SettingsManager.create")
         let themeName = settingsManager.getTheme()
