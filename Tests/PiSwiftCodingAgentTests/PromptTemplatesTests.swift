@@ -166,6 +166,31 @@ import Testing
     #expect(substituteArgs("$1: $@ ($ARGUMENTS)", ["first", "second", "third"]) == "first: first second third (first second third)")
 }
 
+@Test func substituteArgsSupportsDefaultValuesForMissingArgs() {
+    #expect(substituteArgs("Target: ${1:-world}", []) == "Target: world")
+    #expect(substituteArgs("Target: ${1:-world}", ["repo"]) == "Target: repo")
+}
+
+@Test func substituteArgsUsesDefaultValuesForEmptyArgs() {
+    #expect(substituteArgs("${1:-fallback} ${2:-second}", ["", "value"]) == "fallback value")
+}
+
+@Test func substituteArgsDefaultValuesAreNotRecursivelyExpanded() {
+    #expect(substituteArgs("${1:-$2 $ARGUMENTS}", []) == "$2 $ARGUMENTS")
+}
+
+@Test func substituteArgsSupportsArgsFromNthOnward() {
+    #expect(substituteArgs("Rest: ${@:2}", ["one", "two", "three"]) == "Rest: two three")
+    #expect(substituteArgs("Rest: ${@:1}", ["one", "two"]) == "Rest: one two")
+    #expect(substituteArgs("Rest: ${@:0}", ["one", "two"]) == "Rest: one two")
+}
+
+@Test func substituteArgsSupportsArgsSliceLength() {
+    #expect(substituteArgs("Slice: ${@:2:2}", ["one", "two", "three", "four"]) == "Slice: two three")
+    #expect(substituteArgs("Slice: ${@:3:10}", ["one", "two", "three"]) == "Slice: three")
+    #expect(substituteArgs("Slice: ${@:4:1}", ["one", "two", "three"]) == "Slice: ")
+}
+
 @Test func substituteArgsHandlesCommandWithNoPlaceholders() {
     #expect(substituteArgs("Just plain text", ["a", "b"]) == "Just plain text")
 }

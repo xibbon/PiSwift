@@ -14,7 +14,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
   - `pi-mono/packages/coding-agent/src/core/bash-executor.ts` -> `Sources/PiSwiftCodingAgent/Core/BashExecutor.swift`
   - `pi-mono/packages/coding-agent/src/core/messages.ts` -> `Sources/PiSwiftCodingAgent/Core/Messages.swift`
 - Skills + system prompt stack: `pi-mono/packages/coding-agent/src/core/skills.ts` + `system-prompt.ts` -> `Sources/PiSwiftCodingAgent/Core/Skills.swift` + `Sources/PiSwiftCodingAgent/Core/SystemPrompt.swift`
-- Slash commands + @file expansion: `pi-mono/packages/coding-agent/src/core/slash-commands.ts` -> `Sources/PiSwiftCodingAgent/Core/SlashCommands.swift`
+- Slash commands + @file expansion: `pi-mono/packages/coding-agent/src/core/slash-commands.ts` -> `Sources/PiSwiftCodingAgent/Core/SlashCommands.swift` (shared `$ARGUMENTS`, `${N:-default}`, and `${@:N[:L]}` substitution)
 - CLI helpers: `pi-mono/packages/coding-agent/src/cli/file-processor.ts`, `list-models.ts`, `session-picker.ts` -> `Sources/PiSwiftCodingAgent/CLI/*`
 - Utilities: `pi-mono/packages/coding-agent/src/utils/fuzzy.ts` -> `Sources/PiSwiftCodingAgent/Utils/Fuzzy.swift`; `pi-mono/packages/coding-agent/src/utils/mime.ts` -> `Sources/PiSwiftCodingAgent/Utils/Mime.swift`; glob handling in `Sources/PiSwiftCodingAgent/Utils/Glob.swift`; tools manager in `Sources/PiSwiftCodingAgent/Utils/ToolsManager.swift`
 - Shell/clipboard/changelog utils + timings/migrations: `pi-mono/packages/coding-agent/src/utils/{shell,clipboard,changelog}.ts` + `src/core/timings.ts` + `src/migrations.ts` -> `Sources/PiSwiftCodingAgent/Utils/{Shell,Clipboard,Changelog}.swift`, `Sources/PiSwiftCodingAgent/Core/Timings.swift`, `Sources/PiSwiftCodingAgent/Migrations.swift`
@@ -31,6 +31,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - RPC client API: `pi-mono/packages/coding-agent/src/modes/rpc/rpc-client.ts` + `rpc-types.ts` -> `Sources/PiSwiftCodingAgent/Modes/RpcClient.swift` (public Swift RPC client + types)
 - Export HTML: `pi-mono/packages/coding-agent/src/core/export-html/*` -> `Sources/PiSwiftCodingAgent/Core/ExportHtml.swift` + `Sources/PiSwiftCodingAgent/Resources/export-html/*`
 - Print mode: `pi-mono/packages/coding-agent/src/modes/print-mode.ts` -> `Sources/PiSwiftCodingAgent/Modes/PrintMode.swift` (JSON event stream + ANSI markdown rendering + output flush)
+- Prompt templates: `pi-mono/packages/coding-agent/src/core/prompt-templates.ts` -> `Sources/PiSwiftCodingAgent/Core/PromptTemplates.swift` (loading, metadata, and shared slash-command argument substitution)
 - CLI args parsing + wiring: `pi-mono/packages/coding-agent/src/cli/args.ts` -> `Sources/PiSwiftCodingAgent/CLI/Args.swift` + `Sources/PiSwiftCodingAgentCLI/CLIOptions.swift` + `Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (ArgumentParser + help snapshot tests)
 
 ## Partial / stubs (implemented but missing JS behavior)
@@ -55,6 +56,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Tool registry/tool control parity (full registry even when scoped, wrap all tools).
 - [x] Extension context surfaces (`ctx.mode`, `ctx.isProjectTrusted()`, `ctx.getSystemPromptOptions()`) and `project_trust` event/result types.
 - [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, project extension/resource gating when untrusted, and shared config/package command trust resolution.
+- [x] Startup subprocess marker (`PI_CODING_AGENT=true`) for package/config/normal CLI runs.
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).
 - [x] Image handling parity (auto-resize toggle, read tool resize + dimension note, consistent placeholders, clipboard paste).
 - [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot flow.

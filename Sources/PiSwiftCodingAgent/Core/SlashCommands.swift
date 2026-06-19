@@ -47,25 +47,56 @@ public func parseCommandArgs(_ argsString: String) -> [String] {
 
 public func substituteArgs(_ content: String, _ args: [String]) -> String {
     var result = content
+    let allArgs = args.joined(separator: " ")
 
-    if let regex = try? NSRegularExpression(pattern: "\\$(\\d+)", options: []) {
-        let range = NSRange(location: 0, length: result.utf16.count)
-        let matches = regex.matches(in: result, options: [], range: range)
-        for match in matches.reversed() {
-            guard match.numberOfRanges > 1 else { continue }
-            let fullRange = match.range(at: 0)
-            let numRange = match.range(at: 1)
-            guard let numberRange = Range(numRange, in: result),
-                  let replaceRange = Range(fullRange, in: result) else { continue }
-            let index = Int(result[numberRange]) ?? 0
-            let replacement = (index > 0 && args.indices.contains(index - 1)) ? args[index - 1] : ""
-            result.replaceSubrange(replaceRange, with: replacement)
-        }
+    let pattern = #"\$\{(\d+):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+        return result
     }
 
-    let allArgs = args.joined(separator: " ")
-    result = result.replacingOccurrences(of: "$ARGUMENTS", with: allArgs)
-    result = result.replacingOccurrences(of: "$@", with: allArgs)
+    func stringValue(_ match: NSTextCheckingResult, _ index: Int) -> String? {
+        guard index < match.numberOfRanges else { return nil }
+        let range = match.range(at: index)
+        guard range.location != NSNotFound, let swiftRange = Range(range, in: result) else {
+            return nil
+        }
+        return String(result[swiftRange])
+    }
+
+    let range = NSRange(location: 0, length: result.utf16.count)
+    let matches = regex.matches(in: result, options: [], range: range)
+    for match in matches.reversed() {
+        guard let replaceRange = Range(match.range(at: 0), in: result) else { continue }
+
+        let replacement: String
+        if let defaultNum = stringValue(match, 1), let defaultValue = stringValue(match, 2) {
+            let index = (Int(defaultNum) ?? 0) - 1
+            let value = args.indices.contains(index) ? args[index] : ""
+            replacement = value.isEmpty ? defaultValue : value
+        } else if let sliceStart = stringValue(match, 3) {
+            let rawStart = (Int(sliceStart) ?? 1) - 1
+            let start = max(0, rawStart)
+            if start >= args.count {
+                replacement = ""
+            } else if let sliceLength = stringValue(match, 4), let length = Int(sliceLength) {
+                let end = min(args.count, start + max(0, length))
+                replacement = args[start..<end].joined(separator: " ")
+            } else {
+                replacement = args[start...].joined(separator: " ")
+            }
+        } else if let simple = stringValue(match, 5) {
+            if simple == "ARGUMENTS" || simple == "@" {
+                replacement = allArgs
+            } else {
+                let index = (Int(simple) ?? 0) - 1
+                replacement = args.indices.contains(index) ? args[index] : ""
+            }
+        } else {
+            continue
+        }
+
+        result.replaceSubrange(replaceRange, with: replacement)
+    }
 
     return result
 }

@@ -18,6 +18,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
     @OptionGroup var cli: CLIOptions
 
     mutating func run() async throws {
+        markCodingAgentEnvironment()
         time("start")
         if cli.rawMessages.first == "package" {
             let args = Array(cli.rawMessages.dropFirst())
