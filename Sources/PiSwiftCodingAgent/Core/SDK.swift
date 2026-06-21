@@ -448,7 +448,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     if model == nil, hasExistingSession, let existingModel = existingSession.model {
         if let restored = modelRegistry.find(existingModel.provider, existingModel.modelId),
-           await modelRegistry.getApiKeyForProvider(restored.provider) != nil {
+           await modelRegistry.getApiKeyForProvider(restored.provider) != nil,
+           await modelRegistry.isAvailable(restored) {
             model = restored
         }
         if model == nil {
@@ -460,7 +461,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         if let provider = settingsManager.getDefaultProvider(),
            let modelId = settingsManager.getDefaultModel(),
            let settingsModel = modelRegistry.find(provider, modelId),
-           await modelRegistry.getApiKeyForProvider(settingsModel.provider) != nil {
+           await modelRegistry.getApiKeyForProvider(settingsModel.provider) != nil,
+           await modelRegistry.isAvailable(settingsModel) {
             model = settingsModel
         }
     }
@@ -784,6 +786,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         thinkingBudgets: settingsManager.getThinkingBudgets(),
         getApiKey: { provider in
             await modelRegistry.getApiKeyForProvider(provider)
+        },
+        getModelAuth: { model in
+            let auth = await modelRegistry.getApiKeyAndHeaders(model)
+            return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
         },
         onPayload: onPayloadHook,
         onResponse: onResponseHook,

@@ -7,13 +7,25 @@ public struct ModelAuth: Sendable {
     public let ok: Bool
     public let apiKey: String?
     public let headers: [String: String]?
+    public let baseUrl: String?
     public let error: String?
 
-    public init(ok: Bool, apiKey: String?, headers: [String: String]?, error: String?) {
+    public init(ok: Bool, apiKey: String?, headers: [String: String]?, baseUrl: String? = nil, error: String?) {
         self.ok = ok
         self.apiKey = apiKey
         self.headers = headers
+        self.baseUrl = baseUrl
         self.error = error
+    }
+}
+
+public struct ResolvedModelRequest: Sendable {
+    public let model: Model
+    public let auth: ModelAuth
+
+    public init(model: Model, auth: ModelAuth) {
+        self.model = model
+        self.auth = auth
     }
 }
 
@@ -322,6 +334,38 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
     return updated
 }
 
+private func normalizeProviderModel(_ model: Model) -> Model {
+    guard model.provider == OAuthProvider.githubCopilot.rawValue else { return model }
+
+    let api: Api = model.id.lowercased().contains("claude") ? .openAICompletions : model.api
+    let copilotCompat = mergeCompat(
+        model.compat,
+        OpenAICompat(
+            supportsStore: false,
+            supportsDeveloperRole: false,
+            supportsReasoningEffort: false,
+            supportsUsageInStreaming: false,
+            supportsStrictMode: false,
+            sendSessionIdHeader: false
+        )
+    )
+
+    return Model(
+        id: model.id,
+        name: model.name,
+        api: api,
+        provider: model.provider,
+        baseUrl: model.baseUrl,
+        reasoning: model.reasoning,
+        input: model.input,
+        cost: model.cost,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+        headers: model.headers,
+        compat: copilotCompat
+    )
+}
+
 public final class ModelRegistry: Sendable {
     public let authStorage: AuthStorage
     private let modelsDir: String?
@@ -331,6 +375,7 @@ public final class ModelRegistry: Sendable {
     private struct State: Sendable {
         var models: [Model] = []
         var errorMessage: String?
+        var githubCopilotSupportedModelIds: Set<String>?
     }
 
     public init(_ authStorage: AuthStorage, _ modelsDir: String? = nil) {
@@ -352,7 +397,10 @@ public final class ModelRegistry: Sendable {
     }
 
     public func refresh() {
-        state.withLock { $0.errorMessage = nil }
+        state.withLock {
+            $0.errorMessage = nil
+            $0.githubCopilotSupportedModelIds = nil
+        }
         customProviderApiKeys.withLock { $0 = [:] }
         loadModels()
     }
@@ -365,7 +413,20 @@ public final class ModelRegistry: Sendable {
 
     public func getAvailable() async -> [Model] {
         let models = state.withLock { $0.models }
-        return models.filter { authStorage.hasAuth($0.provider) }
+        var available: [Model] = []
+        for model in models where authStorage.hasAuth(model.provider) {
+            if await isAvailable(model) {
+                available.append(model)
+            }
+        }
+        return available
+    }
+
+    public func isAvailable(_ model: Model) async -> Bool {
+        guard authStorage.hasAuth(model.provider) else { return false }
+        guard model.provider == OAuthProvider.githubCopilot.rawValue else { return true }
+        guard let supportedIds = await githubCopilotSupportedModelIds() else { return true }
+        return supportedIds.contains(model.id)
     }
 
     public func getAll() -> [Model] {
@@ -396,10 +457,91 @@ public final class ModelRegistry: Sendable {
                 ok: false,
                 apiKey: nil,
                 headers: nil,
+                baseUrl: nil,
                 error: "No API key or headers configured for provider \"\(model.provider)\""
             )
         }
-        return ModelAuth(ok: true, apiKey: apiKey, headers: resolvedHeaders, error: nil)
+        let baseUrl = dynamicBaseUrl(for: model, apiKey: apiKey)
+        return ModelAuth(ok: true, apiKey: apiKey, headers: resolvedHeaders, baseUrl: baseUrl, error: nil)
+    }
+
+    public func resolveModelRequest(_ model: Model) async -> ResolvedModelRequest {
+        let auth = await getApiKeyAndHeaders(model)
+        return ResolvedModelRequest(model: applyBaseUrlOverride(model, auth.baseUrl), auth: auth)
+    }
+
+    private func dynamicBaseUrl(for model: Model, apiKey: String?) -> String? {
+        guard model.provider == OAuthProvider.githubCopilot.rawValue else { return nil }
+        let enterpriseDomain: String? = {
+            if case .oauth(let oauth) = authStorage.get(model.provider) {
+                return oauth.enterpriseUrl
+            }
+            return nil
+        }()
+        return getGitHubCopilotBaseUrl(token: apiKey, enterpriseDomain: enterpriseDomain)
+    }
+
+    private func applyBaseUrlOverride(_ model: Model, _ baseUrl: String?) -> Model {
+        guard let baseUrl, !baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, baseUrl != model.baseUrl else {
+            return model
+        }
+        return Model(
+            id: model.id,
+            name: model.name,
+            api: model.api,
+            provider: model.provider,
+            baseUrl: baseUrl,
+            reasoning: model.reasoning,
+            input: model.input,
+            cost: model.cost,
+            contextWindow: model.contextWindow,
+            maxTokens: model.maxTokens,
+            headers: model.headers,
+            compat: model.compat,
+            thinkingLevelMap: model.thinkingLevelMap
+        )
+    }
+
+    private func githubCopilotSupportedModelIds() async -> Set<String>? {
+        if let cached = state.withLock({ $0.githubCopilotSupportedModelIds }) {
+            return cached
+        }
+        guard let apiKey = await authStorage.getApiKey(OAuthProvider.githubCopilot.rawValue) else {
+            return nil
+        }
+        let enterpriseDomain: String? = {
+            if case .oauth(let oauth) = authStorage.get(OAuthProvider.githubCopilot.rawValue) {
+                return oauth.enterpriseUrl
+            }
+            return nil
+        }()
+        let baseUrl = getGitHubCopilotBaseUrl(token: apiKey, enterpriseDomain: enterpriseDomain)
+        guard let url = URL(string: baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/models") else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("GitHubCopilotChat/0.35.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("vscode/1.107.0", forHTTPHeaderField: "Editor-Version")
+        request.setValue("copilot-chat/0.35.0", forHTTPHeaderField: "Editor-Plugin-Version")
+        request.setValue("vscode-chat", forHTTPHeaderField: "Copilot-Integration-Id")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let entries = root["data"] as? [[String: Any]] else {
+                return nil
+            }
+            let ids = Set(entries.compactMap { $0["id"] as? String })
+            state.withLock { $0.githubCopilotSupportedModelIds = ids }
+            return ids
+        } catch {
+            return nil
+        }
     }
 
     private func loadModels() {
@@ -454,7 +596,7 @@ public final class ModelRegistry: Sendable {
                     updated = applyModelOverride(model: updated, override: override)
                 }
 
-                models.append(updated)
+                models.append(normalizeProviderModel(updated))
             }
 
             if let apiKey = override?.apiKey {
@@ -485,9 +627,9 @@ public final class ModelRegistry: Sendable {
                     headers: custom.headers,
                     compat: mergedCompat
                 )
-                merged[index] = withCompat
+                merged[index] = normalizeProviderModel(withCompat)
             } else {
-                merged.append(custom)
+                merged.append(normalizeProviderModel(custom))
             }
         }
         return merged

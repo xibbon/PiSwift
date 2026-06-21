@@ -25,6 +25,7 @@ public struct AgentOptions: Sendable {
     public var thinkingBudgets: ThinkingBudgets?
     public var maxRetryDelayMs: Int?
     public var getApiKey: (@Sendable (String) async -> String?)?
+    public var getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)?
     public var onPayload: OnPayloadFn?
     /// v0.67.6: invoked after each provider HTTP response is received and before the stream
     /// begins consuming. Use for header / status inspection at the Agent level.
@@ -55,6 +56,7 @@ public struct AgentOptions: Sendable {
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
         getApiKey: (@Sendable (String) async -> String?)? = nil,
+        getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)? = nil,
         onPayload: OnPayloadFn? = nil,
         onResponse: ResponseHandler? = nil,
         cacheRetention: CacheRetention? = nil,
@@ -77,6 +79,7 @@ public struct AgentOptions: Sendable {
         self.thinkingBudgets = thinkingBudgets
         self.maxRetryDelayMs = maxRetryDelayMs
         self.getApiKey = getApiKey
+        self.getModelAuth = getModelAuth
         self.onPayload = onPayload
         self.onResponse = onResponse
         self.cacheRetention = cacheRetention
@@ -107,6 +110,7 @@ public final class Agent: Sendable {
         var thinkingBudgets: ThinkingBudgets?
         var maxRetryDelayMs: Int?
         var getApiKey: (@Sendable (String) async -> String?)?
+        var getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)?
         var onPayload: OnPayloadFn?
         var onResponse: ResponseHandler?
         var cacheRetention: CacheRetention?
@@ -201,6 +205,11 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.getApiKey = newValue } }
     }
 
+    public var getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)? {
+        get { stateBox.withLock { $0.getModelAuth } }
+        set { stateBox.withLock { $0.getModelAuth = newValue } }
+    }
+
     public var toolExecution: ToolExecutionMode {
         get { stateBox.withLock { $0.toolExecution } }
         set { stateBox.withLock { $0.toolExecution = newValue } }
@@ -280,6 +289,7 @@ public final class Agent: Sendable {
             thinkingBudgets: options.thinkingBudgets,
             maxRetryDelayMs: options.maxRetryDelayMs,
             getApiKey: options.getApiKey,
+            getModelAuth: options.getModelAuth,
             onPayload: options.onPayload,
             onResponse: options.onResponse,
             cacheRetention: options.cacheRetention,
@@ -583,6 +593,7 @@ public final class Agent: Sendable {
             convertToLlm: convertToLlm,
             transformContext: transformContext,
             getApiKey: getApiKey,
+            getModelAuth: getModelAuth,
             getSteeringMessages: { [weak self] in
                 guard let self else { return [] }
                 let shouldSkip = skipInitialSteeringPoll.withLock { flag -> Bool in

@@ -474,6 +474,10 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             thinkingBudgets: settingsManager.getThinkingBudgets(),
             getApiKey: { provider in
                 return await authStorage.getApiKey(provider)
+            },
+            getModelAuth: { model in
+                let auth = await modelRegistry.getApiKeyAndHeaders(model)
+                return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
             }
         ))
         agentBox.withLock { $0 = createdAgent }
@@ -842,6 +846,10 @@ private func findInitialModelForSession(
             Darwin.exit(1)
         }
         if let model = resolved.model {
+            if !(await modelRegistry.isAvailable(model)) {
+                fputs("Model \(model.provider)/\(model.id) is not available for the configured account.\n", stderr)
+                Darwin.exit(1)
+            }
             return InitialModelSelection(model: model, scopedModel: nil, cliThinkingLevel: resolved.thinkingLevel)
         }
         let display = parsed.provider != nil ? "\(parsed.provider!)/\(parsed.model ?? "")" : (parsed.model ?? "")
@@ -853,6 +861,7 @@ private func findInitialModelForSession(
         if let provider = settingsManager.getDefaultProvider(),
            let modelId = settingsManager.getDefaultModel(),
            let savedModel = modelRegistry.find(provider, modelId),
+           await modelRegistry.isAvailable(savedModel),
            let savedInScope = scopedModels.first(where: { modelsAreEqual($0.model, savedModel) }) {
             return InitialModelSelection(model: savedInScope.model, scopedModel: savedInScope, cliThinkingLevel: nil)
         }
@@ -862,17 +871,19 @@ private func findInitialModelForSession(
     if hasExistingSession, let modelInfo = sessionContext.model {
         let restored = modelRegistry.find(modelInfo.provider, modelInfo.modelId)
         var hasApiKey = false
+        var isAvailable = false
         if let restored {
             hasApiKey = await modelRegistry.getApiKeyForProvider(restored.provider) != nil
+            isAvailable = await modelRegistry.isAvailable(restored)
         }
-        if let restored, hasApiKey {
+        if let restored, hasApiKey, isAvailable {
             if shouldPrintMessages {
                 print("Restored model: \(modelInfo.provider)/\(modelInfo.modelId)")
             }
             return InitialModelSelection(model: restored, scopedModel: nil, cliThinkingLevel: nil)
         }
 
-        let reason = restored == nil ? "model no longer exists" : "no API key available"
+        let reason = restored == nil ? "model no longer exists" : (hasApiKey ? "model is not available for this account" : "no API key available")
         restoreWarning = "Could not restore model \(modelInfo.provider)/\(modelInfo.modelId) (\(reason))."
         if shouldPrintMessages {
             print("Warning: \(restoreWarning!)")
@@ -881,7 +892,8 @@ private func findInitialModelForSession(
 
     if let provider = settingsManager.getDefaultProvider(),
        let modelId = settingsManager.getDefaultModel(),
-       let model = modelRegistry.find(provider, modelId) {
+       let model = modelRegistry.find(provider, modelId),
+       await modelRegistry.isAvailable(model) {
         return InitialModelSelection(model: model, scopedModel: nil, cliThinkingLevel: nil)
     }
 

@@ -24,6 +24,8 @@ public func streamOpenAICompletions(
             let openAIStream: AsyncThrowingStream<ChatStreamResult, Error>
             if compat.thinkingFormat == .zai {
                 openAIStream = try streamZaiCompletions(model: model, context: context, options: options, query: query)
+            } else if model.provider == "github-copilot" {
+                openAIStream = try streamManualOpenAICompletions(model: model, options: options, query: query)
             } else {
                 emitPayload(options.onPayload, payload: query)
                 let middlewares = buildCompletionsMiddlewares(model: model, compat: compat, options: options)
@@ -207,7 +209,7 @@ private struct StopReasonResult {
 
 private func mapStopReason(_ reason: ChatStreamResult.Choice.FinishReason) -> StopReasonResult {
     switch reason {
-    case .stop, .end:
+    case .stop:
         return StopReasonResult(stopReason: .stop)
     case .length:
         return StopReasonResult(stopReason: .length)
@@ -702,6 +704,37 @@ private func buildCompletionsMiddlewares(
     return middlewares
 }
 
+private func streamManualOpenAICompletions(
+    model: Model,
+    options: OpenAICompletionsOptions,
+    query: ChatQuery
+) throws -> AsyncThrowingStream<ChatStreamResult, Error> {
+    guard let apiKey = options.apiKey, !apiKey.isEmpty else {
+        throw StreamError.missingApiKey(model.provider)
+    }
+
+    var request = URLRequest(url: chatCompletionsUrl(baseUrl: model.baseUrl))
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    request.setValue("text/event-stream", forHTTPHeaderField: "accept")
+    request.setValue("application/json", forHTTPHeaderField: "content-type")
+
+    var mergedHeaders = model.headers ?? [:]
+    if let headers = options.headers {
+        for (key, value) in headers {
+            mergedHeaders[key] = value
+        }
+    }
+    for (key, value) in mergedHeaders {
+        request.setValue(value, forHTTPHeaderField: key)
+    }
+
+    let body = try JSONEncoder().encode(query)
+    request.httpBody = body
+    emitPayload(options.onPayload, data: body)
+    return streamChatCompletions(request: request, signal: options.signal)
+}
+
 private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
     let enableThinking: Bool
 
@@ -1091,6 +1124,12 @@ private func parseOpenAISseEvent(from chunk: Data) -> ChatStreamResult? {
     let payload = dataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     guard !payload.isEmpty, payload != "[DONE]" else { return nil }
     guard let json = payload.data(using: .utf8) else { return nil }
+    if var object = try? JSONSerialization.jsonObject(with: json) as? [String: Any] {
+        object["object"] = object["object"] ?? "chat.completion.chunk"
+        if let normalized = try? JSONSerialization.data(withJSONObject: object, options: []) {
+            return try? JSONDecoder().decode(ChatStreamResult.self, from: normalized)
+        }
+    }
     return try? JSONDecoder().decode(ChatStreamResult.self, from: json)
 }
 
