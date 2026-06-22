@@ -385,6 +385,54 @@ import PiSwiftAgent
     #expect(receivedApiKey.withLock { $0 } == "dynamic-api-key-openai")
 }
 
+@Test func getModelAuthCallbackOverridesProviderAuth() async throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let receivedApiKey = LockedState<String?>(nil)
+    let receivedHeaders = LockedState<[String: String]?>(nil)
+    let receivedBaseUrl = LockedState<String?>(nil)
+
+    let streamFn: StreamFn = { model, _, options in
+        receivedApiKey.withLock { $0 = options.apiKey }
+        receivedHeaders.withLock { $0 = options.headers }
+        receivedBaseUrl.withLock { $0 = model.baseUrl }
+        let stream = AssistantMessageEventStream()
+        Task {
+            let message = AssistantMessage(
+                content: [.text(TextContent(text: "ok"))],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .stop
+            )
+            stream.push(.done(reason: .stop, message: message))
+            stream.end(message)
+        }
+        return stream
+    }
+
+    let agent = Agent(AgentOptions(
+        initialState: AgentState(model: model),
+        streamFn: streamFn,
+        getApiKey: { provider in "provider-api-key-\(provider)" },
+        getModelAuth: { _ in
+            AgentModelAuth(
+                apiKey: "model-api-key",
+                headers: ["X-Model": "model"],
+                baseUrl: "https://api.example.invalid/custom"
+            )
+        },
+        headers: ["X-Base": "base"]
+    ))
+
+    try await agent.prompt("Hello")
+
+    #expect(receivedApiKey.withLock { $0 } == "model-api-key")
+    #expect(receivedHeaders.withLock { $0?["X-Base"] } == "base")
+    #expect(receivedHeaders.withLock { $0?["X-Model"] } == "model")
+    #expect(receivedBaseUrl.withLock { $0 } == "https://api.example.invalid/custom")
+}
+
 /// v0.63.2: Agent.signal exposes the active turn's cancellation token so subscribers
 /// and extensions can forward cancellation into nested async work.
 @Test func agentSignalExposesTurnCancellationToken() async throws {

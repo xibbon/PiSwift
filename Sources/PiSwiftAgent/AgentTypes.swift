@@ -327,6 +327,12 @@ public struct AgentLoopConfig: Sendable {
     /// Contract: must not throw or reject. Return nil when no key is available.
     public var getApiKey: (@Sendable (String) async -> String?)?
 
+    /// Resolves model-aware auth dynamically for each LLM call.
+    ///
+    /// Use this when a provider needs more than a provider-level token, such as
+    /// per-model headers or token-derived base URLs.
+    public var getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)?
+
     /// Returns steering messages to inject into the conversation mid-run.
     ///
     /// Called after the current assistant turn finishes executing its tool calls.
@@ -369,6 +375,7 @@ public struct AgentLoopConfig: Sendable {
         convertToLlm: @escaping @Sendable ([AgentMessage]) async throws -> [Message],
         transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? = nil,
         getApiKey: (@Sendable (String) async -> String?)? = nil,
+        getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)? = nil,
         getSteeringMessages: (@Sendable () async -> [AgentMessage])? = nil,
         getFollowUpMessages: (@Sendable () async -> [AgentMessage])? = nil,
         shouldStopAfterTurn: ShouldStopAfterTurnFn? = nil
@@ -395,9 +402,22 @@ public struct AgentLoopConfig: Sendable {
         self.convertToLlm = convertToLlm
         self.transformContext = transformContext
         self.getApiKey = getApiKey
+        self.getModelAuth = getModelAuth
         self.getSteeringMessages = getSteeringMessages
         self.getFollowUpMessages = getFollowUpMessages
         self.shouldStopAfterTurn = shouldStopAfterTurn
+    }
+}
+
+public struct AgentModelAuth: Sendable {
+    public var apiKey: String?
+    public var headers: [String: String]?
+    public var baseUrl: String?
+
+    public init(apiKey: String? = nil, headers: [String: String]? = nil, baseUrl: String? = nil) {
+        self.apiKey = apiKey
+        self.headers = headers
+        self.baseUrl = baseUrl
     }
 }
 

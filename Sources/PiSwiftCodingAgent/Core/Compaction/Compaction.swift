@@ -293,6 +293,7 @@ public func compact(
     _ preparation: CompactionPreparation,
     _ model: Model,
     _ apiKey: String,
+    headers: [String: String]? = nil,
     customInstructions: String? = nil,
     signal: CancellationToken? = nil
 ) async throws -> CompactionResult {
@@ -308,6 +309,7 @@ public func compact(
                 model: model,
                 reserveTokens: preparation.settings.reserveTokens,
                 apiKey: apiKey,
+                headers: headers,
                 signal: signal,
                 customInstructions: customInstructions,
                 previousSummary: preparation.previousSummary
@@ -317,6 +319,7 @@ public func compact(
             model: model,
             reserveTokens: preparation.settings.reserveTokens,
             apiKey: apiKey,
+            headers: headers,
             signal: signal
         )
         summary = try await "\(history)\n\n---\n\n**Turn Context (split turn):**\n\n\(prefix)"
@@ -326,6 +329,7 @@ public func compact(
             model: model,
             reserveTokens: preparation.settings.reserveTokens,
             apiKey: apiKey,
+            headers: headers,
             signal: signal,
             customInstructions: customInstructions,
             previousSummary: preparation.previousSummary
@@ -423,6 +427,7 @@ private func generateSummary(
     model: Model,
     reserveTokens: Int,
     apiKey: String,
+    headers: [String: String]?,
     signal: CancellationToken?,
     customInstructions: String?,
     previousSummary: String?
@@ -451,7 +456,7 @@ private func generateSummary(
     let response = try await completeSimple(
         model: model,
         context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages),
-        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, reasoning: reasoning)
+        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, reasoning: reasoning, headers: headers)
     )
 
     if response.stopReason == .error {
@@ -488,6 +493,7 @@ private func generateTurnPrefixSummary(
     model: Model,
     reserveTokens: Int,
     apiKey: String,
+    headers: [String: String]?,
     signal: CancellationToken?
 ) async throws -> String {
     let maxTokens = Int(Double(reserveTokens) * 0.5)
@@ -502,7 +508,7 @@ private func generateTurnPrefixSummary(
     let response = try await completeSimple(
         model: model,
         context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages),
-        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey)
+        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, headers: headers)
     )
 
     if response.stopReason == .error {

@@ -308,10 +308,14 @@ private func streamAssistantResponse(
         try streamSimple(model: model, context: context, options: options)
     }
 
-    let resolvedApiKey = (await config.getApiKey?(config.model.provider)) ?? config.apiKey
+    let modelAuth = await config.getModelAuth?(config.model)
+    let providerApiKey = await config.getApiKey?(config.model.provider)
+    let resolvedApiKey = modelAuth?.apiKey ?? providerApiKey ?? config.apiKey
+    let resolvedHeaders = mergeHeaders(config.headers, modelAuth?.headers)
+    let resolvedModel = applyBaseUrlOverride(config.model, modelAuth?.baseUrl)
 
     let response = try await streamFunction(
-        config.model,
+        resolvedModel,
         llmContext,
         SimpleStreamOptions(
             temperature: config.temperature,
@@ -323,7 +327,7 @@ private func streamAssistantResponse(
             cacheRetention: config.cacheRetention,
             sessionId: config.sessionId,
             thinkingBudgets: config.thinkingBudgets,
-            headers: config.headers,
+            headers: resolvedHeaders,
             onPayload: config.onPayload,
             maxRetryDelayMs: config.maxRetryDelayMs,
             metadata: config.metadata,
@@ -390,6 +394,37 @@ private func streamAssistantResponse(
     }
     await emit(.messageEnd(message: agentMessage))
     return (finalMessage, updatedContext)
+}
+
+private func mergeHeaders(_ base: [String: String]?, _ override: [String: String]?) -> [String: String]? {
+    var merged = base ?? [:]
+    if let override {
+        for (key, value) in override {
+            merged[key] = value
+        }
+    }
+    return merged.isEmpty ? nil : merged
+}
+
+private func applyBaseUrlOverride(_ model: Model, _ baseUrl: String?) -> Model {
+    guard let baseUrl, !baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, baseUrl != model.baseUrl else {
+        return model
+    }
+    return Model(
+        id: model.id,
+        name: model.name,
+        api: model.api,
+        provider: model.provider,
+        baseUrl: baseUrl,
+        reasoning: model.reasoning,
+        input: model.input,
+        cost: model.cost,
+        contextWindow: model.contextWindow,
+        maxTokens: model.maxTokens,
+        headers: model.headers,
+        compat: model.compat,
+        thinkingLevelMap: model.thinkingLevelMap
+    )
 }
 
 // MARK: - Tool execution dispatcher

@@ -190,8 +190,12 @@ public final class AuthStorage: Sendable {
             credentials = try await loginAnthropic(callbacks)
         case .openAICodex:
             credentials = try await loginOpenAICodex(callbacks)
-        case .githubCopilot, .googleGeminiCli, .googleAntigravity:
-            throw OAuthError.notImplemented(provider.rawValue)
+        case .githubCopilot:
+            credentials = try await loginGitHubCopilot(callbacks)
+        case .googleGeminiCli:
+            credentials = try await loginGoogleGeminiCli(callbacks)
+        case .googleAntigravity:
+            credentials = try await loginAntigravity(callbacks)
         }
         set(provider.rawValue, credential: .oauth(OAuthCredential(credentials)))
     }

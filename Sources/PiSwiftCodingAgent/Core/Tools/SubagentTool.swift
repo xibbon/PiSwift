@@ -414,6 +414,10 @@ private func runSingleAgent(
         thinkingBudgets: dependencies.settingsManager.getThinkingBudgets(),
         getApiKey: { provider in
             await dependencies.modelRegistry.getApiKeyForProvider(provider)
+        },
+        getModelAuth: { model in
+            let auth = await dependencies.modelRegistry.getApiKeyAndHeaders(model)
+            return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
         }
     ))
 

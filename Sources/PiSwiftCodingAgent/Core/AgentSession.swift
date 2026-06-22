@@ -1710,10 +1710,12 @@ public final class AgentSession: Sendable {
             guard let model = agent.state.model as Model? else {
                 return (nil, true, nil, nil)
             }
-            if let apiKey = await modelRegistry.getApiKeyForProvider(model.provider) {
+            let request = await modelRegistry.resolveModelRequest(model)
+            if let apiKey = request.auth.apiKey {
                 let options = GenerateBranchSummaryOptions(
-                    model: model,
+                    model: request.model,
                     apiKey: apiKey,
+                    headers: request.auth.headers,
                     signal: branchSummaryAbort,
                     customInstructions: customInstructions,
                     reserveTokens: settingsManager.getBranchSummarySettings().reserveTokens
@@ -1795,7 +1797,8 @@ public final class AgentSession: Sendable {
         defer { compactionAbort = nil }
 
         let model = agent.state.model
-        let apiKey = await modelRegistry.getApiKeyForProvider(model.provider)
+        let request = await modelRegistry.resolveModelRequest(model)
+        let apiKey = request.auth.apiKey
         if apiKey == nil {
             throw AgentSessionError.missingApiKey(provider: model.provider)
         }
@@ -1826,8 +1829,9 @@ public final class AgentSession: Sendable {
         } else if let apiKey {
             result = try await PiSwiftCodingAgent.compact(
                 preparation,
-                model,
+                request.model,
                 apiKey,
+                headers: request.auth.headers,
                 customInstructions: customInstructions,
                 signal: compactionAbort
             )

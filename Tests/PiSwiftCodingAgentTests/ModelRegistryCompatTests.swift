@@ -105,3 +105,37 @@ import PiSwiftCodingAgent
     let available = await registry.getAvailable()
     #expect(available.contains { $0.provider == "lmstudio" && $0.id == "qwen/qwen3-coder-next" })
 }
+
+@Test func modelRegistryAppliesGitHubCopilotCompatWithoutChangingGPTEndpoint() throws {
+    let authStorage = AuthStorage(":memory:")
+    let registry = ModelRegistry(authStorage)
+    guard let model = registry.find("github-copilot", "gpt-5") else {
+        #expect(Bool(false), "Expected GitHub Copilot gpt-5 model to be available")
+        return
+    }
+
+    #expect(model.api == .openAIResponses)
+    #expect(model.compat?.supportsStore == false)
+    #expect(model.compat?.supportsDeveloperRole == false)
+    #expect(model.compat?.supportsReasoningEffort == false)
+    #expect(model.compat?.supportsUsageInStreaming == false)
+    #expect(model.compat?.supportsStrictMode == false)
+    #expect(model.compat?.sendSessionIdHeader == false)
+}
+
+@Test func modelRegistryRoutesGitHubCopilotClaudeThroughOpenAICompletions() throws {
+    let authStorage = AuthStorage(":memory:")
+    let registry = ModelRegistry(authStorage)
+    guard let model = registry.find("github-copilot", "claude-sonnet-4.5") else {
+        #expect(Bool(false), "Expected GitHub Copilot Claude model to be available")
+        return
+    }
+
+    #expect(model.api == .openAICompletions)
+    #expect(model.compat?.supportsStore == false)
+    #expect(model.compat?.supportsDeveloperRole == false)
+    #expect(model.compat?.supportsReasoningEffort == false)
+    #expect(model.compat?.supportsUsageInStreaming == false)
+    #expect(model.compat?.supportsStrictMode == false)
+    #expect(model.compat?.sendSessionIdHeader == false)
+}

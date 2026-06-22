@@ -53,13 +53,15 @@ public struct CollectEntriesResult: Sendable {
 public struct GenerateBranchSummaryOptions: Sendable {
     public var model: Model
     public var apiKey: String
+    public var headers: [String: String]?
     public var signal: CancellationToken?
     public var customInstructions: String?
     public var reserveTokens: Int?
 
-    public init(model: Model, apiKey: String, signal: CancellationToken?, customInstructions: String?, reserveTokens: Int?) {
+    public init(model: Model, apiKey: String, headers: [String: String]? = nil, signal: CancellationToken?, customInstructions: String?, reserveTokens: Int?) {
         self.model = model
         self.apiKey = apiKey
+        self.headers = headers
         self.signal = signal
         self.customInstructions = customInstructions
         self.reserveTokens = reserveTokens
@@ -158,7 +160,7 @@ Include:
         let response = try await completeSimple(
             model: options.model,
             context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: [message]),
-            options: SimpleStreamOptions(maxTokens: Int(Double(reserve) * 0.6), signal: options.signal, apiKey: options.apiKey)
+            options: SimpleStreamOptions(maxTokens: Int(Double(reserve) * 0.6), signal: options.signal, apiKey: options.apiKey, headers: options.headers)
         )
         if response.stopReason == .error {
             return BranchSummaryResult(error: response.errorMessage ?? "Summarization failed")
