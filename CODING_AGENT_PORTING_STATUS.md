@@ -15,7 +15,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
   - `pi-mono/packages/coding-agent/src/core/messages.ts` -> `Sources/PiSwiftCodingAgent/Core/Messages.swift`
 - Skills + system prompt stack: `pi-mono/packages/coding-agent/src/core/skills.ts` + `system-prompt.ts` -> `Sources/PiSwiftCodingAgent/Core/Skills.swift` + `Sources/PiSwiftCodingAgent/Core/SystemPrompt.swift`
 - Slash commands + @file expansion: `pi-mono/packages/coding-agent/src/core/slash-commands.ts` -> `Sources/PiSwiftCodingAgent/Core/SlashCommands.swift` (shared `$ARGUMENTS`, `${N:-default}`, and `${@:N[:L]}` substitution)
-- CLI helpers: `pi-mono/packages/coding-agent/src/cli/file-processor.ts`, `list-models.ts`, `session-picker.ts` -> `Sources/PiSwiftCodingAgent/CLI/*`
+- CLI helpers: `pi-mono/packages/coding-agent/src/cli/file-processor.ts`, `list-models.ts`, `session-picker.ts` -> `Sources/PiSwiftCodingAgent/CLI/*` (`--list-models` includes `models.json` diagnostics and header-auth-backed availability)
 - Utilities: `pi-mono/packages/coding-agent/src/utils/fuzzy.ts` -> `Sources/PiSwiftCodingAgent/Utils/Fuzzy.swift`; `pi-mono/packages/coding-agent/src/utils/mime.ts` -> `Sources/PiSwiftCodingAgent/Utils/Mime.swift`; glob handling in `Sources/PiSwiftCodingAgent/Utils/Glob.swift`; tools manager in `Sources/PiSwiftCodingAgent/Utils/ToolsManager.swift`
 - Shell/clipboard/changelog utils + timings/migrations: `pi-mono/packages/coding-agent/src/utils/{shell,clipboard,changelog}.ts` + `src/core/timings.ts` + `src/migrations.ts` -> `Sources/PiSwiftCodingAgent/Utils/{Shell,Clipboard,Changelog}.swift`, `Sources/PiSwiftCodingAgent/Core/Timings.swift`, `Sources/PiSwiftCodingAgent/Migrations.swift`
 - Exec helper: `pi-mono/packages/coding-agent/src/core/exec.ts` -> `Sources/PiSwiftCodingAgent/Core/Exec.swift`
@@ -57,6 +57,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Extension context surfaces (`ctx.mode`, `ctx.isProjectTrusted()`, `ctx.getSystemPromptOptions()`) and `project_trust` event/result types.
 - [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, project extension/resource gating when untrusted, and shared config/package command trust resolution.
 - [x] Startup subprocess marker (`PI_CODING_AGENT=true`) for package/config/normal CLI runs.
+- [x] `--list-models` diagnostics and header-auth availability for `models.json` custom providers.
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).
 - [x] Image handling parity (auto-resize toggle, read tool resize + dimension note, consistent placeholders, clipboard paste).
 - [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot flow.

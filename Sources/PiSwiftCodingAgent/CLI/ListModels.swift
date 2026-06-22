@@ -13,6 +13,10 @@ private func formatTokenCount(_ count: Int) -> String {
 }
 
 public func listModels(_ modelRegistry: ModelRegistry, _ searchPattern: String? = nil) async {
+    if let error = modelRegistry.getError() {
+        fputs("Warning: \(error)\n", stderr)
+    }
+
     let models = await modelRegistry.getAvailable()
     if models.isEmpty {
         print("No models available. Set API keys in environment variables.")

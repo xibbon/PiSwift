@@ -414,7 +414,7 @@ public final class ModelRegistry: Sendable {
     public func getAvailable() async -> [Model] {
         let models = state.withLock { $0.models }
         var available: [Model] = []
-        for model in models where authStorage.hasAuth(model.provider) {
+        for model in models {
             if await isAvailable(model) {
                 available.append(model)
             }
@@ -423,10 +423,14 @@ public final class ModelRegistry: Sendable {
     }
 
     public func isAvailable(_ model: Model) async -> Bool {
-        guard authStorage.hasAuth(model.provider) else { return false }
+        guard hasConfiguredAuth(for: model) else { return false }
         guard model.provider == OAuthProvider.githubCopilot.rawValue else { return true }
         guard let supportedIds = await githubCopilotSupportedModelIds() else { return true }
         return supportedIds.contains(model.id)
+    }
+
+    private func hasConfiguredAuth(for model: Model) -> Bool {
+        authStorage.hasAuth(model.provider) || !(model.headers?.isEmpty ?? true)
     }
 
     public func getAll() -> [Model] {
