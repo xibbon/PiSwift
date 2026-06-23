@@ -152,8 +152,12 @@ actor RpcTestClient {
         return SendableJSON(value: data.mapValues { AnyCodable($0) })
     }
 
-    func bash(_ command: String) async throws -> SendableJSON {
-        let response = try await send(["type": "bash", "command": command])
+    func bash(_ command: String, excludeFromContext: Bool = false) async throws -> SendableJSON {
+        let response = try await send([
+            "type": "bash",
+            "command": command,
+            "excludeFromContext": excludeFromContext,
+        ])
         guard let data = try responseData(response) as? [String: Any] else {
             throw RpcTestError(message: "Invalid bash response")
         }

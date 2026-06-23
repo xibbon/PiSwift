@@ -1246,13 +1246,17 @@ public final class AgentSession: Sendable {
         bashAbort != nil
     }
 
-    public func executeBash(_ command: String, onChunk: (@Sendable (String) -> Void)? = nil) async throws -> BashResult {
+    public func executeBash(
+        _ command: String,
+        excludeFromContext: Bool = false,
+        onChunk: (@Sendable (String) -> Void)? = nil
+    ) async throws -> BashResult {
         let abortToken = CancellationToken()
         bashAbort = abortToken
         defer { bashAbort = nil }
 
         let result = try await PiSwiftCodingAgent.executeBash(command, options: BashExecutorOptions(onChunk: onChunk, signal: abortToken))
-        recordBashResult(command, result, excludeFromContext: false)
+        recordBashResult(command, result, excludeFromContext: excludeFromContext)
         return result
     }
 

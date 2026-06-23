@@ -196,6 +196,29 @@ private func value<T>(_ dict: [String: AnyCodable], _ key: String, as type: T.Ty
     }
 }
 
+@Test func rpcBashOutputCanBeExcludedFromContext() async throws {
+    guard API_KEY != nil else { return }
+
+    let sessionDir = try makeTempDir()
+    defer { removeTempDir(sessionDir) }
+
+    try await withRpcClient(sessionDir: sessionDir) { client in
+        _ = try await client.promptAndWait("Say hi")
+        let uniqueValue = "excluded-\(Int(Date().timeIntervalSince1970 * 1000))"
+        let result = try await client.bash("echo \(uniqueValue)", excludeFromContext: true).value
+        #expect(value(result, "output", as: String.self)?.contains(uniqueValue) == true)
+
+        await waitForWrites()
+        let entries = try loadSessionEntries(sessionDir: sessionDir)
+        let bashEntries = entries.filter {
+            guard ($0["type"] as? String) == "message" else { return false }
+            let role = ($0["message"] as? [String: Any])?["role"] as? String
+            return role == "bashExecution"
+        }
+        #expect(bashEntries.isEmpty)
+    }
+}
+
 @Test func rpcBashOutputInLlmContext() async throws {
     guard API_KEY != nil else { return }
 

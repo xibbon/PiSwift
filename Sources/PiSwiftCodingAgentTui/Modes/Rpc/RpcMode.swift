@@ -520,7 +520,8 @@ private func handleRpcCommand(
         guard let command = dict["command"] as? String else {
             return makeErrorResponse(idValue, "bash", "Missing command")
         }
-        let result = try await session.executeBash(command)
+        let excludeFromContext = dict["excludeFromContext"] as? Bool ?? false
+        let result = try await session.executeBash(command, excludeFromContext: excludeFromContext)
         return makeSuccessResponse(idValue, "bash", bashResultToDict(result))
 
     case "abort_bash":
