@@ -68,6 +68,18 @@ import Testing
     #expect(styles.contains("white-space: pre-wrap;"))
 }
 
+@Test func exportHtmlTemplateUsesTightToolSpacingRules() throws {
+    let styles = try loadExportHtmlStyles()
+
+    #expect(styles.contains(".assistant-text + .tool-execution"))
+    #expect(styles.contains(".output-preview > div,"))
+    #expect(styles.contains(".output-full > div"))
+    #expect(styles.contains(".tool-output > div:not(.output-preview):not(.output-full),"))
+    #expect(styles.contains(".output-preview > div:not(.expand-hint),"))
+    #expect(styles.contains(".output-full > div:not(.expand-hint)"))
+    #expect(!styles.contains(".output-preview,\n    .output-full"))
+}
+
 private func loadExportHtmlTemplate() throws -> String {
     try loadExportHtmlResource(named: "template", ext: "js")
 }

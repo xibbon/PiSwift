@@ -363,6 +363,10 @@
       margin-top: var(--line-height);
     }
 
+    .assistant-text + .tool-execution {
+      margin-top: var(--line-height);
+    }
+
     .tool-execution.pending { background: var(--toolPendingBg); }
     .tool-execution.success { background: var(--toolSuccessBg); }
     .tool-execution.error { background: var(--toolErrorBg); }
@@ -403,11 +407,17 @@
     }
 
     .tool-output > div,
-    .output-preview,
-    .output-full {
+    .output-preview > div,
+    .output-full > div {
       margin: 0;
       padding: 0;
       line-height: var(--line-height);
+    }
+
+    .tool-output > div:not(.output-preview):not(.output-full),
+    .output-preview > div:not(.expand-hint),
+    .output-full > div:not(.expand-hint) {
+      white-space: pre-wrap;
     }
 
     .tool-output pre {
