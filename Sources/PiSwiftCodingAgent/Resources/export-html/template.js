@@ -1032,7 +1032,11 @@
         let html = `
           <div class="header">
             <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
-            <div class="help-bar">Ctrl+T toggle thinking · Ctrl+O toggle tools</div>
+            <div class="help-bar" role="toolbar" aria-label="Display controls">
+              <button type="button" class="header-toggle" data-action="thinking" aria-pressed="${thinkingExpanded ? 'true' : 'false'}" title="Toggle thinking blocks (T)">Thinking</button>
+              <button type="button" class="header-toggle" data-action="tools" aria-pressed="${toolOutputsExpanded ? 'true' : 'false'}" title="Toggle tool outputs (O)">Tool Outputs</button>
+              <span class="help-shortcuts">T thinking · O tools</span>
+            </div>
             <div class="header-info">
               <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : 'unknown'}</span></div>
               <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${globalStats.models.join(', ') || 'unknown'}</span></div>
@@ -1097,6 +1101,7 @@
         renderTree();
 
         document.getElementById('header-container').innerHTML = renderHeader();
+        bindHeaderControls();
 
         // Build messages using cached DOM nodes
         const messagesEl = document.getElementById('messages');
@@ -1243,6 +1248,31 @@
       let thinkingExpanded = true;
       let toolOutputsExpanded = false;
 
+      const updateHeaderToggleStates = () => {
+        const thinkingButton = document.querySelector('.header-toggle[data-action="thinking"]');
+        if (thinkingButton) {
+          thinkingButton.setAttribute('aria-pressed', thinkingExpanded ? 'true' : 'false');
+        }
+
+        const toolsButton = document.querySelector('.header-toggle[data-action="tools"]');
+        if (toolsButton) {
+          toolsButton.setAttribute('aria-pressed', toolOutputsExpanded ? 'true' : 'false');
+        }
+      };
+
+      const bindHeaderControls = () => {
+        document.querySelectorAll('.header-toggle').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (btn.dataset.action === 'thinking') {
+              toggleThinking();
+            } else if (btn.dataset.action === 'tools') {
+              toggleToolOutputs();
+            }
+          });
+        });
+        updateHeaderToggleStates();
+      };
+
       const toggleThinking = () => {
         thinkingExpanded = !thinkingExpanded;
         document.querySelectorAll('.thinking-text').forEach(el => {
@@ -1251,6 +1281,7 @@
         document.querySelectorAll('.thinking-collapsed').forEach(el => {
           el.style.display = thinkingExpanded ? 'none' : 'block';
         });
+        updateHeaderToggleStates();
       };
 
       const toggleToolOutputs = () => {
@@ -1261,6 +1292,14 @@
         document.querySelectorAll('.compaction').forEach(el => {
           el.classList.toggle('expanded', toolOutputsExpanded);
         });
+        updateHeaderToggleStates();
+      };
+
+      const canHandleSingleKeyShortcut = (event) => {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return false;
+        const target = event.target;
+        if (!(target instanceof Element)) return true;
+        return !target.closest('input, textarea, select, [contenteditable="true"]');
       };
 
       // Keyboard shortcuts
@@ -1270,11 +1309,11 @@
           searchQuery = '';
           navigateTo(leafId, 'bottom');
         }
-        if (e.ctrlKey && e.key === 't') {
+        if (canHandleSingleKeyShortcut(e) && e.key.toLowerCase() === 't') {
           e.preventDefault();
           toggleThinking();
         }
-        if (e.ctrlKey && e.key === 'o') {
+        if (canHandleSingleKeyShortcut(e) && e.key.toLowerCase() === 'o') {
           e.preventDefault();
           toggleToolOutputs();
         }

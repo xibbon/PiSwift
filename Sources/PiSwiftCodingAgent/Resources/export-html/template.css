@@ -218,9 +218,39 @@
 
     /* Help bar */
     .help-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
       font-size: 11px;
       color: var(--warning);
       margin-bottom: var(--line-height);
+    }
+
+    .header-toggle {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      line-height: 1.4;
+      padding: 1px 7px;
+      cursor: pointer;
+    }
+
+    .header-toggle:hover {
+      border-color: var(--borderAccent);
+      color: var(--borderAccent);
+    }
+
+    .header-toggle[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: var(--info-bg);
+      color: var(--accent);
+    }
+
+    .help-shortcuts {
+      color: var(--dim);
     }
 
     /* Header */

@@ -33,13 +33,41 @@ import Testing
     #expect(!template.contains("onclick=\"this.classList.toggle(\\'expanded\\')\""))
 }
 
+@Test func exportHtmlTemplateUsesBrowserSafeHeaderToggles() throws {
+    let template = try loadExportHtmlTemplate()
+    let styles = try loadExportHtmlStyles()
+
+    #expect(template.contains("data-action=\"thinking\""))
+    #expect(template.contains("data-action=\"tools\""))
+    #expect(template.contains("T thinking · O tools"))
+    #expect(template.contains("const canHandleSingleKeyShortcut = (event) =>"))
+    #expect(template.contains("event.ctrlKey || event.metaKey || event.altKey"))
+    #expect(template.contains("target.closest('input, textarea, select, [contenteditable=\"true\"]')"))
+    #expect(template.contains("e.key.toLowerCase() === 't'"))
+    #expect(template.contains("e.key.toLowerCase() === 'o'"))
+    #expect(!template.contains("Ctrl+T toggle thinking"))
+    #expect(!template.contains("Ctrl+O toggle tools"))
+
+    #expect(styles.contains(".header-toggle"))
+    #expect(styles.contains(".header-toggle[aria-pressed=\"true\"]"))
+    #expect(styles.contains(".help-shortcuts"))
+}
+
 private func loadExportHtmlTemplate() throws -> String {
+    try loadExportHtmlResource(named: "template", ext: "js")
+}
+
+private func loadExportHtmlStyles() throws -> String {
+    try loadExportHtmlResource(named: "template", ext: "css")
+}
+
+private func loadExportHtmlResource(named name: String, ext: String) throws -> String {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     let templatePath = packageRoot
-        .appendingPathComponent("Sources/PiSwiftCodingAgent/Resources/export-html/template.js")
+        .appendingPathComponent("Sources/PiSwiftCodingAgent/Resources/export-html/\(name).\(ext)")
     return try String(contentsOf: templatePath, encoding: .utf8)
 }
