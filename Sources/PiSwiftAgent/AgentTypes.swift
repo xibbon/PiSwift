@@ -102,7 +102,7 @@ public struct AfterToolCallContext: Sendable {
 }
 
 public typealias BeforeToolCallFn = @Sendable (BeforeToolCallContext, CancellationToken?) async -> BeforeToolCallResult?
-public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async -> AfterToolCallResult?
+public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async throws -> AfterToolCallResult?
 public typealias OnPayloadFn = PayloadHandler
 public typealias ShouldStopAfterTurnFn = @Sendable () async -> Bool
 
@@ -187,10 +187,12 @@ public enum AgentMessage: Sendable {
 public struct AgentToolResult: Sendable {
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    public var terminate: Bool?
 
-    public init(content: [ContentBlock], details: AnyCodable? = nil) {
+    public init(content: [ContentBlock], details: AnyCodable? = nil, terminate: Bool? = nil) {
         self.content = content
         self.details = details
+        self.terminate = terminate
     }
 }
 

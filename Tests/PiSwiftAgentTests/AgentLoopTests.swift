@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import PiSwiftAI
 import PiSwiftAgent
@@ -620,7 +621,16 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     // Second tool should have started while first was blocked (parallel execution)
     #expect(parallelObserved.withLock { $0 })
 
-    // Tool results should be emitted in source order (tool-1 before tool-2)
+    // tool_execution_end is emitted in completion order, while persisted tool-result
+    // messages stay in assistant source order.
+    let toolExecutionEndIds = events.compactMap { event -> String? in
+        if case .toolExecutionEnd(let id, _, _, _) = event {
+            return id
+        }
+        return nil
+    }
+    #expect(toolExecutionEndIds == ["tool-2", "tool-1"])
+
     let toolResultIds = events.compactMap { event -> String? in
         if case .messageEnd(let message) = event, case .toolResult(let tr) = message {
             return tr.toolCallId
@@ -628,6 +638,69 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         return nil
     }
     #expect(toolResultIds == ["tool-1", "tool-2"])
+}
+
+@Test func afterToolCallThrowBecomesErrorToolResult() async {
+    struct HookFailure: LocalizedError {
+        var errorDescription: String? { "after hook failed" }
+    }
+
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, _, _, _ in
+        AgentToolResult(content: [.text(TextContent(text: "ok"))])
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(
+        model: createModel(),
+        toolExecution: .parallel,
+        afterToolCall: { _, _ in
+            throw HookFailure()
+        },
+        convertToLlm: identityConverter
+    )
+
+    let callIndex = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = callIndex.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 1 {
+                let call = ToolCall(id: "t-1", name: "echo", arguments: [:])
+                let message = createAssistantMessage(content: [.toolCall(call)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "done"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+        }
+        return stream
+    }
+
+    var toolEnd: (AgentToolResult, Bool)?
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        if case .toolExecutionEnd(_, _, let result, let isError) = event {
+            toolEnd = (result, isError)
+        }
+    }
+
+    #expect(toolEnd?.1 == true)
+    if case .text(let text) = toolEnd?.0.content.first {
+        #expect(text.text == "after hook failed")
+    } else {
+        #expect(Bool(false), "Expected after hook error text")
+    }
 }
 
 @Test func lateToolProgressAfterResultIsSuppressed() async {
@@ -985,6 +1058,48 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 
     // Exactly one LLM call: the initial turn that emitted the tool call.
     // No follow-up turn after the terminating tool batch.
+    #expect(llmCallCount.withLock { $0 } == 1)
+}
+
+@Test func toolResultTerminateHintSkipsFollowUpTurn() async {
+    let tool = AgentTool(
+        label: "Final",
+        name: "final",
+        description: "Terminating tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, _, _, _ in
+        AgentToolResult(content: [.text(TextContent(text: "ok"))], terminate: true)
+    }
+
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let userPrompt = createUserMessage("start")
+    let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
+
+    let llmCallCount = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let index = llmCallCount.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        let stream = AssistantMessageEventStream()
+        Task {
+            if index == 1 {
+                let call = ToolCall(id: "t-1", name: "final", arguments: [:])
+                let message = createAssistantMessage(content: [.toolCall(call)], stopReason: .toolUse)
+                stream.push(.done(reason: .toolUse, message: message))
+                stream.end(message)
+            } else {
+                let message = createAssistantMessage(content: [.text(TextContent(text: "should-not-run"))])
+                stream.push(.done(reason: .stop, message: message))
+                stream.end(message)
+            }
+        }
+        return stream
+    }
+
+    let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
+    for await _ in stream {}
+
     #expect(llmCallCount.withLock { $0 } == 1)
 }
 
