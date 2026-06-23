@@ -53,6 +53,21 @@ import Testing
     #expect(styles.contains(".help-shortcuts"))
 }
 
+@Test func exportHtmlTemplatePreservesPlainTextToolOutputIndentation() throws {
+    let template = try loadExportHtmlTemplate()
+    let styles = try loadExportHtmlStyles()
+
+    #expect(template.contains("const escapedText = escapeHtml(text);"))
+    #expect(template.contains("const previewText = escapeHtml(displayLines.join('\\n'));"))
+    #expect(template.contains("<div class=\"output-preview\"><pre>${previewText}</pre>"))
+    #expect(template.contains("<div class=\"output-full\"><pre>${escapedText}</pre></div></div>`;"))
+    #expect(template.contains("return `<div class=\"tool-output\"><pre>${escapedText}</pre></div>`;"))
+    #expect(!template.contains("out += `<div>${escapeHtml(replaceTabs(line))}</div>`;"))
+
+    #expect(styles.contains(".tool-output pre"))
+    #expect(styles.contains("white-space: pre-wrap;"))
+}
+
 private func loadExportHtmlTemplate() throws -> String {
     try loadExportHtmlResource(named: "template", ext: "js")
 }

@@ -692,27 +692,16 @@
         }
 
         // Plain text output
+        const escapedText = escapeHtml(text);
         if (remaining > 0) {
-          let out = '<div class="tool-output expandable" onclick="toggleExpandableFromClick(event, this)">';
-          out += '<div class="output-preview">';
-          for (const line of displayLines) {
-            out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-          }
-          out += `<div class="expand-hint">... (${remaining} more lines)</div></div>`;
-          out += '<div class="output-full">';
-          for (const line of lines) {
-            out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-          }
-          out += '</div></div>';
-          return out;
+          const previewText = escapeHtml(displayLines.join('\n'));
+          return `<div class="tool-output expandable" onclick="toggleExpandableFromClick(event, this)">
+            <div class="output-preview"><pre>${previewText}</pre>
+            <div class="expand-hint">... (${remaining} more lines)</div></div>
+            <div class="output-full"><pre>${escapedText}</pre></div></div>`;
         }
 
-        let out = '<div class="tool-output">';
-        for (const line of displayLines) {
-          out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
-        }
-        out += '</div>';
-        return out;
+        return `<div class="tool-output"><pre>${escapedText}</pre></div>`;
       }
 
       function renderToolCall(call) {
