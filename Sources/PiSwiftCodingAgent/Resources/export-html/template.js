@@ -1120,8 +1120,9 @@
       // INITIALIZATION
       // ============================================================
 
-      // Escape HTML tags in text (but not code blocks)
-      function escapeHtmlTags(text) {
+      // Escape HTML-like tags before Markdown parsing so model output such as
+      // `<file name="...">...</file>` is displayed verbatim instead of becoming DOM.
+      function escapeHtmlLikeTags(text) {
         return text.replace(/<(?=[a-zA-Z\/])/g, '&lt;');
       }
 
@@ -1153,7 +1154,11 @@
           },
           // Text content: escape HTML tags
           text(token) {
-            return escapeHtmlTags(escapeHtml(token.text));
+            return escapeHtml(token.text);
+          },
+          // Raw HTML tokens: show them verbatim in exports.
+          html(token) {
+            return escapeHtml(token.text);
           },
           // Inline code: escape HTML
           codespan(token) {
@@ -1184,7 +1189,7 @@
 
       // Simple marked parse (escaping handled in renderers)
       function safeMarkedParse(text) {
-        return marked.parse(text);
+        return marked.parse(escapeHtmlLikeTags(text));
       }
 
       // Search input
