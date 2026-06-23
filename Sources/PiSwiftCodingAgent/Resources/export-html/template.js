@@ -62,8 +62,8 @@
 
         // Create nodes
         for (const entry of entries) {
-          nodeMap.set(entry.id, { 
-            entry, 
+          nodeMap.set(entry.id, {
+            entry,
             children: [],
             label: labelMap.get(entry.id)
           });
@@ -155,7 +155,7 @@
         const stack = [];
 
         // Add roots (prioritize branch containing active leaf)
-        const orderedRoots = [...roots].sort((a, b) => 
+        const orderedRoots = [...roots].sort((a, b) =>
           Number(containsActive.get(b)) - Number(containsActive.get(a))
         );
         for (let i = orderedRoots.length - 1; i >= 0; i--) {
@@ -172,7 +172,7 @@
           const multipleChildren = children.length > 1;
 
           // Order children (active branch first)
-          const orderedChildren = [...children].sort((a, b) => 
+          const orderedChildren = [...children].sort((a, b) =>
             Number(containsActive.get(b)) - Number(containsActive.get(a))
           );
 
@@ -413,6 +413,42 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+      }
+
+      function escapeAttribute(text) {
+        return escapeHtml(String(text)).replace(/"/g, '&quot;');
+      }
+
+      function sanitizeMarkdownUrl(url, options = {}) {
+        const raw = String(url || '').trim();
+        if (!raw) return null;
+
+        // Remove ASCII controls/whitespace before scheme checks so values such as
+        // `java\nscript:` and `java&#x09;script:` cannot bypass protocol filtering.
+        const compact = raw
+          .replace(/&#(?:x0*([0-9a-fA-F]+)|0*([0-9]+));?/g, (_, hex, dec) => {
+            const code = hex ? parseInt(hex, 16) : parseInt(dec, 10);
+            return Number.isFinite(code) ? String.fromCharCode(code) : '';
+          })
+          .replace(/&colon;/gi, ':')
+          .replace(/[\u0000-\u001f\u007f\s]+/g, '');
+        const lower = compact.toLowerCase();
+
+        if (lower.startsWith('#') || lower.startsWith('/') || lower.startsWith('./') || lower.startsWith('../')) {
+          return raw;
+        }
+
+        const schemeMatch = lower.match(/^([a-z][a-z0-9+.-]*):/);
+        if (!schemeMatch) return raw;
+
+        const scheme = schemeMatch[1];
+        if (scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'tel') {
+          return raw;
+        }
+        if (options.allowDataImage && scheme === 'data' && /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);/i.test(compact)) {
+          return raw;
+        }
+        return null;
       }
 
       /**
@@ -688,8 +724,8 @@
         const renderResultImages = () => {
           const images = getResultImages();
           if (images.length === 0) return '';
-          return '<div class="tool-images">' + 
-            images.map(img => `<img src="data:${img.mimeType};base64,${img.data}" class="tool-image" />`).join('') + 
+          return '<div class="tool-images">' +
+            images.map(img => `<img src="data:${img.mimeType};base64,${img.data}" class="tool-image" />`).join('') +
             '</div>';
         };
 
@@ -834,7 +870,7 @@
               }
             }
 
-            const text = typeof content === 'string' ? content : 
+            const text = typeof content === 'string' ? content :
               content.filter(c => c.type === 'text').map(c => c.text).join('\n');
             if (text.trim()) {
               html += `<div class="markdown-content">${safeMarkedParse(text)}</div>`;
@@ -1122,6 +1158,26 @@
           // Inline code: escape HTML
           codespan(token) {
             return `<code>${escapeHtml(token.text)}</code>`;
+          },
+          link(token) {
+            const href = sanitizeMarkdownUrl(token.href);
+            const label = this.parser.parseInline(token.tokens || [{ type: 'text', text: token.text || '' }]);
+            if (!href) return label;
+
+            let html = `<a href="${escapeAttribute(href)}"`;
+            if (token.title) html += ` title="${escapeAttribute(token.title)}"`;
+            html += `>${label}</a>`;
+            return html;
+          },
+          image(token) {
+            const href = sanitizeMarkdownUrl(token.href, { allowDataImage: true });
+            const alt = token.text || '';
+            if (!href) return escapeHtml(alt);
+
+            let html = `<img src="${escapeAttribute(href)}" alt="${escapeAttribute(alt)}"`;
+            if (token.title) html += ` title="${escapeAttribute(token.title)}"`;
+            html += '>';
+            return html;
           }
         }
       });
