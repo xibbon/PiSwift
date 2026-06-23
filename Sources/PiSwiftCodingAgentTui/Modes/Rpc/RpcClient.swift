@@ -288,6 +288,7 @@ public actor RpcClient {
     private var collectors: [UUID: EventCollector] = [:]
     private var requestId = 0
     private var stderrBuffer = ""
+    private var exitError: RpcClientError?
 
     public init(options: RpcClientOptions = RpcClientOptions()) {
         self.options = options
@@ -297,6 +298,7 @@ public actor RpcClient {
         guard process == nil else {
             throw RpcClientError("RPC client already started")
         }
+        exitError = nil
 
         let process = Process()
         let stdinPipe = Pipe()
@@ -334,6 +336,9 @@ public actor RpcClient {
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        process.terminationHandler = { [weak self] process in
+            Task { await self?.handleProcessExit(process) }
+        }
 
         try process.run()
 
@@ -367,7 +372,9 @@ public actor RpcClient {
         try await Task.sleep(nanoseconds: 100_000_000)
 
         if process.isRunning == false {
-            throw RpcClientError("RPC process exited early. Stderr: \(stderrBuffer)")
+            let error = makeProcessExitError(process)
+            exitError = error
+            throw error
         }
     }
 
@@ -699,6 +706,25 @@ public actor RpcClient {
         stderrBuffer += text
     }
 
+    private func handleProcessExit(_ process: Process) {
+        guard self.process === process else { return }
+        let error = exitError ?? makeProcessExitError(process)
+        exitError = error
+        rejectPendingRequests(error)
+    }
+
+    private func rejectPendingRequests(_ error: RpcClientError) {
+        for (_, continuation) in pendingRequests {
+            continuation.resume(throwing: error)
+        }
+        pendingRequests.removeAll()
+
+        for (_, collector) in collectors {
+            collector.continuation.resume(throwing: error)
+        }
+        collectors.removeAll()
+    }
+
     private func timeoutRequest(_ id: String) {
         guard let continuation = pendingRequests.removeValue(forKey: id) else { return }
         continuation.resume(throwing: RpcClientError("Timeout waiting for response. Stderr: \(stderrBuffer)"))
@@ -712,6 +738,14 @@ public actor RpcClient {
     private func send(_ command: [String: Any], timeout: TimeInterval = 30) async throws -> RpcResponsePayload {
         guard let stdin = stdinPipe?.fileHandleForWriting else {
             throw RpcClientError("RPC client not started")
+        }
+        if let exitError {
+            throw exitError
+        }
+        guard process?.isRunning == true else {
+            let error = process.map { makeProcessExitError($0) } ?? RpcClientError("RPC client not started")
+            exitError = error
+            throw error
         }
         requestId += 1
         let id = "req_\(requestId)"
@@ -759,6 +793,19 @@ public actor RpcClient {
                 continuation.resume()
             }
         }
+    }
+
+    private func makeProcessExitError(_ process: Process) -> RpcClientError {
+        let reason: String
+        switch process.terminationReason {
+        case .exit:
+            reason = "exit code \(process.terminationStatus)"
+        case .uncaughtSignal:
+            reason = "signal \(process.terminationStatus)"
+        @unknown default:
+            reason = "status \(process.terminationStatus)"
+        }
+        return RpcClientError("RPC process exited with \(reason). Stderr: \(stderrBuffer)")
     }
 }
 
