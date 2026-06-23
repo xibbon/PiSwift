@@ -728,6 +728,58 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     #expect(ctx.getSystemPromptOptions().selectedTools == [.edit])
 }
 
+@Test func hookRunnerAfterToolCallAdapterForwardsDetailsAndIsErrorOverrides() async throws {
+    let observedIsError = LockedState<Bool?>(nil)
+    let handler: HookHandler = { event, _ in
+        guard let event = event as? ToolResultEvent else { return nil }
+        observedIsError.withLock { $0 = event.isError }
+        return ToolResultEventResult(
+            content: [.text(TextContent(text: "rewritten"))],
+            details: AnyCodable(["code": "handled"]),
+            isError: false
+        )
+    }
+    let hook = LoadedHook(
+        path: "/fake/tool-result-hook",
+        resolvedPath: "/fake/tool-result-hook",
+        handlers: ["tool_result": [handler]]
+    )
+
+    let sessionManager = SessionManager.inMemory()
+    let modelRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let runner = HookRunner([hook], "/tmp/project", sessionManager, modelRegistry)
+    runner.initialize(getModel: { nil }, mode: .print, hasUI: false)
+
+    let afterToolCall = makeHookRunnerAfterToolCallHook(runner)
+    let result = try await afterToolCall(
+        AfterToolCallContext(
+            assistantMessage: AssistantMessage(
+                content: [],
+                api: .openAIResponses,
+                provider: KnownProvider.openai.rawValue,
+                model: "gpt-4o-mini",
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .toolUse
+            ),
+            toolCall: ToolCall(id: "tool-1", name: "read", arguments: ["path": AnyCodable("missing.txt")]),
+            args: ["path": AnyCodable("missing.txt")],
+            result: AgentToolResult(content: [.text(TextContent(text: "original error"))]),
+            isError: true,
+            context: AgentContext(systemPrompt: "", messages: [], tools: [])
+        ),
+        nil
+    )
+
+    #expect(observedIsError.withLock { $0 } == true)
+    #expect(result?.isError == false)
+    #expect(result?.details?.value as? [String: String] == ["code": "handled"])
+    if case .text(let text) = result?.content?.first {
+        #expect(text.text == "rewritten")
+    } else {
+        Issue.record("Expected rewritten text content")
+    }
+}
+
 @Test func projectTrustEventUsesFirstDefinitiveDecision() async throws {
     let calls = LockedState<[String]>([])
     let undecided: HookHandler = { _, _ in

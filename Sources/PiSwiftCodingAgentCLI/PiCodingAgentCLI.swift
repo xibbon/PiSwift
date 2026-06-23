@@ -410,13 +410,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         }
 
         let initialActiveToolNames = filteredSelectedToolNames.map { $0.rawValue } + extraCustomTools.map { $0.name } + wrappedExtensionTools.map { $0.name }
-        var allTools = selectedTools + extraCustomTools + wrappedExtensionTools
-        if let hookRunner {
-            allTools = wrapToolsWithHooks(allTools, hookRunner)
-            let registryTools = Array(toolRegistry.values)
-            let wrappedRegistry = wrapToolsWithHooks(registryTools, hookRunner)
-            toolRegistry = Dictionary(uniqueKeysWithValues: wrappedRegistry.map { ($0.name, $0) })
-        }
+        let allTools = selectedTools + extraCustomTools + wrappedExtensionTools
 
         let loaderSystemPrompt = resourceLoader.getSystemPrompt()
         let loaderAppend = resourceLoader.getAppendSystemPrompt()
@@ -478,7 +472,9 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             getModelAuth: { model in
                 let auth = await modelRegistry.getApiKeyAndHeaders(model)
                 return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
-            }
+            },
+            beforeToolCall: hookRunner.map(makeHookRunnerBeforeToolCallHook),
+            afterToolCall: hookRunner.map(makeHookRunnerAfterToolCallHook)
         ))
         agentBox.withLock { $0 = createdAgent }
 

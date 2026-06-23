@@ -81,23 +81,7 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
             request.addValue("Bearer \(options.authToken)", forHTTPHeaderField: "Authorization")
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
-            let body = ProxyRequestPayload(
-                model: ProxyModelPayload(model),
-                context: ProxyContextPayload(context),
-                options: ProxyRequestOptions(
-                    temperature: options.temperature,
-                    maxTokens: options.maxTokens,
-                    reasoning: options.reasoning,
-                    sessionId: options.sessionId,
-                    transport: options.transport,
-                    cacheRetention: options.cacheRetention,
-                    thinkingBudgets: options.thinkingBudgets,
-                    maxRetryDelayMs: options.maxRetryDelayMs,
-                    headers: options.headers,
-                    metadata: options.metadata
-                )
-            )
-            request.httpBody = try JSONEncoder().encode(body)
+            request.httpBody = try encodeProxyRequestPayload(model: model, context: context, options: options)
 
             let (bytes, response) = try await URLSession.shared.bytes(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -142,6 +126,26 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
     }
 
     return stream
+}
+
+func encodeProxyRequestPayload(model: Model, context: Context, options: ProxyStreamOptions) throws -> Data {
+    let body = ProxyRequestPayload(
+        model: ProxyModelPayload(model),
+        context: ProxyContextPayload(context),
+        options: ProxyRequestOptions(
+            temperature: options.temperature,
+            maxTokens: options.maxTokens,
+            reasoning: options.reasoning,
+            sessionId: options.sessionId,
+            transport: options.transport,
+            cacheRetention: options.cacheRetention,
+            thinkingBudgets: options.thinkingBudgets,
+            maxRetryDelayMs: options.maxRetryDelayMs,
+            headers: options.headers,
+            metadata: options.metadata
+        )
+    )
+    return try JSONEncoder().encode(body)
 }
 
 private func processProxyEvent(

@@ -668,12 +668,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         toolRegistry.removeValue(forKey: name)
     }
 
-    var allTools = builtInTools + wrappedCustomTools + wrappedExtensionTools
+    let allTools = builtInTools + wrappedCustomTools + wrappedExtensionTools
     time("combineTools")
-    allTools = wrapToolsWithHooks(allTools, hookRunner)
-    let registryTools = Array(toolRegistry.values)
-    let wrappedRegistry = wrapToolsWithHooks(registryTools, hookRunner)
-    toolRegistry = Dictionary(uniqueKeysWithValues: wrappedRegistry.map { ($0.name, $0) })
 
     let makeSystemPromptOptions: @Sendable ([String]) -> BuildSystemPromptOptions = { toolNames in
         let validToolNames = toolNames.compactMap { ToolName(rawValue: $0) }
@@ -738,15 +734,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     // Wire agent-level beforeToolCall/afterToolCall from hook runner (extensions + hooks).
     // The closures are always installed; they cheaply gate on `hasHandlers(...)` at call
     // time so a `/reload` that introduces new tool_call hooks Just Works.
-    let beforeToolCallHook: BeforeToolCallFn? = { [hookRunner] context, _ in
-        guard hookRunner.hasHandlers("tool_call") else { return nil }
-        let event = ToolCallEvent(toolName: context.toolCall.name, toolCallId: context.toolCall.id, input: context.args)
-        if let result = await hookRunner.emitToolCall(event), result.block {
-            return BeforeToolCallResult(block: true, reason: result.reason)
-        }
-        return nil
-    }
-    let afterToolCallHook: AfterToolCallFn? = nil // No hook runner method for after-tool-call results yet
+    let beforeToolCallHook: BeforeToolCallFn? = makeHookRunnerBeforeToolCallHook(hookRunner)
+    let afterToolCallHook: AfterToolCallFn? = makeHookRunnerAfterToolCallHook(hookRunner)
 
     // Wire onPayload to emit BeforeProviderRequestEvent to extensions.
     let onPayloadHook: OnPayloadFn? = { [hookRunner] snapshot in
@@ -824,13 +813,13 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         toolRegistry: toolRegistry,
         rebuildSystemPrompt: rebuildSystemPrompt,
         reloadExtensionsHook: reloadExtensionsHook,
-        wrapExtensionTools: { [hookRunner] tools in
+        wrapExtensionTools: { tools in
             let definitions = tools.map { tool in
                 LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
             }
             let wrapped = wrapCustomTools(definitions, getCustomToolContext)
                 .filter { !excludedToolNames.contains($0.name) }
-            return wrapToolsWithHooks(wrapped, hookRunner)
+            return wrapped
         }
     ))
     time("createAgentSession")

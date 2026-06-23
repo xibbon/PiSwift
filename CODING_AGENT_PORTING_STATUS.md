@@ -22,7 +22,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - Interactive mode + components (MiniTui): `pi-mono/packages/coding-agent/src/modes/interactive/*` -> `Sources/PiSwiftCodingAgent/Modes/Interactive/*`
 - Theme loading + JSON themes: `pi-mono/packages/coding-agent/src/modes/interactive/theme/*` -> `Sources/PiSwiftCodingAgent/Modes/Interactive/Theme.swift` + `Sources/PiSwiftCodingAgent/Resources/theme/*`
 - CLI orchestration + TUI: `pi-mono/packages/coding-agent/src/main.ts` + `cli.ts` -> `Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (interactive mode wiring)
-- SDK: `pi-mono/packages/coding-agent/src/core/sdk.ts` -> `Sources/PiSwiftCodingAgent/Core/SDK.swift` (custom tools discovery + wrapping, hook discovery supports bundles)
+- SDK: `pi-mono/packages/coding-agent/src/core/sdk.ts` -> `Sources/PiSwiftCodingAgent/Core/SDK.swift` (custom tools discovery, hook discovery supports bundles, agent-level before/after tool hook adapters)
 - Hook loader + tool wrapper: `pi-mono/packages/coding-agent/src/core/hooks/loader.ts`, `pi-mono/packages/coding-agent/src/core/hooks/tool-wrapper.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookLoader.swift`, `Sources/PiSwiftCodingAgent/Core/Hooks/ToolWrapper.swift` (bundle-based hooks)
 - Hook runtime: `pi-mono/packages/coding-agent/src/core/hooks/runner.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookRunner.swift` (context/before_agent_start/session/agent/turn/project_trust events; `ctx.mode`, trust, tool metadata, system-prompt option context, and pre-trust global-extension evaluation)
 - Custom tools pipeline: `pi-mono/packages/coding-agent/src/core/custom-tools/*` -> `Sources/PiSwiftCodingAgent/Core/CustomTools/*` + CLI/TUI wiring
@@ -53,7 +53,8 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Event bus for hooks/tools (`pi.events`), tool `sendMessage`, and `deliverAs: "nextTurn"` queue semantics (clear on new/switch/branch).
 - [x] Hook API extensions: `systemPromptAppend`, error stack traces, deep-copy context messages, setTitle/setWidget UI hooks.
 - [x] Plan-mode hook parity (todo extraction, widget + final list, tool_result/turn_end tracking).
-- [x] Tool registry/tool control parity (full registry even when scoped, wrap all tools).
+- [x] Tool registry/tool control parity (full registry even when scoped, agent-level hook dispatch for active tools).
+- [x] Agent-level tool hook parity: `tool_call` blocking and `tool_result` content/details/isError overrides for successful and error tool results.
 - [x] Extension context surfaces (`ctx.mode`, `ctx.isProjectTrusted()`, `ctx.getSystemPromptOptions()`) and `project_trust` event/result types.
 - [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, project extension/resource gating when untrusted, and shared config/package command trust resolution.
 - [x] Startup subprocess marker (`PI_CODING_AGENT=true`) for package/config/normal CLI runs.

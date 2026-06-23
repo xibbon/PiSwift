@@ -63,47 +63,51 @@ public func createEditTool(cwd: String) -> AgentTool {
                 ],
             ]),
             "required": AnyCodable(["path", "edits"]),
-        ]
-    ) { _, params, signal, _ in
-        if signal?.isCancelled == true {
-            throw EditToolError.operationAborted
-        }
-        let prepared = prepareEditArguments(params)
-        guard let path = prepared["path"]?.value as? String else {
-            throw EditToolError.missingPath
-        }
-        let edits = parseEdits(from: prepared["edits"])
-        guard !edits.isEmpty else {
-            throw EditToolError.invalidInput
-        }
+        ],
+        execute: { _, params, signal, _ in
+            if signal?.isCancelled == true {
+                throw EditToolError.operationAborted
+            }
+            let prepared = prepareEditArguments(params)
+            guard let path = prepared["path"]?.value as? String else {
+                throw EditToolError.missingPath
+            }
+            let edits = parseEdits(from: prepared["edits"])
+            guard !edits.isEmpty else {
+                throw EditToolError.invalidInput
+            }
 
-        let absolutePath = resolveToCwd(path, cwd: cwd)
-        guard FileManager.default.isReadableFile(atPath: absolutePath),
-              FileManager.default.isWritableFile(atPath: absolutePath) else {
-            throw EditToolError.fileNotFound(path: path)
+            let absolutePath = resolveToCwd(path, cwd: cwd)
+            guard FileManager.default.isReadableFile(atPath: absolutePath),
+                  FileManager.default.isWritableFile(atPath: absolutePath) else {
+                throw EditToolError.fileNotFound(path: path)
+            }
+
+            return try await FileMutationQueue.shared.withFileLock(absolutePath) {
+                let (bom, content) = try readFilePreservingBom(absolutePath)
+                let originalEnding = detectLineEnding(content)
+                let normalizedContent = normalizeToLF(content)
+                let applied = try applyEditsToNormalizedContent(normalizedContent, edits: edits, path: path)
+                let finalContent = bom + restoreLineEndings(applied.newContent, originalEnding)
+                try finalContent.write(toFile: absolutePath, atomically: true, encoding: .utf8)
+
+                let diffResult = generateDiffString(applied.baseContent, applied.newContent)
+                let firstChanged: Any = diffResult.firstChangedLine != nil ? diffResult.firstChangedLine! : NSNull()
+                let details = AnyCodable([
+                    "diff": diffResult.diff,
+                    "firstChangedLine": firstChanged,
+                ])
+
+                return AgentToolResult(
+                    content: [.text(TextContent(text: "Successfully replaced text in \(path)."))],
+                    details: details
+                )
+            }
+        },
+        prepareArguments: { params in
+            prepareEditArguments(params)
         }
-
-        return try await FileMutationQueue.shared.withFileLock(absolutePath) {
-            let (bom, content) = try readFilePreservingBom(absolutePath)
-            let originalEnding = detectLineEnding(content)
-            let normalizedContent = normalizeToLF(content)
-            let applied = try applyEditsToNormalizedContent(normalizedContent, edits: edits, path: path)
-            let finalContent = bom + restoreLineEndings(applied.newContent, originalEnding)
-            try finalContent.write(toFile: absolutePath, atomically: true, encoding: .utf8)
-
-            let diffResult = generateDiffString(applied.baseContent, applied.newContent)
-            let firstChanged: Any = diffResult.firstChangedLine != nil ? diffResult.firstChangedLine! : NSNull()
-            let details = AnyCodable([
-                "diff": diffResult.diff,
-                "firstChangedLine": firstChanged,
-            ])
-
-            return AgentToolResult(
-                content: [.text(TextContent(text: "Successfully replaced text in \(path)."))],
-                details: details
-            )
-        }
-    }
+    )
 }
 
 /// Normalizes inputs the model produces. Some models (Opus 4.6, GLM-5.1) send `edits` as a

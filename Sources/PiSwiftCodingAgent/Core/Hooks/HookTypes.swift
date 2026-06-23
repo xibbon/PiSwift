@@ -957,10 +957,12 @@ public struct ToolResultEvent: HookEvent, Sendable {
 public struct ToolResultEventResult: Sendable {
     public var content: [ContentBlock]?
     public var details: AnyCodable?
+    public var isError: Bool?
 
-    public init(content: [ContentBlock]? = nil, details: AnyCodable? = nil) {
+    public init(content: [ContentBlock]? = nil, details: AnyCodable? = nil, isError: Bool? = nil) {
         self.content = content
         self.details = details
+        self.isError = isError
     }
 }
 

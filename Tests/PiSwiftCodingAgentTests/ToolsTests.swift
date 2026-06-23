@@ -83,6 +83,30 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     }
 }
 
+@Test func editToolPrepareArgumentsFoldsLegacySingleEditBeforeValidation() async throws {
+    try await withTempDir { dir in
+        let tool = createEditTool(cwd: dir)
+        let raw: [String: AnyCodable] = [
+            "path": AnyCodable("file.txt"),
+            "oldText": AnyCodable("old"),
+            "newText": AnyCodable("new"),
+        ]
+
+        let prepared = try await tool.prepareArguments?(raw) ?? raw
+        _ = try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-legacy", name: "edit", arguments: prepared)
+        )
+
+        #expect(prepared["oldText"] == nil)
+        #expect(prepared["newText"] == nil)
+        let edits = prepared["edits"]?.value as? [Any]
+        let first = edits?.first as? [String: Any]
+        #expect(first?["oldText"] as? String == "old")
+        #expect(first?["newText"] as? String == "new")
+    }
+}
+
 @Test func readToolOffsetAndLimit() async throws {
     try await withTempDir { dir in
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("offset.txt").path
