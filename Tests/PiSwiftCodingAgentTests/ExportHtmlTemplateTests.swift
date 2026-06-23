@@ -80,6 +80,26 @@ import Testing
     #expect(!styles.contains(".output-preview,\n    .output-full"))
 }
 
+@Test func exportHtmlTemplateRendersFindLsAndGrepWithStructuredRows() throws {
+    let template = try loadExportHtmlTemplate()
+    let styles = try loadExportHtmlStyles()
+
+    #expect(template.contains("function renderExpandableHtmlOutput(previewHtml, fullHtml, remaining, extraClass = '')"))
+    #expect(template.contains("function formatPathListOutput(text, maxLines)"))
+    #expect(template.contains("function formatGrepOutput(text, maxLines)"))
+    #expect(template.contains("html += formatPathListOutput(output, 20);"))
+    #expect(template.contains("html += formatGrepOutput(output, 20);"))
+    #expect(template.contains("path-list-entry${isDirectory ? ' directory' : ''}"))
+    #expect(template.contains("const match = line.match(/^(.*)([:\\-])(\\d+)([:\\-]) (.*)$/);"))
+    #expect(template.contains("const isMatch = match[2] === ':' && match[4] === ':';"))
+
+    #expect(styles.contains(".path-list-entry"))
+    #expect(styles.contains(".path-list-entry.directory"))
+    #expect(styles.contains(".grep-line.match .grep-content"))
+    #expect(styles.contains(".grep-line.context .grep-content"))
+    #expect(styles.contains(".tool-notice"))
+}
+
 private func loadExportHtmlTemplate() throws -> String {
     try loadExportHtmlResource(named: "template", ext: "js")
 }

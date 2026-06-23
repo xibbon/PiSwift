@@ -704,6 +704,70 @@
         return `<div class="tool-output"><pre>${escapedText}</pre></div>`;
       }
 
+      function renderExpandableHtmlOutput(previewHtml, fullHtml, remaining, extraClass = '') {
+        const className = extraClass ? `tool-output ${extraClass}` : 'tool-output';
+        if (remaining > 0) {
+          return `<div class="${className} expandable" onclick="toggleExpandableFromClick(event, this)">
+            <div class="output-preview">${previewHtml}
+            <div class="expand-hint">... (${remaining} more lines)</div></div>
+            <div class="output-full">${fullHtml}</div></div>`;
+        }
+        return `<div class="${className}">${fullHtml}</div>`;
+      }
+
+      function formatPathListOutput(text, maxLines) {
+        const lines = replaceTabs(text).split('\n').filter(line => line.length > 0);
+        const displayLines = lines.slice(0, maxLines);
+        const remaining = lines.length - maxLines;
+
+        const renderLine = (line) => {
+          if (/^\[.*\]$/.test(line)) {
+            return `<div class="tool-notice">${escapeHtml(line)}</div>`;
+          }
+          const isDirectory = line.endsWith('/');
+          return `<div class="path-list-entry${isDirectory ? ' directory' : ''}">${escapeHtml(line)}</div>`;
+        };
+
+        return renderExpandableHtmlOutput(
+          displayLines.map(renderLine).join(''),
+          lines.map(renderLine).join(''),
+          remaining,
+          'path-list-output'
+        );
+      }
+
+      function formatGrepOutput(text, maxLines) {
+        const lines = replaceTabs(text).split('\n').filter(line => line.length > 0);
+        const displayLines = lines.slice(0, maxLines);
+        const remaining = lines.length - maxLines;
+
+        const renderLine = (line) => {
+          if (/^\[.*\]$/.test(line)) {
+            return `<div class="tool-notice">${escapeHtml(line)}</div>`;
+          }
+
+          const match = line.match(/^(.*)([:\-])(\d+)([:\-]) (.*)$/);
+          if (!match) {
+            return `<div class="grep-line">${escapeHtml(line)}</div>`;
+          }
+
+          const isMatch = match[2] === ':' && match[4] === ':';
+          return `<div class="grep-line ${isMatch ? 'match' : 'context'}">` +
+            `<span class="grep-path">${escapeHtml(match[1])}</span>` +
+            `<span class="grep-separator">${escapeHtml(match[2])}</span>` +
+            `<span class="grep-line-number">${escapeHtml(match[3])}</span>` +
+            `<span class="grep-separator">${escapeHtml(match[4])}</span> ` +
+            `<span class="grep-content">${escapeHtml(match[5])}</span></div>`;
+        };
+
+        return renderExpandableHtmlOutput(
+          displayLines.map(renderLine).join(''),
+          lines.map(renderLine).join(''),
+          remaining,
+          'grep-output'
+        );
+      }
+
       function renderToolCall(call) {
         const result = findToolResult(call.id);
         const isError = result?.isError || false;
@@ -808,7 +872,7 @@
             html += `<div class="tool-header"><span class="tool-name">ls</span> <span class="tool-path">${pathHtml}</span></div>`;
             if (result) {
               const output = getResultText().trim();
-              if (output) html += formatExpandableOutput(output, 20);
+              if (output) html += formatPathListOutput(output, 20);
             }
             break;
           }
@@ -818,7 +882,7 @@
             html += `<div class="tool-header"><span class="tool-name">find</span> <span class="tool-path">${escapeHtml(String(pattern))} in ${escapeHtml(shortenPath(String(dirPath)))}</span></div>`;
             if (result) {
               const output = getResultText().trim();
-              if (output) html += formatExpandableOutput(output, 20);
+              if (output) html += formatPathListOutput(output, 20);
             }
             break;
           }
@@ -828,7 +892,7 @@
             html += `<div class="tool-header"><span class="tool-name">grep</span> <span class="tool-path">/${escapeHtml(String(pattern))}/ in ${escapeHtml(shortenPath(String(dirPath)))}</span></div>`;
             if (result) {
               const output = getResultText().trim();
-              if (output) html += formatExpandableOutput(output, 20);
+              if (output) html += formatGrepOutput(output, 20);
             }
             break;
           }

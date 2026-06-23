@@ -436,6 +436,40 @@
       color: var(--text);
     }
 
+    .path-list-entry,
+    .grep-line {
+      line-height: var(--line-height);
+      white-space: pre-wrap;
+    }
+
+    .path-list-entry.directory {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .grep-path {
+      color: var(--accent);
+    }
+
+    .grep-line-number {
+      color: var(--warning);
+    }
+
+    .grep-line.match .grep-content {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .grep-line.context .grep-content {
+      color: var(--toolOutput);
+    }
+
+    .tool-notice {
+      color: var(--dim);
+      line-height: var(--line-height);
+      white-space: pre-wrap;
+    }
+
     .tool-output.expandable {
       cursor: pointer;
     }
