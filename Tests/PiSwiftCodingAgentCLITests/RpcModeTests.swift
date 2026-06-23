@@ -300,6 +300,10 @@ private func value<T>(_ dict: [String: AnyCodable], _ key: String, as type: T.Ty
         #expect(value(stats, "sessionId", as: String.self) != nil)
         #expect((value(stats, "userMessages", as: Int.self) ?? 0) >= 1)
         #expect((value(stats, "assistantMessages", as: Int.self) ?? 0) >= 1)
+        let contextUsage = value(stats, "contextUsage", as: [String: Any].self)
+        #expect((contextUsage?["contextWindow"] as? Int ?? 0) > 0)
+        #expect((contextUsage?["tokens"] as? Int ?? 0) > 0)
+        #expect((contextUsage?["percent"] as? Double ?? 0) > 0)
     }
 }
 

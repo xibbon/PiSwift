@@ -1113,6 +1113,22 @@ private func decodeSessionStats(_ dict: [String: Any]) -> SessionStats {
         cacheWrite: tokensDict["cacheWrite"] as? Int ?? 0,
         total: tokensDict["total"] as? Int ?? 0
     )
+    let contextUsage: ContextUsage?
+    if let usageDict = dict["contextUsage"] as? [String: Any] {
+        let usageTokens = usageDict["tokens"] as? Int
+        let contextWindow = usageDict["contextWindow"] as? Int ?? 0
+        let percent: Double?
+        if let value = usageDict["percent"] as? Double {
+            percent = value
+        } else if let value = usageDict["percent"] as? Int {
+            percent = Double(value)
+        } else {
+            percent = nil
+        }
+        contextUsage = ContextUsage(tokens: usageTokens, contextWindow: contextWindow, percent: percent)
+    } else {
+        contextUsage = nil
+    }
     return SessionStats(
         sessionFile: dict["sessionFile"] as? String,
         sessionId: dict["sessionId"] as? String ?? "",
@@ -1122,6 +1138,7 @@ private func decodeSessionStats(_ dict: [String: Any]) -> SessionStats {
         toolResults: dict["toolResults"] as? Int ?? 0,
         totalMessages: dict["totalMessages"] as? Int ?? 0,
         tokens: tokens,
-        cost: dict["cost"] as? Double ?? 0
+        cost: dict["cost"] as? Double ?? 0,
+        contextUsage: contextUsage
     )
 }
