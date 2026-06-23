@@ -22,6 +22,17 @@ import Testing
     #expect(template.contains("return marked.parse(escapeHtmlLikeTags(text));"))
 }
 
+@Test func exportHtmlTemplateDoesNotToggleExpandableBlocksWhileSelectingText() throws {
+    let template = try loadExportHtmlTemplate()
+
+    #expect(template.contains("function hasActiveTextSelection()"))
+    #expect(template.contains("function toggleExpandableFromClick(event, element)"))
+    #expect(template.contains("if (hasActiveTextSelection()) return;"))
+    #expect(template.contains("onclick=\"toggleExpandableFromClick(event, this)\""))
+    #expect(!template.contains("onclick=\"this.classList.toggle('expanded')\""))
+    #expect(!template.contains("onclick=\"this.classList.toggle(\\'expanded\\')\""))
+}
+
 private func loadExportHtmlTemplate() throws -> String {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

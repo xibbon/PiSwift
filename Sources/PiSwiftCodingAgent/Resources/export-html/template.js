@@ -649,6 +649,16 @@
         return null;
       }
 
+      function hasActiveTextSelection() {
+        const selection = window.getSelection?.();
+        return !!selection && !selection.isCollapsed && selection.toString().length > 0;
+      }
+
+      function toggleExpandableFromClick(event, element) {
+        if (hasActiveTextSelection()) return;
+        element.classList.toggle('expanded');
+      }
+
       function formatExpandableOutput(text, maxLines, lang) {
         text = replaceTabs(text);
         const lines = text.split('\n');
@@ -672,7 +682,7 @@
               previewHighlighted = escapeHtml(previewCode);
             }
 
-            return `<div class="tool-output expandable" onclick="this.classList.toggle('expanded')">
+            return `<div class="tool-output expandable" onclick="toggleExpandableFromClick(event, this)">
               <div class="output-preview"><pre><code class="hljs">${previewHighlighted}</code></pre>
               <div class="expand-hint">... (${remaining} more lines)</div></div>
               <div class="output-full"><pre><code class="hljs">${highlighted}</code></pre></div></div>`;
@@ -683,7 +693,7 @@
 
         // Plain text output
         if (remaining > 0) {
-          let out = '<div class="tool-output expandable" onclick="this.classList.toggle(\'expanded\')">';
+          let out = '<div class="tool-output expandable" onclick="toggleExpandableFromClick(event, this)">';
           out += '<div class="output-preview">';
           for (const line of displayLines) {
             out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
@@ -931,7 +941,7 @@
         }
 
         if (entry.type === 'compaction') {
-          return `<div class="compaction" id="${entryId}" onclick="this.classList.toggle('expanded')">
+          return `<div class="compaction" id="${entryId}" onclick="toggleExpandableFromClick(event, this)">
             <div class="compaction-label">[compaction]</div>
             <div class="compaction-collapsed">Compacted from ${entry.tokensBefore.toLocaleString()} tokens</div>
             <div class="compaction-content"><strong>Compacted from ${entry.tokensBefore.toLocaleString()} tokens</strong>\n\n${escapeHtml(entry.summary)}</div>
