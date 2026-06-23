@@ -991,6 +991,14 @@ public final class AgentSession: Sendable {
         }
     }
 
+    private func hasAuthForModel(_ model: Model) async -> Bool {
+        let auth = await modelRegistry.getApiKeyAndHeaders(model)
+        if auth.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return true
+        }
+        return !(auth.headers?.isEmpty ?? true)
+    }
+
     /// Result of a `/reload`-triggered extension swap.
     public struct ReloadExtensionsResult: Sendable {
         public var droppedPaths: [String]
@@ -1084,7 +1092,7 @@ public final class AgentSession: Sendable {
         )
     }
 
-    public func prompt(_ text: String, options: PromptOptions? = nil) async throws {
+    private func preparePromptMessages(_ text: String, options: PromptOptions? = nil) async throws -> [AgentMessage] {
         if isStreaming || isBranchSummarizing {
             throw AgentSessionError.alreadyProcessingQueue
         }
@@ -1093,8 +1101,7 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.noModelSelected(authPath: getAuthPath())
         }
 
-        let apiKey = await modelRegistry.getApiKeyForProvider(agent.state.model.provider)
-        if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+        if !(await hasAuthForModel(agent.state.model)) {
             throw AgentSessionError.missingApiKeyForProvider(
                 provider: agent.state.model.provider,
                 authPath: getAuthPath()
@@ -1137,7 +1144,25 @@ public final class AgentSession: Sendable {
         } else {
             agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
         }
-        try await agent.prompt(messages)
+        return messages
+    }
+
+    /// Submit a prompt after running all synchronous preflight work, then continue the model
+    /// turn in the returned task. This lets RPC callers acknowledge accepted prompts without
+    /// waiting for the whole assistant response while still surfacing immediate rejection.
+    @discardableResult
+    public func submitPrompt(_ text: String, options: PromptOptions? = nil) async throws -> Task<Void, Error> {
+        let messages = try await preparePromptMessages(text, options: options)
+        let task = Task {
+            try await agent.prompt(messages)
+        }
+        await Task.yield()
+        return task
+    }
+
+    public func prompt(_ text: String, options: PromptOptions? = nil) async throws {
+        let task = try await submitPrompt(text, options: options)
+        try await task.value
     }
 
     public func `continue`() async throws {
@@ -1347,8 +1372,8 @@ public final class AgentSession: Sendable {
     /// If the current model is no longer available, switch to the best available model.
     public func refreshActiveModel() async {
         let current = agent.state.model
-        // Check if current model still has a valid API key
-        if await modelRegistry.getApiKeyForProvider(current.provider) != nil {
+        // Check if current model still has usable auth, including custom headers.
+        if await hasAuthForModel(current) {
             return
         }
         // Current model lost its API key — find a fallback
@@ -1372,7 +1397,7 @@ public final class AgentSession: Sendable {
     }
 
     public func setModel(_ model: Model) async throws {
-        guard await modelRegistry.getApiKeyForProvider(model.provider) != nil else {
+        guard await hasAuthForModel(model) else {
             throw AgentSessionError.missingApiKeyForModel(provider: model.provider, modelId: model.id)
         }
         let previousModel = agent.state.model
@@ -1397,7 +1422,7 @@ public final class AgentSession: Sendable {
         let count = scopedModelsInternal.count
         let nextIndex = direction == .forward ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count
         let next = scopedModelsInternal[nextIndex]
-        guard await modelRegistry.getApiKeyForProvider(next.model.provider) != nil else {
+        guard await hasAuthForModel(next.model) else {
             throw AgentSessionError.missingApiKeyForModel(provider: next.model.provider, modelId: next.model.id)
         }
         let previousModel = agent.state.model
@@ -1420,7 +1445,7 @@ public final class AgentSession: Sendable {
         let count = models.count
         let nextIndex = direction == .forward ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count
         let next = models[nextIndex]
-        guard await modelRegistry.getApiKeyForProvider(next.provider) != nil else {
+        guard await hasAuthForModel(next) else {
             throw AgentSessionError.missingApiKeyForModel(provider: next.provider, modelId: next.id)
         }
         let previousModel = agent.state.model

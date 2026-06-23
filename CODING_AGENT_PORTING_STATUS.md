@@ -58,6 +58,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Project trust startup bootstrap: pre-trust global extension loading, `project_trust` dispatch, project extension/resource gating when untrusted, and shared config/package command trust resolution.
 - [x] Startup subprocess marker (`PI_CODING_AGENT=true`) for package/config/normal CLI runs.
 - [x] `--list-models` diagnostics and header-auth availability for `models.json` custom providers.
+- [x] RPC prompt preflight and model-aware header-auth checks for prompt/model selection paths.
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).
 - [x] Image handling parity (auto-resize toggle, read tool resize + dimension note, consistent placeholders, clipboard paste).
 - [ ] OAuth parity for `pi-mono/packages/ai` (see "Partial / stubs"): remaining GitHub Copilot flow.

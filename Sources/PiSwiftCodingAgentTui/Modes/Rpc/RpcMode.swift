@@ -372,9 +372,13 @@ private func handleRpcCommand(
         } else {
             idString = nil
         }
+        let promptTask = try await session.submitPrompt(
+            message,
+            options: PromptOptions(expandSlashCommands: nil, images: images)
+        )
         Task.detached {
             do {
-                try await session.prompt(message, options: PromptOptions(expandSlashCommands: nil, images: images))
+                try await promptTask.value
             } catch {
                 output.send(makeErrorResponse(idString, "prompt", error.localizedDescription))
             }
