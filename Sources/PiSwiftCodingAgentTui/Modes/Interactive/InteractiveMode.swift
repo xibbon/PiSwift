@@ -492,14 +492,24 @@ public final class InteractiveMode {
             }
         }
 
-        if let cwdBase = FileManager.default.currentDirectoryPath.split(separator: "/").last {
-            tui.terminal.setTitle("pi - \(cwdBase)")
-        }
+        updateTerminalTitle()
 
         isInitialized = true
 
         if let tmuxWarning = await checkTmuxKeyboardSetup() {
             showWarning(tmuxWarning)
+        }
+    }
+
+    @MainActor
+    private func updateTerminalTitle() {
+        guard let tui else { return }
+        let cwdBase = FileManager.default.currentDirectoryPath.split(separator: "/").last.map(String.init)
+            ?? FileManager.default.currentDirectoryPath
+        if let sessionName = session?.sessionManager.getSessionName(), !sessionName.isEmpty {
+            tui.terminal.setTitle("pi - \(sessionName) - \(cwdBase)")
+        } else {
+            tui.terminal.setTitle("pi - \(cwdBase)")
         }
     }
 
@@ -755,8 +765,11 @@ public final class InteractiveMode {
             appendEntryHandler: { [weak session] customType, data in
                 session?.sessionManager.appendCustomEntry(customType, data)
             },
-            setSessionNameHandler: { [weak session] name in
+            setSessionNameHandler: { [weak session, weak self] name in
                 _ = session?.sessionManager.appendSessionInfo(name)
+                Task { @MainActor [weak self] in
+                    self?.updateTerminalTitle()
+                }
             },
             getSessionNameHandler: { [weak session] in
                 session?.sessionManager.getSessionName()
@@ -3607,6 +3620,7 @@ public final class InteractiveMode {
         }
 
         session.sessionManager.appendSessionInfo(name)
+        updateTerminalTitle()
         chatContainer.addChild(Spacer(1))
         chatContainer.addChild(Text(theme.fg(.dim, "Session name set: \(name)"), paddingX: 1, paddingY: 0))
         scheduleRender()

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftCodingAgent
@@ -22,14 +23,44 @@ private final class PendingHookRequests: Sendable {
 
 private final class RpcOutput: Sendable {
     private let state = LockedState<Void>(())
+    private let fd: Int32
+    private let closeOnDeinit: Bool
+
+    init(fd: Int32 = STDOUT_FILENO, closeOnDeinit: Bool = false) {
+        self.fd = fd
+        self.closeOnDeinit = closeOnDeinit
+    }
+
+    deinit {
+        if closeOnDeinit {
+            close(fd)
+        }
+    }
+
+    static func takeOverStdout() -> RpcOutput {
+        let outputFD = dup(STDOUT_FILENO)
+        guard outputFD >= 0 else {
+            return RpcOutput()
+        }
+        _ = dup2(STDERR_FILENO, STDOUT_FILENO)
+        return RpcOutput(fd: outputFD, closeOnDeinit: true)
+    }
 
     func send(_ object: [String: Any]) {
         state.withLock { _ in
-            guard let data = try? JSONSerialization.data(withJSONObject: object, options: []),
-                  let json = String(data: data, encoding: .utf8) else {
+            guard var data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
                 return
             }
-            print(json)
+            data.append(0x0A)
+            data.withUnsafeBytes { rawBuffer in
+                guard let baseAddress = rawBuffer.baseAddress else { return }
+                var offset = 0
+                while offset < data.count {
+                    let written = Darwin.write(fd, baseAddress.advanced(by: offset), data.count - offset)
+                    if written <= 0 { break }
+                    offset += written
+                }
+            }
         }
     }
 }
@@ -260,7 +291,7 @@ private func makeErrorResponse(_ id: Any?, _ command: String, _ message: String)
 }
 
 public func runRpcMode(_ session: AgentSession) async {
-    let output = RpcOutput()
+    let output = RpcOutput.takeOverStdout()
 
     let pendingHookRequests = PendingHookRequests()
     let uiContext = await MainActor.run {

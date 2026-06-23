@@ -704,6 +704,9 @@ public actor RpcClient {
 
     private func appendStderr(_ text: String) {
         stderrBuffer += text
+        if let data = text.data(using: .utf8) {
+            FileHandle.standardError.write(data)
+        }
     }
 
     private func handleProcessExit(_ process: Process) {
