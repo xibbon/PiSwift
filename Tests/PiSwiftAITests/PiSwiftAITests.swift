@@ -777,6 +777,49 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     await envLock.withEnv(key, value: value, work: work)
 }
 
+@Test func findEnvKeysReturnsConfiguredNamesWithoutValues() async throws {
+    await withEnv("OPENAI_API_KEY", value: "sk-secret-value") {
+        #expect(findEnvKeys(provider: "openai") == ["OPENAI_API_KEY"])
+        #expect(findEnvKeys(provider: .openai) == ["OPENAI_API_KEY"])
+        #expect(findEnvKeys(provider: "openai")?.contains("sk-secret-value") == false)
+        #expect(getEnvApiKey(provider: "openai") == "sk-secret-value")
+    }
+}
+
+@Test func findEnvKeysOnlyReturnsSetProviderKeys() async throws {
+    await withEnv("ANTHROPIC_OAUTH_TOKEN", value: nil) {
+        await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
+            #expect(findEnvKeys(provider: "anthropic") == ["ANTHROPIC_API_KEY"])
+            #expect(getEnvApiKey(provider: "anthropic") == "sk-ant-api")
+        }
+    }
+
+    await withEnv("ANTHROPIC_OAUTH_TOKEN", value: "oauth-token") {
+        await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
+            #expect(findEnvKeys(provider: "anthropic") == ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"])
+            #expect(getEnvApiKey(provider: "anthropic") == "oauth-token")
+        }
+    }
+}
+
+@Test func findEnvKeysExcludesAmbientCredentialSources() async throws {
+    await withEnv("AWS_PROFILE", value: "dev-profile") {
+        #expect(findEnvKeys(provider: "amazon-bedrock") == nil)
+        #expect(getEnvApiKey(provider: "amazon-bedrock") == "<authenticated>")
+    }
+
+    await withEnv("GOOGLE_CLOUD_PROJECT", value: "project") {
+        await withEnv("GOOGLE_CLOUD_LOCATION", value: "us-central1") {
+            #expect(findEnvKeys(provider: "google-vertex") == nil)
+        }
+    }
+
+    await withEnv("GOOGLE_CLOUD_API_KEY", value: "google-cloud-key") {
+        #expect(findEnvKeys(provider: "google-vertex") == ["GOOGLE_CLOUD_API_KEY"])
+        #expect(getEnvApiKey(provider: "google-vertex") == "google-cloud-key")
+    }
+}
+
 @Test func openAIPromptCacheRetentionHelper() async throws {
     await withEnv("PI_CACHE_RETENTION", value: nil) {
         #expect(resolveCacheRetention(nil) == .short)

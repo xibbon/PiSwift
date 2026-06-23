@@ -34,6 +34,24 @@ public func getEnvApiKey(provider: KnownProvider) -> String? {
     getEnvApiKey(provider: provider.rawValue)
 }
 
+public func findEnvKeys(provider: KnownProvider) -> [String]? {
+    findEnvKeys(provider: provider.rawValue)
+}
+
+/// Return configured API-key environment variable names for a provider without exposing values.
+///
+/// This intentionally reports only explicit key/token variables and excludes ambient credential
+/// sources such as AWS profiles, IAM credentials, and Google Vertex ADC files.
+public func findEnvKeys(provider: String) -> [String]? {
+    let env = ProcessInfo.processInfo.environment
+    guard let envVars = apiKeyEnvVars(provider: provider) else { return nil }
+    let found = envVars.filter { key in
+        guard let value = env[key] else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    return found.isEmpty ? nil : found
+}
+
 public func getEnvApiKey(provider: String) -> String? {
     let env = ProcessInfo.processInfo.environment
 
@@ -68,11 +86,39 @@ public func getEnvApiKey(provider: String) -> String? {
         return selected
     }
 
+    if provider == "google-vertex" {
+        if let apiKey = env["GOOGLE_CLOUD_API_KEY"], !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return apiKey
+        }
+        if hasGoogleVertexCredentials(env: env) {
+            return "<authenticated>"
+        }
+    }
+
+    if let envVar = apiKeyEnvVars(provider: provider)?.first {
+        let apiKey = env[envVar]
+        logApiKeyDebug("provider=\(provider) env apiKey=\(apiKeyInfo(apiKey))")
+        return apiKey
+    }
+
+    return nil
+}
+
+private func apiKeyEnvVars(provider: String) -> [String]? {
+    if provider == "github-copilot" {
+        return ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]
+    }
+
+    if provider == "anthropic" {
+        return ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
+    }
+
     let envMap: [String: String] = [
         "openai": "OPENAI_API_KEY",
         "openai-codex": "OPENAI_API_KEY",
         "azure-openai-responses": "AZURE_OPENAI_API_KEY",
         "google": "GEMINI_API_KEY",
+        "google-vertex": "GOOGLE_CLOUD_API_KEY",
         "groq": "GROQ_API_KEY",
         "cerebras": "CEREBRAS_API_KEY",
         "xai": "XAI_API_KEY",
@@ -84,24 +130,14 @@ public func getEnvApiKey(provider: String) -> String? {
         "minimax-cn": "MINIMAX_CN_API_KEY",
         "huggingface": "HF_TOKEN",
         "opencode": "OPENCODE_API_KEY",
+        "opencode-go": "OPENCODE_API_KEY",
         "kimi-coding": "KIMI_API_KEY",
         "fireworks": "FIREWORKS_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
     ]
 
-    if provider == "google-vertex" {
-        if hasGoogleVertexCredentials(env: env) {
-            return "<authenticated>"
-        }
-    }
-
-    if let envVar = envMap[provider] {
-        let apiKey = env[envVar]
-        logApiKeyDebug("provider=\(provider) env apiKey=\(apiKeyInfo(apiKey))")
-        return apiKey
-    }
-
-    return nil
+    guard let envVar = envMap[provider] else { return nil }
+    return [envVar]
 }
 
 private func hasGoogleVertexCredentials(env: [String: String]) -> Bool {
