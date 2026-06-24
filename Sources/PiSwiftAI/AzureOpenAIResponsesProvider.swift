@@ -178,6 +178,7 @@ public func streamAzureOpenAIResponses(
                 model: azureModel,
                 apiKey: apiKey,
                 headers: options.headers,
+                timeoutMs: options.timeoutMs,
                 middlewares: [cacheMiddleware, azureMiddleware]
             )
             let builtQuery = try buildAzureResponsesQuery(model: model, context: context, options: options, deploymentName: deploymentName)
@@ -423,7 +424,11 @@ public func streamSimpleAzureOpenAIResponses(
         reasoningEffort: reasoningEffort,
         reasoningSummary: nil,
         sessionId: options?.sessionId,
-        headers: options?.headers
+        headers: options?.headers,
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
     return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
 }

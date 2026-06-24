@@ -199,7 +199,10 @@ func mapAnthropicSimpleOptions(model: Model, options: SimpleStreamOptions?, apiK
             thinkingEnabled: false,
             metadata: options?.metadata,
             headers: options?.headers,
-            onPayload: options?.onPayload
+            onPayload: options?.onPayload,
+            onResponse: options?.onResponse,
+            timeoutMs: options?.timeoutMs,
+            maxRetries: options?.maxRetries
         )
     }
 
@@ -220,7 +223,10 @@ func mapAnthropicSimpleOptions(model: Model, options: SimpleStreamOptions?, apiK
         thinkingBudgetTokens: adjusted.thinkingBudget,
         metadata: options?.metadata,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 
@@ -253,7 +259,10 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         apiKey: apiKey,
         reasoningEffort: reasoningEffort,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 
@@ -270,7 +279,11 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
         sessionId: options?.sessionId,
         transport: options?.transport,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries,
+        websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
     )
 }
 
@@ -286,7 +299,11 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         sessionId: options?.sessionId,
         transport: options?.transport,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries,
+        websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
     )
 }
 
@@ -301,7 +318,10 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         reasoningEffort: reasoningEffort,
         sessionId: options?.sessionId,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 
@@ -315,7 +335,10 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
         apiKey: apiKey,
         headers: options?.headers,
         thinking: thinking,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 
@@ -329,7 +352,10 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
         apiKey: apiKey,
         headers: options?.headers,
         thinking: thinking,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 
@@ -397,7 +423,10 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
             thinkingBudgets: mergeThinkingBudgets(options?.thinkingBudgets, reasoning: reasoning, thinkingBudget: adjusted.thinkingBudget),
             cacheRetention: options?.cacheRetention,
             headers: options?.headers,
-            onPayload: options?.onPayload
+            onPayload: options?.onPayload,
+            onResponse: options?.onResponse,
+            timeoutMs: options?.timeoutMs,
+            maxRetries: options?.maxRetries
         )
     }
 
@@ -409,7 +438,10 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
         thinkingBudgets: options?.thinkingBudgets,
         cacheRetention: options?.cacheRetention,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 

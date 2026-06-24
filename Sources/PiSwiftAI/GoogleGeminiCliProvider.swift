@@ -105,7 +105,8 @@ public func streamGoogleGeminiCli(
             var requestUrl: String?
             var lastError: Error?
 
-            for attempt in 0...maxRetries {
+            let retryLimit = max(0, options.maxRetries ?? maxRetries)
+            for attempt in 0...retryLimit {
                 if options.signal?.isCancelled == true {
                     throw GoogleGeminiCliError.aborted
                 }
@@ -118,6 +119,7 @@ public func streamGoogleGeminiCli(
                     }
 
                     var request = URLRequest(url: url)
+                    request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
                     request.httpMethod = "POST"
                     request.httpBody = requestData
 
@@ -135,6 +137,7 @@ public func streamGoogleGeminiCli(
                     guard let http = response as? HTTPURLResponse else {
                         throw GoogleGeminiCliError.invalidResponse
                     }
+                    options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
 
                     if http.statusCode >= 200 && http.statusCode < 300 {
                         responseBytes = bytes
@@ -146,11 +149,11 @@ public func streamGoogleGeminiCli(
                     let errorText = String(data: body, encoding: .utf8) ?? ""
 
                     // 403/404: immediately try next endpoint (no delay)
-                    if (http.statusCode == 403 || http.statusCode == 404) && attempt < maxRetries {
+                    if (http.statusCode == 403 || http.statusCode == 404) && attempt < retryLimit {
                         continue
                     }
 
-                    if attempt < maxRetries && isRetryableError(status: http.statusCode, errorText: errorText) {
+                    if attempt < retryLimit && isRetryableError(status: http.statusCode, errorText: errorText) {
                         let serverDelay = extractRetryDelay(errorText: errorText, response: http)
                         let delay = serverDelay ?? (baseDelayMs * (1 << attempt))
                         let maxDelayMs = options.maxRetryDelayMs ?? 60000
@@ -170,7 +173,7 @@ public func streamGoogleGeminiCli(
                         throw cliError
                     }
                     lastError = error
-                    if attempt < maxRetries {
+                    if attempt < retryLimit {
                         let delay = baseDelayMs * (1 << attempt)
                         try await sleepMillis(delay, signal: options.signal)
                         continue
@@ -424,7 +427,10 @@ public func streamSimpleGoogleGeminiCli(
         thinking: nil,
         sessionId: options?.sessionId,
         projectId: nil,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 
     guard let reasoning = options?.reasoning else {
@@ -439,7 +445,10 @@ public func streamSimpleGoogleGeminiCli(
             thinking: GoogleOptions.ThinkingConfig(enabled: false),
             sessionId: base.sessionId,
             projectId: base.projectId,
-            onPayload: base.onPayload
+            onPayload: base.onPayload,
+            onResponse: base.onResponse,
+            timeoutMs: base.timeoutMs,
+            maxRetries: base.maxRetries
         )
         return streamGoogleGeminiCli(model: model, context: context, options: updated)
     }
@@ -461,7 +470,10 @@ public func streamSimpleGoogleGeminiCli(
             ),
             sessionId: base.sessionId,
             projectId: base.projectId,
-            onPayload: base.onPayload
+            onPayload: base.onPayload,
+            onResponse: base.onResponse,
+            timeoutMs: base.timeoutMs,
+            maxRetries: base.maxRetries
         )
         return streamGoogleGeminiCli(model: model, context: context, options: updated)
     }
@@ -491,7 +503,10 @@ public func streamSimpleGoogleGeminiCli(
         thinking: GoogleOptions.ThinkingConfig(enabled: true, budgetTokens: thinkingBudget, level: nil),
         sessionId: base.sessionId,
         projectId: base.projectId,
-        onPayload: base.onPayload
+        onPayload: base.onPayload,
+        onResponse: base.onResponse,
+        timeoutMs: base.timeoutMs,
+        maxRetries: base.maxRetries
     )
     return streamGoogleGeminiCli(model: model, context: context, options: updated)
 }

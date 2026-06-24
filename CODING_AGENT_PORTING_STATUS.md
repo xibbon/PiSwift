@@ -61,6 +61,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Offline startup/package mode (`--offline`, `PI_OFFLINE=1`) wired through CLI, SDK resource loading, config/package commands, and package manager network suppression.
 - [x] `--list-models` diagnostics and header-auth availability for `models.json` custom providers.
 - [x] AI model registry consumer parity for v0.79.4 generated built-ins: Swift now exposes the 971-model text catalog, including new generated providers used by coding-agent model discovery, while Google Gemini CLI and Google Antigravity remain excluded from default built-in model registration.
+- [x] AI provider request-control consumer parity: `StreamOptions` / `SimpleStreamOptions` now preserve provider `timeoutMs`, `maxRetries`, `onResponse`, and Codex WebSocket connect timeout through built-in provider registration.
 - [x] RPC prompt preflight, model-aware header-auth checks for prompt/model selection paths, bash `excludeFromContext`, `get_session_stats.contextUsage`, child-exit pending-request rejection, stderr forwarding, and stdout JSONL guarding.
 - [x] HTML export markdown-link URL sanitization, HTML-like content rendered verbatim, selection-safe expandable toggles, browser-safe header toggle shortcuts, plain-text output indentation, tightened tool spacing, and structured grep/find/ls output rendering.
 - [x] Keybinding & slash command parity (`/quit` + `/exit`, configurable keybindings, robust shortcut matching, `$ARGUMENTS` for slash commands).

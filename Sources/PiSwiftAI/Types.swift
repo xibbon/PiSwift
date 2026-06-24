@@ -945,6 +945,9 @@ public struct OpenAICompletionsOptions: Sendable {
     public var reasoningEffort: ThinkingLevel?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -954,7 +957,10 @@ public struct OpenAICompletionsOptions: Sendable {
         toolChoice: OpenAIToolChoice? = nil,
         reasoningEffort: ThinkingLevel? = nil,
         headers: [String: String]? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -964,6 +970,9 @@ public struct OpenAICompletionsOptions: Sendable {
         self.reasoningEffort = reasoningEffort
         self.headers = headers
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -1008,6 +1017,10 @@ public struct OpenAIResponsesOptions: Sendable {
     public var transport: Transport?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
+    public var websocketConnectTimeoutMs: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1021,7 +1034,11 @@ public struct OpenAIResponsesOptions: Sendable {
         sessionId: String? = nil,
         transport: Transport? = nil,
         headers: [String: String]? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil,
+        websocketConnectTimeoutMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1035,6 +1052,10 @@ public struct OpenAIResponsesOptions: Sendable {
         self.transport = transport
         self.headers = headers
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
     }
 }
 
@@ -1052,6 +1073,9 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var azureBaseUrl: String?
     public var azureDeploymentName: String?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1066,7 +1090,10 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         azureResourceName: String? = nil,
         azureBaseUrl: String? = nil,
         azureDeploymentName: String? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1081,6 +1108,9 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         self.azureBaseUrl = azureBaseUrl
         self.azureDeploymentName = azureDeploymentName
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -1097,6 +1127,10 @@ public struct OpenAICodexResponsesOptions: Sendable {
     public var transport: Transport?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
+    public var websocketConnectTimeoutMs: Int?
     /// v0.67.1: forward configured serviceTier to Codex Responses requests so users can choose
     /// flex / priority pricing tiers. v0.67.67: trust the explicitly requested tier when the API
     /// echoes the default — keeps cost accounting aligned with the caller-selected tier.
@@ -1115,7 +1149,11 @@ public struct OpenAICodexResponsesOptions: Sendable {
         transport: Transport? = nil,
         headers: [String: String]? = nil,
         onPayload: PayloadHandler? = nil,
-        serviceTier: OpenAIServiceTier? = nil
+        serviceTier: OpenAIServiceTier? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil,
+        websocketConnectTimeoutMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1130,6 +1168,10 @@ public struct OpenAICodexResponsesOptions: Sendable {
         self.headers = headers
         self.onPayload = onPayload
         self.serviceTier = serviceTier
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
     }
 }
 
@@ -1162,6 +1204,9 @@ public struct GoogleOptions: Sendable {
     public var toolChoice: String?
     public var thinking: ThinkingConfig?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1171,7 +1216,10 @@ public struct GoogleOptions: Sendable {
         headers: [String: String]? = nil,
         toolChoice: String? = nil,
         thinking: ThinkingConfig? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1181,6 +1229,9 @@ public struct GoogleOptions: Sendable {
         self.toolChoice = toolChoice
         self.thinking = thinking
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -1196,6 +1247,9 @@ public struct GoogleGeminiCliOptions: Sendable {
     public var sessionId: String?
     public var projectId: String?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1208,7 +1262,10 @@ public struct GoogleGeminiCliOptions: Sendable {
         thinking: GoogleOptions.ThinkingConfig? = nil,
         sessionId: String? = nil,
         projectId: String? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1221,6 +1278,9 @@ public struct GoogleGeminiCliOptions: Sendable {
         self.sessionId = sessionId
         self.projectId = projectId
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -1235,6 +1295,9 @@ public struct GoogleVertexOptions: Sendable {
     public var project: String?
     public var location: String?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1246,7 +1309,10 @@ public struct GoogleVertexOptions: Sendable {
         thinking: GoogleOptions.ThinkingConfig? = nil,
         project: String? = nil,
         location: String? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1258,6 +1324,9 @@ public struct GoogleVertexOptions: Sendable {
         self.project = project
         self.location = location
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 
@@ -1416,6 +1485,9 @@ public struct MistralOptions: Sendable {
     public var sessionId: String?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
+    public var onResponse: ResponseHandler?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1427,7 +1499,10 @@ public struct MistralOptions: Sendable {
         reasoningEffort: String? = nil,
         sessionId: String? = nil,
         headers: [String: String]? = nil,
-        onPayload: PayloadHandler? = nil
+        onPayload: PayloadHandler? = nil,
+        onResponse: ResponseHandler? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -1439,6 +1514,9 @@ public struct MistralOptions: Sendable {
         self.sessionId = sessionId
         self.headers = headers
         self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
     }
 }
 

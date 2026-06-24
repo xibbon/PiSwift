@@ -18,6 +18,23 @@ function loadGeneratedObject(file, exportName) {
   return module.exports;
 }
 
+function sortJsonValue(value) {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, sortJsonValue(item)])
+  );
+}
+
+function writeJsonFixture(name, value) {
+  const resourcesDir = path.join(repoRoot, "Tests/PiSwiftAITests/Resources");
+  fs.mkdirSync(resourcesDir, { recursive: true });
+  const sorted = sortJsonValue(value);
+  fs.writeFileSync(path.join(resourcesDir, name), `${JSON.stringify(sorted, null, 2)}\n`);
+}
+
 function swiftString(value) {
   return JSON.stringify(value)
     .replace(/\u2028/g, "\\u2028")
@@ -297,5 +314,7 @@ const models = loadGeneratedObject("models.generated.ts", "MODELS");
 const imageModels = loadGeneratedObject("image-models.generated.ts", "IMAGE_MODELS");
 writeModelsData(models);
 writeImageModelsData(imageModels);
+writeJsonFixture("upstream-models.generated.json", models);
+writeJsonFixture("upstream-image-models.generated.json", imageModels);
 console.log(`Generated ${Object.values(models).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} text models.`);
 console.log(`Generated ${Object.values(imageModels).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} image models.`);

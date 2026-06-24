@@ -152,7 +152,12 @@ public func streamOpenAIResponses(
             sessionId: options.sessionId,
             transport: options.transport,
             headers: options.headers,
-            onPayload: options.onPayload
+            onPayload: options.onPayload,
+            serviceTier: options.serviceTier,
+            onResponse: options.onResponse,
+            timeoutMs: options.timeoutMs,
+            maxRetries: options.maxRetries,
+            websocketConnectTimeoutMs: options.websocketConnectTimeoutMs
         )
         return streamOpenAICodexResponses(model: model, context: context, options: codexOptions)
     }
@@ -185,6 +190,7 @@ public func streamOpenAIResponses(
                 model: model,
                 apiKey: options.apiKey,
                 headers: options.headers,
+                timeoutMs: options.timeoutMs,
                 middlewares: [middleware, inlineImagesMiddleware]
             )
             let builtQuery = try buildResponsesQuery(model: model, context: context, options: options)

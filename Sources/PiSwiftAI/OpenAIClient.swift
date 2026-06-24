@@ -5,6 +5,7 @@ func makeOpenAIClient(
     model: Model,
     apiKey: String?,
     headers: [String: String]? = nil,
+    timeoutMs: Int? = nil,
     middlewares: [OpenAIMiddleware] = []
 ) throws -> OpenAI {
     let token = apiKey ?? ""
@@ -30,6 +31,7 @@ func makeOpenAIClient(
         }
     }
 
+    let timeoutInterval = Double(timeoutMs ?? 60_000) / 1000.0
     let configuration = OpenAI.Configuration(
         token: token,
         organizationIdentifier: nil,
@@ -37,7 +39,7 @@ func makeOpenAIClient(
         port: port,
         scheme: scheme,
         basePath: basePath,
-        timeoutInterval: 60,
+        timeoutInterval: timeoutInterval,
         customHeaders: mergedHeaders
     )
     let session = proxySession(for: url)

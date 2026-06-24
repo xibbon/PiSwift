@@ -38,6 +38,7 @@ public func streamMistral(
             let bodyData = try JSONSerialization.data(withJSONObject: payload, options: [])
 
             var request = URLRequest(url: mistralChatCompletionsUrl(baseUrl: model.baseUrl))
+            request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
             request.httpMethod = "POST"
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue("text/event-stream", forHTTPHeaderField: "accept")
@@ -63,6 +64,7 @@ public func streamMistral(
             guard let http = response as? HTTPURLResponse else {
                 throw MistralStreamError.invalidResponse
             }
+            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
             if !(200..<300).contains(http.statusCode) {
                 let bodyText = try await collectMistralData(from: bytes)
                 let snippet = String(data: bodyText, encoding: .utf8) ?? ""
@@ -649,7 +651,10 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         reasoningEffort: reasoningEffort,
         sessionId: options?.sessionId,
         headers: options?.headers,
-        onPayload: options?.onPayload
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries
     )
 }
 

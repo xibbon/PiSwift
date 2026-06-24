@@ -141,6 +141,186 @@ private func readRequestBody(_ request: URLRequest) -> Data? {
     return data.isEmpty ? nil : data
 }
 
+private func loadJSONResource(_ name: String) throws -> [String: Any] {
+    guard let url = Bundle.module.url(forResource: name, withExtension: "json") else {
+        throw NSError(domain: "PiSwiftAITests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing resource \(name).json"])
+    }
+    let data = try Data(contentsOf: url)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw NSError(domain: "PiSwiftAITests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON resource \(name).json"])
+    }
+    return object
+}
+
+private func canonicalJSONString(_ value: Any) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    return String(decoding: data, as: UTF8.self)
+}
+
+private func optionalFields(_ pairs: [(String, Any?)]) -> [String: Any] {
+    var result: [String: Any] = [:]
+    for (key, value) in pairs {
+        if let value {
+            result[key] = value
+        }
+    }
+    return result
+}
+
+private func normalizeCost(_ cost: ModelCost) -> [String: Any] {
+    [
+        "cacheRead": cost.cacheRead,
+        "cacheWrite": cost.cacheWrite,
+        "input": cost.input,
+        "output": cost.output,
+    ]
+}
+
+private func normalizeThinkingLevelMap(_ map: ThinkingLevelMap?) -> [String: Any]? {
+    guard let map else { return nil }
+    var result: [String: Any] = [:]
+    for (key, value) in map {
+        result[key.rawValue] = value ?? NSNull()
+    }
+    return result
+}
+
+private func normalizeReasoningEffortMap(_ map: [ThinkingLevel: String]?) -> [String: Any]? {
+    guard let map else { return nil }
+    return Dictionary(uniqueKeysWithValues: map.map { ($0.key.rawValue, $0.value) })
+}
+
+private func normalizeOpenRouterSort(_ sort: OpenRouterRoutingSort?) -> Any? {
+    guard let sort else { return nil }
+    switch sort {
+    case .named(let value):
+        return value
+    case .structured(let by, let partition):
+        return optionalFields([
+            ("by", by),
+            ("partition", partition),
+        ])
+    }
+}
+
+private func normalizeOpenRouterPrice(_ price: OpenRouterRoutingPrice?) -> [String: Any]? {
+    guard let price else { return nil }
+    return optionalFields([
+        ("audio", price.audio),
+        ("completion", price.completion),
+        ("image", price.image),
+        ("prompt", price.prompt),
+        ("request", price.request),
+    ])
+}
+
+private func normalizeOpenRouterPercentile(_ percentile: OpenRouterRoutingPercentile?) -> Any? {
+    guard let percentile else { return nil }
+    switch percentile {
+    case .scalar(let value):
+        return value
+    case .percentiles(let p50, let p75, let p90, let p99):
+        return optionalFields([
+            ("p50", p50),
+            ("p75", p75),
+            ("p90", p90),
+            ("p99", p99),
+        ])
+    }
+}
+
+private func normalizeOpenRouterRouting(_ routing: OpenRouterRouting?) -> [String: Any]? {
+    guard let routing else { return nil }
+    return optionalFields([
+        ("allow_fallbacks", routing.allowFallbacks),
+        ("data_collection", routing.dataCollection),
+        ("enforce_distillable_text", routing.enforceDistillableText),
+        ("ignore", routing.ignore),
+        ("max_price", normalizeOpenRouterPrice(routing.maxPrice)),
+        ("only", routing.only),
+        ("order", routing.order),
+        ("preferred_max_latency", normalizeOpenRouterPercentile(routing.preferredMaxLatency)),
+        ("preferred_min_throughput", normalizeOpenRouterPercentile(routing.preferredMinThroughput)),
+        ("quantizations", routing.quantizations),
+        ("require_parameters", routing.requireParameters),
+        ("sort", normalizeOpenRouterSort(routing.sort)),
+        ("zdr", routing.zdr),
+    ])
+}
+
+private func normalizeVercelGatewayRouting(_ routing: VercelGatewayRouting?) -> [String: Any]? {
+    guard let routing else { return nil }
+    return optionalFields([
+        ("allow_fallbacks", routing.allowFallbacks),
+        ("only", routing.only),
+        ("order", routing.order),
+    ])
+}
+
+private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
+    guard let compat else { return nil }
+    return optionalFields([
+        ("cacheControlFormat", compat.cacheControlFormat?.rawValue),
+        ("forceAdaptiveThinking", compat.forceAdaptiveThinking),
+        ("maxTokensField", compat.maxTokensField?.rawValue),
+        ("openRouterRouting", normalizeOpenRouterRouting(compat.openRouterRouting)),
+        ("reasoningEffortMap", normalizeReasoningEffortMap(compat.reasoningEffortMap)),
+        ("requiresAssistantAfterToolResult", compat.requiresAssistantAfterToolResult),
+        ("requiresMistralToolIds", compat.requiresMistralToolIds),
+        ("requiresReasoningContentOnAssistantMessages", compat.requiresReasoningContentOnAssistantMessages),
+        ("requiresThinkingAsText", compat.requiresThinkingAsText),
+        ("requiresToolResultName", compat.requiresToolResultName),
+        ("sendSessionAffinityHeaders", compat.sendSessionAffinityHeaders),
+        ("sendSessionIdHeader", compat.sendSessionIdHeader),
+        ("supportsCacheControlOnTools", compat.supportsCacheControlOnTools),
+        ("supportsDeveloperRole", compat.supportsDeveloperRole),
+        ("supportsEagerToolInputStreaming", compat.supportsEagerToolInputStreaming),
+        ("supportsLongCacheRetention", compat.supportsLongCacheRetention),
+        ("supportsReasoningEffort", compat.supportsReasoningEffort),
+        ("supportsStore", compat.supportsStore),
+        ("supportsStrictMode", compat.supportsStrictMode),
+        ("supportsTemperature", compat.supportsTemperature),
+        ("supportsUsageInStreaming", compat.supportsUsageInStreaming),
+        ("thinkingFormat", compat.thinkingFormat?.rawValue),
+        ("vercelGatewayRouting", normalizeVercelGatewayRouting(compat.vercelGatewayRouting)),
+        ("zaiToolStream", compat.zaiToolStream),
+    ])
+}
+
+private func normalizeModel(_ model: PiSwiftAI.Model) -> [String: Any] {
+    var result = optionalFields([
+        ("api", model.api.rawValue),
+        ("baseUrl", model.baseUrl),
+        ("compat", normalizeCompat(model.compat)),
+        ("contextWindow", model.contextWindow),
+        ("cost", normalizeCost(model.cost)),
+        ("headers", model.headers),
+        ("id", model.id),
+        ("input", model.input.map(\.rawValue)),
+        ("maxTokens", model.maxTokens),
+        ("name", model.name),
+        ("provider", model.provider),
+        ("reasoning", model.reasoning),
+        ("thinkingLevelMap", normalizeThinkingLevelMap(model.thinkingLevelMap)),
+    ])
+    result.removeValue(forKey: "nil")
+    return result
+}
+
+private func normalizeImagesModel(_ model: ImagesModel) -> [String: Any] {
+    optionalFields([
+        ("api", model.api.rawValue),
+        ("baseUrl", model.baseUrl),
+        ("cost", normalizeCost(model.cost)),
+        ("headers", model.headers),
+        ("id", model.id),
+        ("input", model.input.map(\.rawValue)),
+        ("name", model.name),
+        ("output", model.output.map(\.rawValue)),
+        ("provider", model.provider),
+    ])
+}
+
 private actor CodexRequestLock {
     private var locked = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -2705,10 +2885,95 @@ struct ApiRegistryTests {
     #expect(compat.thinkingFormat == .deepseek)
 }
 
-@Test func generatedTextCatalogMatchesUpstreamCountsAndProviders() {
+@Test func simpleOptionsForwardProviderRequestControls() {
+    let options = SimpleStreamOptions(
+        signal: CancellationToken(),
+        apiKey: "key",
+        transport: .websocketCached,
+        reasoning: .low,
+        cacheRetention: .short,
+        sessionId: "session-1",
+        headers: ["X-Test": "1"],
+        onPayload: { _ in },
+        maxRetryDelayMs: 1234,
+        metadata: ["trace": AnyCodable("yes")],
+        onResponse: { _ in },
+        timeoutMs: 2345,
+        websocketConnectTimeoutMs: 3456,
+        maxRetries: 2
+    )
+
+    let openAI = getModel(provider: .openai, modelId: "gpt-5.4")
+    let responses = mapOpenAIResponsesSimpleOptions(model: openAI, options: options, apiKey: "key")
+    #expect(responses.timeoutMs == 2345)
+    #expect(responses.maxRetries == 2)
+    #expect(responses.websocketConnectTimeoutMs == 3456)
+
+    let codex = mapOpenAICodexResponsesSimpleOptions(model: openAI, options: options, apiKey: "key")
+    #expect(codex.timeoutMs == 2345)
+    #expect(codex.maxRetries == 2)
+    #expect(codex.websocketConnectTimeoutMs == 3456)
+
+    let completions = mapOpenAICompletionsSimpleOptions(model: openAI, options: options, apiKey: "key")
+    #expect(completions.timeoutMs == 2345)
+    #expect(completions.maxRetries == 2)
+
+    let anthropic = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
+    let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, options: options, apiKey: "key")
+    #expect(anthropicOptions.timeoutMs == 2345)
+    #expect(anthropicOptions.maxRetries == 2)
+
+    let google = getModel(provider: .google, modelId: "gemini-3.1-pro-preview")
+    let googleOptions = mapGoogleSimpleOptions(model: google, options: options, apiKey: "key")
+    #expect(googleOptions.timeoutMs == 2345)
+    #expect(googleOptions.maxRetries == 2)
+
+    let vertex = getModel(provider: .googleVertex, modelId: "gemini-3.1-pro-preview")
+    let vertexOptions = mapGoogleVertexSimpleOptions(model: vertex, options: options, apiKey: "key")
+    #expect(vertexOptions.timeoutMs == 2345)
+    #expect(vertexOptions.maxRetries == 2)
+
+    let bedrock = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0")
+    let bedrockOptions = mapBedrockSimpleOptions(model: bedrock, options: options)
+    #expect(bedrockOptions.timeoutMs == 2345)
+    #expect(bedrockOptions.maxRetries == 2)
+
+    let mistral = getModel(provider: .mistral, modelId: "mistral-small-latest")
+    let mistralOptions = mapMistralSimpleOptions(model: mistral, options: options, apiKey: "key")
+    #expect(mistralOptions.timeoutMs == 2345)
+    #expect(mistralOptions.maxRetries == 2)
+}
+
+@Test func generatedTextCatalogMatchesUpstreamMetadata() throws {
+    let upstream = try loadJSONResource("upstream-models.generated")
+    #expect(Set(ModelsData.keys) == Set(upstream.keys))
+
+    var compared = 0
+    for provider in ModelsData.keys.sorted() {
+        guard let swiftModels = ModelsData[provider],
+              let upstreamModels = upstream[provider] as? [String: Any] else {
+            #expect(Bool(false), "Missing provider \(provider)")
+            continue
+        }
+        #expect(Set(swiftModels.keys) == Set(upstreamModels.keys), "Model ID drift for provider \(provider)")
+
+        for modelId in swiftModels.keys.sorted() {
+            guard let upstreamModel = upstreamModels[modelId] as? [String: Any],
+                  let swiftModel = swiftModels[modelId] else {
+                #expect(Bool(false), "Missing model \(provider)/\(modelId)")
+                continue
+            }
+            let actual = try canonicalJSONString(normalizeModel(swiftModel))
+            let expected = try canonicalJSONString(upstreamModel)
+            #expect(actual == expected, "Metadata drift for \(provider)/\(modelId)")
+            compared += 1
+        }
+    }
+
     let allModels = getProviders().flatMap { getModels(provider: $0) }
     #expect(getProviders().count == 35)
     #expect(allModels.count == 971)
+    #expect(compared == 971)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -2731,11 +2996,37 @@ struct ApiRegistryTests {
     #expect(together.input == [.text, .image])
 }
 
-@Test func generatedImageCatalogMatchesUpstreamCountsAndLookup() {
+@Test func generatedImageCatalogMatchesUpstreamMetadata() throws {
+    let upstream = try loadJSONResource("upstream-image-models.generated")
+    #expect(Set(ImageModelsData.keys) == Set(upstream.keys))
+
+    var compared = 0
+    for provider in ImageModelsData.keys.sorted() {
+        guard let swiftModels = ImageModelsData[provider],
+              let upstreamModels = upstream[provider] as? [String: Any] else {
+            #expect(Bool(false), "Missing image provider \(provider)")
+            continue
+        }
+        #expect(Set(swiftModels.keys) == Set(upstreamModels.keys), "Image model ID drift for provider \(provider)")
+
+        for modelId in swiftModels.keys.sorted() {
+            guard let upstreamModel = upstreamModels[modelId] as? [String: Any],
+                  let swiftModel = swiftModels[modelId] else {
+                #expect(Bool(false), "Missing image model \(provider)/\(modelId)")
+                continue
+            }
+            let actual = try canonicalJSONString(normalizeImagesModel(swiftModel))
+            let expected = try canonicalJSONString(upstreamModel)
+            #expect(actual == expected, "Image metadata drift for \(provider)/\(modelId)")
+            compared += 1
+        }
+    }
+
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
     #expect(models.count == 32)
+    #expect(compared == 32)
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)

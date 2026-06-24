@@ -249,13 +249,15 @@ public func streamBedrock(
             let region = resolveBedrockRegion(options: options)
             let auth = try resolveBedrockAuth(profile: options.profile)
             let (request, body) = try buildBedrockRequest(model: model, context: context, options: options, region: region)
-            let signedRequest = try signBedrockRequest(request: request, body: body, region: region, auth: auth)
+            var signedRequest = try signBedrockRequest(request: request, body: body, region: region, auth: auth)
+            signedRequest.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
 
             let session = proxySession(for: signedRequest.url)
             let (bytes, response) = try await session.bytes(for: signedRequest)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw BedrockStreamError.invalidResponse
             }
+            options.onResponse?(ResponseSnapshot(statusCode: httpResponse.statusCode, headers: responseHeaders(httpResponse)))
             guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
                 throw BedrockStreamError.invalidResponse
             }

@@ -31,6 +31,7 @@ public func streamGoogleVertex(
             emitPayload(options.onPayload, data: requestBody)
             let url = try vertexStreamUrl(model: model, project: project, location: location)
             var request = URLRequest(url: url)
+            request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
             request.httpMethod = "POST"
             request.httpBody = requestBody
 
@@ -50,6 +51,7 @@ public func streamGoogleVertex(
             guard let http = response as? HTTPURLResponse else {
                 throw GoogleVertexError.invalidResponse
             }
+            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
             if !(200..<300).contains(http.statusCode) {
                 let body = try await collectSseStreamData(from: bytes)
                 let message = String(data: body, encoding: .utf8) ?? "HTTP \(http.statusCode)"

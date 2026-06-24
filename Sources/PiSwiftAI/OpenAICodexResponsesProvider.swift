@@ -271,6 +271,7 @@ public func streamOpenAICodexResponses(
                         headers: headers,
                         sessionId: options.sessionId,
                         signal: options.signal,
+                        websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
                         onStart: {
                             websocketStarted = true
                             startStreamIfNeeded()
@@ -299,6 +300,7 @@ public func streamOpenAICodexResponses(
 
             let requestData = try JSONSerialization.data(withJSONObject: body, options: [])
             var request = URLRequest(url: codexResponsesUrl(baseUrl: model.baseUrl))
+            request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
             request.httpMethod = "POST"
             request.httpBody = requestData
             for (key, value) in headers {
@@ -310,6 +312,7 @@ public func streamOpenAICodexResponses(
             guard let http = response as? HTTPURLResponse else {
                 throw OpenAICodexStreamError.invalidResponse
             }
+            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
 
             if !(200..<300).contains(http.statusCode) {
                 let bodyData = try await collectCodexData(from: bytes)
@@ -421,9 +424,9 @@ private final class CodexWebSocketCache: @unchecked Sendable {
 
     private init() {}
 
-    func acquire(url: URL, headers: [String: String], sessionId: String?) -> CodexWebSocketLease {
+    func acquire(url: URL, headers: [String: String], sessionId: String?, connectTimeoutMs: Int?) -> CodexWebSocketLease {
         guard let sessionId, !sessionId.isEmpty else {
-            let task = connect(url: url, headers: headers)
+            let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
             return CodexWebSocketLease(task: task, sessionId: nil, cached: false)
         }
 
@@ -444,14 +447,14 @@ private final class CodexWebSocketCache: @unchecked Sendable {
                 entries[sessionId] = existing
                 if existing.busy {
                     lock.unlock()
-                    let task = connect(url: url, headers: headers)
+                    let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
                     return CodexWebSocketLease(task: task, sessionId: nil, cached: false)
                 }
             }
         }
         lock.unlock()
 
-        let task = connect(url: url, headers: headers)
+        let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
         lock.lock()
         entries[sessionId] = Entry(task: task, busy: true, idleTimer: nil)
         lock.unlock()
@@ -505,8 +508,9 @@ private final class CodexWebSocketCache: @unchecked Sendable {
         closeSilently(entry.task, reason: "idle_timeout")
     }
 
-    private func connect(url: URL, headers: [String: String]) -> URLSessionWebSocketTask {
+    private func connect(url: URL, headers: [String: String], connectTimeoutMs: Int?) -> URLSessionWebSocketTask {
         var request = URLRequest(url: url)
+        request.timeoutInterval = Double(connectTimeoutMs ?? 60_000) / 1000.0
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
@@ -613,13 +617,14 @@ private func processCodexWebSocketStream(
     headers: [String: String],
     sessionId: String?,
     signal: CancellationToken?,
+    websocketConnectTimeoutMs: Int?,
     onStart: () -> Void,
     onEvent: ([String: Any]) throws -> Void
 ) async throws {
     var wsHeaders = headers
     wsHeaders["OpenAI-Beta"] = codexWebSocketBetaHeader
 
-    let lease = CodexWebSocketCache.shared.acquire(url: url, headers: wsHeaders, sessionId: sessionId)
+    let lease = CodexWebSocketCache.shared.acquire(url: url, headers: wsHeaders, sessionId: sessionId, connectTimeoutMs: websocketConnectTimeoutMs)
     var keepConnection = true
     defer {
         CodexWebSocketCache.shared.release(lease, keep: keepConnection)

@@ -147,6 +147,9 @@ let package = Package(
         .testTarget(
             name: "PiSwiftAITests",
             dependencies: ["PiSwiftAI"],
+            resources: [
+                .process("Resources")
+            ],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(

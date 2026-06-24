@@ -33,6 +33,7 @@ public func streamOpenAICompletions(
                     model: model,
                     apiKey: options.apiKey,
                     headers: options.headers,
+                    timeoutMs: options.timeoutMs,
                     middlewares: middlewares
                 )
                 openAIStream = client.chatsStream(query: query)
@@ -627,6 +628,7 @@ private func streamZaiCompletions(
     }
 
     var request = URLRequest(url: chatCompletionsUrl(baseUrl: model.baseUrl))
+    request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
     request.httpMethod = "POST"
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
@@ -645,7 +647,7 @@ private func streamZaiCompletions(
     let body = try buildZaiRequestBody(query: query, model: model, options: options)
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
-    return streamChatCompletions(request: request, signal: options.signal)
+    return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
 }
 
 private func buildZaiRequestBody(query: ChatQuery, model: Model, options: OpenAICompletionsOptions) throws -> Data {
@@ -714,6 +716,7 @@ private func streamManualOpenAICompletions(
     }
 
     var request = URLRequest(url: chatCompletionsUrl(baseUrl: model.baseUrl))
+    request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
     request.httpMethod = "POST"
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
@@ -732,7 +735,7 @@ private func streamManualOpenAICompletions(
     let body = try JSONEncoder().encode(query)
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
-    return streamChatCompletions(request: request, signal: options.signal)
+    return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
 }
 
 private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
@@ -1047,7 +1050,8 @@ private func chatCompletionsUrl(baseUrl: String) -> URL {
 
 private func streamChatCompletions(
     request: URLRequest,
-    signal: CancellationToken?
+    signal: CancellationToken?,
+    onResponse: ResponseHandler?
 ) -> AsyncThrowingStream<ChatStreamResult, Error> {
     AsyncThrowingStream { continuation in
         Task {
@@ -1061,6 +1065,7 @@ private func streamChatCompletions(
                 guard let http = response as? HTTPURLResponse else {
                     throw OpenAICompletionsStreamError.invalidResponse
                 }
+                onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
                 if !(200..<300).contains(http.statusCode) {
                     let body = try await collectStreamData(from: bytes)
                     let message = String(data: body, encoding: .utf8) ?? "HTTP \(http.statusCode)"
