@@ -20,13 +20,15 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
     mutating func run() async throws {
         markCodingAgentEnvironment()
         time("start")
+        let offline = cli.offline || CLIOptions.isOfflineEnvironmentEnabled()
         if cli.rawMessages.first == "package" {
             let args = Array(cli.rawMessages.dropFirst())
             if await handlePackageCommand(
                 args,
                 approve: cli.approve,
                 noApprove: cli.noApprove,
-                noExtensions: cli.noExtensions
+                noExtensions: cli.noExtensions,
+                offline: offline
             ) {
                 if let exitCode = consumePackageCommandExitCode() {
                     Darwin.exit(exitCode)
@@ -57,7 +59,8 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
                 cwd: cwd,
                 agentDir: agentDir,
                 settingsManager: settingsManager,
-                projectTrusted: trustContext.trust.trusted
+                projectTrusted: trustContext.trust.trusted,
+                offline: offline
             )
             let resolvedPaths = try await packageManager.resolve()
             await selectConfig(
@@ -75,6 +78,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
 
         var parsed = cli.toArgs()
         time("parseArgs")
+        let resolvedOffline = parsed.offline == true
 
         let cwd = FileManager.default.currentDirectoryPath
         let authStorage = AuthStorage.create(getAuthPath())
@@ -294,6 +298,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             noPromptTemplates: parsed.noPromptTemplates ?? false,
             noContextFiles: parsed.noContextFiles ?? false,
             projectTrusted: trust.trusted,
+            offline: resolvedOffline,
             systemPrompt: parsed.systemPrompt,
             appendSystemPrompt: parsed.appendSystemPrompt
         ))

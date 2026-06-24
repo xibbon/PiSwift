@@ -38,6 +38,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
     /// v0.67.4: skip AGENTS.md / CLAUDE.md auto-discovery for clean runs.
     public var noContextFiles: Bool?
     public var projectTrusted: Bool?
+    public var offline: Bool?
     public var systemPrompt: String?
     public var appendSystemPrompt: String?
 
@@ -55,6 +56,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         noThemes: Bool? = nil,
         noContextFiles: Bool? = nil,
         projectTrusted: Bool? = nil,
+        offline: Bool? = nil,
         systemPrompt: String? = nil,
         appendSystemPrompt: String? = nil
     ) {
@@ -71,6 +73,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         self.noThemes = noThemes
         self.noContextFiles = noContextFiles
         self.projectTrusted = projectTrusted
+        self.offline = offline
         self.systemPrompt = systemPrompt
         self.appendSystemPrompt = appendSystemPrompt
     }
@@ -92,6 +95,7 @@ public final class DefaultResourceLoader: ResourceLoader {
     private let noThemes: Bool
     private let noContextFiles: Bool
     private let projectTrusted: Bool
+    private let offline: Bool
     private let systemPromptSource: String?
     private let appendSystemPromptSource: String?
 
@@ -170,8 +174,15 @@ public final class DefaultResourceLoader: ResourceLoader {
         self.cwd = options.cwd ?? FileManager.default.currentDirectoryPath
         self.agentDir = options.agentDir ?? getAgentDir()
         self.projectTrusted = options.projectTrusted ?? true
+        self.offline = options.offline ?? false
         self.settingsManager = options.settingsManager ?? SettingsManager.create(self.cwd, self.agentDir, projectTrusted: self.projectTrusted)
-        self.packageManager = DefaultPackageManager(cwd: self.cwd, agentDir: self.agentDir, settingsManager: self.settingsManager, projectTrusted: self.projectTrusted)
+        self.packageManager = DefaultPackageManager(
+            cwd: self.cwd,
+            agentDir: self.agentDir,
+            settingsManager: self.settingsManager,
+            projectTrusted: self.projectTrusted,
+            offline: self.offline
+        )
         self.additionalExtensionPaths = options.additionalExtensionPaths ?? []
         self.additionalSkillPaths = options.additionalSkillPaths ?? []
         self.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? []
@@ -227,7 +238,7 @@ public final class DefaultResourceLoader: ResourceLoader {
 
         let cliExtensionPaths: ResolvedPaths
         do {
-            cliExtensionPaths = try await packageManager.resolveExtensionSources(additionalExtensionPaths, options: PackageResolveOptions(temporary: true))
+            cliExtensionPaths = try await packageManager.resolveExtensionSources(additionalExtensionPaths, options: PackageResolveOptions(temporary: true, offline: offline))
         } catch {
             cliExtensionPaths = ResolvedPaths()
         }

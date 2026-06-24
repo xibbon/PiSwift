@@ -64,6 +64,9 @@ private func parseCLI(_ args: [String]) throws -> Args {
     #expect(try parseCLI(["--no-session"]).noSession == true)
     #expect(try parseCLI(["--approve"]).approve == true)
     #expect(try parseCLI(["--no-approve"]).noApprove == true)
+    #expect(try parseCLI(["--offline"]).offline == true)
+    #expect(CLIOptions.isOfflineEnvironmentEnabled(["PI_OFFLINE": "1"]))
+    #expect(!CLIOptions.isOfflineEnvironmentEnabled(["PI_OFFLINE": "true"]))
 }
 
 @Test func parseArgsHookFlags() throws {

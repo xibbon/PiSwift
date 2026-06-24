@@ -81,6 +81,9 @@ struct CLIOptions: ParsableArguments {
     @Flag(name: .customLong("no-extensions"), help: "Disable extension discovery")
     var noExtensions: Bool = false
 
+    @Flag(name: .customLong("offline"), help: "Disable package/update network operations")
+    var offline: Bool = false
+
     @Flag(name: .customLong("verbose"), help: "Force verbose startup (overrides quiet startup setting)")
     var verbose: Bool = false
 
@@ -191,6 +194,9 @@ extension CLIOptions {
         if noExtensions {
             result.noExtensions = true
         }
+        if offline || Self.isOfflineEnvironmentEnabled() {
+            result.offline = true
+        }
         if verbose {
             result.verbose = true
         }
@@ -231,5 +237,9 @@ extension CLIOptions {
 
     private static func warn(_ message: String) {
         fputs("\(message)\n", stderr)
+    }
+
+    static func isOfflineEnvironmentEnabled(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        env["PI_OFFLINE"] == "1"
     }
 }

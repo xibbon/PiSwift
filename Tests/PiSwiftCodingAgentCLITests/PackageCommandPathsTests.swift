@@ -150,4 +150,13 @@ struct PackageCommandUxTests {
         #expect(stderr.contains("Usage: pi install <source> [-l]"))
         #expect(consumePackageCommandExitCode() == 1)
     }
+
+    @MainActor @Test
+    func offlineInstallFailsBeforePackageResolution() async {
+        let stderr = await captureFD(STDERR_FILENO) {
+            _ = await handlePackageCommand(["install", "npm:test-package"], offline: true)
+        }
+        #expect(stderr.contains("Offline mode is enabled; package install is unavailable."))
+        #expect(consumePackageCommandExitCode() == 1)
+    }
 }

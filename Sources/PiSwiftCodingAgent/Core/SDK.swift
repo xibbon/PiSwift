@@ -38,6 +38,7 @@ public struct CreateAgentSessionOptions: Sendable {
     public var scopedModels: [ScopedModel]?
     public var sessionId: String?
     public var projectTrusted: Bool?
+    public var offline: Bool?
     public var systemPrompt: SystemPromptInput?
     /// v0.68.0: tool-name allowlist for built-in tools. When set, only the named tools are
     /// activated. Names match `ToolName.rawValue` (e.g., "read", "bash", "edit", "write",
@@ -75,6 +76,7 @@ public struct CreateAgentSessionOptions: Sendable {
         scopedModels: [ScopedModel]? = nil,
         sessionId: String? = nil,
         projectTrusted: Bool? = nil,
+        offline: Bool? = nil,
         systemPrompt: SystemPromptInput? = nil,
         toolNames: [String]? = nil,
         excludeTools: [String]? = nil,
@@ -102,6 +104,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.scopedModels = scopedModels
         self.sessionId = sessionId
         self.projectTrusted = projectTrusted
+        self.offline = offline
         self.systemPrompt = systemPrompt
         self.toolNames = toolNames
         self.excludeTools = excludeTools
@@ -430,7 +433,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             cwd: cwd,
             agentDir: agentDir,
             settingsManager: settingsManager,
-            projectTrusted: projectTrusted
+            projectTrusted: projectTrusted,
+            offline: options.offline ?? false
         ))
         await loader.reload()
         time("resourceLoader.reload")

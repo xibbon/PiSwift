@@ -67,7 +67,8 @@ func handlePackageCommand(
     _ args: [String],
     approve: Bool = false,
     noApprove: Bool = false,
-    noExtensions: Bool = false
+    noExtensions: Bool = false,
+    offline: Bool = false
 ) async -> Bool {
     _ = consumePackageCommandExitCode()
     guard let options = parsePackageCommand(args) else { return false }
@@ -88,6 +89,13 @@ func handlePackageCommand(
        options.source == nil || options.source?.isEmpty == true {
         fputs("Missing \(options.command.rawValue) source.\n", stderr)
         fputs("Usage: \(packageCommandUsage(options.command))\n", stderr)
+        setPackageCommandExitCode(1)
+        return true
+    }
+
+    if offline && (options.command == .install || options.command == .update) {
+        let action = options.command == .install ? "install" : "update"
+        fputs("Offline mode is enabled; package \(action) is unavailable.\n", stderr)
         setPackageCommandExitCode(1)
         return true
     }
@@ -121,7 +129,8 @@ func handlePackageCommand(
         cwd: cwd,
         agentDir: agentDir,
         settingsManager: settingsManager,
-        projectTrusted: trustContext.trust.trusted
+        projectTrusted: trustContext.trust.trusted,
+        offline: offline
     )
 
     packageManager.setProgressCallback { event in

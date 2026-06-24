@@ -186,10 +186,12 @@ public protocol PackageManager: Sendable {
 public struct PackageResolveOptions: Sendable {
     public var local: Bool
     public var temporary: Bool
+    public var offline: Bool
 
-    public init(local: Bool = false, temporary: Bool = false) {
+    public init(local: Bool = false, temporary: Bool = false, offline: Bool = false) {
         self.local = local
         self.temporary = temporary
+        self.offline = offline
     }
 }
 
@@ -198,6 +200,7 @@ public final class DefaultPackageManager: PackageManager {
     private let agentDir: String
     private let settingsManager: SettingsManager
     private let projectTrusted: Bool
+    private let offline: Bool
     private struct State: Sendable {
         var globalNpmRoot: String?
         var progressCallback: ProgressCallback?
@@ -215,11 +218,12 @@ public final class DefaultPackageManager: PackageManager {
         set { state.withLock { $0.progressCallback = newValue } }
     }
 
-    public init(cwd: String, agentDir: String, settingsManager: SettingsManager, projectTrusted: Bool = true) {
+    public init(cwd: String, agentDir: String, settingsManager: SettingsManager, projectTrusted: Bool = true, offline: Bool = false) {
         self.cwd = cwd
         self.agentDir = agentDir
         self.settingsManager = settingsManager
         self.projectTrusted = projectTrusted
+        self.offline = offline
     }
 
     public func setProgressCallback(_ callback: ProgressCallback?) {
@@ -262,7 +266,7 @@ public final class DefaultPackageManager: PackageManager {
         }
 
         let packageSources = dedupePackages(allPackages)
-        try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: onMissing)
+        try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: onMissing, offline: offline)
 
         let globalBaseDir = agentDir
         let projectBaseDir = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).path
@@ -305,7 +309,7 @@ public final class DefaultPackageManager: PackageManager {
         let accumulator = ResourceAccumulator()
         let scope = options.temporary ? "temporary" : (options.local ? "project" : "user")
         let packageSources = sources.map { (PackageSource.simple($0), scope) }
-        try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: nil)
+        try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: nil, offline: offline || options.offline)
         return accumulator.toResolvedPaths()
     }
 
@@ -315,8 +319,14 @@ public final class DefaultPackageManager: PackageManager {
         try await withProgress(action: "install", source: source, message: "Installing \(source)...") {
             switch parsed {
             case .npm(let npm):
+                guard !self.offline && !options.offline else {
+                    throw PackageManagerError.unsupported(Self.offlineInstallMessage)
+                }
                 try await installNpm(npm, scope: scope, temporary: false)
             case .git(let git):
+                guard !self.offline && !options.offline else {
+                    throw PackageManagerError.unsupported(Self.offlineInstallMessage)
+                }
                 try await installGit(git, scope: scope)
             case .local(let local):
                 let resolved = resolvePath(local.path)
@@ -344,6 +354,9 @@ public final class DefaultPackageManager: PackageManager {
     }
 
     public func update(_ source: String?) async throws {
+        guard !offline else {
+            throw PackageManagerError.unsupported(Self.offlineUpdateMessage)
+        }
         let globalSettings = settingsManager.getGlobalSettings()
         let projectSettings = projectTrusted ? settingsManager.getProjectSettings() : Settings()
 
@@ -397,7 +410,8 @@ public final class DefaultPackageManager: PackageManager {
     private func resolvePackageSources(
         _ sources: [(PackageSource, String)],
         accumulator: ResourceAccumulator,
-        onMissing: (@Sendable (String) async -> MissingSourceAction)?
+        onMissing: (@Sendable (String) async -> MissingSourceAction)?,
+        offline: Bool
     ) async throws {
         for (pkg, scope) in sources {
             let sourceStr = pkg.source
@@ -411,6 +425,9 @@ public final class DefaultPackageManager: PackageManager {
             }
 
             let installMissing: () async throws -> Bool = {
+                if offline {
+                    return false
+                }
                 if let onMissing {
                     let action = await onMissing(sourceStr)
                     switch action {
@@ -432,7 +449,7 @@ public final class DefaultPackageManager: PackageManager {
                 let installed = FileManager.default.fileExists(atPath: installedPath)
                 let needsInstall: Bool
                 if installed {
-                    needsInstall = try await npmNeedsUpdate(npm, installedPath: installedPath)
+                    needsInstall = offline ? false : try await npmNeedsUpdate(npm, installedPath: installedPath)
                 } else {
                     needsInstall = true
                 }
@@ -447,7 +464,7 @@ public final class DefaultPackageManager: PackageManager {
                 if !FileManager.default.fileExists(atPath: installedPath) {
                     let installed = try await installMissing()
                     if !installed { continue }
-                } else if scope == "temporary" && !git.pinned {
+                } else if scope == "temporary" && !git.pinned && !offline {
                     await refreshTemporaryGitSource(git, source: sourceStr)
                 }
                 metadata.baseDir = installedPath
@@ -493,6 +510,9 @@ public final class DefaultPackageManager: PackageManager {
             return
         }
     }
+
+    private static let offlineInstallMessage = "Offline mode is enabled; package install is unavailable"
+    private static let offlineUpdateMessage = "Offline mode is enabled; package update is unavailable"
 
     private func npmNeedsUpdate(_ source: NpmSource, installedPath: String) async throws -> Bool {
         guard let installedVersion = getInstalledNpmVersion(installedPath: installedPath) else { return true }

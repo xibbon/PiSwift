@@ -118,6 +118,23 @@ private final class EventCollector: @unchecked Sendable {
     }
 }
 
+private final class CommandRecorder: @unchecked Sendable {
+    private var _calls: [(command: String, args: [String], cwd: String)] = []
+    private let lock = NSLock()
+
+    var calls: [(command: String, args: [String], cwd: String)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _calls
+    }
+
+    func append(command: String, args: [String], cwd: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        _calls.append((command, args, cwd))
+    }
+}
+
 // MARK: - resolve tests
 
 @Test func resolveReturnsEmptyPathsWhenNoSourcesConfigured() async throws {
@@ -681,6 +698,93 @@ private final class EventCollector: @unchecked Sendable {
 
     let result = try await fixture.packageManager.resolve()
     #expect(result.extensions.contains { $0.path.hasSuffix("pkg-ext.ts") && $0.enabled })
+}
+
+@Test func offlineResolveSkipsMissingNpmPackageWithoutNetworkCommand() async throws {
+    let fixture = try PackageManagerTestFixture()
+    fixture.settingsManager.setProjectPackages([.simple("npm:missing-package")])
+    let manager = DefaultPackageManager(
+        cwd: fixture.tempDir,
+        agentDir: fixture.agentDir,
+        settingsManager: fixture.settingsManager,
+        offline: true
+    )
+    let recorder = CommandRecorder()
+    manager.setCommandRunnerForTests { command, args, cwd in
+        recorder.append(command: command, args: args, cwd: cwd)
+        return ExecResult(stdout: "", stderr: "", code: 0, killed: false)
+    }
+
+    let result = try await manager.resolve()
+    #expect(result.extensions.isEmpty)
+    #expect(recorder.calls.isEmpty)
+}
+
+@Test func offlineResolveUsesInstalledUnpinnedNpmPackageWithoutCheckingLatest() async throws {
+    let fixture = try PackageManagerTestFixture()
+    let packageRoot = try fixture.createDir(".pi/npm/node_modules/test-package")
+    let manifestContent = """
+    {
+        "name": "test-package",
+        "version": "1.0.0",
+        "pi": {
+            "extensions": ["extensions/pkg-ext.ts"]
+        }
+    }
+    """
+    try manifestContent.write(
+        toFile: URL(fileURLWithPath: packageRoot).appendingPathComponent("package.json").path,
+        atomically: true,
+        encoding: .utf8
+    )
+    _ = try fixture.writeFile(".pi/npm/node_modules/test-package/extensions/pkg-ext.ts", content: "export default function() {}")
+    fixture.settingsManager.setProjectPackages([.simple("npm:test-package")])
+    let manager = DefaultPackageManager(
+        cwd: fixture.tempDir,
+        agentDir: fixture.agentDir,
+        settingsManager: fixture.settingsManager,
+        offline: true
+    )
+    let recorder = CommandRecorder()
+    manager.setCommandRunnerForTests { command, args, cwd in
+        recorder.append(command: command, args: args, cwd: cwd)
+        return ExecResult(stdout: "9.9.9\n", stderr: "", code: 0, killed: false)
+    }
+
+    let result = try await manager.resolve()
+    #expect(result.extensions.contains { $0.path.hasSuffix("pkg-ext.ts") && $0.enabled })
+    #expect(recorder.calls.isEmpty)
+}
+
+@Test func offlineInstallAndUpdateRejectNetworkPackageOperations() async throws {
+    let fixture = try PackageManagerTestFixture()
+    let manager = DefaultPackageManager(
+        cwd: fixture.tempDir,
+        agentDir: fixture.agentDir,
+        settingsManager: fixture.settingsManager,
+        offline: true
+    )
+    let recorder = CommandRecorder()
+    manager.setCommandRunnerForTests { command, args, cwd in
+        recorder.append(command: command, args: args, cwd: cwd)
+        return ExecResult(stdout: "", stderr: "", code: 0, killed: false)
+    }
+
+    do {
+        try await manager.install("npm:test-package")
+        Issue.record("Expected offline npm install to throw")
+    } catch {
+        #expect(error.localizedDescription.contains("Offline mode is enabled"))
+    }
+
+    do {
+        try await manager.update(nil)
+        Issue.record("Expected offline package update to throw")
+    } catch {
+        #expect(error.localizedDescription.contains("Offline mode is enabled"))
+    }
+
+    #expect(recorder.calls.isEmpty)
 }
 
 // MARK: - getInstalledPath tests
