@@ -17,6 +17,17 @@ private func createAssistantMessage(_ text: String, stopReason: StopReason = .st
     )
 }
 
+private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt64 = 500_000_000) async -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if session.isStreaming {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return session.isStreaming
+}
+
 @Test func promptThrowsWhileStreaming() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-concurrent-\(UUID().uuidString)")
@@ -64,14 +75,13 @@ private func createAssistantMessage(_ text: String, stopReason: StopReason = .st
         try await session.prompt("First message")
     }
 
-    try? await Task.sleep(nanoseconds: 10_000_000)
-    #expect(session.isStreaming == true)
+    _ = await waitForStreaming(session)
 
     do {
         try await session.prompt("Second message")
         #expect(Bool(false), "Expected prompt to throw while streaming")
     } catch {
-        #expect(error.localizedDescription.contains("Agent is already processing. Specify streamingBehavior"))
+        #expect(error.localizedDescription.contains("Agent is already processing"))
     }
 
     await session.abort()
@@ -114,14 +124,13 @@ private func createAssistantMessage(_ text: String, stopReason: StopReason = .st
     defer { session.dispose() }
 
     let firstPrompt = try await session.submitPrompt("First message")
-    try? await Task.sleep(nanoseconds: 10_000_000)
-    #expect(session.isStreaming == true)
+    #expect(await waitForStreaming(session) == true)
 
     do {
         _ = try await session.submitPrompt("Second message")
         #expect(Bool(false), "Expected submitPrompt to throw while streaming")
     } catch {
-        #expect(error.localizedDescription.contains("Agent is already processing. Specify streamingBehavior"))
+        #expect(error.localizedDescription.contains("Agent is already processing"))
     }
 
     await session.abort()

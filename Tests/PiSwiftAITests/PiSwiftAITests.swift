@@ -9,6 +9,12 @@ private let RUN_ANTHROPIC_TESTS: Bool = {
     return flag == "1" || flag == "true" || flag == "yes"
 }()
 
+private let RUN_OPENAI_TESTS: Bool = {
+    let env = ProcessInfo.processInfo.environment
+    let flag = (env["PI_RUN_OPENAI_TESTS"] ?? env["PI_RUN_LIVE_TESTS"])?.lowercased()
+    return flag == "1" || flag == "true" || flag == "yes"
+}()
+
 final class MockURLProtocol: URLProtocol {
     static let requestHandler = LockedState<(@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
     static let allowedHosts = LockedState<Set<String>>([])
@@ -47,6 +53,36 @@ final class GeminiRetryMockURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool {
         guard request.url?.host == "cloudcode-pa.googleapis.com" else { return false }
         return requestHandler.withLock { $0 } != nil
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler.withLock({ $0 }) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+final class OpenRouterImagesMockURLProtocol: URLProtocol {
+    static let requestHandler = LockedState<(@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "openrouter.ai" && requestHandler.withLock { $0 != nil }
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
@@ -253,7 +289,7 @@ private func runCodexToolCallRequest() async throws -> AssistantMessage {
             URLProtocol.unregisterClass(MockURLProtocol.self)
         }
 
-        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.1")
+        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
         let context = Context(messages: [.user(UserMessage(content: .text("Use read tool")))])
         let stream = streamOpenAICodexResponses(
             model: model,
@@ -386,12 +422,12 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
             URLProtocol.unregisterClass(MockURLProtocol.self)
         }
 
-        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.1")
+        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
         let context = Context(messages: [.user(UserMessage(content: .text("Say hello")))])
         let stream = streamOpenAICodexResponses(
             model: model,
             context: context,
-            options: OpenAICodexResponsesOptions(apiKey: token, sessionId: sessionId)
+            options: OpenAICodexResponsesOptions(apiKey: token, sessionId: sessionId, transport: .sse)
         )
         _ = await stream.result()
 
@@ -687,7 +723,7 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
 }
 
 @Test func openAICompletionsSmoke() async throws {
-    guard ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
+    guard RUN_OPENAI_TESTS, ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
         return
     }
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
@@ -698,7 +734,7 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
 }
 
 @Test func openAIResponsesSmoke() async throws {
-    guard ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
+    guard RUN_OPENAI_TESTS, ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
         return
     }
     let model = getModel(provider: .openai, modelId: "gpt-5-mini")
@@ -1133,11 +1169,15 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
         let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
         return (response, Data("error".utf8))
     } }
-    URLProtocol.registerClass(MockURLProtocol.self)
+    setOpenRouterImagesURLSessionFactory { _ in
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
     defer {
         MockURLProtocol.requestHandler.withLock { $0 = nil }
         MockURLProtocol.allowedHosts.withLock { $0 = [] }
-        URLProtocol.unregisterClass(MockURLProtocol.self)
+        resetOpenRouterImagesURLSessionFactory()
     }
 
     let model = Model(
@@ -2458,7 +2498,7 @@ struct ApiRegistryTests {
 /// the non-overflow exclusion, the generic "too many tokens" pattern would false-positive
 /// and trigger compaction instead of a retry.
 @Test func contextOverflowExcludesBedrockThrottling() {
-    let model = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-3-5-haiku-20241022-v1:0")
+    let model = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-haiku-4-5-20251001-v1:0")
     let message = AssistantMessage(
         content: [],
         api: model.api,
@@ -2488,7 +2528,7 @@ struct ApiRegistryTests {
 
 /// v0.65.0: "Service unavailable:" prefix from Bedrock formatBedrockError() also bypasses overflow.
 @Test func contextOverflowExcludesBedrockServiceUnavailable() {
-    let model = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-3-5-haiku-20241022-v1:0")
+    let model = getModel(provider: .amazonBedrock, modelId: "anthropic.claude-haiku-4-5-20251001-v1:0")
     let message = AssistantMessage(
         content: [],
         api: model.api,
@@ -2663,4 +2703,153 @@ struct ApiRegistryTests {
 @Test func openAICompatDeepSeekThinkingFormat() {
     let compat = OpenAICompat(thinkingFormat: .deepseek)
     #expect(compat.thinkingFormat == .deepseek)
+}
+
+@Test func generatedTextCatalogMatchesUpstreamCountsAndProviders() {
+    let allModels = getProviders().flatMap { getModels(provider: $0) }
+    #expect(getProviders().count == 35)
+    #expect(allModels.count == 971)
+    #expect(getProviders().contains(.antLing))
+    #expect(getProviders().contains(.nvidia))
+    #expect(getProviders().contains(.moonshotai))
+    #expect(getProviders().contains(.moonshotaiCn))
+    #expect(getProviders().contains(.together))
+    #expect(getProviders().contains(.cloudflareWorkersAi))
+    #expect(getProviders().contains(.cloudflareAiGateway))
+    #expect(getProviders().contains(.xiaomi))
+    #expect(getProviders().contains(.xiaomiTokenPlanCn))
+    #expect(getProviders().contains(.xiaomiTokenPlanAms))
+    #expect(getProviders().contains(.xiaomiTokenPlanSgp))
+    #expect(getProviders().contains(.zaiCodingCn))
+
+    let antLing = getModel(provider: .antLing, modelId: "Ring-2.6-1T")
+    #expect(antLing.compat?.thinkingFormat == .antLing)
+    #expect(antLing.thinkingLevelMap?[.xhigh] == "xhigh")
+
+    let together = getModel(provider: .together, modelId: "MiniMaxAI/MiniMax-M3")
+    #expect(together.compat?.thinkingFormat == .together)
+    #expect(together.input == [.text, .image])
+}
+
+@Test func generatedImageCatalogMatchesUpstreamCountsAndLookup() {
+    let providers = getImageProviders()
+    let models = getImageModels(provider: .openrouter)
+    #expect(providers == [.openrouter])
+    #expect(models.count == 32)
+
+    let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
+    #expect(model.api == .openrouterImages)
+    #expect(model.provider == "openrouter")
+    #expect(model.input == [.image, .text])
+    #expect(model.output == [.image, .text])
+    #expect(model.cost.output == 12)
+}
+
+@Test func openRouterImagesGenerateBuildsPayloadAndParsesResponse() async throws {
+    let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
+    let payloadJSON = LockedState<String?>(nil)
+    let responseStatus = LockedState<Int?>(nil)
+
+    OpenRouterImagesMockURLProtocol.requestHandler.withLock { $0 = { request in
+        #expect(request.url?.absoluteString == "https://openrouter.ai/api/v1/chat/completions")
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
+        #expect(request.value(forHTTPHeaderField: "X-Test") == "1")
+
+        guard let body = readRequestBody(request),
+              let payload = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let messages = payload["messages"] as? [[String: Any]],
+              let first = messages.first,
+              let content = first["content"] as? [[String: Any]] else {
+            throw URLError(.cannotParseResponse)
+        }
+        #expect(payload["model"] as? String == model.id)
+        #expect(payload["stream"] as? Bool == false)
+        #expect(payload["modalities"] as? [String] == ["image", "text"])
+        #expect(content.count == 2)
+        #expect(content[0]["type"] as? String == "text")
+        #expect(content[0]["text"] as? String == "draw")
+        #expect(content[1]["type"] as? String == "image_url")
+
+        let responsePayload: [String: Any] = [
+            "id": "chatcmpl-image-1",
+            "usage": [
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "prompt_tokens_details": [
+                    "cached_tokens": 15,
+                    "cache_write_tokens": 5,
+                ],
+            ],
+            "choices": [
+                [
+                    "message": [
+                        "content": "caption",
+                        "images": [
+                            ["image_url": ["url": "data:image/png;base64,aW1n"]],
+                        ],
+                    ],
+                ],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: responsePayload)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["X-Response": "ok"]
+        )!
+        return (response, data)
+    } }
+    setOpenRouterImagesURLSessionFactory { _ in
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OpenRouterImagesMockURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+    defer {
+        OpenRouterImagesMockURLProtocol.requestHandler.withLock { $0 = nil }
+        resetOpenRouterImagesURLSessionFactory()
+    }
+
+    let result = await generateImages(
+        model: model,
+        context: ImagesContext(input: [
+            .text(TextContent(text: "draw")),
+            .image(ImageContent(data: "aW5wdXQ=", mimeType: "image/png")),
+        ]),
+        options: ImagesOptions(
+            apiKey: "test-key",
+            onPayload: { snapshot in payloadJSON.withLock { $0 = snapshot.json } },
+            onResponse: { response in responseStatus.withLock { $0 = response.statusCode } },
+            headers: ["X-Test": "1"],
+            timeoutMs: 1000,
+            maxRetries: 0
+        )
+    )
+
+    #expect(result.stopReason == StopReason.stop)
+    #expect(result.responseId == "chatcmpl-image-1")
+    #expect(responseStatus.withLock { $0 } == 200)
+    #expect(payloadJSON.withLock { $0 }?.contains("\"modalities\"") == true)
+    #expect(result.output.count == 2)
+    guard result.output.count == 2 else {
+        return
+    }
+    if case .text(let text) = result.output[0] {
+        #expect(text.text == "caption")
+    } else {
+        #expect(Bool(false), "Expected text output")
+    }
+    if case .image(let image) = result.output[1] {
+        #expect(image.mimeType == "image/png")
+        #expect(image.data == "aW1n")
+    } else {
+        #expect(Bool(false), "Expected image output")
+    }
+    #expect(result.usage?.input == 85)
+    #expect(result.usage?.output == 20)
+    #expect(result.usage?.cacheRead == 10)
+    #expect(result.usage?.cacheWrite == 5)
+    #expect(result.usage?.totalTokens == 120)
+    #expect(abs((result.usage?.cost.total ?? 0) - 0.000413875) < 0.000000001)
 }

@@ -13,13 +13,19 @@ public enum Api: String, Sendable {
     case mistralConversations = "mistral-conversations"
 }
 
+public enum ImagesApi: String, Sendable {
+    case openrouterImages = "openrouter-images"
+}
+
 public enum KnownProvider: String, Sendable {
     case openai
     case openaiCodex = "openai-codex"
     case azureOpenAIResponses = "azure-openai-responses"
+    case antLing = "ant-ling"
     case anthropic
     case amazonBedrock = "amazon-bedrock"
     case githubCopilot = "github-copilot"
+    case nvidia
     case xai
     case groq
     case cerebras
@@ -34,14 +40,30 @@ public enum KnownProvider: String, Sendable {
     case googleVertex = "google-vertex"
     case vercelAiGateway = "vercel-ai-gateway"
     case zai
+    case zaiCodingCn = "zai-coding-cn"
     case mistral
     case opencode
     case opencodeGo = "opencode-go"
     case fireworks
     case deepseek
+    case moonshotai
+    case moonshotaiCn = "moonshotai-cn"
+    case together
+    case cloudflareWorkersAi = "cloudflare-workers-ai"
+    case cloudflareAiGateway = "cloudflare-ai-gateway"
+    case xiaomi
+    case xiaomiTokenPlanCn = "xiaomi-token-plan-cn"
+    case xiaomiTokenPlanAms = "xiaomi-token-plan-ams"
+    case xiaomiTokenPlanSgp = "xiaomi-token-plan-sgp"
 }
 
 public typealias Provider = String
+
+public enum KnownImagesProvider: String, Sendable {
+    case openrouter
+}
+
+public typealias ImagesProvider = String
 
 public enum ThinkingLevel: String, Sendable {
     case minimal
@@ -127,6 +149,8 @@ public struct StreamOptions: Sendable {
     /// v0.70.1: provider SDK request timeout (milliseconds). Forwarded to OpenAI/Azure/Anthropic
     /// SDK request options so long-running local inference isn't capped at SDK defaults.
     public var timeoutMs: Int?
+    /// v0.79.4: WebSocket connection/open handshake timeout for providers with WebSocket transports.
+    public var websocketConnectTimeoutMs: Int?
     /// v0.70.1: provider SDK max retries. Forwarded to provider SDK retry config.
     public var maxRetries: Int?
 
@@ -144,6 +168,7 @@ public struct StreamOptions: Sendable {
         metadata: [String: AnyCodable]? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
+        websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
         self.temperature = temperature
@@ -159,6 +184,7 @@ public struct StreamOptions: Sendable {
         self.metadata = metadata
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
     }
 }
@@ -181,6 +207,8 @@ public struct SimpleStreamOptions: Sendable {
     public var onResponse: ResponseHandler?
     /// v0.70.1: provider SDK request timeout (ms).
     public var timeoutMs: Int?
+    /// v0.79.4: WebSocket connection/open handshake timeout for providers with WebSocket transports.
+    public var websocketConnectTimeoutMs: Int?
     /// v0.70.1: provider SDK max retries.
     public var maxRetries: Int?
 
@@ -200,6 +228,7 @@ public struct SimpleStreamOptions: Sendable {
         metadata: [String: AnyCodable]? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
+        websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
         self.temperature = temperature
@@ -217,6 +246,7 @@ public struct SimpleStreamOptions: Sendable {
         self.metadata = metadata
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
     }
 }
@@ -245,6 +275,7 @@ public struct ResponseSnapshot: Sendable {
 }
 
 public typealias ResponseHandler = @Sendable (ResponseSnapshot) -> Void
+public typealias ImagesResponseHandler = @Sendable (ResponseSnapshot) -> Void
 
 /// v0.67.6: thinking display mode for Anthropic and Bedrock. Defaults to `summarized`
 /// so Opus 4.7 / Mythos Preview keep returning thinking text. Set to `omitted` to skip
@@ -268,6 +299,9 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     /// v0.70.1: DeepSeek V4 sends `thinking: { type: "enabled" }` plus `reasoning_effort` and
     /// expects `reasoning_content` on replayed assistant messages.
     case deepseek
+    case together
+    case stringThinking = "string-thinking"
+    case antLing = "ant-ling"
 }
 
 /// v0.68.0: opt-in cache_control formats for OpenAI-compatible providers that expose
@@ -387,6 +421,7 @@ public struct OpenAICompat: Sendable {
     public var supportsDeveloperRole: Bool?
     public var supportsReasoningEffort: Bool?
     public var supportsUsageInStreaming: Bool?
+    public var supportsTemperature: Bool?
     public var maxTokensField: OpenAICompatMaxTokensField?
     public var requiresToolResultName: Bool?
     public var requiresAssistantAfterToolResult: Bool?
@@ -418,12 +453,17 @@ public struct OpenAICompat: Sendable {
     /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
     /// (DeepSeek V4 requirement). Empty `reasoning_content` is injected if no thinking content exists.
     public var requiresReasoningContentOnAssistantMessages: Bool?
+    /// v0.79.4 compat metadata retained from upstream generated model data.
+    public var supportsCacheControlOnTools: Bool?
+    public var forceAdaptiveThinking: Bool?
+    public var zaiToolStream: Bool?
 
     public init(
         supportsStore: Bool? = nil,
         supportsDeveloperRole: Bool? = nil,
         supportsReasoningEffort: Bool? = nil,
         supportsUsageInStreaming: Bool? = nil,
+        supportsTemperature: Bool? = nil,
         maxTokensField: OpenAICompatMaxTokensField? = nil,
         requiresToolResultName: Bool? = nil,
         requiresAssistantAfterToolResult: Bool? = nil,
@@ -439,12 +479,16 @@ public struct OpenAICompat: Sendable {
         supportsEagerToolInputStreaming: Bool? = nil,
         cacheControlFormat: OpenAICompatCacheControlFormat? = nil,
         sendSessionAffinityHeaders: Bool? = nil,
-        requiresReasoningContentOnAssistantMessages: Bool? = nil
+        requiresReasoningContentOnAssistantMessages: Bool? = nil,
+        supportsCacheControlOnTools: Bool? = nil,
+        forceAdaptiveThinking: Bool? = nil,
+        zaiToolStream: Bool? = nil
     ) {
         self.supportsStore = supportsStore
         self.supportsDeveloperRole = supportsDeveloperRole
         self.supportsReasoningEffort = supportsReasoningEffort
         self.supportsUsageInStreaming = supportsUsageInStreaming
+        self.supportsTemperature = supportsTemperature
         self.maxTokensField = maxTokensField
         self.requiresToolResultName = requiresToolResultName
         self.requiresAssistantAfterToolResult = requiresAssistantAfterToolResult
@@ -461,6 +505,9 @@ public struct OpenAICompat: Sendable {
         self.cacheControlFormat = cacheControlFormat
         self.sendSessionAffinityHeaders = sendSessionAffinityHeaders
         self.requiresReasoningContentOnAssistantMessages = requiresReasoningContentOnAssistantMessages
+        self.supportsCacheControlOnTools = supportsCacheControlOnTools
+        self.forceAdaptiveThinking = forceAdaptiveThinking
+        self.zaiToolStream = zaiToolStream
     }
 }
 
@@ -526,6 +573,74 @@ public struct Model: Sendable {
         self.headers = headers
         self.compat = compat
         self.thinkingLevelMap = thinkingLevelMap
+    }
+}
+
+public struct ImagesModel: Sendable {
+    public let id: String
+    public let name: String
+    public let api: ImagesApi
+    public let provider: ImagesProvider
+    public let baseUrl: String
+    public let input: [ModelInput]
+    public let output: [ModelInput]
+    public let cost: ModelCost
+    public let headers: [String: String]?
+
+    public init(
+        id: String,
+        name: String,
+        api: ImagesApi,
+        provider: ImagesProvider,
+        baseUrl: String,
+        input: [ModelInput],
+        output: [ModelInput],
+        cost: ModelCost,
+        headers: [String: String]? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.api = api
+        self.provider = provider
+        self.baseUrl = baseUrl
+        self.input = input
+        self.output = output
+        self.cost = cost
+        self.headers = headers
+    }
+}
+
+public struct ImagesOptions: Sendable {
+    public var signal: CancellationToken?
+    public var apiKey: String?
+    public var onPayload: PayloadHandler?
+    public var onResponse: ImagesResponseHandler?
+    public var headers: [String: String]?
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
+    public var metadata: [String: AnyCodable]?
+
+    public init(
+        signal: CancellationToken? = nil,
+        apiKey: String? = nil,
+        onPayload: PayloadHandler? = nil,
+        onResponse: ImagesResponseHandler? = nil,
+        headers: [String: String]? = nil,
+        timeoutMs: Int? = nil,
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil,
+        metadata: [String: AnyCodable]? = nil
+    ) {
+        self.signal = signal
+        self.apiKey = apiKey
+        self.onPayload = onPayload
+        self.onResponse = onResponse
+        self.headers = headers
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
+        self.metadata = metadata
     }
 }
 
@@ -616,6 +731,14 @@ public struct ImageContent: Sendable {
     }
 }
 
+public struct ImagesContext: Sendable {
+    public var input: [ContentBlock]
+
+    public init(input: [ContentBlock]) {
+        self.input = input
+    }
+}
+
 public struct ToolCall: Sendable {
     public let type: String = "toolCall"
     public var id: String
@@ -683,6 +806,40 @@ public struct AssistantMessage: Sendable {
         self.provider = provider
         self.model = model
         self.responseId = responseId
+        self.usage = usage
+        self.stopReason = stopReason
+        self.errorMessage = errorMessage
+        self.timestamp = timestamp
+    }
+}
+
+public struct AssistantImages: Sendable {
+    public var api: ImagesApi
+    public var provider: ImagesProvider
+    public var model: String
+    public var responseId: String?
+    public var output: [ContentBlock]
+    public var usage: Usage?
+    public var stopReason: StopReason
+    public var errorMessage: String?
+    public var timestamp: Int64
+
+    public init(
+        api: ImagesApi,
+        provider: ImagesProvider,
+        model: String,
+        responseId: String? = nil,
+        output: [ContentBlock] = [],
+        usage: Usage? = nil,
+        stopReason: StopReason,
+        errorMessage: String? = nil,
+        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) {
+        self.api = api
+        self.provider = provider
+        self.model = model
+        self.responseId = responseId
+        self.output = output
         self.usage = usage
         self.stopReason = stopReason
         self.errorMessage = errorMessage

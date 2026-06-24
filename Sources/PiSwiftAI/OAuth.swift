@@ -613,6 +613,16 @@ private func decodeJwt(_ token: String) -> [String: Any]? {
 }
 
 #if canImport(Network)
+private func oauthCallbackParameters(port: NWEndpoint.Port) -> NWParameters {
+    let parameters = NWParameters.tcp
+    let host = ProcessInfo.processInfo.environment["PI_OAUTH_CALLBACK_HOST"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let host, !host.isEmpty {
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: port)
+    }
+    return parameters
+}
+
 private actor OpenAICodexCallbackServer {
     private let listener: NWListener
     private let state: String
@@ -629,7 +639,7 @@ private actor OpenAICodexCallbackServer {
         guard let port = NWEndpoint.Port(rawValue: 1455) else { return nil }
         let listener: NWListener
         do {
-            listener = try NWListener(using: .tcp, on: port)
+            listener = try NWListener(using: oauthCallbackParameters(port: port), on: port)
         } catch {
             return nil
         }
@@ -1765,7 +1775,7 @@ private actor GoogleCallbackServer {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return nil }
         let listener: NWListener
         do {
-            listener = try NWListener(using: .tcp, on: nwPort)
+            listener = try NWListener(using: oauthCallbackParameters(port: nwPort), on: nwPort)
         } catch {
             return nil
         }
