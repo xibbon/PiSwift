@@ -943,6 +943,8 @@ public struct OpenAICompletionsOptions: Sendable {
     public var apiKey: String?
     public var toolChoice: OpenAIToolChoice?
     public var reasoningEffort: ThinkingLevel?
+    public var cacheRetention: CacheRetention?
+    public var sessionId: String?
     public var headers: [String: String]?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
@@ -956,6 +958,8 @@ public struct OpenAICompletionsOptions: Sendable {
         apiKey: String? = nil,
         toolChoice: OpenAIToolChoice? = nil,
         reasoningEffort: ThinkingLevel? = nil,
+        cacheRetention: CacheRetention? = nil,
+        sessionId: String? = nil,
         headers: [String: String]? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
@@ -968,6 +972,8 @@ public struct OpenAICompletionsOptions: Sendable {
         self.apiKey = apiKey
         self.toolChoice = toolChoice
         self.reasoningEffort = reasoningEffort
+        self.cacheRetention = cacheRetention
+        self.sessionId = sessionId
         self.headers = headers
         self.onPayload = onPayload
         self.onResponse = onResponse

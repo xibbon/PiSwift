@@ -198,6 +198,7 @@ private struct ProviderOverride: Sendable {
     var baseUrl: String?
     var headers: [String: String]?
     var apiKey: String?
+    var compat: OpenAICompat?
 }
 
 private struct ModelOverride: Sendable {
@@ -580,6 +581,7 @@ public final class ModelRegistry: Sendable {
                     for (key, value) in resolvedHeaders { headers[key] = value }
                     return headers
                 }()
+                let mergedCompat = mergeCompat(model.compat, override?.compat)
 
                 var updated = Model(
                     id: model.id,
@@ -593,7 +595,8 @@ public final class ModelRegistry: Sendable {
                     contextWindow: model.contextWindow,
                     maxTokens: model.maxTokens,
                     headers: mergedHeaders,
-                    compat: model.compat
+                    compat: mergedCompat,
+                    thinkingLevelMap: model.thinkingLevelMap
                 )
 
                 if let override = perModelOverrides[model.id] {
@@ -629,7 +632,8 @@ public final class ModelRegistry: Sendable {
                     contextWindow: custom.contextWindow,
                     maxTokens: custom.maxTokens,
                     headers: custom.headers,
-                    compat: mergedCompat
+                    compat: mergedCompat,
+                    thinkingLevelMap: custom.thinkingLevelMap
                 )
                 merged[index] = normalizeProviderModel(withCompat)
             } else {
@@ -716,9 +720,10 @@ public final class ModelRegistry: Sendable {
             let headers = providerConfig["headers"] as? [String: String]
             let authHeader = providerConfig["authHeader"] as? Bool ?? false
             let overridesDict = providerConfig["modelOverrides"] as? [String: Any]
+            let providerCompat = parseCompat(providerConfig["compat"])
 
-            if baseUrl != nil || headers != nil || apiKey != nil {
-                overrides[providerName] = ProviderOverride(baseUrl: baseUrl, headers: headers, apiKey: apiKey)
+            if baseUrl != nil || headers != nil || apiKey != nil || providerCompat != nil {
+                overrides[providerName] = ProviderOverride(baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat)
             }
 
             if let apiKey {
@@ -759,6 +764,12 @@ public final class ModelRegistry: Sendable {
                 continue
             }
 
+            let builtInDefaults: (api: Api, baseUrl: String)? = {
+                guard let provider = KnownProvider(rawValue: providerName) else { return nil }
+                guard let model = getModels(provider: provider).first else { return nil }
+                return (api: model.api, baseUrl: model.baseUrl)
+            }()
+
             for modelDef in models {
                 guard let rawId = modelDef["id"] as? String else { continue }
                 let modelProvider = providerName
@@ -770,8 +781,8 @@ public final class ModelRegistry: Sendable {
                 let maxTokens = modelDef["maxTokens"] as? Int ?? 16384
                 let cost = modelDef["cost"] as? [String: Any] ?? [:]
 
-                let apiRaw = (modelDef["api"] as? String) ?? apiOverride
-                guard let apiRaw, let api = Api(rawValue: apiRaw) else { continue }
+                let api = ((modelDef["api"] as? String) ?? apiOverride).flatMap(Api.init(rawValue:)) ?? builtInDefaults?.api
+                guard let api else { continue }
 
                 var resolvedHeaders = resolveHeaders(headers)
                 if let modelHeaders = resolveHeaders(modelDef["headers"] as? [String: String]) {
@@ -791,8 +802,9 @@ public final class ModelRegistry: Sendable {
                     cacheWrite: cost["cacheWrite"] as? Double ?? 0
                 )
 
-                let modelBaseUrl = modelDef["baseUrl"] as? String ?? baseUrl
+                let modelBaseUrl = modelDef["baseUrl"] as? String ?? baseUrl ?? builtInDefaults?.baseUrl
                 guard let modelBaseUrl else { continue }
+                let compat = mergeCompat(providerCompat, parseCompat(modelDef["compat"]))
                 let model = Model(
                     id: id,
                     name: name,
@@ -805,7 +817,7 @@ public final class ModelRegistry: Sendable {
                     contextWindow: contextWindow,
                     maxTokens: maxTokens,
                     headers: resolvedHeaders,
-                    compat: parseCompat(modelDef["compat"])
+                    compat: compat
                 )
                 custom.append(model)
             }

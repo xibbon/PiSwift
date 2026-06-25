@@ -358,6 +358,16 @@ private struct CodexRequestCapture: Sendable {
     let promptCacheKey: String?
 }
 
+private func codexSubscriptionToken() throws -> String {
+    let payload: [String: Any] = ["https://api.openai.com/auth": ["chatgpt_account_id": "acc_test"]]
+    let payloadData = try JSONSerialization.data(withJSONObject: payload)
+    let payloadBase64 = payloadData.base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+    return "aaa.\(payloadBase64).bbb"
+}
+
 private func runCodexToolCallRequest() async throws -> AssistantMessage {
     try await codexRequestLock.withLock {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codex-\(UUID().uuidString)")
@@ -372,13 +382,7 @@ private func runCodexToolCallRequest() async throws -> AssistantMessage {
             }
         }
 
-        let payload: [String: Any] = ["https://api.openai.com/auth": ["chatgpt_account_id": "acc_test"]]
-        let payloadData = try JSONSerialization.data(withJSONObject: payload)
-        let payloadBase64 = payloadData.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        let token = "aaa.\(payloadBase64).bbb"
+        let token = try codexSubscriptionToken()
 
         MockURLProtocol.allowedHosts.withLock { $0 = ["api.github.com", "raw.githubusercontent.com", "chatgpt.com"] }
         MockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -495,13 +499,7 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
             }
         }
 
-        let payload: [String: Any] = ["https://api.openai.com/auth": ["chatgpt_account_id": "acc_test"]]
-        let payloadData = try JSONSerialization.data(withJSONObject: payload)
-        let payloadBase64 = payloadData.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        let token = "aaa.\(payloadBase64).bbb"
+        let token = try codexSubscriptionToken()
 
         let seenConversationId = LockedState<String?>(nil)
         let seenSessionId = LockedState<String?>(nil)
@@ -835,6 +833,37 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
     #expect(capture.promptCacheKey == nil)
 }
 
+@Test func openAIResponsesForeignFunctionCallItemIdUsesUpstreamHash() {
+    let rawItemId = "tool.item:with spaces/and=punct"
+    #expect(openAIResponsesShortHash(rawItemId) == "14qw7aq1pijvw1")
+    #expect(openAIResponsesForeignFunctionCallItemId(rawItemId) == "fc_14qw7aq1pijvw1")
+}
+
+@Test func openAICodexForeignToolCallItemIdsAreHashed() async throws {
+    let rawItemId = "foreign.item/id with punctuation and a very very very very very long suffix"
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
+    let foreignAssistant = AssistantMessage(
+        content: [
+            .toolCall(ToolCall(id: "call.foreign|\(rawItemId)", name: "lookup", arguments: ["q": AnyCodable("weather")]))
+        ],
+        api: .anthropicMessages,
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .toolUse
+    )
+    let context = Context(messages: [
+        .user(UserMessage(content: .text("Use the tool"))),
+        .assistant(foreignAssistant),
+    ])
+
+    let input = convertCodexMessages(model: model, context: context)
+    let functionCall = input.compactMap { $0 as? [String: Any] }.first { $0["type"] as? String == "function_call" }
+    let itemId = functionCall?["id"] as? String
+    #expect(itemId == "fc_1wy8det4hqwa6")
+    #expect(itemId?.count ?? 0 <= 64)
+}
+
 @Test func openAICodexToolCallUsesStreamingArguments() async throws {
     let message = try await runCodexToolCallRequest()
     let toolCall = message.content.compactMap { block -> ToolCall? in
@@ -1088,6 +1117,7 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     }
     await withEnv("PI_CACHE_RETENTION", value: "long") {
         #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com") == "1h")
+        #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com", supportsLongCacheRetention: false) == nil)
         #expect(anthropicCacheTtl(baseUrl: "https://proxy.example.com") == nil)
     }
 }
@@ -1111,6 +1141,207 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     #expect(updatedLongString?.contains("\"ttl\":\"1h\"") == true)
 }
 
+@Test func anthropicSSEParserRepairsJsonAndIgnoresUnknownEvents() throws {
+    let lines = [
+        "event: ping",
+        "data: {\"type\":\"ping\"}",
+        "",
+        "event: message_start",
+        "data: {\"type\":\"message_start\",",
+        "data: \"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-test\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}",
+        "",
+        "event: content_block_start",
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+        "",
+        "event: content_block_delta",
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"bad\\qescape\"}}",
+        "",
+        "event: content_block_stop",
+        "data: {\"type\":\"content_block_stop\",\"index\":0}",
+        "",
+        "event: done",
+        "data: [DONE]",
+        "",
+        "event: message_stop",
+        "data: {\"type\":\"message_stop\"}",
+        "",
+    ]
+
+    let events = try decodeAnthropicSSELines(lines)
+    #expect(events.map(\.type) == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_stop",
+    ])
+    #expect(events[2].delta?.text == "bad\\qescape")
+}
+
+@Test func anthropicSSEParserRequiresMessageStopAfterStart() throws {
+    let lines = [
+        "event: message_start",
+        "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-test\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}",
+        "",
+    ]
+
+    do {
+        _ = try decodeAnthropicSSELines(lines)
+        #expect(Bool(false), "Expected missing message_stop to throw")
+    } catch {
+        #expect(error.localizedDescription.contains("message_stop"))
+    }
+}
+
+@Test func openAICompletionsAnthropicCacheControlInjection() throws {
+    let payload: [String: Any] = [
+        "model": "anthropic/claude-sonnet-4.5",
+        "messages": [
+            ["role": "system", "content": "You are concise."],
+            [
+                "role": "user",
+                "content": [
+                    ["type": "text", "text": "First"],
+                    ["type": "image_url", "image_url": ["url": "data:image/png;base64,AA=="]],
+                ],
+            ],
+            ["role": "assistant", "content": "Cached answer"],
+        ],
+        "tools": [
+            ["type": "function", "function": ["name": "first"]],
+            ["type": "function", "function": ["name": "second"]],
+        ],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    let cacheControl: [String: Any] = ["type": "ephemeral", "ttl": "1h"]
+
+    guard let updatedBody = applyOpenAICompatCacheControl(
+        data: body,
+        cacheControl: cacheControl,
+        supportsCacheControlOnTools: true
+    ),
+    let updated = try JSONSerialization.jsonObject(with: updatedBody) as? [String: Any],
+    let messages = updated["messages"] as? [[String: Any]],
+    let tools = updated["tools"] as? [[String: Any]] else {
+        #expect(Bool(false), "Expected cache-control payload to decode")
+        return
+    }
+
+    let systemContent = messages[0]["content"] as? [[String: Any]]
+    let systemCache = systemContent?.first?["cache_control"] as? [String: Any]
+    #expect(systemContent?.first?["text"] as? String == "You are concise.")
+    #expect(systemCache?["type"] as? String == "ephemeral")
+    #expect(systemCache?["ttl"] as? String == "1h")
+
+    let userContent = messages[1]["content"] as? [[String: Any]]
+    #expect(userContent?.first?["cache_control"] == nil)
+
+    let assistantContent = messages[2]["content"] as? [[String: Any]]
+    let assistantCache = assistantContent?.first?["cache_control"] as? [String: Any]
+    #expect(assistantContent?.first?["text"] as? String == "Cached answer")
+    #expect(assistantCache?["ttl"] as? String == "1h")
+
+    #expect(tools.first?["cache_control"] == nil)
+    let lastToolCache = tools.last?["cache_control"] as? [String: Any]
+    #expect(lastToolCache?["type"] as? String == "ephemeral")
+}
+
+@Test func openAICompletionsCacheControlCanOmitToolMarker() throws {
+    let payload: [String: Any] = [
+        "model": "custom",
+        "messages": [["role": "user", "content": "Hello"]],
+        "tools": [["type": "function", "function": ["name": "search"]]],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    let cacheControl: [String: Any] = ["type": "ephemeral"]
+
+    guard let updatedBody = applyOpenAICompatCacheControl(
+        data: body,
+        cacheControl: cacheControl,
+        supportsCacheControlOnTools: false
+    ),
+    let updated = try JSONSerialization.jsonObject(with: updatedBody) as? [String: Any],
+    let tools = updated["tools"] as? [[String: Any]] else {
+        #expect(Bool(false), "Expected cache-control payload to decode")
+        return
+    }
+
+    #expect(tools.first?["cache_control"] == nil)
+}
+
+@Test func openAICompletionsSessionAffinityHeaders() {
+    let request = URLRequest(url: URL(string: "https://proxy.example.com/v1/chat/completions")!)
+
+    let updated = applyOpenAICompletionsSessionAffinityHeaders(
+        request: request,
+        sessionId: "session-xyz",
+        sendSessionAffinityHeaders: true
+    )
+    #expect(updated.value(forHTTPHeaderField: "session_id") == "session-xyz")
+    #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+    #expect(updated.value(forHTTPHeaderField: "x-session-affinity") == "session-xyz")
+
+    let omitted = applyOpenAICompletionsSessionAffinityHeaders(
+        request: request,
+        sessionId: "session-xyz",
+        sendSessionAffinityHeaders: false
+    )
+    #expect(omitted.value(forHTTPHeaderField: "session_id") == nil)
+    #expect(omitted.value(forHTTPHeaderField: "x-client-request-id") == nil)
+    #expect(omitted.value(forHTTPHeaderField: "x-session-affinity") == nil)
+}
+
+@Test func openAICompletionsPromptCacheFields() throws {
+    let payload: [String: Any] = [
+        "model": "gpt-4o-mini",
+        "messages": [["role": "user", "content": "Hello"]],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    let longSession = String(repeating: "a", count: 70)
+
+    guard let directBody = applyOpenAICompletionsPromptCache(
+        data: body,
+        baseUrl: "https://api.openai.com/v1",
+        sessionId: longSession,
+        cacheRetention: .short,
+        supportsLongCacheRetention: true
+    ),
+    let direct = try JSONSerialization.jsonObject(with: directBody) as? [String: Any] else {
+        #expect(Bool(false), "Expected direct OpenAI prompt cache payload")
+        return
+    }
+    #expect((direct["prompt_cache_key"] as? String)?.count == 64)
+    #expect(direct["prompt_cache_retention"] == nil)
+
+    guard let proxyLongBody = applyOpenAICompletionsPromptCache(
+        data: body,
+        baseUrl: "https://proxy.example.com/v1",
+        sessionId: "session-xyz",
+        cacheRetention: .long,
+        supportsLongCacheRetention: true
+    ),
+    let proxyLong = try JSONSerialization.jsonObject(with: proxyLongBody) as? [String: Any] else {
+        #expect(Bool(false), "Expected proxy long-cache payload")
+        return
+    }
+    #expect(proxyLong["prompt_cache_key"] as? String == "session-xyz")
+    #expect(proxyLong["prompt_cache_retention"] as? String == "24h")
+
+    guard let proxyUnsupportedBody = applyOpenAICompletionsPromptCache(
+        data: body,
+        baseUrl: "https://proxy.example.com/v1",
+        sessionId: "session-xyz",
+        cacheRetention: .long,
+        supportsLongCacheRetention: false
+    ),
+    let proxyUnsupported = try JSONSerialization.jsonObject(with: proxyUnsupportedBody) as? [String: Any] else {
+        #expect(Bool(false), "Expected proxy unsupported-cache payload")
+        return
+    }
+    #expect(proxyUnsupported["prompt_cache_key"] == nil)
+    #expect(proxyUnsupported["prompt_cache_retention"] == nil)
+}
+
 @Test func anthropicBetaHeadersCopilotExcludeFineGrained() {
     let headers = buildAnthropicBetaHeaders(
         apiKey: "tid_copilot_session_test_token",
@@ -1131,6 +1362,35 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     #expect(headers?.contains("interleaved-thinking-2025-05-14") == true)
 }
 
+@Test func anthropicBetaHeadersUseLegacyFineGrainedOnlyWhenEagerUnsupported() {
+    let eagerHeaders = buildAnthropicBetaHeaders(
+        apiKey: "sk-ant-test",
+        interleavedThinking: false,
+        provider: "anthropic",
+        hasTools: true,
+        supportsEagerToolInputStreaming: true
+    )
+    #expect(eagerHeaders?.contains("fine-grained-tool-streaming-2025-05-14") != true)
+
+    let legacyHeaders = buildAnthropicBetaHeaders(
+        apiKey: "sk-ant-test",
+        interleavedThinking: false,
+        provider: "anthropic",
+        hasTools: true,
+        supportsEagerToolInputStreaming: false
+    )
+    #expect(legacyHeaders?.contains("fine-grained-tool-streaming-2025-05-14") == true)
+
+    let noToolHeaders = buildAnthropicBetaHeaders(
+        apiKey: "sk-ant-test",
+        interleavedThinking: false,
+        provider: "anthropic",
+        hasTools: false,
+        supportsEagerToolInputStreaming: false
+    )
+    #expect(noToolHeaders?.contains("fine-grained-tool-streaming-2025-05-14") != true)
+}
+
 @Test func anthropicMetadataInjection() async throws {
     let payload: [String: Any] = [
         "model": "claude-3-5-haiku-20241022",
@@ -1142,6 +1402,70 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     let updated = injectAnthropicRequestBody(body: body, ttl: nil, metadataUserId: "user-123")
     let updatedString = updated.flatMap { String(data: $0, encoding: .utf8) }
     #expect(updatedString?.contains("\"metadata\":{\"user_id\":\"user-123\"}") == true)
+}
+
+@Test func anthropicToolEagerInputStreamingInjectionAndGates() throws {
+    let payload: [String: Any] = [
+        "model": "claude-sonnet-4-5",
+        "messages": [["role": "user", "content": "Hello"]],
+        "tools": [
+            ["name": "first", "input_schema": ["type": "object"]],
+            ["name": "second", "input_schema": ["type": "object"]],
+        ],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+
+    guard let eagerBody = injectAnthropicRequestBody(
+        body: body,
+        ttl: nil,
+        metadataUserId: nil,
+        supportsEagerToolInputStreaming: true,
+        supportsCacheControlOnTools: true
+    ),
+    let eagerPayload = try JSONSerialization.jsonObject(with: eagerBody) as? [String: Any],
+    let eagerTools = eagerPayload["tools"] as? [[String: Any]] else {
+        #expect(Bool(false), "Expected eager Anthropic tools payload")
+        return
+    }
+    #expect(eagerTools.first?["eager_input_streaming"] as? Bool == true)
+    #expect(eagerTools.last?["eager_input_streaming"] as? Bool == true)
+    #expect(eagerTools.first?["cache_control"] == nil)
+    #expect((eagerTools.last?["cache_control"] as? [String: Any])?["type"] as? String == "ephemeral")
+
+    guard let gatedBody = injectAnthropicRequestBody(
+        body: body,
+        ttl: nil,
+        metadataUserId: nil,
+        supportsEagerToolInputStreaming: false,
+        supportsCacheControlOnTools: false
+    ),
+    let gatedPayload = try JSONSerialization.jsonObject(with: gatedBody) as? [String: Any],
+    let gatedTools = gatedPayload["tools"] as? [[String: Any]] else {
+        #expect(Bool(false), "Expected gated Anthropic tools payload")
+        return
+    }
+    #expect(gatedTools.first?["eager_input_streaming"] == nil)
+    #expect(gatedTools.last?["cache_control"] == nil)
+}
+
+@Test func anthropicRequestBodyCanInjectDisabledThinking() throws {
+    let payload: [String: Any] = [
+        "model": "claude-sonnet-4-5",
+        "messages": [["role": "user", "content": "Hello"]],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    guard let updatedBody = injectAnthropicRequestBody(
+        body: body,
+        ttl: nil,
+        metadataUserId: nil,
+        thinkingDisabled: true
+    ),
+    let updated = try JSONSerialization.jsonObject(with: updatedBody) as? [String: Any],
+    let thinking = updated["thinking"] as? [String: Any] else {
+        #expect(Bool(false), "Expected disabled thinking payload")
+        return
+    }
+    #expect(thinking["type"] as? String == "disabled")
 }
 
 @Test func anthropicSimpleOptionsCarryMetadata() {
@@ -1349,15 +1673,9 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
         let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
         return (response, Data("error".utf8))
     } }
-    setOpenRouterImagesURLSessionFactory { _ in
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        return URLSession(configuration: configuration)
-    }
     defer {
         MockURLProtocol.requestHandler.withLock { $0 = nil }
         MockURLProtocol.allowedHosts.withLock { $0 = [] }
-        resetOpenRouterImagesURLSessionFactory()
     }
 
     let model = Model(
@@ -2917,6 +3235,8 @@ struct ApiRegistryTests {
     let completions = mapOpenAICompletionsSimpleOptions(model: openAI, options: options, apiKey: "key")
     #expect(completions.timeoutMs == 2345)
     #expect(completions.maxRetries == 2)
+    #expect(completions.cacheRetention == .short)
+    #expect(completions.sessionId == "session-1")
 
     let anthropic = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, options: options, apiKey: "key")

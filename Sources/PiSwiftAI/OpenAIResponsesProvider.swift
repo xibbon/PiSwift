@@ -563,20 +563,21 @@ func normalizeIdPart(_ raw: String) -> String {
 func convertResponsesMessages(model: Model, context: Context, allowedToolCallProviders: Set<String>) -> [InputItem] {
     var messages: [InputItem] = []
 
-    let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, _ in
-        guard allowedToolCallProviders.contains(model.provider) else { return id }
+    let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, source in
+        guard allowedToolCallProviders.contains(model.provider) else { return normalizeIdPart(id) }
         if id.contains("|") {
             let parts = id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
             let callIdRaw = parts.first.map(String.init) ?? id
             let itemIdRaw = parts.count > 1 ? String(parts[1]) : ""
 
             let normalizedCallId = normalizeIdPart(callIdRaw)
-            var sanitizedItemId = itemIdRaw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
-            if !sanitizedItemId.hasPrefix("fc") {
-                sanitizedItemId = "fc_\(sanitizedItemId)"
+            let isForeignToolCall = source.provider != model.provider || source.api != model.api
+            var normalizedItemId = isForeignToolCall
+                ? openAIResponsesForeignFunctionCallItemId(itemIdRaw)
+                : normalizeIdPart(itemIdRaw)
+            if !normalizedItemId.hasPrefix("fc_") {
+                normalizedItemId = normalizeIdPart("fc_\(normalizedItemId)")
             }
-            var normalizedItemId = sanitizedItemId.count > 64 ? String(sanitizedItemId.prefix(64)) : sanitizedItemId
-            normalizedItemId = normalizedItemId.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
             return "\(normalizedCallId)|\(normalizedItemId)"
         }
         return normalizeIdPart(id)
@@ -754,6 +755,23 @@ func normalizeOptionalResponseItemId(_ id: String?) -> String? {
         return "msg_\(shortHash(id))"
     }
     return id
+}
+
+func openAIResponsesForeignFunctionCallItemId(_ itemId: String) -> String {
+    let normalized = "fc_\(openAIResponsesShortHash(itemId))"
+    return normalized.count > 64 ? String(normalized.prefix(64)) : normalized
+}
+
+func openAIResponsesShortHash(_ value: String) -> String {
+    var h1: UInt32 = 0xdeadbeef
+    var h2: UInt32 = 0x41c6ce57
+    for unit in value.utf16 {
+        h1 = (h1 ^ UInt32(unit)) &* 2_654_435_761
+        h2 = (h2 ^ UInt32(unit)) &* 1_597_334_677
+    }
+    h1 = ((h1 ^ (h1 >> 16)) &* 2_246_822_507) ^ ((h2 ^ (h2 >> 13)) &* 3_266_489_909)
+    h2 = ((h2 ^ (h2 >> 16)) &* 2_246_822_507) ^ ((h1 ^ (h1 >> 13)) &* 3_266_489_909)
+    return String(h2, radix: 36) + String(h1, radix: 36)
 }
 
 func shortHash(_ value: String) -> String {

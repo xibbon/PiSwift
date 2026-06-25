@@ -258,6 +258,8 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         signal: options?.signal,
         apiKey: apiKey,
         reasoningEffort: reasoningEffort,
+        cacheRetention: options?.cacheRetention,
+        sessionId: options?.sessionId,
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,

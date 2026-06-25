@@ -145,6 +145,8 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                cacheRetention: options?.cacheRetention,
+                sessionId: options?.sessionId,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,

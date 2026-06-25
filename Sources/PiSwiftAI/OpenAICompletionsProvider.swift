@@ -23,9 +23,9 @@ public func streamOpenAICompletions(
             let query = try buildCompletionsQuery(model: model, context: context, options: options, compat: compat)
             let openAIStream: AsyncThrowingStream<ChatStreamResult, Error>
             if compat.thinkingFormat == .zai {
-                openAIStream = try streamZaiCompletions(model: model, context: context, options: options, query: query)
+                openAIStream = try streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat)
             } else if model.provider == "github-copilot" {
-                openAIStream = try streamManualOpenAICompletions(model: model, options: options, query: query)
+                openAIStream = try streamManualOpenAICompletions(model: model, options: options, query: query, compat: compat)
             } else {
                 emitPayload(options.onPayload, payload: query)
                 let middlewares = buildCompletionsMiddlewares(model: model, compat: compat, options: options)
@@ -236,6 +236,10 @@ private struct ResolvedOpenAICompat {
     let thinkingFormat: OpenAICompatThinkingFormat
     let supportsStrictMode: Bool
     let reasoningEffortMap: [ThinkingLevel: String]?
+    let cacheControlFormat: OpenAICompatCacheControlFormat?
+    let sendSessionAffinityHeaders: Bool
+    let supportsLongCacheRetention: Bool
+    let supportsCacheControlOnTools: Bool
     /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
     /// (DeepSeek V4 requirement). Empty string is injected when no thinking content exists.
     let requiresReasoningContentOnAssistantMessages: Bool
@@ -252,6 +256,11 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let isDeepSeek = provider == "deepseek" || baseUrl.contains("deepseek.com")
     let isOpencode = provider == "opencode" || baseUrl.contains("opencode.ai")
     let isOpenRouter = provider == "openrouter" || baseUrl.contains("openrouter.ai")
+    let isTogether = provider == "together" || baseUrl.contains("api.together.ai") || baseUrl.contains("api.together.xyz")
+    let isCloudflareWorkersAI = provider == "cloudflare-workers-ai" || baseUrl.contains("api.cloudflare.com")
+    let isCloudflareAiGateway = provider == "cloudflare-ai-gateway" || baseUrl.contains("gateway.ai.cloudflare.com")
+    let isNvidia = provider == "nvidia" || baseUrl.contains("integrate.api.nvidia.com")
+    let isAntLing = provider == "ant-ling" || baseUrl.contains("api.ant-ling.com")
 
     let isNonStandard = isCerebras || isGrok || isChutes || isDeepSeek || isZai || isOpencode || isOpenRouter
     let useMaxTokens = isChutes
@@ -301,6 +310,10 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         thinkingFormat: thinkingFormat,
         supportsStrictMode: true,
         reasoningEffortMap: reasoningEffortMap,
+        cacheControlFormat: isOpenRouter && model.id.hasPrefix("anthropic/") ? .anthropic : nil,
+        sendSessionAffinityHeaders: false,
+        supportsLongCacheRetention: !(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isNvidia || isAntLing),
+        supportsCacheControlOnTools: true,
         requiresReasoningContentOnAssistantMessages: isDeepSeek
     )
 }
@@ -322,6 +335,10 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         thinkingFormat: compat.thinkingFormat ?? detected.thinkingFormat,
         supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
         reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap,
+        cacheControlFormat: compat.cacheControlFormat ?? detected.cacheControlFormat,
+        sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
+        supportsLongCacheRetention: compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+        supportsCacheControlOnTools: compat.supportsCacheControlOnTools ?? detected.supportsCacheControlOnTools,
         requiresReasoningContentOnAssistantMessages: compat.requiresReasoningContentOnAssistantMessages ?? detected.requiresReasoningContentOnAssistantMessages
     )
 }
@@ -621,7 +638,8 @@ private func streamZaiCompletions(
     model: Model,
     context: Context,
     options: OpenAICompletionsOptions,
-    query: ChatQuery
+    query: ChatQuery,
+    compat: ResolvedOpenAICompat
 ) throws -> AsyncThrowingStream<ChatStreamResult, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
@@ -643,8 +661,30 @@ private func streamZaiCompletions(
     for (key, value) in mergedHeaders {
         request.setValue(value, forHTTPHeaderField: key)
     }
+    request = applyOpenAICompletionsSessionAffinityHeaders(
+        request: request,
+        sessionId: options.sessionId,
+        sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders
+    )
 
-    let body = try buildZaiRequestBody(query: query, model: model, options: options)
+    var body = try buildZaiRequestBody(query: query, model: model, options: options)
+    if let updated = applyOpenAICompletionsPromptCache(
+        data: body,
+        baseUrl: model.baseUrl,
+        sessionId: options.sessionId,
+        cacheRetention: resolveCacheRetention(options.cacheRetention),
+        supportsLongCacheRetention: compat.supportsLongCacheRetention
+    ) {
+        body = updated
+    }
+    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)),
+       let updated = applyOpenAICompatCacheControl(
+        data: body,
+        cacheControl: cacheControl,
+        supportsCacheControlOnTools: compat.supportsCacheControlOnTools
+       ) {
+        body = updated
+    }
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
     return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
@@ -670,6 +710,21 @@ private func buildCompletionsMiddlewares(
     options: OpenAICompletionsOptions
 ) -> [OpenAIMiddleware] {
     var middlewares: [OpenAIMiddleware] = []
+    if compat.sendSessionAffinityHeaders || shouldSendOpenAICompletionsPromptCache(baseUrl: model.baseUrl, cacheRetention: resolveCacheRetention(options.cacheRetention), compat: compat) {
+        middlewares.append(OpenAICompletionsSessionMiddleware(
+            baseUrl: model.baseUrl,
+            sessionId: options.sessionId,
+            cacheRetention: resolveCacheRetention(options.cacheRetention),
+            sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
+            supportsLongCacheRetention: compat.supportsLongCacheRetention
+        ))
+    }
+    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)) {
+        middlewares.append(OpenAICompletionsCacheControlMiddleware(
+            cacheControl: cacheControl,
+            supportsCacheControlOnTools: compat.supportsCacheControlOnTools
+        ))
+    }
     if compat.thinkingFormat == .qwen, model.reasoning {
         let enabled = options.reasoningEffort != nil
         middlewares.append(OpenAICompletionsThinkingMiddleware(enableThinking: enabled))
@@ -706,10 +761,225 @@ private func buildCompletionsMiddlewares(
     return middlewares
 }
 
+private func clampOpenAIPromptCacheKey(_ key: String?) -> String? {
+    guard let key else { return nil }
+    return key.count <= 64 ? key : String(key.prefix(64))
+}
+
+private func shouldSendOpenAICompletionsPromptCache(
+    baseUrl: String,
+    cacheRetention: CacheRetention,
+    compat: ResolvedOpenAICompat
+) -> Bool {
+    (baseUrl.contains("api.openai.com") && cacheRetention != .none) ||
+        (cacheRetention == .long && compat.supportsLongCacheRetention)
+}
+
+func applyOpenAICompletionsSessionAffinityHeaders(
+    request: URLRequest,
+    sessionId: String?,
+    sendSessionAffinityHeaders: Bool
+) -> URLRequest {
+    guard sendSessionAffinityHeaders, let sessionId, !sessionId.isEmpty else { return request }
+    var updated = request
+    updated.setValue(sessionId, forHTTPHeaderField: "session_id")
+    updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
+    updated.setValue(sessionId, forHTTPHeaderField: "x-session-affinity")
+    return updated
+}
+
+func applyOpenAICompletionsPromptCache(
+    data: Data,
+    baseUrl: String,
+    sessionId: String?,
+    cacheRetention: CacheRetention,
+    supportsLongCacheRetention: Bool
+) -> Data? {
+    guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    let shouldSendPromptCacheKey = (baseUrl.contains("api.openai.com") && cacheRetention != .none) ||
+        (cacheRetention == .long && supportsLongCacheRetention)
+    if shouldSendPromptCacheKey, let key = clampOpenAIPromptCacheKey(sessionId) {
+        payload["prompt_cache_key"] = key
+    } else {
+        payload.removeValue(forKey: "prompt_cache_key")
+    }
+
+    if cacheRetention == .long, supportsLongCacheRetention {
+        payload["prompt_cache_retention"] = "24h"
+    } else {
+        payload.removeValue(forKey: "prompt_cache_retention")
+    }
+
+    return try? JSONSerialization.data(withJSONObject: payload, options: [])
+}
+
+private func openAICompatCacheControl(compat: ResolvedOpenAICompat, cacheRetention: CacheRetention) -> [String: Any]? {
+    guard compat.cacheControlFormat == .anthropic, cacheRetention != .none else { return nil }
+    var cacheControl: [String: Any] = ["type": "ephemeral"]
+    if cacheRetention == .long, compat.supportsLongCacheRetention {
+        cacheControl["ttl"] = "1h"
+    }
+    return cacheControl
+}
+
+func applyOpenAICompatCacheControl(
+    data: Data,
+    cacheControl: [String: Any],
+    supportsCacheControlOnTools: Bool
+) -> Data? {
+    guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    guard var messages = payload["messages"] as? [[String: Any]] else { return nil }
+
+    addCacheControlToInstructionMessage(messages: &messages, cacheControl: cacheControl)
+    addCacheControlToLastConversationMessage(messages: &messages, cacheControl: cacheControl)
+    payload["messages"] = messages
+
+    if supportsCacheControlOnTools, var tools = payload["tools"] as? [[String: Any]], !tools.isEmpty {
+        tools[tools.count - 1]["cache_control"] = cacheControl
+        payload["tools"] = tools
+    }
+
+    return try? JSONSerialization.data(withJSONObject: payload, options: [])
+}
+
+private struct OpenAICompletionsSessionMiddleware: OpenAIMiddleware {
+    let baseUrl: String
+    let sessionId: String?
+    let cacheRetention: CacheRetention
+    let sendSessionAffinityHeaders: Bool
+    let supportsLongCacheRetention: Bool
+
+    func intercept(request: URLRequest) -> URLRequest {
+        var updated = applyOpenAICompletionsSessionAffinityHeaders(
+            request: request,
+            sessionId: sessionId,
+            sendSessionAffinityHeaders: sendSessionAffinityHeaders
+        )
+        guard let body = readRequestBody(updated) else { return updated }
+        guard let updatedBody = applyOpenAICompletionsPromptCache(
+            data: body,
+            baseUrl: baseUrl,
+            sessionId: sessionId,
+            cacheRetention: cacheRetention,
+            supportsLongCacheRetention: supportsLongCacheRetention
+        ) else { return updated }
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
+    }
+}
+
+private func addCacheControlToInstructionMessage(messages: inout [[String: Any]], cacheControl: [String: Any]) {
+    for index in messages.indices {
+        guard let role = messages[index]["role"] as? String, role == "system" || role == "developer" else {
+            continue
+        }
+        if addCacheControlToTextContent(message: &messages[index], cacheControl: cacheControl) {
+            return
+        }
+    }
+}
+
+private func addCacheControlToLastConversationMessage(messages: inout [[String: Any]], cacheControl: [String: Any]) {
+    for index in messages.indices.reversed() {
+        guard let role = messages[index]["role"] as? String, role == "user" || role == "assistant" else {
+            continue
+        }
+        if addCacheControlToTextContent(message: &messages[index], cacheControl: cacheControl) {
+            return
+        }
+    }
+}
+
+@discardableResult
+private func addCacheControlToTextContent(message: inout [String: Any], cacheControl: [String: Any]) -> Bool {
+    if let content = message["content"] as? String {
+        guard !content.isEmpty else { return false }
+        message["content"] = [
+            [
+                "type": "text",
+                "text": content,
+                "cache_control": cacheControl,
+            ]
+        ]
+        return true
+    }
+
+    guard var content = message["content"] as? [[String: Any]] else { return false }
+    for index in content.indices.reversed() {
+        guard content[index]["type"] as? String == "text" else { continue }
+        content[index]["cache_control"] = cacheControl
+        message["content"] = content
+        return true
+    }
+    return false
+}
+
+private struct OpenAICompletionsCacheControlMiddleware: OpenAIMiddleware, @unchecked Sendable {
+    let cacheControl: [String: Any]
+    let supportsCacheControlOnTools: Bool
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = readRequestBody(request) else { return request }
+        guard let updatedBody = applyOpenAICompatCacheControl(
+            data: body,
+            cacheControl: cacheControl,
+            supportsCacheControlOnTools: supportsCacheControlOnTools
+        ) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
+    }
+}
+
 private func streamManualOpenAICompletions(
     model: Model,
     options: OpenAICompletionsOptions,
-    query: ChatQuery
+    query: ChatQuery,
+    compat: ResolvedOpenAICompat
 ) throws -> AsyncThrowingStream<ChatStreamResult, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
@@ -731,8 +1001,30 @@ private func streamManualOpenAICompletions(
     for (key, value) in mergedHeaders {
         request.setValue(value, forHTTPHeaderField: key)
     }
+    request = applyOpenAICompletionsSessionAffinityHeaders(
+        request: request,
+        sessionId: options.sessionId,
+        sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders
+    )
 
-    let body = try JSONEncoder().encode(query)
+    var body = try JSONEncoder().encode(query)
+    if let updated = applyOpenAICompletionsPromptCache(
+        data: body,
+        baseUrl: model.baseUrl,
+        sessionId: options.sessionId,
+        cacheRetention: resolveCacheRetention(options.cacheRetention),
+        supportsLongCacheRetention: compat.supportsLongCacheRetention
+    ) {
+        body = updated
+    }
+    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)),
+       let updated = applyOpenAICompatCacheControl(
+        data: body,
+        cacheControl: cacheControl,
+        supportsCacheControlOnTools: compat.supportsCacheControlOnTools
+       ) {
+        body = updated
+    }
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
     return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)

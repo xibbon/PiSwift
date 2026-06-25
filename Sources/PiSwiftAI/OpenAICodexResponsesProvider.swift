@@ -738,25 +738,24 @@ private func collectCodexData(from bytes: URLSession.AsyncBytes) async throws ->
     return data
 }
 
-private func convertCodexMessages(model: Model, context: Context) -> [Any] {
+func convertCodexMessages(model: Model, context: Context) -> [Any] {
     var messages: [Any] = []
     let codexToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode"]
 
-    let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, _ in
-        guard codexToolCallProviders.contains(model.provider) else { return id }
-        guard id.contains("|") else { return id }
+    let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, source in
+        guard codexToolCallProviders.contains(model.provider) else { return normalizeIdPart(id) }
+        guard id.contains("|") else { return normalizeIdPart(id) }
         let parts = id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         let callIdRaw = parts.first.map(String.init) ?? id
         let itemIdRaw = parts.count > 1 ? String(parts[1]) : ""
-        let sanitizedCallId = callIdRaw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
-        var sanitizedItemId = itemIdRaw.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
-        if !sanitizedItemId.hasPrefix("fc") {
-            sanitizedItemId = "fc_\(sanitizedItemId)"
+        let normalizedCallId = normalizeIdPart(callIdRaw)
+        let isForeignToolCall = source.provider != model.provider || source.api != model.api
+        var normalizedItemId = isForeignToolCall
+            ? openAIResponsesForeignFunctionCallItemId(itemIdRaw)
+            : normalizeIdPart(itemIdRaw)
+        if !normalizedItemId.hasPrefix("fc_") {
+            normalizedItemId = normalizeIdPart("fc_\(normalizedItemId)")
         }
-        var normalizedCallId = sanitizedCallId.count > 64 ? String(sanitizedCallId.prefix(64)) : sanitizedCallId
-        var normalizedItemId = sanitizedItemId.count > 64 ? String(sanitizedItemId.prefix(64)) : sanitizedItemId
-        normalizedCallId = normalizedCallId.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
-        normalizedItemId = normalizedItemId.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
         return "\(normalizedCallId)|\(normalizedItemId)"
     }
 

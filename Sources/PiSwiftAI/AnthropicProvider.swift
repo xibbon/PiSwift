@@ -73,6 +73,29 @@ private func debugNonStreamingError(_ service: AnthropicService, _ parameters: M
     }
 }
 
+private struct ResolvedAnthropicCompat {
+    let supportsEagerToolInputStreaming: Bool
+    let supportsLongCacheRetention: Bool
+    let sendSessionAffinityHeaders: Bool
+    let supportsCacheControlOnTools: Bool
+    let supportsTemperature: Bool
+}
+
+private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
+    let provider = model.provider.lowercased()
+    let baseUrl = model.baseUrl.lowercased()
+    let isFireworks = provider == "fireworks"
+    let isCloudflareAiGatewayAnthropic = provider == "cloudflare-ai-gateway" && baseUrl.contains("anthropic")
+    let compat = model.compat
+    return ResolvedAnthropicCompat(
+        supportsEagerToolInputStreaming: compat?.supportsEagerToolInputStreaming ?? !isFireworks,
+        supportsLongCacheRetention: compat?.supportsLongCacheRetention ?? !isFireworks,
+        sendSessionAffinityHeaders: compat?.sendSessionAffinityHeaders ?? (isFireworks || isCloudflareAiGatewayAnthropic),
+        supportsCacheControlOnTools: compat?.supportsCacheControlOnTools ?? !isFireworks,
+        supportsTemperature: compat?.supportsTemperature ?? true
+    )
+}
+
 public func streamAnthropic(
     model: Model,
     context: Context,
@@ -98,12 +121,15 @@ public func streamAnthropic(
                 throw StreamError.missingApiKey(model.provider)
             }
             let isOAuthToken = isAnthropicOAuthToken(apiKey)
+            let compat = resolveAnthropicCompat(model: model)
 
             let betaHeaders = buildAnthropicBetaHeaders(
                 apiKey: apiKey,
                 interleavedThinking: options.interleavedThinking ?? true,
                 provider: model.provider,
-                modelId: model.id
+                modelId: model.id,
+                hasTools: context.tools?.isEmpty == false,
+                supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming
             )
             if let betaHeaders {
                 logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
@@ -120,7 +146,11 @@ public func streamAnthropic(
                 isOAuthToken: isOAuthToken,
                 extraHeaders: mergedHeaders,
                 baseUrl: model.baseUrl,
-                metadataUserId: extractAnthropicMetadataUserId(options.metadata)
+                metadataUserId: extractAnthropicMetadataUserId(options.metadata),
+                supportsLongCacheRetention: compat.supportsLongCacheRetention,
+                supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
+                thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil
             )
             let service = AnthropicServiceFactory.service(
                 apiKey: apiKey,
@@ -130,13 +160,20 @@ public func streamAnthropic(
                 debugEnabled: false
             )
 
-            let parameters = buildAnthropicParameters(model: model, context: context, options: options, isOAuthToken: isOAuthToken)
+            let parameters = buildAnthropicParameters(model: model, context: context, options: options, isOAuthToken: isOAuthToken, compat: compat)
             emitPayload(options.onPayload, payload: parameters)
             debugService = service
             debugParameters = parameters
             let toolCount = context.tools?.count ?? 0
             logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
-            let anthropicStream = try await service.streamMessage(parameters)
+            let anthropicStream = try await streamAnthropicMessagesTolerant(
+                apiKey: apiKey,
+                baseUrl: model.baseUrl,
+                betaHeaders: betaHeaders,
+                httpClient: httpClient,
+                parameters: parameters,
+                onResponse: options.onResponse
+            )
 
             stream.push(.start(partial: output))
 
@@ -307,7 +344,13 @@ public func streamAnthropic(
     return stream
 }
 
-private func buildAnthropicParameters(model: Model, context: Context, options: AnthropicOptions, isOAuthToken: Bool) -> MessageParameter {
+private func buildAnthropicParameters(
+    model: Model,
+    context: Context,
+    options: AnthropicOptions,
+    isOAuthToken: Bool,
+    compat: ResolvedAnthropicCompat
+) -> MessageParameter {
     let messages = convertAnthropicMessages(model: model, messages: context.messages, isOAuthToken: isOAuthToken)
     let maxTokens = options.maxTokens ?? max(model.maxTokens / 3, 1024)
 
@@ -331,7 +374,7 @@ private func buildAnthropicParameters(model: Model, context: Context, options: A
 
     // Do NOT send temperature when thinking is enabled (incompatible with both
     // adaptive and budget-based thinking).
-    let temperature = thinkingEnabled ? nil : options.temperature
+    let temperature = thinkingEnabled || !compat.supportsTemperature ? nil : options.temperature
 
     let toolChoice = options.toolChoice.map { convertAnthropicToolChoice($0, isOAuthToken: isOAuthToken) }
 
@@ -348,6 +391,324 @@ private func buildAnthropicParameters(model: Model, context: Context, options: A
         toolChoice: toolChoice,
         thinking: thinking
     )
+}
+
+private let anthropicMessageSseEvents: Set<String> = [
+    "message_start",
+    "message_delta",
+    "message_stop",
+    "content_block_start",
+    "content_block_delta",
+    "content_block_stop",
+]
+
+struct AnthropicServerSentEvent {
+    var event: String?
+    var data: String
+    var raw: [String]
+}
+
+private struct AnthropicSSEDecoder {
+    var event: String?
+    var data: [String] = []
+    var raw: [String] = []
+
+    mutating func decode(line: String) -> AnthropicServerSentEvent? {
+        let normalized = line.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
+        if normalized.isEmpty {
+            return flush()
+        }
+
+        raw.append(normalized)
+        if normalized.hasPrefix(":") {
+            return nil
+        }
+
+        let parts = normalized.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        let fieldName = parts.first.map(String.init) ?? normalized
+        var value = parts.count > 1 ? String(parts[1]) : ""
+        if value.hasPrefix(" ") {
+            value.removeFirst()
+        }
+
+        if fieldName == "event" {
+            event = value
+        } else if fieldName == "data" {
+            data.append(value)
+        }
+        return nil
+    }
+
+    mutating func flush() -> AnthropicServerSentEvent? {
+        guard event != nil || !data.isEmpty else { return nil }
+        let result = AnthropicServerSentEvent(event: event, data: data.joined(separator: "\n"), raw: raw)
+        event = nil
+        data = []
+        raw = []
+        return result
+    }
+}
+
+func decodeAnthropicSSELines(_ lines: [String]) throws -> [MessageStreamResponse] {
+    var decoder = AnthropicSSEDecoder()
+    var events: [MessageStreamResponse] = []
+    var sawMessageStart = false
+    var sawMessageStop = false
+
+    for line in lines {
+        if let sse = decoder.decode(line: line),
+           let event = try decodeAnthropicMessageEvent(sse) {
+            if event.type == "message_start" {
+                sawMessageStart = true
+            } else if event.type == "message_stop" {
+                sawMessageStop = true
+            }
+            events.append(event)
+        }
+    }
+    if let sse = decoder.flush(),
+       let event = try decodeAnthropicMessageEvent(sse) {
+        if event.type == "message_start" {
+            sawMessageStart = true
+        } else if event.type == "message_stop" {
+            sawMessageStop = true
+        }
+        events.append(event)
+    }
+
+    if sawMessageStart && !sawMessageStop {
+        throw AnthropicTolerantStreamError.messageStopMissing
+    }
+    return events
+}
+
+private func decodeAnthropicMessageEvent(_ sse: AnthropicServerSentEvent) throws -> MessageStreamResponse? {
+    if sse.event == "error" {
+        throw AnthropicTolerantStreamError.sseError(sse.data)
+    }
+    guard let eventName = sse.event, anthropicMessageSseEvents.contains(eventName) else {
+        return nil
+    }
+    do {
+        return try decodeAnthropicJSONEvent(sse.data)
+    } catch {
+        throw AnthropicTolerantStreamError.invalidEvent(eventName: eventName, data: sse.data, raw: sse.raw, underlying: error)
+    }
+}
+
+private func decodeAnthropicJSONEvent(_ json: String) throws -> MessageStreamResponse {
+    guard let data = repairedAnthropicJSON(json).data(using: .utf8) else {
+        throw AnthropicTolerantStreamError.invalidUTF8
+    }
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try decoder.decode(MessageStreamResponse.self, from: data)
+}
+
+private func repairedAnthropicJSON(_ json: String) -> String {
+    let validEscapes: Set<Character> = ["\"", "\\", "/", "b", "f", "n", "r", "t", "u"]
+    var repaired = ""
+    var inString = false
+    var index = json.startIndex
+
+    while index < json.endIndex {
+        let char = json[index]
+        if !inString {
+            repaired.append(char)
+            if char == "\"" {
+                inString = true
+            }
+            index = json.index(after: index)
+            continue
+        }
+
+        if char == "\"" {
+            repaired.append(char)
+            inString = false
+            index = json.index(after: index)
+            continue
+        }
+
+        if char == "\\" {
+            let nextIndex = json.index(after: index)
+            guard nextIndex < json.endIndex else {
+                repaired.append("\\\\")
+                index = nextIndex
+                continue
+            }
+            let next = json[nextIndex]
+            if next == "u" {
+                let hexStart = json.index(after: nextIndex)
+                let hexEnd = json.index(hexStart, offsetBy: 4, limitedBy: json.endIndex) ?? json.endIndex
+                let digits = String(json[hexStart..<hexEnd])
+                if digits.count == 4, digits.allSatisfy(\.isHexDigit) {
+                    repaired.append("\\u\(digits)")
+                    index = hexEnd
+                    continue
+                }
+            }
+            if validEscapes.contains(next) {
+                repaired.append("\\")
+                repaired.append(next)
+                index = json.index(after: nextIndex)
+                continue
+            }
+            repaired.append("\\\\")
+            index = nextIndex
+            continue
+        }
+
+        if char.isASCII, let scalar = char.unicodeScalars.first, scalar.value <= 0x1f {
+            switch char {
+            case "\u{08}":
+                repaired.append("\\b")
+            case "\u{0C}":
+                repaired.append("\\f")
+            case "\n":
+                repaired.append("\\n")
+            case "\r":
+                repaired.append("\\r")
+            case "\t":
+                repaired.append("\\t")
+            default:
+                repaired.append(String(format: "\\u%04x", scalar.value))
+            }
+        } else {
+            repaired.append(char)
+        }
+        index = json.index(after: index)
+    }
+
+    return repaired
+}
+
+private func streamAnthropicMessagesTolerant(
+    apiKey: String,
+    baseUrl: String,
+    betaHeaders: [String]?,
+    httpClient: HTTPClient,
+    parameters: MessageParameter,
+    onResponse: ResponseHandler?
+) async throws -> AsyncThrowingStream<MessageStreamResponse, Error> {
+    var localParameters = parameters
+    localParameters.stream = true
+    let body = try anthropicJSONBody(localParameters)
+    let url = try anthropicMessagesURL(baseUrl: baseUrl)
+    var headers: [String: String] = [
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+    ]
+    if let betaHeaders, !betaHeaders.isEmpty {
+        headers["anthropic-beta"] = betaHeaders.joined(separator: ",")
+    }
+    let request = HTTPRequest(url: url, method: .post, headers: headers, body: body)
+    let (byteStream, response) = try await httpClient.bytes(for: request)
+    let snapshot = anthropicResponseSnapshot(response)
+    onResponse?(snapshot)
+    guard snapshot.statusCode == 200 else {
+        throw AnthropicTolerantStreamError.unsuccessfulStatus(snapshot.statusCode)
+    }
+    return decodeAnthropicSSEStream(byteStream)
+}
+
+private func anthropicJSONBody(_ parameters: MessageParameter) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.keyEncodingStrategy = .convertToSnakeCase
+    return try encoder.encode(parameters)
+}
+
+private func anthropicMessagesURL(baseUrl: String) throws -> URL {
+    var trimmed = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+        trimmed = "https://api.anthropic.com"
+    }
+    if trimmed.hasSuffix("/") {
+        trimmed.removeLast()
+    }
+    guard let url = URL(string: trimmed + "/v1/messages") else {
+        throw AnthropicTolerantStreamError.invalidBaseUrl(baseUrl)
+    }
+    return url
+}
+
+private func anthropicResponseSnapshot(_ response: HTTPResponse) -> ResponseSnapshot {
+    var statusCode = 0
+    var headers: [String: String] = [:]
+    for child in Mirror(reflecting: response).children {
+        switch child.label {
+        case "statusCode":
+            statusCode = child.value as? Int ?? statusCode
+        case "headers":
+            headers = child.value as? [String: String] ?? headers
+        default:
+            continue
+        }
+    }
+    return ResponseSnapshot(statusCode: statusCode, headers: headers)
+}
+
+private struct SendableAnthropicByteStream: @unchecked Sendable {
+    let stream: HTTPByteStream
+}
+
+private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowingStream<MessageStreamResponse, Error> {
+    let sendableStream = SendableAnthropicByteStream(stream: stream)
+    return AsyncThrowingStream<MessageStreamResponse, Error> { continuation in
+        let task = Task {
+            var decoder = AnthropicSSEDecoder()
+            var sawMessageStart = false
+            var sawMessageStop = false
+
+            func handle(_ sse: AnthropicServerSentEvent) throws {
+                guard let event = try decodeAnthropicMessageEvent(sse) else { return }
+                if event.type == "message_start" {
+                    sawMessageStart = true
+                } else if event.type == "message_stop" {
+                    sawMessageStop = true
+                }
+                continuation.yield(event)
+            }
+
+            do {
+                switch sendableStream.stream {
+                case .lines(let lines):
+                    for try await line in lines {
+                        if let sse = decoder.decode(line: line) {
+                            try handle(sse)
+                        }
+                    }
+                case .bytes(let bytes):
+                    var buffer = ""
+                    for try await byte in bytes {
+                        buffer.append(Character(UnicodeScalar(byte)))
+                        while let range = buffer.range(of: #"\r\n|\n|\r"#, options: .regularExpression) {
+                            let line = String(buffer[..<range.lowerBound])
+                            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+                            if let sse = decoder.decode(line: line) {
+                                try handle(sse)
+                            }
+                        }
+                    }
+                    if !buffer.isEmpty, let sse = decoder.decode(line: buffer) {
+                        try handle(sse)
+                    }
+                }
+                if let sse = decoder.flush() {
+                    try handle(sse)
+                }
+                if sawMessageStart && !sawMessageStop {
+                    throw AnthropicTolerantStreamError.messageStopMissing
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
+        }
+    }
 }
 
 private func mapAnthropicModel(_ id: String) -> SwiftAnthropic.Model {
@@ -384,7 +745,14 @@ private func adaptiveThinkingBudget(effort: ThinkingLevel, maxTokens: Int) -> In
     }
 }
 
-func buildAnthropicBetaHeaders(apiKey: String, interleavedThinking: Bool, provider: String, modelId: String = "") -> [String]? {
+func buildAnthropicBetaHeaders(
+    apiKey: String,
+    interleavedThinking: Bool,
+    provider: String,
+    modelId: String = "",
+    hasTools: Bool = true,
+    supportsEagerToolInputStreaming: Bool = false
+) -> [String]? {
     let env = ProcessInfo.processInfo.environment
     let disableFlag = (env["PI_DISABLE_ANTHROPIC_BETA"] ?? "").lowercased()
     if disableFlag == "1" || disableFlag == "true" || disableFlag == "yes" {
@@ -409,7 +777,9 @@ func buildAnthropicBetaHeaders(apiKey: String, interleavedThinking: Bool, provid
             headers.append("interleaved-thinking-2025-05-14")
         }
     } else {
-        headers.append("fine-grained-tool-streaming-2025-05-14")
+        if hasTools && !supportsEagerToolInputStreaming {
+            headers.append("fine-grained-tool-streaming-2025-05-14")
+        }
         if needsInterleavedBeta {
             headers.append("interleaved-thinking-2025-05-14")
         }
@@ -594,9 +964,10 @@ private func convertAnthropicToolChoice(_ choice: AnthropicToolChoice, isOAuthTo
     }
 }
 
-func anthropicCacheTtl(baseUrl: String) -> String? {
+func anthropicCacheTtl(baseUrl: String, supportsLongCacheRetention: Bool = true) -> String? {
     let flag = getenv("PI_CACHE_RETENTION").map { String(cString: $0) }?.lowercased()
     guard flag == "long" else { return nil }
+    guard supportsLongCacheRetention else { return nil }
     guard baseUrl.contains("api.anthropic.com") else { return nil }
     return "1h"
 }
@@ -605,7 +976,11 @@ private func buildAnthropicHttpClient(
     isOAuthToken: Bool,
     extraHeaders: [String: String],
     baseUrl: String,
-    metadataUserId: String?
+    metadataUserId: String?,
+    supportsLongCacheRetention: Bool,
+    supportsEagerToolInputStreaming: Bool,
+    supportsCacheControlOnTools: Bool,
+    thinkingDisabled: Bool
 ) -> HTTPClient {
     var merged = extraHeaders
     if isOAuthToken {
@@ -616,12 +991,15 @@ private func buildAnthropicHttpClient(
             merged["x-app"] = "cli"
         }
     }
-    let cacheTtl = anthropicCacheTtl(baseUrl: baseUrl)
+    let cacheTtl = anthropicCacheTtl(baseUrl: baseUrl, supportsLongCacheRetention: supportsLongCacheRetention)
     return AnthropicHeaderInjectingHTTPClient(
         base: HTTPClientFactory.createDefault(),
         extraHeaders: merged,
         cacheTtl: cacheTtl,
-        metadataUserId: metadataUserId
+        metadataUserId: metadataUserId,
+        supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
+        supportsCacheControlOnTools: supportsCacheControlOnTools,
+        thinkingDisabled: thinkingDisabled
     )
 }
 
@@ -678,6 +1056,9 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let extraHeaders: [String: String]
     let cacheTtl: String?
     let metadataUserId: String?
+    let supportsEagerToolInputStreaming: Bool
+    let supportsCacheControlOnTools: Bool
+    let thinkingDisabled: Bool
 
     func data(for request: HTTPRequest) async throws -> (Data, HTTPResponse) {
         let updated = injectingHeaders(request)
@@ -720,7 +1101,14 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
         for (key, value) in extraHeaders where headers[key] == nil {
             headers[key] = value
         }
-        let updatedBody = injectAnthropicRequestBody(body: body, ttl: cacheTtl, metadataUserId: metadataUserId)
+        let updatedBody = injectAnthropicRequestBody(
+            body: body,
+            ttl: cacheTtl,
+            metadataUserId: metadataUserId,
+            supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
+            supportsCacheControlOnTools: supportsCacheControlOnTools,
+            thinkingDisabled: thinkingDisabled
+        )
         return HTTPRequest(url: url, method: method, headers: headers, body: updatedBody ?? body)
     }
 }
@@ -731,7 +1119,14 @@ private func extractAnthropicMetadataUserId(_ metadata: [String: AnyCodable]?) -
     return trimmed.isEmpty ? nil : trimmed
 }
 
-func injectAnthropicRequestBody(body: Data?, ttl: String?, metadataUserId: String?) -> Data? {
+func injectAnthropicRequestBody(
+    body: Data?,
+    ttl: String?,
+    metadataUserId: String?,
+    supportsEagerToolInputStreaming: Bool = false,
+    supportsCacheControlOnTools: Bool = true,
+    thinkingDisabled: Bool = false
+) -> Data? {
     guard let body,
           var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
         return nil
@@ -771,17 +1166,27 @@ func injectAnthropicRequestBody(body: Data?, ttl: String?, metadataUserId: Strin
     // v0.67.4: add a cache_control breakpoint on the last tool definition so tool schemas
     // can be cached independently from transcript updates while preserving existing cache
     // retention behavior.
-    if var tools = payload["tools"] as? [[String: Any]],
-       let lastToolIndex = tools.indices.last {
-        let lastTool = tools[lastToolIndex]
-        if lastTool["cache_control"] == nil {
-            tools[lastToolIndex] = ensureCacheControl(in: lastTool, ttl: ttl)
-            payload["tools"] = tools
+    if var tools = payload["tools"] as? [[String: Any]], !tools.isEmpty {
+        for index in tools.indices {
+            if supportsEagerToolInputStreaming {
+                tools[index]["eager_input_streaming"] = true
+            }
         }
+
+        if supportsCacheControlOnTools, let lastToolIndex = tools.indices.last {
+            let lastTool = tools[lastToolIndex]
+            if lastTool["cache_control"] == nil {
+                tools[lastToolIndex] = ensureCacheControl(in: lastTool, ttl: ttl)
+            }
+        }
+        payload["tools"] = tools
     }
 
     if let metadataUserId {
         payload["metadata"] = ["user_id": metadataUserId]
+    }
+    if thinkingDisabled {
+        payload["thinking"] = ["type": "disabled"]
     }
 
     return try? JSONSerialization.data(withJSONObject: payload)
@@ -894,4 +1299,30 @@ private func anthropicMediaType(from mimeType: String) -> MessageParameter.Messa
 private enum AnthropicStreamError: Error {
     case aborted
     case unknown
+}
+
+private enum AnthropicTolerantStreamError: Error, LocalizedError {
+    case invalidBaseUrl(String)
+    case invalidUTF8
+    case sseError(String)
+    case invalidEvent(eventName: String, data: String, raw: [String], underlying: Error)
+    case messageStopMissing
+    case unsuccessfulStatus(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidBaseUrl(let baseUrl):
+            return "Invalid Anthropic base URL: \(baseUrl)"
+        case .invalidUTF8:
+            return "Anthropic SSE event was not valid UTF-8"
+        case .sseError(let data):
+            return data
+        case .invalidEvent(let eventName, let data, let raw, let underlying):
+            return "Could not parse Anthropic SSE event \(eventName): \(underlying.localizedDescription); data=\(data); raw=\(raw.joined(separator: "\\n"))"
+        case .messageStopMissing:
+            return "Anthropic stream ended before message_stop"
+        case .unsuccessfulStatus(let status):
+            return "Anthropic stream returned status code \(status)"
+        }
+    }
 }

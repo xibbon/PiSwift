@@ -57,6 +57,77 @@ import PiSwiftCodingAgent
     #expect(model.compat?.vercelGatewayRouting?.only == ["openai"])
 }
 
+@Test func modelRegistryAppliesProviderCompatOverrideWithoutReplacingBuiltIns() throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-models-provider-compat-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    let modelsPath = tempDir.appendingPathComponent("models.json")
+
+    let baselineRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let baselineOpenAIModels = baselineRegistry.getAll().filter { $0.provider == "openai" }
+    let baselineModel = try #require(baselineOpenAIModels.first)
+
+    let json = """
+    {
+      "providers": {
+        "openai": {
+          "compat": {
+            "supportsLongCacheRetention": false,
+            "sendSessionIdHeader": false,
+            "cacheControlFormat": "anthropic"
+          }
+        }
+      }
+    }
+    """
+    try json.data(using: .utf8)?.write(to: modelsPath)
+
+    let registry = ModelRegistry(AuthStorage(":memory:"), tempDir.path)
+    let openAIModels = registry.getAll().filter { $0.provider == "openai" }
+    #expect(openAIModels.count == baselineOpenAIModels.count)
+
+    let model = try #require(registry.find("openai", baselineModel.id))
+    #expect(model.baseUrl == baselineModel.baseUrl)
+    #expect(model.api == baselineModel.api)
+    #expect(model.compat?.supportsLongCacheRetention == false)
+    #expect(model.compat?.sendSessionIdHeader == false)
+    #expect(model.compat?.cacheControlFormat == .anthropic)
+}
+
+@Test func modelRegistryBuiltInCustomModelsInheritApiBaseUrlAndMergeCompat() throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-models-built-in-inherit-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    let modelsPath = tempDir.appendingPathComponent("models.json")
+
+    let baselineModel = try #require(getModels(provider: .openai).first)
+    let json = """
+    {
+      "providers": {
+        "openai": {
+          "compat": {
+            "supportsLongCacheRetention": false
+          },
+          "models": [
+            {
+              "id": "custom-inherited",
+              "compat": {
+                "sendSessionIdHeader": false
+              }
+            }
+          ]
+        }
+      }
+    }
+    """
+    try json.data(using: .utf8)?.write(to: modelsPath)
+
+    let registry = ModelRegistry(AuthStorage(":memory:"), tempDir.path)
+    let model = try #require(registry.find("openai", "custom-inherited"))
+    #expect(model.api == baselineModel.api)
+    #expect(model.baseUrl == baselineModel.baseUrl)
+    #expect(model.compat?.supportsLongCacheRetention == false)
+    #expect(model.compat?.sendSessionIdHeader == false)
+}
+
 @Test func modelRegistryPreservesSlashDelimitedCustomModelIdsUnderConfiguredProvider() async throws {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-models-provider-ids-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
