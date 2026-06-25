@@ -47,6 +47,38 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+final class OpenAICompletionsMockURLProtocol: URLProtocol {
+    static let requestHandler = LockedState<(@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
+    static let allowedHosts = LockedState<Set<String>>([])
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        guard requestHandler.withLock({ $0 }) != nil, let host = request.url?.host else { return false }
+        return allowedHosts.withLock({ $0.contains(host) })
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler.withLock({ $0 }) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
 final class GeminiRetryMockURLProtocol: URLProtocol {
     static let requestHandler = LockedState<(@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
 
@@ -118,6 +150,15 @@ private func codexTestEvent(type: String, payload: [String: Any]) -> String {
     return string
 }
 
+private func openAITestSseData(_ payloads: [[String: Any]]) throws -> Data {
+    var result = ""
+    for payload in payloads {
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        result += "data: \(String(decoding: data, as: UTF8.self))\n\n"
+    }
+    result += "data: [DONE]\n\n"
+    return Data(result.utf8)
+}
 
 private func readRequestBody(_ request: URLRequest) -> Data? {
     if let body = request.httpBody {
@@ -931,6 +972,165 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
     #expect(resolvedThird.id == "toolcall_2")
 }
 
+@Test func openAICompletionsUsagePreservesCacheWriteTokens() async throws {
+    await codexRequestLock.withLock {
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["api.openai.com"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            #expect(request.url?.absoluteString == "https://api.openai.com/v1/chat/completions")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-usage",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "chat-compat-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": NSNull(),
+                        ],
+                    ],
+                ],
+                [
+                    "id": "chatcmpl-usage",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "chat-compat-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": [:],
+                            "finish_reason": "stop",
+                        ],
+                    ],
+                ],
+                [
+                    "id": "chatcmpl-usage",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "chat-compat-test",
+                    "choices": [],
+                    "usage": [
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "prompt_tokens_details": [
+                            "cached_tokens": 15,
+                            "cache_write_tokens": 5,
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "chat-compat-test",
+            name: "Chat Compat Test",
+            api: .openAICompletions,
+            provider: "openai",
+            baseUrl: "https://api.openai.com/v1",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 1, output: 2, cacheRead: 0.5, cacheWrite: 3),
+            contextWindow: 128000,
+            maxTokens: 4096
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key")
+        )
+        let message = await stream.result()
+
+        #expect(message.stopReason == .stop)
+        #expect(message.usage.input == 80)
+        #expect(message.usage.output == 20)
+        #expect(message.usage.cacheRead == 15)
+        #expect(message.usage.cacheWrite == 5)
+        #expect(message.usage.totalTokens == 120)
+    }
+}
+
+@Test func openAICompletionsUsageFallsBackToChoiceUsage() async throws {
+    await codexRequestLock.withLock {
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["moonshot.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-choice-usage",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "moonshot-choice-usage",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": "stop",
+                            "usage": [
+                                "prompt_tokens": 40,
+                                "completion_tokens": 8,
+                                "prompt_cache_hit_tokens": 6,
+                            ],
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "moonshot-choice-usage",
+            name: "Moonshot Choice Usage",
+            api: .openAICompletions,
+            provider: "moonshot",
+            baseUrl: "https://moonshot.example/v1",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 128000,
+            maxTokens: 4096
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key")
+        )
+        let message = await stream.result()
+
+        #expect(message.stopReason == .stop)
+        #expect(message.usage.input == 34)
+        #expect(message.usage.output == 8)
+        #expect(message.usage.cacheRead == 6)
+        #expect(message.usage.cacheWrite == 0)
+        #expect(message.usage.totalTokens == 48)
+    }
+}
+
 @Test func openAICompletionsSmoke() async throws {
     guard RUN_OPENAI_TESTS, ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
         return
@@ -1666,73 +1866,77 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
 }
 
 @Test func openAICompletionsToolChoiceAndStrictPayload() async {
-    let capturedPayloadJson = LockedState<String?>(nil)
-    MockURLProtocol.allowedHosts.withLock { $0 = ["zai.example"] }
-    MockURLProtocol.requestHandler.withLock { $0 = { request in
-        guard let url = request.url else { throw URLError(.badURL) }
-        let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
-        return (response, Data("error".utf8))
-    } }
-    defer {
-        MockURLProtocol.requestHandler.withLock { $0 = nil }
-        MockURLProtocol.allowedHosts.withLock { $0 = [] }
-    }
+    await codexRequestLock.withLock {
+        let capturedPayloadJson = LockedState<String?>(nil)
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["zai.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            guard let url = request.url else { throw URLError(.badURL) }
+            let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
+            return (response, Data("error".utf8))
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
 
-    let model = Model(
-        id: "zai-test-model",
-        name: "zai-test-model",
-        api: .openAICompletions,
-        provider: "zai",
-        baseUrl: "https://zai.example/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 8192,
-        maxTokens: 4096,
-        compat: OpenAICompat(
-            thinkingFormat: .zai,
-            supportsStrictMode: false
+        let model = Model(
+            id: "zai-test-model",
+            name: "zai-test-model",
+            api: .openAICompletions,
+            provider: "zai",
+            baseUrl: "https://zai.example/v1",
+            reasoning: true,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 8192,
+            maxTokens: 4096,
+            compat: OpenAICompat(
+                thinkingFormat: .zai,
+                supportsStrictMode: false
+            )
         )
-    )
-    let context = Context(
-        messages: [.user(UserMessage(content: .text("Call ping")))],
-        tools: [
-            AITool(
-                name: "ping",
-                description: "Ping tool",
-                parameters: [
-                    "type": AnyCodable("object"),
-                    "properties": AnyCodable(["ok": ["type": "boolean"] as [String: String]]),
-                ]
-            ),
-        ]
-    )
-
-    let stream = streamOpenAICompletions(
-        model: model,
-        context: context,
-        options: OpenAICompletionsOptions(
-            apiKey: "test-key",
-            toolChoice: .required,
-            onPayload: { snapshot in
-                capturedPayloadJson.withLock { $0 = snapshot.json }
-            }
+        let context = Context(
+            messages: [.user(UserMessage(content: .text("Call ping")))],
+            tools: [
+                AITool(
+                    name: "ping",
+                    description: "Ping tool",
+                    parameters: [
+                        "type": AnyCodable("object"),
+                        "properties": AnyCodable(["ok": ["type": "boolean"] as [String: String]]),
+                    ]
+                ),
+            ]
         )
-    )
-    _ = await stream.result()
 
-    let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
-        guard let data = jsonString.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data, options: []),
-              let dict = json as? [String: Any] else { return nil }
-        return dict
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: context,
+            options: OpenAICompletionsOptions(
+                apiKey: "test-key",
+                toolChoice: .required,
+                onPayload: { snapshot in
+                    capturedPayloadJson.withLock { $0 = snapshot.json }
+                }
+            )
+        )
+        _ = await stream.result()
+
+        let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+            guard let data = jsonString.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data, options: []),
+                  let dict = json as? [String: Any] else { return nil }
+            return dict
+        }
+        #expect(payload != nil)
+        #expect(payload?["tool_choice"] as? String == "required")
+        let tools = payload?["tools"] as? [[String: Any]]
+        let function = tools?.first?["function"] as? [String: Any]
+        #expect(function != nil)
+        #expect(function?["strict"] == nil)
     }
-    #expect(payload != nil)
-    #expect(payload?["tool_choice"] as? String == "required")
-    let tools = payload?["tools"] as? [[String: Any]]
-    let function = tools?.first?["function"] as? [String: Any]
-    #expect(function != nil)
-    #expect(function?["strict"] == nil)
 }
 
 // MARK: - JSON Schema Validation Tests

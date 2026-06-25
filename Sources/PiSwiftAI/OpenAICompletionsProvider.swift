@@ -21,22 +21,17 @@ public func streamOpenAICompletions(
         do {
             let compat = resolveCompat(model: model)
             let query = try buildCompletionsQuery(model: model, context: context, options: options, compat: compat)
-            let openAIStream: AsyncThrowingStream<ChatStreamResult, Error>
+            let openAIStream: AsyncThrowingStream<OpenAICompletionsStreamChunk, Error>
             if compat.thinkingFormat == .zai {
                 openAIStream = try streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat)
-            } else if model.provider == "github-copilot" {
-                openAIStream = try streamManualOpenAICompletions(model: model, options: options, query: query, compat: compat)
             } else {
-                emitPayload(options.onPayload, payload: query)
                 let middlewares = buildCompletionsMiddlewares(model: model, compat: compat, options: options)
-                let client = try makeOpenAIClient(
+                openAIStream = try streamManualOpenAICompletions(
                     model: model,
-                    apiKey: options.apiKey,
-                    headers: options.headers,
-                    timeoutMs: options.timeoutMs,
+                    options: options,
+                    query: query,
                     middlewares: middlewares
                 )
-                openAIStream = client.chatsStream(query: query)
             }
             stream.push(.start(partial: output))
 
@@ -73,27 +68,22 @@ public func streamOpenAICompletions(
                 if options.signal?.isCancelled == true {
                     throw OpenAICompletionsStreamError.aborted
                 }
+                let result = chunk.result
 
                 // Capture response ID from chunk
-                if output.responseId == nil, !chunk.id.isEmpty {
-                    output.responseId = chunk.id
+                if output.responseId == nil, !result.id.isEmpty {
+                    output.responseId = result.id
                 }
 
-                if let usage = chunk.usage {
-                    let cachedTokens = usage.promptTokensDetails?.cachedTokens ?? 0
-                    let input = usage.promptTokens - cachedTokens
-                    let outputTokens = usage.completionTokens
-                    output.usage = Usage(
-                        input: input,
-                        output: outputTokens,
-                        cacheRead: cachedTokens,
-                        cacheWrite: 0,
-                        totalTokens: usage.totalTokens
-                    )
+                if let rawUsage = chunk.rawUsage {
+                    output.usage = parseCompletionsUsage(rawUsage)
+                    calculateCost(model: model, usage: &output.usage)
+                } else if let usage = result.usage {
+                    output.usage = parseCompletionsUsage(usage)
                     calculateCost(model: model, usage: &output.usage)
                 }
 
-                guard let choice = chunk.choices.first else { continue }
+                guard let choice = result.choices.first else { continue }
                 if let finishReason = choice.finishReason {
                     let result = mapStopReason(finishReason)
                     output.stopReason = result.stopReason
@@ -640,7 +630,7 @@ private func streamZaiCompletions(
     options: OpenAICompletionsOptions,
     query: ChatQuery,
     compat: ResolvedOpenAICompat
-) throws -> AsyncThrowingStream<ChatStreamResult, Error> {
+) throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
     }
@@ -702,6 +692,68 @@ private func buildZaiRequestBody(query: ChatQuery, model: Model, options: OpenAI
     }
 
     return try JSONSerialization.data(withJSONObject: object, options: [])
+}
+
+private struct OpenAICompletionsStreamChunk {
+    let result: ChatStreamResult
+    let rawUsage: OpenAICompletionsRawUsage?
+}
+
+private struct OpenAICompletionsRawUsage: Decodable {
+    let promptTokens: Int?
+    let completionTokens: Int?
+    let totalTokens: Int?
+    let promptCacheHitTokens: Int?
+    let promptTokensDetails: PromptTokensDetails?
+
+    struct PromptTokensDetails: Decodable {
+        let cachedTokens: Int?
+        let cacheWriteTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case cachedTokens = "cached_tokens"
+            case cacheWriteTokens = "cache_write_tokens"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+        case promptCacheHitTokens = "prompt_cache_hit_tokens"
+        case promptTokensDetails = "prompt_tokens_details"
+    }
+}
+
+private func parseCompletionsUsage(_ rawUsage: OpenAICompletionsRawUsage) -> Usage {
+    let promptTokens = rawUsage.promptTokens ?? 0
+    let cacheReadTokens = rawUsage.promptTokensDetails?.cachedTokens ?? rawUsage.promptCacheHitTokens ?? 0
+    let cacheWriteTokens = rawUsage.promptTokensDetails?.cacheWriteTokens ?? 0
+    let input = max(0, promptTokens - cacheReadTokens - cacheWriteTokens)
+    let outputTokens = rawUsage.completionTokens ?? 0
+    return Usage(
+        input: input,
+        output: outputTokens,
+        cacheRead: cacheReadTokens,
+        cacheWrite: cacheWriteTokens,
+        totalTokens: input + outputTokens + cacheReadTokens + cacheWriteTokens
+    )
+}
+
+private func parseCompletionsUsage(_ usage: ChatResult.CompletionUsage) -> Usage {
+    let rawUsage = OpenAICompletionsRawUsage(
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        promptCacheHitTokens: nil,
+        promptTokensDetails: usage.promptTokensDetails.map {
+            OpenAICompletionsRawUsage.PromptTokensDetails(
+                cachedTokens: $0.cachedTokens,
+                cacheWriteTokens: nil
+            )
+        }
+    )
+    return parseCompletionsUsage(rawUsage)
 }
 
 private func buildCompletionsMiddlewares(
@@ -979,8 +1031,8 @@ private func streamManualOpenAICompletions(
     model: Model,
     options: OpenAICompletionsOptions,
     query: ChatQuery,
-    compat: ResolvedOpenAICompat
-) throws -> AsyncThrowingStream<ChatStreamResult, Error> {
+    middlewares: [OpenAIMiddleware]
+) throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
     }
@@ -1001,32 +1053,12 @@ private func streamManualOpenAICompletions(
     for (key, value) in mergedHeaders {
         request.setValue(value, forHTTPHeaderField: key)
     }
-    request = applyOpenAICompletionsSessionAffinityHeaders(
-        request: request,
-        sessionId: options.sessionId,
-        sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders
-    )
 
-    var body = try JSONEncoder().encode(query)
-    if let updated = applyOpenAICompletionsPromptCache(
-        data: body,
-        baseUrl: model.baseUrl,
-        sessionId: options.sessionId,
-        cacheRetention: resolveCacheRetention(options.cacheRetention),
-        supportsLongCacheRetention: compat.supportsLongCacheRetention
-    ) {
-        body = updated
+    request.httpBody = try JSONEncoder().encode(query)
+    request = middlewares.reduce(request) { current, middleware in
+        middleware.intercept(request: current)
     }
-    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)),
-       let updated = applyOpenAICompatCacheControl(
-        data: body,
-        cacheControl: cacheControl,
-        supportsCacheControlOnTools: compat.supportsCacheControlOnTools
-       ) {
-        body = updated
-    }
-    request.httpBody = body
-    emitPayload(options.onPayload, data: body)
+    emitPayload(options.onPayload, data: requestBodyData(request))
     return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
 }
 
@@ -1344,7 +1376,7 @@ private func streamChatCompletions(
     request: URLRequest,
     signal: CancellationToken?,
     onResponse: ResponseHandler?
-) -> AsyncThrowingStream<ChatStreamResult, Error> {
+) -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     AsyncThrowingStream { continuation in
         Task {
             var buffer = Data()
@@ -1405,7 +1437,7 @@ private func findStreamDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range
     }
 }
 
-private func parseOpenAISseEvent(from chunk: Data) -> ChatStreamResult? {
+private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChunk? {
     guard !chunk.isEmpty, let raw = String(data: chunk, encoding: .utf8) else { return nil }
     let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
@@ -1422,12 +1454,48 @@ private func parseOpenAISseEvent(from chunk: Data) -> ChatStreamResult? {
     guard !payload.isEmpty, payload != "[DONE]" else { return nil }
     guard let json = payload.data(using: .utf8) else { return nil }
     if var object = try? JSONSerialization.jsonObject(with: json) as? [String: Any] {
+        let rawUsage = decodeOpenAICompletionsRawUsage(from: object["usage"]) ?? decodeFirstChoiceUsage(from: object["choices"])
         object["object"] = object["object"] ?? "chat.completion.chunk"
         if let normalized = try? JSONSerialization.data(withJSONObject: object, options: []) {
-            return try? JSONDecoder().decode(ChatStreamResult.self, from: normalized)
+            guard let result = try? JSONDecoder().decode(ChatStreamResult.self, from: normalized) else { return nil }
+            return OpenAICompletionsStreamChunk(result: result, rawUsage: rawUsage)
         }
     }
-    return try? JSONDecoder().decode(ChatStreamResult.self, from: json)
+    guard let result = try? JSONDecoder().decode(ChatStreamResult.self, from: json) else { return nil }
+    return OpenAICompletionsStreamChunk(result: result, rawUsage: nil)
+}
+
+private func decodeFirstChoiceUsage(from choices: Any?) -> OpenAICompletionsRawUsage? {
+    guard let choices = choices as? [[String: Any]], let first = choices.first else { return nil }
+    return decodeOpenAICompletionsRawUsage(from: first["usage"])
+}
+
+private func decodeOpenAICompletionsRawUsage(from value: Any?) -> OpenAICompletionsRawUsage? {
+    guard let value, !(value is NSNull) else { return nil }
+    guard JSONSerialization.isValidJSONObject(value),
+          let data = try? JSONSerialization.data(withJSONObject: value, options: []) else { return nil }
+    return try? JSONDecoder().decode(OpenAICompletionsRawUsage.self, from: data)
+}
+
+private func requestBodyData(_ request: URLRequest) -> Data {
+    if let body = request.httpBody {
+        return body
+    }
+    guard let stream = request.httpBodyStream else { return Data() }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    let bufferSize = 1024
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+    while stream.hasBytesAvailable {
+        let read = stream.read(&buffer, maxLength: bufferSize)
+        if read > 0 {
+            data.append(buffer, count: read)
+        } else {
+            break
+        }
+    }
+    return data
 }
 
 private func collectStreamData(from bytes: URLSession.AsyncBytes) async throws -> Data {
