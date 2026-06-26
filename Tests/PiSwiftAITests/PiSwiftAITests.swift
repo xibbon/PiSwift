@@ -396,7 +396,20 @@ private let codexRequestLock = CodexRequestLock()
 private struct CodexRequestCapture: Sendable {
     let conversationId: String?
     let sessionId: String?
+    let xClientRequestId: String?
     let promptCacheKey: String?
+    let serviceTier: String?
+    let usage: Usage
+}
+
+private enum CodexArgumentStreamEvent: Sendable {
+    case delta(String)
+    case done(String)
+}
+
+private struct CodexToolCallCapture: Sendable {
+    let message: AssistantMessage
+    let deltas: [String]
 }
 
 private func codexSubscriptionToken() throws -> String {
@@ -409,7 +422,9 @@ private func codexSubscriptionToken() throws -> String {
     return "aaa.\(payloadBase64).bbb"
 }
 
-private func runCodexToolCallRequest() async throws -> AssistantMessage {
+private func runCodexToolCallRequest(
+    argumentEvents: [CodexArgumentStreamEvent] = [.delta("{\"path\":\"x\"}")]
+) async throws -> CodexToolCallCapture {
     try await codexRequestLock.withLock {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codex-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -457,10 +472,14 @@ private func runCodexToolCallRequest() async throws -> AssistantMessage {
                         ],
                     ]
                 )
-                let argumentsDelta = codexTestEvent(
-                    type: "response.function_call_arguments.delta",
-                    payload: ["delta": "{\"path\":\"x\"}"]
-                )
+                let argumentSseEvents = argumentEvents.map { event in
+                    switch event {
+                    case .delta(let delta):
+                        return "data: \(codexTestEvent(type: "response.function_call_arguments.delta", payload: ["delta": delta]))"
+                    case .done(let arguments):
+                        return "data: \(codexTestEvent(type: "response.function_call_arguments.done", payload: ["arguments": arguments]))"
+                    }
+                }
                 let outputItemDone = codexTestEvent(
                     type: "response.output_item.done",
                     payload: [
@@ -488,12 +507,10 @@ private func runCodexToolCallRequest() async throws -> AssistantMessage {
                     ]
                 )
 
-                let sseEvents = [
-                    "data: \(outputItemAdded)",
-                    "data: \(argumentsDelta)",
+                let sseEvents = (["data: \(outputItemAdded)"] + argumentSseEvents + [
                     "data: \(outputItemDone)",
                     "data: \(responseCompleted)",
-                ].joined(separator: "\n\n") + "\n\n"
+                ]).joined(separator: "\n\n") + "\n\n"
                 let data = Data(sseEvents.utf8)
                 let response = HTTPURLResponse(
                     url: url,
@@ -519,14 +536,34 @@ private func runCodexToolCallRequest() async throws -> AssistantMessage {
         let stream = streamOpenAICodexResponses(
             model: model,
             context: context,
-            options: OpenAICodexResponsesOptions(apiKey: token)
+            options: OpenAICodexResponsesOptions(apiKey: token, transport: .sse)
         )
-        return await stream.result()
+        var deltas: [String] = []
+        var message: AssistantMessage?
+        for await event in stream {
+            switch event {
+            case .toolCallDelta(_, let delta, _):
+                deltas.append(delta)
+            case .done(_, let final):
+                message = final
+            case .error(_, let error):
+                message = error
+            default:
+                break
+            }
+        }
+        if message == nil {
+            message = await stream.result()
+        }
+        guard let message else {
+            throw NSError(domain: "CodexToolCallTest", code: 1)
+        }
+        return CodexToolCallCapture(message: message, deltas: deltas)
     }
 }
 
 
-private func runCodexSessionRequest(sessionId: String?) async throws -> CodexRequestCapture {
+private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServiceTier? = nil) async throws -> CodexRequestCapture {
     try await codexRequestLock.withLock {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codex-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -544,7 +581,9 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
 
         let seenConversationId = LockedState<String?>(nil)
         let seenSessionId = LockedState<String?>(nil)
+        let seenXClientRequestId = LockedState<String?>(nil)
         let seenPromptCacheKey = LockedState<String?>(nil)
+        let seenServiceTier = LockedState<String?>(nil)
         MockURLProtocol.allowedHosts.withLock { $0 = ["api.github.com", "raw.githubusercontent.com", "chatgpt.com"] }
         MockURLProtocol.requestHandler.withLock { $0 = { request in
             guard let url = request.url else {
@@ -567,9 +606,11 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
             if urlString == "https://chatgpt.com/backend-api/codex/responses" {
                 seenConversationId.withLock { $0 = request.value(forHTTPHeaderField: "conversation_id") }
                 seenSessionId.withLock { $0 = request.value(forHTTPHeaderField: "session_id") }
+                seenXClientRequestId.withLock { $0 = request.value(forHTTPHeaderField: "x-client-request-id") }
                 if let body = readRequestBody(request),
                    let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
                     seenPromptCacheKey.withLock { $0 = json["prompt_cache_key"] as? String }
+                    seenServiceTier.withLock { $0 = json["service_tier"] as? String }
                 }
 
                 let outputItemAdded = codexTestEvent(
@@ -646,14 +687,17 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
         let stream = streamOpenAICodexResponses(
             model: model,
             context: context,
-            options: OpenAICodexResponsesOptions(apiKey: token, sessionId: sessionId, transport: .sse)
+            options: OpenAICodexResponsesOptions(apiKey: token, sessionId: sessionId, transport: .sse, serviceTier: serviceTier)
         )
-        _ = await stream.result()
+        let message = await stream.result()
 
         return CodexRequestCapture(
             conversationId: seenConversationId.withLock { $0 },
             sessionId: seenSessionId.withLock { $0 },
-            promptCacheKey: seenPromptCacheKey.withLock { $0 }
+            xClientRequestId: seenXClientRequestId.withLock { $0 },
+            promptCacheKey: seenPromptCacheKey.withLock { $0 },
+            serviceTier: seenServiceTier.withLock { $0 },
+            usage: message.usage
         )
     }
 }
@@ -864,6 +908,7 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
     let capture = try await runCodexSessionRequest(sessionId: sessionId)
     #expect(capture.conversationId == sessionId)
     #expect(capture.sessionId == sessionId)
+    #expect(capture.xClientRequestId == sessionId)
     #expect(capture.promptCacheKey == sessionId)
 }
 
@@ -871,7 +916,21 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
     let capture = try await runCodexSessionRequest(sessionId: nil)
     #expect(capture.conversationId == nil)
     #expect(capture.sessionId == nil)
+    #expect(capture.xClientRequestId == nil)
     #expect(capture.promptCacheKey == nil)
+    #expect(capture.serviceTier == nil)
+}
+
+@Test func openAICodexForwardsServiceTierAndAppliesPricing() async throws {
+    let capture = try await runCodexSessionRequest(sessionId: "tier-session", serviceTier: .priority)
+    #expect(capture.serviceTier == "priority")
+
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
+    let expectedInput = model.cost.input / 1_000_000 * Double(capture.usage.input) * 2
+    let expectedOutput = model.cost.output / 1_000_000 * Double(capture.usage.output) * 2
+    #expect(abs(capture.usage.cost.input - expectedInput) < 0.000000001)
+    #expect(abs(capture.usage.cost.output - expectedOutput) < 0.000000001)
+    #expect(abs(capture.usage.cost.total - (expectedInput + expectedOutput)) < 0.000000001)
 }
 
 @Test func openAIResponsesForeignFunctionCallItemIdUsesUpstreamHash() {
@@ -906,8 +965,8 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
 }
 
 @Test func openAICodexToolCallUsesStreamingArguments() async throws {
-    let message = try await runCodexToolCallRequest()
-    let toolCall = message.content.compactMap { block -> ToolCall? in
+    let capture = try await runCodexToolCallRequest()
+    let toolCall = capture.message.content.compactMap { block -> ToolCall? in
         if case .toolCall(let call) = block { return call }
         return nil
     }.first
@@ -915,6 +974,37 @@ private func runCodexSessionRequest(sessionId: String?) async throws -> CodexReq
     #expect(toolCall?.name == "read")
     let path = toolCall?.arguments["path"]?.value as? String
     #expect(path == "x")
+    #expect(capture.deltas == ["{\"path\":\"x\"}"])
+}
+
+@Test func openAICodexToolCallDoneOnlyArgumentsEmitDelta() async throws {
+    let capture = try await runCodexToolCallRequest(argumentEvents: [.done("{\"path\":\"x\"}")])
+    let toolCall = capture.message.content.compactMap { block -> ToolCall? in
+        if case .toolCall(let call) = block { return call }
+        return nil
+    }.first
+    #expect(toolCall?.arguments["path"]?.value as? String == "x")
+    #expect(capture.deltas == ["{\"path\":\"x\"}"])
+}
+
+@Test func openAICodexToolCallDoneArgumentsEmitOnlyMissingSuffix() async throws {
+    let capture = try await runCodexToolCallRequest(argumentEvents: [
+        .delta("{\"path\""),
+        .done("{\"path\":\"x\"}"),
+    ])
+    let toolCall = capture.message.content.compactMap { block -> ToolCall? in
+        if case .toolCall(let call) = block { return call }
+        return nil
+    }.first
+    #expect(toolCall?.arguments["path"]?.value as? String == "x")
+    #expect(capture.deltas == ["{\"path\"", ":\"x\"}"])
+}
+
+@Test func openAIResponsesFinalToolCallArgumentsDeltaMatchesUpstreamSuffixRules() {
+    #expect(finalToolCallArgumentsDelta(previous: "", final: "{\"path\":\"x\"}") == "{\"path\":\"x\"}")
+    #expect(finalToolCallArgumentsDelta(previous: "{\"path\"", final: "{\"path\":\"x\"}") == ":\"x\"}")
+    #expect(finalToolCallArgumentsDelta(previous: "{\"path\":\"x\"}", final: "{\"path\":\"x\"}") == nil)
+    #expect(finalToolCallArgumentsDelta(previous: "{\"other\"", final: "{\"path\":\"x\"}") == nil)
 }
 
 @Test func openAICompletionsToolCallIdResolutionUsesIndexMapping() async throws {

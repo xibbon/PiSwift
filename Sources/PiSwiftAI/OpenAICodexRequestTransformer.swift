@@ -55,7 +55,7 @@ func transformCodexRequestBody(
     }
 
     var text = (body["text"] as? [String: Any]) ?? [:]
-    text["verbosity"] = (options.textVerbosity ?? .medium).rawValue
+    text["verbosity"] = (options.textVerbosity ?? .low).rawValue
     body["text"] = text
 
     var include = options.include ?? []

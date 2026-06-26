@@ -46,6 +46,10 @@ public func streamOpenAICodexResponses(
                 body["prompt_cache_key"] = sessionId
             }
 
+            if let serviceTier = options.serviceTier {
+                body["service_tier"] = serviceTier.rawValue
+            }
+
             if let maxTokens = options.maxTokens {
                 body["max_output_tokens"] = maxTokens
             }
@@ -120,6 +124,18 @@ public func streamOpenAICodexResponses(
                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
             }
 
+            func finishToolCallArguments(_ arguments: String) {
+                guard let index = currentBlockIndex, currentBlockKind == "toolCall",
+                      case .toolCall(var tool) = output.content[index] else { return }
+                let previous = currentToolCallPartial
+                currentToolCallPartial = arguments
+                tool.arguments = parseStreamingJSON(currentToolCallPartial)
+                output.content[index] = .toolCall(tool)
+                if let delta = finalToolCallArgumentsDelta(previous: previous, final: currentToolCallPartial) {
+                    stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
+                }
+            }
+
             func startStreamIfNeeded() {
                 guard !hasStartedStream else { return }
                 hasStartedStream = true
@@ -172,6 +188,10 @@ public func streamOpenAICodexResponses(
                     if !delta.isEmpty {
                         updateToolCallDelta(delta)
                     }
+
+                case "response.function_call_arguments.done":
+                    let arguments = rawEvent["arguments"] as? String ?? ""
+                    finishToolCallArguments(arguments)
 
                 case "response.output_item.done":
                     guard let item = rawEvent["item"] as? [String: Any],
@@ -238,6 +258,7 @@ public func streamOpenAICodexResponses(
                                 totalTokens: totalTokens
                             )
                             calculateCost(model: model, usage: &output.usage)
+                            applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier, model: model)
                         }
                         let status = responseInfo["status"] as? String
                         output.stopReason = mapCodexStopReason(status)
@@ -543,9 +564,11 @@ private func buildCodexHeaders(
     if let sessionId, !sessionId.isEmpty {
         headers["conversation_id"] = sessionId
         headers["session_id"] = sessionId
+        headers["x-client-request-id"] = sessionId
     } else {
         headers.removeValue(forKey: "conversation_id")
         headers.removeValue(forKey: "session_id")
+        headers.removeValue(forKey: "x-client-request-id")
     }
     return headers
 }

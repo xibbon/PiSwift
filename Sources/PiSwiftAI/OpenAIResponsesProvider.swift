@@ -359,9 +359,13 @@ public func streamOpenAIResponses(
                         }
                     case .done(let doneEvent):
                         if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
+                            let previousArgs = currentToolCallArgs
                             currentToolCallArgs = doneEvent.arguments
                             tool.arguments = parseStreamingJSON(currentToolCallArgs)
                             output.content[index] = .toolCall(tool)
+                            if let delta = finalToolCallArgumentsDelta(previous: previousArgs, final: currentToolCallArgs) {
+                                stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
+                            }
                         }
                     }
                 case .created(let created):
@@ -544,7 +548,7 @@ private func serviceTierMultiplier(_ tier: OpenAIServiceTier?, model: Model? = n
     }
 }
 
-private func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAIServiceTier?, model: Model? = nil) {
+func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAIServiceTier?, model: Model? = nil) {
     let multiplier = serviceTierMultiplier(serviceTier, model: model)
     guard multiplier != 1 else { return }
     usage.cost.input *= multiplier
@@ -552,6 +556,12 @@ private func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAISe
     usage.cost.cacheRead *= multiplier
     usage.cost.cacheWrite *= multiplier
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
+}
+
+func finalToolCallArgumentsDelta(previous: String, final: String) -> String? {
+    guard final.hasPrefix(previous) else { return nil }
+    let suffix = String(final.dropFirst(previous.count))
+    return suffix.isEmpty ? nil : suffix
 }
 
 func normalizeIdPart(_ raw: String) -> String {
