@@ -163,10 +163,12 @@ public func streamGoogle(
                 }
 
                 if let usage = chunk.usageMetadata {
+                    let cacheRead = usage.cachedContentTokenCount ?? 0
+                    let promptTokens = usage.promptTokenCount ?? 0
                     output.usage = Usage(
-                        input: usage.promptTokenCount ?? 0,
+                        input: max(0, promptTokens - cacheRead),
                         output: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
-                        cacheRead: usage.cachedContentTokenCount ?? 0,
+                        cacheRead: cacheRead,
                         cacheWrite: 0,
                         totalTokens: usage.totalTokenCount ?? 0
                     )
@@ -232,12 +234,18 @@ private func buildGoogleRequestBody(
             ],
         ]
     }
-    if let thinking = options.thinking, thinking.enabled, model.reasoning {
-        var config: [String: Any] = ["includeThoughts": true]
-        if let level = thinking.level {
-            config["thinkingLevel"] = level.rawValue
-        } else if let budget = thinking.budgetTokens {
-            config["thinkingBudget"] = budget
+    if let thinking = options.thinking, model.reasoning {
+        let config: [String: Any]
+        if thinking.enabled {
+            var enabledConfig: [String: Any] = ["includeThoughts": true]
+            if let level = thinking.level {
+                enabledConfig["thinkingLevel"] = level.rawValue
+            } else if let budget = thinking.budgetTokens {
+                enabledConfig["thinkingBudget"] = budget
+            }
+            config = enabledConfig
+        } else {
+            config = googleDisabledThinkingConfig(model: model)
         }
         payload["thinkingConfig"] = config
     }

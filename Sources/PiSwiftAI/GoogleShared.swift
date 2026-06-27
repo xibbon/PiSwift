@@ -255,6 +255,17 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false) -> [[Str
     return [["functionDeclarations": declarations]]
 }
 
+func googleDisabledThinkingConfig(model: Model) -> [String: Any] {
+    let id = model.id.lowercased()
+    if id.range(of: #"gemini-3(?:\.\d+)?-pro"#, options: .regularExpression) != nil {
+        return ["thinkingLevel": GoogleThinkingLevel.low.rawValue]
+    }
+    if id.range(of: #"gemini-3(?:\.\d+)?-flash"#, options: .regularExpression) != nil || id.range(of: #"gemma-?4"#, options: .regularExpression) != nil {
+        return ["thinkingLevel": GoogleThinkingLevel.minimal.rawValue]
+    }
+    return ["thinkingBudget": 0]
+}
+
 func mapGoogleToolChoice(_ choice: String) -> String {
     switch choice {
     case "none":

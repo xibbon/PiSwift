@@ -2100,76 +2100,78 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
 }
 
 @Test func googleGeminiCliRetriesEmptyStreamWithoutDuplicateStart() async {
-    let requestCount = LockedState(0)
-    GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = { request in
-        let count = requestCount.withLock { value -> Int in
-            value += 1
-            return value
+    await codexRequestLock.withLock {
+        let requestCount = LockedState(0)
+        GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = { request in
+            let count = requestCount.withLock { value -> Int in
+                value += 1
+                return value
+            }
+            guard let url = request.url else { throw URLError(.badURL) }
+            let body: String
+            if count == 1 {
+                body = "\n\n"
+            } else {
+                let payload = """
+                {"response":{"candidates":[{"content":{"parts":[{"text":"pong"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}
+                """
+                body = "data: \(payload)\n\n"
+            }
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["content-type": "text/event-stream"]
+            )!
+            return (response, Data(body.utf8))
+        } }
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        sessionConfig.protocolClasses = [GeminiRetryMockURLProtocol.self]
+        let testSession = URLSession(configuration: sessionConfig)
+        setGoogleGeminiCliSessionOverrideForTesting(testSession)
+        defer {
+            setGoogleGeminiCliSessionOverrideForTesting(nil)
+            testSession.invalidateAndCancel()
+            GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = nil }
         }
-        guard let url = request.url else { throw URLError(.badURL) }
-        let body: String
-        if count == 1 {
-            body = "\n\n"
-        } else {
-            let payload = """
-            {"response":{"candidates":[{"content":{"parts":[{"text":"pong"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}
-            """
-            body = "data: \(payload)\n\n"
+
+        let model = Model(
+            id: "gemini-2.5-flash",
+            name: "Gemini 2.5 Flash",
+            api: .googleGeminiCli,
+            provider: "google-gemini-cli",
+            baseUrl: "http://cloudcode-pa.googleapis.com",
+            reasoning: true,
+            input: [.text, .image],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 1_000_000,
+            maxTokens: 65_536
+        )
+        let context = Context(messages: [.user(UserMessage(content: .text("say pong")))])
+        let credentials = #"{"token":"tok_test","projectId":"proj_test"}"#
+        let stream = streamGoogleGeminiCli(
+            model: model,
+            context: context,
+            options: GoogleGeminiCliOptions(apiKey: credentials)
+        )
+
+        var startCount = 0
+        for await event in stream {
+            if case .start = event {
+                startCount += 1
+            }
         }
-        let response = HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: ["content-type": "text/event-stream"]
-        )!
-        return (response, Data(body.utf8))
-    } }
-    let sessionConfig = URLSessionConfiguration.ephemeral
-    sessionConfig.protocolClasses = [GeminiRetryMockURLProtocol.self]
-    let testSession = URLSession(configuration: sessionConfig)
-    setGoogleGeminiCliSessionOverrideForTesting(testSession)
-    defer {
-        setGoogleGeminiCliSessionOverrideForTesting(nil)
-        testSession.invalidateAndCancel()
-        GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = nil }
+        let message = await stream.result()
+
+        #expect(requestCount.withLock { $0 } == 2)
+        #expect(startCount == 1)
+        #expect(message.stopReason == .stop)
+        let text = message.content.compactMap { block -> String? in
+            if case .text(let textContent) = block { return textContent.text }
+            return nil
+        }.joined(separator: "")
+        #expect(text.contains("pong"))
     }
-
-    let model = Model(
-        id: "gemini-2.5-flash",
-        name: "Gemini 2.5 Flash",
-        api: .googleGeminiCli,
-        provider: "google-gemini-cli",
-        baseUrl: "http://cloudcode-pa.googleapis.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1_000_000,
-        maxTokens: 65_536
-    )
-    let context = Context(messages: [.user(UserMessage(content: .text("say pong")))])
-    let credentials = #"{"token":"tok_test","projectId":"proj_test"}"#
-    let stream = streamGoogleGeminiCli(
-        model: model,
-        context: context,
-        options: GoogleGeminiCliOptions(apiKey: credentials)
-    )
-
-    var startCount = 0
-    for await event in stream {
-        if case .start = event {
-            startCount += 1
-        }
-    }
-    let message = await stream.result()
-
-    #expect(requestCount.withLock { $0 } == 2)
-    #expect(startCount == 1)
-    #expect(message.stopReason == .stop)
-    let text = message.content.compactMap { block -> String? in
-        if case .text(let textContent) = block { return textContent.text }
-        return nil
-    }.joined(separator: "")
-    #expect(text.contains("pong"))
 }
 
 @Test func openAICompletionsToolChoiceAndStrictPayload() async {
@@ -3647,6 +3649,288 @@ struct ApiRegistryTests {
     #expect(parameters["$schema"] == nil)
     #expect(parameters["$defs"] == nil)
     #expect(parameters["type"] as? String == "object")
+}
+
+/// v0.62.0: explicit disabled thinking uses the lowest supported Gemini 3 level instead of
+/// a zero thinking budget on models that do not support full disable.
+@Test func googleDisabledThinkingConfigMatchesUpstreamFallbacks() {
+    let pro = Model(
+        id: "gemini-3.1-pro-preview",
+        name: "Gemini 3.1 Pro",
+        api: .googleGenerativeAI,
+        provider: "google",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1_000_000,
+        maxTokens: 65_536
+    )
+    let flash = Model(
+        id: "gemini-3.1-flash-lite",
+        name: "Gemini 3.1 Flash Lite",
+        api: .googleGenerativeAI,
+        provider: "google",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1_000_000,
+        maxTokens: 65_536
+    )
+    let gemma = Model(
+        id: "gemma-4-27b-it",
+        name: "Gemma 4",
+        api: .googleGenerativeAI,
+        provider: "google",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131_072,
+        maxTokens: 8_192
+    )
+    let gemini2 = Model(
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
+        api: .googleGenerativeAI,
+        provider: "google",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1_000_000,
+        maxTokens: 65_536
+    )
+
+    let proConfig = googleDisabledThinkingConfig(model: pro)
+    #expect(proConfig["thinkingLevel"] as? String == GoogleThinkingLevel.low.rawValue)
+    #expect(proConfig["includeThoughts"] == nil)
+    #expect(proConfig["thinkingBudget"] == nil)
+
+    let flashConfig = googleDisabledThinkingConfig(model: flash)
+    #expect(flashConfig["thinkingLevel"] as? String == GoogleThinkingLevel.minimal.rawValue)
+    #expect(flashConfig["includeThoughts"] == nil)
+    #expect(flashConfig["thinkingBudget"] == nil)
+
+    let gemmaConfig = googleDisabledThinkingConfig(model: gemma)
+    #expect(gemmaConfig["thinkingLevel"] as? String == GoogleThinkingLevel.minimal.rawValue)
+    #expect(gemmaConfig["includeThoughts"] == nil)
+    #expect(gemmaConfig["thinkingBudget"] == nil)
+
+    let gemini2Config = googleDisabledThinkingConfig(model: gemini2)
+    #expect(gemini2Config["thinkingBudget"] as? Int == 0)
+    #expect(gemini2Config["includeThoughts"] == nil)
+    #expect(gemini2Config["thinkingLevel"] == nil)
+}
+
+/// v0.63.0: cached prompt tokens are cache-read tokens, not billable input tokens.
+/// v0.62.0: disabled thinking payloads use Gemini 3 fallback levels where required.
+@Test func googleUsageSubtractsCachedTokensAndPayloadDisablesThinking() async {
+    await codexRequestLock.withLock {
+        let capturedPayload = LockedState<String?>(nil)
+        MockURLProtocol.allowedHosts.withLock { $0 = ["google-usage.example"] }
+        MockURLProtocol.requestHandler.withLock { $0 = { request in
+            guard let url = request.url else { throw URLError(.badURL) }
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["content-type": "text/event-stream"]
+            )!
+            let payload = """
+            {"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":30,"candidatesTokenCount":7,"thoughtsTokenCount":3,"totalTokenCount":110},"responseId":"resp-google"}
+            """
+            return (response, Data("data: \(payload)\n\ndata: [DONE]\n\n".utf8))
+        } }
+        URLProtocol.registerClass(MockURLProtocol.self)
+        defer {
+            URLProtocol.unregisterClass(MockURLProtocol.self)
+            MockURLProtocol.allowedHosts.withLock { $0 = [] }
+            MockURLProtocol.requestHandler.withLock { $0 = nil }
+        }
+
+        let model = Model(
+            id: "gemini-3.1-pro-preview",
+            name: "Gemini 3.1 Pro",
+            api: .googleGenerativeAI,
+            provider: "google",
+            baseUrl: "https://google-usage.example/v1beta",
+            reasoning: true,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 1_000_000,
+            maxTokens: 65_536
+        )
+        let stream = streamGoogle(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("say ok")))]),
+            options: GoogleOptions(
+                apiKey: "google-key",
+                thinking: GoogleOptions.ThinkingConfig(enabled: false),
+                onPayload: { snapshot in capturedPayload.withLock { $0 = snapshot.json } }
+            )
+        )
+        for await _ in stream {}
+        let message = await stream.result()
+
+        #expect(message.stopReason == .stop)
+        #expect(message.usage.input == 70)
+        #expect(message.usage.cacheRead == 30)
+        #expect(message.usage.output == 10)
+        #expect(message.usage.totalTokens == 110)
+
+        guard let json = capturedPayload.withLock({ $0 }),
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let thinkingConfig = object["thinkingConfig"] as? [String: Any] else {
+            #expect(Bool(false), "Expected Google payload thinkingConfig")
+            return
+        }
+        #expect(thinkingConfig["thinkingLevel"] as? String == GoogleThinkingLevel.low.rawValue)
+        #expect(thinkingConfig["includeThoughts"] == nil)
+        #expect(thinkingConfig["thinkingBudget"] == nil)
+    }
+}
+
+/// v0.63.0: Vertex also subtracts cached prompt tokens from billable input tokens.
+/// v0.67.3: `gcp-vertex-credentials` is an ADC marker, not a literal bearer token.
+@Test func googleVertexUsageSubtractsCachedTokens() async {
+    await codexRequestLock.withLock {
+        await withEnv("GOOGLE_CLOUD_API_KEY", value: nil) {
+            await withEnv("GOOGLE_ACCESS_TOKEN", value: "vertex-adc-token") {
+                let capturedAuthorization = LockedState<String?>(nil)
+                MockURLProtocol.allowedHosts.withLock { $0 = ["vertex-usage.example"] }
+                MockURLProtocol.requestHandler.withLock { $0 = { request in
+                    capturedAuthorization.withLock { $0 = request.value(forHTTPHeaderField: "Authorization") }
+                    guard let url = request.url else { throw URLError(.badURL) }
+                    let response = HTTPURLResponse(
+                        url: url,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["content-type": "text/event-stream"]
+                    )!
+                    let payload = """
+                    {"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":80,"cachedContentTokenCount":55,"candidatesTokenCount":4,"thoughtsTokenCount":1,"totalTokenCount":85},"responseId":"resp-vertex"}
+                    """
+                    return (response, Data("data: \(payload)\n\ndata: [DONE]\n\n".utf8))
+                } }
+                URLProtocol.registerClass(MockURLProtocol.self)
+                defer {
+                    URLProtocol.unregisterClass(MockURLProtocol.self)
+                    MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                    MockURLProtocol.requestHandler.withLock { $0 = nil }
+                }
+
+                let model = Model(
+                    id: "gemini-3.1-pro-preview",
+                    name: "Gemini 3.1 Pro",
+                    api: .googleVertex,
+                    provider: "google-vertex",
+                    baseUrl: "https://vertex-usage.example",
+                    reasoning: true,
+                    input: [.text],
+                    cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                    contextWindow: 1_000_000,
+                    maxTokens: 65_536
+                )
+                let stream = streamGoogleVertex(
+                    model: model,
+                    context: Context(messages: [.user(UserMessage(content: .text("say ok")))]),
+                    options: GoogleVertexOptions(
+                        apiKey: "gcp-vertex-credentials",
+                        project: "proj-test",
+                        location: "us-central1"
+                    )
+                )
+                for await _ in stream {}
+                let message = await stream.result()
+
+                #expect(capturedAuthorization.withLock { $0 } == "Bearer vertex-adc-token")
+                #expect(message.stopReason == .stop)
+                #expect(message.usage.input == 25)
+                #expect(message.usage.cacheRead == 55)
+                #expect(message.usage.output == 5)
+                #expect(message.usage.totalTokens == 85)
+            }
+        }
+    }
+}
+
+/// v0.67.1 / v0.62.0: Antigravity uses the current upstream default User-Agent and sends
+/// disabled-thinking fallback config through Cloud Code Assist payloads.
+@Test func googleAntigravityUserAgentAndDisabledThinkingPayload() async {
+    await codexRequestLock.withLock {
+        await withEnv("PI_AI_ANTIGRAVITY_VERSION", value: nil) {
+            let capturedUserAgent = LockedState<String?>(nil)
+            let capturedBody = LockedState<String?>(nil)
+            GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = { request in
+                capturedUserAgent.withLock { $0 = request.value(forHTTPHeaderField: "User-Agent") }
+                if let body = readRequestBody(request), let json = String(data: body, encoding: .utf8) {
+                    capturedBody.withLock { $0 = json }
+                }
+                guard let url = request.url else { throw URLError(.badURL) }
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "text/event-stream"]
+                )!
+                let payload = """
+                {"response":{"candidates":[{"content":{"parts":[{"text":"pong"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}
+                """
+                return (response, Data("data: \(payload)\n\n".utf8))
+            } }
+            let sessionConfig = URLSessionConfiguration.ephemeral
+            sessionConfig.protocolClasses = [GeminiRetryMockURLProtocol.self]
+            let testSession = URLSession(configuration: sessionConfig)
+            setGoogleGeminiCliSessionOverrideForTesting(testSession)
+            defer {
+                setGoogleGeminiCliSessionOverrideForTesting(nil)
+                testSession.invalidateAndCancel()
+                GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let model = Model(
+                id: "gemini-3.1-flash-lite",
+                name: "Gemini 3.1 Flash Lite",
+                api: .googleGeminiCli,
+                provider: "google-antigravity",
+                baseUrl: "http://cloudcode-pa.googleapis.com",
+                reasoning: true,
+                input: [.text, .image],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 1_000_000,
+                maxTokens: 65_536
+            )
+            let stream = streamGoogleGeminiCli(
+                model: model,
+                context: Context(messages: [.user(UserMessage(content: .text("say pong")))]),
+                options: GoogleGeminiCliOptions(
+                    apiKey: #"{"token":"tok_test","projectId":"proj_test"}"#,
+                    thinking: GoogleOptions.ThinkingConfig(enabled: false)
+                )
+            )
+            for await _ in stream {}
+            let message = await stream.result()
+
+            #expect(message.stopReason == .stop)
+            #expect(capturedUserAgent.withLock { $0 } == "antigravity/1.21.9 darwin/arm64")
+
+            guard let json = capturedBody.withLock({ $0 }),
+                  let data = json.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let request = object["request"] as? [String: Any],
+                  let generationConfig = request["generationConfig"] as? [String: Any],
+                  let thinkingConfig = generationConfig["thinkingConfig"] as? [String: Any] else {
+                #expect(Bool(false), "Expected Gemini CLI request thinkingConfig")
+                return
+            }
+            #expect(thinkingConfig["thinkingLevel"] as? String == GoogleThinkingLevel.minimal.rawValue)
+            #expect(thinkingConfig["includeThoughts"] == nil)
+            #expect(thinkingConfig["thinkingBudget"] == nil)
+        }
+    }
 }
 
 /// v0.67.6: OpenAI Responses cache middleware sends aligned `session_id` and `x-client-request-id`

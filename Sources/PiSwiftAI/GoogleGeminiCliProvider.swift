@@ -16,7 +16,7 @@ private let geminiCliHeaders: [String: String] = [
 // Antigravity: minimal headers only (stripped extra headers per upstream v0.61.1)
 private let antigravityHeaders: [String: String] = [:]
 
-private let defaultAntigravityVersion = "1.18.4"
+private let defaultAntigravityVersion = "1.21.9"
 
 private func antigravityUserAgent() -> String {
     let env = ProcessInfo.processInfo.environment
@@ -528,12 +528,18 @@ private func buildGeminiCliRequest(
         generationConfig["maxOutputTokens"] = maxTokens
     }
 
-    if let thinking = options.thinking, thinking.enabled, model.reasoning {
-        var thinkingConfig: [String: Any] = ["includeThoughts": true]
-        if let level = thinking.level {
-            thinkingConfig["thinkingLevel"] = level.rawValue
-        } else if let budget = thinking.budgetTokens {
-            thinkingConfig["thinkingBudget"] = budget
+    if let thinking = options.thinking, model.reasoning {
+        let thinkingConfig: [String: Any]
+        if thinking.enabled {
+            var enabledConfig: [String: Any] = ["includeThoughts": true]
+            if let level = thinking.level {
+                enabledConfig["thinkingLevel"] = level.rawValue
+            } else if let budget = thinking.budgetTokens {
+                enabledConfig["thinkingBudget"] = budget
+            }
+            thinkingConfig = enabledConfig
+        } else {
+            thinkingConfig = googleDisabledThinkingConfig(model: model)
         }
         generationConfig["thinkingConfig"] = thinkingConfig
     }
