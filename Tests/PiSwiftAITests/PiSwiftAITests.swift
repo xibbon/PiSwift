@@ -399,6 +399,9 @@ private struct CodexRequestCapture: Sendable {
     let xClientRequestId: String?
     let promptCacheKey: String?
     let serviceTier: String?
+    let hasTools: Bool
+    let toolChoice: String?
+    let parallelToolCalls: Bool?
     let usage: Usage
 }
 
@@ -563,7 +566,11 @@ private func runCodexToolCallRequest(
 }
 
 
-private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServiceTier? = nil) async throws -> CodexRequestCapture {
+private func runCodexSessionRequest(
+    sessionId: String?,
+    serviceTier: OpenAIServiceTier? = nil,
+    tools: [AITool]? = nil
+) async throws -> CodexRequestCapture {
     try await codexRequestLock.withLock {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codex-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -584,6 +591,9 @@ private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServi
         let seenXClientRequestId = LockedState<String?>(nil)
         let seenPromptCacheKey = LockedState<String?>(nil)
         let seenServiceTier = LockedState<String?>(nil)
+        let seenHasTools = LockedState(false)
+        let seenToolChoice = LockedState<String?>(nil)
+        let seenParallelToolCalls = LockedState<Bool?>(nil)
         MockURLProtocol.allowedHosts.withLock { $0 = ["api.github.com", "raw.githubusercontent.com", "chatgpt.com"] }
         MockURLProtocol.requestHandler.withLock { $0 = { request in
             guard let url = request.url else {
@@ -611,6 +621,9 @@ private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServi
                    let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
                     seenPromptCacheKey.withLock { $0 = json["prompt_cache_key"] as? String }
                     seenServiceTier.withLock { $0 = json["service_tier"] as? String }
+                    seenHasTools.withLock { $0 = json.keys.contains("tools") }
+                    seenToolChoice.withLock { $0 = json["tool_choice"] as? String }
+                    seenParallelToolCalls.withLock { $0 = json["parallel_tool_calls"] as? Bool }
                 }
 
                 let outputItemAdded = codexTestEvent(
@@ -683,7 +696,7 @@ private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServi
         }
 
         let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
-        let context = Context(messages: [.user(UserMessage(content: .text("Say hello")))])
+        let context = Context(messages: [.user(UserMessage(content: .text("Say hello")))], tools: tools)
         let stream = streamOpenAICodexResponses(
             model: model,
             context: context,
@@ -697,6 +710,9 @@ private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServi
             xClientRequestId: seenXClientRequestId.withLock { $0 },
             promptCacheKey: seenPromptCacheKey.withLock { $0 },
             serviceTier: seenServiceTier.withLock { $0 },
+            hasTools: seenHasTools.withLock { $0 },
+            toolChoice: seenToolChoice.withLock { $0 },
+            parallelToolCalls: seenParallelToolCalls.withLock { $0 },
             usage: message.usage
         )
     }
@@ -921,6 +937,29 @@ private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServi
     #expect(capture.serviceTier == nil)
 }
 
+@Test func openAICodexOmitsToolFieldsForExplicitEmptyTools() async throws {
+    let capture = try await runCodexSessionRequest(sessionId: nil, tools: [])
+    #expect(capture.hasTools == false)
+    #expect(capture.toolChoice == nil)
+    #expect(capture.parallelToolCalls == nil)
+}
+
+@Test func openAICodexKeepsToolFieldsForNonEmptyTools() async throws {
+    let capture = try await runCodexSessionRequest(
+        sessionId: nil,
+        tools: [
+            AITool(
+                name: "ping",
+                description: "Ping tool",
+                parameters: ["type": AnyCodable("object")]
+            ),
+        ]
+    )
+    #expect(capture.hasTools == true)
+    #expect(capture.toolChoice == "auto")
+    #expect(capture.parallelToolCalls == true)
+}
+
 @Test func openAICodexForwardsServiceTierAndAppliesPricing() async throws {
     let capture = try await runCodexSessionRequest(sessionId: "tier-session", serviceTier: .priority)
     #expect(capture.serviceTier == "priority")
@@ -1005,6 +1044,20 @@ private func runCodexSessionRequest(sessionId: String?, serviceTier: OpenAIServi
     #expect(finalToolCallArgumentsDelta(previous: "{\"path\"", final: "{\"path\":\"x\"}") == ":\"x\"}")
     #expect(finalToolCallArgumentsDelta(previous: "{\"path\":\"x\"}", final: "{\"path\":\"x\"}") == nil)
     #expect(finalToolCallArgumentsDelta(previous: "{\"other\"", final: "{\"path\":\"x\"}") == nil)
+}
+
+@Test func openAIResponsesOmitsToolsForNilAndEmptyToolLists() {
+    #expect(responsesToolsPayload(nil) == nil)
+    #expect(responsesToolsPayload([]) == nil)
+
+    let tools = responsesToolsPayload([
+        AITool(
+            name: "ping",
+            description: "Ping tool",
+            parameters: ["type": AnyCodable("object")]
+        ),
+    ])
+    #expect(tools?.count == 1)
 }
 
 @Test func openAICompletionsToolCallIdResolutionUsesIndexMapping() async throws {

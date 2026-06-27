@@ -456,7 +456,7 @@ private func buildAzureResponsesQuery(
         }
     }
 
-    let tools = context.tools.map(convertResponsesTools)
+    let tools = responsesToolsPayload(context.tools)
 
     return CreateModelResponseQuery(
         input: .inputItemList(inputItems),

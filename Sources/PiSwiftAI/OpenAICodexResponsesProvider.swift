@@ -56,7 +56,7 @@ public func streamOpenAICodexResponses(
             if let temperature = options.temperature {
                 body["temperature"] = temperature
             }
-            if let tools = context.tools {
+            if let tools = context.tools, !tools.isEmpty {
                 body["tools"] = convertCodexTools(tools)
                 body["tool_choice"] = "auto"
                 body["parallel_tool_calls"] = true

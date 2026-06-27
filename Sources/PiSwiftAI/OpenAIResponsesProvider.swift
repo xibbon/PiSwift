@@ -457,7 +457,7 @@ private func buildResponsesQuery(
         }
     }
 
-    let tools = context.tools.map(convertResponsesTools)
+    let tools = responsesToolsPayload(context.tools)
 
     let query = CreateModelResponseQuery(
         input: .inputItemList(inputItems),
@@ -562,6 +562,11 @@ func finalToolCallArgumentsDelta(previous: String, final: String) -> String? {
     guard final.hasPrefix(previous) else { return nil }
     let suffix = String(final.dropFirst(previous.count))
     return suffix.isEmpty ? nil : suffix
+}
+
+func responsesToolsPayload(_ tools: [AITool]?) -> [Tool]? {
+    guard let tools, !tools.isEmpty else { return nil }
+    return convertResponsesTools(tools)
 }
 
 func normalizeIdPart(_ raw: String) -> String {
