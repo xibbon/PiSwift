@@ -1099,6 +1099,21 @@ private func runCodexSessionRequest(
     )
     #expect(resolvedSecond.id == "call_1")
 
+    let mutated = ChatStreamResult.Choice.ChoiceDelta.ChoiceDeltaToolCall(
+        index: 0,
+        id: "provider_changed_id",
+        function: secondFunction
+    )
+    let resolvedMutated = resolveToolCallIdentity(
+        toolCall: mutated,
+        currentToolCallId: resolvedFirst.id,
+        currentToolCallIndex: resolvedFirst.index,
+        toolCallIdByIndex: &toolCallIdByIndex,
+        requiresMistral: false
+    )
+    #expect(resolvedMutated.id == "call_1")
+    #expect(toolCallIdByIndex[0] == "call_1")
+
     var emptyMap: [Int: String] = [:]
     let third = ChatStreamResult.Choice.ChoiceDelta.ChoiceDeltaToolCall(
         index: 2,
@@ -1271,6 +1286,155 @@ private func runCodexSessionRequest(
         #expect(message.usage.cacheRead == 6)
         #expect(message.usage.cacheWrite == 0)
         #expect(message.usage.totalTokens == 48)
+    }
+}
+
+@Test func openAICompletionsIgnoresNullSSEChunks() async throws {
+    await codexRequestLock.withLock {
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["null-chunk.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            let validChunk = try JSONSerialization.data(withJSONObject: [
+                "id": "chatcmpl-null",
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": "null-chunk-test",
+                "choices": [
+                    [
+                        "index": 0,
+                        "delta": ["content": "ok"],
+                        "finish_reason": "stop",
+                    ],
+                ],
+            ])
+            let validJSON = String(decoding: validChunk, as: UTF8.self)
+            let data = Data("data: null\n\ndata: \(validJSON)\n\ndata: [DONE]\n\n".utf8)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "null-chunk-test",
+            name: "Null Chunk Test",
+            api: .openAICompletions,
+            provider: "null-chunk",
+            baseUrl: "https://null-chunk.example/v1",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 128000,
+            maxTokens: 4096
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key")
+        )
+        let message = await stream.result()
+
+        #expect(message.stopReason == .stop)
+        let text = message.content.compactMap { block -> String? in
+            if case .text(let text) = block { return text.text }
+            return nil
+        }.joined()
+        #expect(text == "ok")
+    }
+}
+
+@Test func openAICompletionsRequiresThinkingAsTextUsesAssistantContentParts() async throws {
+    await codexRequestLock.withLock {
+        let capturedPayloadJson = LockedState<String?>(nil)
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["thinking-as-text.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-thinking-text",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "thinking-as-text-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": "stop",
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "thinking-as-text-test",
+            name: "Thinking As Text Test",
+            api: .openAICompletions,
+            provider: "thinking-as-text",
+            baseUrl: "https://thinking-as-text.example/v1",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 128000,
+            maxTokens: 4096,
+            compat: OpenAICompat(requiresThinkingAsText: true)
+        )
+        let assistant = AssistantMessage(
+            content: [
+                .thinking(ThinkingContent(thinking: "private reasoning")),
+                .text(TextContent(text: "visible answer")),
+            ],
+            api: .openAICompletions,
+            provider: "thinking-as-text",
+            model: model.id,
+            usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+            stopReason: .stop
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [
+                .assistant(assistant),
+                .user(UserMessage(content: .text("continue"))),
+            ]),
+            options: OpenAICompletionsOptions(
+                apiKey: "test-key",
+                onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json } }
+            )
+        )
+        _ = await stream.result()
+
+        let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+            guard let data = jsonString.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return json
+        }
+        let messages = payload?["messages"] as? [[String: Any]]
+        let assistantPayload = messages?.first { $0["role"] as? String == "assistant" }
+        let content = assistantPayload?["content"] as? [[String: Any]]
+        #expect(content?.count == 2)
+        #expect(content?.first?["type"] as? String == "text")
+        #expect(content?.first?["text"] as? String == "private reasoning")
+        #expect(content?.last?["text"] as? String == "visible answer")
     }
 }
 

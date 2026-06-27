@@ -341,12 +341,12 @@ func resolveToolCallIdentity(
     requiresMistral: Bool = false
 ) -> (id: String, index: Int) {
     let index = toolCall.index ?? currentToolCallIndex ?? 0
+    if let existing = toolCallIdByIndex[index] {
+        return (existing, index)
+    }
     if let id = toolCall.id, !id.isEmpty {
         toolCallIdByIndex[index] = id
         return (id, index)
-    }
-    if let existing = toolCallIdByIndex[index] {
-        return (existing, index)
     }
     if let current = currentToolCallId, currentToolCallIndex == index {
         return (current, index)
@@ -535,7 +535,8 @@ private func convertCompletionsMessages(
                 return nil
             }
 
-            var contentText = textBlocks.joined()
+            let contentText = textBlocks.joined()
+            var assistantContent: ChatQuery.ChatCompletionMessageParam.TextOrRefusalContent? = nil
 
             let thinkingBlocks = assistant.content.compactMap { block -> ThinkingContent? in
                 if case .thinking(let thinking) = block {
@@ -546,12 +547,17 @@ private func convertCompletionsMessages(
             }
 
             if !thinkingBlocks.isEmpty && compat.requiresThinkingAsText {
-                let thinkingText = thinkingBlocks.map { $0.thinking }.joined(separator: "\n\n")
-                contentText = thinkingText + contentText
+                var contentParts: [ChatQuery.ChatCompletionMessageParam.TextOrRefusalContent.ContentPart] = [
+                    .text(.init(text: sanitizeSurrogates(thinkingBlocks.map { $0.thinking }.joined(separator: "\n\n"))))
+                ]
+                contentParts.append(contentsOf: textBlocks.map { .text(.init(text: $0)) })
+                assistantContent = .contentParts(contentParts)
+            } else if !contentText.isEmpty {
+                assistantContent = .textContent(contentText)
             }
 
-            if !contentText.isEmpty {
-                assistantMessage = ChatQuery.ChatCompletionMessageParam.AssistantMessageParam(content: .textContent(contentText))
+            if let assistantContent {
+                assistantMessage = ChatQuery.ChatCompletionMessageParam.AssistantMessageParam(content: assistantContent)
             }
 
             let toolCalls = assistant.content.compactMap { block -> ToolCall? in
@@ -561,7 +567,7 @@ private func convertCompletionsMessages(
 
             if !toolCalls.isEmpty {
                 assistantMessage = ChatQuery.ChatCompletionMessageParam.AssistantMessageParam(
-                    content: compat.requiresAssistantAfterToolResult ? .textContent("") : (contentText.isEmpty ? nil : .textContent(contentText)),
+                    content: compat.requiresAssistantAfterToolResult ? .textContent("") : assistantContent,
                     toolCalls: toolCalls.map {
                         .init(
                             id: $0.id,
