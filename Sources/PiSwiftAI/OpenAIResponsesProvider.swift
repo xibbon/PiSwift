@@ -435,25 +435,28 @@ public func streamOpenAIResponses(
     return stream
 }
 
-private func buildResponsesQuery(
+func buildResponsesQuery(
     model: Model,
     context: Context,
     options: OpenAIResponsesOptions
 ) throws -> CreateModelResponseQuery {
-    var inputItems = convertResponsesMessages(model: model, context: context, allowedToolCallProviders: openAIToolCallProviders)
+    let inputItems = convertResponsesMessages(model: model, context: context, allowedToolCallProviders: openAIToolCallProviders)
 
     var reasoning: Components.Schemas.Reasoning? = nil
     var include: [Components.Schemas.Includable]? = nil
     if model.reasoning {
         if options.reasoningEffort != nil || options.reasoningSummary != nil {
             reasoning = Components.Schemas.Reasoning(
-                effort: mapResponsesReasoningEffort(options.reasoningEffort),
-                summary: mapReasoningSummary(options.reasoningSummary)
+                effort: mapResponsesReasoningEffort(model: model, requested: options.reasoningEffort) ?? .medium,
+                summary: mapReasoningSummary(options.reasoningSummary) ?? .auto
             )
             include = [.reasoning_encryptedContent]
-        } else if model.id.hasPrefix("gpt-5") {
-            let note = EasyInputMessage(role: .developer, content: .textInput(sanitizeSurrogates("# Juice: 0 !important")))
-            inputItems.append(.inputMessage(note))
+        } else if model.provider.lowercased() != "github-copilot",
+                  let offEffort = mapDisabledResponsesReasoningEffort(model: model) {
+            reasoning = Components.Schemas.Reasoning(
+                effort: offEffort,
+                summary: nil
+            )
         }
     }
 
@@ -488,6 +491,37 @@ func mapResponsesReasoningEffort(_ effort: ThinkingLevel?) -> Components.Schemas
         return .medium
     case .high, .xhigh:
         return .high
+    }
+}
+
+func mapResponsesReasoningEffort(model: Model, requested effort: ThinkingLevel?) -> Components.Schemas.ReasoningEffort? {
+    guard let effort else { return nil }
+    if let mapped = mappedThinkingLevel(model: model, level: effort),
+       let mappedEffort = mapResponsesReasoningEffortValue(mapped) {
+        return mappedEffort
+    }
+    return mapResponsesReasoningEffort(effort)
+}
+
+func mapDisabledResponsesReasoningEffort(model: Model) -> Components.Schemas.ReasoningEffort? {
+    guard let off = mappedOffThinkingLevel(model: model) else { return nil }
+    return mapResponsesReasoningEffortValue(off)
+}
+
+private func mapResponsesReasoningEffortValue(_ value: String) -> Components.Schemas.ReasoningEffort? {
+    switch value.lowercased() {
+    case "none":
+        return Components.Schemas.ReasoningEffort.none
+    case "minimal":
+        return .minimal
+    case "low":
+        return .low
+    case "medium":
+        return .medium
+    case "high", "xhigh":
+        return .high
+    default:
+        return nil
     }
 }
 

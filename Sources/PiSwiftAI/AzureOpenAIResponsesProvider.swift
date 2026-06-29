@@ -433,26 +433,28 @@ public func streamSimpleAzureOpenAIResponses(
     return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
 }
 
-private func buildAzureResponsesQuery(
+func buildAzureResponsesQuery(
     model: Model,
     context: Context,
     options: AzureOpenAIResponsesOptions,
     deploymentName: String
 ) throws -> CreateModelResponseQuery {
-    var inputItems = convertResponsesMessages(model: model, context: context, allowedToolCallProviders: azureToolCallProviders)
+    let inputItems = convertResponsesMessages(model: model, context: context, allowedToolCallProviders: azureToolCallProviders)
 
     var reasoning: Components.Schemas.Reasoning? = nil
     var include: [Components.Schemas.Includable]? = nil
     if model.reasoning {
         if options.reasoningEffort != nil || options.reasoningSummary != nil {
             reasoning = Components.Schemas.Reasoning(
-                effort: mapResponsesReasoningEffort(options.reasoningEffort),
-                summary: mapReasoningSummary(options.reasoningSummary)
+                effort: mapResponsesReasoningEffort(model: model, requested: options.reasoningEffort) ?? .medium,
+                summary: mapReasoningSummary(options.reasoningSummary) ?? .auto
             )
             include = [.reasoning_encryptedContent]
-        } else if model.name.lowercased().hasPrefix("gpt-5") {
-            let note = EasyInputMessage(role: .developer, content: .textInput(sanitizeSurrogates("# Juice: 0 !important")))
-            inputItems.append(.inputMessage(note))
+        } else if let offEffort = mapDisabledResponsesReasoningEffort(model: model) {
+            reasoning = Components.Schemas.Reasoning(
+                effort: offEffort,
+                summary: nil
+            )
         }
     }
 

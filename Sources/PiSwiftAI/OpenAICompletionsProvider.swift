@@ -792,9 +792,7 @@ private func buildCompletionsMiddlewares(
         middlewares.append(OpenAICompletionsChatTemplateMiddleware(enableThinking: enabled))
     }
     if compat.thinkingFormat == .openrouter, model.reasoning {
-        let enabled = options.reasoningEffort != nil
-        let effort = options.reasoningEffort
-        middlewares.append(OpenAICompletionsOpenRouterReasoningMiddleware(enableReasoning: enabled, effort: effort))
+        middlewares.append(OpenAICompletionsOpenRouterReasoningMiddleware(model: model, effort: options.reasoningEffort))
     }
     if compat.thinkingFormat == .deepseek, model.reasoning {
         let enabled = options.reasoningEffort != nil
@@ -1216,21 +1214,24 @@ private struct OpenAICompletionsReasoningContentInjectionMiddleware: OpenAIMiddl
     }
 }
 
-/// Middleware for OpenRouter models that injects reasoning effort via the `provider` object.
-/// OpenRouter uses `{ "provider": { "reasoning_effort": "<level>" } }` in the request body.
+/// Middleware for OpenRouter models that injects reasoning effort via the nested `reasoning` object.
+/// v0.61.0 / v0.62.0: OpenRouter normalizes reasoning as `{ "reasoning": { "effort": "<level>" } }`;
+/// when no effort is requested, explicitly disable reasoning with `"none"`.
 private struct OpenAICompletionsOpenRouterReasoningMiddleware: OpenAIMiddleware {
-    let enableReasoning: Bool
+    let model: Model
     let effort: ThinkingLevel?
 
     func intercept(request: URLRequest) -> URLRequest {
         guard let body = readRequestBody(request) else { return request }
         guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
 
-        if enableReasoning, let effort {
-            var provider = payload["provider"] as? [String: Any] ?? [:]
-            provider["reasoning_effort"] = effort.rawValue
-            payload["provider"] = provider
+        var reasoning = payload["reasoning"] as? [String: Any] ?? [:]
+        if let effort {
+            reasoning["effort"] = mappedThinkingLevel(model: model, level: effort) ?? effort.rawValue
+        } else {
+            reasoning["effort"] = mappedOffThinkingLevel(model: model) ?? "none"
         }
+        payload["reasoning"] = reasoning
 
         guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
         var updated = request

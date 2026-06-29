@@ -198,6 +198,14 @@ private func canonicalJSONString(_ value: Any) throws -> String {
     return String(decoding: data, as: UTF8.self)
 }
 
+private func encodedJSONObject<T: Encodable>(_ value: T) throws -> [String: Any] {
+    let data = try JSONEncoder().encode(value)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw NSError(domain: "PiSwiftAITests", code: 3, userInfo: [NSLocalizedDescriptionKey: "Encoded value was not a JSON object"])
+    }
+    return object
+}
+
 private func optionalFields(_ pairs: [(String, Any?)]) -> [String: Any] {
     var result: [String: Any] = [:]
     for (key, value) in pairs {
@@ -1618,6 +1626,95 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     #expect(updatedBody?.contains("\"prompt_cache_retention\"") == false)
 }
 
+/// v0.62.0: reasoning Responses models explicitly disable thinking with `effort: "none"`
+/// when no reasoning effort/summary is requested.
+@Test func openAIResponsesDefaultReasoningUsesNoneEffort() throws {
+    let model = getModel(provider: .openai, modelId: "gpt-5.4")
+    let query = try buildResponsesQuery(
+        model: model,
+        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        options: OpenAIResponsesOptions(apiKey: "test-key")
+    )
+    let object = try encodedJSONObject(query)
+    let json = try canonicalJSONString(object)
+    let reasoning = object["reasoning"] as? [String: Any]
+
+    #expect(reasoning?["effort"] as? String == "none")
+    #expect(reasoning?["summary"] == nil)
+    #expect(object["include"] == nil)
+    #expect(!json.contains("Juice"))
+}
+
+@Test func openAIResponsesReasoningRequestDefaultsSummaryAutoAndInclude() throws {
+    let model = getModel(provider: .openai, modelId: "gpt-5.4")
+    let query = try buildResponsesQuery(
+        model: model,
+        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        options: OpenAIResponsesOptions(apiKey: "test-key", reasoningEffort: .high)
+    )
+    let object = try encodedJSONObject(query)
+    let reasoning = object["reasoning"] as? [String: Any]
+    let include = object["include"] as? [String]
+
+    #expect(reasoning?["effort"] as? String == "high")
+    #expect(reasoning?["summary"] as? String == "auto")
+    #expect(include == ["reasoning.encrypted_content"])
+}
+
+@Test func openAIResponsesDoesNotDefaultDisableGithubCopilotReasoning() throws {
+    let model = Model(
+        id: "gpt-5-copilot",
+        name: "GPT-5 Copilot",
+        api: .openAIResponses,
+        provider: "github-copilot",
+        baseUrl: "https://api.githubcopilot.com",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 4096
+    )
+    let query = try buildResponsesQuery(
+        model: model,
+        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        options: OpenAIResponsesOptions(apiKey: "test-key")
+    )
+    let object = try encodedJSONObject(query)
+
+    #expect(object["reasoning"] == nil)
+    #expect(object["include"] == nil)
+}
+
+@Test func azureOpenAIResponsesDefaultReasoningUsesNoneEffort() throws {
+    let model = Model(
+        id: "gpt-5-azure",
+        name: "GPT-5 Azure",
+        api: .azureOpenAIResponses,
+        provider: "azure-openai-responses",
+        baseUrl: "https://example.openai.azure.com/openai/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 4096
+    )
+    let query = try buildAzureResponsesQuery(
+        model: model,
+        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        options: AzureOpenAIResponsesOptions(apiKey: "test-key"),
+        deploymentName: "deployment-gpt-5"
+    )
+    let object = try encodedJSONObject(query)
+    let json = try canonicalJSONString(object)
+    let reasoning = object["reasoning"] as? [String: Any]
+
+    #expect(object["model"] as? String == "deployment-gpt-5")
+    #expect(reasoning?["effort"] as? String == "none")
+    #expect(reasoning?["summary"] == nil)
+    #expect(object["include"] == nil)
+    #expect(!json.contains("Juice"))
+}
+
 @Test func anthropicCacheRetentionHelper() async throws {
     await withEnv("PI_CACHE_RETENTION", value: nil) {
         #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com") == nil)
@@ -2245,6 +2342,79 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
         let function = tools?.first?["function"] as? [String: Any]
         #expect(function != nil)
         #expect(function?["strict"] == nil)
+    }
+}
+
+/// v0.61.0 / v0.62.0: OpenRouter-compatible Chat Completions uses nested
+/// `reasoning.effort`, and defaults disabled reasoning to `none`.
+@Test func openAICompletionsOpenRouterReasoningUsesNestedNoneEffort() async throws {
+    await codexRequestLock.withLock {
+        let capturedPayloadJson = LockedState<String?>(nil)
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["openrouter-chat.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            if let body = readRequestBody(request),
+               let json = String(data: body, encoding: .utf8) {
+                capturedPayloadJson.withLock { $0 = json }
+            }
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-openrouter-reasoning",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "openrouter-reasoning-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": "stop",
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "openrouter-reasoning-test",
+            name: "OpenRouter Reasoning Test",
+            api: .openAICompletions,
+            provider: "openrouter",
+            baseUrl: "https://openrouter-chat.example/v1",
+            reasoning: true,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 128000,
+            maxTokens: 4096,
+            compat: OpenAICompat(thinkingFormat: .openrouter)
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key")
+        )
+        for await _ in stream {}
+
+        let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+            guard let data = jsonString.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return object
+        }
+        let reasoning = payload?["reasoning"] as? [String: Any]
+        let provider = payload?["provider"] as? [String: Any]
+        #expect(reasoning?["effort"] as? String == "none")
+        #expect(provider?["reasoning_effort"] == nil)
     }
 }
 
