@@ -410,7 +410,8 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
     let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
     let reasoning = clampThinkingLevel(model: model, requested: options?.reasoning)
 
-    if let reasoning, (model.id.contains("anthropic.claude") || model.id.contains("anthropic/claude")) {
+    let bedrockClaudeIdentifier = "\(model.id) \(model.name)".lowercased()
+    if let reasoning, (bedrockClaudeIdentifier.contains("anthropic.claude") || bedrockClaudeIdentifier.contains("anthropic/claude") || bedrockClaudeIdentifier.contains("claude")) {
         let adjusted = adjustMaxTokensForThinking(
             baseMaxTokens: baseMaxTokens,
             modelMaxTokens: model.maxTokens,

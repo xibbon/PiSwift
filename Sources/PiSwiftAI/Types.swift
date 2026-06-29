@@ -1428,6 +1428,9 @@ public struct BedrockOptions: Sendable {
     public var onPayload: PayloadHandler?
     /// v0.62.0: AWS Cost Explorer split cost allocation tags forwarded as Converse `requestMetadata`.
     public var requestMetadata: [String: String]?
+    /// v0.67.67: Bedrock bearer-token auth. Bypasses SigV4 when present unless
+    /// `AWS_BEDROCK_SKIP_AUTH=1` is set.
+    public var bearerToken: String?
     /// v0.67.6: thinking display mode. `summarized` (default) returns thinking text;
     /// `omitted` skips thinking streaming for faster time-to-first-text-token.
     public var thinkingDisplay: ThinkingDisplay?
@@ -1452,6 +1455,7 @@ public struct BedrockOptions: Sendable {
         headers: [String: String]? = nil,
         onPayload: PayloadHandler? = nil,
         requestMetadata: [String: String]? = nil,
+        bearerToken: String? = nil,
         thinkingDisplay: ThinkingDisplay? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
@@ -1470,6 +1474,7 @@ public struct BedrockOptions: Sendable {
         self.headers = headers
         self.onPayload = onPayload
         self.requestMetadata = requestMetadata
+        self.bearerToken = bearerToken
         self.thinkingDisplay = thinkingDisplay
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs

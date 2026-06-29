@@ -1537,6 +1537,28 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     await envLock.withEnv(key, value: value, work: work)
 }
 
+private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
+    await withEnv("AWS_REGION", value: nil) {
+        await withEnv("AWS_DEFAULT_REGION", value: nil) {
+            await withEnv("AWS_PROFILE", value: nil) {
+                await withEnv("AWS_DEFAULT_PROFILE", value: nil) {
+                    await withEnv("AWS_ACCESS_KEY_ID", value: nil) {
+                        await withEnv("AWS_SECRET_ACCESS_KEY", value: nil) {
+                            await withEnv("AWS_SESSION_TOKEN", value: nil) {
+                                await withEnv("AWS_BEARER_TOKEN_BEDROCK", value: nil) {
+                                    await withEnv("AWS_BEDROCK_SKIP_AUTH", value: nil) {
+                                        await work()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Test func findEnvKeysReturnsConfiguredNamesWithoutValues() async throws {
     await withEnv("OPENAI_API_KEY", value: "sk-secret-value") {
         #expect(findEnvKeys(provider: "openai") == ["OPENAI_API_KEY"])
@@ -2154,6 +2176,364 @@ private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -
     #expect(fields?["anthropic_beta"] == nil)
     let thinking = fields?["thinking"]?.value as? [String: Any]
     #expect(thinking?["type"] as? String == "adaptive")
+}
+
+/// v0.67.67 / v0.68.0 / v0.62.0: Bedrock supports bearer-token auth, custom
+/// non-reserved headers, catalog endpoint regions, Claude default maxTokens, request
+/// metadata, and summarized thinking display.
+@Test func bedrockBearerHeadersPayloadAndCatalogEndpoint() async {
+    await codexRequestLock.withLock {
+        await withCleanBedrockEnv {
+            let capturedURL = LockedState<String?>(nil)
+            let capturedAuthorization = LockedState<String?>(nil)
+            let capturedCustomHeader = LockedState<String?>(nil)
+            let capturedReservedHeader = LockedState<String?>(nil)
+            let capturedBody = LockedState<String?>(nil)
+
+            MockURLProtocol.allowedHosts.withLock { $0 = ["bedrock-runtime.eu-central-1.amazonaws.com"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                capturedURL.withLock { $0 = request.url?.absoluteString }
+                capturedAuthorization.withLock { $0 = request.value(forHTTPHeaderField: "Authorization") }
+                capturedCustomHeader.withLock { $0 = request.value(forHTTPHeaderField: "X-Cost-Center") }
+                capturedReservedHeader.withLock { $0 = request.value(forHTTPHeaderField: "X-Amz-Date") }
+                if let body = readRequestBody(request), let json = String(data: body, encoding: .utf8) {
+                    capturedBody.withLock { $0 = json }
+                }
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/vnd.amazon.eventstream"]
+                )!
+                return (response, Data())
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let model = Model(
+                id: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+                name: "Claude Sonnet 4.5 Bedrock",
+                api: .bedrockConverseStream,
+                provider: "amazon-bedrock",
+                baseUrl: "https://bedrock-runtime.eu-central-1.amazonaws.com",
+                reasoning: true,
+                input: [.text],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 200000,
+                maxTokens: 64000
+            )
+            let stream = streamBedrock(
+                model: model,
+                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                options: BedrockOptions(
+                    reasoning: .high,
+                    cacheRetention: CacheRetention.none,
+                    headers: [
+                        "X-Cost-Center": "agent-tests",
+                        "Authorization": "should-not-win",
+                        "X-Amz-Date": "should-not-win",
+                    ],
+                    requestMetadata: ["team": "ai"],
+                    bearerToken: "bedrock-bearer-token"
+                )
+            )
+            for await _ in stream {}
+            let message = await stream.result()
+
+            #expect(message.stopReason == .stop)
+            #expect(capturedURL.withLock { $0 }?.contains("bedrock-runtime.eu-central-1.amazonaws.com") == true)
+            #expect(capturedAuthorization.withLock { $0 } == "Bearer bedrock-bearer-token")
+            #expect(capturedCustomHeader.withLock { $0 } == "agent-tests")
+            #expect(capturedReservedHeader.withLock { $0 } != "should-not-win")
+
+            guard let json = capturedBody.withLock({ $0 }),
+                  let data = json.data(using: .utf8),
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let inferenceConfig = payload["inferenceConfig"] as? [String: Any],
+                  let requestMetadata = payload["requestMetadata"] as? [String: Any],
+                  let additional = payload["additionalModelRequestFields"] as? [String: Any],
+                  let thinking = additional["thinking"] as? [String: Any] else {
+                #expect(Bool(false), "Expected Bedrock request payload")
+                return
+            }
+            #expect(inferenceConfig["maxTokens"] as? Int == 64000)
+            #expect(inferenceConfig["temperature"] == nil)
+            #expect(requestMetadata["team"] as? String == "ai")
+            #expect(thinking["type"] as? String == "enabled")
+            #expect(thinking["display"] as? String == ThinkingDisplay.summarized.rawValue)
+        }
+    }
+}
+
+/// v0.68.1: explicit region/profile settings override built-in regional Bedrock runtime endpoints.
+@Test func bedrockConfiguredRegionOverridesCatalogEndpoint() async {
+    await codexRequestLock.withLock {
+        await withCleanBedrockEnv {
+            let capturedHost = LockedState<String?>(nil)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["bedrock-runtime.us-west-2.amazonaws.com"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                capturedHost.withLock { $0 = request.url?.host }
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/vnd.amazon.eventstream"]
+                )!
+                return (response, Data())
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let model = Model(
+                id: "anthropic.claude-haiku-4-5-20251001-v1:0",
+                name: "Claude Haiku 4.5 Bedrock",
+                api: .bedrockConverseStream,
+                provider: "amazon-bedrock",
+                baseUrl: "https://bedrock-runtime.eu-central-1.amazonaws.com",
+                reasoning: false,
+                input: [.text],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 200000,
+                maxTokens: 8192
+            )
+            let stream = streamBedrock(
+                model: model,
+                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                options: BedrockOptions(region: "us-west-2", cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token")
+            )
+            for await _ in stream {}
+            let message = await stream.result()
+
+            #expect(message.stopReason == .stop)
+            #expect(capturedHost.withLock { $0 } == "bedrock-runtime.us-west-2.amazonaws.com")
+        }
+    }
+}
+
+/// v0.68.1: an ARN model ID's embedded region wins over a standard catalog endpoint region.
+@Test func bedrockArnRegionOverridesStandardCatalogEndpoint() async {
+    await codexRequestLock.withLock {
+        await withCleanBedrockEnv {
+            let capturedHost = LockedState<String?>(nil)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["bedrock-runtime.ap-southeast-2.amazonaws.com"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                capturedHost.withLock { $0 = request.url?.host }
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/vnd.amazon.eventstream"]
+                )!
+                return (response, Data())
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let model = Model(
+                id: "arn:aws:bedrock:ap-southeast-2:123456789012:application-inference-profile/example",
+                name: "Claude Sonnet 4.5 Bedrock",
+                api: .bedrockConverseStream,
+                provider: "amazon-bedrock",
+                baseUrl: "https://bedrock-runtime.eu-central-1.amazonaws.com",
+                reasoning: false,
+                input: [.text],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 200000,
+                maxTokens: 8192
+            )
+            let stream = streamBedrock(
+                model: model,
+                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                options: BedrockOptions(cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token")
+            )
+            for await _ in stream {}
+            let message = await stream.result()
+
+            #expect(message.stopReason == .stop)
+            #expect(capturedHost.withLock { $0 } == "bedrock-runtime.ap-southeast-2.amazonaws.com")
+        }
+    }
+}
+
+/// v0.68.0: non-Claude Bedrock requests omit unset inference fields instead of sending
+/// guessed maxTokens or null/default temperature.
+@Test func bedrockNonClaudeOmitsUnsetInferenceFields() async {
+    await codexRequestLock.withLock {
+        await withCleanBedrockEnv {
+            let capturedBody = LockedState<String?>(nil)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["bedrock-runtime.us-east-1.amazonaws.com"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                if let body = readRequestBody(request), let json = String(data: body, encoding: .utf8) {
+                    capturedBody.withLock { $0 = json }
+                }
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/vnd.amazon.eventstream"]
+                )!
+                return (response, Data())
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let model = Model(
+                id: "amazon.nova-lite-v1:0",
+                name: "Amazon Nova Lite",
+                api: .bedrockConverseStream,
+                provider: "amazon-bedrock",
+                baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+                reasoning: false,
+                input: [.text],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 300000,
+                maxTokens: 5000
+            )
+            let stream = streamBedrock(
+                model: model,
+                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                options: BedrockOptions(cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token")
+            )
+            for await _ in stream {}
+            let message = await stream.result()
+
+            #expect(message.stopReason == .stop)
+            guard let json = capturedBody.withLock({ $0 }),
+                  let data = json.data(using: .utf8),
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let inferenceConfig = payload["inferenceConfig"] as? [String: Any] else {
+                #expect(Bool(false), "Expected Bedrock inferenceConfig")
+                return
+            }
+            #expect(inferenceConfig["maxTokens"] == nil)
+            #expect(inferenceConfig["temperature"] == nil)
+        }
+    }
+}
+
+/// v0.67.6 / v0.70.3: GovCloud omits `thinking.display`, and inference-profile
+/// names participate in adaptive/xhigh capability checks.
+@Test func bedrockGovCloudOmitsThinkingDisplayAndModelNameDrivesAdaptiveXhigh() {
+    let govModel = Model(
+        id: "us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        name: "Claude Sonnet 4.5 GovCloud",
+        api: .bedrockConverseStream,
+        provider: "amazon-bedrock",
+        baseUrl: "https://bedrock-runtime.us-gov-west-1.amazonaws.com",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 200000,
+        maxTokens: 64000
+    )
+    let govFields = buildAdditionalModelRequestFields(
+        model: govModel,
+        options: BedrockOptions(region: "us-gov-west-1", reasoning: .high)
+    )
+    let govThinking = govFields?["thinking"]?.value as? [String: Any]
+    #expect(govThinking?["display"] == nil)
+    let govEndpointFields = buildAdditionalModelRequestFields(
+        model: govModel,
+        options: BedrockOptions(reasoning: .high)
+    )
+    let govEndpointThinking = govEndpointFields?["thinking"]?.value as? [String: Any]
+    #expect(govEndpointThinking?["display"] == nil)
+
+    let profileModel = Model(
+        id: "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/example",
+        name: "Claude Opus 4.7 Bedrock",
+        api: .bedrockConverseStream,
+        provider: "amazon-bedrock",
+        baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 200000,
+        maxTokens: 64000
+    )
+    let profileFields = buildAdditionalModelRequestFields(
+        model: profileModel,
+        options: BedrockOptions(reasoning: .xhigh)
+    )
+    let profileThinking = profileFields?["thinking"]?.value as? [String: Any]
+    let outputConfig = profileFields?["output_config"]?.value as? [String: Any]
+    #expect(profileThinking?["type"] as? String == "adaptive")
+    #expect(outputConfig?["effort"] as? String == "xhigh")
+}
+
+/// v0.70.0: transient Bedrock HTTP/2 no-response transport failures are retried.
+@Test func bedrockRetriesHTTP2NoResponseTransportFailure() async {
+    await codexRequestLock.withLock {
+        await withCleanBedrockEnv {
+            let requestCount = LockedState(0)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["bedrock-runtime.us-east-1.amazonaws.com"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                let count = requestCount.withLock { value -> Int in
+                    value += 1
+                    return value
+                }
+                if count == 1 {
+                    throw NSError(
+                        domain: NSURLErrorDomain,
+                        code: NSURLErrorNetworkConnectionLost,
+                        userInfo: [NSLocalizedDescriptionKey: "http2 request did not get a response"]
+                    )
+                }
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/vnd.amazon.eventstream"]
+                )!
+                return (response, Data())
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let model = Model(
+                id: "anthropic.claude-haiku-4-5-20251001-v1:0",
+                name: "Claude Haiku 4.5 Bedrock",
+                api: .bedrockConverseStream,
+                provider: "amazon-bedrock",
+                baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+                reasoning: false,
+                input: [.text],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 200000,
+                maxTokens: 8192
+            )
+            let stream = streamBedrock(
+                model: model,
+                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                options: BedrockOptions(cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token", maxRetries: 1)
+            )
+            for await _ in stream {}
+            let message = await stream.result()
+
+            #expect(message.stopReason == .stop)
+            #expect(requestCount.withLock { $0 } == 2)
+        }
+    }
 }
 
 @Test func supportsXhighModels() async throws {

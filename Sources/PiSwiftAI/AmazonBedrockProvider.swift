@@ -246,39 +246,61 @@ public func streamBedrock(
         )
 
         do {
-            let region = resolveBedrockRegion(options: options)
-            let auth = try resolveBedrockAuth(profile: options.profile)
+            let region = resolveBedrockRegion(model: model, options: options)
+            let auth = try resolveBedrockAuth(options: options)
             let (request, body) = try buildBedrockRequest(model: model, context: context, options: options, region: region)
             var signedRequest = try signBedrockRequest(request: request, body: body, region: region, auth: auth)
             signedRequest.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
 
-            let session = proxySession(for: signedRequest.url)
-            let (bytes, response) = try await session.bytes(for: signedRequest)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw BedrockStreamError.invalidResponse
-            }
-            options.onResponse?(ResponseSnapshot(statusCode: httpResponse.statusCode, headers: responseHeaders(httpResponse)))
-            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-                throw BedrockStreamError.invalidResponse
-            }
+            let retryLimit = max(0, options.maxRetries ?? 0)
+            var attempt = 0
+            while true {
+                do {
+                    let session = proxySession(for: signedRequest.url)
+                    let (bytes, response) = try await session.bytes(for: signedRequest)
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw BedrockStreamError.invalidResponse
+                    }
+                    options.onResponse?(ResponseSnapshot(statusCode: httpResponse.statusCode, headers: responseHeaders(httpResponse)))
+                    guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+                        let data = try await collectSseStreamData(from: bytes)
+                        let text = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
+                        throw BedrockStreamError.serverError(formatBedrockHTTPError(statusCode: httpResponse.statusCode, body: text))
+                    }
 
-            var parser = AwsEventStreamParser()
-            var state = BedrockStreamState()
-            let decoder = JSONDecoder()
+                    var parser = AwsEventStreamParser()
+                    var state = BedrockStreamState()
+                    let decoder = JSONDecoder()
 
-            for try await byte in bytes {
-                if options.signal?.isCancelled == true {
-                    throw BedrockStreamError.aborted
-                }
-                for message in parser.append(byte) {
-                    try handleBedrockEvent(
-                        message,
-                        decoder: decoder,
-                        model: model,
-                        output: &output,
-                        state: &state,
-                        stream: stream
-                    )
+                    for try await byte in bytes {
+                        if options.signal?.isCancelled == true {
+                            throw BedrockStreamError.aborted
+                        }
+                        for message in parser.append(byte) {
+                            try handleBedrockEvent(
+                                message,
+                                decoder: decoder,
+                                model: model,
+                                output: &output,
+                                state: &state,
+                                stream: stream
+                            )
+                        }
+                    }
+                    break
+                } catch {
+                    if options.signal?.isCancelled == true {
+                        throw BedrockStreamError.aborted
+                    }
+                    if attempt < retryLimit, isRetryableBedrockTransportError(error) {
+                        attempt += 1
+                        output.content = []
+                        output.usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
+                        output.stopReason = .stop
+                        output.errorMessage = nil
+                        continue
+                    }
+                    throw error
                 }
             }
 
@@ -575,14 +597,7 @@ private func buildBedrockRequest(
     options: BedrockOptions,
     region: String
 ) throws -> (URLRequest, Data) {
-    let baseUrlString: String
-    if let baseUrl = URL(string: model.baseUrl),
-       let host = baseUrl.host,
-       host.contains("bedrock-runtime.") {
-        baseUrlString = "https://bedrock-runtime.\(region).amazonaws.com"
-    } else {
-        baseUrlString = model.baseUrl
-    }
+    let baseUrlString = resolveBedrockBaseUrl(model: model, options: options, region: region)
 
     guard let baseUrl = URL(string: baseUrlString) else {
         throw BedrockStreamError.invalidUrl
@@ -601,7 +616,8 @@ private func buildBedrockRequest(
     let cacheRetention = resolveBedrockCacheRetention(options.cacheRetention)
     let messages = convertMessages(context: context, model: model, cacheRetention: cacheRetention)
     let system = buildSystemPrompt(context.systemPrompt, model: model, cacheRetention: cacheRetention)
-    let inferenceConfig = BedrockInferenceConfig(maxTokens: options.maxTokens, temperature: options.temperature)
+    let inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : nil)
+    let inferenceConfig = BedrockInferenceConfig(maxTokens: inferenceMaxTokens, temperature: options.temperature)
     let toolConfig = convertToolConfig(context.tools, toolChoice: options.toolChoice)
     let additional = buildAdditionalModelRequestFields(model: model, options: options)
     let requestBody = BedrockRequest(
@@ -623,6 +639,13 @@ private func buildBedrockRequest(
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("application/vnd.amazon.eventstream", forHTTPHeaderField: "Accept")
     request.setValue(url.host ?? "", forHTTPHeaderField: "Host")
+    var customHeaders = model.headers ?? [:]
+    if let optionHeaders = options.headers {
+        customHeaders.merge(optionHeaders) { _, new in new }
+    }
+    for (key, value) in customHeaders where !isReservedBedrockHeader(key) {
+        request.setValue(value, forHTTPHeaderField: key)
+    }
     return (request, body)
 }
 
@@ -673,14 +696,45 @@ private func supportsThinkingSignature(model: Model) -> Bool {
     return id.contains("anthropic.claude") || id.contains("anthropic/claude") || id.contains("claude")
 }
 
-private func supportsAdaptiveThinking(modelId: String) -> Bool {
-    modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
-    modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6") ||
-    // v0.67.5: Opus 4.7 joins adaptive-thinking model set on Bedrock as well.
-    modelId.contains("opus-4-7") || modelId.contains("opus-4.7")
+private func bedrockModelMatchCandidates(_ model: Model) -> [String] {
+    [model.id, model.name].flatMap { value -> [String] in
+        let lower = value.lowercased()
+        let normalized = lower.replacingOccurrences(of: #"[\s_.:]+"#, with: "-", options: .regularExpression)
+        return [lower, normalized]
+    }
 }
 
-private func mapThinkingLevelToEffort(_ level: ThinkingLevel) -> String {
+private func supportsAdaptiveThinking(model: Model) -> Bool {
+    bedrockModelMatchCandidates(model).contains { candidate in
+        candidate.contains("opus-4-6") ||
+        candidate.contains("opus-4.6") ||
+        candidate.contains("opus-4-7") ||
+        candidate.contains("opus-4.7") ||
+        candidate.contains("opus-4-8") ||
+        candidate.contains("opus-4.8") ||
+        candidate.contains("sonnet-4-6") ||
+        candidate.contains("sonnet-4.6") ||
+        candidate.contains("fable-5")
+    }
+}
+
+private func supportsNativeXhighEffort(model: Model) -> Bool {
+    bedrockModelMatchCandidates(model).contains { candidate in
+        candidate.contains("opus-4-7") ||
+        candidate.contains("opus-4.7") ||
+        candidate.contains("opus-4-8") ||
+        candidate.contains("opus-4.8") ||
+        candidate.contains("fable-5")
+    }
+}
+
+private func mapThinkingLevelToEffort(model: Model, level: ThinkingLevel) -> String {
+    if level == .xhigh, supportsNativeXhighEffort(model: model) {
+        return "xhigh"
+    }
+    if let mapped = model.thinkingLevelMap?[ModelThinkingLevel(level)], let mapped {
+        return mapped
+    }
     switch level {
     case .minimal, .low:
         return "low"
@@ -689,7 +743,7 @@ private func mapThinkingLevelToEffort(_ level: ThinkingLevel) -> String {
     case .high:
         return "high"
     case .xhigh:
-        return "max"
+        return "high"
     }
 }
 
@@ -903,14 +957,18 @@ func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) ->
     guard let reasoning = options.reasoning, model.reasoning else { return nil }
     // v0.70.3: use capability identifier so inference-profile ARNs still detect Claude.
     let capabilityId = bedrockCapabilityIdentifier(model)
-    let isAnthropicClaude = capabilityId.hasPrefix("anthropic.claude") || capabilityId.hasPrefix("anthropic/claude") || capabilityId.contains("claude")
-    guard isAnthropicClaude else { return nil }
+    guard isAnthropicClaudeModel(model) || capabilityId.contains("claude") else { return nil }
 
     var result: [String: Any] = [:]
+    let display = isGovCloudBedrockTarget(model: model, options: options) ? nil : (options.thinkingDisplay ?? .summarized).rawValue
 
-    if supportsAdaptiveThinking(modelId: capabilityId) {
-        result["thinking"] = ["type": "adaptive"]
-        result["output_config"] = ["effort": mapThinkingLevelToEffort(reasoning)]
+    if supportsAdaptiveThinking(model: model) {
+        var thinking: [String: Any] = ["type": "adaptive"]
+        if let display {
+            thinking["display"] = display
+        }
+        result["thinking"] = thinking
+        result["output_config"] = ["effort": mapThinkingLevelToEffort(model: model, level: reasoning)]
     } else {
         let defaultBudgets: [ThinkingLevel: Int] = [
             .minimal: 1024,
@@ -922,10 +980,14 @@ func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) ->
 
         let level = reasoning == .xhigh ? .high : reasoning
         let budget = options.thinkingBudgets?[level] ?? defaultBudgets[level] ?? 1024
-        result["thinking"] = [
+        var thinking: [String: Any] = [
             "type": "enabled",
             "budget_tokens": budget,
         ]
+        if let display {
+            thinking["display"] = display
+        }
+        result["thinking"] = thinking
 
         if options.interleavedThinking ?? true {
             result["anthropic_beta"] = ["interleaved-thinking-2025-05-14"]
@@ -935,7 +997,18 @@ func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) ->
     return result.mapValues { AnyCodable($0) }
 }
 
-private func resolveBedrockRegion(options: BedrockOptions) -> String {
+private func isAnthropicClaudeModel(_ model: Model) -> Bool {
+    let id = model.id.lowercased()
+    let name = model.name.lowercased()
+    return id.contains("anthropic.claude") ||
+        id.contains("anthropic/claude") ||
+        id.contains("claude") ||
+        name.contains("anthropic.claude") ||
+        name.contains("anthropic/claude") ||
+        name.contains("claude")
+}
+
+private func configuredBedrockRegion(options: BedrockOptions) -> String? {
     let env = ProcessInfo.processInfo.environment
     if let region = options.region {
         return region
@@ -943,6 +1016,62 @@ private func resolveBedrockRegion(options: BedrockOptions) -> String {
     if let region = env["AWS_REGION"] ?? env["AWS_DEFAULT_REGION"] {
         return region
     }
+    return nil
+}
+
+private func hasConfiguredBedrockProfile(options: BedrockOptions) -> Bool {
+    let env = ProcessInfo.processInfo.environment
+    if let profile = options.profile, !profile.isEmpty {
+        return true
+    }
+    if let profile = env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"], !profile.isEmpty {
+        return true
+    }
+    return false
+}
+
+private func standardBedrockEndpointRegion(baseUrl: String) -> String? {
+    guard let host = URL(string: baseUrl)?.host?.lowercased() else { return nil }
+    let pattern = #"^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: host, range: NSRange(host.startIndex..., in: host)),
+          let range = Range(match.range(at: 1), in: host) else {
+        return nil
+    }
+    return String(host[range])
+}
+
+private func shouldUseExplicitBedrockEndpoint(baseUrl: String, configuredRegion: String?, hasConfiguredProfile: Bool) -> Bool {
+    guard standardBedrockEndpointRegion(baseUrl: baseUrl) != nil else {
+        return true
+    }
+    return configuredRegion == nil && !hasConfiguredProfile
+}
+
+private func bedrockArnRegion(modelId: String) -> String? {
+    let pattern = #"^arn:aws(?:-[a-z0-9-]+)?:bedrock:([a-z0-9-]+):"#
+    let id = modelId.lowercased()
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)),
+          let range = Range(match.range(at: 1), in: id) else {
+        return nil
+    }
+    return String(id[range])
+}
+
+private func resolveBedrockRegion(model: Model, options: BedrockOptions) -> String {
+    if let arnRegion = bedrockArnRegion(modelId: model.id) {
+        return arnRegion
+    }
+    if let configured = configuredBedrockRegion(options: options) {
+        return configured
+    }
+    let hasProfile = hasConfiguredBedrockProfile(options: options)
+    if let endpointRegion = standardBedrockEndpointRegion(baseUrl: model.baseUrl),
+       shouldUseExplicitBedrockEndpoint(baseUrl: model.baseUrl, configuredRegion: nil, hasConfiguredProfile: hasProfile) {
+        return endpointRegion
+    }
+    let env = ProcessInfo.processInfo.environment
     if let profile = options.profile ?? env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"],
        let region = loadAwsProfileRegion(profile: profile) {
         return region
@@ -950,9 +1079,43 @@ private func resolveBedrockRegion(options: BedrockOptions) -> String {
     return "us-east-1"
 }
 
-private func resolveBedrockAuth(profile: String?) throws -> BedrockAuth {
+private func resolveBedrockBaseUrl(model: Model, options: BedrockOptions, region: String) -> String {
+    let trimmed = model.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+        return "https://bedrock-runtime.\(region).amazonaws.com"
+    }
+    if bedrockArnRegion(modelId: model.id) != nil, standardBedrockEndpointRegion(baseUrl: trimmed) != nil {
+        return "https://bedrock-runtime.\(region).amazonaws.com"
+    }
+    let configuredRegion = configuredBedrockRegion(options: options)
+    let hasProfile = hasConfiguredBedrockProfile(options: options)
+    if shouldUseExplicitBedrockEndpoint(baseUrl: trimmed, configuredRegion: configuredRegion, hasConfiguredProfile: hasProfile) {
+        return trimmed
+    }
+    return "https://bedrock-runtime.\(region).amazonaws.com"
+}
+
+private func isGovCloudBedrockTarget(model: Model, options: BedrockOptions) -> Bool {
+    if let region = configuredBedrockRegion(options: options)?.lowercased(), region.hasPrefix("us-gov-") {
+        return true
+    }
+    if let endpointRegion = standardBedrockEndpointRegion(baseUrl: model.baseUrl), endpointRegion.hasPrefix("us-gov-") {
+        return true
+    }
+    let id = model.id.lowercased()
+    return id.hasPrefix("us-gov.") || id.hasPrefix("arn:aws-us-gov:")
+}
+
+private func isReservedBedrockHeader(_ key: String) -> Bool {
+    let lower = key.lowercased()
+    return lower == "authorization" || lower == "host" || lower.hasPrefix("x-amz-")
+}
+
+private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
     let env = ProcessInfo.processInfo.environment
-    if let bearer = env["AWS_BEARER_TOKEN_BEDROCK"], !bearer.isEmpty {
+    if env["AWS_BEDROCK_SKIP_AUTH"] != "1",
+       let bearer = options.bearerToken ?? env["AWS_BEARER_TOKEN_BEDROCK"],
+       !bearer.isEmpty {
         return .bearer(bearer)
     }
     if env["AWS_BEDROCK_SKIP_AUTH"] == "1" {
@@ -967,12 +1130,31 @@ private func resolveBedrockAuth(profile: String?) throws -> BedrockAuth {
         return .sigV4(AwsCredentials(accessKeyId: access, secretAccessKey: secret, sessionToken: token))
     }
 
-    let selectedProfile = profile ?? env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"] ?? "default"
+    let selectedProfile = options.profile ?? env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"] ?? "default"
     if let credentials = loadAwsProfileCredentials(profile: selectedProfile) {
         return .sigV4(credentials)
     }
 
     throw BedrockStreamError.missingCredentials
+}
+
+private func isRetryableBedrockTransportError(_ error: Error) -> Bool {
+    let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+    return text.contains("http2 request did not get a response") ||
+        text.contains("http/2 request did not get a response") ||
+        text.contains("http2") && text.contains("did not get a response")
+}
+
+private func formatBedrockHTTPError(statusCode: Int, body: String) -> String {
+    let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = trimmed.isEmpty ? "HTTP \(statusCode)" : trimmed
+    if statusCode == 429 {
+        return "Throttling error: \(message)"
+    }
+    if statusCode == 503 {
+        return "Service unavailable: \(message)"
+    }
+    return message
 }
 
 private func loadAwsProfileCredentials(profile: String) -> AwsCredentials? {
