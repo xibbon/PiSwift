@@ -2074,6 +2074,57 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(gatedTools.last?["cache_control"] == nil)
 }
 
+@Test func fireworksAnthropicCompatGatesCacheAndEagerToolMarkers() async throws {
+    let model = getModel(provider: .fireworks, modelId: "accounts/fireworks/models/deepseek-v4-flash")
+    #expect(model.api == .anthropicMessages)
+    #expect(model.compat?.supportsLongCacheRetention == false)
+    #expect(model.compat?.supportsEagerToolInputStreaming == false)
+    #expect(model.compat?.sendSessionAffinityHeaders == true)
+    #expect(model.compat?.supportsCacheControlOnTools == false)
+
+    let headers = buildAnthropicBetaHeaders(
+        apiKey: "fw-test-key",
+        interleavedThinking: false,
+        provider: model.provider,
+        hasTools: true,
+        supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true
+    )
+    #expect(headers?.contains("fine-grained-tool-streaming-2025-05-14") == true)
+
+    await withEnv("PI_CACHE_RETENTION", value: "long") {
+        #expect(anthropicCacheTtl(
+            baseUrl: "https://api.anthropic.com",
+            supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true
+        ) == nil)
+    }
+
+    let payload: [String: Any] = [
+        "model": model.id,
+        "messages": [["role": "user", "content": "Hello"]],
+        "tools": [
+            ["name": "first", "input_schema": ["type": "object"]],
+            ["name": "second", "input_schema": ["type": "object"]],
+        ],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: payload)
+    guard let updatedBody = injectAnthropicRequestBody(
+        body: body,
+        ttl: "1h",
+        metadataUserId: nil,
+        supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true,
+        supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? true
+    ),
+    let updated = try JSONSerialization.jsonObject(with: updatedBody) as? [String: Any],
+    let tools = updated["tools"] as? [[String: Any]] else {
+        #expect(Bool(false), "Expected Fireworks Anthropic payload")
+        return
+    }
+    #expect(tools.first?["eager_input_streaming"] == nil)
+    #expect(tools.last?["eager_input_streaming"] == nil)
+    #expect(tools.first?["cache_control"] == nil)
+    #expect(tools.last?["cache_control"] == nil)
+}
+
 @Test func anthropicRequestBodyCanInjectDisabledThinking() throws {
     let payload: [String: Any] = [
         "model": "claude-sonnet-4-5",
@@ -2815,6 +2866,101 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         let provider = payload?["provider"] as? [String: Any]
         #expect(reasoning?["effort"] as? String == "none")
         #expect(provider?["reasoning_effort"] == nil)
+    }
+}
+
+/// v0.70.1: DeepSeek V4 replay requires both the DeepSeek thinking payload and
+/// `reasoning_content` on prior assistant turns, even when no thinking block exists.
+@Test func openAICompletionsDeepSeekV4ReplayPayloadsInjectReasoningContent() async throws {
+    await codexRequestLock.withLock {
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["deepseek-replay.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-deepseek-replay",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "deepseek-replay-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": "stop",
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        for modelId in ["deepseek-v4-flash", "deepseek-v4-pro"] {
+            let capturedPayloadJson = LockedState<String?>(nil)
+            let model = Model(
+                id: modelId,
+                name: modelId,
+                api: .openAICompletions,
+                provider: "deepseek",
+                baseUrl: "https://deepseek-replay.example/v1",
+                reasoning: true,
+                input: [.text],
+                cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: 128000,
+                maxTokens: 4096,
+                compat: OpenAICompat(
+                    maxTokensField: .maxTokens,
+                    thinkingFormat: .deepseek,
+                    reasoningEffortMap: [.xhigh: "max"],
+                    requiresReasoningContentOnAssistantMessages: true
+                )
+            )
+            let assistant = AssistantMessage(
+                content: [.text(TextContent(text: "prior answer"))],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .stop
+            )
+            let stream = streamOpenAICompletions(
+                model: model,
+                context: Context(messages: [
+                    .assistant(assistant),
+                    .user(UserMessage(content: .text("continue"))),
+                ]),
+                options: OpenAICompletionsOptions(
+                    apiKey: "test-key",
+                    reasoningEffort: .xhigh,
+                    onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json } }
+                )
+            )
+            _ = await stream.result()
+
+            let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+                guard let data = jsonString.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+                return object
+            }
+            let thinking = payload?["thinking"] as? [String: Any]
+            let messages = payload?["messages"] as? [[String: Any]]
+            let assistantPayload = messages?.first { $0["role"] as? String == "assistant" }
+
+            #expect(payload?["model"] as? String == modelId)
+            #expect(thinking?["type"] as? String == "enabled")
+            #expect(payload?["reasoning_effort"] as? String == "max")
+            #expect(assistantPayload?["reasoning_content"] as? String == "")
+        }
     }
 }
 
@@ -3964,6 +4110,97 @@ struct ApiRegistryTests {
         #expect(text == "custom-provider")
 
         resetApiProviders()
+    }
+
+    @Test func fauxProviderStreamsScriptedMessagesAndFactories() async throws {
+        resetApiProviders()
+        defer { resetApiProviders() }
+
+        let registration = registerFauxProvider(FauxRegistrationOptions(
+            models: [
+                FauxModelDefinition(
+                    id: "faux-test",
+                    name: "Faux Test",
+                    reasoning: true,
+                    input: [.text],
+                    cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                    contextWindow: 4096,
+                    maxTokens: 1024
+                )
+            ],
+            minTokenSize: 1,
+            maxTokenSize: 1
+        ))
+        registration.setResponses([
+            .message(fauxAssistantMessage(
+                content: [
+                    fauxThinking("plan"),
+                    fauxText("answer"),
+                    fauxToolCall(name: "lookup", arguments: ["query": AnyCodable("pi")], id: "call-1"),
+                ],
+                stopReason: .toolUse,
+                responseId: "faux-response-1"
+            )),
+            .factory { _, _, state, _ in
+                fauxAssistantMessage(
+                    content: [fauxText("factory call \(state.callCount)")],
+                    responseId: "faux-response-2"
+                )
+            },
+        ])
+
+        guard let model = registration.getModel(id: "faux-test") else {
+            #expect(Bool(false), "Expected faux model")
+            return
+        }
+
+        let firstStream = try streamSimple(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: SimpleStreamOptions(cacheRetention: .short, sessionId: "faux-session")
+        )
+        var sawThinking = false
+        var sawText = false
+        var sawTool = false
+        for await event in firstStream {
+            switch event {
+            case .thinkingDelta:
+                sawThinking = true
+            case .textDelta:
+                sawText = true
+            case .toolCallEnd:
+                sawTool = true
+            default:
+                break
+            }
+        }
+        let first = await firstStream.result()
+        #expect(sawThinking)
+        #expect(sawText)
+        #expect(sawTool)
+        #expect(first.api == Api.openAICompletions)
+        #expect(first.provider == "faux")
+        #expect(first.model == "faux-test")
+        #expect(first.responseId == "faux-response-1")
+        #expect(first.stopReason == StopReason.toolUse)
+        #expect(first.usage.totalTokens > 0)
+        #expect(registration.pendingResponseCount() == 1)
+        #expect(registration.state().callCount == 1)
+
+        let second = try await completeSimple(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("again")))])
+        )
+        let secondText = second.content.compactMap { block -> String? in
+            if case .text(let text) = block { return text.text }
+            return nil
+        }.joined()
+        #expect(secondText == "factory call 2")
+        #expect(registration.pendingResponseCount() == 0)
+        #expect(registration.state().callCount == 2)
+
+        registration.unregister()
+        #expect(getApiProvider(.openAICompletions) == nil)
     }
 }
 
