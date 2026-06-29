@@ -2556,6 +2556,26 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         maxTokens: 4096
     )
     #expect(supportsXhigh(model: opus))
+
+    let togetherDeepSeek = getModel(provider: .together, modelId: "deepseek-ai/DeepSeek-V4-Pro")
+    #expect(supportsXhigh(model: togetherDeepSeek))
+    #expect(mappedThinkingLevel(model: togetherDeepSeek, level: .xhigh) == "max")
+
+    let staleDeepSeek = Model(
+        id: "deepseek-ai/DeepSeek-V4-Pro",
+        name: "DeepSeek V4 Pro",
+        api: .openAICompletions,
+        provider: "deepseek-test",
+        baseUrl: "https://deepseek-test.example/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        thinkingLevelMap: [.high: "high", .low: nil, .medium: nil, .minimal: nil, .xhigh: nil]
+    )
+    #expect(supportsXhigh(model: staleDeepSeek))
+    #expect(mappedThinkingLevel(model: staleDeepSeek, level: .xhigh) == "max")
 }
 
 @Test func googleGeminiCliRetryDelayHeaderParsing() {
@@ -2795,6 +2815,184 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         let provider = payload?["provider"] as? [String: Any]
         #expect(reasoning?["effort"] as? String == "none")
         #expect(provider?["reasoning_effort"] == nil)
+    }
+}
+
+/// v0.67.0: OpenRouter provider-selection routing emits the full routing field set.
+@Test func openAICompletionsOpenRouterRoutingPayload() async throws {
+    await codexRequestLock.withLock {
+        let capturedPayloadJson = LockedState<String?>(nil)
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["openrouter.ai"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            if let body = readRequestBody(request),
+               let json = String(data: body, encoding: .utf8) {
+                capturedPayloadJson.withLock { $0 = json }
+            }
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-openrouter-routing",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "openrouter-routing-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": "stop",
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "openrouter-routing-test",
+            name: "OpenRouter Routing Test",
+            api: .openAICompletions,
+            provider: "openrouter",
+            baseUrl: "https://openrouter.ai/api/v1",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 128000,
+            maxTokens: 4096,
+            compat: OpenAICompat(openRouterRouting: OpenRouterRouting(
+                allowFallbacks: false,
+                requireParameters: true,
+                dataCollection: "deny",
+                zdr: true,
+                enforceDistillableText: true,
+                order: ["anthropic", "openai"],
+                only: ["anthropic"],
+                ignore: ["bad-provider"],
+                quantizations: ["fp16", "int8"],
+                sort: .structured(by: "throughput", partition: "none"),
+                maxPrice: OpenRouterRoutingPrice(prompt: 1.25, completion: 2.5, image: 0.75, audio: 0.5, request: 0.01),
+                preferredMinThroughput: .percentiles(p50: 120, p75: 90, p90: 60, p99: 30),
+                preferredMaxLatency: .scalar(2.5)
+            ))
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key")
+        )
+        for await _ in stream {}
+
+        let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+            guard let data = jsonString.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return object
+        }
+        let provider = payload?["provider"] as? [String: Any]
+        #expect(provider?["allow_fallbacks"] as? Bool == false)
+        #expect(provider?["require_parameters"] as? Bool == true)
+        #expect(provider?["data_collection"] as? String == "deny")
+        #expect(provider?["zdr"] as? Bool == true)
+        #expect(provider?["enforce_distillable_text"] as? Bool == true)
+        #expect(provider?["order"] as? [String] == ["anthropic", "openai"])
+        #expect(provider?["only"] as? [String] == ["anthropic"])
+        #expect(provider?["ignore"] as? [String] == ["bad-provider"])
+        #expect(provider?["quantizations"] as? [String] == ["fp16", "int8"])
+        let sort = provider?["sort"] as? [String: Any]
+        #expect(sort?["by"] as? String == "throughput")
+        #expect(sort?["partition"] as? String == "none")
+        let maxPrice = provider?["max_price"] as? [String: Any]
+        #expect(maxPrice?["prompt"] as? Double == 1.25)
+        #expect(maxPrice?["completion"] as? Double == 2.5)
+        #expect(maxPrice?["image"] as? Double == 0.75)
+        #expect(maxPrice?["audio"] as? Double == 0.5)
+        #expect(maxPrice?["request"] as? Double == 0.01)
+        let throughput = provider?["preferred_min_throughput"] as? [String: Any]
+        #expect(throughput?["p50"] as? Double == 120)
+        #expect(throughput?["p75"] as? Double == 90)
+        #expect(throughput?["p90"] as? Double == 60)
+        #expect(throughput?["p99"] as? Double == 30)
+        #expect(provider?["preferred_max_latency"] as? Double == 2.5)
+    }
+}
+
+/// v0.67.67: Qwen chat-template requests preserve thinking state across tool-call turns.
+@Test func openAICompletionsQwenChatTemplatePreservesThinking() async throws {
+    await codexRequestLock.withLock {
+        let capturedPayloadJson = LockedState<String?>(nil)
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["qwen-template.example"] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            if let body = readRequestBody(request),
+               let json = String(data: body, encoding: .utf8) {
+                capturedPayloadJson.withLock { $0 = json }
+            }
+            let data = try openAITestSseData([
+                [
+                    "id": "chatcmpl-qwen-template",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "qwen-template-test",
+                    "choices": [
+                        [
+                            "index": 0,
+                            "delta": ["content": "ok"],
+                            "finish_reason": "stop",
+                        ],
+                    ],
+                ],
+            ])
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, data)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "qwen-template-test",
+            name: "Qwen Template Test",
+            api: .openAICompletions,
+            provider: "qwen-template",
+            baseUrl: "https://qwen-template.example/v1",
+            reasoning: true,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 128000,
+            maxTokens: 4096,
+            compat: OpenAICompat(thinkingFormat: .qwenChatTemplate)
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key", reasoningEffort: .high)
+        )
+        for await _ in stream {}
+
+        let payload = capturedPayloadJson.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+            guard let data = jsonString.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return object
+        }
+        let kwargs = payload?["chat_template_kwargs"] as? [String: Any]
+        #expect(kwargs?["enable_thinking"] as? Bool == true)
+        #expect(kwargs?["preserve_thinking"] as? Bool == true)
     }
 }
 
@@ -4607,6 +4805,90 @@ struct ApiRegistryTests {
     let mistralOptions = mapMistralSimpleOptions(model: mistral, options: options, apiKey: "key")
     #expect(mistralOptions.timeoutMs == 2345)
     #expect(mistralOptions.maxRetries == 2)
+}
+
+/// v0.67.67: Mistral Small 4 / Medium 3.5 use `reasoning_effort`, not `prompt_mode`.
+@Test func mistralReasoningEffortMappingUsesModelMetadata() {
+    let options = SimpleStreamOptions(reasoning: .xhigh)
+
+    let small = getModel(provider: .mistral, modelId: "mistral-small-2603")
+    let smallOptions = mapMistralSimpleOptions(model: small, options: options, apiKey: "key")
+    #expect(smallOptions.promptMode == nil)
+    #expect(smallOptions.reasoningEffort == "high")
+
+    let medium = getModel(provider: .mistral, modelId: "mistral-medium-3.5")
+    let mediumOptions = mapMistralSimpleOptions(model: medium, options: SimpleStreamOptions(reasoning: .high), apiKey: "key")
+    #expect(mediumOptions.promptMode == nil)
+    #expect(mediumOptions.reasoningEffort == "high")
+
+    let large = getModel(provider: .mistral, modelId: "magistral-medium-latest")
+    let largeOptions = mapMistralSimpleOptions(model: large, options: SimpleStreamOptions(reasoning: .high), apiKey: "key")
+    #expect(largeOptions.promptMode == "reasoning")
+    #expect(largeOptions.reasoningEffort == nil)
+}
+
+/// v0.70.1: `maxRetries` retries retryable Mistral response setup failures before stream consumption.
+@Test func mistralRetriesRetryableHTTPFailure() async {
+    await codexRequestLock.withLock {
+        let requestCount = LockedState(0)
+        let capturedBody = LockedState<String?>(nil)
+        MockURLProtocol.allowedHosts.withLock { $0 = ["api.mistral.ai"] }
+        MockURLProtocol.requestHandler.withLock { $0 = { request in
+            if let body = readRequestBody(request), let json = String(data: body, encoding: .utf8) {
+                capturedBody.withLock { $0 = json }
+            }
+            let count = requestCount.withLock { value -> Int in
+                value += 1
+                return value
+            }
+            if count == 1 {
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 503,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return (response, Data(#"{"error":"try again"}"#.utf8))
+            }
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, Data())
+        } }
+        URLProtocol.registerClass(MockURLProtocol.self)
+        defer {
+            URLProtocol.unregisterClass(MockURLProtocol.self)
+            MockURLProtocol.allowedHosts.withLock { $0 = [] }
+            MockURLProtocol.requestHandler.withLock { $0 = nil }
+        }
+
+        let model = getModel(provider: .mistral, modelId: "mistral-medium-3.5")
+        let mapped = mapMistralSimpleOptions(
+            model: model,
+            options: SimpleStreamOptions(reasoning: .high, maxRetries: 1),
+            apiKey: "test-key"
+        )
+        let stream = streamMistral(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: mapped
+        )
+        for await _ in stream {}
+        let message = await stream.result()
+
+        #expect(message.stopReason == .stop)
+        #expect(requestCount.withLock { $0 } == 2)
+        let payload = capturedBody.withLock { $0 }.flatMap { jsonString -> [String: Any]? in
+            guard let data = jsonString.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return object
+        }
+        #expect(payload?["reasoning_effort"] as? String == "high")
+        #expect(payload?["prompt_mode"] == nil)
+    }
 }
 
 @Test func generatedTextCatalogMatchesUpstreamMetadata() throws {

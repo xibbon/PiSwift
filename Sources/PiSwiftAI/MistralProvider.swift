@@ -59,17 +59,7 @@ public func streamMistral(
             }
             request.httpBody = bodyData
 
-            let session = proxySession(for: request.url)
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw MistralStreamError.invalidResponse
-            }
-            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-            if !(200..<300).contains(http.statusCode) {
-                let bodyText = try await collectMistralData(from: bytes)
-                let snippet = String(data: bodyText, encoding: .utf8) ?? ""
-                throw MistralStreamError.apiError(http.statusCode, snippet)
-            }
+            let bytes = try await fetchMistralStream(request: request, options: options)
 
             stream.push(.start(partial: output))
 
@@ -632,14 +622,74 @@ private func collectMistralData(from bytes: URLSession.AsyncBytes) async throws 
     return data
 }
 
+private func fetchMistralStream(request: URLRequest, options: MistralOptions) async throws -> URLSession.AsyncBytes {
+    let session = proxySession(for: request.url)
+    let retryLimit = max(0, options.maxRetries ?? 0)
+    var attempt = 0
+
+    while true {
+        do {
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw MistralStreamError.invalidResponse
+            }
+            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
+            if (200..<300).contains(http.statusCode) {
+                return bytes
+            }
+            let bodyText = try await collectMistralData(from: bytes)
+            let snippet = String(data: bodyText, encoding: .utf8) ?? ""
+            let error = MistralStreamError.apiError(http.statusCode, snippet)
+            if attempt < retryLimit, isRetryableMistralStatus(http.statusCode), options.signal?.isCancelled != true {
+                attempt += 1
+                continue
+            }
+            throw error
+        } catch {
+            if options.signal?.isCancelled == true {
+                throw MistralStreamError.aborted
+            }
+            if attempt < retryLimit, isRetryableMistralTransportError(error) {
+                attempt += 1
+                continue
+            }
+            throw error
+        }
+    }
+}
+
+private func isRetryableMistralStatus(_ statusCode: Int) -> Bool {
+    statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504
+}
+
+private func isRetryableMistralTransportError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    if nsError.domain == NSURLErrorDomain {
+        switch URLError.Code(rawValue: nsError.code) {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed, .notConnectedToInternet:
+            return true
+        default:
+            break
+        }
+    }
+    let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+    return text.contains("timed out") ||
+        text.contains("network connection was lost") ||
+        text.contains("connection reset") ||
+        text.contains("temporarily unavailable")
+}
+
 /// Maps `SimpleStreamOptions` onto `MistralOptions`, applying Mistral's reasoning conventions.
 public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> MistralOptions {
     let useReasoningEffort = mistralUsesReasoningEffort(model: model)
     let usePromptMode = model.reasoning && !useReasoningEffort
-    let reasoningPresent = options?.reasoning != nil
+    let reasoning = clampThinkingLevel(model: model, requested: options?.reasoning)
 
-    let promptMode: String? = (usePromptMode && model.reasoning && reasoningPresent) ? "reasoning" : nil
-    let reasoningEffort: String? = (useReasoningEffort && model.reasoning && reasoningPresent) ? "high" : nil
+    let promptMode: String? = (usePromptMode && model.reasoning && reasoning != nil) ? "reasoning" : nil
+    let reasoningEffort: String? = {
+        guard useReasoningEffort, model.reasoning, let reasoning else { return nil }
+        return mappedThinkingLevel(model: model, level: reasoning) ?? "high"
+    }()
 
     return MistralOptions(
         temperature: options?.temperature,
@@ -659,5 +709,8 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
 }
 
 private func mistralUsesReasoningEffort(model: Model) -> Bool {
-    return model.id == "mistral-small-2603" || model.id == "mistral-small-latest"
+    return model.id == "mistral-small-2603" ||
+        model.id == "mistral-small-latest" ||
+        model.id == "mistral-medium-2604" ||
+        model.id == "mistral-medium-3.5"
 }

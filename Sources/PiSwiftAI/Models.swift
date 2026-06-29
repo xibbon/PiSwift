@@ -53,26 +53,40 @@ private func lookupThinkingLevelMap(_ map: ThinkingLevelMap?, level: ModelThinki
 }
 
 private func inferredThinkingLevelMap(model: Model) -> ThinkingLevelMap? {
-    if model.id.contains("gpt-5.2") || model.id.contains("gpt-5.3") {
+    let id = model.id.lowercased()
+    if id.contains("gpt-5.2") || id.contains("gpt-5.3") {
         return [.xhigh: "xhigh"]
     }
-    if model.id.contains("gpt-5.5") {
+    if id.contains("gpt-5.5") {
         return [.minimal: "low", .xhigh: "xhigh"]
     }
-    if model.id.contains("deepseek") && (model.id.contains("v4-pro") || model.id.contains("v4.pro")) {
+    if isDeepSeekV4Pro(model) {
         return [.xhigh: "max"]
     }
     if model.api == .anthropicMessages || model.api == .bedrockConverseStream {
-        if model.id.contains("opus-4-6") || model.id.contains("opus-4.6")
-            || model.id.contains("opus-4-7") || model.id.contains("opus-4.7") {
+        if id.contains("opus-4-6") || id.contains("opus-4.6")
+            || id.contains("opus-4-7") || id.contains("opus-4.7") {
             return [.xhigh: "xhigh"]
         }
     }
     return nil
 }
 
+private func isDeepSeekV4Pro(_ model: Model) -> Bool {
+    let id = model.id.lowercased()
+    let name = model.name.lowercased()
+    return (id.contains("deepseek") || name.contains("deepseek")) &&
+        (id.contains("v4-pro") || id.contains("v4.pro") || name.contains("v4 pro"))
+}
+
 private func effectiveThinkingLevelMap(model: Model) -> ThinkingLevelMap? {
-    model.thinkingLevelMap ?? inferredThinkingLevelMap(model: model)
+    guard var map = model.thinkingLevelMap else {
+        return inferredThinkingLevelMap(model: model)
+    }
+    if isDeepSeekV4Pro(model) {
+        map[.xhigh] = "max"
+    }
+    return map
 }
 
 public func getSupportedThinkingLevels(_ model: Model) -> [ModelThinkingLevel] {
