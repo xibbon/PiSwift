@@ -3856,6 +3856,87 @@ struct OAuthTests {
         #expect(fallbackUrl == "https://api.individual.githubcopilot.com")
     }
 
+    @Test func gitHubCopilotLoginDeviceFlowExchangesTokenAndEnablesModels() async throws {
+        try await codexRequestLock.withLock {
+            let seenDeviceCode = LockedState(false)
+            let seenAccessToken = LockedState(false)
+            let seenCopilotToken = LockedState(false)
+            let enabledModelCount = LockedState(0)
+            let authInfo = LockedState<OAuthAuthInfo?>(nil)
+            let progressMessages = LockedState<[String]>([])
+
+            MockURLProtocol.allowedHosts.withLock {
+                $0 = ["github.com", "api.github.com", "api.individual.githubcopilot.com"]
+            }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                guard let url = request.url else { throw URLError(.badURL) }
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/json"]
+                )!
+                switch (url.host, url.path) {
+                case ("github.com", "/login/device/code"):
+                    seenDeviceCode.withLock { $0 = true }
+                    #expect(request.httpMethod == "POST")
+                    #expect(request.value(forHTTPHeaderField: "User-Agent") == "GitHubCopilotChat/0.35.0")
+                    return (response, Data("""
+                    {"device_code":"device-123","user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device","interval":1,"expires_in":60}
+                    """.utf8))
+                case ("github.com", "/login/oauth/access_token"):
+                    seenAccessToken.withLock { $0 = true }
+                    #expect(request.httpMethod == "POST")
+                    return (response, Data("""
+                    {"access_token":"gh_access_token"}
+                    """.utf8))
+                case ("api.github.com", "/copilot_internal/v2/token"):
+                    seenCopilotToken.withLock { $0 = true }
+                    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer gh_access_token")
+                    #expect(request.value(forHTTPHeaderField: "Copilot-Integration-Id") == "vscode-chat")
+                    return (response, Data("""
+                    {"token":"tid=abc;exp=123;proxy-ep=proxy.individual.githubcopilot.com;sku=free","expires_at":2000000000}
+                    """.utf8))
+                default:
+                    if url.host == "api.individual.githubcopilot.com", url.path.hasPrefix("/models/"), url.path.hasSuffix("/policy") {
+                        enabledModelCount.withLock { $0 += 1 }
+                        #expect(request.httpMethod == "POST")
+                        #expect(request.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer tid=abc") == true)
+                        #expect(request.value(forHTTPHeaderField: "openai-intent") == "chat-policy")
+                        return (response, Data("{}".utf8))
+                    }
+                    throw URLError(.badURL)
+                }
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let credentials = try await loginGitHubCopilot(OAuthLoginCallbacks(
+                onAuth: { info in authInfo.withLock { $0 = info } },
+                onPrompt: { prompt in
+                    #expect(prompt.allowEmpty)
+                    return ""
+                },
+                onProgress: { message in progressMessages.withLock { $0.append(message) } }
+            ))
+
+            #expect(seenDeviceCode.withLock { $0 })
+            #expect(seenAccessToken.withLock { $0 })
+            #expect(seenCopilotToken.withLock { $0 })
+            #expect(enabledModelCount.withLock { $0 } == getModels(provider: .githubCopilot).count)
+            #expect(authInfo.withLock { $0?.url } == "https://github.com/login/device")
+            #expect(authInfo.withLock { $0?.instructions } == "Enter code: ABCD-EFGH")
+            #expect(progressMessages.withLock { $0 }.contains("Enabling models..."))
+            #expect(credentials.refresh == "gh_access_token")
+            #expect(credentials.access.contains("proxy-ep=proxy.individual.githubcopilot.com"))
+            #expect(credentials.enterpriseUrl == nil)
+        }
+    }
+
     @Test func oauthCredentialsEncoding() throws {
         let credentials = OAuthCredentials(
             refresh: "refresh_token",
