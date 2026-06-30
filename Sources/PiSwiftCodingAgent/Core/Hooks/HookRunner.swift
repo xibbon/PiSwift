@@ -158,6 +158,22 @@ public final class HookRunner: Sendable {
             errorListeners: [:],
             wiring: nil
         ))
+        for hook in hooks {
+            wireProviderHandlers(for: hook)
+        }
+    }
+
+    private func wireProviderHandlers(for hook: LoadedHook) {
+        let sourceId = hook.resolvedPath
+        hook.setRegisterProviderHandler { [modelRegistry] config in
+            modelRegistry.registerProvider(config, sourceId: sourceId)
+        }
+        hook.setUnregisterProviderHandler { [modelRegistry] provider in
+            modelRegistry.unregisterProvider(provider, sourceId: sourceId)
+        }
+        for config in hook.providerRegistrations.values {
+            modelRegistry.registerProvider(config, sourceId: sourceId)
+        }
     }
 
     public func initialize(
@@ -217,6 +233,7 @@ public final class HookRunner: Sendable {
         )
         state.withLock { $0.wiring = wiring }
         for hook in hooks {
+            wireProviderHandlers(for: hook)
             wiring.apply(to: hook)
         }
     }
@@ -267,18 +284,31 @@ public final class HookRunner: Sendable {
     /// Returns the paths of extension hooks that were dropped (caller may want to log them).
     @discardableResult
     public func replaceExtensionHooks(_ newExtensionHooks: [LoadedHook]) -> [String] {
-        let droppedPaths: [String] = state.withLock { state in
-            let dropped = state.hooks.filter { $0.isExtension }.map { $0.path }
+        let droppedHooks: [LoadedHook] = state.withLock { state in
+            let dropped = state.hooks.filter { $0.isExtension }
             let kept = state.hooks.filter { !$0.isExtension }
             state.hooks = kept + newExtensionHooks
             return dropped
+        }
+        for hook in droppedHooks {
+            modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
+        }
+        for hook in newExtensionHooks {
+            wireProviderHandlers(for: hook)
         }
         if let wiring = state.withLock({ $0.wiring }) {
             for hook in newExtensionHooks {
                 wiring.apply(to: hook)
             }
         }
-        return droppedPaths
+        return droppedHooks.map { $0.path }
+    }
+
+    public func unregisterExtensionProviders() {
+        let extensionHooks = hooks.filter { $0.isExtension }
+        for hook in extensionHooks {
+            modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
+        }
     }
 
     /// Emit an event only to hooks loaded from extensions (skips settings-defined hooks).

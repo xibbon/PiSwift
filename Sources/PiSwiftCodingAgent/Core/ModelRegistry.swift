@@ -375,6 +375,10 @@ public final class ModelRegistry: Sendable {
 
     private struct State: Sendable {
         var models: [Model] = []
+        var baseModels: [Model] = []
+        var dynamicModelsBySource: [String: [String: [Model]]] = [:]
+        var dynamicProviderApiKeysBySource: [String: [String: String]] = [:]
+        var dynamicSourceOrder: [String] = []
         var errorMessage: String?
         var githubCopilotSupportedModelIds: Set<String>?
     }
@@ -384,6 +388,17 @@ public final class ModelRegistry: Sendable {
         self.modelsDir = modelsDir
         self.authStorage.setFallbackResolver { [weak self] provider in
             guard let self else { return nil }
+            let dynamicKeyConfig = self.state.withLock { state -> String? in
+                for sourceId in state.dynamicSourceOrder.reversed() {
+                    if let keyConfig = state.dynamicProviderApiKeysBySource[sourceId]?[provider] {
+                        return keyConfig
+                    }
+                }
+                return nil
+            }
+            if let dynamicKeyConfig {
+                return resolveConfigValue(dynamicKeyConfig)
+            }
             let keyConfig = self.customProviderApiKeys.withLock { $0[provider] }
             if let keyConfig {
                 return resolveConfigValue(keyConfig)
@@ -404,6 +419,70 @@ public final class ModelRegistry: Sendable {
         }
         customProviderApiKeys.withLock { $0 = [:] }
         loadModels()
+    }
+
+    public func registerProvider(_ config: HookProviderConfig, sourceId: String) {
+        let models = config.models.map { model in
+            normalizeProviderModel(Model(
+                id: model.id,
+                name: model.name ?? model.id,
+                api: model.api ?? config.api,
+                provider: config.provider,
+                baseUrl: model.baseUrl ?? config.baseUrl,
+                reasoning: model.reasoning,
+                input: model.input,
+                cost: model.cost,
+                contextWindow: model.contextWindow,
+                maxTokens: model.maxTokens,
+                headers: mergeHeaders(config.headers, model.headers),
+                compat: mergeCompat(config.compat, model.compat),
+                thinkingLevelMap: model.thinkingLevelMap
+            ))
+        }
+
+        state.withLock { state in
+            if !state.dynamicSourceOrder.contains(sourceId) {
+                state.dynamicSourceOrder.append(sourceId)
+            }
+            var sourceModels = state.dynamicModelsBySource[sourceId] ?? [:]
+            sourceModels[config.provider] = models
+            state.dynamicModelsBySource[sourceId] = sourceModels
+
+            var sourceKeys = state.dynamicProviderApiKeysBySource[sourceId] ?? [:]
+            if let apiKey = config.apiKey {
+                sourceKeys[config.provider] = apiKey
+            } else {
+                sourceKeys.removeValue(forKey: config.provider)
+            }
+            state.dynamicProviderApiKeysBySource[sourceId] = sourceKeys.isEmpty ? nil : sourceKeys
+            rebuildModelsLocked(&state)
+        }
+    }
+
+    public func unregisterProvider(_ provider: String, sourceId: String) {
+        state.withLock { state in
+            state.dynamicModelsBySource[sourceId]?[provider] = nil
+            if state.dynamicModelsBySource[sourceId]?.isEmpty == true {
+                state.dynamicModelsBySource[sourceId] = nil
+            }
+            state.dynamicProviderApiKeysBySource[sourceId]?[provider] = nil
+            if state.dynamicProviderApiKeysBySource[sourceId]?.isEmpty == true {
+                state.dynamicProviderApiKeysBySource[sourceId] = nil
+            }
+            if state.dynamicModelsBySource[sourceId] == nil && state.dynamicProviderApiKeysBySource[sourceId] == nil {
+                state.dynamicSourceOrder.removeAll { $0 == sourceId }
+            }
+            rebuildModelsLocked(&state)
+        }
+    }
+
+    public func unregisterProviders(sourceId: String) {
+        state.withLock { state in
+            state.dynamicModelsBySource[sourceId] = nil
+            state.dynamicProviderApiKeysBySource[sourceId] = nil
+            state.dynamicSourceOrder.removeAll { $0 == sourceId }
+            rebuildModelsLocked(&state)
+        }
     }
 
     public func find(_ provider: String, _ modelId: String) -> Model? {
@@ -559,7 +638,30 @@ public final class ModelRegistry: Sendable {
             modelOverrides: customResult.modelOverrides
         )
         let combined = mergeCustomModels(builtInModels: builtInModels, customModels: customResult.models)
-        state.withLock { $0.models = combined }
+        state.withLock { state in
+            state.baseModels = combined
+            rebuildModelsLocked(&state)
+        }
+    }
+
+    private func rebuildModelsLocked(_ state: inout State) {
+        var combined = state.baseModels
+        for sourceId in state.dynamicSourceOrder {
+            guard let providers = state.dynamicModelsBySource[sourceId] else { continue }
+            for provider in providers.keys.sorted() {
+                combined = mergeCustomModels(builtInModels: combined, customModels: providers[provider] ?? [])
+            }
+        }
+        state.models = combined
+    }
+
+    private func mergeHeaders(_ providerHeaders: [String: String]?, _ modelHeaders: [String: String]?) -> [String: String]? {
+        guard providerHeaders != nil || modelHeaders != nil else { return nil }
+        var merged = providerHeaders ?? [:]
+        for (key, value) in modelHeaders ?? [:] {
+            merged[key] = value
+        }
+        return merged
     }
 
     private func loadBuiltInModels(

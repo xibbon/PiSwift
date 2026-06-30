@@ -3,6 +3,45 @@ import Testing
 import PiSwiftAI
 import PiSwiftCodingAgent
 
+@Test func modelRegistryRegistersDynamicHookProvider() async throws {
+    let registry = ModelRegistry(AuthStorage(":memory:"))
+    let config = HookProviderConfig(
+        provider: "swift-extension-provider",
+        api: .openAIResponses,
+        baseUrl: "https://example.invalid/v1",
+        apiKey: "ext-token",
+        headers: ["X-Provider": "provider"],
+        models: [
+            HookProviderModel(
+                id: "swift-extension-model",
+                name: "Swift Extension Model",
+                input: [.text, .image],
+                contextWindow: 8192,
+                maxTokens: 4096,
+                headers: ["X-Model": "model"]
+            )
+        ]
+    )
+
+    registry.registerProvider(config, sourceId: "/extensions/provider.swift")
+
+    let model = try #require(registry.find("swift-extension-provider", "swift-extension-model"))
+    #expect(model.name == "Swift Extension Model")
+    #expect(model.api == .openAIResponses)
+    #expect(model.baseUrl == "https://example.invalid/v1")
+    #expect(model.input == [.text, .image])
+    #expect(model.contextWindow == 8192)
+    #expect(model.maxTokens == 4096)
+    #expect(model.headers?["X-Provider"] == "provider")
+    #expect(model.headers?["X-Model"] == "model")
+    #expect(await registry.getApiKeyForProvider("swift-extension-provider") == "ext-token")
+
+    registry.unregisterProvider("swift-extension-provider", sourceId: "/extensions/provider.swift")
+
+    #expect(registry.find("swift-extension-provider", "swift-extension-model") == nil)
+    #expect(await registry.getApiKeyForProvider("swift-extension-provider") == nil)
+}
+
 @Test func modelRegistryParsesCompatRouting() throws {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-models-compat-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)

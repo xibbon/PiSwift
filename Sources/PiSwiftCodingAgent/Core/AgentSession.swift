@@ -579,6 +579,7 @@ public final class AgentSession: Sendable {
     public func dispose() {
         unsubscribeAgent?()
         unsubscribeAgent = nil
+        _hookRunner?.unregisterExtensionProviders()
         // v0.67.4: reap any detached bash subprocesses the user spawned during this session
         // so we don't leave orphans hanging around after `/quit` or session shutdown.
         killTrackedDetachedChildren()

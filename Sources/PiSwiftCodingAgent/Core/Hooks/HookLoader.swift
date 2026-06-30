@@ -98,6 +98,7 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             commands: api.commands,
             flags: api.flags,
             shortcuts: api.shortcuts,
+            providerRegistrations: api.providerRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
             setAppendEntryHandler: api.setAppendEntryHandler,
             setSetSessionNameHandler: api.setSetSessionNameHandler,
@@ -105,6 +106,8 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             setGetActiveToolsHandler: api.setGetActiveToolsHandler,
             setGetAllToolsHandler: api.setGetAllToolsHandler,
             setSetActiveToolsHandler: api.setSetActiveToolsHandler,
+            setRegisterProviderHandler: api.setRegisterProviderHandler,
+            setUnregisterProviderHandler: api.setUnregisterProviderHandler,
             setFlagValue: api.setFlagValue
         )
         return (loaded, nil)

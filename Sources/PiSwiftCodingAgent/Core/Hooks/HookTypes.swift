@@ -254,6 +254,81 @@ public typealias HookGetActiveToolsSetter = @Sendable (@escaping HookGetActiveTo
 public typealias HookGetAllToolsSetter = @Sendable (@escaping HookGetAllToolsHandler) -> Void
 public typealias HookSetActiveToolsSetter = @Sendable (@escaping HookSetActiveToolsHandler) -> Void
 public typealias HookSetFlagValue = @Sendable (_ name: String, _ value: HookFlagValue) -> Void
+public typealias HookRegisterProviderHandler = @Sendable (_ config: HookProviderConfig) -> Void
+public typealias HookUnregisterProviderHandler = @Sendable (_ provider: String) -> Void
+public typealias HookRegisterProviderSetter = @Sendable (@escaping HookRegisterProviderHandler) -> Void
+public typealias HookUnregisterProviderSetter = @Sendable (@escaping HookUnregisterProviderHandler) -> Void
+
+public struct HookProviderModel: Sendable {
+    public var id: String
+    public var name: String?
+    public var api: Api?
+    public var baseUrl: String?
+    public var reasoning: Bool
+    public var input: [ModelInput]
+    public var cost: ModelCost
+    public var contextWindow: Int
+    public var maxTokens: Int
+    public var headers: [String: String]?
+    public var compat: OpenAICompat?
+    public var thinkingLevelMap: ThinkingLevelMap?
+
+    public init(
+        id: String,
+        name: String? = nil,
+        api: Api? = nil,
+        baseUrl: String? = nil,
+        reasoning: Bool = false,
+        input: [ModelInput] = [.text],
+        cost: ModelCost = ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: Int = 128_000,
+        maxTokens: Int = 16_384,
+        headers: [String: String]? = nil,
+        compat: OpenAICompat? = nil,
+        thinkingLevelMap: ThinkingLevelMap? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.api = api
+        self.baseUrl = baseUrl
+        self.reasoning = reasoning
+        self.input = input
+        self.cost = cost
+        self.contextWindow = contextWindow
+        self.maxTokens = maxTokens
+        self.headers = headers
+        self.compat = compat
+        self.thinkingLevelMap = thinkingLevelMap
+    }
+}
+
+public struct HookProviderConfig: Sendable {
+    public var provider: String
+    public var api: Api
+    public var baseUrl: String
+    public var apiKey: String?
+    public var headers: [String: String]?
+    public var compat: OpenAICompat?
+    public var models: [HookProviderModel]
+
+    public init(
+        provider: String,
+        api: Api,
+        baseUrl: String,
+        apiKey: String? = nil,
+        headers: [String: String]? = nil,
+        compat: OpenAICompat? = nil,
+        models: [HookProviderModel]
+    ) {
+        self.provider = provider
+        self.api = api
+        self.baseUrl = baseUrl
+        self.apiKey = apiKey
+        self.headers = headers
+        self.compat = compat
+        self.models = models
+    }
+}
 
 public struct HookCommandResult: Sendable {
     public var cancelled: Bool
@@ -1059,6 +1134,7 @@ public struct LoadedHook: Sendable {
     /// Custom tools registered by the extension via `pi.registerTool(_:)`. Empty for
     /// settings-defined hooks (which use the legacy `--tool` flag pathway instead).
     public var tools: [String: CustomTool]
+    public var providerRegistrations: [String: HookProviderConfig]
     public var setSendMessageHandler: HookSendMessageSetter
     public var setAppendEntryHandler: HookAppendEntrySetter
     public var setSetSessionNameHandler: (@Sendable (@escaping HookSetSessionNameHandler) -> Void)
@@ -1066,6 +1142,8 @@ public struct LoadedHook: Sendable {
     public var setGetActiveToolsHandler: HookGetActiveToolsSetter
     public var setGetAllToolsHandler: HookGetAllToolsSetter
     public var setSetActiveToolsHandler: HookSetActiveToolsSetter
+    public var setRegisterProviderHandler: HookRegisterProviderSetter
+    public var setUnregisterProviderHandler: HookUnregisterProviderSetter
     public var setFlagValue: HookSetFlagValue
     /// True when this hook was loaded from a `.swift`/SPM extension (vs a settings-defined hook).
     /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
@@ -1080,6 +1158,7 @@ public struct LoadedHook: Sendable {
         flags: [String: HookFlag] = [:],
         shortcuts: [KeyId: HookShortcut] = [:],
         tools: [String: CustomTool] = [:],
+        providerRegistrations: [String: HookProviderConfig] = [:],
         setSendMessageHandler: @escaping HookSendMessageSetter = { _ in },
         setAppendEntryHandler: @escaping HookAppendEntrySetter = { _ in },
         setSetSessionNameHandler: @escaping (@Sendable (@escaping HookSetSessionNameHandler) -> Void) = { _ in },
@@ -1087,6 +1166,8 @@ public struct LoadedHook: Sendable {
         setGetActiveToolsHandler: @escaping HookGetActiveToolsSetter = { _ in },
         setGetAllToolsHandler: @escaping HookGetAllToolsSetter = { _ in },
         setSetActiveToolsHandler: @escaping HookSetActiveToolsSetter = { _ in },
+        setRegisterProviderHandler: @escaping HookRegisterProviderSetter = { _ in },
+        setUnregisterProviderHandler: @escaping HookUnregisterProviderSetter = { _ in },
         setFlagValue: @escaping HookSetFlagValue = { _, _ in },
         isExtension: Bool = false
     ) {
@@ -1098,6 +1179,7 @@ public struct LoadedHook: Sendable {
         self.flags = flags
         self.shortcuts = shortcuts
         self.tools = tools
+        self.providerRegistrations = providerRegistrations
         self.setSendMessageHandler = setSendMessageHandler
         self.setAppendEntryHandler = setAppendEntryHandler
         self.setSetSessionNameHandler = setSetSessionNameHandler
@@ -1105,6 +1187,8 @@ public struct LoadedHook: Sendable {
         self.setGetActiveToolsHandler = setGetActiveToolsHandler
         self.setGetAllToolsHandler = setGetAllToolsHandler
         self.setSetActiveToolsHandler = setSetActiveToolsHandler
+        self.setRegisterProviderHandler = setRegisterProviderHandler
+        self.setUnregisterProviderHandler = setUnregisterProviderHandler
         self.setFlagValue = setFlagValue
         self.isExtension = isExtension
     }
@@ -1139,6 +1223,9 @@ public final class HookAPI: Sendable {
         /// Custom tools registered by the extension via `pi.registerTool(_:)`.
         /// Keyed by tool name; collisions overwrite (last write wins).
         var tools: [String: CustomTool]
+        var providerRegistrations: [String: HookProviderConfig]
+        var registerProviderHandler: HookRegisterProviderHandler
+        var unregisterProviderHandler: HookUnregisterProviderHandler
         var sendMessageHandler: HookSendMessageHandler
         var appendEntryHandler: HookAppendEntryHandler
         var setSessionNameHandler: HookSetSessionNameHandler
@@ -1179,6 +1266,21 @@ public final class HookAPI: Sendable {
     public private(set) var tools: [String: CustomTool] {
         get { state.withLock { $0.tools } }
         set { state.withLock { $0.tools = newValue } }
+    }
+
+    public private(set) var providerRegistrations: [String: HookProviderConfig] {
+        get { state.withLock { $0.providerRegistrations } }
+        set { state.withLock { $0.providerRegistrations = newValue } }
+    }
+
+    private var registerProviderHandler: HookRegisterProviderHandler {
+        get { state.withLock { $0.registerProviderHandler } }
+        set { state.withLock { $0.registerProviderHandler = newValue } }
+    }
+
+    private var unregisterProviderHandler: HookUnregisterProviderHandler {
+        get { state.withLock { $0.unregisterProviderHandler } }
+        set { state.withLock { $0.unregisterProviderHandler = newValue } }
     }
 
     private var sendMessageHandler: HookSendMessageHandler {
@@ -1241,6 +1343,9 @@ public final class HookAPI: Sendable {
             flags: [:],
             shortcuts: [:],
             tools: [:],
+            providerRegistrations: [:],
+            registerProviderHandler: { _ in },
+            unregisterProviderHandler: { _ in },
             sendMessageHandler: { _, _ in },
             appendEntryHandler: { _, _ in },
             setSessionNameHandler: { _ in },
@@ -1288,6 +1393,14 @@ public final class HookAPI: Sendable {
 
     public func setSetActiveToolsHandler(_ handler: @escaping HookSetActiveToolsHandler) {
         setActiveToolsHandler = handler
+    }
+
+    public func setRegisterProviderHandler(_ handler: @escaping HookRegisterProviderHandler) {
+        registerProviderHandler = handler
+    }
+
+    public func setUnregisterProviderHandler(_ handler: @escaping HookUnregisterProviderHandler) {
+        unregisterProviderHandler = handler
     }
 
     public func setFlagValue(_ name: String, _ value: HookFlagValue) {
@@ -1375,6 +1488,16 @@ public final class HookAPI: Sendable {
     /// dropped via `/reload`, its tools are removed from the agent's roster.
     public func registerTool(_ tool: CustomTool) {
         tools[tool.name] = tool
+    }
+
+    public func registerProvider(_ config: HookProviderConfig) {
+        providerRegistrations[config.provider] = config
+        registerProviderHandler(config)
+    }
+
+    public func unregisterProvider(_ provider: String) {
+        providerRegistrations.removeValue(forKey: provider)
+        unregisterProviderHandler(provider)
     }
 
 #if !canImport(UIKit)

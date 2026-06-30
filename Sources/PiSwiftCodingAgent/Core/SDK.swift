@@ -408,11 +408,17 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             commands: api.commands,
             flags: api.flags,
             shortcuts: api.shortcuts,
+            tools: api.tools,
+            providerRegistrations: api.providerRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
             setAppendEntryHandler: api.setAppendEntryHandler,
+            setSetSessionNameHandler: api.setSetSessionNameHandler,
+            setGetSessionNameHandler: api.setGetSessionNameHandler,
             setGetActiveToolsHandler: api.setGetActiveToolsHandler,
             setGetAllToolsHandler: api.setGetAllToolsHandler,
             setSetActiveToolsHandler: api.setSetActiveToolsHandler,
+            setRegisterProviderHandler: api.setRegisterProviderHandler,
+            setUnregisterProviderHandler: api.setUnregisterProviderHandler,
             setFlagValue: api.setFlagValue
         )
     }
@@ -440,6 +446,12 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
         }
         for shortcut in loaded.shortcuts.values {
             api.registerShortcut(shortcut.shortcut, description: shortcut.description, handler: shortcut.handler)
+        }
+        for tool in loaded.tools.values {
+            api.registerTool(tool)
+        }
+        for provider in loaded.providerRegistrations.values {
+            api.registerProvider(provider)
         }
     }
 }
@@ -474,6 +486,58 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     }
 
     let resolvedResourceLoader = resourceLoader!
+
+    var allLoadedHooks: [LoadedHook] = []
+
+    if let hooks = options.hooks {
+        if !hooks.isEmpty {
+            allLoadedHooks = createLoadedHooksFromDefinitions(hooks, eventBus: eventBus)
+        }
+    } else {
+        let hookPaths = settingsManager.getHooks() + (options.additionalHookPaths ?? [])
+        let loadResult = discoverAndLoadHooks(hookPaths, cwd, agentDir, eventBus)
+        time("discoverAndLoadHooks")
+        for error in loadResult.errors {
+            writeStderr("Failed to load hook \"\(error.path)\": \(error.error)\n")
+        }
+        allLoadedHooks = loadResult.hooks
+    }
+
+    // Load extensions (plain .swift files) before model selection so provider
+    // registrations are visible to restored/default model resolution.
+    let extensionPaths = settingsManager.getExtensionPaths() + (options.additionalExtensionPaths ?? [])
+    let extensionResult = await discoverAndLoadExtensions(
+        extensionPaths,
+        cwd,
+        agentDir,
+        eventBus,
+        includeProjectExtensions: projectTrusted
+    )
+    time("discoverAndLoadExtensions")
+    for error in extensionResult.errors {
+        writeStderr("Failed to load extension: \(error.localizedDescription)\n")
+    }
+    allLoadedHooks += extensionResult.hooks
+
+    // Closure used by AgentSession.reloadExtensions() so /reload can swap extensions live.
+    // Captures the same paths/cwd/agentDir/eventBus the initial load used. SDK extension
+    // resolution is repeated inside discoverAndLoadExtensions so it picks up newly-installed
+    // SDKs too.
+    let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
+        await discoverAndLoadExtensions(
+            extensionPaths,
+            cwd,
+            agentDir,
+            eventBus,
+            includeProjectExtensions: projectTrusted
+        )
+    }
+
+    // Always create a HookRunner — even with zero hooks at startup, /reload can add
+    // extensions later, and the agent's beforeToolCall/onPayload/onResponse closures need
+    // a runner instance to forward events to. The closures gate at call-time on
+    // `hasHandlers(...)`, so empty runners cost nothing.
+    let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry)
 
     let existingSession = sessionManager.buildSessionContext()
     time("loadSession")
@@ -605,57 +669,6 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             writeStderr("Failed to load custom tool \"\(error.path)\": \(error.error)\n")
         }
     }
-
-    var allLoadedHooks: [LoadedHook] = []
-
-    if let hooks = options.hooks {
-        if !hooks.isEmpty {
-            allLoadedHooks = createLoadedHooksFromDefinitions(hooks, eventBus: eventBus)
-        }
-    } else {
-        let hookPaths = settingsManager.getHooks() + (options.additionalHookPaths ?? [])
-        let loadResult = discoverAndLoadHooks(hookPaths, cwd, agentDir, eventBus)
-        time("discoverAndLoadHooks")
-        for error in loadResult.errors {
-            writeStderr("Failed to load hook \"\(error.path)\": \(error.error)\n")
-        }
-        allLoadedHooks = loadResult.hooks
-    }
-
-    // Load extensions (plain .swift files) and merge into hooks
-    let extensionPaths = settingsManager.getExtensionPaths() + (options.additionalExtensionPaths ?? [])
-    let extensionResult = await discoverAndLoadExtensions(
-        extensionPaths,
-        cwd,
-        agentDir,
-        eventBus,
-        includeProjectExtensions: projectTrusted
-    )
-    time("discoverAndLoadExtensions")
-    for error in extensionResult.errors {
-        writeStderr("Failed to load extension: \(error.localizedDescription)\n")
-    }
-    allLoadedHooks += extensionResult.hooks
-
-    // Closure used by AgentSession.reloadExtensions() so /reload can swap extensions live.
-    // Captures the same paths/cwd/agentDir/eventBus the initial load used. SDK extension
-    // resolution is repeated inside discoverAndLoadExtensions so it picks up newly-installed
-    // SDKs too.
-    let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
-        await discoverAndLoadExtensions(
-            extensionPaths,
-            cwd,
-            agentDir,
-            eventBus,
-            includeProjectExtensions: projectTrusted
-        )
-    }
-
-    // Always create a HookRunner — even with zero hooks at startup, /reload can add
-    // extensions later, and the agent's beforeToolCall/onPayload/onResponse closures need
-    // a runner instance to forward events to. The closures gate at call-time on
-    // `hasHandlers(...)`, so empty runners cost nothing.
-    let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry)
 
     let agentBox = LockedState<Agent?>(nil)
     let sessionBox = LockedState<AgentSession?>(nil)

@@ -1035,6 +1035,113 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
             "the wired closure should reach the live setSessionNameHandler")
 }
 
+@Test func replaceExtensionHooksCleansUpProviderRegistrations() async throws {
+    let cwd = NSTemporaryDirectory()
+    let sessionManager = SessionManager.inMemory()
+    let authStorage = AuthStorage(":memory:")
+    let modelRegistry = ModelRegistry(authStorage)
+
+    func makeProviderHook(path: String, provider: String, modelId: String) -> (HookAPI, LoadedHook) {
+        let api = HookAPI(hookPath: path)
+        api.registerProvider(HookProviderConfig(
+            provider: provider,
+            api: .openAIResponses,
+            baseUrl: "https://example.invalid/\(provider)",
+            apiKey: "\(provider)-token",
+            models: [HookProviderModel(id: modelId)]
+        ))
+        let hook = LoadedHook(
+            path: path,
+            resolvedPath: path,
+            handlers: [:],
+            providerRegistrations: api.providerRegistrations,
+            setRegisterProviderHandler: api.setRegisterProviderHandler,
+            setUnregisterProviderHandler: api.setUnregisterProviderHandler,
+            isExtension: true
+        )
+        return (api, hook)
+    }
+
+    let (oldAPI, oldHook) = makeProviderHook(
+        path: "/fake/old-provider-extension.swift",
+        provider: "old-extension-provider",
+        modelId: "old-extension-model"
+    )
+    let (_, newHook) = makeProviderHook(
+        path: "/fake/new-provider-extension.swift",
+        provider: "new-extension-provider",
+        modelId: "new-extension-model"
+    )
+
+    let runner = HookRunner([oldHook], cwd, sessionManager, modelRegistry)
+    #expect(modelRegistry.find("old-extension-provider", "old-extension-model") != nil)
+
+    oldAPI.unregisterProvider("old-extension-provider")
+    #expect(modelRegistry.find("old-extension-provider", "old-extension-model") == nil,
+            "runtime unregister should remove the provider from the model registry")
+
+    oldAPI.registerProvider(HookProviderConfig(
+        provider: "old-extension-provider",
+        api: .openAIResponses,
+        baseUrl: "https://example.invalid/old-extension-provider",
+        apiKey: "old-extension-provider-token",
+        models: [HookProviderModel(id: "old-extension-model")]
+    ))
+    #expect(modelRegistry.find("old-extension-provider", "old-extension-model") != nil)
+
+    let dropped = runner.replaceExtensionHooks([newHook])
+    #expect(dropped == ["/fake/old-provider-extension.swift"])
+    #expect(modelRegistry.find("old-extension-provider", "old-extension-model") == nil,
+            "dropping an extension must remove its registered providers")
+    #expect(modelRegistry.find("new-extension-provider", "new-extension-model") != nil,
+            "replacement extension providers should be registered immediately")
+}
+
+@Test func createAgentSessionCanSelectExtensionRegisteredDefaultModel() async throws {
+    _ = _seedExtensionSDK
+    guard testSDKPaths() != nil else {
+        Issue.record("SDK paths not available")
+        return
+    }
+
+    let providerSource = extensionFixture("provider-extension.swift")
+
+    try await withTempDir { tempDir in
+        let agentDir = (tempDir as NSString).appendingPathComponent("agent")
+        try FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+
+        let settingsManager = SettingsManager.inMemory()
+        settingsManager.setDefaultModelAndProvider(
+            "fixture-extension-provider",
+            "fixture-extension-model"
+        )
+        let authStorage = AuthStorage(":memory:")
+        let modelRegistry = ModelRegistry(authStorage)
+
+        let result = await createAgentSession(CreateAgentSessionOptions(
+            cwd: tempDir,
+            agentDir: agentDir,
+            authStorage: authStorage,
+            modelRegistry: modelRegistry,
+            noTools: .all,
+            additionalExtensionPaths: [providerSource],
+            sessionManager: SessionManager.inMemory(),
+            settingsManager: settingsManager
+        ))
+        let session = result.session
+
+        #expect(session.agent.state.model.provider == "fixture-extension-provider")
+        #expect(session.agent.state.model.id == "fixture-extension-model")
+        #expect(session.agent.state.model.name == "Fixture Extension Model")
+        #expect(await session.modelRegistry.getApiKeyForProvider("fixture-extension-provider") == "fixture-token")
+
+        session.dispose()
+
+        #expect(modelRegistry.find("fixture-extension-provider", "fixture-extension-model") == nil)
+        #expect(await modelRegistry.getApiKeyForProvider("fixture-extension-provider") == nil)
+    }
+}
+
 @Test func reloadExtensionsEndToEndViaCreateAgentSession() async throws {
     // End-to-end: build a session with the hello-extension fixture, swap it for the
     // event-counter fixture via session.reloadExtensions(), and confirm both the
