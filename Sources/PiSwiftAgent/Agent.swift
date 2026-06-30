@@ -38,6 +38,8 @@ public struct AgentOptions: Sendable {
     public var metadata: [String: AnyCodable]?
     /// v0.70.1: provider SDK request timeout (ms).
     public var timeoutMs: Int?
+    /// WebSocket connect/open handshake timeout (ms).
+    public var websocketConnectTimeoutMs: Int?
     /// v0.70.1: provider SDK max retries.
     public var maxRetries: Int?
     public var toolExecution: ToolExecutionMode?
@@ -63,6 +65,7 @@ public struct AgentOptions: Sendable {
         headers: [String: String]? = nil,
         metadata: [String: AnyCodable]? = nil,
         timeoutMs: Int? = nil,
+        websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
@@ -86,6 +89,7 @@ public struct AgentOptions: Sendable {
         self.headers = headers
         self.metadata = metadata
         self.timeoutMs = timeoutMs
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
@@ -117,6 +121,7 @@ public final class Agent: Sendable {
         var headers: [String: String]?
         var metadata: [String: AnyCodable]?
         var timeoutMs: Int?
+        var websocketConnectTimeoutMs: Int?
         var maxRetries: Int?
         var toolExecution: ToolExecutionMode
         var beforeToolCall: BeforeToolCallFn?
@@ -245,6 +250,11 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.timeoutMs = newValue } }
     }
 
+    public var websocketConnectTimeoutMs: Int? {
+        get { stateBox.withLock { $0.websocketConnectTimeoutMs } }
+        set { stateBox.withLock { $0.websocketConnectTimeoutMs = newValue } }
+    }
+
     public var maxRetries: Int? {
         get { stateBox.withLock { $0.maxRetries } }
         set { stateBox.withLock { $0.maxRetries = newValue } }
@@ -296,6 +306,7 @@ public final class Agent: Sendable {
             headers: options.headers,
             metadata: options.metadata,
             timeoutMs: options.timeoutMs,
+            websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
             maxRetries: options.maxRetries,
             toolExecution: options.toolExecution ?? .parallel,
             beforeToolCall: options.beforeToolCall,
@@ -586,6 +597,7 @@ public final class Agent: Sendable {
             headers: headers,
             metadata: metadata,
             timeoutMs: timeoutMs,
+            websocketConnectTimeoutMs: websocketConnectTimeoutMs,
             maxRetries: maxRetries,
             toolExecution: toolExecution,
             beforeToolCall: beforeToolCall,

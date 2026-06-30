@@ -90,6 +90,11 @@ import PiSwiftAI
     #expect(reloaded.getTransport() == .websocket)
 }
 
+@Test func settingsTransportDefaultsToAuto() throws {
+    let manager = SettingsManager.inMemory()
+    #expect(manager.getTransport() == .auto)
+}
+
 @Test func settingsMigratesLegacyWebsocketsFlagToTransport() throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-settings-websockets-\(UUID().uuidString)")
@@ -105,6 +110,109 @@ import PiSwiftAI
 
     let manager = SettingsManager.create(tempDir, tempDir)
     #expect(manager.getTransport() == .websocket)
+}
+
+@Test func settingsParityFieldsRoundTrip() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-parity-\(UUID().uuidString)")
+        .path
+    try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let settingsPath = URL(fileURLWithPath: tempDir).appendingPathComponent("settings.json").path
+    let initial = """
+    {
+      "defaultProjectTrust":"never",
+      "editorPaddingX":9,
+      "showHardwareCursor":true,
+      "markdown":{"codeBlockIndent":"    "},
+      "httpIdleTimeoutMs":"disabled",
+      "websocketConnectTimeoutMs":"1234"
+    }
+    """
+    try initial.data(using: .utf8)?.write(to: URL(fileURLWithPath: settingsPath))
+
+    let manager = SettingsManager.create(tempDir, tempDir)
+    #expect(manager.getDefaultProjectTrust() == .never)
+    #expect(manager.getEditorPaddingX() == 3)
+    #expect(manager.getShowHardwareCursor() == true)
+    #expect(manager.getCodeBlockIndent() == "    ")
+    #expect(manager.getHttpIdleTimeoutMs() == 0)
+    #expect(manager.getWebSocketConnectTimeoutMs() == 1234)
+
+    manager.setDefaultProjectTrust(.always)
+    manager.setEditorPaddingX(-4)
+    manager.setShowHardwareCursor(false)
+    manager.setHttpIdleTimeoutMs(60_000)
+    manager.setWebSocketConnectTimeoutMs(nil)
+
+    let data = try Data(contentsOf: URL(fileURLWithPath: settingsPath))
+    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    #expect(json?["defaultProjectTrust"] as? String == "always")
+    #expect(json?["editorPaddingX"] as? Int == 0)
+    #expect(json?["showHardwareCursor"] as? Bool == false)
+    #expect(json?["httpIdleTimeoutMs"] as? Int == 60_000)
+    #expect(json?["websocketConnectTimeoutMs"] == nil)
+
+    let markdown = json?["markdown"] as? [String: Any]
+    #expect(markdown?["codeBlockIndent"] as? String == "    ")
+}
+
+@Test func settingsAnalyticsOptInGeneratesTrackingId() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-analytics-\(UUID().uuidString)")
+        .path
+    try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(tempDir, tempDir)
+    #expect(manager.getEnableAnalytics() == false)
+    #expect(manager.getTrackingId() == nil)
+
+    manager.setEnableAnalytics(true)
+    let trackingId = try #require(manager.getTrackingId())
+    #expect(!trackingId.isEmpty)
+
+    manager.setEnableAnalytics(false)
+    #expect(manager.getEnableAnalytics() == false)
+    #expect(manager.getTrackingId() == trackingId)
+
+    let reloaded = SettingsManager.create(tempDir, tempDir)
+    #expect(reloaded.getEnableAnalytics() == false)
+    #expect(reloaded.getTrackingId() == trackingId)
+}
+
+@Test func settingsProjectOverridesParityFields() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-parity-project-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let globalPath = URL(fileURLWithPath: agentDir).appendingPathComponent("settings.json").path
+    let projectPath = URL(fileURLWithPath: projectDir).appendingPathComponent(".pi").appendingPathComponent("settings.json").path
+    try? FileManager.default.createDirectory(
+        atPath: URL(fileURLWithPath: projectPath).deletingLastPathComponent().path,
+        withIntermediateDirectories: true
+    )
+    try #"{"editorPaddingX":1,"httpIdleTimeoutMs":300000,"websocketConnectTimeoutMs":2222}"#.write(
+        toFile: globalPath,
+        atomically: true,
+        encoding: .utf8
+    )
+    try #"{"editorPaddingX":2,"websocketConnectTimeoutMs":3333}"#.write(
+        toFile: projectPath,
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let manager = SettingsManager.create(projectDir, agentDir)
+    #expect(manager.getEditorPaddingX() == 2)
+    #expect(manager.getHttpIdleTimeoutMs() == 300_000)
+    #expect(manager.getWebSocketConnectTimeoutMs() == 3333)
 }
 
 // MARK: - Packages tests

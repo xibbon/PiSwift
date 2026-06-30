@@ -223,6 +223,47 @@ import PiSwiftAgent
     #expect(receivedTransport.withLock { $0 } == .auto)
 }
 
+@Test func forwardsTimeoutsToStreamOptions() async throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let receivedTimeoutMs = LockedState<Int?>(nil)
+    let receivedWebSocketConnectTimeoutMs = LockedState<Int?>(nil)
+    let streamFn: StreamFn = { model, _, options in
+        receivedTimeoutMs.withLock { $0 = options.timeoutMs }
+        receivedWebSocketConnectTimeoutMs.withLock { $0 = options.websocketConnectTimeoutMs }
+        let stream = AssistantMessageEventStream()
+        Task {
+            let message = AssistantMessage(
+                content: [.text(TextContent(text: "ok"))],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .stop
+            )
+            stream.push(.done(reason: .stop, message: message))
+            stream.end(message)
+        }
+        return stream
+    }
+
+    let agent = Agent(AgentOptions(
+        initialState: AgentState(model: model),
+        streamFn: streamFn,
+        timeoutMs: 12_345,
+        websocketConnectTimeoutMs: 6_789
+    ))
+
+    try await agent.prompt("Hello")
+    #expect(receivedTimeoutMs.withLock { $0 } == 12_345)
+    #expect(receivedWebSocketConnectTimeoutMs.withLock { $0 } == 6_789)
+
+    agent.timeoutMs = 22_000
+    agent.websocketConnectTimeoutMs = nil
+    try await agent.prompt("Hello again")
+    #expect(receivedTimeoutMs.withLock { $0 } == 22_000)
+    #expect(receivedWebSocketConnectTimeoutMs.withLock { $0 } == nil)
+}
+
 @Test func continueWhileStreamingThrows() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let streamFn: StreamFn = { model, _, _ in

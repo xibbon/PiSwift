@@ -411,6 +411,7 @@ private func runSingleAgent(
         convertToLlm: { messages in
             convertToLlmWithBlockImages(messages)
         },
+        transport: dependencies.settingsManager.getTransport(),
         thinkingBudgets: dependencies.settingsManager.getThinkingBudgets(),
         getApiKey: { provider in
             await dependencies.modelRegistry.getApiKeyForProvider(provider)
@@ -418,7 +419,9 @@ private func runSingleAgent(
         getModelAuth: { model in
             let auth = await dependencies.modelRegistry.getApiKeyAndHeaders(model)
             return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
-        }
+        },
+        timeoutMs: dependencies.settingsManager.getHttpIdleTimeoutMs(),
+        websocketConnectTimeoutMs: dependencies.settingsManager.getWebSocketConnectTimeoutMs()
     ))
 
     let updateState = LockedState(SubagentRunResult(

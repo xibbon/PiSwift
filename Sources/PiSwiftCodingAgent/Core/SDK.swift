@@ -144,6 +144,7 @@ public struct SettingsSnapshot: Sendable {
     public var steeringMode: String
     public var followUpMode: String
     public var transport: Transport
+    public var defaultProjectTrust: DefaultProjectTrust
     public var theme: String?
     public var compaction: CompactionSettings
     public var retry: RetrySettings
@@ -157,6 +158,13 @@ public struct SettingsSnapshot: Sendable {
     public var images: ImageSettings
     public var enabledModels: [String]?
     public var doubleEscapeAction: String
+    public var editorPaddingX: Int
+    public var showHardwareCursor: Bool
+    public var codeBlockIndent: String
+    public var enableAnalytics: Bool
+    public var trackingId: String?
+    public var httpIdleTimeoutMs: Int
+    public var websocketConnectTimeoutMs: Int?
     public var thinkingBudgets: ThinkingBudgets?
 
     public init(
@@ -166,6 +174,7 @@ public struct SettingsSnapshot: Sendable {
         steeringMode: String,
         followUpMode: String,
         transport: Transport,
+        defaultProjectTrust: DefaultProjectTrust,
         theme: String?,
         compaction: CompactionSettings,
         retry: RetrySettings,
@@ -179,6 +188,13 @@ public struct SettingsSnapshot: Sendable {
         images: ImageSettings,
         enabledModels: [String]?,
         doubleEscapeAction: String,
+        editorPaddingX: Int,
+        showHardwareCursor: Bool,
+        codeBlockIndent: String,
+        enableAnalytics: Bool,
+        trackingId: String?,
+        httpIdleTimeoutMs: Int,
+        websocketConnectTimeoutMs: Int?,
         thinkingBudgets: ThinkingBudgets?
     ) {
         self.defaultProvider = defaultProvider
@@ -187,6 +203,7 @@ public struct SettingsSnapshot: Sendable {
         self.steeringMode = steeringMode
         self.followUpMode = followUpMode
         self.transport = transport
+        self.defaultProjectTrust = defaultProjectTrust
         self.theme = theme
         self.compaction = compaction
         self.retry = retry
@@ -200,6 +217,13 @@ public struct SettingsSnapshot: Sendable {
         self.images = images
         self.enabledModels = enabledModels
         self.doubleEscapeAction = doubleEscapeAction
+        self.editorPaddingX = editorPaddingX
+        self.showHardwareCursor = showHardwareCursor
+        self.codeBlockIndent = codeBlockIndent
+        self.enableAnalytics = enableAnalytics
+        self.trackingId = trackingId
+        self.httpIdleTimeoutMs = httpIdleTimeoutMs
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.thinkingBudgets = thinkingBudgets
     }
 }
@@ -345,6 +369,7 @@ public func loadSettings(cwd: String? = nil, agentDir: String? = nil) -> Setting
         steeringMode: manager.getSteeringMode(),
         followUpMode: manager.getFollowUpMode(),
         transport: manager.getTransport(),
+        defaultProjectTrust: manager.getDefaultProjectTrust(),
         theme: manager.getTheme(),
         compaction: manager.getCompactionSettings(),
         retry: manager.getRetrySettings(),
@@ -358,6 +383,13 @@ public func loadSettings(cwd: String? = nil, agentDir: String? = nil) -> Setting
         images: ImageSettings(autoResize: manager.getAutoResizeImages(), blockImages: manager.getBlockImages()),
         enabledModels: manager.getEnabledModels(),
         doubleEscapeAction: manager.getDoubleEscapeAction(),
+        editorPaddingX: manager.getEditorPaddingX(),
+        showHardwareCursor: manager.getShowHardwareCursor(),
+        codeBlockIndent: manager.getCodeBlockIndent(),
+        enableAnalytics: manager.getEnableAnalytics(),
+        trackingId: manager.getTrackingId(),
+        httpIdleTimeoutMs: manager.getHttpIdleTimeoutMs(),
+        websocketConnectTimeoutMs: manager.getWebSocketConnectTimeoutMs(),
         thinkingBudgets: manager.getThinkingBudgets()
     )
 }
@@ -786,6 +818,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         },
         onPayload: onPayloadHook,
         onResponse: onResponseHook,
+        timeoutMs: settingsManager.getHttpIdleTimeoutMs(),
+        websocketConnectTimeoutMs: settingsManager.getWebSocketConnectTimeoutMs(),
         beforeToolCall: beforeToolCallHook,
         afterToolCall: afterToolCallHook
     ))

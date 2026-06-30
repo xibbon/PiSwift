@@ -1,6 +1,8 @@
 import Foundation
 import PiSwiftAI
 
+public let DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000
+
 public struct CompactionSettingsOverrides: Sendable {
     public var enabled: Bool?
     public var reserveTokens: Int?
@@ -91,6 +93,20 @@ public struct ImageSettings: Sendable {
     public var blockImages: Bool?
 }
 
+public struct MarkdownSettings: Sendable {
+    public var codeBlockIndent: String?
+
+    public init(codeBlockIndent: String? = nil) {
+        self.codeBlockIndent = codeBlockIndent
+    }
+}
+
+public enum DefaultProjectTrust: String, Sendable {
+    case ask
+    case always
+    case never
+}
+
 public struct ThinkingBudgetsSettings: Sendable {
     public var minimal: Int?
     public var low: Int?
@@ -114,6 +130,7 @@ public struct Settings: Sendable {
     public var steeringMode: String?
     public var followUpMode: String?
     public var theme: String?
+    public var defaultProjectTrust: DefaultProjectTrust?
     public var compaction: CompactionSettingsOverrides?
     public var branchSummary: BranchSummarySettings?
     public var retry: RetrySettings?
@@ -135,7 +152,10 @@ public struct Settings: Sendable {
     public var images: ImageSettings?
     public var enabledModels: [String]?
     public var doubleEscapeAction: String?
+    public var editorPaddingX: Int?
     public var autocompleteMaxVisible: Int?
+    public var showHardwareCursor: Bool?
+    public var markdown: MarkdownSettings?
     public var thinkingBudgets: ThinkingBudgetsSettings?
     public var treeFilterMode: String?
     public var promptSnippetsEnabled: Bool?
@@ -147,6 +167,9 @@ public struct Settings: Sendable {
     /// v0.67.1: install telemetry ping. Defaults to true (interactive mode); set false to
     /// disable. Also disabled by env vars `PI_OFFLINE=1` / `PI_TELEMETRY=0`.
     public var enableInstallTelemetry: Bool?
+    /// Opt-in analytics data sharing. Defaults to false; enabling generates a tracking ID.
+    public var enableAnalytics: Bool?
+    public var trackingId: String?
     /// v0.63.0 / v0.68.1: portable session directory. `~` expansion handled at resolution time.
     public var sessionDir: String?
     /// v0.62.0: command used for npm package lookup/install operations. Argv-style (e.g.,
@@ -154,6 +177,10 @@ public struct Settings: Sendable {
     /// Lets users wrap npm with version managers (mise/nvm/asdf/pnpm) without breaking
     /// pi's package install flow.
     public var npmCommand: [String]?
+    /// HTTP header/body idle timeout in milliseconds. Defaults to 300 seconds; 0 disables it.
+    public var httpIdleTimeoutMs: Int?
+    /// WebSocket connect/open handshake timeout in milliseconds. Nil uses provider defaults.
+    public var websocketConnectTimeoutMs: Int?
 
     public init() {}
 }
@@ -434,12 +461,22 @@ public final class SettingsManager: Sendable {
     }
 
     public func getTransport() -> Transport {
-        settings.transport ?? .sse
+        settings.transport ?? .auto
     }
 
     public func setTransport(_ transport: Transport) {
         globalSettings.transport = transport
         markModified("transport")
+        save()
+    }
+
+    public func getDefaultProjectTrust() -> DefaultProjectTrust {
+        globalSettings.defaultProjectTrust ?? .ask
+    }
+
+    public func setDefaultProjectTrust(_ defaultProjectTrust: DefaultProjectTrust) {
+        globalSettings.defaultProjectTrust = defaultProjectTrust
+        markModified("defaultProjectTrust")
         save()
     }
 
@@ -724,6 +761,31 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    public func getEditorPaddingX() -> Int {
+        settings.editorPaddingX ?? 0
+    }
+
+    public func setEditorPaddingX(_ padding: Int) {
+        globalSettings.editorPaddingX = max(0, min(3, padding))
+        markModified("editorPaddingX")
+        save()
+    }
+
+    public func getShowHardwareCursor() -> Bool {
+        if let show = settings.showHardwareCursor { return show }
+        return ProcessInfo.processInfo.environment["PI_HARDWARE_CURSOR"] == "1"
+    }
+
+    public func setShowHardwareCursor(_ enabled: Bool) {
+        globalSettings.showHardwareCursor = enabled
+        markModified("showHardwareCursor")
+        save()
+    }
+
+    public func getCodeBlockIndent() -> String {
+        settings.markdown?.codeBlockIndent ?? "  "
+    }
+
     public func getTerminalSettings() -> TerminalSettings {
         settings.terminal ?? TerminalSettings()
     }
@@ -790,6 +852,24 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    public func getEnableAnalytics() -> Bool {
+        settings.enableAnalytics ?? false
+    }
+
+    public func getTrackingId() -> String? {
+        settings.trackingId
+    }
+
+    public func setEnableAnalytics(_ enabled: Bool) {
+        globalSettings.enableAnalytics = enabled
+        markModified("enableAnalytics")
+        if enabled && globalSettings.trackingId == nil {
+            globalSettings.trackingId = UUID().uuidString.lowercased()
+            markModified("trackingId")
+        }
+        save()
+    }
+
     /// v0.63.0 / v0.68.1: portable session directory. `~` expansion happens in
     /// `getDefaultSessionDir()`; this returns the raw stored value.
     public func getSessionDir() -> String? {
@@ -811,6 +891,26 @@ public final class SettingsManager: Sendable {
     public func setNpmCommand(_ command: [String]?) {
         globalSettings.npmCommand = command
         markModified("npmCommand")
+        save()
+    }
+
+    public func getHttpIdleTimeoutMs() -> Int {
+        settings.httpIdleTimeoutMs ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS
+    }
+
+    public func setHttpIdleTimeoutMs(_ timeoutMs: Int) {
+        globalSettings.httpIdleTimeoutMs = max(0, timeoutMs)
+        markModified("httpIdleTimeoutMs")
+        save()
+    }
+
+    public func getWebSocketConnectTimeoutMs() -> Int? {
+        settings.websocketConnectTimeoutMs
+    }
+
+    public func setWebSocketConnectTimeoutMs(_ timeoutMs: Int?) {
+        globalSettings.websocketConnectTimeoutMs = timeoutMs.map { max(0, $0) }
+        markModified("websocketConnectTimeoutMs")
         save()
     }
 
@@ -865,6 +965,23 @@ public final class SettingsManager: Sendable {
         }
         let json = try JSONSerialization.jsonObject(with: data)
         return json as? [String: Any] ?? [:]
+    }
+
+    private static func parseNonNegativeMilliseconds(_ value: Any?) -> Int? {
+        switch value {
+        case let int as Int where int >= 0:
+            return int
+        case let double as Double where double.isFinite && double >= 0:
+            return Int(double.rounded(.down))
+        case let string as String:
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return nil }
+            if trimmed.lowercased() == "disabled" { return 0 }
+            guard let double = Double(trimmed), double.isFinite, double >= 0 else { return nil }
+            return Int(double.rounded(.down))
+        default:
+            return nil
+        }
     }
 
     private func loadProjectSettings() -> Settings {
@@ -984,6 +1101,9 @@ public final class SettingsManager: Sendable {
         settings.steeringMode = json["steeringMode"] as? String ?? settings.steeringMode
         settings.followUpMode = json["followUpMode"] as? String
         settings.theme = json["theme"] as? String
+        if let trust = json["defaultProjectTrust"] as? String {
+            settings.defaultProjectTrust = DefaultProjectTrust(rawValue: trust)
+        }
         settings.hideThinkingBlock = json["hideThinkingBlock"] as? Bool
         settings.shellPath = json["shellPath"] as? String
         settings.shellCommandPrefix = json["shellCommandPrefix"] as? String
@@ -1000,7 +1120,11 @@ public final class SettingsManager: Sendable {
         settings.customTools = json["customTools"] as? [String]
         settings.enabledModels = json["enabledModels"] as? [String]
         settings.doubleEscapeAction = json["doubleEscapeAction"] as? String
+        if let padding = json["editorPaddingX"] as? Int {
+            settings.editorPaddingX = max(0, min(3, padding))
+        }
         settings.autocompleteMaxVisible = json["autocompleteMaxVisible"] as? Int
+        settings.showHardwareCursor = json["showHardwareCursor"] as? Bool
         settings.treeFilterMode = json["treeFilterMode"] as? String
         settings.promptSnippetsEnabled = json["promptSnippetsEnabled"] as? Bool
         settings.projectTrust = json["projectTrust"] as? [String: Bool]
@@ -1067,12 +1191,25 @@ public final class SettingsManager: Sendable {
             settings.enableInstallTelemetry = telemetry
         }
 
+        if let analytics = json["enableAnalytics"] as? Bool {
+            settings.enableAnalytics = analytics
+        }
+
+        settings.trackingId = json["trackingId"] as? String
+
         if let dir = json["sessionDir"] as? String, !dir.isEmpty {
             settings.sessionDir = dir
         }
 
         if let npmCmd = json["npmCommand"] as? [String], !npmCmd.isEmpty {
             settings.npmCommand = npmCmd
+        }
+
+        settings.httpIdleTimeoutMs = parseNonNegativeMilliseconds(json["httpIdleTimeoutMs"])
+        settings.websocketConnectTimeoutMs = parseNonNegativeMilliseconds(json["websocketConnectTimeoutMs"])
+
+        if let markdown = json["markdown"] as? [String: Any] {
+            settings.markdown = MarkdownSettings(codeBlockIndent: markdown["codeBlockIndent"] as? String)
         }
 
         if let images = json["images"] as? [String: Any] {
@@ -1210,6 +1347,7 @@ public final class SettingsManager: Sendable {
         json["steeringMode"] = settings.steeringMode
         json["followUpMode"] = settings.followUpMode
         json["theme"] = settings.theme
+        json["defaultProjectTrust"] = settings.defaultProjectTrust?.rawValue
         json["hideThinkingBlock"] = settings.hideThinkingBlock
         json["shellPath"] = settings.shellPath
         json["shellCommandPrefix"] = settings.shellCommandPrefix
@@ -1229,7 +1367,9 @@ public final class SettingsManager: Sendable {
         json["customTools"] = settings.customTools
         json["enabledModels"] = settings.enabledModels
         json["doubleEscapeAction"] = settings.doubleEscapeAction
+        json["editorPaddingX"] = settings.editorPaddingX
         json["autocompleteMaxVisible"] = settings.autocompleteMaxVisible
+        json["showHardwareCursor"] = settings.showHardwareCursor
         json["treeFilterMode"] = settings.treeFilterMode
         json["promptSnippetsEnabled"] = settings.promptSnippetsEnabled
         json["projectTrust"] = settings.projectTrust
@@ -1293,12 +1433,34 @@ public final class SettingsManager: Sendable {
             json["enableInstallTelemetry"] = telemetry
         }
 
+        if let analytics = settings.enableAnalytics {
+            json["enableAnalytics"] = analytics
+        }
+
+        if let trackingId = settings.trackingId {
+            json["trackingId"] = trackingId
+        }
+
         if let dir = settings.sessionDir {
             json["sessionDir"] = dir
         }
 
         if let npmCmd = settings.npmCommand {
             json["npmCommand"] = npmCmd
+        }
+
+        if let timeout = settings.httpIdleTimeoutMs {
+            json["httpIdleTimeoutMs"] = timeout
+        }
+
+        if let timeout = settings.websocketConnectTimeoutMs {
+            json["websocketConnectTimeoutMs"] = timeout
+        }
+
+        if let markdown = settings.markdown {
+            json["markdown"] = [
+                "codeBlockIndent": markdown.codeBlockIndent as Any,
+            ]
         }
 
         if let images = settings.images {
@@ -1367,11 +1529,22 @@ public final class SettingsManager: Sendable {
         if override.images != nil { result.images = override.images }
         if override.enabledModels != nil { result.enabledModels = override.enabledModels }
         if override.doubleEscapeAction != nil { result.doubleEscapeAction = override.doubleEscapeAction }
+        if override.editorPaddingX != nil { result.editorPaddingX = override.editorPaddingX }
         if override.autocompleteMaxVisible != nil { result.autocompleteMaxVisible = override.autocompleteMaxVisible }
+        if override.showHardwareCursor != nil { result.showHardwareCursor = override.showHardwareCursor }
+        if override.markdown != nil { result.markdown = override.markdown }
         if override.thinkingBudgets != nil { result.thinkingBudgets = override.thinkingBudgets }
         if override.treeFilterMode != nil { result.treeFilterMode = override.treeFilterMode }
         if override.promptSnippetsEnabled != nil { result.promptSnippetsEnabled = override.promptSnippetsEnabled }
         if override.projectTrust != nil { result.projectTrust = override.projectTrust }
+        if override.warnings != nil { result.warnings = override.warnings }
+        if override.enableInstallTelemetry != nil { result.enableInstallTelemetry = override.enableInstallTelemetry }
+        if override.enableAnalytics != nil { result.enableAnalytics = override.enableAnalytics }
+        if override.trackingId != nil { result.trackingId = override.trackingId }
+        if override.sessionDir != nil { result.sessionDir = override.sessionDir }
+        if override.npmCommand != nil { result.npmCommand = override.npmCommand }
+        if override.httpIdleTimeoutMs != nil { result.httpIdleTimeoutMs = override.httpIdleTimeoutMs }
+        if override.websocketConnectTimeoutMs != nil { result.websocketConnectTimeoutMs = override.websocketConnectTimeoutMs }
         return result
     }
 }

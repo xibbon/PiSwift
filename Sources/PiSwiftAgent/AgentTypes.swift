@@ -300,6 +300,10 @@ public struct AgentLoopConfig: Sendable {
     /// so long-running local-LLM SSE streams don't hit the SDK default cap.
     public var timeoutMs: Int?
 
+    /// WebSocket connect/open handshake timeout (ms). Forwarded as
+    /// `SimpleStreamOptions.websocketConnectTimeoutMs`.
+    public var websocketConnectTimeoutMs: Int?
+
     /// v0.70.1: provider SDK max retries. Forwarded as `SimpleStreamOptions.maxRetries`.
     public var maxRetries: Int?
 
@@ -370,6 +374,7 @@ public struct AgentLoopConfig: Sendable {
         headers: [String: String]? = nil,
         metadata: [String: AnyCodable]? = nil,
         timeoutMs: Int? = nil,
+        websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
@@ -397,6 +402,7 @@ public struct AgentLoopConfig: Sendable {
         self.headers = headers
         self.metadata = metadata
         self.timeoutMs = timeoutMs
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall

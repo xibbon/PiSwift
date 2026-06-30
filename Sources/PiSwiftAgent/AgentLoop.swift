@@ -333,6 +333,7 @@ private func streamAssistantResponse(
             metadata: config.metadata,
             onResponse: config.onResponse,
             timeoutMs: config.timeoutMs,
+            websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
             maxRetries: config.maxRetries
         )
     )

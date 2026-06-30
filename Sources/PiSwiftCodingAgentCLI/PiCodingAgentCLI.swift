@@ -478,6 +478,8 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
                 let auth = await modelRegistry.getApiKeyAndHeaders(model)
                 return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
             },
+            timeoutMs: settingsManager.getHttpIdleTimeoutMs(),
+            websocketConnectTimeoutMs: settingsManager.getWebSocketConnectTimeoutMs(),
             beforeToolCall: hookRunner.map(makeHookRunnerBeforeToolCallHook),
             afterToolCall: hookRunner.map(makeHookRunnerAfterToolCallHook)
         ))
