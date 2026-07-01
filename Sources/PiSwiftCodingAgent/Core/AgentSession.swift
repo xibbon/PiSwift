@@ -1085,12 +1085,32 @@ public final class AgentSession: Sendable {
 
         // 6. Notify the freshly-loaded extensions.
         await hookRunner.emitToExtensions(SessionStartEvent(reason: .reload))
+        await extendResourcesFromExtensions(reason: .reload)
 
         return ReloadExtensionsResult(
             droppedPaths: dropped,
             loadedPaths: result.hooks.map { $0.path },
             errors: result.errors
         )
+    }
+
+    private func extendResourcesFromExtensions(reason: ResourcesDiscoverReason) async {
+        guard let hookRunner = _hookRunner else {
+            return
+        }
+
+        let extensionResources = hookRunner.hasHandlers("resources_discover")
+            ? await hookRunner.emitResourcesDiscover(cwd: sessionManager.getCwd(), reason: reason)
+            : ResourceExtensionPaths()
+
+        resourceLoader.extendResources(extensionResources)
+        promptTemplatesInternal = resourceLoader.getPrompts().prompts
+
+        if let rebuildSystemPrompt {
+            let activeToolNames = getActiveToolNames()
+            baseSystemPrompt = rebuildSystemPrompt(activeToolNames)
+            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
+        }
     }
 
     private func preparePromptMessages(_ text: String, options: PromptOptions? = nil) async throws -> [AgentMessage] {

@@ -324,6 +324,69 @@ private final class ResourceLoaderTestFixture {
     #expect(!metadata.isEmpty)
 }
 
+@Test func resourceLoaderExtendsResourcesWithExtensionPaths() async throws {
+    let fixture = try ResourceLoaderTestFixture()
+    try fixture.writeFile("extension-resources/skills/ext-skill/SKILL.md", content: """
+        ---
+        name: ext-skill
+        description: Extension skill
+        ---
+        Extension skill content.
+        """)
+    try fixture.writeFile("extension-resources/prompts/ext-prompt.md", content: """
+        ---
+        description: Extension prompt
+        ---
+        Extension prompt content.
+        """)
+    try fixture.writeFile("extension-resources/themes/ext-theme.json", content: "{}")
+
+    let skillPath = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("extension-resources/skills").path
+    let promptPath = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("extension-resources/prompts/ext-prompt.md").path
+    let themePath = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("extension-resources/themes/ext-theme.json").path
+    let metadata = PathMetadata(
+        source: "extension:resources-extension",
+        scope: "temporary",
+        origin: "top-level",
+        baseDir: URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("extension-resources").path
+    )
+
+    let loader = fixture.createLoader()
+    await loader.reload()
+    loader.extendResources(ResourceExtensionPaths(
+        skillPaths: [ResourceExtensionPath(path: skillPath, metadata: metadata)],
+        promptPaths: [ResourceExtensionPath(path: promptPath, metadata: metadata)],
+        themePaths: [ResourceExtensionPath(path: themePath, metadata: metadata)]
+    ))
+
+    let (skills, _) = loader.getSkills()
+    let skill = try #require(skills.first { $0.name == "ext-skill" })
+    #expect(skill.sourceInfo.source == "extension:resources-extension")
+    #expect(skill.sourceInfo.scope == "temporary")
+
+    let (prompts, _) = loader.getPrompts()
+    let prompt = try #require(prompts.first { $0.name == "ext-prompt" })
+    #expect(prompt.content.contains("Extension prompt content."))
+    #expect(prompt.sourceInfo.source == "extension:resources-extension")
+
+    let (themes, _) = loader.getThemes()
+    #expect(themes.contains { $0.name == "ext-theme" })
+
+    let pathMetadata = loader.getPathMetadata()
+    #expect(pathMetadata[skillPath]?.source == "extension:resources-extension")
+    #expect(pathMetadata[promptPath]?.source == "extension:resources-extension")
+    #expect(pathMetadata[themePath]?.source == "extension:resources-extension")
+
+    loader.extendResources(ResourceExtensionPaths())
+
+    #expect(!loader.getSkills().skills.contains { $0.name == "ext-skill" })
+    #expect(!loader.getPrompts().prompts.contains { $0.name == "ext-prompt" })
+    #expect(!loader.getThemes().themes.contains { $0.name == "ext-theme" })
+    #expect(loader.getPathMetadata()[skillPath] == nil)
+    #expect(loader.getPathMetadata()[promptPath] == nil)
+    #expect(loader.getPathMetadata()[themePath] == nil)
+}
+
 // MARK: - Multiple resource discovery tests
 
 @Test func resourceLoaderDiscoversMultipleSkillsFromAgentDir() async throws {

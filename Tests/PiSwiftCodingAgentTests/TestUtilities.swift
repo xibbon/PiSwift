@@ -57,6 +57,8 @@ final class TestResourceLoader: ResourceLoader {
         [:]
     }
 
+    func extendResources(_ paths: ResourceExtensionPaths) {}
+
     func reload() async {}
 }
 

@@ -11,6 +11,32 @@ public struct ExtensionsResult: Sendable {
     }
 }
 
+public struct ResourceExtensionPath: Sendable {
+    public var path: String
+    public var metadata: PathMetadata
+
+    public init(path: String, metadata: PathMetadata) {
+        self.path = path
+        self.metadata = metadata
+    }
+}
+
+public struct ResourceExtensionPaths: Sendable {
+    public var skillPaths: [ResourceExtensionPath]
+    public var promptPaths: [ResourceExtensionPath]
+    public var themePaths: [ResourceExtensionPath]
+
+    public init(
+        skillPaths: [ResourceExtensionPath] = [],
+        promptPaths: [ResourceExtensionPath] = [],
+        themePaths: [ResourceExtensionPath] = []
+    ) {
+        self.skillPaths = skillPaths
+        self.promptPaths = promptPaths
+        self.themePaths = themePaths
+    }
+}
+
 public protocol ResourceLoader: Sendable {
     func getExtensions() -> ExtensionsResult
     func getSkills() -> (skills: [Skill], diagnostics: [ResourceDiagnostic])
@@ -20,6 +46,7 @@ public protocol ResourceLoader: Sendable {
     func getSystemPrompt() -> String?
     func getAppendSystemPrompt() -> [String]
     func getPathMetadata() -> [String: PathMetadata]
+    func extendResources(_ paths: ResourceExtensionPaths)
     func reload() async
 }
 
@@ -111,6 +138,13 @@ public final class DefaultResourceLoader: ResourceLoader {
         var systemPrompt: String?
         var appendSystemPrompt: [String] = []
         var pathMetadata: [String: PathMetadata] = [:]
+        var baseSkillPaths: [String] = []
+        var basePromptPaths: [String] = []
+        var baseThemePaths: [String] = []
+        var lastSkillPaths: [String] = []
+        var lastPromptPaths: [String] = []
+        var lastThemePaths: [String] = []
+        var extensionMetadataPaths: Set<String> = []
     }
 
     private let state = LockedState(State())
@@ -228,6 +262,44 @@ public final class DefaultResourceLoader: ResourceLoader {
         pathMetadata
     }
 
+    public func extendResources(_ paths: ResourceExtensionPaths) {
+        let skillEntries = normalizeExtensionPaths(paths.skillPaths)
+        let promptEntries = normalizeExtensionPaths(paths.promptPaths)
+        let themeEntries = normalizeExtensionPaths(paths.themePaths)
+        let metadataPaths = Set((skillEntries + promptEntries + themeEntries).map { $0.path })
+
+        state.withLock { state in
+            for oldPath in state.extensionMetadataPaths {
+                state.pathMetadata.removeValue(forKey: oldPath)
+            }
+            for entry in skillEntries + promptEntries + themeEntries {
+                state.pathMetadata[entry.path] = entry.metadata
+            }
+            state.extensionMetadataPaths = metadataPaths
+        }
+
+        let nextSkillPaths = mergePaths(state.withLock { $0.baseSkillPaths }, skillEntries.map { $0.path })
+        if nextSkillPaths != state.withLock({ $0.lastSkillPaths }) {
+            let nextPaths = nextSkillPaths
+            state.withLock { $0.lastSkillPaths = nextPaths }
+            updateSkillsFromPaths(nextPaths)
+        }
+
+        let nextPromptPaths = mergePaths(state.withLock { $0.basePromptPaths }, promptEntries.map { $0.path })
+        if nextPromptPaths != state.withLock({ $0.lastPromptPaths }) {
+            let nextPaths = nextPromptPaths
+            state.withLock { $0.lastPromptPaths = nextPaths }
+            updatePromptsFromPaths(nextPaths)
+        }
+
+        let nextThemePaths = mergePaths(state.withLock { $0.baseThemePaths }, themeEntries.map { $0.path })
+        if nextThemePaths != state.withLock({ $0.lastThemePaths }) {
+            let nextPaths = nextThemePaths
+            state.withLock { $0.lastThemePaths = nextPaths }
+            updateThemesFromPaths(nextPaths)
+        }
+    }
+
     public func reload() async {
         let resolvedPaths: ResolvedPaths
         do {
@@ -304,7 +376,11 @@ public final class DefaultResourceLoader: ResourceLoader {
             : mergePaths(enabledSkills + cliEnabledSkills, additionalSkillPaths)
 
         let skillsResult = loadSkillsFromPaths(skillPaths, includeDefaults: false)
-        skills = skillsResult.skills
+        state.withLock {
+            $0.baseSkillPaths = skillPaths
+            $0.lastSkillPaths = skillPaths
+        }
+        skills = applySkillMetadata(skillsResult.skills)
         skillDiagnostics = skillsResult.diagnostics
         for skill in skills {
             addDefaultMetadataForPath(skill.filePath)
@@ -315,7 +391,11 @@ public final class DefaultResourceLoader: ResourceLoader {
             : mergePaths(enabledPrompts + cliEnabledPrompts, additionalPromptTemplatePaths)
 
         let promptsResult = loadPromptsFromPaths(promptPaths, includeDefaults: false)
-        prompts = promptsResult.prompts
+        state.withLock {
+            $0.basePromptPaths = promptPaths
+            $0.lastPromptPaths = promptPaths
+        }
+        prompts = applyPromptMetadata(promptsResult.prompts)
         promptDiagnostics = promptsResult.diagnostics
         for prompt in prompts {
             addDefaultMetadataForPath(prompt.filePath)
@@ -326,6 +406,10 @@ public final class DefaultResourceLoader: ResourceLoader {
             : mergePaths(enabledThemes + cliEnabledThemes, additionalThemePaths)
 
         let themesResult = loadThemesFromPaths(themePaths)
+        state.withLock {
+            $0.baseThemePaths = themePaths
+            $0.lastThemePaths = themePaths
+        }
         themes = themesResult.themes
         themeDiagnostics = themesResult.diagnostics
         for theme in themes {
@@ -363,6 +447,16 @@ public final class DefaultResourceLoader: ResourceLoader {
         return merged
     }
 
+    private func normalizeExtensionPaths(_ entries: [ResourceExtensionPath]) -> [ResourceExtensionPath] {
+        entries.map { entry in
+            var metadata = entry.metadata
+            if let baseDir = metadata.baseDir {
+                metadata.baseDir = resolveResourcePath(baseDir)
+            }
+            return ResourceExtensionPath(path: resolveResourcePath(entry.path), metadata: metadata)
+        }
+    }
+
     private func resolveResourcePath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed == "~" {
@@ -394,18 +488,26 @@ public final class DefaultResourceLoader: ResourceLoader {
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { continue }
             if isDir.boolValue {
                 let result = loadSkillsFromDir(options: LoadSkillsFromDirOptions(dir: path, source: "path"))
-                skills.append(contentsOf: result.skills)
+                let metadata = metadataForExactPath(path)
+                skills.append(contentsOf: applySkillMetadata(result.skills, metadata: metadata))
                 diagnostics.append(contentsOf: result.warnings.map { ResourceDiagnostic(type: "warning", message: $0.message, path: $0.skillPath) })
             } else {
                 let result = loadSkillFromFile(path, source: "path")
                 if let skill = result.skill {
-                    skills.append(skill)
+                    let metadata = metadataForExactPath(path)
+                    skills.append(applySkillMetadata([skill], metadata: metadata).first ?? skill)
                 }
                 diagnostics.append(contentsOf: result.warnings.map { ResourceDiagnostic(type: "warning", message: $0.message, path: $0.skillPath) })
             }
         }
 
         return (skills, diagnostics)
+    }
+
+    private func updateSkillsFromPaths(_ paths: [String]) {
+        let result = loadSkillsFromPaths(paths, includeDefaults: false)
+        skills = applySkillMetadata(result.skills)
+        skillDiagnostics = result.diagnostics
     }
 
     private func loadPromptsFromPaths(_ paths: [String], includeDefaults: Bool) -> (prompts: [PromptTemplate], diagnostics: [ResourceDiagnostic]) {
@@ -422,6 +524,12 @@ public final class DefaultResourceLoader: ResourceLoader {
 
         let deduped = dedupePrompts(templates)
         return deduped
+    }
+
+    private func updatePromptsFromPaths(_ paths: [String]) {
+        let result = loadPromptsFromPaths(paths, includeDefaults: false)
+        prompts = applyPromptMetadata(result.prompts)
+        promptDiagnostics = result.diagnostics
     }
 
     private func loadThemesFromPaths(_ paths: [String]) -> (themes: [HookThemeInfo], diagnostics: [ResourceDiagnostic]) {
@@ -453,6 +561,64 @@ public final class DefaultResourceLoader: ResourceLoader {
         let deduped = dedupeThemes(themes)
         diagnostics.append(contentsOf: deduped.diagnostics)
         return (deduped.themes, diagnostics)
+    }
+
+    private func updateThemesFromPaths(_ paths: [String]) {
+        let result = loadThemesFromPaths(paths)
+        themes = result.themes
+        themeDiagnostics = result.diagnostics
+    }
+
+    private func applySkillMetadata(_ loaded: [Skill]) -> [Skill] {
+        loaded.map { skill in
+            var updated = skill
+            if let metadata = metadataForResourcePath(skill.filePath) {
+                updated.sourceInfo = SourceInfo(path: skill.filePath, metadata: metadata)
+            }
+            return updated
+        }
+    }
+
+    private func applySkillMetadata(_ loaded: [Skill], metadata: PathMetadata?) -> [Skill] {
+        guard let metadata else { return loaded }
+        return loaded.map { skill in
+            var updated = skill
+            updated.sourceInfo = SourceInfo(path: skill.filePath, metadata: metadata)
+            return updated
+        }
+    }
+
+    private func applyPromptMetadata(_ loaded: [PromptTemplate]) -> [PromptTemplate] {
+        loaded.map { prompt in
+            var updated = prompt
+            if let metadata = metadataForResourcePath(prompt.filePath) {
+                updated.sourceInfo = SourceInfo(path: prompt.filePath, metadata: metadata)
+            }
+            return updated
+        }
+    }
+
+    private func metadataForResourcePath(_ path: String) -> PathMetadata? {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        if let exact = metadataForExactPath(path) {
+            return exact
+        }
+
+        for (sourcePath, metadata) in pathMetadata {
+            let normalizedSource = URL(fileURLWithPath: sourcePath).standardized.path
+            if isUnderPath(target: normalized, root: normalizedSource) {
+                return metadata
+            }
+            if let baseDir = metadata.baseDir, isUnderPath(target: normalized, root: baseDir) {
+                return metadata
+            }
+        }
+        return nil
+    }
+
+    private func metadataForExactPath(_ path: String) -> PathMetadata? {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        return pathMetadata[normalized] ?? pathMetadata[path]
     }
 
     private func dedupePrompts(_ prompts: [PromptTemplate]) -> (prompts: [PromptTemplate], diagnostics: [ResourceDiagnostic]) {

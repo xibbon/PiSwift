@@ -311,6 +311,49 @@ public final class HookRunner: Sendable {
         }
     }
 
+    public func emitResourcesDiscover(cwd: String, reason: ResourcesDiscoverReason) async -> ResourceExtensionPaths {
+        let context = createContext()
+        let extensionHooks = hooks.filter { $0.isExtension }
+        var skillPaths: [ResourceExtensionPath] = []
+        var promptPaths: [ResourceExtensionPath] = []
+        var themePaths: [ResourceExtensionPath] = []
+
+        for hook in extensionHooks {
+            guard let handlers = hook.handlers["resources_discover"], !handlers.isEmpty else { continue }
+            for handler in handlers {
+                do {
+                    let event = ResourcesDiscoverEvent(cwd: cwd, reason: reason)
+                    guard let result = try await handler(event, context) as? ResourcesDiscoverResult else { continue }
+                    let metadata = extensionResourceMetadata(for: hook)
+                    skillPaths.append(contentsOf: result.skillPaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
+                    promptPaths.append(contentsOf: result.promptPaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
+                    themePaths.append(contentsOf: result.themePaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: "resources_discover", error: error.localizedDescription, stack: captureStack()))
+                }
+            }
+        }
+
+        return ResourceExtensionPaths(skillPaths: skillPaths, promptPaths: promptPaths, themePaths: themePaths)
+    }
+
+    private func extensionResourceMetadata(for hook: LoadedHook) -> PathMetadata {
+        let source = extensionSourceLabel(for: hook.resolvedPath)
+        let baseDir: String? = hook.resolvedPath.hasPrefix("<")
+            ? nil
+            : URL(fileURLWithPath: hook.resolvedPath).deletingLastPathComponent().path
+        return PathMetadata(source: source, scope: "temporary", origin: "top-level", baseDir: baseDir)
+    }
+
+    private func extensionSourceLabel(for path: String) -> String {
+        if path.hasPrefix("<") {
+            return "extension:\(path.replacingOccurrences(of: "<", with: "").replacingOccurrences(of: ">", with: ""))"
+        }
+        let filename = URL(fileURLWithPath: path).lastPathComponent
+        let name = (filename as NSString).deletingPathExtension
+        return "extension:\(name)"
+    }
+
     /// Emit an event only to hooks loaded from extensions (skips settings-defined hooks).
     /// Used by the reload lifecycle to fire `session_shutdown` / `session_start(reason: .reload)`
     /// at the extensions being swapped, without disturbing built-in hooks.

@@ -1142,6 +1142,49 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     }
 }
 
+@Test func createAgentSessionLoadsResourcesDiscoveredByExtension() async throws {
+    _ = _seedExtensionSDK
+    guard testSDKPaths() != nil else {
+        Issue.record("SDK paths not available")
+        return
+    }
+
+    let resourcesSource = extensionFixture("resources-extension.swift")
+
+    try await withTempDir { tempDir in
+        let agentDir = (tempDir as NSString).appendingPathComponent("agent")
+        try FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+        try """
+            ---
+            description: Extension supplied prompt
+            ---
+            Prompt loaded from resources_discover.
+            """.write(
+                toFile: (tempDir as NSString).appendingPathComponent("extension-prompt.md"),
+                atomically: true,
+                encoding: .utf8
+            )
+
+        let result = await createAgentSession(CreateAgentSessionOptions(
+            cwd: tempDir,
+            agentDir: agentDir,
+            authStorage: AuthStorage(":memory:"),
+            noTools: .all,
+            additionalExtensionPaths: [resourcesSource],
+            sessionManager: SessionManager.inMemory(),
+            settingsManager: SettingsManager.inMemory()
+        ))
+        let session = result.session
+        defer { session.dispose() }
+
+        let prompt = try #require(session.promptTemplates.first { $0.name == "extension-prompt" })
+        #expect(prompt.content.contains("Prompt loaded from resources_discover."))
+        #expect(prompt.sourceInfo.source == "extension:resources-extension")
+        #expect(prompt.sourceInfo.scope == "temporary")
+        #expect(session.resourceLoader.getPathMetadata().values.contains { $0.source == "extension:resources-extension" })
+    }
+}
+
 @Test func reloadExtensionsEndToEndViaCreateAgentSession() async throws {
     // End-to-end: build a session with the hello-extension fixture, swap it for the
     // event-counter fixture via session.reloadExtensions(), and confirm both the

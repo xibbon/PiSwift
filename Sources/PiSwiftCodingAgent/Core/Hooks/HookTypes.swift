@@ -802,6 +802,38 @@ public struct ContextEvent: HookEvent, Sendable {
     }
 }
 
+public enum ResourcesDiscoverReason: String, Sendable {
+    case startup
+    case reload
+}
+
+public struct ResourcesDiscoverEvent: HookEvent, Sendable {
+    public let type: String = "resources_discover"
+    public var cwd: String
+    public var reason: ResourcesDiscoverReason
+
+    public init(cwd: String, reason: ResourcesDiscoverReason) {
+        self.cwd = cwd
+        self.reason = reason
+    }
+}
+
+public struct ResourcesDiscoverResult: Sendable {
+    public var skillPaths: [String]
+    public var promptPaths: [String]
+    public var themePaths: [String]
+
+    public init(
+        skillPaths: [String] = [],
+        promptPaths: [String] = [],
+        themePaths: [String] = []
+    ) {
+        self.skillPaths = skillPaths
+        self.promptPaths = promptPaths
+        self.themePaths = themePaths
+    }
+}
+
 public struct BeforeAgentStartEvent: HookEvent, Sendable {
     public let type: String = "before_agent_start"
     public var prompt: String

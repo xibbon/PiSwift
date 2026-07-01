@@ -539,6 +539,14 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     // `hasHandlers(...)`, so empty runners cost nothing.
     let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry)
 
+    if hookRunner.hasHandlers("resources_discover") {
+        let extensionResources = await hookRunner.emitResourcesDiscover(cwd: cwd, reason: .startup)
+        if !extensionResources.skillPaths.isEmpty || !extensionResources.promptPaths.isEmpty || !extensionResources.themePaths.isEmpty {
+            resolvedResourceLoader.extendResources(extensionResources)
+        }
+        time("resourcesDiscover")
+    }
+
     let existingSession = sessionManager.buildSessionContext()
     time("loadSession")
     let hasExistingSession = !existingSession.messages.isEmpty
