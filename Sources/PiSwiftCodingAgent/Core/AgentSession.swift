@@ -568,6 +568,86 @@ public final class AgentSession: Sendable {
             getActiveToolsHandler: { [weak self] in self?.getActiveToolNames() ?? [] },
             getAllToolsHandler: { [weak self] in self?.getAllTools() ?? [] },
             setActiveToolsHandler: { [weak self] names in self?.setActiveToolsByName(names) },
+            getCommandsHandler: { [weak self] in self?.getHookCommands() ?? [] },
+            setModelHandler: { [weak self] model in
+                guard let self else { return false }
+                do {
+                    try await self.setModel(model)
+                    return true
+                } catch {
+                    return false
+                }
+            },
+            getThinkingLevelHandler: { [weak agent] in
+                agent?.state.thinkingLevel ?? .off
+            },
+            setThinkingLevelHandler: { [weak self] level in
+                self?.setThinkingLevel(level)
+            },
+            sendUserMessageHandler: { [weak self] content, options in
+                Task { [weak self] in
+                    guard let self else { return }
+                    if self.isStreaming {
+                        if options?.deliverAs == .followUp {
+                            self.followUp(content)
+                        } else {
+                            self.steer(content)
+                        }
+                        return
+                    }
+                    try? await self.prompt(
+                        content,
+                        options: PromptOptions(expandSlashCommands: false, expandPromptTemplates: false)
+                    )
+                }
+            },
+            setLabelHandler: { [weak self] entryId, label in
+                _ = try? self?.sessionManager.appendLabelChange(entryId, label)
+            },
+            getContextUsage: { [weak self] in self?.getContextUsage() },
+            compactHandler: { [weak self] options in
+                Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        let result = try await self.compact(customInstructions: options?.customInstructions)
+                        options?.onComplete?(result)
+                    } catch {
+                        options?.onError?(error)
+                    }
+                }
+            },
+            newSessionHandler: { [weak self] options in
+                guard let self else { return HookCommandResult(cancelled: true) }
+                let result = await self.newSession(NewSessionOptions(parentSession: options?.parentSession))
+                if result, let setup = options?.setup {
+                    await setup(self.sessionManager)
+                }
+                return HookCommandResult(cancelled: !result)
+            },
+            forkHandler: { [weak self] entryId in
+                guard let self else { return HookCommandResult(cancelled: true) }
+                do {
+                    let result = try await self.fork(entryId)
+                    return HookCommandResult(cancelled: result.cancelled)
+                } catch {
+                    return HookCommandResult(cancelled: true)
+                }
+            },
+            navigateTreeHandler: { [weak self] targetId, options in
+                guard let self else { return HookCommandResult(cancelled: true) }
+                let result = await self.navigateTree(targetId, summarize: options?.summarize ?? false)
+                return HookCommandResult(cancelled: result.cancelled)
+            },
+            switchSessionHandler: { [weak self] sessionPath in
+                guard let self else { return HookCommandResult(cancelled: true) }
+                let result = await self.switchSession(sessionPath)
+                return HookCommandResult(cancelled: !result)
+            },
+            reloadHandler: { [weak self] in
+                guard let self else { return }
+                await self.reload()
+                _ = await self.reloadExtensions()
+            },
             hasUI: false
         )
 
@@ -727,8 +807,34 @@ public final class AgentSession: Sendable {
                 let currentIndex = self.turnIndex
                 self.turnIndex += 1
                 enqueueOnEventQueue { _ = await hookRunner.emit(TurnEndEvent(turnIndex: currentIndex, message: message, toolResults: toolResults)) }
-            default:
-                break
+            case .messageStart(let message):
+                enqueueOnEventQueue { _ = await hookRunner.emit(MessageStartEvent(message: message)) }
+            case .messageUpdate(let message, let assistantMessageEvent):
+                enqueueOnEventQueue { _ = await hookRunner.emit(MessageUpdateEvent(message: message, assistantMessageEvent: assistantMessageEvent)) }
+            case .messageEnd(let message):
+                enqueueOnEventQueue { _ = await hookRunner.emit(MessageEndEvent(message: message)) }
+            case .toolExecutionStart(let toolCallId, let toolName, let args):
+                enqueueOnEventQueue {
+                    _ = await hookRunner.emit(ToolExecutionStartEvent(toolCallId: toolCallId, toolName: toolName, args: args))
+                }
+            case .toolExecutionUpdate(let toolCallId, let toolName, let args, let partialResult):
+                enqueueOnEventQueue {
+                    _ = await hookRunner.emit(ToolExecutionUpdateEvent(
+                        toolCallId: toolCallId,
+                        toolName: toolName,
+                        args: args,
+                        partialResult: partialResult
+                    ))
+                }
+            case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError):
+                enqueueOnEventQueue {
+                    _ = await hookRunner.emit(ToolExecutionEndEvent(
+                        toolCallId: toolCallId,
+                        toolName: toolName,
+                        result: result,
+                        isError: isError
+                    ))
+                }
             }
         }
 
@@ -955,6 +1061,34 @@ public final class AgentSession: Sendable {
 
     public func getAllTools() -> [ToolInfo] {
         toolRegistry.values.map { ToolInfo(name: $0.name, description: $0.description) }
+    }
+
+    private func getHookCommands() -> [HookSlashCommandInfo] {
+        let extensionCommands = (_hookRunner?.getRegisteredCommands() ?? []).map { command in
+            HookSlashCommandInfo(
+                name: command.name,
+                description: command.description,
+                source: "extension",
+                sourceInfo: command.sourceInfo
+            )
+        }
+        let prompts = promptTemplates.map { template in
+            HookSlashCommandInfo(
+                name: template.name,
+                description: template.description,
+                source: "prompt",
+                sourceInfo: template.sourceInfo
+            )
+        }
+        let skills = resourceLoader.getSkills().skills.map { skill in
+            HookSlashCommandInfo(
+                name: "skill:\(skill.name)",
+                description: skill.description,
+                source: "skill",
+                sourceInfo: skill.sourceInfo
+            )
+        }
+        return extensionCommands + prompts + skills
     }
 
     /// Build the effective system prompt by appending any registered tool prompt snippets.

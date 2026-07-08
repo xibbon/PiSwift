@@ -728,6 +728,133 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     #expect(ctx.getSystemPromptOptions().selectedTools == [.edit])
 }
 
+@Test func hookCommandContextDelegatesRuntimeControlApis() async throws {
+    let sessionManager = SessionManager.inMemory()
+    let modelRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let runner = HookRunner([], "/tmp/runtime-project", sessionManager, modelRegistry)
+    let sentUserMessage = LockedState<String?>(nil)
+    let sentUserDelivery = LockedState<HookDeliverAs?>(nil)
+    let labeledEntry = LockedState<String?>(nil)
+    let labelValue = LockedState<String?>(nil)
+    let selectedModel = LockedState<String?>(nil)
+    let selectedThinking = LockedState<PiSwiftAgent.ThinkingLevel?>(nil)
+    let compactInstructions = LockedState<String?>(nil)
+    let switchedSession = LockedState<String?>(nil)
+    let reloadCount = LockedState(0)
+
+    runner.initialize(
+        getModel: { nil },
+        getCommandsHandler: {
+            [HookSlashCommandInfo(name: "runtime-command", description: "Runtime command", source: "extension")]
+        },
+        setModelHandler: { model in
+            selectedModel.withLock { $0 = model.id }
+            return true
+        },
+        getThinkingLevelHandler: { .high },
+        setThinkingLevelHandler: { level in selectedThinking.withLock { $0 = level } },
+        sendUserMessageHandler: { content, options in
+            sentUserMessage.withLock { $0 = content }
+            sentUserDelivery.withLock { $0 = options?.deliverAs }
+        },
+        setLabelHandler: { entryId, label in
+            labeledEntry.withLock { $0 = entryId }
+            labelValue.withLock { $0 = label }
+        },
+        getContextUsage: { ContextUsage(tokens: 42, contextWindow: 100, percent: 42) },
+        compactHandler: { options in
+            compactInstructions.withLock { $0 = options?.customInstructions }
+            options?.onComplete?(CompactionResult(summary: "done", firstKeptEntryId: "entry-1", tokensBefore: 100))
+        },
+        switchSessionHandler: { sessionPath in
+            switchedSession.withLock { $0 = sessionPath }
+            return HookCommandResult(cancelled: false)
+        },
+        reloadHandler: {
+            reloadCount.withLock { $0 += 1 }
+        },
+        hasUI: false
+    )
+
+    let ctx = runner.createCommandContext()
+    ctx.sendUserMessage("hello", HookSendMessageOptions(deliverAs: .followUp))
+    ctx.setLabel("entry-1", "bookmark")
+    let commands = ctx.getCommands()
+    let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
+    #expect(await ctx.setModel(model) == true)
+    #expect(ctx.getThinkingLevel() == .high)
+    ctx.setThinkingLevel(.low)
+    #expect(ctx.getContextUsage()?.tokens == 42)
+    ctx.compact(HookCompactOptions(customInstructions: "compress"))
+    #expect((await ctx.switchSession("/tmp/session.jsonl")).cancelled == false)
+    await ctx.reload()
+
+    #expect(sentUserMessage.withLock { $0 } == "hello")
+    #expect(sentUserDelivery.withLock { $0 } == .followUp)
+    #expect(labeledEntry.withLock { $0 } == "entry-1")
+    #expect(labelValue.withLock { $0 } == "bookmark")
+    #expect(commands.map(\.name) == ["runtime-command"])
+    #expect(selectedModel.withLock { $0 } == "claude-sonnet-4-5")
+    #expect(selectedThinking.withLock { $0 } == .low)
+    #expect(compactInstructions.withLock { $0 } == "compress")
+    #expect(switchedSession.withLock { $0 } == "/tmp/session.jsonl")
+    #expect(reloadCount.withLock { $0 } == 1)
+}
+
+@Test func hookApiReceivesRuntimeControlWiring() async throws {
+    let api = HookAPI(hookPath: "/fake/api-runtime-hook")
+    let hook = LoadedHook(
+        path: "/fake/api-runtime-hook",
+        resolvedPath: "/fake/api-runtime-hook",
+        handlers: [:],
+        setSendMessageHandler: api.setSendMessageHandler,
+        setSendUserMessageHandler: api.setSendUserMessageHandler,
+        setAppendEntryHandler: api.setAppendEntryHandler,
+        setSetSessionNameHandler: api.setSetSessionNameHandler,
+        setGetSessionNameHandler: api.setGetSessionNameHandler,
+        setSetLabelHandler: api.setSetLabelHandler,
+        setGetActiveToolsHandler: api.setGetActiveToolsHandler,
+        setGetAllToolsHandler: api.setGetAllToolsHandler,
+        setSetActiveToolsHandler: api.setSetActiveToolsHandler,
+        setGetCommandsHandler: api.setGetCommandsHandler,
+        setSetModelHandler: api.setSetModelHandler,
+        setGetThinkingLevelHandler: api.setGetThinkingLevelHandler,
+        setSetThinkingLevelHandler: api.setSetThinkingLevelHandler
+    )
+
+    let sessionManager = SessionManager.inMemory()
+    let modelRegistry = ModelRegistry(AuthStorage(":memory:"))
+    let runner = HookRunner([hook], "/tmp/api-runtime-project", sessionManager, modelRegistry)
+    let sentUserMessage = LockedState<String?>(nil)
+    let labeledEntry = LockedState<String?>(nil)
+    let selectedThinking = LockedState<PiSwiftAgent.ThinkingLevel?>(nil)
+
+    runner.initialize(
+        getModel: { nil },
+        getCommandsHandler: {
+            [HookSlashCommandInfo(name: "api-command", description: nil, source: "extension")]
+        },
+        setModelHandler: { _ in true },
+        getThinkingLevelHandler: { .medium },
+        setThinkingLevelHandler: { level in selectedThinking.withLock { $0 = level } },
+        sendUserMessageHandler: { content, _ in sentUserMessage.withLock { $0 = content } },
+        setLabelHandler: { entryId, _ in labeledEntry.withLock { $0 = entryId } },
+        hasUI: false
+    )
+
+    api.sendUserMessage("from-api")
+    api.setLabel("entry-2", "label")
+    api.setThinkingLevel(.high)
+    let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
+
+    #expect(api.getCommands().map(\.name) == ["api-command"])
+    #expect(await api.setModel(model) == true)
+    #expect(api.getThinkingLevel() == .medium)
+    #expect(sentUserMessage.withLock { $0 } == "from-api")
+    #expect(labeledEntry.withLock { $0 } == "entry-2")
+    #expect(selectedThinking.withLock { $0 } == .high)
+}
+
 @Test func hookRunnerAfterToolCallAdapterForwardsDetailsAndIsErrorOverrides() async throws {
     let observedIsError = LockedState<Bool?>(nil)
     let handler: HookHandler = { event, _ in

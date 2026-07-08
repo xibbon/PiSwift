@@ -36,9 +36,19 @@ public final class HookRunner: Sendable {
         var waitForIdle: @Sendable () async -> Void
         var abort: @Sendable () -> Void
         var hasPendingMessages: @Sendable () -> Bool
+        var getContextUsage: HookGetContextUsageHandler
+        var compactHandler: HookCompactHandler
         var newSessionHandler: HookNewSessionHandler
         var forkHandler: HookForkHandler
         var navigateTreeHandler: HookNavigateTreeHandler
+        var switchSessionHandler: HookSwitchSessionHandler
+        var reloadHandler: HookReloadHandler
+        var sendUserMessageHandler: HookSendUserMessageHandler
+        var setLabelHandler: HookSetLabelHandler
+        var getCommandsHandler: HookGetCommandsHandler
+        var setModelHandler: HookSetModelHandler
+        var getThinkingLevelHandler: HookGetThinkingLevelHandler
+        var setThinkingLevelHandler: HookSetThinkingLevelHandler
         var uiContext: HookUIContext
         var mode: HookMode
         var hasUI: Bool
@@ -52,21 +62,33 @@ public final class HookRunner: Sendable {
     /// Stored on State so the same wiring can be re-applied to hooks loaded later by `/reload`.
     private struct HookWiring: Sendable {
         var sendMessageHandler: HookSendMessageHandler
+        var sendUserMessageHandler: HookSendUserMessageHandler
         var appendEntryHandler: HookAppendEntryHandler
         var setSessionNameHandler: HookSetSessionNameHandler
         var getSessionNameHandler: HookGetSessionNameHandler
+        var setLabelHandler: HookSetLabelHandler
         var getActiveToolsHandler: HookGetActiveToolsHandler
         var getAllToolsHandler: HookGetAllToolsHandler
         var setActiveToolsHandler: HookSetActiveToolsHandler
+        var getCommandsHandler: HookGetCommandsHandler
+        var setModelHandler: HookSetModelHandler
+        var getThinkingLevelHandler: HookGetThinkingLevelHandler
+        var setThinkingLevelHandler: HookSetThinkingLevelHandler
 
         func apply(to hook: LoadedHook) {
             hook.setSendMessageHandler(sendMessageHandler)
+            hook.setSendUserMessageHandler(sendUserMessageHandler)
             hook.setAppendEntryHandler(appendEntryHandler)
             hook.setSetSessionNameHandler(setSessionNameHandler)
             hook.setGetSessionNameHandler(getSessionNameHandler)
+            hook.setSetLabelHandler(setLabelHandler)
             hook.setGetActiveToolsHandler(getActiveToolsHandler)
             hook.setGetAllToolsHandler(getAllToolsHandler)
             hook.setSetActiveToolsHandler(setActiveToolsHandler)
+            hook.setGetCommandsHandler(getCommandsHandler)
+            hook.setSetModelHandler(setModelHandler)
+            hook.setGetThinkingLevelHandler(getThinkingLevelHandler)
+            hook.setSetThinkingLevelHandler(setThinkingLevelHandler)
         }
     }
 
@@ -105,6 +127,16 @@ public final class HookRunner: Sendable {
         set { state.withLock { $0.hasPendingMessages = newValue } }
     }
 
+    private var getContextUsage: HookGetContextUsageHandler {
+        get { state.withLock { $0.getContextUsage } }
+        set { state.withLock { $0.getContextUsage = newValue } }
+    }
+
+    private var compactHandler: HookCompactHandler {
+        get { state.withLock { $0.compactHandler } }
+        set { state.withLock { $0.compactHandler = newValue } }
+    }
+
     private var newSessionHandler: HookNewSessionHandler {
         get { state.withLock { $0.newSessionHandler } }
         set { state.withLock { $0.newSessionHandler = newValue } }
@@ -118,6 +150,46 @@ public final class HookRunner: Sendable {
     private var navigateTreeHandler: HookNavigateTreeHandler {
         get { state.withLock { $0.navigateTreeHandler } }
         set { state.withLock { $0.navigateTreeHandler = newValue } }
+    }
+
+    private var switchSessionHandler: HookSwitchSessionHandler {
+        get { state.withLock { $0.switchSessionHandler } }
+        set { state.withLock { $0.switchSessionHandler = newValue } }
+    }
+
+    private var reloadHandler: HookReloadHandler {
+        get { state.withLock { $0.reloadHandler } }
+        set { state.withLock { $0.reloadHandler = newValue } }
+    }
+
+    private var sendUserMessageHandler: HookSendUserMessageHandler {
+        get { state.withLock { $0.sendUserMessageHandler } }
+        set { state.withLock { $0.sendUserMessageHandler = newValue } }
+    }
+
+    private var setLabelHandler: HookSetLabelHandler {
+        get { state.withLock { $0.setLabelHandler } }
+        set { state.withLock { $0.setLabelHandler = newValue } }
+    }
+
+    private var getCommandsHandler: HookGetCommandsHandler {
+        get { state.withLock { $0.getCommandsHandler } }
+        set { state.withLock { $0.getCommandsHandler = newValue } }
+    }
+
+    private var setModelHandler: HookSetModelHandler {
+        get { state.withLock { $0.setModelHandler } }
+        set { state.withLock { $0.setModelHandler = newValue } }
+    }
+
+    private var getThinkingLevelHandler: HookGetThinkingLevelHandler {
+        get { state.withLock { $0.getThinkingLevelHandler } }
+        set { state.withLock { $0.getThinkingLevelHandler = newValue } }
+    }
+
+    private var setThinkingLevelHandler: HookSetThinkingLevelHandler {
+        get { state.withLock { $0.setThinkingLevelHandler } }
+        set { state.withLock { $0.setThinkingLevelHandler = newValue } }
     }
 
     private var uiContext: HookUIContext {
@@ -149,9 +221,19 @@ public final class HookRunner: Sendable {
             waitForIdle: {},
             abort: {},
             hasPendingMessages: { false },
+            getContextUsage: { nil },
+            compactHandler: { _ in },
             newSessionHandler: { _ in HookCommandResult(cancelled: false) },
             forkHandler: { _ in HookCommandResult(cancelled: false) },
             navigateTreeHandler: { _, _ in HookCommandResult(cancelled: false) },
+            switchSessionHandler: { _ in HookCommandResult(cancelled: false) },
+            reloadHandler: {},
+            sendUserMessageHandler: { _, _ in },
+            setLabelHandler: { _, _ in },
+            getCommandsHandler: { [] },
+            setModelHandler: { _ in false },
+            getThinkingLevelHandler: { .off },
+            setThinkingLevelHandler: { _ in },
             uiContext: NoOpHookUIContext(),
             mode: .print,
             hasUI: false,
@@ -188,9 +270,19 @@ public final class HookRunner: Sendable {
         getActiveToolsHandler: HookGetActiveToolsHandler? = nil,
         getAllToolsHandler: HookGetAllToolsHandler? = nil,
         setActiveToolsHandler: HookSetActiveToolsHandler? = nil,
+        getCommandsHandler: HookGetCommandsHandler? = nil,
+        setModelHandler: HookSetModelHandler? = nil,
+        getThinkingLevelHandler: HookGetThinkingLevelHandler? = nil,
+        setThinkingLevelHandler: HookSetThinkingLevelHandler? = nil,
+        sendUserMessageHandler: HookSendUserMessageHandler? = nil,
+        setLabelHandler: HookSetLabelHandler? = nil,
+        getContextUsage: HookGetContextUsageHandler? = nil,
+        compactHandler: HookCompactHandler? = nil,
         newSessionHandler: HookNewSessionHandler? = nil,
         forkHandler: HookForkHandler? = nil,
         navigateTreeHandler: HookNavigateTreeHandler? = nil,
+        switchSessionHandler: HookSwitchSessionHandler? = nil,
+        reloadHandler: HookReloadHandler? = nil,
         isIdle: (@Sendable () -> Bool)? = nil,
         waitForIdle: (@Sendable () async -> Void)? = nil,
         abort: (@Sendable () -> Void)? = nil,
@@ -210,6 +302,14 @@ public final class HookRunner: Sendable {
         self.waitForIdle = waitForIdle ?? {}
         self.abort = abort ?? {}
         self.hasPendingMessages = hasPendingMessages ?? { false }
+        self.getContextUsage = getContextUsage ?? { nil }
+        self.compactHandler = compactHandler ?? { _ in }
+        self.sendUserMessageHandler = sendUserMessageHandler ?? { _, _ in }
+        self.setLabelHandler = setLabelHandler ?? { _, _ in }
+        self.getCommandsHandler = getCommandsHandler ?? { [] }
+        self.setModelHandler = setModelHandler ?? { _ in false }
+        self.getThinkingLevelHandler = getThinkingLevelHandler ?? { .off }
+        self.setThinkingLevelHandler = setThinkingLevelHandler ?? { _ in }
         if let newSessionHandler {
             self.newSessionHandler = newSessionHandler
         }
@@ -219,17 +319,29 @@ public final class HookRunner: Sendable {
         if let navigateTreeHandler {
             self.navigateTreeHandler = navigateTreeHandler
         }
+        if let switchSessionHandler {
+            self.switchSessionHandler = switchSessionHandler
+        }
+        if let reloadHandler {
+            self.reloadHandler = reloadHandler
+        }
         self.uiContext = uiContext ?? NoOpHookUIContext()
         self.hasUI = hasUI
 
         let wiring = HookWiring(
             sendMessageHandler: sendMessageHandler,
+            sendUserMessageHandler: sendUserMessageHandler ?? { _, _ in },
             appendEntryHandler: appendEntryHandler,
             setSessionNameHandler: setSessionNameHandler,
             getSessionNameHandler: getSessionNameHandler,
+            setLabelHandler: setLabelHandler ?? { _, _ in },
             getActiveToolsHandler: getActiveToolsHandler ?? { [] },
             getAllToolsHandler: getAllToolsHandler ?? { [] },
-            setActiveToolsHandler: setActiveToolsHandler ?? { _ in }
+            setActiveToolsHandler: setActiveToolsHandler ?? { _ in },
+            getCommandsHandler: getCommandsHandler ?? { [] },
+            setModelHandler: setModelHandler ?? { _ in false },
+            getThinkingLevelHandler: getThinkingLevelHandler ?? { .off },
+            setThinkingLevelHandler: setThinkingLevelHandler ?? { _ in }
         )
         state.withLock { $0.wiring = wiring }
         for hook in hooks {
@@ -495,7 +607,9 @@ public final class HookRunner: Sendable {
             },
             isIdle: { [weak self] in self?.isIdle() ?? true },
             abort: { [weak self] in self?.abort() },
-            hasPendingMessages: { [weak self] in self?.hasPendingMessages() ?? false }
+            hasPendingMessages: { [weak self] in self?.hasPendingMessages() ?? false },
+            getContextUsage: { [weak self] in self?.getContextUsage() },
+            compact: { [weak self] options in self?.compactHandler(options) }
         )
     }
 
@@ -538,6 +652,38 @@ public final class HookRunner: Sendable {
             navigateTree: { [weak self] targetId, options in
                 guard let self else { return HookCommandResult(cancelled: true) }
                 return await self.navigateTreeHandler(targetId, options)
+            },
+            switchSession: { [weak self] sessionPath in
+                guard let self else { return HookCommandResult(cancelled: true) }
+                return await self.switchSessionHandler(sessionPath)
+            },
+            reload: { [weak self] in
+                await self?.reloadHandler()
+            },
+            sendUserMessage: { [weak self] content, options in
+                self?.sendUserMessageHandler(content, options)
+            },
+            setLabel: { [weak self] entryId, label in
+                self?.setLabelHandler(entryId, label)
+            },
+            getCommands: { [weak self] in
+                self?.getCommandsHandler() ?? []
+            },
+            setModel: { [weak self] model in
+                guard let self else { return false }
+                return await self.setModelHandler(model)
+            },
+            getThinkingLevel: { [weak self] in
+                self?.getThinkingLevelHandler() ?? .off
+            },
+            setThinkingLevel: { [weak self] level in
+                self?.setThinkingLevelHandler(level)
+            },
+            getContextUsage: { [weak self] in
+                self?.getContextUsage()
+            },
+            compact: { [weak self] options in
+                self?.compactHandler(options)
             }
         )
     }

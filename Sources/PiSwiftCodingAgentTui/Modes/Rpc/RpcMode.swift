@@ -209,6 +209,10 @@ private final class RpcHookUIContext: HookUIContext {
         return nil
     }
 
+    func pasteToEditor(_ text: String) {
+        setEditorText(text)
+    }
+
     func setEditorText(_ text: String) {
         output.send([
             "type": "hook_ui_request",
@@ -261,6 +265,14 @@ private final class RpcHookUIContext: HookUIContext {
     func setTheme(_ theme: HookThemeInput) -> HookThemeResult {
         _ = theme
         return HookThemeResult(success: false, error: "UI not available")
+    }
+
+    func getToolsExpanded() -> Bool {
+        false
+    }
+
+    func setToolsExpanded(_ expanded: Bool) {
+        _ = expanded
     }
 
     var theme: Theme {

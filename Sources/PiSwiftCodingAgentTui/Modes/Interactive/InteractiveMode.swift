@@ -76,6 +76,7 @@ private struct InteractiveHookUIContext: HookUIContext {
     private let setFooterHandler: (HookFooterFactory?) -> Void
     private let setTitleHandler: (String) -> Void
     private let customHandler: (@escaping HookCustomFactory, HookCustomOptions?) async -> HookCustomResult?
+    private let pasteToEditorHandler: (String) -> Void
     private let setEditorTextHandler: (String) -> Void
     private let getEditorTextHandler: () -> String
     private let editorHandler: (String, String?) async -> String?
@@ -83,6 +84,8 @@ private struct InteractiveHookUIContext: HookUIContext {
     private let getAllThemesHandler: () -> [HookThemeInfo]
     private let getThemeHandler: (String) -> Theme?
     private let setThemeHandler: (HookThemeInput) -> HookThemeResult
+    private let getToolsExpandedHandler: () -> Bool
+    private let setToolsExpandedHandler: (Bool) -> Void
     private let themeProvider: () -> Theme
 
     init(
@@ -96,6 +99,7 @@ private struct InteractiveHookUIContext: HookUIContext {
         setFooter: @escaping (HookFooterFactory?) -> Void,
         setTitle: @escaping (String) -> Void,
         custom: @escaping (@escaping HookCustomFactory, HookCustomOptions?) async -> HookCustomResult?,
+        pasteToEditor: @escaping (String) -> Void,
         setEditorText: @escaping (String) -> Void,
         getEditorText: @escaping () -> String,
         editor: @escaping (String, String?) async -> String?,
@@ -103,6 +107,8 @@ private struct InteractiveHookUIContext: HookUIContext {
         getAllThemes: @escaping () -> [HookThemeInfo],
         getTheme: @escaping (String) -> Theme?,
         setTheme: @escaping (HookThemeInput) -> HookThemeResult,
+        getToolsExpanded: @escaping () -> Bool,
+        setToolsExpanded: @escaping (Bool) -> Void,
         themeProvider: @escaping () -> Theme
     ) {
         self.selectHandler = select
@@ -115,6 +121,7 @@ private struct InteractiveHookUIContext: HookUIContext {
         self.setFooterHandler = setFooter
         self.setTitleHandler = setTitle
         self.customHandler = custom
+        self.pasteToEditorHandler = pasteToEditor
         self.setEditorTextHandler = setEditorText
         self.getEditorTextHandler = getEditorText
         self.editorHandler = editor
@@ -122,6 +129,8 @@ private struct InteractiveHookUIContext: HookUIContext {
         self.getAllThemesHandler = getAllThemes
         self.getThemeHandler = getTheme
         self.setThemeHandler = setTheme
+        self.getToolsExpandedHandler = getToolsExpanded
+        self.setToolsExpandedHandler = setToolsExpanded
         self.themeProvider = themeProvider
     }
 
@@ -165,6 +174,10 @@ private struct InteractiveHookUIContext: HookUIContext {
         await customHandler(factory, options)
     }
 
+    func pasteToEditor(_ text: String) {
+        pasteToEditorHandler(text)
+    }
+
     func setEditorText(_ text: String) {
         setEditorTextHandler(text)
     }
@@ -191,6 +204,14 @@ private struct InteractiveHookUIContext: HookUIContext {
 
     func setTheme(_ theme: HookThemeInput) -> HookThemeResult {
         setThemeHandler(theme)
+    }
+
+    func getToolsExpanded() -> Bool {
+        getToolsExpandedHandler()
+    }
+
+    func setToolsExpanded(_ expanded: Bool) {
+        setToolsExpandedHandler(expanded)
     }
 
     var theme: Theme {
@@ -666,6 +687,11 @@ public final class InteractiveMode {
                 guard let self else { return nil }
                 return await self.showHookCustom(factory, options: options)
             },
+            pasteToEditor: { [weak self] text in
+                Task { @MainActor in
+                    self?.editor?.handleInput("\u{001B}[200~\(text)\u{001B}[201~")
+                }
+            },
             setEditorText: { [weak self] text in
                 Task { @MainActor in
                     self?.editor?.setText(text)
@@ -706,6 +732,14 @@ public final class InteractiveMode {
                     setThemeInstance(theme)
                     self.ui.requestRender()
                     return HookThemeResult(success: true)
+                }
+            },
+            getToolsExpanded: { [weak self] in
+                self?.toolOutputExpanded ?? false
+            },
+            setToolsExpanded: { [weak self] expanded in
+                Task { @MainActor in
+                    self?.setToolsExpanded(expanded)
                 }
             },
             themeProvider: { theme }
@@ -2349,7 +2383,12 @@ public final class InteractiveMode {
 
     @MainActor
     private func toggleToolOutputExpansion() {
-        toolOutputExpanded.toggle()
+        setToolsExpanded(!toolOutputExpanded)
+    }
+
+    @MainActor
+    private func setToolsExpanded(_ expanded: Bool) {
+        toolOutputExpanded = expanded
         for child in chatContainer.children {
             if let tool = child as? ToolExecutionComponent {
                 tool.setExpanded(toolOutputExpanded)
