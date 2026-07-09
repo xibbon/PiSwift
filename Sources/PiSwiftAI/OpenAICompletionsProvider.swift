@@ -992,6 +992,8 @@ private func addCacheControlToTextContent(message: inout [String: Any], cacheCon
     return false
 }
 
+/// SAFETY: middleware captures immutable configuration and does not mutate
+/// shared state while intercepting requests.
 private struct OpenAICompletionsCacheControlMiddleware: OpenAIMiddleware, @unchecked Sendable {
     let cacheControl: [String: Any]
     let supportsCacheControlOnTools: Bool

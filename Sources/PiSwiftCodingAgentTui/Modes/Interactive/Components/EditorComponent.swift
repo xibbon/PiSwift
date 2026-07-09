@@ -13,9 +13,14 @@ public protocol EditorComponent: AnyObject {
     func insertTextAtCursor(_ text: String)
     func addToHistory(_ text: String)
     func setAutocompleteProvider(_ provider: AutocompleteProvider)
+    func setPaddingX(_ padding: Int)
     func setAutocompleteMaxVisible(_ maxVisible: Int)
     func isShowingAutocomplete() -> Bool
     func invalidate()
+}
+
+public extension EditorComponent {
+    func setPaddingX(_ padding: Int) {}
 }
 
 public typealias EditorComponentView = Component & EditorComponent

@@ -21,14 +21,7 @@ private func extensionFixture(_ name: String) -> String {
 /// Resolve the SDK paths for tests from the SPM build artifacts.
 private func testSDKPaths() -> ExtensionCompiler.SDKPaths? {
     func checkBuildDir(_ buildDir: String) -> ExtensionCompiler.SDKPaths? {
-        let modulesDir = (buildDir as NSString).appendingPathComponent("Modules")
-        let moduleFile = (modulesDir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule")
-        let libFile = (buildDir as NSString).appendingPathComponent("libPiExtensionSDK.dylib")
-        if FileManager.default.fileExists(atPath: moduleFile),
-           FileManager.default.fileExists(atPath: libFile) {
-            return ExtensionCompiler.SDKPaths(modulePath: modulesDir, libPath: buildDir)
-        }
-        return nil
+        ExtensionCompiler.sdkPathsAt(buildDir)
     }
 
     func walkUp(from baseDir: String) -> ExtensionCompiler.SDKPaths? {

@@ -26,6 +26,15 @@ private func writeProjectSettings(_ cwd: String, _ json: String) throws {
     try json.write(to: settingsPath, atomically: true, encoding: .utf8)
 }
 
+private func writeGlobalSettings(_ agentDir: String, _ json: String) throws {
+    let settingsPath = URL(fileURLWithPath: agentDir).appendingPathComponent("settings.json")
+    try FileManager.default.createDirectory(
+        at: settingsPath.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try json.write(to: settingsPath, atomically: true, encoding: .utf8)
+}
+
 @Test func cliProjectTrustBootstrapSkipsProjectSettingsWhenUntrusted() async throws {
     try await withTrustBootstrapTempDirs { cwd, agentDir in
         try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
@@ -44,6 +53,176 @@ private func writeProjectSettings(_ cwd: String, _ json: String) throws {
 
         #expect(result.trust.trusted == false)
         #expect((result.settingsManager.getProjectSettings().packages ?? []).isEmpty)
+    }
+}
+
+@Test func cliProjectTrustBootstrapUsesDefaultProjectTrustAlways() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"always"}"#)
+        try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .print,
+            hasUI: false
+        )
+
+        #expect(result.trust.trusted == true)
+        #expect(result.trust.source == "default-always")
+        #expect((result.settingsManager.getProjectSettings().packages ?? []).count == 1)
+    }
+}
+
+@Test func cliProjectTrustBootstrapUsesDefaultProjectTrustNever() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"never"}"#)
+        try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .print,
+            hasUI: false
+        )
+
+        #expect(result.trust.trusted == false)
+        #expect(result.trust.source == "default-never")
+        #expect((result.settingsManager.getProjectSettings().packages ?? []).isEmpty)
+    }
+}
+
+@Test func cliProjectTrustBootstrapAskWithoutUiDeniesTrustRequiringProject() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"ask"}"#)
+        try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .print,
+            hasUI: false
+        )
+
+        #expect(result.trust.trusted == false)
+        #expect(result.trust.source == "ask-no-ui")
+        #expect((result.settingsManager.getProjectSettings().packages ?? []).isEmpty)
+    }
+}
+
+@Test func cliProjectTrustBootstrapAskWithUiPersistsSelectedTrustOption() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"ask"}"#)
+        try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .tui,
+            hasUI: true,
+            selectTrustOption: { cwd, _ in
+                getProjectTrustOptions(cwd, includeSessionOnly: true)[0]
+            }
+        )
+
+        #expect(result.trust.trusted == true)
+        #expect(result.trust.source == "prompt-saved")
+        #expect(result.trustSettingsManager.getProjectTrust(cwd) == true)
+        #expect((result.settingsManager.getProjectSettings().packages ?? []).count == 1)
+    }
+}
+
+@Test func cliProjectTrustBootstrapAskWithUiUsesSessionOnlySelection() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"ask"}"#)
+        try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .tui,
+            hasUI: true,
+            selectTrustOption: { cwd, _ in
+                getProjectTrustOptions(cwd, includeSessionOnly: true).first {
+                    $0.trusted && $0.updates.isEmpty
+                }
+            }
+        )
+
+        #expect(result.trust.trusted == true)
+        #expect(result.trust.source == "prompt-session")
+        #expect(result.trustSettingsManager.getProjectTrust(cwd) == nil)
+        #expect((result.settingsManager.getProjectSettings().packages ?? []).count == 1)
+    }
+}
+
+@Test func cliProjectTrustBootstrapAskWithUiCancelDeniesProject() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"ask"}"#)
+        try writeProjectSettings(cwd, #"{"packages":["project-pkg"]}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .tui,
+            hasUI: true,
+            selectTrustOption: { _, _ in nil }
+        )
+
+        #expect(result.trust.trusted == false)
+        #expect(result.trust.source == "ask-cancelled")
+        #expect((result.settingsManager.getProjectSettings().packages ?? []).isEmpty)
+    }
+}
+
+@Test func cliProjectTrustBootstrapTrustsProjectWithoutTrustRequiringResources() async throws {
+    try await withTrustBootstrapTempDirs { cwd, agentDir in
+        try writeGlobalSettings(agentDir, #"{"defaultProjectTrust":"never"}"#)
+
+        let result = await resolveProjectTrustForCLI(
+            cwd: cwd,
+            agentDir: agentDir,
+            modelRegistry: ModelRegistry(AuthStorage(":memory:"), agentDir),
+            eventBus: createEventBus(),
+            choice: nil,
+            persistChoice: false,
+            noExtensions: true,
+            mode: .print,
+            hasUI: false
+        )
+
+        #expect(result.trust.trusted == true)
+        #expect(result.trust.source == "no-project-resources")
     }
 }
 
@@ -73,4 +252,3 @@ private func writeProjectSettings(_ cwd: String, _ json: String) throws {
         }
     }
 }
-

@@ -30,6 +30,9 @@ private struct RegisteredApiProvider: Sendable {
 }
 
 /// Thread-safe registry for API providers.
+///
+/// SAFETY: all mutable provider storage is accessed only while holding `lock`;
+/// registered providers and source identifiers are value-typed `Sendable`.
 public final class ApiProviderRegistry: @unchecked Sendable {
     public static let shared = ApiProviderRegistry()
 

@@ -1,6 +1,8 @@
 import Foundation
 import PiSwiftCodingAgent
 
+typealias ProjectTrustOptionSelector = @Sendable (String, SettingsManager) async -> ProjectTrustOption?
+
 struct CLIProjectTrustBootstrap: Sendable {
     var trust: ProjectTrustResolution
     var trustSettingsManager: SettingsManager
@@ -22,7 +24,8 @@ func resolveProjectTrustForCLI(
     persistChoice: Bool,
     noExtensions: Bool,
     mode: HookMode,
-    hasUI: Bool
+    hasUI: Bool,
+    selectTrustOption: ProjectTrustOptionSelector? = nil
 ) async -> CLIProjectTrustBootstrap {
     let trustSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
     let extensionDecision: ProjectTrustEventResult?
@@ -55,12 +58,32 @@ func resolveProjectTrustForCLI(
         extensionDecision = nil
     }
 
-    let trust = ProjectTrustManager(settingsManager: trustSettingsManager).resolve(
+    var trust = ProjectTrustManager(settingsManager: trustSettingsManager).resolve(
         cwd: cwd,
         choice: choice,
         persistChoice: persistChoice,
-        extensionDecision: extensionDecision
+        extensionDecision: extensionDecision,
+        hasUI: hasUI
     )
+
+    if trust.source == "ask-unhandled", hasUI, mode == .tui {
+        let selected = if let selectTrustOption {
+            await selectTrustOption(cwd, trustSettingsManager)
+        } else {
+            await selectProjectTrustOption(cwd: cwd, settingsManager: trustSettingsManager)
+        }
+
+        if let selected {
+            trustSettingsManager.applyProjectTrustUpdates(selected.updates)
+            trust = ProjectTrustResolution(
+                trusted: selected.trusted,
+                source: selected.updates.isEmpty ? "prompt-session" : "prompt-saved"
+            )
+        } else {
+            trust = ProjectTrustResolution(trusted: false, source: "ask-cancelled")
+        }
+    }
+
     let settingsManager = trust.trusted
         ? SettingsManager.create(cwd, agentDir, projectTrusted: true)
         : trustSettingsManager
@@ -70,4 +93,3 @@ func resolveProjectTrustForCLI(
         settingsManager: settingsManager
     )
 }
-

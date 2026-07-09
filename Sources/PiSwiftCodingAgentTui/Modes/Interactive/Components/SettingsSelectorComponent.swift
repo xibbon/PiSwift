@@ -30,6 +30,7 @@ public struct SettingsConfig: Sendable {
     public var collapseChangelog: Bool
     public var quietStartup: Bool
     public var doubleEscapeAction: String
+    public var editorPaddingX: Int
     public var autocompleteMaxVisible: Int
 
     public init(
@@ -49,6 +50,7 @@ public struct SettingsConfig: Sendable {
         collapseChangelog: Bool,
         quietStartup: Bool,
         doubleEscapeAction: String,
+        editorPaddingX: Int,
         autocompleteMaxVisible: Int
     ) {
         self.autoCompact = autoCompact
@@ -67,6 +69,7 @@ public struct SettingsConfig: Sendable {
         self.collapseChangelog = collapseChangelog
         self.quietStartup = quietStartup
         self.doubleEscapeAction = doubleEscapeAction
+        self.editorPaddingX = editorPaddingX
         self.autocompleteMaxVisible = autocompleteMaxVisible
     }
 }
@@ -87,6 +90,7 @@ public struct SettingsCallbacks {
     public var onCollapseChangelogChange: (Bool) -> Void
     public var onQuietStartupChange: (Bool) -> Void
     public var onDoubleEscapeActionChange: (String) -> Void
+    public var onEditorPaddingXChange: (Int) -> Void
     public var onAutocompleteMaxVisibleChange: (Int) -> Void
     public var onCancel: () -> Void
 
@@ -106,6 +110,7 @@ public struct SettingsCallbacks {
         onCollapseChangelogChange: @escaping (Bool) -> Void,
         onQuietStartupChange: @escaping (Bool) -> Void,
         onDoubleEscapeActionChange: @escaping (String) -> Void,
+        onEditorPaddingXChange: @escaping (Int) -> Void,
         onAutocompleteMaxVisibleChange: @escaping (Int) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -124,6 +129,7 @@ public struct SettingsCallbacks {
         self.onCollapseChangelogChange = onCollapseChangelogChange
         self.onQuietStartupChange = onQuietStartupChange
         self.onDoubleEscapeActionChange = onDoubleEscapeActionChange
+        self.onEditorPaddingXChange = onEditorPaddingXChange
         self.onAutocompleteMaxVisibleChange = onAutocompleteMaxVisibleChange
         self.onCancel = onCancel
     }
@@ -246,6 +252,13 @@ public final class SettingsSelectorComponent: Container {
                 description: "Max visible items in autocomplete dropdown (3-20)",
                 currentValue: String(config.autocompleteMaxVisible),
                 values: ["3", "5", "7", "10", "15", "20"]
+            ),
+            SettingItem(
+                id: "editor-padding-x",
+                label: "Editor padding",
+                description: "Horizontal padding inside the prompt editor (0-3)",
+                currentValue: String(config.editorPaddingX),
+                values: ["0", "1", "2", "3"]
             ),
             SettingItem(
                 id: "thinking",
@@ -379,6 +392,10 @@ public final class SettingsSelectorComponent: Container {
                     callbacks.onQuietStartupChange(newValue == "true")
                 case "double-escape-action":
                     callbacks.onDoubleEscapeActionChange(newValue)
+                case "editor-padding-x":
+                    if let value = Int(newValue) {
+                        callbacks.onEditorPaddingXChange(value)
+                    }
                 case "autocomplete-max-visible":
                     if let value = Int(newValue) {
                         callbacks.onAutocompleteMaxVisibleChange(value)

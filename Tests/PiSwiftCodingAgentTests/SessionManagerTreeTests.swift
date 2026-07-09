@@ -114,13 +114,13 @@ import PiSwiftAgent
     #expect(tree[0].children.first?.children.first?.entry.id == id3)
 }
 
-@Test func getTreeWithBranches() {
+@Test func getTreeWithBranches() throws {
     let session = SessionManager.inMemory()
     let id1 = session.appendMessage(userMsg("1"))
     let id2 = session.appendMessage(assistantMsg("2"))
     let id3 = session.appendMessage(userMsg("3"))
 
-    session.branch(id2)
+    try session.branch(id2)
     let id4 = session.appendMessage(userMsg("4-branch"))
 
     let tree = session.getTree()
@@ -131,22 +131,50 @@ import PiSwiftAgent
     #expect(childIds == [id3, id4].sorted())
 }
 
-@Test func getTreeMultipleBranches() {
+@Test func getTreeMultipleBranches() throws {
     let session = SessionManager.inMemory()
     _ = session.appendMessage(userMsg("root"))
     let id2 = session.appendMessage(assistantMsg("response"))
 
-    session.branch(id2)
+    try session.branch(id2)
     let idA = session.appendMessage(userMsg("branch-A"))
-    session.branch(id2)
+    try session.branch(id2)
     let idB = session.appendMessage(userMsg("branch-B"))
-    session.branch(id2)
+    try session.branch(id2)
     let idC = session.appendMessage(userMsg("branch-C"))
 
     let tree = session.getTree()
     let node2 = tree[0].children[0]
     let ids = node2.children.map { $0.entry.id }.sorted()
     #expect(ids == [idA, idB, idC].sorted())
+}
+
+@Test func branchMissingEntryThrowsInsteadOfCrashing() {
+    let session = SessionManager.inMemory()
+
+    do {
+        try session.branch("missing-entry")
+        #expect(Bool(false), "Expected missing branch entry to throw")
+    } catch {
+        #expect(error.localizedDescription == "Entry missing-entry not found")
+    }
+}
+
+@Test func branchWithSummaryMissingEntryThrowsInsteadOfCrashing() {
+    let session = SessionManager.inMemory()
+
+    do {
+        _ = try session.branchWithSummary("missing-entry", "summary")
+        #expect(Bool(false), "Expected missing summary branch entry to throw")
+    } catch {
+        #expect(error.localizedDescription == "Entry missing-entry not found")
+    }
+}
+
+@Test func createBranchedSessionMissingEntryReturnsNil() {
+    let session = SessionManager.inMemory()
+
+    #expect(session.createBranchedSession("missing-entry") == nil)
 }
 
 @Test func saveCustomEntry() {

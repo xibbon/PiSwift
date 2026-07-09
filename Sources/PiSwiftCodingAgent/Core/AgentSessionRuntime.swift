@@ -20,6 +20,10 @@ import PiSwiftAI
 ///   2. **Cross-cwd / full rebuild**: invokes the factory closure to construct a fresh session
 ///      against a new cwd / SessionManager. Use this for `/fork` into a different worktree
 ///      or `switchSession` into a session whose stored cwd differs from the current one.
+///
+/// SAFETY: mutable runtime state is stored in `LockedState`; the factory closure is
+/// `@Sendable` and invoked from async methods that publish the replacement only after
+/// construction succeeds.
 public final class AgentSessionRuntime: @unchecked Sendable {
     private let factory: CreateAgentSessionRuntimeFactory
     private let agentDirState: LockedState<String>

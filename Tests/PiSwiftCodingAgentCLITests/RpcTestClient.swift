@@ -37,6 +37,7 @@ actor RpcTestClient {
     private var eventWaiters: [UUID: CheckedContinuation<SendableJSONArray, Error>] = [:]
     private var requestId = 0
     private var stderrBuffer = ""
+    private var invalidStdoutLines: [String] = []
 
     init(options: Options) {
         self.options = options
@@ -142,6 +143,14 @@ actor RpcTestClient {
             throw RpcTestError(message: "Invalid get_state response")
         }
         return SendableJSON(value: data.mapValues { AnyCodable($0) })
+    }
+
+    func stderrText() -> String {
+        stderrBuffer
+    }
+
+    func invalidStdoutText() -> [String] {
+        invalidStdoutLines
     }
 
     func compact() async throws -> SendableJSON {
@@ -290,6 +299,7 @@ actor RpcTestClient {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data, options: []),
               let dict = json as? [String: Any] else {
+            invalidStdoutLines.append(line)
             return
         }
         if let type = dict["type"] as? String, type == "response" {

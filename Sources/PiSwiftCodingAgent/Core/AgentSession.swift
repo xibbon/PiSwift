@@ -1791,7 +1791,9 @@ public final class AgentSession: Sendable {
 
         // position: "at" — branch from the leaf so the new session inherits the leaf entry
         // (rather than forking from its parent, which would drop it).
-        _ = sessionManager.createBranchedSession(leafId)
+        guard sessionManager.createBranchedSession(leafId) != nil else {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
         agent.sessionId = sessionManager.getSessionId()
 
         if let hookRunner = _hookRunner {
@@ -1826,7 +1828,9 @@ public final class AgentSession: Sendable {
         if msg.parentId == nil {
             _ = sessionManager.newSession()
         } else if let parentId = msg.parentId {
-            _ = sessionManager.createBranchedSession(parentId)
+            guard sessionManager.createBranchedSession(parentId) != nil else {
+                throw AgentSessionError.invalidEntryIdForForking
+            }
         }
         agent.sessionId = sessionManager.getSessionId()
 
@@ -1944,15 +1948,19 @@ public final class AgentSession: Sendable {
         }
 
         var summaryEntry: BranchSummaryEntry?
-        if let summaryText {
-            let summaryId = sessionManager.branchWithSummary(newLeafId, summaryText, details: summaryDetails, fromHook: fromHook)
-            if case .branchSummary(let entry) = sessionManager.getEntry(summaryId) {
-                summaryEntry = entry
+        do {
+            if let summaryText {
+                let summaryId = try sessionManager.branchWithSummary(newLeafId, summaryText, details: summaryDetails, fromHook: fromHook)
+                if case .branchSummary(let entry) = sessionManager.getEntry(summaryId) {
+                    summaryEntry = entry
+                }
+            } else if newLeafId == nil {
+                sessionManager.resetLeaf()
+            } else if let newLeafId {
+                try sessionManager.branch(newLeafId)
             }
-        } else if newLeafId == nil {
-            sessionManager.resetLeaf()
-        } else if let newLeafId {
-            sessionManager.branch(newLeafId)
+        } catch {
+            return (nil, true, nil, nil)
         }
 
         await syncAgentContext()

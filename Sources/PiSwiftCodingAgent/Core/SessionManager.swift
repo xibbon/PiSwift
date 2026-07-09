@@ -1100,9 +1100,9 @@ public final class SessionManager: Sendable {
         return entry.id
     }
 
-    public func branch(_ branchFromId: String) {
+    public func branch(_ branchFromId: String) throws {
         guard byId[branchFromId] != nil else {
-            fatalError("Entry \(branchFromId) not found")
+            throw SessionManagerError.entryNotFound(branchFromId)
         }
         leafId = branchFromId
     }
@@ -1111,9 +1111,9 @@ public final class SessionManager: Sendable {
         leafId = nil
     }
 
-    public func branchWithSummary(_ branchFromId: String?, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil) -> String {
+    public func branchWithSummary(_ branchFromId: String?, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil) throws -> String {
         if let branchFromId, byId[branchFromId] == nil {
-            fatalError("Entry \(branchFromId) not found")
+            throw SessionManagerError.entryNotFound(branchFromId)
         }
         leafId = branchFromId
         let entry = BranchSummaryEntry(id: generateId(existing: Set(byId.keys)), parentId: branchFromId, timestamp: isoNow(), fromId: branchFromId ?? "root", summary: summary, details: details, fromHook: fromHook)
@@ -1124,7 +1124,7 @@ public final class SessionManager: Sendable {
     public func createBranchedSession(_ leafId: String) -> String? {
         let path = getBranch(leafId)
         if path.isEmpty {
-            fatalError("Entry \(leafId) not found")
+            return nil
         }
 
         let pathWithoutLabels = path.filter { $0.type != "label" }

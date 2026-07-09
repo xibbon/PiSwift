@@ -42,6 +42,10 @@ public actor FileMutationQueue {
 }
 
 /// Thread-safe holder for passing a result out of a `Task<Void, Never>`.
+///
+/// SAFETY: result/error storage is protected by `lock`. `get()` is called only
+/// after the producer task has completed; a missing value is an internal invariant
+/// failure, not a user-controlled error path.
 private final class LockedResultHolder<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var value: T?

@@ -253,7 +253,7 @@ import PiSwiftCodingAgent
     #expect(a1 != nil)
 
     if let a1 {
-        ctx.session.sessionManager.branch(a1.id)
+        try ctx.session.sessionManager.branch(a1.id)
         try await ctx.session.prompt("Branch path")
         await ctx.session.agent.waitForIdle()
     }

@@ -411,16 +411,12 @@ public func streamSimpleGoogleGeminiCli(
     context: Context,
     options: SimpleStreamOptions?
 ) -> AssistantMessageEventStream {
-    guard let apiKey = options?.apiKey, !apiKey.isEmpty else {
-        fatalError("Google Cloud Code Assist requires OAuth authentication. Use /login to authenticate.")
-    }
-
     let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
     let base = GoogleGeminiCliOptions(
         temperature: options?.temperature,
         maxTokens: baseMaxTokens,
         signal: options?.signal,
-        apiKey: apiKey,
+        apiKey: options?.apiKey,
         maxRetryDelayMs: options?.maxRetryDelayMs,
         headers: options?.headers,
         toolChoice: nil,

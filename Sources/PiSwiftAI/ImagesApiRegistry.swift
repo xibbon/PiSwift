@@ -17,6 +17,8 @@ private struct RegisteredImagesApiProvider: Sendable {
     let sourceId: String?
 }
 
+/// SAFETY: all mutable provider storage is accessed only while holding `lock`;
+/// registered providers and source identifiers are value-typed `Sendable`.
 public final class ImagesApiProviderRegistry: @unchecked Sendable {
     public static let shared = ImagesApiProviderRegistry()
 
@@ -116,4 +118,3 @@ public func generateImages(model: ImagesModel, context: ImagesContext, options: 
     }
     return await provider.generateImages(model, context, options)
 }
-

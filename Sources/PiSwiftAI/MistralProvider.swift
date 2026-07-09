@@ -523,6 +523,9 @@ private func jsonEncodeMistralArgs(_ args: [String: AnyCodable]) -> String {
 
 /// Mistral requires tool-call IDs to be exactly 9 alphanumeric characters. This normalizer
 /// preserves identity (same input yields same output) and resolves collisions by hashing.
+///
+/// SAFETY: instances are request-local and used synchronously while constructing
+/// one payload, so the mutable maps are not shared across concurrent tasks.
 private final class MistralToolCallIdNormalizer: @unchecked Sendable {
     private static let length = 9
     private var idMap: [String: String] = [:]

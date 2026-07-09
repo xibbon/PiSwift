@@ -39,6 +39,11 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         if cli.rawMessages.first == "config" {
             let cwd = FileManager.default.currentDirectoryPath
             let agentDir = getAgentDir()
+            let startupSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
+            await runFirstTimeSetupIfNeeded(
+                settingsManager: startupSettingsManager,
+                isInteractive: true
+            )
             let authStorage = AuthStorage.create(getAuthPath())
             let modelRegistry = ModelRegistry(authStorage, agentDir)
             let trustChoice = projectTrustChoice(approve: cli.approve, noApprove: cli.noApprove)
@@ -81,8 +86,9 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         let resolvedOffline = parsed.offline == true
 
         let cwd = FileManager.default.currentDirectoryPath
+        let agentDir = getAgentDir()
         let authStorage = AuthStorage.create(getAuthPath())
-        let modelRegistry = ModelRegistry(authStorage, getAgentDir())
+        let modelRegistry = ModelRegistry(authStorage, agentDir)
         let eventBus = createEventBus()
         time("discoverModels")
 
@@ -114,7 +120,6 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             Darwin.exit(1)
         }
 
-        let agentDir = getAgentDir()
         let trustChoice = projectTrustChoice(
             approve: parsed.approve == true,
             noApprove: parsed.noApprove == true
@@ -125,6 +130,14 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
             if parsed.print == true || parsed.mode != nil { return .print }
             return .tui
         }()
+        if trustMode == .tui {
+            let startupSettingsManager = SettingsManager.create(cwd, agentDir, projectTrusted: false)
+            await runFirstTimeSetupIfNeeded(
+                settingsManager: startupSettingsManager,
+                isInteractive: true
+            )
+            time("firstTimeSetup")
+        }
         let trustContext = await resolveProjectTrustForCLI(
             cwd: cwd,
             agentDir: agentDir,
@@ -145,7 +158,7 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         time("initTheme")
 
         // If stdin is a pipe, read all of it and prepend to the initial message
-        if isatty(STDIN_FILENO) == 0 {
+        if parsed.mode != .rpc, isatty(STDIN_FILENO) == 0 {
             var stdinContent = ""
             while let line = readLine(strippingNewline: false) {
                 stdinContent += line
@@ -214,6 +227,16 @@ struct PiCodingAgentCLI: AsyncParsableCommand {
         let isInteractive = parsed.print != true && parsed.mode == nil
         let mode = parsed.mode ?? .text
         let shouldPrintMessages = isInteractive
+        var nonInteractiveSignalSources: [DispatchSourceSignal] = []
+        if !isInteractive {
+            _ = takeOverStdoutForMachineReadableOutput()
+            nonInteractiveSignalSources = registerNonInteractiveSignalHandlers()
+        }
+        defer {
+            if !nonInteractiveSignalSources.isEmpty {
+                unregisterNonInteractiveSignalHandlers(nonInteractiveSignalSources)
+            }
+        }
         let sessionContext = sessionManager.buildSessionContext()
         let hasExistingSession = !sessionContext.messages.isEmpty
         let defaultThinkingLevel = ThinkingLevel(rawValue: settingsManager.getDefaultThinkingLevel() ?? "off") ?? .off

@@ -55,14 +55,18 @@ public func agentLoopContinue(
     let stream = createAgentStream()
 
     Task {
-        let messages = await runAgentLoopContinue(
-            context: context,
-            config: config,
-            emit: { event in stream.push(event) },
-            signal: signal,
-            streamFn: streamFn
-        )
-        stream.end(messages)
+        do {
+            let messages = try await runAgentLoopContinue(
+                context: context,
+                config: config,
+                emit: { event in stream.push(event) },
+                signal: signal,
+                streamFn: streamFn
+            )
+            stream.end(messages)
+        } catch {
+            stream.end([])
+        }
     }
 
     return stream
@@ -108,12 +112,12 @@ public func runAgentLoopContinue(
     emit: @escaping AgentEventSink,
     signal: CancellationToken? = nil,
     streamFn: StreamFn? = nil
-) async -> [AgentMessage] {
+) async throws -> [AgentMessage] {
     guard !context.messages.isEmpty else {
-        fatalError("Cannot continue: no messages in context")
+        throw AgentLoopError.emptyContext
     }
     if let last = context.messages.last, last.role == "assistant" {
-        fatalError("Cannot continue from message role: assistant")
+        throw AgentLoopError.lastMessageAssistant
     }
 
     let currentContext = context

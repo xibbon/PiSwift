@@ -2,6 +2,8 @@ import Foundation
 
 public func getModel(provider: KnownProvider, modelId: String) -> Model {
     guard let model = ModelsData[provider.rawValue]?[modelId] else {
+        // API precondition for known-provider convenience lookup. Use the
+        // string-provider overload when the provider/model pair is user input.
         fatalError("Unknown model \(modelId) for provider \(provider.rawValue)")
     }
     return model

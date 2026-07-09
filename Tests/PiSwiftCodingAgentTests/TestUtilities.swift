@@ -163,7 +163,7 @@ func buildTestTree(session: SessionManager, messages: [(role: String, text: Stri
     var ids: [String: String] = [:]
     for message in messages {
         if let branchFrom = message.branchFrom, let branchId = ids[branchFrom] {
-            session.branch(branchId)
+            try? session.branch(branchId)
         }
 
         let id: String

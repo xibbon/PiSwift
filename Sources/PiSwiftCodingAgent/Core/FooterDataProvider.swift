@@ -7,6 +7,8 @@ public protocol FooterDataProviding: Sendable {
     func onBranchChange(_ callback: @escaping @Sendable () -> Void) -> @Sendable () -> Void
 }
 
+/// SAFETY: branch cache, extension statuses, callbacks, and watcher handles are
+/// accessed only while holding `lock`; callback invocation uses snapshots.
 public final class FooterDataProvider: @unchecked Sendable, FooterDataProviding {
     private let lock = NSLock()
     private var extensionStatuses: [String: String] = [:]

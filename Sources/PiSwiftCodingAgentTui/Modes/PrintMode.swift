@@ -13,15 +13,16 @@ public func runPrintMode(
     _ initialImages: [ImageContent]? = nil
 ) async throws {
     let outputJson = mode == .json
+    let machineOutput = takeOverStdoutForMachineReadableOutput()
 
     if outputJson, let header = session.sessionManager.getHeader() {
-        writeJsonLine(encodeSessionHeader(header))
+        machineOutput.writeJSONLine(encodeSessionHeader(header))
     }
 
     _ = session.subscribe { event in
         guard outputJson else { return }
         let payload = encodeSessionEvent(event)
-        writeJsonLine(payload)
+        machineOutput.writeJSONLine(payload)
     }
 
     if let hookRunner = session.hookRunner {
@@ -112,29 +113,15 @@ public func runPrintMode(
                         let markdown = Markdown(combined, paddingX: 0, paddingY: 0, theme: getMarkdownTheme())
                         return markdown.render(width: width).joined(separator: "\n")
                     }
-                    writeStdout(rendered + "\n")
+                    machineOutput.writeString(rendered + "\n")
                 } else {
-                    writeStdout(combined + "\n")
+                    machineOutput.writeString(combined + "\n")
                 }
             }
         }
     }
 
     flushStdout()
-}
-
-private func writeJsonLine(_ object: [String: Any]) {
-    guard var data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
-        return
-    }
-    data.append(0x0A)
-    FileHandle.standardOutput.write(data)
-    FileHandle.standardOutput.synchronizeFile()
-}
-
-private func writeStdout(_ text: String) {
-    guard let data = text.data(using: .utf8) else { return }
-    FileHandle.standardOutput.write(data)
 }
 
 private func flushStdout() {

@@ -5,6 +5,14 @@ https://github.com/badlogic/pi-mono
 
 It is split up slightly differently.
 
+## Package boundary
+
+`PiSwiftAgent` is the reusable low-level agent loop/proxy layer. The higher-level
+coding-agent harness behavior from `pi-mono/packages/agent` lives in
+`PiSwiftCodingAgent` and `PiSwiftCodingAgentTui` instead of being exposed as a
+source-compatible generic `AgentHarness` API. See
+`AGENT_HARNESS_API_BOUNDARY.md` for the parity decision.
+
 ## Subagents (in-process)
 
 PiSwift supports delegating work to specialized subagents without spawning a subprocess. Subagents are defined by user-editable Markdown files and run in-process with isolated context.
@@ -97,8 +105,10 @@ When no model is selected, the default fallback order is:
 
 ## Strict concurrency + errors
 
-This port uses strict concurrency (no `@unchecked Sendable`). Data races are fixed at the source.
-Errors use Swift enums that conform to `LocalizedError` instead of `NSError`.
+This port builds with strict concurrency. Some lock-backed wrappers still use
+`@unchecked Sendable`; see `CONCURRENCY_FATALERROR_AUDIT.md` for the current
+inventory and cleanup plan. Errors use Swift enums that conform to
+`LocalizedError` instead of `NSError`.
 
 ## Sample subagent
 

@@ -417,6 +417,7 @@ import PiSwiftAI
     let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
     try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    try writeTrustRequiringProjectSettings(projectDir)
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
     let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
@@ -436,6 +437,7 @@ import PiSwiftAI
     let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
     try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    try writeTrustRequiringProjectSettings(projectDir)
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
     let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
@@ -447,6 +449,112 @@ import PiSwiftAI
 
     let reloaded = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
     #expect(ProjectTrustManager(settingsManager: reloaded).resolve(cwd: projectDir).trusted == true)
+}
+
+@Test func projectTrustManagerAppliesDefaultProjectTrustPolicy() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-default-policy-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    try writeTrustRequiringProjectSettings(projectDir)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+    let trustManager = ProjectTrustManager(settingsManager: manager)
+
+    manager.setDefaultProjectTrust(.always)
+    let always = trustManager.resolve(cwd: projectDir)
+    #expect(always.trusted == true)
+    #expect(always.source == "default-always")
+
+    manager.setDefaultProjectTrust(.never)
+    let never = trustManager.resolve(cwd: projectDir)
+    #expect(never.trusted == false)
+    #expect(never.source == "default-never")
+
+    manager.setDefaultProjectTrust(.ask)
+    let askNoUI = trustManager.resolve(cwd: projectDir, hasUI: false)
+    #expect(askNoUI.trusted == false)
+    #expect(askNoUI.source == "ask-no-ui")
+}
+
+@Test func projectTrustManagerTrustsProjectsWithoutTrustRequiringResources() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-no-resources-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(projectDir, agentDir, projectTrusted: false)
+    manager.setDefaultProjectTrust(.never)
+    let resolved = ProjectTrustManager(settingsManager: manager).resolve(cwd: projectDir)
+
+    #expect(resolved.trusted == true)
+    #expect(resolved.source == "no-project-resources")
+}
+
+@Test func projectTrustOptionsMatchPersistentAndSessionChoices() throws {
+    let cwd = "/tmp/pi-trust-options/project/subdir"
+    let trustPath = normalizeProjectTrustPathForOptions(cwd)
+    let parentPath = try #require(getProjectTrustParentPath(cwd))
+    let options = getProjectTrustOptions(cwd, includeSessionOnly: true)
+
+    #expect(options.count == 5)
+    #expect(options[0] == ProjectTrustOption(
+        label: "Trust",
+        trusted: true,
+        updates: [ProjectTrustUpdate(path: trustPath, decision: true)],
+        savedPath: trustPath
+    ))
+    #expect(options[1] == ProjectTrustOption(
+        label: "Trust parent folder (\(parentPath))",
+        trusted: true,
+        updates: [
+            ProjectTrustUpdate(path: parentPath, decision: true),
+            ProjectTrustUpdate(path: trustPath, decision: nil),
+        ],
+        savedPath: parentPath
+    ))
+    #expect(options[2] == ProjectTrustOption(label: "Trust (this session only)", trusted: true, updates: []))
+    #expect(options[3] == ProjectTrustOption(
+        label: "Do not trust",
+        trusted: false,
+        updates: [ProjectTrustUpdate(path: trustPath, decision: false)],
+        savedPath: trustPath
+    ))
+    #expect(options[4] == ProjectTrustOption(label: "Do not trust (this session only)", trusted: false, updates: []))
+}
+
+@Test func settingsManagerUsesNearestProjectTrustDecision() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-parent-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let childDir = URL(fileURLWithPath: projectDir).appendingPathComponent("child").path
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent").path
+    try? FileManager.default.createDirectory(atPath: childDir, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(childDir, agentDir, projectTrusted: false)
+    manager.setProjectTrust(projectDir, trusted: true)
+
+    #expect(manager.getProjectTrust(childDir) == true)
+
+    manager.setProjectTrust(childDir, trusted: false)
+    #expect(manager.getProjectTrust(childDir) == false)
+
+    manager.applyProjectTrustUpdates([
+        ProjectTrustUpdate(path: projectDir, decision: true),
+        ProjectTrustUpdate(path: childDir, decision: nil),
+    ])
+    #expect(manager.getProjectTrust(childDir) == true)
 }
 
 @Test func hasTrustRequiringProjectResourcesDetectsPiResources() throws {
@@ -468,6 +576,36 @@ import PiSwiftAI
     )
 
     #expect(hasTrustRequiringProjectResources(projectDir) == true)
+}
+
+@Test func hasTrustRequiringProjectResourcesDetectsAncestorAgentsSkills() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-project-trust-agents-skills-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project").path
+    let childDir = URL(fileURLWithPath: projectDir).appendingPathComponent("child").path
+    let skillsDir = URL(fileURLWithPath: projectDir)
+        .appendingPathComponent(".agents")
+        .appendingPathComponent("skills")
+        .path
+    try FileManager.default.createDirectory(atPath: childDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    #expect(hasTrustRequiringProjectResources(childDir) == false)
+
+    try FileManager.default.createDirectory(atPath: skillsDir, withIntermediateDirectories: true)
+    #expect(hasTrustRequiringProjectResources(childDir) == true)
+}
+
+private func writeTrustRequiringProjectSettings(_ projectDir: String) throws {
+    let settingsPath = URL(fileURLWithPath: projectDir)
+        .appendingPathComponent(CONFIG_DIR_NAME)
+        .appendingPathComponent("settings.json")
+    try FileManager.default.createDirectory(
+        at: settingsPath.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try "{}".write(to: settingsPath, atomically: true, encoding: .utf8)
 }
 
 @Test func settingsPreserveExternalProjectEditWhenChangingUnrelatedProjectField() async throws {

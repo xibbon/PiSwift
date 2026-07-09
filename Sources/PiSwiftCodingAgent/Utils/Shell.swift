@@ -192,11 +192,54 @@ public func killProcessTree(_ pid: pid_t) {
     process.standardError = Pipe()
     try? process.run()
     #else
+    let descendants = collectDescendantPids(of: pid)
     if kill(-pid, SIGKILL) != 0 {
+        for childPid in descendants.sorted(by: >) {
+            _ = kill(childPid, SIGKILL)
+        }
         _ = kill(pid, SIGKILL)
     }
     #endif
 }
+
+#if !os(Windows)
+private func collectDescendantPids(of pid: pid_t) -> Set<pid_t> {
+    var result = Set<pid_t>()
+    var stack = childPids(of: pid)
+
+    while let current = stack.popLast() {
+        guard result.insert(current).inserted else { continue }
+        stack.append(contentsOf: childPids(of: current))
+    }
+
+    return result
+}
+
+private func childPids(of pid: pid_t) -> [pid_t] {
+    let executable = FileManager.default.fileExists(atPath: "/usr/bin/pgrep") ? "/usr/bin/pgrep" : "/bin/pgrep"
+    guard FileManager.default.fileExists(atPath: executable) else { return [] }
+
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = ["-P", String(pid)]
+    process.standardOutput = output
+    process.standardError = Pipe()
+
+    do {
+        try process.run()
+    } catch {
+        return []
+    }
+
+    process.waitUntilExit()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    let text = String(decoding: data, as: UTF8.self)
+    return text
+        .split(whereSeparator: { $0 == "\n" || $0 == "\r" || $0 == " " || $0 == "\t" })
+        .compactMap { pid_t(String($0)) }
+}
+#endif
 
 /// v0.67.4: registry of detached child PIDs spawned by long-running tools (e.g., bash with `&`).
 /// On normal session shutdown / signal-driven exit (SIGINT, SIGTERM), `killTrackedDetachedChildren()`

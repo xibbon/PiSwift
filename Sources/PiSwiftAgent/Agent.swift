@@ -638,15 +638,19 @@ public final class Agent: Sendable {
                 streamFn: streamFn
             )
         } else {
-            _ = await runAgentLoopContinue(
-                context: context,
-                config: config,
-                emit: { [weak self] event in
-                    await self?.processLoopEvent(event)
-                },
-                signal: token,
-                streamFn: streamFn
-            )
+            do {
+                _ = try await runAgentLoopContinue(
+                    context: context,
+                    config: config,
+                    emit: { [weak self] event in
+                        await self?.processLoopEvent(event)
+                    },
+                    signal: token,
+                    streamFn: streamFn
+                )
+            } catch {
+                mutateState { $0._setErrorMessage(error.localizedDescription) }
+            }
         }
 
         // Settle: clear isStreaming AFTER all listeners (including agent_end) have drained.

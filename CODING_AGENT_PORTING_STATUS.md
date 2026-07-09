@@ -2,6 +2,11 @@
 
 This document tracks parity between the JS module in `pi-mono/packages/coding-agent` and the Swift module under `PiSwift`.
 
+For the broader `pi-mono/packages/agent` harness boundary, see
+`AGENT_HARNESS_API_BOUNDARY.md`. The Swift port intentionally keeps the reusable
+loop/proxy primitives in `PiSwiftAgent` and the coding-agent harness behavior in
+`PiSwiftCodingAgent`/`PiSwiftCodingAgentTui`.
+
 ## Ported (feature-complete or very close)
 - Core tools: `pi-mono/packages/coding-agent/src/core/tools/*` -> `Sources/PiSwiftCodingAgent/Core/Tools/*`
 - Compaction + branch summarization: `pi-mono/packages/coding-agent/src/core/compaction/*` -> `Sources/PiSwiftCodingAgent/Core/Compaction/*`
@@ -25,6 +30,15 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - SDK: `pi-mono/packages/coding-agent/src/core/sdk.ts` -> `Sources/PiSwiftCodingAgent/Core/SDK.swift` (custom tools discovery, hook discovery supports bundles, agent-level before/after tool hook adapters)
 - Hook loader + tool wrapper: `pi-mono/packages/coding-agent/src/core/hooks/loader.ts`, `pi-mono/packages/coding-agent/src/core/hooks/tool-wrapper.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookLoader.swift`, `Sources/PiSwiftCodingAgent/Core/Hooks/ToolWrapper.swift` (bundle-based hooks)
 - Hook runtime: `pi-mono/packages/coding-agent/src/core/hooks/runner.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookRunner.swift` (context/before_agent_start/session/agent/turn/project_trust events; `ctx.mode`, trust, tool metadata, system-prompt option context, and pre-trust global-extension evaluation)
+- Extension provider/resource/lifecycle parity:
+  - Dynamic provider registration/unregistration via `HookAPI` and `ModelRegistry`.
+  - `resources_discover` overlays for extension skills, prompts, and themes with provenance metadata.
+  - `message_*` and `tool_execution_*` lifecycle dispatch from `AgentSession`.
+  - Main command/context APIs and UI helpers documented in `EXTENSION_API_PARITY.md`.
+- Settings/default parity:
+  - `transport` defaults to `.auto` and legacy `websockets` migrates.
+  - `defaultProjectTrust`, analytics/tracking ID, editor padding, hardware cursor, markdown indentation, HTTP idle timeout, and WebSocket connect timeout are parsed, saved, merged, and tested.
+  - HTTP/WebSocket timeouts are routed into agent/provider construction.
 - Custom tools pipeline: `pi-mono/packages/coding-agent/src/core/custom-tools/*` -> `Sources/PiSwiftCodingAgent/Core/CustomTools/*` + CLI/TUI wiring
 - RPC mode: `pi-mono/packages/coding-agent/src/modes/rpc/*` -> `Sources/PiSwiftCodingAgent/Modes/RpcMode.swift` (JSON protocol + hook UI + command handling)
 - RPC mode tests: `pi-mono/packages/coding-agent/test/rpc.test.ts` -> `Tests/PiSwiftCodingAgentTests/RpcModeTests.swift` + `Tests/PiSwiftCodingAgentTests/RpcTestClient.swift` (live-gated RPC client)
@@ -72,3 +86,7 @@ This document tracks parity between the JS module in `pi-mono/packages/coding-ag
 - [x] Interactive terminal title refresh after `/name` and extension-driven `pi.setSessionName()`.
 - [x] OAuth parity for `pi-mono/packages/ai`: GitHub Copilot device flow, token exchange, model enablement, base URL extraction, and auth-key conversion are implemented and covered by offline tests.
 - [x] Gemini provider parity: Google Generative AI, Vertex, Gemini CLI, and Antigravity request/usage/auth paths are implemented and covered by focused AI tests where applicable.
+- [x] Extension provider/resource/lifecycle parity: dynamic provider registration, `resources_discover`, message/tool lifecycle hooks, and main command/context APIs are implemented or documented as Swift differences in `EXTENSION_API_PARITY.md`.
+- [x] Settings/transport parity: the drifted settings keys identified by the audit are supported and tested, and transport/timeouts reach agent construction.
+- [x] Process-mode parity: output guarding, print/RPC stdout cleanliness, and signal shutdown cleanup are implemented and covered by focused tests.
+- [x] MiniTui editor parity: editor padding plus autocomplete trigger/debounce behavior are implemented and covered by MiniTui tests.

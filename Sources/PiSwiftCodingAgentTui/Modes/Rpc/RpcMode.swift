@@ -22,46 +22,18 @@ private final class PendingHookRequests: Sendable {
 }
 
 private final class RpcOutput: Sendable {
-    private let state = LockedState<Void>(())
-    private let fd: Int32
-    private let closeOnDeinit: Bool
+    private let output: MachineReadableOutput
 
-    init(fd: Int32 = STDOUT_FILENO, closeOnDeinit: Bool = false) {
-        self.fd = fd
-        self.closeOnDeinit = closeOnDeinit
-    }
-
-    deinit {
-        if closeOnDeinit {
-            close(fd)
-        }
+    init(output: MachineReadableOutput) {
+        self.output = output
     }
 
     static func takeOverStdout() -> RpcOutput {
-        let outputFD = dup(STDOUT_FILENO)
-        guard outputFD >= 0 else {
-            return RpcOutput()
-        }
-        _ = dup2(STDERR_FILENO, STDOUT_FILENO)
-        return RpcOutput(fd: outputFD, closeOnDeinit: true)
+        RpcOutput(output: takeOverStdoutForMachineReadableOutput())
     }
 
     func send(_ object: [String: Any]) {
-        state.withLock { _ in
-            guard var data = try? JSONSerialization.data(withJSONObject: object, options: []) else {
-                return
-            }
-            data.append(0x0A)
-            data.withUnsafeBytes { rawBuffer in
-                guard let baseAddress = rawBuffer.baseAddress else { return }
-                var offset = 0
-                while offset < data.count {
-                    let written = Darwin.write(fd, baseAddress.advanced(by: offset), data.count - offset)
-                    if written <= 0 { break }
-                    offset += written
-                }
-            }
-        }
+        output.writeJSONLine(object)
     }
 }
 

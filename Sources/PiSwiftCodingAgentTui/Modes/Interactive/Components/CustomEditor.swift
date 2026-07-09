@@ -37,8 +37,8 @@ public final class CustomEditor: Component, SystemCursorAware, EditorComponent {
         set { editor.borderColor = newValue }
     }
 
-    public init(theme: EditorTheme, keybindings: KeybindingsManager) {
-        self.editor = Editor(theme: theme)
+    public init(theme: EditorTheme, keybindings: KeybindingsManager, options: EditorOptions = EditorOptions()) {
+        self.editor = Editor(theme: theme, options: options)
         self.keybindings = keybindings
     }
 
@@ -68,6 +68,14 @@ public final class CustomEditor: Component, SystemCursorAware, EditorComponent {
 
     public func setAutocompleteProvider(_ provider: AutocompleteProvider) {
         editor.setAutocompleteProvider(provider)
+    }
+
+    public func setPaddingX(_ padding: Int) {
+        editor.setPaddingX(padding)
+    }
+
+    public func getPaddingX() -> Int {
+        editor.getPaddingX()
     }
 
     public func setAutocompleteMaxVisible(_ maxVisible: Int) {

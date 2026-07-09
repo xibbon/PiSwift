@@ -289,6 +289,9 @@ private func isAdcMarker(_ key: String) -> Bool {
 }
 
 /// Cache for ADC token resolution to avoid concurrent gcloud subprocess races.
+///
+/// SAFETY: token and timestamp mutation are serialized by `lock`; callers only
+/// receive copied `String` values.
 private final class VertexTokenCache: @unchecked Sendable {
     static let shared = VertexTokenCache()
     private let lock = NSLock()

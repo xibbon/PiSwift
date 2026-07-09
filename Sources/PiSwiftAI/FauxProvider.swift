@@ -67,6 +67,8 @@ public struct FauxRegistrationOptions: Sendable {
     }
 }
 
+/// SAFETY: mutable scripted-response and usage state is serialized by `lock`;
+/// immutable registration metadata is value typed.
 public final class FauxProviderRegistration: @unchecked Sendable {
     public let api: Api
     public let models: [Model]

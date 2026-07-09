@@ -306,6 +306,7 @@ public final class InteractiveMode {
     private var exitContinuation: CheckedContinuation<Void, Never>?
     private var unsubscribe: (() -> Void)?
     private var sigcontSource: DispatchSourceSignal?
+    private var isShuttingDown = false
     /// v0.70.5: signal sources for SIGHUP/SIGTERM that drive a clean shutdown so extensions
     /// receive `session_shutdown` and detached children get killed before the process exits.
     private var shutdownSignalSources: [DispatchSourceSignal] = []
@@ -403,8 +404,14 @@ public final class InteractiveMode {
         let pendingMessages = Container()
         let status = Container()
         let widgets = Container()
-        let defaultEditor = CustomEditor(theme: getEditorTheme(), keybindings: keybindings)
-        defaultEditor.setAutocompleteMaxVisible(settingsManager.getAutocompleteMaxVisible())
+        let defaultEditor = CustomEditor(
+            theme: getEditorTheme(),
+            keybindings: keybindings,
+            options: EditorOptions(
+                paddingX: settingsManager.getEditorPaddingX(),
+                autocompleteMaxVisible: settingsManager.getAutocompleteMaxVisible()
+            )
+        )
         let editorContainer = Container()
         let footerDataProvider = FooterDataProvider()
         footerBranchUnsubscribe = footerDataProvider.onBranchChange { [weak tui] in
@@ -1268,6 +1275,7 @@ public final class InteractiveMode {
                     newEditor.setAutocompleteProvider(provider)
                 }
                 if let settingsManager = session?.settingsManager {
+                    newEditor.setPaddingX(settingsManager.getEditorPaddingX())
                     newEditor.setAutocompleteMaxVisible(settingsManager.getAutocompleteMaxVisible())
                 }
 
@@ -1283,12 +1291,16 @@ public final class InteractiveMode {
             } else {
                 defaultEditor.setText(currentText)
                 if let settingsManager = session?.settingsManager {
+                    defaultEditor.setPaddingX(settingsManager.getEditorPaddingX())
                     defaultEditor.setAutocompleteMaxVisible(settingsManager.getAutocompleteMaxVisible())
                 }
                 editor = defaultEditor
             }
         } else {
             defaultEditor.setText(currentText)
+            if let settingsManager = session?.settingsManager {
+                defaultEditor.setPaddingX(settingsManager.getEditorPaddingX())
+            }
             editor = defaultEditor
         }
 
@@ -2198,7 +2210,7 @@ public final class InteractiveMode {
     private func handleCtrlC() {
         let now = Date().timeIntervalSince1970
         if now - lastSigintTime < 0.5 {
-            shutdown()
+            requestShutdown()
             return
         }
         lastSigintTime = now
@@ -2209,7 +2221,7 @@ public final class InteractiveMode {
     @MainActor
     private func handleCtrlD() {
         if editor?.getText().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
-            shutdown()
+            requestShutdown()
         }
     }
 
@@ -2234,16 +2246,23 @@ public final class InteractiveMode {
     }
 
     @MainActor
-    private func shutdown() {
-        unregisterShutdownSignalHandlers()
-        if let session {
-            Task { [session] in
-                if let hookRunner = session.hookRunner {
-                    _ = await hookRunner.emit(SessionShutdownEvent())
-                }
-                await session.emitCustomToolSessionEvent(.shutdown)
-            }
+    private func requestShutdown(fromSignal: Bool = false) {
+        Task { @MainActor in
+            await performShutdown(fromSignal: fromSignal)
         }
+    }
+
+    @MainActor
+    private func performShutdown(fromSignal: Bool = false) async {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
+        unregisterShutdownSignalHandlers()
+
+        if fromSignal {
+            killTrackedDetachedChildren()
+            await emitSessionShutdownEvents()
+        }
+
         unsubscribe?()
         unsubscribe = nil
         footerBranchUnsubscribe?()
@@ -2251,10 +2270,23 @@ public final class InteractiveMode {
         footerDataProvider?.dispose()
         footerDataProvider = nil
         tui?.stop()
+
+        if !fromSignal {
+            await emitSessionShutdownEvents()
+        }
+
         if let continuation = exitContinuation {
             exitContinuation = nil
             continuation.resume()
         }
+    }
+
+    private func emitSessionShutdownEvents() async {
+        guard let session else { return }
+        if let hookRunner = session.hookRunner {
+            _ = await hookRunner.emit(SessionShutdownEvent())
+        }
+        await session.emitCustomToolSessionEvent(.shutdown)
     }
 
     /// v0.70.5: register SIGHUP/SIGTERM handlers so extensions receive `session_shutdown` and
@@ -2267,9 +2299,8 @@ public final class InteractiveMode {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler { [weak self] in
-                killTrackedDetachedChildren()
                 Task { @MainActor in
-                    self?.shutdown()
+                    await self?.performShutdown(fromSignal: true)
                 }
             }
             source.resume()
@@ -2622,7 +2653,7 @@ public final class InteractiveMode {
         }
         if trimmed == "/quit" || trimmed == "/exit" {
             editor.setText("")
-            shutdown()
+            requestShutdown()
             return
         }
 
@@ -2888,6 +2919,7 @@ public final class InteractiveMode {
             collapseChangelog: settingsManager.getCollapseChangelog(),
             quietStartup: settingsManager.getQuietStartup(),
             doubleEscapeAction: settingsManager.getDoubleEscapeAction(),
+            editorPaddingX: settingsManager.getEditorPaddingX(),
             autocompleteMaxVisible: settingsManager.getAutocompleteMaxVisible()
         )
 
@@ -2951,6 +2983,12 @@ public final class InteractiveMode {
                 },
                 onDoubleEscapeActionChange: { action in
                     settingsManager.setDoubleEscapeAction(action)
+                },
+                onEditorPaddingXChange: { [weak self] padding in
+                    settingsManager.setEditorPaddingX(padding)
+                    self?.defaultEditor?.setPaddingX(padding)
+                    self?.editor?.setPaddingX(padding)
+                    self?.scheduleRender()
                 },
                 onAutocompleteMaxVisibleChange: { [weak self] maxVisible in
                     settingsManager.setAutocompleteMaxVisible(maxVisible)
@@ -3339,7 +3377,7 @@ public final class InteractiveMode {
                     self?.ui.requestRender()
                 },
                 onExit: { [weak self] in
-                    self?.shutdown()
+                    self?.requestShutdown()
                 },
                 requestRender: { [weak self] in
                     self?.ui.requestRender()

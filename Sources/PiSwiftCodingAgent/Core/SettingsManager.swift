@@ -391,13 +391,48 @@ public final class SettingsManager: Sendable {
     }
 
     public func getProjectTrust(_ cwd: String) -> Bool? {
-        globalSettings.projectTrust?[normalizeProjectTrustPath(cwd)]
+        guard let trust = globalSettings.projectTrust else { return nil }
+        var currentPath = normalizeProjectTrustPath(cwd)
+        while true {
+            if let decision = trust[currentPath] {
+                return decision
+            }
+            let parentPath = URL(fileURLWithPath: currentPath).deletingLastPathComponent().path
+            if parentPath == currentPath {
+                return nil
+            }
+            currentPath = parentPath
+        }
     }
 
     public func setProjectTrust(_ cwd: String, trusted: Bool) {
         var trust = globalSettings.projectTrust ?? [:]
         trust[normalizeProjectTrustPath(cwd)] = trusted
         globalSettings.projectTrust = trust
+        markModified("projectTrust")
+        save()
+    }
+
+    public func clearProjectTrust(_ cwd: String) {
+        var trust = globalSettings.projectTrust ?? [:]
+        trust.removeValue(forKey: normalizeProjectTrustPath(cwd))
+        globalSettings.projectTrust = trust.isEmpty ? nil : trust
+        markModified("projectTrust")
+        save()
+    }
+
+    public func applyProjectTrustUpdates(_ updates: [ProjectTrustUpdate]) {
+        guard !updates.isEmpty else { return }
+        var trust = globalSettings.projectTrust ?? [:]
+        for update in updates {
+            let path = normalizeProjectTrustPath(update.path)
+            if let decision = update.decision {
+                trust[path] = decision
+            } else {
+                trust.removeValue(forKey: path)
+            }
+        }
+        globalSettings.projectTrust = trust.isEmpty ? nil : trust
         markModified("projectTrust")
         save()
     }

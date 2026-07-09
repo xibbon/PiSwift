@@ -44,7 +44,7 @@ struct PiAICLI: AsyncParsableCommand {
 
         mutating func run() async throws {
             let prompt = readPrompt(from: options.prompt)
-            let model = resolveModel(provider: options.provider, modelId: options.model)
+            let model = try resolveModel(provider: options.provider, modelId: options.model)
             let context = Context(systemPrompt: options.system, messages: [.user(UserMessage(content: .text(prompt)))])
             let streamOptions = StreamOptions(
                 temperature: options.temperature,
@@ -66,7 +66,7 @@ struct PiAICLI: AsyncParsableCommand {
 
         mutating func run() async throws {
             let prompt = readPrompt(from: options.prompt)
-            let model = resolveModel(provider: options.provider, modelId: options.model)
+            let model = try resolveModel(provider: options.provider, modelId: options.model)
             let context = Context(systemPrompt: options.system, messages: [.user(UserMessage(content: .text(prompt)))])
             let reasoning = parseReasoning(options.reasoning)
             let streamOptions = SimpleStreamOptions(
@@ -134,14 +134,15 @@ private func readPrompt(from argument: String?) -> String {
     return ""
 }
 
-private func resolveModel(provider: String, modelId: String) -> Model {
+private func resolveModel(provider: String, modelId: String) throws -> Model {
     if let model = getModel(provider: provider, modelId: modelId) {
         return model
     }
     if let known = KnownProvider(rawValue: provider) {
-        return getModel(provider: known, modelId: modelId)
+        let available = getModels(provider: known).map(\.id).sorted().joined(separator: ", ")
+        throw ValidationError("Unknown model '\(modelId)' for provider '\(provider)'. Available models: \(available)")
     }
-    fatalError("Unknown provider/model: \(provider)/\(modelId)")
+    throw ValidationError("Unknown provider '\(provider)'")
 }
 
 private func parseReasoning(_ value: String?) -> ReasoningEffort? {

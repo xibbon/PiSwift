@@ -36,6 +36,9 @@ public struct ValidationResult {
 }
 
 /// JSON Schema validator for tool arguments.
+///
+/// SAFETY: this type has no mutable instance state; validation uses local
+/// variables only, so sharing `shared` across tasks is safe.
 public final class JSONSchemaValidator: @unchecked Sendable {
     public static let shared = JSONSchemaValidator()
 

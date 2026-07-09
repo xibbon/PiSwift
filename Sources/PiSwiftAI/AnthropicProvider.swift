@@ -648,6 +648,8 @@ private func anthropicResponseSnapshot(_ response: HTTPResponse) -> ResponseSnap
     return ResponseSnapshot(statusCode: statusCode, headers: headers)
 }
 
+/// SAFETY: the wrapped byte stream is consumed by a single task created
+/// immediately below; the wrapper only moves ownership into that task.
 private struct SendableAnthropicByteStream: @unchecked Sendable {
     let stream: HTTPByteStream
 }

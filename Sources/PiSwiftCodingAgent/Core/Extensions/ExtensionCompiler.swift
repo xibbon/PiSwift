@@ -124,11 +124,9 @@ public struct ExtensionCompiler {
         if let sdkDir = ProcessInfo.processInfo.environment["PI_EXTENSION_SDK_PATH"],
            !sdkDir.isEmpty,
            FileManager.default.fileExists(atPath: sdkDir) {
-            // Honor a `Modules/` subdir if present so callers can ship one tree.
-            let modulesSubdir = (sdkDir as NSString).appendingPathComponent("Modules")
-            let moduleDir = FileManager.default.fileExists(atPath: (modulesSubdir as NSString).appendingPathComponent("PiExtensionSDK.swiftmodule"))
-                ? modulesSubdir : sdkDir
-            return SDKPaths(modulePath: moduleDir, libPath: sdkDir)
+            if let paths = sdkPathsAt(sdkDir) {
+                return paths
+            }
         }
 
         // 2. ~/.pi/agent/sdk/  (per-user install — no root required).

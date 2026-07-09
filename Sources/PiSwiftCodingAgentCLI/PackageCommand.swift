@@ -16,6 +16,8 @@ private struct PackageCommandOptions {
     var invalidOption: String?
 }
 
+/// SAFETY: the optional exit code is read and written only while holding `lock`;
+/// values are copied `Int32`s.
 private final class PackageCommandExitCodeStore: @unchecked Sendable {
     private let lock = NSLock()
     private var code: Int32?

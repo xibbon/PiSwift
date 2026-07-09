@@ -431,6 +431,8 @@ private struct CodexWebSocketLease {
     let cached: Bool
 }
 
+/// SAFETY: all cache entry mutation is serialized by `lock`; timers/tasks are
+/// stored and invalidated under that same lock.
 private final class CodexWebSocketCache: @unchecked Sendable {
     private struct Entry {
         var task: URLSessionWebSocketTask

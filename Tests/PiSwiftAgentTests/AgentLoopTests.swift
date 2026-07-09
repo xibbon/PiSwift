@@ -305,6 +305,28 @@ import PiSwiftAgent
     }
 }
 
+@Test func runAgentLoopContinueValidationThrowsInsteadOfCrashing() async {
+    let emptyContext = AgentContext(systemPrompt: "You are helpful.", messages: [], tools: [])
+    let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
+
+    do {
+        _ = try await runAgentLoopContinue(context: emptyContext, config: config, emit: { _ in })
+        #expect(Bool(false), "Expected error for empty context")
+    } catch {
+        #expect(error.localizedDescription == "Cannot continue: no messages in context")
+    }
+
+    let assistant = createAssistantMessage(content: [.text(TextContent(text: "Hi"))])
+    let assistantContext = AgentContext(systemPrompt: "You are helpful.", messages: [.assistant(assistant)], tools: [])
+
+    do {
+        _ = try await runAgentLoopContinue(context: assistantContext, config: config, emit: { _ in })
+        #expect(Bool(false), "Expected error for assistant last message")
+    } catch {
+        #expect(error.localizedDescription == "Cannot continue from message role: assistant")
+    }
+}
+
 @Test func agentLoopContinueWithExistingContext() async throws {
     let userMessage = createUserMessage("Hello")
     let context = AgentContext(systemPrompt: "You are helpful.", messages: [userMessage], tools: [])
