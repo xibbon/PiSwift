@@ -5,6 +5,10 @@ import PiSwiftAI
 public struct ApiKeyCredential: Sendable {
     public var type: String = "api_key"
     public var key: String
+
+    public init(key: String) {
+        self.key = key
+    }
 }
 
 public struct OAuthCredential: Sendable {

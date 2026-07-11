@@ -21,6 +21,7 @@ func proxySession(for url: URL?) -> URLSession {
 }
 
 private func buildProxyConfig(env: [String: String]) -> [AnyHashable: Any]? {
+    #if os(macOS)
     let allProxy = env["ALL_PROXY"] ?? env["all_proxy"]
     let httpProxy = env["HTTP_PROXY"] ?? env["http_proxy"] ?? allProxy
     let httpsProxy = env["HTTPS_PROXY"] ?? env["https_proxy"] ?? httpProxy ?? allProxy
@@ -38,8 +39,14 @@ private func buildProxyConfig(env: [String: String]) -> [AnyHashable: Any]? {
         config[kCFNetworkProxiesHTTPSPort as String] = parsed.port
     }
     return config.isEmpty ? nil : config
+    #else
+    // Environment-variable proxy configuration is a desktop concept; iOS apps
+    // use the system-managed proxy settings through URLSession.shared.
+    return nil
+    #endif
 }
 
+#if os(macOS)
 private func parseProxy(_ value: String) -> (host: String, port: Int)? {
     var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.isEmpty { return nil }
@@ -50,6 +57,7 @@ private func parseProxy(_ value: String) -> (host: String, port: Int)? {
     let port = url.port ?? (url.scheme == "https" ? 443 : 80)
     return (host, port)
 }
+#endif
 
 private func parseNoProxy(env: [String: String]) -> [String] {
     let raw = env["NO_PROXY"] ?? env["no_proxy"] ?? ""
