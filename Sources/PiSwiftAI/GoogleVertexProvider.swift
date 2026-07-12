@@ -292,6 +292,7 @@ private func isAdcMarker(_ key: String) -> Bool {
 ///
 /// SAFETY: token and timestamp mutation are serialized by `lock`; callers only
 /// receive copied `String` values.
+#if os(macOS) || os(Linux)
 private final class VertexTokenCache: @unchecked Sendable {
     static let shared = VertexTokenCache()
     private let lock = NSLock()
@@ -318,6 +319,7 @@ private final class VertexTokenCache: @unchecked Sendable {
         lock.unlock()
     }
 }
+#endif
 
 private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> String {
     if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>", !isPlaceholderApiKey(apiKey), !isAdcMarker(apiKey) {
@@ -334,7 +336,9 @@ private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> St
             return token
         }
     }
-    // Use cached ADC token to avoid concurrent gcloud subprocess races
+    #if os(macOS) || os(Linux)
+    // The gcloud CLI is only available on desktop/server platforms. Mobile callers must provide
+    // a token directly through options or one of the token environment keys.
     if let cached = VertexTokenCache.shared.get() {
         return cached
     }
@@ -342,6 +346,7 @@ private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> St
         VertexTokenCache.shared.set(token)
         return token
     }
+    #endif
     throw GoogleVertexError.missingToken
 }
 
@@ -362,6 +367,7 @@ private func vertexStreamUrl(model: Model, project: String, location: String) th
     return url
 }
 
+#if os(macOS) || os(Linux)
 private func runCommandCapture(_ command: String, _ args: [String]) -> String? {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -383,6 +389,7 @@ private func runCommandCapture(_ command: String, _ args: [String]) -> String? {
     let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     return output?.isEmpty == false ? output : nil
 }
+#endif
 
 private enum GoogleVertexError: LocalizedError {
     case missingProject
