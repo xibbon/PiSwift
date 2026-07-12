@@ -160,7 +160,7 @@ public final class ProjectTrustManager: Sendable {
 }
 
 public func hasTrustRequiringProjectResources(_ cwd: String) -> Bool {
-    let homeDir = FileManager.default.homeDirectoryForCurrentUser.standardized.path
+    let homeDir = URL(fileURLWithPath: getHomeDir()).standardized.path
     let userAgentsSkillsDir = URL(fileURLWithPath: homeDir)
         .appendingPathComponent(".agents")
         .appendingPathComponent("skills")
