@@ -257,7 +257,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.kimiCoding, "kimi-k2-thinking"),
 ]
 
-package func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
+public func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
     for (provider, modelId) in defaultModelPerProvider {
         if let match = available.first(where: { $0.provider == provider.rawValue && $0.id == modelId }),
            await registry.getApiKeyForProvider(match.provider) != nil {

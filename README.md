@@ -9,8 +9,10 @@ It is split up slightly differently.
 
 `PiSwiftAgent` is the reusable low-level agent loop/proxy layer. The higher-level
 coding-agent harness behavior from `pi-mono/packages/agent` lives in
-`PiSwiftCodingAgent` and `PiSwiftCodingAgentTui` instead of being exposed as a
-source-compatible generic `AgentHarness` API. See
+`PiSwiftCodingAgent` instead of being exposed as a source-compatible generic
+`AgentHarness` API. The macOS terminal UI and `pi-coding-agent` executable live
+in the sibling `../PiSwiftTui` package so this package stays suitable for mobile
+applications. See
 `AGENT_HARNESS_API_BOUNDARY.md` for the parity decision.
 
 ## Subagents (in-process)

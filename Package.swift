@@ -29,10 +29,6 @@ let package = Package(
             targets: ["PiSwiftCodingAgent"]
         ),
         .library(
-            name: "PiSwiftCodingAgentTui",
-            targets: ["PiSwiftCodingAgentTui"]
-        ),
-        .library(
             name: "PiSwiftSyntaxHighlight",
             targets: ["PiSwiftSyntaxHighlight"]
         ),
@@ -49,16 +45,11 @@ let package = Package(
             name: "pi-ai",
             targets: ["PiSwiftAICLI"]
         ),
-        .executable(
-            name: "pi-coding-agent",
-            targets: ["PiSwiftCodingAgentCLI"]
-        ),
     ],
     dependencies: [
         .package(url: "https://github.com/MacPaw/OpenAI.git", revision: "4ed3ea99ff9dfd2a760509ddb31020f4b153ef93"),
         .package(url: "https://github.com/jamesrochabrun/SwiftAnthropic.git", revision: "4f9e21b94e491138003903ff6c14ab4f04b6ba6c"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
-        .package(path: "../MiniTui"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -95,17 +86,6 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .target(
-            name: "PiSwiftCodingAgentTui",
-            dependencies: [
-                "PiSwiftAI",
-                "PiSwiftAgent",
-                "PiSwiftCodingAgent",
-                "PiSwiftSyntaxHighlight",
-                .product(name: "MiniTui", package: "MiniTui"),
-            ],
-            swiftSettings: strictConcurrencySettings
-        ),
-        .target(
             name: "PiMCPAdapter",
             dependencies: [
                 "PiSwiftCodingAgent",
@@ -135,15 +115,6 @@ let package = Package(
             ],
             swiftSettings: strictConcurrencySettings
         ),
-        .executableTarget(
-            name: "PiSwiftCodingAgentCLI",
-            dependencies: [
-                "PiSwiftCodingAgent",
-                "PiSwiftCodingAgentTui",
-                .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            ],
-            swiftSettings: strictConcurrencySettings
-        ),
         .testTarget(
             name: "PiSwiftAITests",
             dependencies: ["PiSwiftAI"],
@@ -166,23 +137,6 @@ let package = Package(
             ],
             resources: [
                 .copy("fixtures")
-            ],
-            swiftSettings: strictConcurrencySettings
-        ),
-        .testTarget(
-            name: "PiSwiftCodingAgentCLITests",
-            dependencies: [
-                "PiSwiftCodingAgent",
-                "PiSwiftCodingAgentCLI",
-            ],
-            swiftSettings: strictConcurrencySettings
-        ),
-        .testTarget(
-            name: "PiSwiftCodingAgentTuiTests",
-            dependencies: [
-                "PiSwiftCodingAgent",
-                "PiSwiftCodingAgentTui",
-                .product(name: "MiniTui", package: "MiniTui"),
             ],
             swiftSettings: strictConcurrencySettings
         ),

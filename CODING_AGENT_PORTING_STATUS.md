@@ -1,11 +1,12 @@
 # Coding Agent Porting Status (JS -> Swift)
 
-This document tracks parity between the JS module in `pi-mono/packages/coding-agent` and the Swift module under `PiSwift`.
+This document tracks parity between the JS module in `pi-mono/packages/coding-agent` and the Swift packages `PiSwift` and `PiSwiftTui`.
 
 For the broader `pi-mono/packages/agent` harness boundary, see
 `AGENT_HARNESS_API_BOUNDARY.md`. The Swift port intentionally keeps the reusable
-loop/proxy primitives in `PiSwiftAgent` and the coding-agent harness behavior in
-`PiSwiftCodingAgent`/`PiSwiftCodingAgentTui`.
+loop/proxy primitives in `PiSwiftAgent`, the mobile-safe coding-agent library in
+`PiSwiftCodingAgent`, and the terminal UI in `PiSwiftCodingAgentTui` (under the
+sibling `PiSwiftTui` package).
 
 ## Ported (feature-complete or very close)
 - Core tools: `pi-mono/packages/coding-agent/src/core/tools/*` -> `Sources/PiSwiftCodingAgent/Core/Tools/*`
@@ -24,9 +25,9 @@ loop/proxy primitives in `PiSwiftAgent` and the coding-agent harness behavior in
 - Utilities: `pi-mono/packages/coding-agent/src/utils/fuzzy.ts` -> `Sources/PiSwiftCodingAgent/Utils/Fuzzy.swift`; `pi-mono/packages/coding-agent/src/utils/mime.ts` -> `Sources/PiSwiftCodingAgent/Utils/Mime.swift`; glob handling in `Sources/PiSwiftCodingAgent/Utils/Glob.swift`; tools manager in `Sources/PiSwiftCodingAgent/Utils/ToolsManager.swift`
 - Shell/clipboard/changelog utils + timings/migrations: `pi-mono/packages/coding-agent/src/utils/{shell,clipboard,changelog}.ts` + `src/core/timings.ts` + `src/migrations.ts` -> `Sources/PiSwiftCodingAgent/Utils/{Shell,Clipboard,Changelog}.swift`, `Sources/PiSwiftCodingAgent/Core/Timings.swift`, `Sources/PiSwiftCodingAgent/Migrations.swift`
 - Exec helper: `pi-mono/packages/coding-agent/src/core/exec.ts` -> `Sources/PiSwiftCodingAgent/Core/Exec.swift`
-- Interactive mode + components (MiniTui): `pi-mono/packages/coding-agent/src/modes/interactive/*` -> `Sources/PiSwiftCodingAgent/Modes/Interactive/*`
-- Theme loading + JSON themes: `pi-mono/packages/coding-agent/src/modes/interactive/theme/*` -> `Sources/PiSwiftCodingAgent/Modes/Interactive/Theme.swift` + `Sources/PiSwiftCodingAgent/Resources/theme/*`
-- CLI orchestration + TUI: `pi-mono/packages/coding-agent/src/main.ts` + `cli.ts` -> `Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (interactive mode wiring)
+- Interactive mode + components (MiniTui): `pi-mono/packages/coding-agent/src/modes/interactive/*` -> `../PiSwiftTui/Sources/PiSwiftCodingAgentTui/Modes/Interactive/*`
+- Theme loading + JSON themes: `pi-mono/packages/coding-agent/src/modes/interactive/theme/*` -> `../PiSwiftTui/Sources/PiSwiftCodingAgentTui/Theme+MiniTui.swift` + `Sources/PiSwiftCodingAgent/Resources/theme/*`
+- CLI orchestration + TUI: `pi-mono/packages/coding-agent/src/main.ts` + `cli.ts` -> `../PiSwiftTui/Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (interactive mode wiring)
 - SDK: `pi-mono/packages/coding-agent/src/core/sdk.ts` -> `Sources/PiSwiftCodingAgent/Core/SDK.swift` (custom tools discovery, hook discovery supports bundles, agent-level before/after tool hook adapters)
 - Hook loader + tool wrapper: `pi-mono/packages/coding-agent/src/core/hooks/loader.ts`, `pi-mono/packages/coding-agent/src/core/hooks/tool-wrapper.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookLoader.swift`, `Sources/PiSwiftCodingAgent/Core/Hooks/ToolWrapper.swift` (bundle-based hooks)
 - Hook runtime: `pi-mono/packages/coding-agent/src/core/hooks/runner.ts` -> `Sources/PiSwiftCodingAgent/Core/Hooks/HookRunner.swift` (context/before_agent_start/session/agent/turn/project_trust events; `ctx.mode`, trust, tool metadata, system-prompt option context, and pre-trust global-extension evaluation)
@@ -40,13 +41,13 @@ loop/proxy primitives in `PiSwiftAgent` and the coding-agent harness behavior in
   - `defaultProjectTrust`, analytics/tracking ID, editor padding, hardware cursor, markdown indentation, HTTP idle timeout, and WebSocket connect timeout are parsed, saved, merged, and tested.
   - HTTP/WebSocket timeouts are routed into agent/provider construction.
 - Custom tools pipeline: `pi-mono/packages/coding-agent/src/core/custom-tools/*` -> `Sources/PiSwiftCodingAgent/Core/CustomTools/*` + CLI/TUI wiring
-- RPC mode: `pi-mono/packages/coding-agent/src/modes/rpc/*` -> `Sources/PiSwiftCodingAgent/Modes/RpcMode.swift` (JSON protocol + hook UI + command handling)
-- RPC mode tests: `pi-mono/packages/coding-agent/test/rpc.test.ts` -> `Tests/PiSwiftCodingAgentTests/RpcModeTests.swift` + `Tests/PiSwiftCodingAgentTests/RpcTestClient.swift` (live-gated RPC client)
-- RPC client API: `pi-mono/packages/coding-agent/src/modes/rpc/rpc-client.ts` + `rpc-types.ts` -> `Sources/PiSwiftCodingAgent/Modes/RpcClient.swift` (public Swift RPC client + types)
+- RPC mode: `pi-mono/packages/coding-agent/src/modes/rpc/*` -> `../PiSwiftTui/Sources/PiSwiftCodingAgentTui/Modes/Rpc/RpcMode.swift` (JSON protocol + hook UI + command handling)
+- RPC mode tests: `pi-mono/packages/coding-agent/test/rpc.test.ts` -> `../PiSwiftTui/Tests/PiSwiftCodingAgentCLITests/RpcModeTests.swift` + `../PiSwiftTui/Tests/PiSwiftCodingAgentCLITests/RpcTestClient.swift` (live-gated RPC client)
+- RPC client API: `pi-mono/packages/coding-agent/src/modes/rpc/rpc-client.ts` + `rpc-types.ts` -> `../PiSwiftTui/Sources/PiSwiftCodingAgentTui/Modes/Rpc/RpcClient.swift` (public Swift RPC client + types)
 - Export HTML: `pi-mono/packages/coding-agent/src/core/export-html/*` -> `Sources/PiSwiftCodingAgent/Core/ExportHtml.swift` + `Sources/PiSwiftCodingAgent/Resources/export-html/*`
-- Print mode: `pi-mono/packages/coding-agent/src/modes/print-mode.ts` -> `Sources/PiSwiftCodingAgent/Modes/PrintMode.swift` (JSON event stream + ANSI markdown rendering + output flush)
+- Print mode: `pi-mono/packages/coding-agent/src/modes/print-mode.ts` -> `../PiSwiftTui/Sources/PiSwiftCodingAgentTui/Modes/PrintMode.swift` (JSON event stream + ANSI markdown rendering + output flush)
 - Prompt templates: `pi-mono/packages/coding-agent/src/core/prompt-templates.ts` -> `Sources/PiSwiftCodingAgent/Core/PromptTemplates.swift` (loading, metadata, and shared slash-command argument substitution)
-- CLI args parsing + wiring: `pi-mono/packages/coding-agent/src/cli/args.ts` -> `Sources/PiSwiftCodingAgent/CLI/Args.swift` + `Sources/PiSwiftCodingAgentCLI/CLIOptions.swift` + `Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (ArgumentParser + help snapshot tests)
+- CLI args parsing + wiring: `pi-mono/packages/coding-agent/src/cli/args.ts` -> `Sources/PiSwiftCodingAgent/CLI/Args.swift` + `../PiSwiftTui/Sources/PiSwiftCodingAgentCLI/CLIOptions.swift` + `../PiSwiftTui/Sources/PiSwiftCodingAgentCLI/PiCodingAgentCLI.swift` (ArgumentParser + help snapshot tests)
 
 ## Partial / stubs (implemented but missing JS behavior)
 - OAuth login + token refresh workflows (JS `packages/ai/src/utils/oauth/*`):
