@@ -28,6 +28,12 @@ public func resolveHeaders(_ headers: [String: String]?) -> [String: String]? {
 }
 
 private func executeCommand(_ commandConfig: String) -> String? {
+    #if canImport(UIKit)
+    // Shell-backed configuration is unavailable on Apple mobile platforms. API
+    // keys and headers can still be provided directly or through environment values.
+    _ = commandConfig
+    return nil
+    #else
     let command = String(commandConfig.dropFirst())
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -57,4 +63,5 @@ private func executeCommand(_ commandConfig: String) -> String? {
         return nil
     }
     return nil
+    #endif
 }

@@ -213,6 +213,14 @@ public struct ExtensionCompiler {
     }
 
     private static func runProcess(_ args: [String]) async throws -> ProcessResult {
+        #if canImport(UIKit)
+        _ = args
+        return ProcessResult(
+            exitCode: -1,
+            stdout: "",
+            stderr: "Extension compilation is unavailable on Apple mobile platforms"
+        )
+        #else
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = args
@@ -233,6 +241,7 @@ public struct ExtensionCompiler {
             stdout: String(data: stdoutData, encoding: .utf8) ?? "",
             stderr: String(data: stderrData, encoding: .utf8) ?? ""
         )
+        #endif
     }
 
     private static func findSPMBuildDir(config: String) -> String? {

@@ -109,6 +109,11 @@ public final class FooterDataProvider: @unchecked Sendable, FooterDataProviding 
     }
 
     private func resolveGitBranchViaCommand() -> String? {
+        #if canImport(UIKit)
+        // Reftable repositories require invoking git, which is unavailable on Apple
+        // mobile platforms. Traditional repositories still resolve from .git/HEAD.
+        return nil
+        #else
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["branch", "--show-current"]
@@ -128,6 +133,7 @@ public final class FooterDataProvider: @unchecked Sendable, FooterDataProviding 
         } catch {
             return nil
         }
+        #endif
     }
 
     private func invalidateBranchCache() {

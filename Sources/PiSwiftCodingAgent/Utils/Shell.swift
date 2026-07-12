@@ -35,6 +35,15 @@ private struct ShellConfigState: Sendable {
 private let shellConfigState = LockedState(ShellConfigState())
 
 public func getShellConfig(settingsManager: SettingsManager = SettingsManager.create()) throws -> ShellConfig {
+    #if canImport(UIKit)
+    // Apple mobile platforms cannot launch Foundation `Process` instances and do not
+    // provide a system bash. Embedders can still expose the bash tool by registering
+    // a BashExecutorProvider backed by an in-process implementation such as VirtualBash.
+    _ = settingsManager
+    throw ShellConfigError.bashNotFound(
+        "System bash is unavailable on this platform. Register a custom BashExecutorProvider instead."
+    )
+    #else
     if let cached = shellConfigState.withLock({ $0.cached }) {
         return cached
     }
@@ -78,6 +87,7 @@ public func getShellConfig(settingsManager: SettingsManager = SettingsManager.cr
     storeShellConfig(config)
     return config
     #endif
+    #endif
 }
 
 private func storeShellConfig(_ config: ShellConfig) {
@@ -86,7 +96,7 @@ private func storeShellConfig(_ config: ShellConfig) {
     }
 }
 
-#if os(Windows)
+#if !canImport(UIKit) && os(Windows)
 private func findWindowsBashConfig() -> (config: ShellConfig?, searched: [String]) {
     var paths: [String] = []
     let env = ProcessInfo.processInfo.environment
@@ -134,7 +144,7 @@ private func findBashOnPath() -> String? {
     }
     return nil
 }
-#else
+#elseif !canImport(UIKit)
 private func findBashOnPath() -> String? {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -184,7 +194,11 @@ public func sanitizeBinaryOutput(_ text: String) -> String {
 }
 
 public func killProcessTree(_ pid: pid_t) {
-    #if os(Windows)
+    #if canImport(UIKit)
+    // System processes cannot be spawned on Apple mobile platforms. Keeping this a
+    // no-op lets shared session teardown remain platform-agnostic.
+    _ = pid
+    #elseif os(Windows)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "taskkill")
     process.arguments = ["/F", "/T", "/PID", String(pid)]
@@ -202,7 +216,7 @@ public func killProcessTree(_ pid: pid_t) {
     #endif
 }
 
-#if !os(Windows)
+#if !os(Windows) && !canImport(UIKit)
 private func collectDescendantPids(of pid: pid_t) -> Set<pid_t> {
     var result = Set<pid_t>()
     var stack = childPids(of: pid)

@@ -1414,6 +1414,11 @@ public final class DefaultPackageManager: PackageManager {
     }
 
     private func runCommandSync(_ command: String, _ args: [String]) -> String {
+        #if canImport(UIKit)
+        _ = command
+        _ = args
+        return ""
+        #else
         let process = Process()
         if command.contains("/") {
             process.executableURL = URL(fileURLWithPath: command)
@@ -1433,6 +1438,7 @@ public final class DefaultPackageManager: PackageManager {
         process.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(decoding: data, as: UTF8.self)
+        #endif
     }
 
     private func sha256(_ input: String) -> String {
