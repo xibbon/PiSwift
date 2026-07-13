@@ -27,8 +27,37 @@ public struct ExecResult: Sendable {
     }
 }
 
+public enum ShellExecutionError: LocalizedError, Sendable {
+    case invalidTimeout
+    case timeoutExceedsMaximum
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidTimeout:
+            return "Invalid timeout: must be a finite number of seconds"
+        case .timeoutExceedsMaximum:
+            return "Invalid timeout: maximum is \(maximumShellTimeoutSeconds) seconds"
+        }
+    }
+}
+
+public let maximumShellTimeoutMilliseconds: Double = 2_147_483_647
+public let maximumShellTimeoutSeconds = maximumShellTimeoutMilliseconds / 1_000
+
+func validatedShellTimeout(_ timeout: TimeInterval?) throws -> TimeInterval? {
+    guard let timeout else { return nil }
+    guard timeout.isFinite, timeout > 0 else {
+        throw ShellExecutionError.invalidTimeout
+    }
+    guard timeout * 1_000 <= maximumShellTimeoutMilliseconds else {
+        throw ShellExecutionError.timeoutExceedsMaximum
+    }
+    return timeout
+}
+
 #if !canImport(UIKit)
-public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ options: ExecOptions? = nil) async -> ExecResult {
+public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ options: ExecOptions? = nil) async throws -> ExecResult {
+    let timeout = try validatedShellTimeout(options?.timeout)
     let process = Process()
 
     #if os(Windows)
@@ -77,7 +106,7 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     cancellationTimer.resume()
 
     var timeoutTimer: DispatchSourceTimer?
-    if let timeout = options?.timeout, timeout > 0 {
+    if let timeout {
         let timer = DispatchSource.makeTimerSource()
         timer.schedule(deadline: .now() + timeout)
         timer.setEventHandler {

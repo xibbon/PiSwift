@@ -25,6 +25,18 @@ func getPromptCacheRetention(baseUrl: String, cacheRetention: CacheRetention, co
     return "24h"
 }
 
+func makeOpenAIResponsesUsage(_ usage: Components.Schemas.ResponseUsage) -> Usage {
+    let cached = usage.inputTokensDetails.cachedTokens
+    return Usage(
+        input: usage.inputTokens - cached,
+        output: usage.outputTokens,
+        cacheRead: cached,
+        cacheWrite: 0,
+        reasoning: usage.outputTokensDetails.reasoningTokens,
+        totalTokens: usage.totalTokens
+    )
+}
+
 struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let sessionId: String?
     let cacheRetention: CacheRetention
@@ -88,6 +100,32 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
         }
         return data.isEmpty ? nil : data
     }
+}
+
+struct OpenAIResponsesReasoningEffortMiddleware: OpenAIMiddleware {
+    let effort: String?
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let effort,
+              let body = request.httpBody,
+              let updatedBody = applyOpenAIResponsesReasoningEffort(data: body, effort: effort) else {
+            return request
+        }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+}
+
+func applyOpenAIResponsesReasoningEffort(data: Data, effort: String) -> Data? {
+    guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          var reasoning = payload["reasoning"] as? [String: Any] else {
+        return nil
+    }
+    reasoning["effort"] = effort
+    payload["reasoning"] = reasoning
+    return try? JSONSerialization.data(withJSONObject: payload)
 }
 
 /// Middleware that rewrites function_call_output items containing inline image markers
@@ -186,12 +224,15 @@ public func streamOpenAIResponses(
                 sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
+            let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
+                effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
+            )
             let builtClient = try makeOpenAIClient(
                 model: model,
                 apiKey: options.apiKey,
                 headers: options.headers,
                 timeoutMs: options.timeoutMs,
-                middlewares: [middleware, inlineImagesMiddleware]
+                middlewares: [middleware, inlineImagesMiddleware, reasoningEffortMiddleware]
             )
             let builtQuery = try buildResponsesQuery(model: model, context: context, options: options)
             emitPayload(options.onPayload, payload: builtQuery)
@@ -201,13 +242,16 @@ public func streamOpenAIResponses(
             stream.push(.start(partial: output))
 
             var currentBlockIndex: Int? = nil
-            var currentBlockKind: String? = nil
             var currentToolCallArgs = ""
+            // Responses events are multiplexed: a reasoning item can finish after
+            // a later text/tool item has started. Track each item by output_index.
+            var blockIndexByOutputIndex: [Int: Int] = [:]
+            var toolCallArgsByOutputIndex: [Int: String] = [:]
 
-            func startBlock(kind: String, block: ContentBlock) {
+            func startBlock(outputIndex: Int, kind: String, block: ContentBlock) {
                 output.content.append(block)
                 currentBlockIndex = output.content.count - 1
-                currentBlockKind = kind
+                blockIndexByOutputIndex[outputIndex] = currentBlockIndex
                 switch block {
                 case .text:
                     stream.push(.textStart(contentIndex: currentBlockIndex!, partial: output))
@@ -235,7 +279,6 @@ public func streamOpenAIResponses(
                     break
                 }
                 currentBlockIndex = nil
-                currentBlockKind = nil
                 currentToolCallArgs = ""
             }
 
@@ -250,52 +293,49 @@ public func streamOpenAIResponses(
                     case .added(let added):
                         switch added.item {
                         case .reasoning:
-                            finishCurrentBlock()
-                            startBlock(kind: "thinking", block: .thinking(ThinkingContent(thinking: "")))
+                            startBlock(outputIndex: added.outputIndex, kind: "thinking", block: .thinking(ThinkingContent(thinking: "")))
                         case .outputMessage:
-                            finishCurrentBlock()
-                            startBlock(kind: "text", block: .text(TextContent(text: "")))
+                            startBlock(outputIndex: added.outputIndex, kind: "text", block: .text(TextContent(text: "")))
                         case .functionToolCall(let toolCall):
-                            finishCurrentBlock()
                             let idPart = toolCall.id ?? ""
                             let combinedId = "\(toolCall.callId)|\(idPart)"
                             let call = ToolCall(id: combinedId, name: toolCall.name, arguments: [:])
                             currentToolCallArgs = toolCall.arguments
-                            startBlock(kind: "toolCall", block: .toolCall(call))
+                            toolCallArgsByOutputIndex[added.outputIndex] = toolCall.arguments
+                            startBlock(outputIndex: added.outputIndex, kind: "toolCall", block: .toolCall(call))
                         default:
                             break
                         }
                     case .done(let doneEvent):
                         switch doneEvent.item {
                         case .reasoning(let reasoningItem):
-                            if currentBlockKind == "thinking", let index = currentBlockIndex, case .thinking(var thinking) = output.content[index] {
+                            if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .thinking(var thinking) = output.content[index] {
                                 if let data = try? JSONEncoder().encode(reasoningItem),
                                    let signature = String(data: data, encoding: .utf8) {
                                     thinking.thinkingSignature = signature
                                     output.content[index] = .thinking(thinking)
                                 }
                                 stream.push(.thinkingEnd(contentIndex: index, content: thinking.thinking, partial: output))
-                                currentBlockIndex = nil
-                                currentBlockKind = nil
+                                blockIndexByOutputIndex.removeValue(forKey: doneEvent.outputIndex)
                             }
                         case .outputMessage(let message):
-                            if currentBlockKind == "text", let index = currentBlockIndex, case .text(var text) = output.content[index] {
+                            if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .text(var text) = output.content[index] {
                                 text.textSignature = encodeTextSignatureV1(id: message.id)
                                 output.content[index] = .text(text)
                                 stream.push(.textEnd(contentIndex: index, content: text.text, partial: output))
-                                currentBlockIndex = nil
-                                currentBlockKind = nil
+                                blockIndexByOutputIndex.removeValue(forKey: doneEvent.outputIndex)
                             }
                         case .functionToolCall(let toolCall):
                             let idPart = toolCall.id ?? ""
                             let combinedId = "\(toolCall.callId)|\(idPart)"
-                            let preferredArgs = currentToolCallArgs.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let partialArgs = toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
+                            let preferredArgs = partialArgs.trimmingCharacters(in: .whitespacesAndNewlines)
                             var arguments = preferredArgs.isEmpty ? [:] : parseStreamingJSON(preferredArgs)
                             if arguments.isEmpty {
                                 arguments = parseJSONStringArguments(toolCall.arguments)
                             }
                             var resolvedName = toolCall.name
-                            if let index = currentBlockIndex, case .toolCall(let existing) = output.content[index] {
+                            if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .toolCall(let existing) = output.content[index] {
                                 if resolvedName.isEmpty {
                                     resolvedName = existing.name
                                 }
@@ -304,13 +344,12 @@ public func streamOpenAIResponses(
                                 }
                             }
                             let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments)
-                            if let index = currentBlockIndex {
+                            if let index = blockIndexByOutputIndex[doneEvent.outputIndex] {
                                 output.content[index] = .toolCall(call)
                                 stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
                             }
-                            currentBlockIndex = nil
-                            currentBlockKind = nil
-                            currentToolCallArgs = ""
+                            blockIndexByOutputIndex.removeValue(forKey: doneEvent.outputIndex)
+                            toolCallArgsByOutputIndex.removeValue(forKey: doneEvent.outputIndex)
                         default:
                             break
                         }
@@ -318,7 +357,7 @@ public func streamOpenAIResponses(
                 case .reasoningSummaryText(let summaryEvent):
                     switch summaryEvent {
                     case .delta(let deltaEvent):
-                        if currentBlockKind == "thinking", let index = currentBlockIndex, case .thinking(var thinking) = output.content[index] {
+                        if let index = blockIndexByOutputIndex[deltaEvent.outputIndex], case .thinking(var thinking) = output.content[index] {
                             thinking.thinking += deltaEvent.delta
                             output.content[index] = .thinking(thinking)
                             stream.push(.thinkingDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
@@ -329,7 +368,7 @@ public func streamOpenAIResponses(
                 case .outputText(let outputTextEvent):
                     switch outputTextEvent {
                     case .delta(let deltaEvent):
-                        if currentBlockKind == "text", let index = currentBlockIndex, case .text(var text) = output.content[index] {
+                        if let index = blockIndexByOutputIndex[deltaEvent.outputIndex], case .text(var text) = output.content[index] {
                             text.text += deltaEvent.delta
                             output.content[index] = .text(text)
                             stream.push(.textDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
@@ -340,7 +379,7 @@ public func streamOpenAIResponses(
                 case .refusal(let refusalEvent):
                     switch refusalEvent {
                     case .delta(let deltaEvent):
-                        if currentBlockKind == "text", let index = currentBlockIndex, case .text(var text) = output.content[index] {
+                        if let index = blockIndexByOutputIndex[deltaEvent.outputIndex], case .text(var text) = output.content[index] {
                             text.text += deltaEvent.delta
                             output.content[index] = .text(text)
                             stream.push(.textDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
@@ -351,19 +390,20 @@ public func streamOpenAIResponses(
                 case .functionCallArguments(let argumentsEvent):
                     switch argumentsEvent {
                     case .delta(let deltaEvent):
-                        if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
-                            currentToolCallArgs += deltaEvent.delta
-                            tool.arguments = parseStreamingJSON(currentToolCallArgs)
+                        if let index = blockIndexByOutputIndex[deltaEvent.outputIndex], case .toolCall(var tool) = output.content[index] {
+                            let args = (toolCallArgsByOutputIndex[deltaEvent.outputIndex] ?? "") + deltaEvent.delta
+                            toolCallArgsByOutputIndex[deltaEvent.outputIndex] = args
+                            tool.arguments = parseStreamingJSON(args)
                             output.content[index] = .toolCall(tool)
                             stream.push(.toolCallDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
                         }
                     case .done(let doneEvent):
-                        if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
-                            let previousArgs = currentToolCallArgs
-                            currentToolCallArgs = doneEvent.arguments
-                            tool.arguments = parseStreamingJSON(currentToolCallArgs)
+                        if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .toolCall(var tool) = output.content[index] {
+                            let previousArgs = toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
+                            toolCallArgsByOutputIndex[doneEvent.outputIndex] = doneEvent.arguments
+                            tool.arguments = parseStreamingJSON(doneEvent.arguments)
                             output.content[index] = .toolCall(tool)
-                            if let delta = finalToolCallArgumentsDelta(previous: previousArgs, final: currentToolCallArgs) {
+                            if let delta = finalToolCallArgumentsDelta(previous: previousArgs, final: doneEvent.arguments) {
                                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
                             }
                         }
@@ -379,14 +419,7 @@ public func streamOpenAIResponses(
                         output.responseId = completed.response.id
                     }
                     if let usage = completed.response.usage {
-                        let cached = usage.inputTokensDetails.cachedTokens
-                        output.usage = Usage(
-                            input: usage.inputTokens - cached,
-                            output: usage.outputTokens,
-                            cacheRead: cached,
-                            cacheWrite: 0,
-                            totalTokens: usage.totalTokens
-                        )
+                        output.usage = makeOpenAIResponsesUsage(usage)
                         calculateCost(model: model, usage: &output.usage)
                         applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier, model: model)
                     }
@@ -467,7 +500,8 @@ func buildResponsesQuery(
         model: model.id,
         include: include,
         instructions: nil,
-        maxOutputTokens: options.maxTokens,
+        // OpenAI Responses rejects max_output_tokens below 16.
+        maxOutputTokens: options.maxTokens.map { max($0, 16) },
         reasoning: reasoning,
         serviceTier: mapResponsesServiceTier(options.serviceTier),
         store: false,
@@ -489,7 +523,7 @@ func mapResponsesReasoningEffort(_ effort: ThinkingLevel?) -> Components.Schemas
         return .low
     case .medium:
         return .medium
-    case .high, .xhigh:
+    case .high, .xhigh, .max:
         return .high
     }
 }
@@ -501,6 +535,12 @@ func mapResponsesReasoningEffort(model: Model, requested effort: ThinkingLevel?)
         return mappedEffort
     }
     return mapResponsesReasoningEffort(effort)
+}
+
+func rawResponsesReasoningEffort(model: Model, requested effort: ThinkingLevel?) -> String? {
+    guard let effort else { return nil }
+    let rawEffort = mappedThinkingLevel(model: model, level: effort) ?? effort.rawValue
+    return rawEffort == "xhigh" || rawEffort == "max" ? rawEffort : nil
 }
 
 func mapDisabledResponsesReasoningEffort(model: Model) -> Components.Schemas.ReasoningEffort? {
@@ -518,7 +558,7 @@ private func mapResponsesReasoningEffortValue(_ value: String) -> Components.Sch
         return .low
     case "medium":
         return .medium
-    case "high", "xhigh":
+    case "high", "xhigh", "max":
         return .high
     default:
         return nil
@@ -771,7 +811,7 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
                 let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
                     callId: callId,
                     _type: .functionCallOutput,
-                    output: sanitizeSurrogates(textResult.isEmpty ? "(no output)" : textResult)
+                    output: sanitizeSurrogates(textResult.isEmpty ? "(no tool output)" : textResult)
                 )
                 messages.append(.item(.functionCallOutputItemParam(toolOutput)))
             }

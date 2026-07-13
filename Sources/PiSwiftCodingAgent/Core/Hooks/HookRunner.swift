@@ -493,6 +493,18 @@ public final class HookRunner: Sendable {
         return nil
     }
 
+    /// Returns the first entry renderer registered for `customType`, in extension
+    /// load order. Entry rendering is intentionally a library surface; terminal
+    /// presentation is owned by PiSwiftCodingAgentTui.
+    public func getEntryRenderer(_ customType: String) -> EntryRenderer? {
+        for hook in hooks {
+            if let renderer = hook.entryRenderers[customType] {
+                return renderer
+            }
+        }
+        return nil
+    }
+
     /// v0.62.0: when multiple extensions register commands with the same name, conflicting
     /// commands receive numeric invocation suffixes in load order — e.g., the first wins
     /// the bare name, the second becomes `<name>:1`, the third `<name>:2`, etc. This
@@ -718,6 +730,32 @@ public final class HookRunner: Sendable {
         }
 
         return lastResult
+    }
+
+    /// Emits `before_provider_headers` and applies each returned header set in
+    /// handler order. Swift handlers cannot mutate a value-type dictionary across
+    /// the call boundary, so their explicit results model upstream's in-place API.
+    public func emitBeforeProviderHeaders(_ headers: [String: String]) async -> [String: String] {
+        let context = createContext()
+        var currentHeaders = headers
+
+        for hook in hooks {
+            guard let handlers = hook.handlers["before_provider_headers"] else { continue }
+            for handler in handlers {
+                do {
+                    let event = BeforeProviderHeadersEvent(headers: currentHeaders)
+                    if let result = try await handler(event, context) as? BeforeProviderHeadersEventResult {
+                        for (name, value) in result.headers {
+                            currentHeaders[name] = value
+                        }
+                    }
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: "before_provider_headers", error: error.localizedDescription, stack: captureStack()))
+                }
+            }
+        }
+
+        return currentHeaders
     }
 
     public func emitProjectTrust(_ event: ProjectTrustEvent) async -> ProjectTrustEventResult? {

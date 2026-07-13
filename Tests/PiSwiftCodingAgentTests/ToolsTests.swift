@@ -107,6 +107,25 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     }
 }
 
+@Test func editToolSchemaAllowsModelInventedReplacementFields() async throws {
+    try await withTempDir { dir in
+        let tool = createEditTool(cwd: dir)
+        let arguments: [String: AnyCodable] = [
+            "path": AnyCodable("file.txt"),
+            "edits": AnyCodable([[
+                "oldText": "old",
+                "newText": "new",
+                "explanation": "Model-added metadata",
+            ]]),
+        ]
+
+        _ = try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-extra-fields", name: "edit", arguments: arguments)
+        )
+    }
+}
+
 @Test func readToolOffsetAndLimit() async throws {
     try await withTempDir { dir in
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("offset.txt").path

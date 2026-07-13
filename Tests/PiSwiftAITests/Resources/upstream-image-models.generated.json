@@ -121,6 +121,27 @@
       ],
       "provider": "openrouter"
     },
+    "google/gemini-3-pro-image": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0.19999999999999998,
+        "cacheWrite": 0.375,
+        "input": 2,
+        "output": 12
+      },
+      "id": "google/gemini-3-pro-image",
+      "input": [
+        "image",
+        "text"
+      ],
+      "name": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+      "output": [
+        "image",
+        "text"
+      ],
+      "provider": "openrouter"
+    },
     "google/gemini-3-pro-image-preview": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -142,6 +163,27 @@
       ],
       "provider": "openrouter"
     },
+    "google/gemini-3.1-flash-image": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.5,
+        "output": 3
+      },
+      "id": "google/gemini-3.1-flash-image",
+      "input": [
+        "image",
+        "text"
+      ],
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
+      "output": [
+        "image",
+        "text"
+      ],
+      "provider": "openrouter"
+    },
     "google/gemini-3.1-flash-image-preview": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -157,6 +199,27 @@
         "text"
       ],
       "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
+      "output": [
+        "image",
+        "text"
+      ],
+      "provider": "openrouter"
+    },
+    "google/gemini-3.1-flash-lite-image": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.25,
+        "output": 1.5
+      },
+      "id": "google/gemini-3.1-flash-lite-image",
+      "input": [
+        "image",
+        "text"
+      ],
+      "name": "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
       "output": [
         "image",
         "text"
@@ -243,6 +306,66 @@
       "output": [
         "image",
         "text"
+      ],
+      "provider": "openrouter"
+    },
+    "openai/gpt-image-1": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 1.25,
+        "cacheWrite": 0,
+        "input": 10,
+        "output": 10
+      },
+      "id": "openai/gpt-image-1",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "OpenAI: GPT Image 1",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "openai/gpt-image-1-mini": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0.25,
+        "cacheWrite": 0,
+        "input": 2.5,
+        "output": 2.5
+      },
+      "id": "openai/gpt-image-1-mini",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "OpenAI: GPT Image 1 Mini",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "openai/gpt-image-2": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 2,
+        "cacheWrite": 0,
+        "input": 8,
+        "output": 8
+      },
+      "id": "openai/gpt-image-2",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "OpenAI: GPT Image 2",
+      "output": [
+        "image"
       ],
       "provider": "openrouter"
     },
@@ -507,46 +630,6 @@
       ],
       "provider": "openrouter"
     },
-    "sourceful/riverflow-v2-fast-preview": {
-      "api": "openrouter-images",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "sourceful/riverflow-v2-fast-preview",
-      "input": [
-        "text",
-        "image"
-      ],
-      "name": "Sourceful: Riverflow V2 Fast Preview",
-      "output": [
-        "image"
-      ],
-      "provider": "openrouter"
-    },
-    "sourceful/riverflow-v2-max-preview": {
-      "api": "openrouter-images",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "sourceful/riverflow-v2-max-preview",
-      "input": [
-        "text",
-        "image"
-      ],
-      "name": "Sourceful: Riverflow V2 Max Preview",
-      "output": [
-        "image"
-      ],
-      "provider": "openrouter"
-    },
     "sourceful/riverflow-v2-pro": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -562,26 +645,6 @@
         "image"
       ],
       "name": "Sourceful: Riverflow V2 Pro",
-      "output": [
-        "image"
-      ],
-      "provider": "openrouter"
-    },
-    "sourceful/riverflow-v2-standard-preview": {
-      "api": "openrouter-images",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "sourceful/riverflow-v2-standard-preview",
-      "input": [
-        "text",
-        "image"
-      ],
-      "name": "Sourceful: Riverflow V2 Standard Preview",
       "output": [
         "image"
       ],

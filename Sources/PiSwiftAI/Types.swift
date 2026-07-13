@@ -71,6 +71,7 @@ public enum ThinkingLevel: String, Sendable {
     case medium
     case high
     case xhigh
+    case max
 }
 
 public enum ModelThinkingLevel: String, Sendable, CaseIterable {
@@ -80,6 +81,7 @@ public enum ModelThinkingLevel: String, Sendable, CaseIterable {
     case medium
     case high
     case xhigh
+    case max
 
     public init(_ level: ThinkingLevel) {
         switch level {
@@ -93,6 +95,8 @@ public enum ModelThinkingLevel: String, Sendable, CaseIterable {
             self = .high
         case .xhigh:
             self = .xhigh
+        case .max:
+            self = .max
         }
     }
 
@@ -110,6 +114,8 @@ public enum ModelThinkingLevel: String, Sendable, CaseIterable {
             return .high
         case .xhigh:
             return .xhigh
+        case .max:
+            return .max
         }
     }
 }
@@ -294,6 +300,7 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     case openai
     case zai
     case qwen
+    case chatTemplate = "chat-template"
     case qwenChatTemplate = "qwen-chat-template"
     case openrouter
     /// v0.70.1: DeepSeek V4 sends `thinking: { type: "enabled" }` plus `reasoning_effort` and
@@ -302,6 +309,21 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     case together
     case stringThinking = "string-thinking"
     case antLing = "ant-ling"
+}
+
+/// A JSON-compatible value for an OpenAI chat-template kwarg.
+public enum ChatTemplateKwargValue: Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+    /// Resolves from Pi's requested thinking state. `omitWhenOff` only applies to effort.
+    case variable(ChatTemplateKwargVariable, omitWhenOff: Bool = false)
+}
+
+public enum ChatTemplateKwargVariable: String, Sendable {
+    case thinkingEnabled = "thinking.enabled"
+    case thinkingEffort = "thinking.effort"
 }
 
 /// v0.68.0: opt-in cache_control formats for OpenAI-compatible providers that expose
@@ -428,6 +450,8 @@ public struct OpenAICompat: Sendable {
     public var requiresThinkingAsText: Bool?
     public var requiresMistralToolIds: Bool?
     public var thinkingFormat: OpenAICompatThinkingFormat?
+    /// Kwargs sent as `chat_template_kwargs` for the `.chatTemplate` thinking format.
+    public var chatTemplateKwargs: [String: ChatTemplateKwargValue]?
     public var openRouterRouting: OpenRouterRouting?
     public var vercelGatewayRouting: VercelGatewayRouting?
     public var supportsStrictMode: Bool?
@@ -470,6 +494,7 @@ public struct OpenAICompat: Sendable {
         requiresThinkingAsText: Bool? = nil,
         requiresMistralToolIds: Bool? = nil,
         thinkingFormat: OpenAICompatThinkingFormat? = nil,
+        chatTemplateKwargs: [String: ChatTemplateKwargValue]? = nil,
         openRouterRouting: OpenRouterRouting? = nil,
         vercelGatewayRouting: VercelGatewayRouting? = nil,
         supportsStrictMode: Bool? = nil,
@@ -495,6 +520,7 @@ public struct OpenAICompat: Sendable {
         self.requiresThinkingAsText = requiresThinkingAsText
         self.requiresMistralToolIds = requiresMistralToolIds
         self.thinkingFormat = thinkingFormat
+        self.chatTemplateKwargs = chatTemplateKwargs
         self.openRouterRouting = openRouterRouting
         self.vercelGatewayRouting = vercelGatewayRouting
         self.supportsStrictMode = supportsStrictMode
@@ -511,17 +537,50 @@ public struct OpenAICompat: Sendable {
     }
 }
 
-public struct ModelCost: Sendable {
+public protocol ModelCostRates: Sendable {
+    var input: Double { get }
+    var output: Double { get }
+    var cacheRead: Double { get }
+    var cacheWrite: Double { get }
+}
+
+public struct ModelCostTier: ModelCostRates, Sendable {
+    public var inputTokensAbove: Int
     public var input: Double
     public var output: Double
     public var cacheRead: Double
     public var cacheWrite: Double
+
+    public init(inputTokensAbove: Int, input: Double, output: Double, cacheRead: Double, cacheWrite: Double) {
+        self.inputTokensAbove = inputTokensAbove
+        self.input = input
+        self.output = output
+        self.cacheRead = cacheRead
+        self.cacheWrite = cacheWrite
+    }
+}
+
+public struct ModelCost: ModelCostRates, Sendable {
+    public var input: Double
+    public var output: Double
+    public var cacheRead: Double
+    public var cacheWrite: Double
+    public var tiers: [ModelCostTier]?
 
     public init(input: Double, output: Double, cacheRead: Double, cacheWrite: Double) {
         self.input = input
         self.output = output
         self.cacheRead = cacheRead
         self.cacheWrite = cacheWrite
+        self.tiers = nil
+    }
+
+    public init(input: Double, output: Double, cacheRead: Double, cacheWrite: Double, tiers: [ModelCostTier]? = nil) {
+        self.input = input
+        self.output = output
+        self.cacheRead = cacheRead
+        self.cacheWrite = cacheWrite
+        self.tiers = tiers
     }
 }
 
@@ -665,6 +724,8 @@ public struct Usage: Sendable {
     public var output: Int
     public var cacheRead: Int
     public var cacheWrite: Int
+    /// Reasoning/thinking tokens reported by the provider; a subset of `output`.
+    public var reasoning: Int?
     public var totalTokens: Int
     public var cost: UsageCost
 
@@ -673,6 +734,7 @@ public struct Usage: Sendable {
         output: Int,
         cacheRead: Int,
         cacheWrite: Int,
+        reasoning: Int? = nil,
         totalTokens: Int,
         cost: UsageCost = UsageCost()
     ) {
@@ -680,6 +742,7 @@ public struct Usage: Sendable {
         self.output = output
         self.cacheRead = cacheRead
         self.cacheWrite = cacheWrite
+        self.reasoning = reasoning
         self.totalTokens = totalTokens
         self.cost = cost
     }
@@ -1352,7 +1415,8 @@ public struct AnthropicOptions: Sendable {
     public var thinkingBudgetTokens: Int?
     /// Adaptive thinking effort level. When set on models that support adaptive
     /// thinking (e.g. Opus 4.6, Sonnet 4.6, Opus 4.7), this takes precedence over
-    /// `thinkingBudgetTokens` and maps to an appropriate token budget.
+    /// `thinkingBudgetTokens` and maps to an appropriate token budget. `.max` requests
+    /// unconstrained adaptive thinking where supported.
     public var effort: ThinkingLevel?
     public var interleavedThinking: Bool?
     public var toolChoice: AnthropicToolChoice?

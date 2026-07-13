@@ -183,7 +183,67 @@ public func streamSimple(model: Model, context: Context, options: SimpleStreamOp
     guard let provider = getApiProvider(model.api) else {
         throw StreamError.noApiProvider(model.api.rawValue)
     }
-    return provider.streamSimple(model, context, options)
+    var resolvedOptions = options ?? SimpleStreamOptions()
+    let requestedMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32_000)
+    resolvedOptions.maxTokens = clampSimpleMaxTokensToContext(model: model, context: context, maxTokens: requestedMaxTokens)
+    return provider.streamSimple(model, context, resolvedOptions)
+}
+
+/// Leave room for protocol overhead and completion tokens on APIs whose context
+/// window covers both the prompt and generated output.
+func clampSimpleMaxTokensToContext(model: Model, context: Context, maxTokens: Int) -> Int {
+    guard model.contextWindow > 0 else { return max(1, maxTokens) }
+    let available = model.contextWindow - estimateContextTokens(context) - 4_096
+    return min(maxTokens, max(1, available))
+}
+
+func estimateContextTokens(_ context: Context) -> Int {
+    func textTokens(_ text: String) -> Int { (text.count + 3) / 4 }
+    func blocksTokens(_ blocks: [ContentBlock]) -> Int {
+        blocks.reduce(0) { total, block in
+            switch block {
+            case .text(let text): return total + textTokens(text.text)
+            case .thinking(let thinking): return total + textTokens(thinking.thinking)
+            case .image: return total + 1_200
+            case .toolCall(let call): return total + textTokens(call.name + jsonString(from: call.arguments))
+            }
+        }
+    }
+
+    func messageTokens(_ message: Message) -> Int {
+        switch message {
+        case .user(let user):
+            switch user.content {
+            case .text(let text): return textTokens(text)
+            case .blocks(let blocks): return blocksTokens(blocks)
+            }
+        case .toolResult(let result): return blocksTokens(result.content)
+        case .assistant(let assistant): return blocksTokens(assistant.content)
+        }
+    }
+
+    // Usage from an assistant turn already represents the entire request context;
+    // only estimate messages appended after that turn. Summing the whole history
+    // again would unnecessarily shrink the output budget on long conversations.
+    if let lastUsageIndex = context.messages.indices.reversed().first(where: { index in
+        guard case .assistant(let assistant) = context.messages[index],
+              assistant.stopReason != .error, assistant.stopReason != .aborted else { return false }
+        return assistant.usage.totalTokens > 0 || assistant.usage.input + assistant.usage.output + assistant.usage.cacheRead + assistant.usage.cacheWrite > 0
+    }), case .assistant(let assistant) = context.messages[lastUsageIndex] {
+        let usage = assistant.usage.totalTokens > 0
+            ? assistant.usage.totalTokens
+            : assistant.usage.input + assistant.usage.output + assistant.usage.cacheRead + assistant.usage.cacheWrite
+        let trailing = lastUsageIndex + 1 < context.messages.endIndex
+            ? context.messages[(lastUsageIndex + 1)...].reduce(0) { $0 + messageTokens($1) }
+            : 0
+        return usage + trailing
+    }
+
+    var total = textTokens(context.systemPrompt ?? "") + context.messages.reduce(0) { $0 + messageTokens($1) }
+    if let tools = context.tools, !tools.isEmpty {
+        total += textTokens(tools.map { "\($0.name):\($0.description)" }.joined(separator: "\n"))
+    }
+    return total
 }
 
 public func completeSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) async throws -> AssistantMessage {
@@ -191,7 +251,7 @@ public func completeSimple(model: Model, context: Context, options: SimpleStream
     return await stream.result()
 }
 
-func mapAnthropicSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> AnthropicOptions {
+func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleStreamOptions?, apiKey: String) -> AnthropicOptions {
     let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
 
     if options?.reasoning == nil {
@@ -211,20 +271,27 @@ func mapAnthropicSimpleOptions(model: Model, options: SimpleStreamOptions?, apiK
     }
 
     let effort = clampThinkingLevel(model: model, requested: options?.reasoning) ?? .medium
+    let adaptiveEffort = mapAnthropicAdaptiveThinkingEffort(model: model, level: effort)
     let adjusted = adjustMaxTokensForThinking(
         baseMaxTokens: baseMaxTokens,
         modelMaxTokens: model.maxTokens,
         reasoningLevel: effort,
         customBudgets: options?.thinkingBudgets
     )
+    // v0.80.x (#5595): the thinking budget is added on top of the base output cap, so
+    // re-clamp the inflated total against the context window and fit the thinking budget
+    // inside it, mirroring upstream `anthropic-messages.ts` clampMaxTokensToContext.
+    let clampedMaxTokens = clampSimpleMaxTokensToContext(model: model, context: context, maxTokens: adjusted.maxTokens)
+    let clampedThinkingBudget = min(adjusted.thinkingBudget, max(0, clampedMaxTokens - 1024))
 
     return AnthropicOptions(
         temperature: options?.temperature,
-        maxTokens: adjusted.maxTokens,
+        maxTokens: clampedMaxTokens,
         signal: options?.signal,
         apiKey: apiKey,
         thinkingEnabled: true,
-        thinkingBudgetTokens: adjusted.thinkingBudget,
+        thinkingBudgetTokens: clampedThinkingBudget,
+        effort: model.compat?.forceAdaptiveThinking == true ? adaptiveEffort : nil,
         metadata: options?.metadata,
         headers: options?.headers,
         onPayload: options?.onPayload,
@@ -234,9 +301,19 @@ func mapAnthropicSimpleOptions(model: Model, options: SimpleStreamOptions?, apiK
     )
 }
 
+/// Resolves catalog aliases such as Opus 4.6's `xhigh -> max` before Anthropic
+/// adaptive-thinking request construction.
+func mapAnthropicAdaptiveThinkingEffort(model: Model, level: ThinkingLevel) -> ThinkingLevel {
+    guard let mapped = mappedThinkingLevel(model: model, level: level),
+          let effort = ThinkingLevel(rawValue: mapped) else {
+        return level
+    }
+    return effort
+}
+
 func clampThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel? {
     guard let effort else { return nil }
-    if effort == .xhigh {
+    if effort == .xhigh || effort == .max {
         return .high
     }
     return effort
@@ -463,6 +540,8 @@ func adjustMaxTokensForThinking(
         .low: 2048,
         .medium: 8192,
         .high: 16384,
+        .xhigh: 16384,
+        .max: 16384,
     ]
     let budgets = defaultBudgets.merging(customBudgets ?? [:]) { _, new in new }
     let minOutputTokens = 1024

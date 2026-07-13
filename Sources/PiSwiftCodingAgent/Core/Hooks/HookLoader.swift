@@ -95,6 +95,7 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             resolvedPath: resolvedPath,
             handlers: api.handlers,
             messageRenderers: api.messageRenderers,
+            entryRenderers: api.entryRenderers,
             commands: api.commands,
             flags: api.flags,
             shortcuts: api.shortcuts,

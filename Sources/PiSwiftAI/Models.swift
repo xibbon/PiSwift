@@ -26,15 +26,23 @@ public func getModels(provider: KnownProvider) -> [Model] {
 
 @discardableResult
 public func calculateCost(model: Model, usage: inout Usage) -> UsageCost {
-    usage.cost.input = (model.cost.input / 1_000_000) * Double(usage.input)
-    usage.cost.output = (model.cost.output / 1_000_000) * Double(usage.output)
-    usage.cost.cacheRead = (model.cost.cacheRead / 1_000_000) * Double(usage.cacheRead)
-    usage.cost.cacheWrite = (model.cost.cacheWrite / 1_000_000) * Double(usage.cacheWrite)
+    let inputTokens = usage.input + usage.cacheRead + usage.cacheWrite
+    var rates: any ModelCostRates = model.cost
+    var matchedThreshold = -1
+    for tier in model.cost.tiers ?? [] where inputTokens > tier.inputTokensAbove && tier.inputTokensAbove > matchedThreshold {
+        rates = tier
+        matchedThreshold = tier.inputTokensAbove
+    }
+
+    usage.cost.input = (rates.input / 1_000_000) * Double(usage.input)
+    usage.cost.output = (rates.output / 1_000_000) * Double(usage.output)
+    usage.cost.cacheRead = (rates.cacheRead / 1_000_000) * Double(usage.cacheRead)
+    usage.cost.cacheWrite = (rates.cacheWrite / 1_000_000) * Double(usage.cacheWrite)
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
     return usage.cost
 }
 
-private let extendedThinkingLevels: [ModelThinkingLevel] = [.off, .minimal, .low, .medium, .high, .xhigh]
+private let extendedThinkingLevels: [ModelThinkingLevel] = [.off, .minimal, .low, .medium, .high, .xhigh, .max]
 
 private enum ThinkingLevelMapLookup {
     case missing
@@ -102,7 +110,7 @@ public func getSupportedThinkingLevels(_ model: Model) -> [ModelThinkingLevel] {
         case .unsupported:
             return false
         case .missing:
-            return level != .xhigh
+            return level != .xhigh && level != .max
         case .mapped:
             return true
         }

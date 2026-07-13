@@ -54,6 +54,7 @@ public struct ExtensionDylibLoader {
             resolvedPath: extensionPath,
             handlers: api.handlers,
             messageRenderers: api.messageRenderers,
+            entryRenderers: api.entryRenderers,
             commands: api.commands,
             flags: api.flags,
             shortcuts: api.shortcuts,

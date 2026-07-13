@@ -7,6 +7,19 @@ import PiSwiftAI
 public enum ExtensionFormat: Sendable {
     case singleFile(url: URL)
     case packageDirectory(url: URL)
+    case inline(name: String)
+}
+
+/// A named, in-process extension factory. Inline extensions avoid dylib compilation
+/// while retaining the same registration surface as file-based extensions.
+public struct InlineExtension: Sendable {
+    public let name: String
+    public let factory: HookFactory
+
+    public init(name: String, factory: @escaping HookFactory) {
+        self.name = name
+        self.factory = factory
+    }
 }
 
 // MARK: - Extension Errors
@@ -120,6 +133,9 @@ public struct LoadedExtension: Sendable {
     
     /// Message renderers registered by extension
     public let messageRenderers: [String: HookMessageRenderer]
+
+    /// Display-only session-entry renderers registered by extension.
+    public let entryRenderers: [String: EntryRenderer]
     
     /// Commands registered by extension
     public let commands: [String: RegisteredCommand]
@@ -149,6 +165,7 @@ public struct LoadedExtension: Sendable {
         format: ExtensionFormat,
         handlers: [String: [HookHandler]] = [:],
         messageRenderers: [String: HookMessageRenderer] = [:],
+        entryRenderers: [String: EntryRenderer] = [:],
         commands: [String: RegisteredCommand] = [:],
         flags: [String: HookFlag] = [:],
         shortcuts: [KeyId: HookShortcut] = [:],
@@ -167,6 +184,7 @@ public struct LoadedExtension: Sendable {
         self.format = format
         self.handlers = handlers
         self.messageRenderers = messageRenderers
+        self.entryRenderers = entryRenderers
         self.commands = commands
         self.flags = flags
         self.shortcuts = shortcuts

@@ -290,7 +290,7 @@ func mapGoogleStopReason(_ reason: String) -> StopReason {
 
 func googleThinkingLevel(for effort: ThinkingLevel, modelId: String) -> GoogleThinkingLevel {
     let clamped: ThinkingLevel
-    if effort == .xhigh {
+    if effort == .xhigh || effort == .max {
         clamped = .high
     } else {
         clamped = effort
@@ -299,7 +299,7 @@ func googleThinkingLevel(for effort: ThinkingLevel, modelId: String) -> GoogleTh
         switch clamped {
         case .minimal, .low:
             return .low
-        case .medium, .high, .xhigh:
+        case .medium, .high, .xhigh, .max:
             return .high
         }
     }
@@ -310,7 +310,7 @@ func googleThinkingLevel(for effort: ThinkingLevel, modelId: String) -> GoogleTh
         return .low
     case .medium:
         return .medium
-    case .high, .xhigh:
+    case .high, .xhigh, .max:
         return .high
     }
 }

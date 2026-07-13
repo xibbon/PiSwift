@@ -113,6 +113,7 @@ public enum ThinkingLevel: String, Sendable {
     case medium
     case high
     case xhigh
+    case max
 }
 
 public struct AgentCustomMessage: Sendable {

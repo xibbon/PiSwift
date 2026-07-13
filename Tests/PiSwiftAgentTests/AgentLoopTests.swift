@@ -180,6 +180,55 @@ import PiSwiftAgent
     }
 }
 
+@Test func lengthTruncatedToolCallsFailWithoutExecuting() async {
+    let executed = LockedState<[String]>([])
+    let tool = AgentTool(
+        label: "Echo",
+        name: "echo",
+        description: "Echo tool",
+        parameters: ["type": AnyCodable("object")]
+    ) { _, params, _, _ in
+        executed.withLock { $0.append(params["value"]?.value as? String ?? "") }
+        return AgentToolResult(content: [.text(TextContent(text: "executed"))])
+    }
+    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
+    let calls = LockedState(0)
+    let streamFn: StreamFn = { _, _, _ in
+        let call = calls.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        if call == 1 {
+            return makeStream(done: createAssistantMessage(
+                content: [.toolCall(ToolCall(id: "tool-1", name: "echo", arguments: ["value": AnyCodable("hel")]))],
+                stopReason: .length
+            ))
+        }
+        return makeStream(done: createAssistantMessage(content: [.text(TextContent(text: "done"))]))
+    }
+
+    var events: [AgentEvent] = []
+    let stream = agentLoop(prompts: [createUserMessage("echo something")], context: context, config: config, streamFn: streamFn)
+    for await event in stream {
+        events.append(event)
+    }
+
+    #expect(executed.withLock { $0 }.isEmpty)
+    #expect(calls.withLock { $0 } == 2)
+    let failures = events.compactMap { event -> AgentToolResult? in
+        guard case .toolExecutionEnd(_, _, let result, let isError) = event, isError else { return nil }
+        return result
+    }
+    #expect(failures.count == 1)
+    let failureText = failures[0].content.compactMap { block -> String? in
+        if case .text(let text) = block { return text.text }
+        return nil
+    }.joined()
+    #expect(failureText.contains("output token limit"))
+    #expect((await stream.result()).last?.role == "assistant")
+}
+
 /// v0.61.1 behavior: steering messages are delivered AFTER all tool calls
 /// complete in the current turn (they no longer skip remaining tools).
 @Test func steeringMessagesDeliveredAfterAllToolCalls() async {

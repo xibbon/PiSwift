@@ -662,7 +662,7 @@ private func fetchMistralStream(request: URLRequest, options: MistralOptions) as
 }
 
 private func isRetryableMistralStatus(_ statusCode: Int) -> Bool {
-    statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504
+    statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504 || statusCode == 524
 }
 
 private func isRetryableMistralTransportError(_ error: Error) -> Bool {
@@ -678,8 +678,13 @@ private func isRetryableMistralTransportError(_ error: Error) -> Bool {
     let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
     return text.contains("timed out") ||
         text.contains("network connection was lost") ||
+        text.contains("socket connection was closed") ||
         text.contains("connection reset") ||
-        text.contains("temporarily unavailable")
+        text.contains("temporarily unavailable") ||
+        text.contains("resourceexhausted") ||
+        text.contains("you can retry your request") ||
+        text.contains("try your request again") ||
+        text.contains("please retry your request")
 }
 
 /// Maps `SimpleStreamOptions` onto `MistralOptions`, applying Mistral's reasoning conventions.

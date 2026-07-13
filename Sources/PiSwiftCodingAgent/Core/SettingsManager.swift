@@ -135,6 +135,9 @@ public struct Settings: Sendable {
     public var branchSummary: BranchSummarySettings?
     public var retry: RetrySettings?
     public var hideThinkingBlock: Bool?
+    /// Whether significant prompt-cache misses should be surfaced by a presentation layer.
+    /// Defaults to false.
+    public var showCacheMissNotices: Bool?
     public var shellPath: String?
     public var shellCommandPrefix: String?
     public var quietStartup: Bool?
@@ -589,14 +592,24 @@ public final class SettingsManager: Sendable {
         settings.hideThinkingBlock ?? false
     }
 
+    public func getShowCacheMissNotices() -> Bool {
+        settings.showCacheMissNotices ?? false
+    }
+
     public func setHideThinkingBlock(_ hide: Bool) {
         globalSettings.hideThinkingBlock = hide
         markModified("hideThinkingBlock")
         save()
     }
 
+    public func setShowCacheMissNotices(_ show: Bool) {
+        globalSettings.showCacheMissNotices = show
+        markModified("showCacheMissNotices")
+        save()
+    }
+
     public func getShellPath() -> String? {
-        settings.shellPath
+        settings.shellPath.map { ($0 as NSString).expandingTildeInPath }
     }
 
     public func setShellPath(_ path: String?) {
@@ -1140,6 +1153,7 @@ public final class SettingsManager: Sendable {
             settings.defaultProjectTrust = DefaultProjectTrust(rawValue: trust)
         }
         settings.hideThinkingBlock = json["hideThinkingBlock"] as? Bool
+        settings.showCacheMissNotices = json["showCacheMissNotices"] as? Bool
         settings.shellPath = json["shellPath"] as? String
         settings.shellCommandPrefix = json["shellCommandPrefix"] as? String
         settings.quietStartup = json["quietStartup"] as? Bool
@@ -1384,6 +1398,7 @@ public final class SettingsManager: Sendable {
         json["theme"] = settings.theme
         json["defaultProjectTrust"] = settings.defaultProjectTrust?.rawValue
         json["hideThinkingBlock"] = settings.hideThinkingBlock
+        json["showCacheMissNotices"] = settings.showCacheMissNotices
         json["shellPath"] = settings.shellPath
         json["shellCommandPrefix"] = settings.shellCommandPrefix
         json["quietStartup"] = settings.quietStartup
@@ -1547,6 +1562,7 @@ public final class SettingsManager: Sendable {
         if override.branchSummary != nil { result.branchSummary = override.branchSummary }
         if override.retry != nil { result.retry = override.retry }
         if override.hideThinkingBlock != nil { result.hideThinkingBlock = override.hideThinkingBlock }
+        if override.showCacheMissNotices != nil { result.showCacheMissNotices = override.showCacheMissNotices }
         if override.shellPath != nil { result.shellPath = override.shellPath }
         if override.shellCommandPrefix != nil { result.shellCommandPrefix = override.shellCommandPrefix }
         if override.quietStartup != nil { result.quietStartup = override.quietStartup }

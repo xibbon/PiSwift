@@ -68,6 +68,16 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         output: [.image, .text],
         cost: ModelCost(input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.08333333333333334)
     ),
+    "google/gemini-3-pro-image": ImagesModel(
+        id: "google/gemini-3-pro-image",
+        name: "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.image, .text],
+        output: [.image, .text],
+        cost: ModelCost(input: 2, output: 12, cacheRead: 0.19999999999999998, cacheWrite: 0.375)
+    ),
     "google/gemini-3-pro-image-preview": ImagesModel(
         id: "google/gemini-3-pro-image-preview",
         name: "Google: Nano Banana Pro (Gemini 3 Pro Image Preview)",
@@ -78,6 +88,16 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         output: [.image, .text],
         cost: ModelCost(input: 2, output: 12, cacheRead: 0.19999999999999998, cacheWrite: 0.375)
     ),
+    "google/gemini-3.1-flash-image": ImagesModel(
+        id: "google/gemini-3.1-flash-image",
+        name: "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.image, .text],
+        output: [.image, .text],
+        cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0)
+    ),
     "google/gemini-3.1-flash-image-preview": ImagesModel(
         id: "google/gemini-3.1-flash-image-preview",
         name: "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
@@ -87,6 +107,16 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         input: [.image, .text],
         output: [.image, .text],
         cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0)
+    ),
+    "google/gemini-3.1-flash-lite-image": ImagesModel(
+        id: "google/gemini-3.1-flash-lite-image",
+        name: "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.image, .text],
+        output: [.image, .text],
+        cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0, cacheWrite: 0)
     ),
     "microsoft/mai-image-2.5": ImagesModel(
         id: "microsoft/mai-image-2.5",
@@ -127,6 +157,36 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         input: [.image, .text],
         output: [.image, .text],
         cost: ModelCost(input: 8, output: 15, cacheRead: 2, cacheWrite: 0)
+    ),
+    "openai/gpt-image-1": ImagesModel(
+        id: "openai/gpt-image-1",
+        name: "OpenAI: GPT Image 1",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 10, output: 10, cacheRead: 1.25, cacheWrite: 0)
+    ),
+    "openai/gpt-image-1-mini": ImagesModel(
+        id: "openai/gpt-image-1-mini",
+        name: "OpenAI: GPT Image 1 Mini",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 2.5, output: 2.5, cacheRead: 0.25, cacheWrite: 0)
+    ),
+    "openai/gpt-image-2": ImagesModel(
+        id: "openai/gpt-image-2",
+        name: "OpenAI: GPT Image 2",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0)
     ),
     "openrouter/auto": ImagesModel(
         id: "openrouter/auto",
@@ -258,39 +318,9 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
-    "sourceful/riverflow-v2-fast-preview": ImagesModel(
-        id: "sourceful/riverflow-v2-fast-preview",
-        name: "Sourceful: Riverflow V2 Fast Preview",
-        api: .openrouterImages,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
-    ),
-    "sourceful/riverflow-v2-max-preview": ImagesModel(
-        id: "sourceful/riverflow-v2-max-preview",
-        name: "Sourceful: Riverflow V2 Max Preview",
-        api: .openrouterImages,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
-    ),
     "sourceful/riverflow-v2-pro": ImagesModel(
         id: "sourceful/riverflow-v2-pro",
         name: "Sourceful: Riverflow V2 Pro",
-        api: .openrouterImages,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
-    ),
-    "sourceful/riverflow-v2-standard-preview": ImagesModel(
-        id: "sourceful/riverflow-v2-standard-preview",
-        name: "Sourceful: Riverflow V2 Standard Preview",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",

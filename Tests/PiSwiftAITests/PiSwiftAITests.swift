@@ -1,5 +1,6 @@
 import Foundation
 import OpenAI
+import SwiftAnthropic
 import Testing
 @testable import PiSwiftAI
 
@@ -217,12 +218,24 @@ private func optionalFields(_ pairs: [(String, Any?)]) -> [String: Any] {
 }
 
 private func normalizeCost(_ cost: ModelCost) -> [String: Any] {
-    [
+    var result: [String: Any] = [
         "cacheRead": cost.cacheRead,
         "cacheWrite": cost.cacheWrite,
         "input": cost.input,
         "output": cost.output,
     ]
+    if let tiers = cost.tiers {
+        result["tiers"] = tiers.map { tier in
+            [
+                "cacheRead": tier.cacheRead,
+                "cacheWrite": tier.cacheWrite,
+                "input": tier.input,
+                "inputTokensAbove": tier.inputTokensAbove,
+                "output": tier.output,
+            ]
+        }
+    }
+    return result
 }
 
 private func normalizeThinkingLevelMap(_ map: ThinkingLevelMap?) -> [String: Any]? {
@@ -1472,7 +1485,7 @@ private func runCodexSessionRequest(
     guard RUN_ANTHROPIC_TESTS else {
         return
     }
-    let model = getModel(provider: .anthropic, modelId: "claude-3-5-haiku-20241022")
+    let model = getModel(provider: .anthropic, modelId: "claude-haiku-4-5")
     let context = Context(messages: [.user(UserMessage(content: .text("Reply with hi.")))])
     let response = try await complete(model: model, context: context)
     #expect(!response.content.isEmpty)
@@ -2146,9 +2159,10 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 @Test func anthropicSimpleOptionsCarryMetadata() {
-    let model = getModel(provider: .anthropic, modelId: "claude-3-5-haiku-20241022")
+    let model = getModel(provider: .anthropic, modelId: "claude-haiku-4-5")
     let options = SimpleStreamOptions(metadata: ["user_id": AnyCodable("user-123")])
-    let mapped = mapAnthropicSimpleOptions(model: model, options: options, apiKey: "sk-ant-api")
+    let context = Context(messages: [.user(UserMessage(content: .text("hello")))])
+    let mapped = mapAnthropicSimpleOptions(model: model, context: context, options: options, apiKey: "sk-ant-api")
     #expect(mapped.metadata?["user_id"]?.value as? String == "user-123")
 }
 
@@ -4503,11 +4517,137 @@ struct ApiRegistryTests {
     #expect(Transport.websocketCached.rawValue == "websocket-cached")
 }
 
+@Test func maxThinkingLevelRequiresMappingAndClampsWhenUnsupported() {
+    func model(thinkingLevelMap: ThinkingLevelMap? = nil) -> PiSwiftAI.Model {
+        PiSwiftAI.Model(
+            id: "thinking-level-test",
+            name: "Thinking Level Test",
+            api: .openAIResponses,
+            provider: "test",
+            baseUrl: "https://example.invalid",
+            reasoning: true,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 1_000,
+            maxTokens: 1_000,
+            thinkingLevelMap: thinkingLevelMap
+        )
+    }
+
+    #expect(!getSupportedThinkingLevels(model()).contains(.max))
+    #expect(getSupportedThinkingLevels(model(thinkingLevelMap: [.max: "max"])).contains(.max))
+    #expect(clampThinkingLevel(model: model(thinkingLevelMap: [.high: "high"]), requested: .max) == .high)
+    #expect(mapAnthropicAdaptiveThinkingEffort(model: model(thinkingLevelMap: [.xhigh: "max"]), level: .xhigh) == .max)
+}
+
+@Test func calculateCostUsesHighestMatchingInputTier() {
+    func model(cost: ModelCost) -> PiSwiftAI.Model {
+        PiSwiftAI.Model(
+            id: "tiered-cost-test",
+            name: "Tiered Cost Test",
+            api: .openAICompletions,
+            provider: "test",
+            baseUrl: "https://example.invalid",
+            reasoning: false,
+            input: [.text],
+            cost: cost,
+            contextWindow: 1_000,
+            maxTokens: 1_000
+        )
+    }
+
+    let base = ModelCost(input: 1, output: 2, cacheRead: 3, cacheWrite: 4)
+    var noTiers = Usage(input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 2_000_000)
+    #expect(calculateCost(model: model(cost: base), usage: &noTiers).total == 3)
+
+    let tiered = ModelCost(
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+        tiers: [
+            ModelCostTier(inputTokensAbove: 100, input: 10, output: 20, cacheRead: 30, cacheWrite: 40),
+            ModelCostTier(inputTokensAbove: 1_000, input: 100, output: 200, cacheRead: 300, cacheWrite: 400),
+        ]
+    )
+    var belowFirst = Usage(input: 100, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 1_000_100)
+    #expect(calculateCost(model: model(cost: tiered), usage: &belowFirst).total == 2.0001)
+
+    var aboveFirst = Usage(input: 101, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 1_000_101)
+    #expect(calculateCost(model: model(cost: tiered), usage: &aboveFirst).total == 20.00101)
+
+    var highestMatch = Usage(input: 1_001, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 1_001_001)
+    #expect(calculateCost(model: model(cost: tiered), usage: &highestMatch).total == 200.1001)
+}
+
+@Test func providerUsageDecodesAndPropagatesReasoningTokens() throws {
+    let anthropicData = Data("""
+    {"input_tokens":10,"output_tokens":30,"thinking_tokens":17,"cache_read_input_tokens":2,"cache_creation_input_tokens":1}
+    """.utf8)
+    let anthropicDecoder = JSONDecoder()
+    anthropicDecoder.keyDecodingStrategy = .convertFromSnakeCase
+    let decodedAnthropic = try anthropicDecoder.decode(MessageResponse.Usage.self, from: anthropicData)
+    let anthropic = makeAnthropicUsage(
+        input: decodedAnthropic.inputTokens ?? 0,
+        output: decodedAnthropic.outputTokens,
+        cacheRead: decodedAnthropic.cacheReadInputTokens ?? 0,
+        cacheWrite: decodedAnthropic.cacheCreationInputTokens ?? 0,
+        reasoning: decodedAnthropic.thinkingTokens
+    )
+    #expect(anthropic.reasoning == 17)
+    #expect(anthropic.output == 30)
+
+    let responsesData = Data("""
+    {"input_tokens":120,"input_tokens_details":{"cached_tokens":20},"output_tokens":80,"output_tokens_details":{"reasoning_tokens":55},"total_tokens":200}
+    """.utf8)
+    let responses = try JSONDecoder().decode(Components.Schemas.ResponseUsage.self, from: responsesData)
+    let openAI = makeOpenAIResponsesUsage(responses)
+    #expect(openAI.input == 100)
+    #expect(openAI.reasoning == 55)
+    #expect(openAI.output == 80)
+}
+
+@Test func openAIResponsesMaxReasoningUsesRawOverride() throws {
+    let data = try JSONSerialization.data(withJSONObject: ["reasoning": ["effort": "high"]])
+    let updated = try #require(applyOpenAIResponsesReasoningEffort(data: data, effort: "max"))
+    let payload = try #require(try JSONSerialization.jsonObject(with: updated) as? [String: Any])
+    let reasoning = try #require(payload["reasoning"] as? [String: Any])
+    #expect(reasoning["effort"] as? String == "max")
+}
+
+@Test func chatTemplateThinkingKwargsResolveVariables() throws {
+    let model = Model(
+        id: "chat-template-test",
+        name: "Chat Template Test",
+        api: .openAICompletions,
+        provider: "test",
+        baseUrl: "https://example.invalid",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1_000,
+        maxTokens: 1_000,
+        thinkingLevelMap: [.max: "provider-max"]
+    )
+    let data = try JSONSerialization.data(withJSONObject: ["model": model.id])
+    let kwargs: [String: ChatTemplateKwargValue] = [
+        "enabled": .variable(.thinkingEnabled),
+        "effort": .variable(.thinkingEffort, omitWhenOff: true),
+        "temperature": .number(0.5),
+    ]
+    let configured = try #require(applyOpenAIChatTemplateKwargs(data: data, model: model, effort: .max, kwargs: kwargs))
+    let payload = try #require(try JSONSerialization.jsonObject(with: configured) as? [String: Any])
+    let resolved = try #require(payload["chat_template_kwargs"] as? [String: Any])
+    #expect(resolved["enabled"] as? Bool == true)
+    #expect(resolved["effort"] as? String == "provider-max")
+    #expect(resolved["temperature"] as? Double == 0.5)
+}
+
 // MARK: - Phase 2 (v0.61.1 → v0.70.5) tests
 
 /// v0.65.0: Anthropic HTTP 413 surfaces as `request_too_large` and counts as context overflow.
 @Test func contextOverflowDetectsRequestTooLarge() {
-    let model = getModel(provider: .anthropic, modelId: "claude-3-5-haiku-20241022")
+    let model = getModel(provider: .anthropic, modelId: "claude-haiku-4-5")
     let message = AssistantMessage(
         content: [],
         api: model.api,
@@ -4533,6 +4673,48 @@ struct ApiRegistryTests {
         errorMessage: "prompt too long; exceeded max context length 8192"
     )
     #expect(isContextOverflow(message))
+}
+
+@Test func contextOverflowDetectsDS4ConfiguredContextPattern() {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let message = AssistantMessage(
+        content: [], api: model.api, provider: model.provider, model: model.id,
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .error,
+        errorMessage: "Prompt has 131,073 tokens, but the configured context size is 131,072 tokens"
+    )
+    #expect(isContextOverflow(message))
+}
+
+@Test func streamSimpleMaxTokensLeavesContextHeadroom() {
+    let model = Model(
+        id: "test", name: "test", api: .openAICompletions, provider: "openai", baseUrl: "",
+        reasoning: false, input: [.text], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 8_192, maxTokens: 8_192
+    )
+    let context = Context(messages: [.user(UserMessage(content: .text(String(repeating: "x", count: 24_000))))])
+    #expect(clampSimpleMaxTokensToContext(model: model, context: context, maxTokens: 8_192) == 1)
+}
+
+@Test func responsesQueryClampsMinimumOutputTokens() throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let query = try buildResponsesQuery(
+        model: model,
+        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        options: OpenAIResponsesOptions(maxTokens: 1, apiKey: "test")
+    )
+    #expect(query.maxOutputTokens == 16)
+}
+
+@Test func responsesToolResultWithoutTextOrImageUsesExplicitNoOutput() throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let items = convertResponsesMessages(
+        model: model,
+        context: Context(messages: [.toolResult(ToolResultMessage(toolCallId: "call", toolName: "tool", content: [], isError: false))]),
+        allowedToolCallProviders: []
+    )
+    let data = try JSONEncoder().encode(items)
+    #expect(String(decoding: data, as: UTF8.self).contains("(no tool output)"))
 }
 
 /// v0.70.3: Azure Cognitive Services endpoints get the same `/openai/v1` path normalization
@@ -5100,7 +5282,7 @@ struct ApiRegistryTests {
     #expect(completions.sessionId == "session-1")
 
     let anthropic = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
-    let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, options: options, apiKey: "key")
+    let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, context: Context(messages: [.user(UserMessage(content: .text("hello")))]), options: options, apiKey: "key")
     #expect(anthropicOptions.timeoutMs == 2345)
     #expect(anthropicOptions.maxRetries == 2)
 
@@ -5237,8 +5419,8 @@ struct ApiRegistryTests {
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
     #expect(getProviders().count == 35)
-    #expect(allModels.count == 971)
-    #expect(compared == 971)
+    #expect(allModels.count == 1057)
+    #expect(compared == 1057)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -5290,8 +5472,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 32)
-    #expect(compared == 32)
+    #expect(models.count == 35)
+    #expect(compared == 35)
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)

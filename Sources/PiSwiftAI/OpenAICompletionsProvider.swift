@@ -224,6 +224,7 @@ private struct ResolvedOpenAICompat {
     let requiresThinkingAsText: Bool
     let requiresMistralToolIds: Bool
     let thinkingFormat: OpenAICompatThinkingFormat
+    let chatTemplateKwargs: [String: ChatTemplateKwargValue]
     let supportsStrictMode: Bool
     let reasoningEffortMap: [ThinkingLevel: String]?
     let cacheControlFormat: OpenAICompatCacheControlFormat?
@@ -274,6 +275,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
             .medium: "high",
             .high: "high",
             .xhigh: "max",
+            .max: "max",
         ]
     } else if isGroq {
         reasoningEffortMap = [
@@ -282,6 +284,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
             .medium: "default",
             .high: "default",
             .xhigh: "default",
+            .max: "default",
         ]
     } else {
         reasoningEffortMap = nil
@@ -298,6 +301,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         requiresThinkingAsText: false,
         requiresMistralToolIds: false,
         thinkingFormat: thinkingFormat,
+        chatTemplateKwargs: [:],
         supportsStrictMode: true,
         reasoningEffortMap: reasoningEffortMap,
         cacheControlFormat: isOpenRouter && model.id.hasPrefix("anthropic/") ? .anthropic : nil,
@@ -323,6 +327,7 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         requiresThinkingAsText: compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
         requiresMistralToolIds: compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
         thinkingFormat: compat.thinkingFormat ?? detected.thinkingFormat,
+        chatTemplateKwargs: compat.chatTemplateKwargs ?? detected.chatTemplateKwargs,
         supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
         reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap,
         cacheControlFormat: compat.cacheControlFormat ?? detected.cacheControlFormat,
@@ -452,6 +457,8 @@ private func mapChatReasoningEffort(_ effort: ThinkingLevel) -> ChatQuery.Reason
         return .medium
     case .high, .xhigh:
         return .high
+    case .max:
+        return .customValue("max")
     }
 }
 
@@ -591,7 +598,10 @@ private func convertCompletionsMessages(
                 return false
             }
 
-            let toolText = sanitizeSurrogates(text.isEmpty ? "(see attached image)" : text)
+            // An empty text-only result is not an image attachment. Telling the model
+            // otherwise causes it to invent an image that was never supplied.
+            let emptyToolResult = hasImages ? "(see attached image)" : "(no tool output)"
+            let toolText = sanitizeSurrogates(text.isEmpty ? emptyToolResult : text)
             let toolMessage = ChatQuery.ChatCompletionMessageParam.ToolMessageParam(
                 content: .textContent(toolText),
                 toolCallId: toolResult.toolCallId
@@ -694,7 +704,10 @@ private func buildZaiRequestBody(query: ChatQuery, model: Model, options: OpenAI
 
     if model.reasoning {
         let enabled = options.reasoningEffort != nil
-        object["thinking"] = ["type": enabled ? "enabled" : "disabled"]
+        // Keep replayed reasoning_content so Z.AI can include it in its cache.
+        object["thinking"] = enabled
+            ? ["type": "enabled", "clear_thinking": false]
+            : ["type": "disabled"]
     }
 
     return try JSONSerialization.data(withJSONObject: object, options: [])
@@ -711,6 +724,7 @@ private struct OpenAICompletionsRawUsage: Decodable {
     let totalTokens: Int?
     let promptCacheHitTokens: Int?
     let promptTokensDetails: PromptTokensDetails?
+    let completionTokensDetails: CompletionTokensDetails?
 
     struct PromptTokensDetails: Decodable {
         let cachedTokens: Int?
@@ -722,12 +736,21 @@ private struct OpenAICompletionsRawUsage: Decodable {
         }
     }
 
+    struct CompletionTokensDetails: Decodable {
+        let reasoningTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case reasoningTokens = "reasoning_tokens"
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
         case promptCacheHitTokens = "prompt_cache_hit_tokens"
         case promptTokensDetails = "prompt_tokens_details"
+        case completionTokensDetails = "completion_tokens_details"
     }
 }
 
@@ -742,6 +765,7 @@ private func parseCompletionsUsage(_ rawUsage: OpenAICompletionsRawUsage) -> Usa
         output: outputTokens,
         cacheRead: cacheReadTokens,
         cacheWrite: cacheWriteTokens,
+        reasoning: rawUsage.completionTokensDetails?.reasoningTokens,
         totalTokens: input + outputTokens + cacheReadTokens + cacheWriteTokens
     )
 }
@@ -757,7 +781,8 @@ private func parseCompletionsUsage(_ usage: ChatResult.CompletionUsage) -> Usage
                 cachedTokens: $0.cachedTokens,
                 cacheWriteTokens: nil
             )
-        }
+        },
+        completionTokensDetails: nil
     )
     return parseCompletionsUsage(rawUsage)
 }
@@ -790,6 +815,13 @@ private func buildCompletionsMiddlewares(
     if compat.thinkingFormat == .qwenChatTemplate, model.reasoning {
         let enabled = options.reasoningEffort != nil
         middlewares.append(OpenAICompletionsChatTemplateMiddleware(enableThinking: enabled))
+    }
+    if compat.thinkingFormat == .chatTemplate, model.reasoning {
+        middlewares.append(OpenAICompletionsConfiguredChatTemplateMiddleware(
+            model: model,
+            effort: options.reasoningEffort,
+            kwargs: compat.chatTemplateKwargs
+        ))
     }
     if compat.thinkingFormat == .openrouter, model.reasoning {
         middlewares.append(OpenAICompletionsOpenRouterReasoningMiddleware(model: model, effort: options.reasoningEffort))
@@ -1123,6 +1155,70 @@ private struct OpenAICompletionsChatTemplateMiddleware: OpenAIMiddleware {
         updated.httpBodyStream = nil
         updated.httpBody = updatedBody
         return updated
+    }
+}
+
+private struct OpenAICompletionsConfiguredChatTemplateMiddleware: OpenAIMiddleware {
+    let model: Model
+    let effort: ThinkingLevel?
+    let kwargs: [String: ChatTemplateKwargValue]
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = request.httpBody,
+              let updatedBody = applyOpenAIChatTemplateKwargs(data: body, model: model, effort: effort, kwargs: kwargs) else {
+            return request
+        }
+
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+}
+
+func applyOpenAIChatTemplateKwargs(
+    data: Data,
+    model: Model,
+    effort: ThinkingLevel?,
+    kwargs: [String: ChatTemplateKwargValue]
+) -> Data? {
+    guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        return nil
+    }
+
+    var resolved: [String: Any] = [:]
+    for (key, value) in kwargs {
+        if let value = resolveChatTemplateKwarg(value, model: model, effort: effort) {
+            resolved[key] = value
+        }
+    }
+    guard !resolved.isEmpty else { return nil }
+    payload["chat_template_kwargs"] = resolved
+    return try? JSONSerialization.data(withJSONObject: payload)
+}
+
+private func resolveChatTemplateKwarg(
+    _ value: ChatTemplateKwargValue,
+    model: Model,
+    effort: ThinkingLevel?
+) -> Any? {
+    switch value {
+    case .string(let value):
+        return value
+    case .number(let value):
+        return value
+    case .bool(let value):
+        return value
+    case .null:
+        return NSNull()
+    case .variable(.thinkingEnabled, _):
+        return effort != nil
+    case .variable(.thinkingEffort, let omitWhenOff):
+        guard let effort else {
+            guard !omitWhenOff else { return nil }
+            return mappedOffThinkingLevel(model: model)
+        }
+        return mappedThinkingLevel(model: model, level: effort) ?? effort.rawValue
     }
 }
 

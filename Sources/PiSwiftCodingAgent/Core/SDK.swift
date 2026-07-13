@@ -58,6 +58,8 @@ public struct CreateAgentSessionOptions: Sendable {
     public var hooks: [HookDefinition]?
     public var additionalHookPaths: [String]?
     public var additionalExtensionPaths: [String]?
+    /// Named in-process extensions that use the same API as dylib extensions.
+    public var inlineExtensions: [InlineExtension]?
     public var eventBus: EventBus?
     public var skills: [Skill]?
     public var contextFiles: [ContextFile]?
@@ -87,6 +89,7 @@ public struct CreateAgentSessionOptions: Sendable {
         hooks: [HookDefinition]? = nil,
         additionalHookPaths: [String]? = nil,
         additionalExtensionPaths: [String]? = nil,
+        inlineExtensions: [InlineExtension]? = nil,
         eventBus: EventBus? = nil,
         skills: [Skill]? = nil,
         contextFiles: [ContextFile]? = nil,
@@ -115,6 +118,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.hooks = hooks
         self.additionalHookPaths = additionalHookPaths
         self.additionalExtensionPaths = additionalExtensionPaths
+        self.inlineExtensions = inlineExtensions
         self.eventBus = eventBus
         self.skills = skills
         self.contextFiles = contextFiles
@@ -260,7 +264,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
 public func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
     for (provider, modelId) in defaultModelPerProvider {
         if let match = available.first(where: { $0.provider == provider.rawValue && $0.id == modelId }),
-           await registry.getApiKeyForProvider(match.provider) != nil {
+           registry.hasConfiguredAuth(match) {
             return match
         }
     }
@@ -405,6 +409,7 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             resolvedPath: path,
             handlers: api.handlers,
             messageRenderers: api.messageRenderers,
+            entryRenderers: api.entryRenderers,
             commands: api.commands,
             flags: api.flags,
             shortcuts: api.shortcuts,
@@ -439,6 +444,9 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
         }
         for (customType, renderer) in loaded.messageRenderers {
             api.registerMessageRenderer(customType, renderer)
+        }
+        for (customType, renderer) in loaded.entryRenderers {
+            api.registerEntryRenderer(customType, renderer)
         }
         for command in loaded.commands.values {
             api.registerCommand(command.name, description: command.description, handler: command.handler)
@@ -512,6 +520,21 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     // Load extensions (plain .swift files) before model selection so provider
     // registrations are visible to restored/default model resolution.
     let extensionPaths = settingsManager.getExtensionPaths() + (options.additionalExtensionPaths ?? [])
+    let inlineExtensions = options.inlineExtensions ?? []
+    let loadInlineExtensions: @Sendable () -> LoadExtensionsResult = {
+        var hooks: [LoadedHook] = []
+        var errors: [ExtensionLoadError] = []
+        for inlineExtension in inlineExtensions {
+            let result = ExtensionLoader.load(inlineExtension, cwd: cwd, eventBus: eventBus)
+            if let hook = result.hook {
+                hooks.append(hook)
+            }
+            if let error = result.error {
+                errors.append(error)
+            }
+        }
+        return LoadExtensionsResult(hooks: hooks, errors: errors)
+    }
     let extensionResult = await discoverAndLoadExtensions(
         extensionPaths,
         cwd,
@@ -524,18 +547,28 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         writeStderr("Failed to load extension: \(error.localizedDescription)\n")
     }
     allLoadedHooks += extensionResult.hooks
+    let inlineExtensionResult = loadInlineExtensions()
+    allLoadedHooks += inlineExtensionResult.hooks
+    for error in inlineExtensionResult.errors {
+        writeStderr("Failed to load inline extension: \(error.localizedDescription)\n")
+    }
 
     // Closure used by AgentSession.reloadExtensions() so /reload can swap extensions live.
     // Captures the same paths/cwd/agentDir/eventBus the initial load used. SDK extension
     // resolution is repeated inside discoverAndLoadExtensions so it picks up newly-installed
     // SDKs too.
     let reloadExtensionsHook: @Sendable () async -> LoadExtensionsResult = {
-        await discoverAndLoadExtensions(
+        let fileExtensions = await discoverAndLoadExtensions(
             extensionPaths,
             cwd,
             agentDir,
             eventBus,
             includeProjectExtensions: projectTrusted
+        )
+        let inlineExtensions = loadInlineExtensions()
+        return LoadExtensionsResult(
+            hooks: fileExtensions.hooks + inlineExtensions.hooks,
+            errors: fileExtensions.errors + inlineExtensions.errors
         )
     }
 
@@ -562,7 +595,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     if model == nil, hasExistingSession, let existingModel = existingSession.model {
         if let restored = modelRegistry.find(existingModel.provider, existingModel.modelId),
-           await modelRegistry.getApiKeyForProvider(restored.provider) != nil,
+           modelRegistry.hasConfiguredAuth(restored),
            await modelRegistry.isAvailable(restored) {
             model = restored
         }
@@ -575,7 +608,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         if let provider = settingsManager.getDefaultProvider(),
            let modelId = settingsManager.getDefaultModel(),
            let settingsModel = modelRegistry.find(provider, modelId),
-           await modelRegistry.getApiKeyForProvider(settingsModel.provider) != nil,
+           modelRegistry.hasConfiguredAuth(settingsModel),
            await modelRegistry.isAvailable(settingsModel) {
             model = settingsModel
         }
@@ -587,7 +620,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             model = preferred
         } else {
             for candidate in available {
-                if await modelRegistry.getApiKeyForProvider(candidate.provider) != nil {
+                if modelRegistry.hasConfiguredAuth(candidate) {
                     model = candidate
                     break
                 }
@@ -841,7 +874,24 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         },
         getModelAuth: { model in
             let auth = await modelRegistry.getApiKeyAndHeaders(model)
-            return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
+            // PiSwiftAgent obtains model auth immediately before it constructs
+            // `SimpleStreamOptions`. At this point model and auth headers are known,
+            // making it the coding-agent boundary equivalent to upstream's provider
+            // header assembly hook.
+            var headers = model.headers ?? [:]
+            if let authHeaders = auth.headers {
+                for (name, value) in authHeaders {
+                    headers[name] = value
+                }
+            }
+            if hookRunner.hasHandlers("before_provider_headers") {
+                headers = await hookRunner.emitBeforeProviderHeaders(headers)
+            }
+            return AgentModelAuth(
+                apiKey: auth.apiKey,
+                headers: headers.isEmpty ? nil : headers,
+                baseUrl: auth.baseUrl
+            )
         },
         onPayload: onPayloadHook,
         onResponse: onResponseHook,

@@ -170,6 +170,7 @@ public func streamGoogle(
                         output: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
                         cacheRead: cacheRead,
                         cacheWrite: 0,
+                        reasoning: usage.thoughtsTokenCount,
                         totalTokens: usage.totalTokenCount ?? 0
                     )
                     calculateCost(model: model, usage: &output.usage)

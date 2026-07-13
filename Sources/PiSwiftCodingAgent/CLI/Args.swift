@@ -71,7 +71,7 @@ public struct Args: Sendable {
     }
 }
 
-private let validThinkingLevels: Set<String> = ["off", "minimal", "low", "medium", "high", "xhigh"]
+private let validThinkingLevels: Set<String> = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 public func isValidThinkingLevel(_ level: String) -> Bool {
     validThinkingLevels.contains(level)

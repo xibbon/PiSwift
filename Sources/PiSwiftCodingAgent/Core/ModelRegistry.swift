@@ -218,6 +218,21 @@ private struct ModelCostOverride: Sendable {
     var output: Double?
     var cacheRead: Double?
     var cacheWrite: Double?
+    var tiers: [ModelCostTier]?
+}
+
+private func parseModelCostTiers(_ value: Any?) -> [ModelCostTier]? {
+    guard let values = value as? [[String: Any]] else { return nil }
+    return values.compactMap { tier in
+        guard let inputTokensAbove = tier["inputTokensAbove"] as? Int else { return nil }
+        return ModelCostTier(
+            inputTokensAbove: inputTokensAbove,
+            input: tier["input"] as? Double ?? 0,
+            output: tier["output"] as? Double ?? 0,
+            cacheRead: tier["cacheRead"] as? Double ?? 0,
+            cacheWrite: tier["cacheWrite"] as? Double ?? 0
+        )
+    }
 }
 
 private struct CustomModelsResult: Sendable {
@@ -316,7 +331,8 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
             input: cost.input ?? updated.cost.input,
             output: cost.output ?? updated.cost.output,
             cacheRead: cost.cacheRead ?? updated.cost.cacheRead,
-            cacheWrite: cost.cacheWrite ?? updated.cost.cacheWrite
+            cacheWrite: cost.cacheWrite ?? updated.cost.cacheWrite,
+            tiers: cost.tiers ?? updated.cost.tiers
         )
         updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: mergedCost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, headers: updated.headers, compat: updated.compat)
     }
@@ -376,6 +392,7 @@ public final class ModelRegistry: Sendable {
     private struct State: Sendable {
         var models: [Model] = []
         var baseModels: [Model] = []
+        var configuredModelOverrides: [String: [String: ModelOverride]] = [:]
         var dynamicModelsBySource: [String: [String: [Model]]] = [:]
         var dynamicProviderApiKeysBySource: [String: [String: String]] = [:]
         var dynamicSourceOrder: [String] = []
@@ -422,8 +439,9 @@ public final class ModelRegistry: Sendable {
     }
 
     public func registerProvider(_ config: HookProviderConfig, sourceId: String) {
+        let configuredOverrides = state.withLock { $0.configuredModelOverrides[config.provider] ?? [:] }
         let models = config.models.map { model in
-            normalizeProviderModel(Model(
+            let registered = Model(
                 id: model.id,
                 name: model.name ?? model.id,
                 api: model.api ?? config.api,
@@ -437,7 +455,9 @@ public final class ModelRegistry: Sendable {
                 headers: mergeHeaders(config.headers, model.headers),
                 compat: mergeCompat(config.compat, model.compat),
                 thinkingLevelMap: model.thinkingLevelMap
-            ))
+            )
+            let overridden = configuredOverrides[model.id].map { applyModelOverride(model: registered, override: $0) } ?? registered
+            return normalizeProviderModel(overridden)
         }
 
         state.withLock { state in
@@ -503,13 +523,15 @@ public final class ModelRegistry: Sendable {
     }
 
     public func isAvailable(_ model: Model) async -> Bool {
-        guard hasConfiguredAuth(for: model) else { return false }
+        guard hasConfiguredAuth(model) else { return false }
         guard model.provider == OAuthProvider.githubCopilot.rawValue else { return true }
         guard let supportedIds = await githubCopilotSupportedModelIds() else { return true }
         return supportedIds.contains(model.id)
     }
 
-    private func hasConfiguredAuth(for model: Model) -> Bool {
+    /// Whether a model has usable provider authentication or request headers configured.
+    /// Header-only local and extension providers are valid even when they do not use an API key.
+    public func hasConfiguredAuth(_ model: Model) -> Bool {
         authStorage.hasAuth(model.provider) || !(model.headers?.isEmpty ?? true)
     }
 
@@ -640,6 +662,7 @@ public final class ModelRegistry: Sendable {
         let combined = mergeCustomModels(builtInModels: builtInModels, customModels: customResult.models)
         state.withLock { state in
             state.baseModels = combined
+            state.configuredModelOverrides = customResult.modelOverrides
             rebuildModelsLocked(&state)
         }
     }
@@ -786,7 +809,8 @@ public final class ModelRegistry: Sendable {
                 input: cost["input"] as? Double ?? 0,
                 output: cost["output"] as? Double ?? 0,
                 cacheRead: cost["cacheRead"] as? Double ?? 0,
-                cacheWrite: cost["cacheWrite"] as? Double ?? 0
+                cacheWrite: cost["cacheWrite"] as? Double ?? 0,
+                tiers: parseModelCostTiers(cost["tiers"])
             )
 
             let model = Model(
@@ -843,7 +867,8 @@ public final class ModelRegistry: Sendable {
                             input: cost["input"] as? Double,
                             output: cost["output"] as? Double,
                             cacheRead: cost["cacheRead"] as? Double,
-                            cacheWrite: cost["cacheWrite"] as? Double
+                            cacheWrite: cost["cacheWrite"] as? Double,
+                            tiers: parseModelCostTiers(cost["tiers"])
                         )
                     }()
 
@@ -901,7 +926,8 @@ public final class ModelRegistry: Sendable {
                     input: cost["input"] as? Double ?? 0,
                     output: cost["output"] as? Double ?? 0,
                     cacheRead: cost["cacheRead"] as? Double ?? 0,
-                    cacheWrite: cost["cacheWrite"] as? Double ?? 0
+                    cacheWrite: cost["cacheWrite"] as? Double ?? 0,
+                    tiers: parseModelCostTiers(cost["tiers"])
                 )
 
                 let modelBaseUrl = modelDef["baseUrl"] as? String ?? baseUrl ?? builtInDefaults?.baseUrl

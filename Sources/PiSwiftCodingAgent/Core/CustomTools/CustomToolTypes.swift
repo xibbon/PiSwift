@@ -240,9 +240,9 @@ public final class CustomToolAPI: Sendable {
         return ExecResult(stdout: "Execution is not supported on iOS", stderr: "", code: -1, killed: true)
     }
 #else
-    public func exec(_ command: String, _ args: [String], _ options: ExecOptions? = nil) async -> ExecResult {
+    public func exec(_ command: String, _ args: [String], _ options: ExecOptions? = nil) async throws -> ExecResult {
         let execCwd = options?.cwd ?? cwd
-        return await execCommand(command, args, execCwd, options)
+        return try await execCommand(command, args, execCwd, options)
     }
 #endif
 }

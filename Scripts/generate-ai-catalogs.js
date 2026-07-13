@@ -6,15 +6,45 @@ const path = require("path");
 const repoRoot = path.resolve(__dirname, "..");
 const upstreamRoot = path.resolve(repoRoot, "../pi-mono/packages/ai/src");
 
+function stripTypeScriptSyntax(source) {
+  return source
+    .replace(/^import[^\n]*(?:\n|$)/gm, "")
+    .replace(/\s+as const\s+satisfies[\s\S]*?;\s*$/, ";")
+    .replace(/\s+as const\b/g, "")
+    .replace(/\s+satisfies\s+[A-Za-z_$][A-Za-z0-9_$]*(?:\s*<(?:(?:[^<>]+)|<[^<>]*>)*>)?/g, "");
+}
+
 function loadGeneratedObject(file, exportName) {
   let source = fs.readFileSync(path.join(upstreamRoot, file), "utf8");
-  source = source.replace(/import[^\n]*\n/g, "");
+  source = stripTypeScriptSyntax(source);
   source = source.replace(new RegExp(`export const ${exportName} =`), "module.exports =");
-  source = source.replace(/\s+as const satisfies[\s\S]*?;\s*$/, ";");
-  source = source.replace(/\s+as const;\s*$/, ";");
-  source = source.replace(/\s+satisfies\s+[A-Za-z0-9_<>"'|. -]+/g, "");
   const module = { exports: undefined };
   new Function("module", source)(module);
+  return module.exports;
+}
+
+function loadTextModels() {
+  const generatedSource = fs.readFileSync(path.join(upstreamRoot, "models.generated.ts"), "utf8");
+  const imports = new Map();
+  const importPattern = /^import\s*{\s*([A-Z][A-Z0-9_]*)\s*}\s*from\s*"(\.\/providers\/[^\"]+\.models\.ts)";?$/gm;
+  for (const match of generatedSource.matchAll(importPattern)) {
+    imports.set(match[1], match[2]);
+  }
+
+  const scope = {};
+  for (const [exportName, providerFile] of imports) {
+    let source = fs.readFileSync(path.join(upstreamRoot, providerFile), "utf8");
+    source = stripTypeScriptSyntax(source);
+    source = source.replace(new RegExp(`export const ${exportName} =`), "module.exports =");
+    const module = { exports: undefined };
+    new Function("module", source)(module);
+    scope[exportName] = module.exports;
+  }
+
+  let mappingSource = stripTypeScriptSyntax(generatedSource);
+  mappingSource = mappingSource.replace(/export const MODELS =/, "module.exports =");
+  const module = { exports: undefined };
+  new Function("module", ...Object.keys(scope), mappingSource)(module, ...Object.values(scope));
   return module.exports;
 }
 
@@ -223,6 +253,9 @@ function providerVariableName(provider) {
 }
 
 function swiftModel(model) {
+  const cost = model.cost.tiers?.length
+    ? `ModelCost(input: ${model.cost.input}, output: ${model.cost.output}, cacheRead: ${model.cost.cacheRead}, cacheWrite: ${model.cost.cacheWrite}, tiers: [${model.cost.tiers.map((tier) => `ModelCostTier(inputTokensAbove: ${tier.inputTokensAbove}, input: ${tier.input}, output: ${tier.output}, cacheRead: ${tier.cacheRead}, cacheWrite: ${tier.cacheWrite})`).join(", ")}])`
+    : `ModelCost(input: ${model.cost.input}, output: ${model.cost.output}, cacheRead: ${model.cost.cacheRead}, cacheWrite: ${model.cost.cacheWrite})`;
   const args = [
     `id: ${swiftString(model.id)}`,
     `name: ${swiftString(model.name)}`,
@@ -231,7 +264,7 @@ function swiftModel(model) {
     `baseUrl: ${swiftString(model.baseUrl)}`,
     `reasoning: ${swiftBool(model.reasoning)}`,
     `input: ${modelInputArray(model.input)}`,
-    `cost: ModelCost(input: ${model.cost.input}, output: ${model.cost.output}, cacheRead: ${model.cost.cacheRead}, cacheWrite: ${model.cost.cacheWrite})`,
+    `cost: ${cost}`,
     `contextWindow: ${model.contextWindow}`,
     `maxTokens: ${model.maxTokens}`,
   ];
@@ -262,6 +295,7 @@ function swiftImagesModel(model) {
 
 function writeModelsData(models) {
   const providers = Object.keys(models).sort();
+  const modelsPerDictionaryChunk = 100;
   const lines = [
     "import Foundation",
     "",
@@ -275,11 +309,25 @@ function writeModelsData(models) {
   ];
   for (const provider of providers) {
     const ids = Object.keys(models[provider]).sort();
-    lines.push(`private let ${providerVariableName(provider)}: [String: Model] = [`);
-    for (const id of ids) {
-      lines.push(`    ${swiftString(id)}: ${swiftModel(models[provider][id])},`);
+    const variableName = providerVariableName(provider);
+    const chunks = Array.from({ length: Math.ceil(ids.length / modelsPerDictionaryChunk) }, (_, index) =>
+      ids.slice(index * modelsPerDictionaryChunk, (index + 1) * modelsPerDictionaryChunk)
+    );
+    const chunkVariableNames = chunks.map((_, index) => chunks.length === 1 ? variableName : `${variableName}_chunk${index + 1}`);
+    if (chunks.length > 1) {
+      const merged = chunkVariableNames.slice(1).reduce(
+        (result, chunkVariableName) => `${result}.merging(${chunkVariableName}) { _, new in new }`,
+        chunkVariableNames[0]
+      );
+      lines.push(`private let ${variableName}: [String: Model] = ${merged}`, "");
     }
-    lines.push("]", "");
+    for (const [index, chunk] of chunks.entries()) {
+      lines.push(`private let ${chunkVariableNames[index]}: [String: Model] = [`);
+      for (const id of chunk) {
+        lines.push(`    ${swiftString(id)}: ${swiftModel(models[provider][id])},`);
+      }
+      lines.push("]", "");
+    }
   }
   while (lines.at(-1) === "") lines.pop();
   fs.writeFileSync(path.join(repoRoot, "Sources/PiSwiftAI/ModelsData.swift"), `${lines.join("\n")}\n`);
@@ -310,7 +358,7 @@ function writeImageModelsData(models) {
   fs.writeFileSync(path.join(repoRoot, "Sources/PiSwiftAI/ImageModelsData.swift"), `${lines.join("\n")}\n`);
 }
 
-const models = loadGeneratedObject("models.generated.ts", "MODELS");
+const models = loadTextModels();
 const imageModels = loadGeneratedObject("image-models.generated.ts", "IMAGE_MODELS");
 writeModelsData(models);
 writeImageModelsData(imageModels);

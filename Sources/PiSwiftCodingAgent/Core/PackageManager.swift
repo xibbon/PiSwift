@@ -1405,7 +1405,7 @@ public final class DefaultPackageManager: PackageManager {
         #if canImport(UIKit)
         throw PackageManagerError.unsupported("Command execution not available")
         #else
-        let result = await execCommand(command, args, cwd)
+        let result = try await execCommand(command, args, cwd)
         if result.code != 0 {
             throw PackageManagerError.commandFailed("\(command) \(args.joined(separator: " ")) failed with code \(result.code)")
         }

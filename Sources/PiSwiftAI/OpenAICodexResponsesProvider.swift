@@ -250,11 +250,13 @@ public func streamOpenAICodexResponses(
                             let inputTokens = intValue(usage, key: "input_tokens") ?? 0
                             let outputTokens = intValue(usage, key: "output_tokens") ?? 0
                             let totalTokens = intValue(usage, key: "total_tokens") ?? 0
+                            let reasoningTokens = intValue(usage["output_tokens_details"], key: "reasoning_tokens")
                             output.usage = Usage(
                                 input: max(0, inputTokens - cachedTokens),
                                 output: outputTokens,
                                 cacheRead: cachedTokens,
                                 cacheWrite: 0,
+                                reasoning: reasoningTokens,
                                 totalTokens: totalTokens
                             )
                             calculateCost(model: model, usage: &output.usage)
@@ -424,6 +426,7 @@ private func codexWebSocketUrl(baseUrl: String) -> URL {
 
 private let codexWebSocketBetaHeader = "responses_websockets=2026-02-06"
 private let codexSessionWebSocketCacheTtl: TimeInterval = 5 * 60
+private let codexSessionWebSocketMaxAge: TimeInterval = 55 * 60
 
 private struct CodexWebSocketLease {
     let task: URLSessionWebSocketTask
@@ -438,6 +441,7 @@ private final class CodexWebSocketCache: @unchecked Sendable {
         var task: URLSessionWebSocketTask
         var busy: Bool
         var idleTimer: DispatchSourceTimer?
+        let createdAt: Date
     }
 
     static let shared = CodexWebSocketCache()
@@ -457,14 +461,14 @@ private final class CodexWebSocketCache: @unchecked Sendable {
         if var existing = entries[sessionId] {
             existing.idleTimer?.cancel()
             existing.idleTimer = nil
-            if !existing.busy, isReusable(existing.task) {
+            if !existing.busy, isReusable(existing.task), Date().timeIntervalSince(existing.createdAt) < codexSessionWebSocketMaxAge {
                 existing.busy = true
                 entries[sessionId] = existing
                 lock.unlock()
                 return CodexWebSocketLease(task: existing.task, sessionId: sessionId, cached: true)
             }
-            if !isReusable(existing.task) {
-                closeSilently(existing.task, reason: "reconnect")
+            if !isReusable(existing.task) || Date().timeIntervalSince(existing.createdAt) >= codexSessionWebSocketMaxAge {
+                closeSilently(existing.task, reason: "connection_rotation")
                 entries.removeValue(forKey: sessionId)
             } else {
                 entries[sessionId] = existing
@@ -479,7 +483,7 @@ private final class CodexWebSocketCache: @unchecked Sendable {
 
         let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
         lock.lock()
-        entries[sessionId] = Entry(task: task, busy: true, idleTimer: nil)
+        entries[sessionId] = Entry(task: task, busy: true, idleTimer: nil, createdAt: Date())
         lock.unlock()
         return CodexWebSocketLease(task: task, sessionId: sessionId, cached: true)
     }

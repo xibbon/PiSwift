@@ -70,6 +70,33 @@ import PiSwiftAI
     #expect(reloaded.getQuietStartup() == true)
 }
 
+@Test func settingsCacheMissNoticesDefaultAndRoundTrip() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-cache-miss-\(UUID().uuidString)")
+        .path
+    try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(tempDir, tempDir)
+    #expect(manager.getShowCacheMissNotices() == false)
+    manager.setShowCacheMissNotices(true)
+
+    let settingsPath = URL(fileURLWithPath: tempDir).appendingPathComponent("settings.json").path
+    let data = try Data(contentsOf: URL(fileURLWithPath: settingsPath))
+    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    #expect(json?["showCacheMissNotices"] as? Bool == true)
+    #expect(SettingsManager.create(tempDir, tempDir).getShowCacheMissNotices() == true)
+}
+
+@Test func settingsShellPathExpandsLeadingTilde() {
+    let manager = SettingsManager.inMemory()
+    manager.setShellPath("~/bin/custom-shell")
+    let expected = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("bin/custom-shell")
+        .path
+    #expect(manager.getShellPath() == expected)
+}
+
 @Test func settingsTransportRoundTrip() throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-settings-transport-\(UUID().uuidString)")

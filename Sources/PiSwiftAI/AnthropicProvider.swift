@@ -96,6 +96,23 @@ private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
     )
 }
 
+func makeAnthropicUsage(
+    input: Int,
+    output: Int,
+    cacheRead: Int,
+    cacheWrite: Int,
+    reasoning: Int?
+) -> Usage {
+    Usage(
+        input: input,
+        output: output,
+        cacheRead: cacheRead,
+        cacheWrite: cacheWrite,
+        reasoning: reasoning,
+        totalTokens: input + output + cacheRead + cacheWrite
+    )
+}
+
 public func streamAnthropic(
     model: Model,
     context: Context,
@@ -195,12 +212,12 @@ public func streamAnthropic(
                         let outputTokens = usage.outputTokens
                         let cacheRead = usage.cacheReadInputTokens ?? 0
                         let cacheWrite = usage.cacheCreationInputTokens ?? 0
-                        output.usage = Usage(
+                        output.usage = makeAnthropicUsage(
                             input: input,
                             output: outputTokens,
                             cacheRead: cacheRead,
                             cacheWrite: cacheWrite,
-                            totalTokens: input + outputTokens + cacheRead + cacheWrite
+                            reasoning: usage.thinkingTokens
                         )
                         calculateCost(model: model, usage: &output.usage)
                     }
@@ -298,12 +315,12 @@ public func streamAnthropic(
                         let outputTokens = usage.outputTokens
                         let cacheRead = usage.cacheReadInputTokens ?? output.usage.cacheRead
                         let cacheWrite = usage.cacheCreationInputTokens ?? output.usage.cacheWrite
-                        output.usage = Usage(
+                        output.usage = makeAnthropicUsage(
                             input: input,
                             output: outputTokens,
                             cacheRead: cacheRead,
                             cacheWrite: cacheWrite,
-                            totalTokens: input + outputTokens + cacheRead + cacheWrite
+                            reasoning: usage.thinkingTokens ?? output.usage.reasoning
                         )
                         calculateCost(model: model, usage: &output.usage)
                     }
@@ -722,13 +739,15 @@ private func mapAnthropicModel(_ id: String) -> SwiftAnthropic.Model {
     }
 }
 
-/// Check if a model supports adaptive thinking (Opus 4.6, Sonnet 4.6, Opus 4.7).
+/// Check if a model supports adaptive thinking.
 /// These models have interleaved thinking built-in and don't need the beta header.
 /// v0.67.5 added Opus 4.7 to this list.
 private func supportsAdaptiveThinking(_ modelId: String) -> Bool {
     modelId.contains("opus-4-6") || modelId.contains("opus-4.6") ||
     modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6") ||
-    modelId.contains("opus-4-7") || modelId.contains("opus-4.7")
+    modelId.contains("opus-4-7") || modelId.contains("opus-4.7") ||
+    modelId.contains("opus-4-8") || modelId.contains("opus-4.8") ||
+    modelId.contains("sonnet-5") || modelId.contains("fable-5")
 }
 
 /// Maps an adaptive thinking effort level to a token budget.
@@ -743,6 +762,8 @@ private func adaptiveThinkingBudget(effort: ThinkingLevel, maxTokens: Int) -> In
     case .high:
         return max(4096, maxTokens)
     case .xhigh:
+        return max(8192, maxTokens * 2)
+    case .max:
         return max(8192, maxTokens * 2)
     }
 }

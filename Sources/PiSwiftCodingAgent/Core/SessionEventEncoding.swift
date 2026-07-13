@@ -6,6 +6,8 @@ public func encodeSessionEvent(_ event: AgentSessionEvent) -> [String: Any] {
     switch event {
     case .agent(let agentEvent):
         return encodeAgentEvent(agentEvent)
+    case .agentSettled:
+        return ["type": "agent_settled"]
     case .autoCompactionStart(let reason):
         return [
             "type": "auto_compaction_start",

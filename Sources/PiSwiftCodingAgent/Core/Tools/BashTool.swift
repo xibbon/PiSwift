@@ -93,6 +93,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
             resolvedCommand = command
         }
         let timeoutValue: Double? = doubleValue(params["timeout"])
+        _ = try validatedShellTimeout(timeoutValue)
         let operations: BashOperations = options?.operations ?? DefaultBashOperations()
 
         // Track output for truncation using thread-safe state

@@ -58,7 +58,6 @@ public func createEditTool(cwd: String) -> AgentTool {
                             "newText": ["type": "string", "description": "Replacement text for this targeted edit."],
                         ],
                         "required": ["oldText", "newText"],
-                        "additionalProperties": false,
                     ],
                 ],
             ]),

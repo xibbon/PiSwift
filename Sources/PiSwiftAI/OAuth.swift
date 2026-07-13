@@ -929,6 +929,11 @@ private func pollForGitHubAccessToken(
     let deadline = Date().addingTimeInterval(Double(expiresIn))
     var intervalMs = max(1000, intervalSeconds * 1000)
 
+    // RFC 8628 requires clients to wait the advertised interval before the
+    // first poll; polling immediately after opening the browser is rejected by
+    // GitHub's device-code endpoint.
+    try await sleepMs(intervalMs, signal: signal)
+
     while Date() < deadline {
         if signal?.isCancelled == true {
             throw OAuthError.cancelled
@@ -963,7 +968,13 @@ private func pollForGitHubAccessToken(
                 continue
             }
             if error == "slow_down" {
-                intervalMs += 5000
+                // GitHub can include its new minimum interval in the response.
+                // Use it when present; otherwise follow RFC 8628's +5 seconds.
+                if let serverInterval = json["interval"] as? NSNumber, serverInterval.intValue > 0 {
+                    intervalMs = max(1000, serverInterval.intValue * 1000)
+                } else {
+                    intervalMs += 5000
+                }
                 try await sleepMs(intervalMs, signal: signal)
                 continue
             }

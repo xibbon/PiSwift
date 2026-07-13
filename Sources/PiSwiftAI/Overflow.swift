@@ -23,6 +23,8 @@ private let overflowPatterns: [NSRegularExpression] = [
     try! NSRegularExpression(pattern: "request_too_large", options: [.caseInsensitive]),
     // v0.63.1: Ollama explicit overflow when prompt exceeds max context length.
     try! NSRegularExpression(pattern: "prompt too long; exceeded max context length", options: [.caseInsensitive]),
+    // DS4: "Prompt has X tokens, but the configured context size is Y tokens".
+    try! NSRegularExpression(pattern: "prompt has [\\d,]+ tokens?, but the configured context size is [\\d,]+ tokens?", options: [.caseInsensitive]),
 ]
 
 /// v0.65.0: error patterns that LOOK like overflow on a casual regex match (e.g.,

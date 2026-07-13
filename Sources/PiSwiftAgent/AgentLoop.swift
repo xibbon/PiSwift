@@ -227,13 +227,18 @@ private func runLoop(
 
                 var toolResults: [ToolResultMessage] = []
                 if hasMoreToolCalls {
-                    let outcome = await executeToolCalls(
-                        context: context,
-                        assistantMessage: assistantMessage,
-                        config: config,
-                        signal: signal,
-                        emit: emit
-                    )
+                    // A length stop means the model output was cut off. Tool-call arguments
+                    // from that message may be incomplete even when a salvage parser accepted
+                    // them, so report errors instead of executing unsafe calls.
+                    let outcome = assistantMessage.stopReason == .length
+                        ? await failToolCallsFromTruncatedMessage(toolCalls, emit: emit)
+                        : await executeToolCalls(
+                            context: context,
+                            assistantMessage: assistantMessage,
+                            config: config,
+                            signal: signal,
+                            emit: emit
+                        )
                     toolResults = outcome.results
 
                     for result in toolResults {
@@ -441,6 +446,21 @@ private func applyBaseUrlOverride(_ model: Model, _ baseUrl: String?) -> Model {
 struct ToolBatchOutcome: Sendable {
     var results: [ToolResultMessage]
     var terminate: Bool
+}
+
+private func failToolCallsFromTruncatedMessage(
+    _ toolCalls: [ToolCall],
+    emit: @escaping AgentEventSink
+) async -> ToolBatchOutcome {
+    var results: [ToolResultMessage] = []
+    for toolCall in toolCalls {
+        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
+        let result = createErrorToolResult(
+            "Tool call \"\(toolCall.name)\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments."
+        )
+        results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: true, emit: emit))
+    }
+    return ToolBatchOutcome(results: results, terminate: false)
 }
 
 private func executeToolCalls(

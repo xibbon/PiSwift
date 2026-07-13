@@ -29,3 +29,23 @@ import PiSwiftCodingAgent
     #expect(selected?.provider == "vercel-ai-gateway")
     #expect(selected?.id == "anthropic/claude-opus-4.5")
 }
+
+@Test func selectDefaultModelAcceptsHeaderOnlyConfiguredModels() async {
+    let model = Model(
+        id: "anthropic/claude-opus-4.5",
+        name: "Claude Opus 4.5",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
+        contextWindow: 200000,
+        maxTokens: 8192,
+        headers: ["Authorization": "Bearer local-token"]
+    )
+
+    let registry = ModelRegistry(AuthStorage(":memory:"))
+    let selected = await selectDefaultModel(available: [model], registry: registry)
+    #expect(selected?.provider == "vercel-ai-gateway")
+}

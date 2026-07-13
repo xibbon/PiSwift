@@ -184,6 +184,24 @@ public func findTurnStartIndex(_ entries: [SessionEntry], _ entryIndex: Int, _ s
     return -1
 }
 
+private func isTurnStartEntry(_ entry: SessionEntry) -> Bool {
+    switch entry {
+    case .branchSummary, .customMessage:
+        return true
+    case .message(let messageEntry):
+        switch messageEntry.message {
+        case .user:
+            return true
+        case .custom(let custom):
+            return custom.role == "bashExecution"
+        default:
+            return false
+        }
+    default:
+        return false
+    }
+}
+
 public func findCutPoint(_ entries: [SessionEntry], _ startIndex: Int, _ endIndex: Int, _ keepRecentTokens: Int) -> CutPointResult {
     let cutPoints = findValidCutPoints(entries, startIndex, endIndex)
     if cutPoints.isEmpty {
@@ -195,8 +213,8 @@ public func findCutPoint(_ entries: [SessionEntry], _ startIndex: Int, _ endInde
 
     for i in stride(from: endIndex - 1, through: startIndex, by: -1) {
         let entry = entries[i]
-        guard case .message(let msgEntry) = entry else { continue }
-        accumulatedTokens += estimateTokens(msgEntry.message)
+        guard let message = messageFromEntry(entry) else { continue }
+        accumulatedTokens += estimateTokens(message)
         if accumulatedTokens >= keepRecentTokens {
             if let nextCut = cutPoints.first(where: { $0 >= i }) {
                 cutIndex = nextCut
@@ -208,19 +226,14 @@ public func findCutPoint(_ entries: [SessionEntry], _ startIndex: Int, _ endInde
     while cutIndex > startIndex {
         let prev = entries[cutIndex - 1]
         if prev.type == "compaction" { break }
-        if prev.type == "message" { break }
+        if messageFromEntry(prev) != nil { break }
         cutIndex -= 1
     }
 
     let cutEntry = entries[cutIndex]
-    let isUserMessage: Bool = {
-        if case .message(let msgEntry) = cutEntry {
-            if case .user = msgEntry.message { return true }
-        }
-        return false
-    }()
-    let turnStartIndex = isUserMessage ? -1 : findTurnStartIndex(entries, cutIndex, startIndex)
-    return CutPointResult(firstKeptEntryIndex: cutIndex, turnStartIndex: turnStartIndex, isSplitTurn: !isUserMessage && turnStartIndex != -1)
+    let startsTurn = isTurnStartEntry(cutEntry)
+    let turnStartIndex = startsTurn ? -1 : findTurnStartIndex(entries, cutIndex, startIndex)
+    return CutPointResult(firstKeptEntryIndex: cutIndex, turnStartIndex: turnStartIndex, isSplitTurn: !startsTurn && turnStartIndex != -1)
 }
 
 public func prepareCompaction(_ pathEntries: [SessionEntry], _ settings: CompactionSettings) -> CompactionPreparation? {
@@ -302,27 +315,33 @@ public func compact(
 
     let summary: String
     if preparation.isSplitTurn && !turnPrefixMessages.isEmpty {
-        async let history = messagesToSummarize.isEmpty
-            ? "No prior history."
-            : generateSummary(
-                currentMessages: messagesToSummarize,
-                model: model,
-                reserveTokens: preparation.settings.reserveTokens,
-                apiKey: apiKey,
-                headers: headers,
-                signal: signal,
-                customInstructions: customInstructions,
-                previousSummary: preparation.previousSummary
-            )
-        async let prefix = generateTurnPrefixSummary(
-            messages: turnPrefixMessages,
-            model: model,
-            reserveTokens: preparation.settings.reserveTokens,
-            apiKey: apiKey,
-            headers: headers,
-            signal: signal
+        summary = try await serializeSplitTurnSummaries(
+            history: {
+                if messagesToSummarize.isEmpty {
+                    return "No prior history."
+                }
+                return try await generateSummary(
+                    currentMessages: messagesToSummarize,
+                    model: model,
+                    reserveTokens: preparation.settings.reserveTokens,
+                    apiKey: apiKey,
+                    headers: headers,
+                    signal: signal,
+                    customInstructions: customInstructions,
+                    previousSummary: preparation.previousSummary
+                )
+            },
+            turnPrefix: {
+                try await generateTurnPrefixSummary(
+                    messages: turnPrefixMessages,
+                    model: model,
+                    reserveTokens: preparation.settings.reserveTokens,
+                    apiKey: apiKey,
+                    headers: headers,
+                    signal: signal
+                )
+            }
         )
-        summary = try await "\(history)\n\n---\n\n**Turn Context (split turn):**\n\n\(prefix)"
     } else {
         summary = try await generateSummary(
             currentMessages: messagesToSummarize,
@@ -344,6 +363,16 @@ public func compact(
     ])
 
     return CompactionResult(summary: combinedSummary, firstKeptEntryId: preparation.firstKeptEntryId, tokensBefore: preparation.tokensBefore, details: details)
+}
+
+/// Runs split-turn summarization requests in provider-safe sequence.
+func serializeSplitTurnSummaries(
+    history: () async throws -> String,
+    turnPrefix: () async throws -> String
+) async rethrows -> String {
+    let historyResult = try await history()
+    let turnPrefixResult = try await turnPrefix()
+    return "\(historyResult)\n\n---\n\n**Turn Context (split turn):**\n\n\(turnPrefixResult)"
 }
 
 private let SUMMARIZATION_PROMPT = """

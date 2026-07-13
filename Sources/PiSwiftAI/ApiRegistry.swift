@@ -134,7 +134,7 @@ public func registerBuiltInProviders() {
         },
         streamSimple: { model, context, options in
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
-            let providerOptions = mapAnthropicSimpleOptions(model: model, options: options, apiKey: apiKey)
+            let providerOptions = mapAnthropicSimpleOptions(model: model, context: context, options: options, apiKey: apiKey)
             return streamAnthropic(model: model, context: context, options: providerOptions)
         }
     ), sourceId: "built-in")

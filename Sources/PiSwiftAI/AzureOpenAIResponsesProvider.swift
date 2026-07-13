@@ -157,6 +157,9 @@ public func streamAzureOpenAIResponses(
                 apiKey: apiKey,
                 apiVersion: azureConfig.apiVersion
             )
+            let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
+                effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
+            )
 
             var azureModel = model
             azureModel = Model(
@@ -179,7 +182,7 @@ public func streamAzureOpenAIResponses(
                 apiKey: apiKey,
                 headers: options.headers,
                 timeoutMs: options.timeoutMs,
-                middlewares: [cacheMiddleware, azureMiddleware]
+                middlewares: [cacheMiddleware, azureMiddleware, reasoningEffortMiddleware]
             )
             let builtQuery = try buildAzureResponsesQuery(model: model, context: context, options: options, deploymentName: deploymentName)
             emitPayload(options.onPayload, payload: builtQuery)
@@ -355,14 +358,7 @@ public func streamAzureOpenAIResponses(
                     }
                 case .completed(let completed):
                     if let usage = completed.response.usage {
-                        let cached = usage.inputTokensDetails.cachedTokens
-                        output.usage = Usage(
-                            input: usage.inputTokens - cached,
-                            output: usage.outputTokens,
-                            cacheRead: cached,
-                            cacheWrite: 0,
-                            totalTokens: usage.totalTokens
-                        )
+                        output.usage = makeOpenAIResponsesUsage(usage)
                         calculateCost(model: model, usage: &output.usage)
                     }
                     output.stopReason = mapResponsesStopReason(completed.response.status)
@@ -462,7 +458,8 @@ func buildAzureResponsesQuery(
         model: deploymentName,
         include: include,
         instructions: nil,
-        maxOutputTokens: options.maxTokens,
+        // Azure's Responses endpoint has the same 16-token minimum as OpenAI.
+        maxOutputTokens: options.maxTokens.map { max($0, 16) },
         reasoning: reasoning,
         serviceTier: nil,
         store: nil,
@@ -481,7 +478,7 @@ private enum AzureOpenAIResponsesStreamError: Error {
 
 private func clampAzureThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel? {
     guard let effort else { return nil }
-    if effort == .xhigh {
+    if effort == .xhigh || effort == .max {
         return .high
     }
     return effort

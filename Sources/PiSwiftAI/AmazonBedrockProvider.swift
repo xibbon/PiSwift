@@ -742,7 +742,7 @@ private func mapThinkingLevelToEffort(model: Model, level: ThinkingLevel) -> Str
         return "medium"
     case .high:
         return "high"
-    case .xhigh:
+    case .xhigh, .max:
         return "high"
     }
 }
@@ -976,9 +976,10 @@ func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) ->
             .medium: 8192,
             .high: 16384,
             .xhigh: 16384,
+            .max: 16384,
         ]
 
-        let level = reasoning == .xhigh ? .high : reasoning
+        let level = (reasoning == .xhigh || reasoning == .max) ? .high : reasoning
         let budget = options.thinkingBudgets?[level] ?? defaultBudgets[level] ?? 1024
         var thinking: [String: Any] = [
             "type": "enabled",
@@ -1142,7 +1143,13 @@ private func isRetryableBedrockTransportError(_ error: Error) -> Bool {
     let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
     return text.contains("http2 request did not get a response") ||
         text.contains("http/2 request did not get a response") ||
-        text.contains("http2") && text.contains("did not get a response")
+        text.contains("http2") && text.contains("did not get a response") ||
+        text.contains("resourceexhausted") ||
+        text.contains("network connection was lost") ||
+        text.contains("socket connection was closed") ||
+        text.contains("you can retry your request") ||
+        text.contains("try your request again") ||
+        text.contains("please retry your request")
 }
 
 private func formatBedrockHTTPError(statusCode: Int, body: String) -> String {

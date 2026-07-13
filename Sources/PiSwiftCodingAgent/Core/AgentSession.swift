@@ -9,6 +9,7 @@ public enum AutoCompactionReason: String, Sendable {
 
 public enum AgentSessionEvent: Sendable {
     case agent(AgentEvent)
+    case agentSettled
     case autoCompactionStart(reason: AutoCompactionReason)
     case autoCompactionEnd(result: CompactionResult?, aborted: Bool, willRetry: Bool)
     case autoRetryStart(attempt: Int, maxAttempts: Int, delayMs: Int, errorMessage: String)
@@ -18,6 +19,8 @@ public enum AgentSessionEvent: Sendable {
         switch self {
         case .agent(let event):
             return event.type
+        case .agentSettled:
+            return "agent_settled"
         case .autoCompactionStart:
             return "auto_compaction_start"
         case .autoCompactionEnd:
@@ -301,6 +304,7 @@ public final class AgentSession: Sendable {
     /// Serial queue for agent event processing.
     /// Ensures tool call/result interception from extensions happens in order.
     private let _agentEventQueue = LockedState<Task<Void, Never>?>(nil)
+    private let idleWaiter = AgentSessionIdleWaiter()
 
     private struct State: Sendable {
         var hookRunner: HookRunner?
@@ -320,6 +324,9 @@ public final class AgentSession: Sendable {
         var retryAbort: CancellationToken?
         var retryAttempt: Int
         var retryTask: Task<Void, Never>?
+        /// Retry/compaction follow-up work scheduled after an `agent_end` callback.
+        /// The run cannot settle while this count is non-zero.
+        var pendingPostRunTasks: Int
         var bashAbort: CancellationToken?
         var pendingBashMessages: [BashExecutionMessage]
         var isCompactingInternal: Bool
@@ -334,6 +341,38 @@ public final class AgentSession: Sendable {
         var toolPromptSnippets: [String: String]
         var reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)?
         var wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])?
+    }
+
+    /// Actor-isolated waiter state keeps the public idle API race-free without
+    /// polling or unchecked Sendable storage.
+    private actor AgentSessionIdleWaiter {
+        private var isRunActive = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func beginRun() {
+            isRunActive = true
+        }
+
+        func waitForIdle() async {
+            guard isRunActive else { return }
+            await withCheckedContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+
+        func settleRun() -> Bool {
+            guard isRunActive else { return false }
+            isRunActive = false
+            return true
+        }
+
+        func resolveWaiters() {
+            let pending = waiters
+            waiters.removeAll()
+            for waiter in pending {
+                waiter.resume()
+            }
+        }
     }
 
     private var _hookRunner: HookRunner? {
@@ -422,6 +461,11 @@ public final class AgentSession: Sendable {
     private var retryTask: Task<Void, Never>? {
         get { state.withLock { $0.retryTask } }
         set { state.withLock { $0.retryTask = newValue } }
+    }
+
+    private var pendingPostRunTasks: Int {
+        get { state.withLock { $0.pendingPostRunTasks } }
+        set { state.withLock { $0.pendingPostRunTasks = newValue } }
     }
 
     private var bashAbort: CancellationToken? {
@@ -538,6 +582,7 @@ public final class AgentSession: Sendable {
             retryAbort: nil,
             retryAttempt: 0,
             retryTask: nil,
+            pendingPostRunTasks: 0,
             bashAbort: nil,
             pendingBashMessages: [],
             isCompactingInternal: false,
@@ -740,6 +785,46 @@ public final class AgentSession: Sendable {
         _agentEventQueue.withLock { $0 = task }
     }
 
+    private func emitAgentSettledIfNeeded() async {
+        // `agent_end` may schedule an automatic retry, compaction, or queued
+        // continuation. Keep the run active until that follow-up chain finishes.
+        guard pendingPostRunTasks == 0 else { return }
+        guard await idleWaiter.settleRun() else { return }
+
+        // Agent lifecycle hooks are queued from the Agent callback. Waiting for this
+        // queue keeps the observable order `agent_end` then `agent_settled`.
+        let previous = _agentEventQueue.withLock { $0 }
+        _ = await previous?.value
+        if let hookRunner = _hookRunner {
+            _ = await hookRunner.emit(AgentSettledEvent())
+        }
+        emit(.agentSettled)
+        await idleWaiter.resolveWaiters()
+    }
+
+    private func runUntilSettled<T: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        await idleWaiter.beginRun()
+        defer {
+            Task { [weak self] in
+                await self?.emitAgentSettledIfNeeded()
+            }
+        }
+        return try await operation()
+    }
+
+    private func beginPostRunTask() {
+        pendingPostRunTasks += 1
+    }
+
+    private func finishPostRunTask() {
+        pendingPostRunTasks = max(0, pendingPostRunTasks - 1)
+        Task { [weak self] in
+            await self?.emitAgentSettledIfNeeded()
+        }
+    }
+
     private func handleAgentEvent(_ event: AgentEvent) {
         if case .messageStart(let message) = event, message.role == "user" {
             let text = extractUserMessageText(message)
@@ -842,7 +927,9 @@ public final class AgentSession: Sendable {
 
         if case .agentEnd = event, let lastAssistantMessage {
             self.lastAssistantMessage = nil
+            beginPostRunTask()
             Task { [weak self] in
+                defer { self?.finishPostRunTask() }
                 guard let self else { return }
                 if self.isRetryableError(lastAssistantMessage) {
                     let didRetry = await self.handleRetryableError(lastAssistantMessage)
@@ -897,7 +984,9 @@ public final class AgentSession: Sendable {
         let token = CancellationToken()
         retryAbort = token
         let attempt = retryAttempt
+        beginPostRunTask()
         retryTask = Task { [weak self] in
+            defer { self?.finishPostRunTask() }
             await self?.performRetry(delayMs: delayMs, attempt: attempt, token: token)
         }
 
@@ -1025,6 +1114,12 @@ public final class AgentSession: Sendable {
 
     public var isStreaming: Bool {
         agent.state.isStreaming
+    }
+
+    /// Wait until the active agent run has completed its lifecycle hooks.
+    /// Returns immediately when the session is already settled.
+    public func waitForIdle() async {
+        await idleWaiter.waitForIdle()
     }
 
     public var messages: [AgentMessage] {
@@ -1308,7 +1403,13 @@ public final class AgentSession: Sendable {
     @discardableResult
     public func submitPrompt(_ text: String, options: PromptOptions? = nil) async throws -> Task<Void, Error> {
         let messages = try await preparePromptMessages(text, options: options)
-        let task = Task {
+        await idleWaiter.beginRun()
+        let task = Task { [weak self, agent] in
+            defer {
+                Task { [weak self] in
+                    await self?.emitAgentSettledIfNeeded()
+                }
+            }
             try await agent.prompt(messages)
         }
         await Task.yield()
@@ -1324,7 +1425,9 @@ public final class AgentSession: Sendable {
         if isStreaming {
             throw AgentSessionError.alreadyProcessingContinue
         }
-        try await agent.continue()
+        try await runUntilSettled { [agent] in
+            try await agent.continue()
+        }
     }
 
     public func steer(_ text: String) {
@@ -1391,7 +1494,7 @@ public final class AgentSession: Sendable {
     public func abort() async {
         abortRetry()
         agent.abort()
-        await agent.waitForIdle()
+        await waitForIdle()
         compactionAbort?.cancel()
         branchSummaryAbort?.cancel()
         bashAbort?.cancel()

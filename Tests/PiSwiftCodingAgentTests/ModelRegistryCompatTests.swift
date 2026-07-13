@@ -3,6 +3,120 @@ import Testing
 import PiSwiftAI
 import PiSwiftCodingAgent
 
+@Test func modelRegistryParsesCostTiersForCustomModelsAndMergesOverrides() throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-model-tiers-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let modelsPath = tempDir.appendingPathComponent("models.json")
+    let json = """
+    {
+      "providers": {
+        "local": {
+          "baseUrl": "http://localhost:1234/v1",
+          "api": "openai-completions",
+          "models": [{
+            "id": "tiered-local",
+            "cost": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 0.1,
+              "cacheWrite": 0.2,
+              "tiers": [{
+                "inputTokensAbove": 100000,
+                "input": 3,
+                "output": 4,
+                "cacheRead": 0.3,
+                "cacheWrite": 0.4
+              }]
+            }
+          }]
+        },
+        "openai": {
+          "modelOverrides": {
+            "gpt-4o-mini": {
+              "cost": {
+                "input": 9,
+                "tiers": [{
+                  "inputTokensAbove": 200000,
+                  "input": 10,
+                  "output": 11,
+                  "cacheRead": 1,
+                  "cacheWrite": 2
+                }]
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    try json.write(to: modelsPath, atomically: true, encoding: .utf8)
+
+    let registry = ModelRegistry(AuthStorage(":memory:"), tempDir.path)
+    let custom = try #require(registry.find("local", "tiered-local"))
+    #expect(custom.cost.tiers?.count == 1)
+    #expect(custom.cost.tiers?.first?.inputTokensAbove == 100000)
+    #expect(custom.cost.tiers?.first?.output == 4)
+
+    let overridden = try #require(registry.find("openai", "gpt-4o-mini"))
+    #expect(overridden.cost.input == 9)
+    #expect(overridden.cost.output > 0)
+    #expect(overridden.cost.tiers?.first?.inputTokensAbove == 200000)
+    #expect(overridden.cost.tiers?.first?.cacheWrite == 2)
+}
+
+@Test func modelRegistryAppliesConfiguredOverridesToExtensionProviders() throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-extension-model-override-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let json = """
+    {
+      "providers": {
+        "swift-extension-provider": {
+          "modelOverrides": {
+            "swift-extension-model": {
+              "name": "Configured extension model",
+              "cost": {
+                "output": 7,
+                "tiers": [{
+                  "inputTokensAbove": 50000,
+                  "input": 2,
+                  "output": 8,
+                  "cacheRead": 0.2,
+                  "cacheWrite": 0.3
+                }]
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    try json.write(to: tempDir.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+
+    let registry = ModelRegistry(AuthStorage(":memory:"), tempDir.path)
+    registry.registerProvider(HookProviderConfig(
+        provider: "swift-extension-provider",
+        api: .openAIResponses,
+        baseUrl: "https://example.invalid/v1",
+        models: [HookProviderModel(
+            id: "swift-extension-model",
+            input: [.text],
+            cost: ModelCost(input: 1, output: 2, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 8192,
+            maxTokens: 4096
+        )]
+    ), sourceId: "test-extension")
+
+    let model = try #require(registry.find("swift-extension-provider", "swift-extension-model"))
+    #expect(model.name == "Configured extension model")
+    #expect(model.cost.input == 1)
+    #expect(model.cost.output == 7)
+    #expect(model.cost.tiers?.first?.inputTokensAbove == 50000)
+}
+
 @Test func modelRegistryRegistersDynamicHookProvider() async throws {
     let registry = ModelRegistry(AuthStorage(":memory:"))
     let config = HookProviderConfig(

@@ -177,6 +177,22 @@ private struct EntryBuilder {
     #expect(result.firstKeptEntryIndex == 0)
 }
 
+@Test func findCutPointCountsContextVisibleCustomMessages() {
+    let content = """
+    {"type":"session","version":3,"id":"session","timestamp":"2026-01-01T00:00:00Z","cwd":"/tmp"}
+    {"type":"message","id":"user","timestamp":"2026-01-01T00:00:00Z","message":{"role":"user","content":"short","timestamp":0}}
+    {"type":"custom_message","id":"custom","parentId":"user","timestamp":"2026-01-01T00:00:01Z","customType":"hook","content":"\(String(repeating: "x", count: 8_000))","display":true}
+    """
+    let entries = parseSessionEntries(content).compactMap { entry -> SessionEntry? in
+        if case .entry(let sessionEntry) = entry { return sessionEntry }
+        return nil
+    }
+
+    let result = findCutPoint(entries, 0, entries.count, 1_000)
+    #expect(entries[result.firstKeptEntryIndex].id == "custom")
+    #expect(result.isSplitTurn == false)
+}
+
 @Test func findCutPointSplitTurn() {
     var builder = EntryBuilder()
     let entries: [SessionEntry] = [

@@ -63,11 +63,13 @@ public func executeBashWithOperations(
     operations: BashOperations,
     options: BashExecutorOptions? = nil
 ) async throws -> BashResult {
-    try await operations.execute(command, options: options)
+    _ = try validatedShellTimeout(options?.timeoutSeconds)
+    return try await operations.execute(command, options: options)
 }
 
 public func executeBash(_ command: String, options: BashExecutorOptions? = nil) async throws -> BashResult {
-    try await BashExecutorRegistry.provider().execute(command, options)
+    _ = try validatedShellTimeout(options?.timeoutSeconds)
+    return try await BashExecutorRegistry.provider().execute(command, options)
 }
 
 private let defaultBashProvider: BashExecutorProvider = {
@@ -90,6 +92,7 @@ private let defaultBashProvider: BashExecutorProvider = {
 
 #if !canImport(UIKit)
 private func executeSystemBash(_ command: String, options: BashExecutorOptions? = nil) async throws -> BashResult {
+    let timeoutSeconds = try validatedShellTimeout(options?.timeoutSeconds)
     let process = Process()
     let shellConfig = try getShellConfig()
     process.executableURL = URL(fileURLWithPath: shellConfig.shell)
@@ -137,7 +140,7 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
     cancellationTimer.resume()
 
     var timeoutTimer: DispatchSourceTimer?
-    if let timeoutSeconds = options?.timeoutSeconds, timeoutSeconds > 0 {
+    if let timeoutSeconds {
         let timer = DispatchSource.makeTimerSource()
         timer.schedule(deadline: .now() + timeoutSeconds)
         timer.setEventHandler {
@@ -276,4 +279,3 @@ private struct Utf8StreamDecoder: Sendable {
         return decoded
     }
 }
-

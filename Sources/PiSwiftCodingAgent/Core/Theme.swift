@@ -48,6 +48,7 @@ public enum ThemeColor: String, CaseIterable, Sendable {
     case thinkingMedium
     case thinkingHigh
     case thinkingXhigh
+    case thinkingMax
     case bashMode
 }
 
@@ -196,6 +197,8 @@ public struct Theme: Sendable {
             return { self.fg(.thinkingHigh, $0) }
         case "xhigh":
             return { self.fg(.thinkingXhigh, $0) }
+        case "max":
+            return { self.fg(.thinkingMax, $0) }
         default:
             return { self.fg(.thinkingOff, $0) }
         }
@@ -446,20 +449,31 @@ private func validateThemeJson(_ json: ThemeJson, name: String) throws {
     }
 }
 
+/// Applies optional theme-token fallbacks before validation so themes written before a
+/// new optional token was introduced remain valid.
+private func withThemeColorFallbacks(_ json: ThemeJson) -> ThemeJson {
+    var resolved = json
+    if resolved.colors[ThemeColor.thinkingMax.rawValue] == nil,
+       let xhigh = resolved.colors[ThemeColor.thinkingXhigh.rawValue] {
+        resolved.colors[ThemeColor.thinkingMax.rawValue] = xhigh
+    }
+    return resolved
+}
+
 private func loadThemeJson(_ name: String) throws -> ThemeJson {
     if let registeredPath = withThemeState({ $0.registeredThemePaths[name] }) {
         guard FileManager.default.fileExists(atPath: registeredPath) else {
             throw ThemeLoadError.missingTheme(name)
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: registeredPath))
-        let json = try JSONDecoder().decode(ThemeJson.self, from: data)
+        let json = withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
         try validateThemeJson(json, name: name)
         return json
     }
 
     let builtins = getBuiltinThemeData()
     if let builtin = builtins[name] {
-        return builtin
+        return withThemeColorFallbacks(builtin)
     }
 
     let customDir = getCustomThemesDir()
@@ -468,7 +482,7 @@ private func loadThemeJson(_ name: String) throws -> ThemeJson {
         throw ThemeLoadError.missingTheme(name)
     }
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    let json = try JSONDecoder().decode(ThemeJson.self, from: data)
+    let json = withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
     try validateThemeJson(json, name: name)
     return json
 }

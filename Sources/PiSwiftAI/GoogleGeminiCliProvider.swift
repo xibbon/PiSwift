@@ -722,10 +722,10 @@ private func isClaudeThinkingModel(_ modelId: String) -> Bool {
 }
 
 private func isRetryableError(status: Int, errorText: String) -> Bool {
-    if status == 429 || status == 500 || status == 502 || status == 503 || status == 504 {
+    if status == 429 || status == 500 || status == 502 || status == 503 || status == 504 || status == 524 {
         return true
     }
-    let pattern = "resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed"
+    let pattern = "resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed|socket connection was closed|you can retry your request|try your request again|please retry your request"
     return errorText.range(of: pattern, options: .regularExpression) != nil
 }
 
@@ -751,12 +751,12 @@ private func sleepMillis(_ ms: Int, signal: CancellationToken?) async throws {
 }
 
 private func getGeminiCliThinkingLevel(effort: ThinkingLevel, modelId: String) -> GoogleThinkingLevel {
-    let clamped = effort == .xhigh ? .high : effort
+    let clamped = (effort == .xhigh || effort == .max) ? .high : effort
     if modelId.contains("3-pro") || modelId.contains("3.1-pro") {
         switch clamped {
         case .minimal, .low:
             return .low
-        case .medium, .high, .xhigh:
+        case .medium, .high, .xhigh, .max:
             return .high
         }
     }
@@ -767,13 +767,13 @@ private func getGeminiCliThinkingLevel(effort: ThinkingLevel, modelId: String) -
         return .low
     case .medium:
         return .medium
-    case .high, .xhigh:
+    case .high, .xhigh, .max:
         return .high
     }
 }
 
 private func clampGeminiThinkingLevel(_ effort: ThinkingLevel) -> ThinkingLevel {
-    effort == .xhigh ? .high : effort
+    (effort == .xhigh || effort == .max) ? .high : effort
 }
 
 private enum GoogleGeminiCliError: LocalizedError, Equatable {

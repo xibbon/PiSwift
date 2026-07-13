@@ -30,24 +30,36 @@ public struct SessionHeader: Sendable {
     public var timestamp: String
     public var cwd: String
     public var parentSession: String?
+    public var metadata: [String: AnyCodable]?
 
-    public init(type: String = "session", version: Int? = nil, id: String, timestamp: String, cwd: String, parentSession: String? = nil) {
+    public init(
+        type: String = "session",
+        version: Int? = nil,
+        id: String,
+        timestamp: String,
+        cwd: String,
+        parentSession: String? = nil,
+        metadata: [String: AnyCodable]? = nil
+    ) {
         self.type = type
         self.version = version
         self.id = id
         self.timestamp = timestamp
         self.cwd = cwd
         self.parentSession = parentSession
+        self.metadata = metadata
     }
 }
 
 public struct NewSessionOptions: Sendable {
     public var parentSession: String?
     public var id: String?
+    public var metadata: [String: AnyCodable]?
 
-    public init(parentSession: String? = nil, id: String? = nil) {
+    public init(parentSession: String? = nil, id: String? = nil, metadata: [String: AnyCodable]? = nil) {
         self.parentSession = parentSession
         self.id = id
+        self.metadata = metadata
     }
 }
 
@@ -974,7 +986,8 @@ public final class SessionManager: Sendable {
             id: newSessionId,
             timestamp: timestamp,
             cwd: cwd,
-            parentSession: options?.parentSession
+            parentSession: options?.parentSession,
+            metadata: options?.metadata
         )
         entries = []
         byId = [:]
@@ -1136,7 +1149,15 @@ public final class SessionManager: Sendable {
             let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
             let newSessionFile = URL(fileURLWithPath: sessionDir).appendingPathComponent("\(fileTimestamp)_\(newSessionId).jsonl").path
 
-            let header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: newSessionId, timestamp: timestamp, cwd: cwd, parentSession: sessionFile)
+            let header = SessionHeader(
+                type: "session",
+                version: CURRENT_SESSION_VERSION,
+                id: newSessionId,
+                timestamp: timestamp,
+                cwd: cwd,
+                parentSession: sessionFile,
+                metadata: self.header?.metadata
+            )
             // Guard against duplicate header if the target file already exists
             if !FileManager.default.fileExists(atPath: newSessionFile) {
                 appendLine(newSessionFile, encodeSessionHeader(header))
@@ -1278,12 +1299,40 @@ private func parseTimestamp(_ value: String) -> Int64 {
 
 private func generateId(existing: Set<String>) -> String {
     for _ in 0..<100 {
-        let id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))
+        // UUIDv7 starts with a timestamp, so a short ID must use its random tail.
+        let id = String(uuidV7().uuidString.replacingOccurrences(of: "-", with: "").suffix(8))
         if !existing.contains(id) {
             return id
         }
     }
-    return UUID().uuidString
+    return uuidV7().uuidString
+}
+
+private func uuidV7() -> UUID {
+    let milliseconds = UInt64(Date().timeIntervalSince1970 * 1_000) & 0x0000_FFFF_FFFF_FFFF
+    var generator = SystemRandomNumberGenerator()
+    var randomBytes: [UInt8] = []
+    for _ in 0..<10 {
+        randomBytes.append(UInt8.random(in: .min ... .max, using: &generator))
+    }
+    return UUID(uuid: (
+        UInt8((milliseconds >> 40) & 0xFF),
+        UInt8((milliseconds >> 32) & 0xFF),
+        UInt8((milliseconds >> 24) & 0xFF),
+        UInt8((milliseconds >> 16) & 0xFF),
+        UInt8((milliseconds >> 8) & 0xFF),
+        UInt8(milliseconds & 0xFF),
+        0x70 | (randomBytes[0] & 0x0F),
+        randomBytes[1],
+        0x80 | (randomBytes[2] & 0x3F),
+        randomBytes[3],
+        randomBytes[4],
+        randomBytes[5],
+        randomBytes[6],
+        randomBytes[7],
+        randomBytes[8],
+        randomBytes[9]
+    ))
 }
 
 public func getSessionDirEnvironmentOverride(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
@@ -1336,6 +1385,9 @@ private func encodeSessionHeader(_ header: SessionHeader) -> String {
     ]
     if let version = header.version { dict["version"] = version }
     if let parentSession = header.parentSession { dict["parentSession"] = parentSession }
+    if let metadata = header.metadata {
+        dict["metadata"] = metadata.mapValues(\.jsonValue)
+    }
     let data = try? JSONSerialization.data(withJSONObject: dict, options: [])
     return String(data: data ?? Data(), encoding: .utf8) ?? ""
 }
@@ -1354,7 +1406,16 @@ private func decodeSessionHeader(_ dict: [String: Any]) -> SessionHeader? {
     let cwd = dict["cwd"] as? String ?? ""
     let version = dict["version"] as? Int
     let parentSession = dict["parentSession"] as? String
-    return SessionHeader(type: "session", version: version, id: id, timestamp: timestamp, cwd: cwd, parentSession: parentSession)
+    let metadata = (dict["metadata"] as? [String: Any]).map { $0.mapValues(AnyCodable.init) }
+    return SessionHeader(
+        type: "session",
+        version: version,
+        id: id,
+        timestamp: timestamp,
+        cwd: cwd,
+        parentSession: parentSession,
+        metadata: metadata
+    )
 }
 
 private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {

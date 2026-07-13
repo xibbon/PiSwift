@@ -201,6 +201,19 @@ public struct HookMessageRenderOptions: Sendable {
 
 public typealias HookMessageRenderer = @Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent?
 
+/// Rendering options for persisted display-only custom entries.
+public struct EntryRenderOptions: Sendable {
+    public var expanded: Bool
+
+    public init(expanded: Bool) {
+        self.expanded = expanded
+    }
+}
+
+/// Renders a persisted `CustomEntry`. Custom entries are display-only and are never
+/// included in the model context.
+public typealias EntryRenderer = @Sendable (CustomEntry, EntryRenderOptions, Theme) -> HookComponent?
+
 public enum HookDeliverAs: String, Sendable {
     case steer
     case followUp
@@ -947,6 +960,14 @@ public struct AgentEndEvent: HookEvent, Sendable {
     }
 }
 
+/// Fired after an agent run has fully settled: no retry, compaction, or queued
+/// continuation remains active.
+public struct AgentSettledEvent: HookEvent, Sendable {
+    public let type: String = "agent_settled"
+
+    public init() {}
+}
+
 public struct TurnStartEvent: HookEvent, Sendable {
     public let type: String = "turn_start"
     public var turnIndex: Int
@@ -1157,6 +1178,26 @@ public struct BeforeProviderRequestEvent: HookEvent, Sendable {
     }
 }
 
+/// Fired after provider headers have been assembled and immediately before the
+/// provider request. Handlers return optional header changes; results are applied
+/// in handler order, with later values overriding earlier values.
+public struct BeforeProviderHeadersEvent: HookEvent, Sendable {
+    public let type: String = "before_provider_headers"
+    public var headers: [String: String]
+
+    public init(headers: [String: String]) {
+        self.headers = headers
+    }
+}
+
+public struct BeforeProviderHeadersEventResult: Sendable {
+    public var headers: [String: String]
+
+    public init(headers: [String: String]) {
+        self.headers = headers
+    }
+}
+
 /// v0.68.0: emitted after a provider HTTP response is received and BEFORE the stream begins
 /// consuming. Lets extensions inspect status / headers — useful for tracing, debugging
 /// rate-limit/auth failures, surfacing provider-specific telemetry.
@@ -1319,6 +1360,7 @@ public struct LoadedHook: Sendable {
     public var resolvedPath: String
     public var handlers: [String: [HookHandler]]
     public var messageRenderers: [String: HookMessageRenderer]
+    public var entryRenderers: [String: EntryRenderer]
     public var commands: [String: RegisteredCommand]
     public var flags: [String: HookFlag]
     public var shortcuts: [KeyId: HookShortcut]
@@ -1351,6 +1393,7 @@ public struct LoadedHook: Sendable {
         resolvedPath: String,
         handlers: [String: [HookHandler]],
         messageRenderers: [String: HookMessageRenderer] = [:],
+        entryRenderers: [String: EntryRenderer] = [:],
         commands: [String: RegisteredCommand] = [:],
         flags: [String: HookFlag] = [:],
         shortcuts: [KeyId: HookShortcut] = [:],
@@ -1378,6 +1421,7 @@ public struct LoadedHook: Sendable {
         self.resolvedPath = resolvedPath
         self.handlers = handlers
         self.messageRenderers = messageRenderers
+        self.entryRenderers = entryRenderers
         self.commands = commands
         self.flags = flags
         self.shortcuts = shortcuts
@@ -1426,6 +1470,7 @@ public final class HookAPI: Sendable {
     private struct State: Sendable {
         var handlers: [String: [HookHandler]]
         var messageRenderers: [String: HookMessageRenderer]
+        var entryRenderers: [String: EntryRenderer]
         var commands: [String: RegisteredCommand]
         var flags: [String: HookFlag]
         var shortcuts: [KeyId: HookShortcut]
@@ -1461,6 +1506,11 @@ public final class HookAPI: Sendable {
     public private(set) var messageRenderers: [String: HookMessageRenderer] {
         get { state.withLock { $0.messageRenderers } }
         set { state.withLock { $0.messageRenderers = newValue } }
+    }
+
+    public private(set) var entryRenderers: [String: EntryRenderer] {
+        get { state.withLock { $0.entryRenderers } }
+        set { state.withLock { $0.entryRenderers = newValue } }
     }
 
     public private(set) var commands: [String: RegisteredCommand] {
@@ -1584,6 +1634,7 @@ public final class HookAPI: Sendable {
         self.state = LockedState(State(
             handlers: [:],
             messageRenderers: [:],
+            entryRenderers: [:],
             commands: [:],
             flags: [:],
             shortcuts: [:],
@@ -1777,6 +1828,11 @@ public final class HookAPI: Sendable {
         messageRenderers[customType] = renderer
     }
 
+    /// Register a renderer for a persisted display-only custom entry.
+    public func registerEntryRenderer(_ customType: String, _ renderer: @escaping EntryRenderer) {
+        entryRenderers[customType] = renderer
+    }
+
     public func registerCommand(_ name: String, description: String? = nil, handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
         commands[name] = RegisteredCommand(name: name, description: description, handler: handler)
     }
@@ -1800,9 +1856,9 @@ public final class HookAPI: Sendable {
     }
 
 #if !canImport(UIKit)
-    public func exec(_ command: String, _ args: [String], _ options: ExecOptions? = nil) async -> ExecResult {
+    public func exec(_ command: String, _ args: [String], _ options: ExecOptions? = nil) async throws -> ExecResult {
         let cwd = options?.cwd ?? execCwd ?? FileManager.default.currentDirectoryPath
-        return await execCommand(command, args, cwd, options)
+        return try await execCommand(command, args, cwd, options)
     }
 #endif
 }

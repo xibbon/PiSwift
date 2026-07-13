@@ -15,6 +15,47 @@ public struct LoadExtensionResult: Sendable {
 /// into `LoadedHook` values that merge directly into `HookRunner`.
 public struct ExtensionLoader {
 
+    /// Load a named in-process extension without compiling or opening a dylib.
+    public static func load(
+        _ inlineExtension: InlineExtension,
+        cwd: String,
+        eventBus: EventBus
+    ) -> LoadExtensionResult {
+        let path = "<inline:\(inlineExtension.name)>"
+        let api = HookAPI(events: eventBus, hookPath: path)
+        api.setExecCwd(cwd)
+        inlineExtension.factory(api)
+        return LoadExtensionResult(hook: LoadedHook(
+            path: path,
+            resolvedPath: path,
+            handlers: api.handlers,
+            messageRenderers: api.messageRenderers,
+            entryRenderers: api.entryRenderers,
+            commands: api.commands,
+            flags: api.flags,
+            shortcuts: api.shortcuts,
+            tools: api.tools,
+            providerRegistrations: api.providerRegistrations,
+            setSendMessageHandler: api.setSendMessageHandler,
+            setSendUserMessageHandler: api.setSendUserMessageHandler,
+            setAppendEntryHandler: api.setAppendEntryHandler,
+            setSetSessionNameHandler: api.setSetSessionNameHandler,
+            setGetSessionNameHandler: api.setGetSessionNameHandler,
+            setSetLabelHandler: api.setSetLabelHandler,
+            setGetActiveToolsHandler: api.setGetActiveToolsHandler,
+            setGetAllToolsHandler: api.setGetAllToolsHandler,
+            setSetActiveToolsHandler: api.setSetActiveToolsHandler,
+            setGetCommandsHandler: api.setGetCommandsHandler,
+            setSetModelHandler: api.setSetModelHandler,
+            setGetThinkingLevelHandler: api.setGetThinkingLevelHandler,
+            setSetThinkingLevelHandler: api.setSetThinkingLevelHandler,
+            setRegisterProviderHandler: api.setRegisterProviderHandler,
+            setUnregisterProviderHandler: api.setUnregisterProviderHandler,
+            setFlagValue: api.setFlagValue,
+            isExtension: true
+        ))
+    }
+
     /// Load a single extension from a path.
     ///
     /// 1. Determine format: `.swift` file vs `Package.swift` directory
