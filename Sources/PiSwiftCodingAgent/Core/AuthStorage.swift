@@ -56,35 +56,355 @@ struct OAuthOverrides: Sendable {
     var oauthApiKey: (@Sendable (OAuthProvider, String, String?) throws -> String)?
 }
 
+/// The result of an atomic auth-storage transaction.
+///
+/// Set `next` to persist a replacement value, or leave it `nil` to make the
+/// transaction read-only. A backend invokes `onCommit` exactly once after it
+/// has persisted `next` (if any), and before it releases the transaction.
+public struct AuthStorageLockResult<Result: Sendable>: Sendable {
+    public let result: Result
+    public let next: String?
+    public let onCommit: @Sendable () -> Void
+
+    public init(
+        result: Result,
+        next: String? = nil,
+        onCommit: @escaping @Sendable () -> Void = {}
+    ) {
+        self.result = result
+        self.next = next
+        self.onCommit = onCommit
+    }
+}
+
+/// Persistent storage for `AuthStorage` credential data.
+///
+/// Implement this protocol to keep the serialized auth data in a secure store,
+/// such as the Keychain or an encrypted database, instead of `auth.json`.
+/// Implementations must run each closure atomically: it receives the current
+/// value and may replace it by returning a non-`nil` `next` value. Invoke the
+/// returned transaction's `onCommit` callback only after a replacement has
+/// been persisted successfully, before releasing the transaction.
+public protocol AuthStorageBackend: Sendable {
+    func withLock<Result: Sendable>(
+        _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
+    ) throws -> Result
+
+    func withLockAsync<Result: Sendable>(
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result
+}
+
+/// The default `AuthStorageBackend`, which stores credentials in an auth JSON file.
+public final class FileAuthStorageBackend: AuthStorageBackend {
+    private let authPath: String
+    private let lockOptionsOverride = LockedState<AuthLockOptions?>(nil)
+
+    public init(_ authPath: String = getAuthPath()) {
+        self.authPath = authPath
+    }
+
+    public func withLock<Result: Sendable>(
+        _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
+    ) throws -> Result {
+        try withFileLockSync {
+            let current = try String(contentsOfFile: authPath, encoding: .utf8)
+            let transaction = try body(current)
+            if let next = transaction.next {
+                try write(next)
+            }
+            transaction.onCommit()
+            return transaction.result
+        }
+    }
+
+    public func withLockAsync<Result: Sendable>(
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        try await withFileLock {
+            let current = try String(contentsOfFile: self.authPath, encoding: .utf8)
+            let transaction = try await body(current)
+            if let next = transaction.next {
+                try self.write(next)
+            }
+            transaction.onCommit()
+            return transaction.result
+        }
+    }
+
+    func setLockOptionsForTesting(_ options: AuthLockOptions?) {
+        lockOptionsOverride.withLock { $0 = options }
+    }
+
+    private func write(_ value: String) throws {
+        try value.write(toFile: authPath, atomically: false, encoding: .utf8)
+        chmod(authPath, 0o600)
+    }
+
+    private func withFileLock<Result: Sendable>(
+        _ body: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        try ensureAuthFileExists()
+
+        let fd = open(authPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw OAuthError.refreshFailed("failed to open auth storage")
+        }
+        defer { close(fd) }
+
+        let override = lockOptionsOverride.withLock { $0 }
+        let maxAttempts = override?.maxAttempts ?? 10
+        let maxDelayMs = override?.maxDelayMs ?? 10_000
+        var delayMs = override?.initialDelayMs ?? 100
+        var locked = false
+        guard maxAttempts > 0 else {
+            throw OAuthError.refreshFailed("failed to acquire auth storage lock")
+        }
+        for _ in 0..<maxAttempts {
+            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+                locked = true
+                break
+            }
+            try await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+            delayMs = min(delayMs * 2, maxDelayMs)
+        }
+
+        guard locked else {
+            throw OAuthError.refreshFailed("failed to acquire auth storage lock")
+        }
+
+        defer { flock(fd, LOCK_UN) }
+        return try await body()
+    }
+
+    private func withFileLockSync<Result: Sendable>(_ body: () throws -> Result) throws -> Result {
+        try ensureAuthFileExists()
+
+        let fd = open(authPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw OAuthError.refreshFailed("failed to open auth storage")
+        }
+        defer { close(fd) }
+
+        let override = lockOptionsOverride.withLock { $0 }
+        let maxAttempts = override?.maxAttempts ?? 10
+        let maxDelayMs = override?.maxDelayMs ?? 10_000
+        var delayMs = override?.initialDelayMs ?? 100
+        var locked = false
+        guard maxAttempts > 0 else {
+            throw OAuthError.refreshFailed("failed to acquire auth storage lock")
+        }
+        for _ in 0..<maxAttempts {
+            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+                locked = true
+                break
+            }
+            usleep(useconds_t(delayMs) * 1_000)
+            delayMs = min(delayMs * 2, maxDelayMs)
+        }
+
+        guard locked else {
+            throw OAuthError.refreshFailed("failed to acquire auth storage lock")
+        }
+
+        defer { flock(fd, LOCK_UN) }
+        return try body()
+    }
+
+    private func ensureAuthFileExists() throws {
+        let url = URL(fileURLWithPath: authPath)
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+
+        if !FileManager.default.fileExists(atPath: authPath) {
+            guard FileManager.default.createFile(
+                atPath: authPath,
+                contents: Data("{}".utf8),
+                attributes: [.posixPermissions: 0o600]
+            ) else {
+                throw OAuthError.refreshFailed("failed to create auth storage")
+            }
+        }
+    }
+}
+
+private actor AsyncTransactionGate {
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard isLocked else {
+            isLocked = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isLocked = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
+/// Coordinates synchronous and asynchronous in-memory transactions without
+/// holding a thread mutex across an `await`.
+private final class InMemoryTransactionState: @unchecked Sendable {
+    // `condition` protects both transaction flags; `value` has its own mutex.
+    // The flags ensure no transaction can observe or update `value` while an
+    // asynchronous transaction is suspended in its closure.
+    private let value: LockedState<String?>
+    private let asyncGate = AsyncTransactionGate()
+    private let condition = NSCondition()
+    private var synchronousTransactionInProgress = false
+    private var asynchronousTransactionInProgress = false
+
+    init(_ initialValue: String?) {
+        value = LockedState(initialValue)
+    }
+
+    func withLock<Result: Sendable>(
+        _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
+    ) throws -> Result {
+        beginSynchronousTransaction()
+        defer { endSynchronousTransaction() }
+
+        return try value.withLock { current in
+            let transaction = try body(current)
+            if let next = transaction.next {
+                current = next
+            }
+            transaction.onCommit()
+            return transaction.result
+        }
+    }
+
+    func withLockAsync<Result: Sendable>(
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        await asyncGate.acquire()
+        beginAsynchronousTransaction()
+
+        do {
+            let current = value.withLock { $0 }
+            let transaction = try await body(current)
+            if let next = transaction.next {
+                value.withLock { $0 = next }
+            }
+            transaction.onCommit()
+            endAsynchronousTransaction()
+            await asyncGate.release()
+            return transaction.result
+        } catch {
+            endAsynchronousTransaction()
+            await asyncGate.release()
+            throw error
+        }
+    }
+
+    private func beginSynchronousTransaction() {
+        condition.lock()
+        while synchronousTransactionInProgress || asynchronousTransactionInProgress {
+            condition.wait()
+        }
+        synchronousTransactionInProgress = true
+        condition.unlock()
+    }
+
+    private func endSynchronousTransaction() {
+        condition.lock()
+        synchronousTransactionInProgress = false
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    private func beginAsynchronousTransaction() {
+        condition.lock()
+        while synchronousTransactionInProgress || asynchronousTransactionInProgress {
+            condition.wait()
+        }
+        asynchronousTransactionInProgress = true
+        condition.unlock()
+    }
+
+    private func endAsynchronousTransaction() {
+        condition.lock()
+        asynchronousTransactionInProgress = false
+        condition.broadcast()
+        condition.unlock()
+    }
+}
+
+/// An `AuthStorageBackend` that keeps credential data only in memory.
+public final class InMemoryAuthStorageBackend: AuthStorageBackend {
+    private let state: InMemoryTransactionState
+
+    public init(_ initialValue: String? = nil) {
+        state = InMemoryTransactionState(initialValue)
+    }
+
+    public func withLock<Result: Sendable>(
+        _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
+    ) throws -> Result {
+        try state.withLock(body)
+    }
+
+    public func withLockAsync<Result: Sendable>(
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        try await state.withLockAsync(body)
+    }
+}
+
 public final class AuthStorage: Sendable {
     private struct State: Sendable {
         var data: [String: AuthCredential] = [:]
         var runtimeOverrides: [String: String] = [:]
         var fallbackResolver: (@Sendable (String) -> String?)?
-        var lockOptionsOverride: AuthLockOptions?
         var oauthOverrides: OAuthOverrides?
         var loadError: String?
         var errors: [String] = []
     }
 
     private let state = LockedState(State())
-    private let authPath: String
+    private let storage: any AuthStorageBackend
 
     public init(_ authPath: String) {
-        self.authPath = authPath
+        if authPath == ":memory:" {
+            storage = InMemoryAuthStorageBackend()
+        } else {
+            storage = FileAuthStorageBackend(authPath)
+        }
+        reload()
+    }
+
+    /// Creates auth storage backed by a caller-provided persistence implementation.
+    public init(storage: any AuthStorageBackend) {
+        self.storage = storage
         reload()
     }
 
     public static func create(_ authPath: String? = nil) -> AuthStorage {
-        AuthStorage(authPath ?? getAuthPath())
+        AuthStorage(storage: FileAuthStorageBackend(authPath ?? getAuthPath()))
+    }
+
+    /// Creates auth storage backed by a caller-provided persistence implementation.
+    public static func fromStorage(_ storage: any AuthStorageBackend) -> AuthStorage {
+        AuthStorage(storage: storage)
     }
 
     public static func inMemory(_ data: [String: AuthCredential] = [:]) -> AuthStorage {
         let storage = AuthStorage(":memory:")
-        storage.state.withLock { state in
-            state.data = data
-            state.loadError = nil
-            state.errors = []
+        for (provider, credential) in data {
+            storage.set(provider, credential: credential)
         }
         return storage
     }
@@ -102,7 +422,7 @@ public final class AuthStorage: Sendable {
     }
 
     func setAuthLockOptionsForTesting(_ options: AuthLockOptions?) {
-        state.withLock { $0.lockOptionsOverride = options }
+        (storage as? FileAuthStorageBackend)?.setLockOptionsForTesting(options)
     }
 
     func setOAuthOverridesForTesting(_ overrides: OAuthOverrides?) {
@@ -110,19 +430,10 @@ public final class AuthStorage: Sendable {
     }
 
     public func reload() {
-        guard authPath != ":memory:" else { return }
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: authPath)) else {
-            state.withLock {
-                $0.data = [:]
-                $0.loadError = nil
-            }
-            return
-        }
         do {
-            let loaded = try parseAuthData(data)
-            state.withLock {
-                $0.data = loaded
-                $0.loadError = nil
+            try storage.withLock { current in
+                let loaded = try self.parseAuthData(current)
+                return AuthStorageLockResult(result: (), onCommit: self.cacheCommit(loaded))
             }
         } catch {
             state.withLock { state in
@@ -137,12 +448,10 @@ public final class AuthStorage: Sendable {
     }
 
     public func set(_ provider: String, credential: AuthCredential) {
-        state.withLock { $0.data[provider] = credential }
         persistProviderChange(provider: provider, credential: credential)
     }
 
     public func remove(_ provider: String) {
-        state.withLock { $0.data.removeValue(forKey: provider) }
         persistProviderChange(provider: provider, credential: nil)
     }
 
@@ -269,86 +578,25 @@ public final class AuthStorage: Sendable {
         return snapshot.fallback?(provider)
     }
 
-    private func save() {
-        if authPath == ":memory:" { return }
-        var json: [String: Any] = [:]
-        let credentials = state.withLock { $0.data }
-        for (provider, credential) in credentials {
-            switch credential {
-            case .apiKey(let apiKey):
-                json[provider] = ["type": "api_key", "key": apiKey.key]
-            case .oauth(let oauth):
-                var entry: [String: Any] = ["type": "oauth", "access": oauth.access]
-                if let refresh = oauth.refresh { entry["refresh"] = refresh }
-                if let expires = oauth.expires { entry["expires"] = expires }
-                if let enterpriseUrl = oauth.enterpriseUrl { entry["enterpriseUrl"] = enterpriseUrl }
-                if let projectId = oauth.projectId { entry["projectId"] = projectId }
-                if let email = oauth.email { entry["email"] = email }
-                if let accountId = oauth.accountId { entry["accountId"] = accountId }
-                json[provider] = entry
-            }
-        }
-
-        let dir = URL(fileURLWithPath: authPath).deletingLastPathComponent()
-        try? FileManager.default.createDirectory(
-            at: dir,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
-            try? data.write(to: URL(fileURLWithPath: authPath))
-            chmod(authPath, 0o600)
-        }
-    }
-
     private func persistProviderChange(provider: String, credential: AuthCredential?) {
-        if authPath == ":memory:" { return }
         let blockedByLoadError = state.withLock { $0.loadError != nil }
         if blockedByLoadError {
             return
         }
 
         do {
-            try withAuthLockSync {
-                let url = URL(fileURLWithPath: authPath)
-                let dir = url.deletingLastPathComponent()
-                try? FileManager.default.createDirectory(
-                    at: dir,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700]
-                )
-
-                var merged: [String: AuthCredential] = [:]
-                if let data = try? Data(contentsOf: url) {
-                    merged = try parseAuthData(data)
-                }
+            try storage.withLock { current in
+                var merged = try self.parseAuthData(current)
                 if let credential {
                     merged[provider] = credential
                 } else {
                     merged.removeValue(forKey: provider)
                 }
-
-                var json: [String: Any] = [:]
-                for (providerName, value) in merged {
-                    switch value {
-                    case .apiKey(let apiKey):
-                        json[providerName] = ["type": "api_key", "key": apiKey.key]
-                    case .oauth(let oauth):
-                        var entry: [String: Any] = ["type": "oauth", "access": oauth.access]
-                        if let refresh = oauth.refresh { entry["refresh"] = refresh }
-                        if let expires = oauth.expires { entry["expires"] = expires }
-                        if let enterpriseUrl = oauth.enterpriseUrl { entry["enterpriseUrl"] = enterpriseUrl }
-                        if let projectId = oauth.projectId { entry["projectId"] = projectId }
-                        if let email = oauth.email { entry["email"] = email }
-                        if let accountId = oauth.accountId { entry["accountId"] = accountId }
-                        json[providerName] = entry
-                    }
-                }
-
-                if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
-                    try? data.write(to: url)
-                    chmod(authPath, 0o600)
-                }
+                return AuthStorageLockResult(
+                    result: (),
+                    next: try self.serializeAuthData(merged),
+                    onCommit: self.cacheCommit(merged)
+                )
             }
         } catch {
             state.withLock { state in
@@ -357,8 +605,9 @@ public final class AuthStorage: Sendable {
         }
     }
 
-    private func parseAuthData(_ data: Data) throws -> [String: AuthCredential] {
-        let raw = try JSONSerialization.jsonObject(with: data)
+    private func parseAuthData(_ content: String?) throws -> [String: AuthCredential] {
+        guard let content, !content.isEmpty else { return [:] }
+        let raw = try JSONSerialization.jsonObject(with: Data(content.utf8))
         guard let json = raw as? [String: Any] else {
             throw NSError(domain: "AuthStorage", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid auth storage format"])
         }
@@ -392,33 +641,76 @@ public final class AuthStorage: Sendable {
         return loaded
     }
 
-    private func refreshOAuthTokenWithLock(_ provider: OAuthProvider) async throws -> (apiKey: String, newCredentials: OAuthCredentials)? {
-        try await withAuthLock {
-            self.reload()
+    private func serializeAuthData(_ credentials: [String: AuthCredential]) throws -> String {
+        var json: [String: Any] = [:]
+        for (provider, credential) in credentials {
+            switch credential {
+            case .apiKey(let apiKey):
+                json[provider] = ["type": "api_key", "key": apiKey.key]
+            case .oauth(let oauth):
+                var entry: [String: Any] = ["type": "oauth", "access": oauth.access]
+                if let refresh = oauth.refresh { entry["refresh"] = refresh }
+                if let expires = oauth.expires { entry["expires"] = expires }
+                if let enterpriseUrl = oauth.enterpriseUrl { entry["enterpriseUrl"] = enterpriseUrl }
+                if let projectId = oauth.projectId { entry["projectId"] = projectId }
+                if let email = oauth.email { entry["email"] = email }
+                if let accountId = oauth.accountId { entry["accountId"] = accountId }
+                json[provider] = entry
+            }
+        }
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted])
+        guard let content = String(data: data, encoding: .utf8) else {
+            throw NSError(domain: "AuthStorage", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unable to encode auth storage"])
+        }
+        return content
+    }
 
-            let credential = self.state.withLock { $0.data[provider.rawValue] }
+    private func cacheCommit(_ data: [String: AuthCredential]) -> @Sendable () -> Void {
+        { [self] in
+            state.withLock { state in
+                state.data = data
+                state.loadError = nil
+            }
+        }
+    }
+
+    private struct OAuthRefreshLockedResult: Sendable {
+        var value: (apiKey: String, newCredentials: OAuthCredentials)?
+    }
+
+    private func refreshOAuthTokenWithLock(_ provider: OAuthProvider) async throws -> (apiKey: String, newCredentials: OAuthCredentials)? {
+        let lockedResult = try await storage.withLockAsync { current in
+            let currentData = try self.parseAuthData(current)
+            let credential = currentData[provider.rawValue]
             guard case .oauth(let oauth) = credential else {
-                return nil
+                return AuthStorageLockResult(
+                    result: OAuthRefreshLockedResult(value: nil),
+                    onCommit: self.cacheCommit(currentData)
+                )
             }
 
             let now = Date().timeIntervalSince1970 * 1000
             if let expires = oauth.expires, now < expires {
                 let apiKey = try oauthApiKey(provider: provider, accessToken: oauth.access, projectId: oauth.projectId)
                 if let creds = oauth.toOAuthCredentials() {
-                    return (apiKey: apiKey, newCredentials: creds)
+                    return AuthStorageLockResult(result: OAuthRefreshLockedResult(
+                        value: (apiKey: apiKey, newCredentials: creds)
+                    ), onCommit: self.cacheCommit(currentData))
                 }
-                return (apiKey: apiKey, newCredentials: OAuthCredentials(
-                    refresh: oauth.refresh ?? "",
-                    access: oauth.access,
-                    expires: expires,
-                    enterpriseUrl: oauth.enterpriseUrl,
-                    projectId: oauth.projectId,
-                    email: oauth.email,
-                    accountId: oauth.accountId
-                ))
+                return AuthStorageLockResult(result: OAuthRefreshLockedResult(
+                    value: (apiKey: apiKey, newCredentials: OAuthCredentials(
+                        refresh: oauth.refresh ?? "",
+                        access: oauth.access,
+                        expires: expires,
+                        enterpriseUrl: oauth.enterpriseUrl,
+                        projectId: oauth.projectId,
+                        email: oauth.email,
+                        accountId: oauth.accountId
+                    ))
+                ), onCommit: self.cacheCommit(currentData))
             }
 
-            let oauthCreds = self.oauthCredentialsMap()
+            let oauthCreds = self.oauthCredentialsMap(from: currentData)
             let override = self.state.withLock { $0.oauthOverrides }
             let result: (newCredentials: OAuthCredentials, apiKey: String)?
             if let overrideFn = override?.getOAuthApiKey {
@@ -427,20 +719,27 @@ public final class AuthStorage: Sendable {
                 result = try await getOAuthApiKey(provider: provider, credentials: oauthCreds)
             }
             if let result {
-                self.state.withLock { state in
-                    state.data[provider.rawValue] = .oauth(OAuthCredential(result.newCredentials))
-                }
-                self.save()
-                return (apiKey: result.apiKey, newCredentials: result.newCredentials)
+                var updatedData = currentData
+                updatedData[provider.rawValue] = .oauth(OAuthCredential(result.newCredentials))
+                return AuthStorageLockResult(
+                    result: OAuthRefreshLockedResult(
+                        value: (apiKey: result.apiKey, newCredentials: result.newCredentials)
+                    ),
+                    next: try self.serializeAuthData(updatedData),
+                    onCommit: self.cacheCommit(updatedData)
+                )
             }
 
-            return nil
+            return AuthStorageLockResult(
+                result: OAuthRefreshLockedResult(value: nil),
+                onCommit: self.cacheCommit(currentData)
+            )
         }
+        return lockedResult.value
     }
 
-    private func oauthCredentialsMap() -> [String: OAuthCredentials] {
+    private func oauthCredentialsMap(from credentials: [String: AuthCredential]) -> [String: OAuthCredentials] {
         var creds: [String: OAuthCredentials] = [:]
-        let credentials = state.withLock { $0.data }
         for (provider, credential) in credentials {
             guard case .oauth(let oauth) = credential,
                   let refresh = oauth.refresh else { continue }
@@ -456,90 +755,6 @@ public final class AuthStorage: Sendable {
             )
         }
         return creds
-    }
-
-    private func withAuthLock<T>(_ body: @escaping () async throws -> T) async throws -> T {
-        ensureAuthFileExists()
-
-        let fd = open(authPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        guard fd >= 0 else {
-            throw OAuthError.refreshFailed("failed to open auth.json")
-        }
-        defer { close(fd) }
-
-        let override = state.withLock { $0.lockOptionsOverride }
-        let maxAttempts = override?.maxAttempts ?? 10
-        let maxDelayMs = override?.maxDelayMs ?? 10_000
-        var delayMs = override?.initialDelayMs ?? 100
-        var locked = false
-        if maxAttempts <= 0 {
-            throw OAuthError.refreshFailed("failed to acquire auth.json lock")
-        }
-        for _ in 0..<maxAttempts {
-            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
-                locked = true
-                break
-            }
-            try await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
-            delayMs = min(delayMs * 2, maxDelayMs)
-        }
-
-        guard locked else {
-            throw OAuthError.refreshFailed("failed to acquire auth.json lock")
-        }
-
-        defer { flock(fd, LOCK_UN) }
-        return try await body()
-    }
-
-    private func withAuthLockSync<T>(_ body: () throws -> T) throws -> T {
-        ensureAuthFileExists()
-
-        let fd = open(authPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        guard fd >= 0 else {
-            throw OAuthError.refreshFailed("failed to open auth.json")
-        }
-        defer { close(fd) }
-
-        let override = state.withLock { $0.lockOptionsOverride }
-        let maxAttempts = override?.maxAttempts ?? 10
-        let maxDelayMs = override?.maxDelayMs ?? 10_000
-        var delayMs = override?.initialDelayMs ?? 100
-        var locked = false
-        if maxAttempts <= 0 {
-            throw OAuthError.refreshFailed("failed to acquire auth.json lock")
-        }
-        for _ in 0..<maxAttempts {
-            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
-                locked = true
-                break
-            }
-            usleep(useconds_t(delayMs) * 1_000)
-            delayMs = min(delayMs * 2, maxDelayMs)
-        }
-
-        guard locked else {
-            throw OAuthError.refreshFailed("failed to acquire auth.json lock")
-        }
-
-        defer { flock(fd, LOCK_UN) }
-        return try body()
-    }
-
-    private func ensureAuthFileExists() {
-        let dir = URL(fileURLWithPath: authPath).deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.createDirectory(
-                at: dir,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-        }
-
-        if !FileManager.default.fileExists(atPath: authPath) {
-            let empty = Data("{}".utf8)
-            FileManager.default.createFile(atPath: authPath, contents: empty, attributes: [.posixPermissions: 0o600])
-        }
     }
 
     private func envKeyName(for provider: String) -> String? {

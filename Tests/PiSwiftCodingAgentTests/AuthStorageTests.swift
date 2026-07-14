@@ -19,6 +19,191 @@ private func writeAuthJson(_ path: String, data: [String: Any]) {
     try? payload.write(to: url)
 }
 
+/// Represents an app-owned secure store, such as a Keychain wrapper. The test
+/// intentionally only implements the public backend protocol.
+private final class SecureStoreTestBackend: AuthStorageBackend {
+    private let storage = InMemoryAuthStorageBackend()
+
+    func withLock<Result: Sendable>(
+        _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
+    ) throws -> Result {
+        try storage.withLock(body)
+    }
+
+    func withLockAsync<Result: Sendable>(
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        try await storage.withLockAsync(body)
+    }
+}
+
+private actor AsyncTransactionBarrier {
+    private var firstStarted = false
+    private var isReleased = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func signalFirstStarted() {
+        firstStarted = true
+        startWaiter?.resume()
+        startWaiter = nil
+    }
+
+    func waitForFirstStart() async {
+        guard !firstStarted else { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func waitForRelease() async {
+        guard !isReleased else { return }
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+
+    func releaseFirst() {
+        isReleased = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
+private final class OutOfOrderReturnBackend: AuthStorageBackend {
+    private struct State: Sendable {
+        var value: String?
+        var writeCount = 0
+        var firstWriteIsWaiting = false
+    }
+
+    private let state = LockedState(State())
+    private let allowFirstWriteToReturn = DispatchSemaphore(value: 0)
+
+    func withLock<Result: Sendable>(
+        _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
+    ) throws -> Result {
+        let (result, writeCount) = try state.withLock { state in
+            let transaction = try body(state.value)
+            if let next = transaction.next {
+                state.value = next
+                state.writeCount += 1
+            }
+            transaction.onCommit()
+            if state.writeCount == 1, transaction.next != nil {
+                state.firstWriteIsWaiting = true
+            }
+            return (transaction.result, transaction.next == nil ? 0 : state.writeCount)
+        }
+
+        if writeCount == 1 {
+            allowFirstWriteToReturn.wait()
+        } else if writeCount == 2 {
+            allowFirstWriteToReturn.signal()
+        }
+        return result
+    }
+
+    func withLockAsync<Result: Sendable>(
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        fatalError("This test backend only exercises synchronous transactions")
+    }
+
+    func isFirstWriteWaiting() -> Bool {
+        state.withLock { $0.firstWriteIsWaiting }
+    }
+}
+
+@Test func authStorageUsesConsumerProvidedBackend() async {
+    let backend = SecureStoreTestBackend()
+    let storage = AuthStorage(storage: backend)
+
+    storage.set("anthropic", credential: .apiKey(ApiKeyCredential(key: "secure-key")))
+    #expect(await storage.getApiKey("anthropic") == "secure-key")
+
+    let reloaded = AuthStorage.fromStorage(backend)
+    #expect(await reloaded.getApiKey("anthropic") == "secure-key")
+}
+
+@Test func inMemoryBackendSerializesAsyncTransactions() async throws {
+    let backend = InMemoryAuthStorageBackend()
+    let barrier = AsyncTransactionBarrier()
+
+    let first = Task {
+        try await backend.withLockAsync { _ in
+            await barrier.signalFirstStarted()
+            await barrier.waitForRelease()
+            return AuthStorageLockResult(result: (), next: "first")
+        }
+    }
+    await barrier.waitForFirstStart()
+
+    let second = Task {
+        try await backend.withLockAsync { current in
+            AuthStorageLockResult(result: current)
+        }
+    }
+
+    for _ in 0..<10 {
+        await Task.yield()
+    }
+    await barrier.releaseFirst()
+
+    _ = try await first.value
+    #expect(try await second.value == "first")
+}
+
+@Test func authStorageInMemoryRefreshesExpiredOAuthOnlyOnce() async {
+    let now = Date().timeIntervalSince1970 * 1000
+    let storage = AuthStorage.inMemory([
+        "anthropic": .oauth(OAuthCredential(
+            access: "expired-access",
+            refresh: "refresh-token",
+            expires: now - 1
+        )),
+    ])
+    let refreshCount = LockedState(0)
+    storage.setOAuthOverridesForTesting(OAuthOverrides(
+        getOAuthApiKey: { _, _ in
+            refreshCount.withLock { $0 += 1 }
+            try await Task.sleep(nanoseconds: 20_000_000)
+            let credentials = OAuthCredentials(
+                refresh: "refresh-token",
+                access: "fresh-access",
+                expires: now + 60_000
+            )
+            return (newCredentials: credentials, apiKey: "fresh-access")
+        },
+        oauthApiKey: { _, access, _ in "Bearer \(access)" }
+    ))
+
+    async let first = storage.getApiKey("anthropic")
+    async let second = storage.getApiKey("anthropic")
+    let firstKey = await first
+    let secondKey = await second
+    #expect(firstKey == "fresh-access")
+    #expect(secondKey == "fresh-access")
+    #expect(refreshCount.withLock { $0 } == 1)
+}
+
+@Test func authStorageCacheFollowsTransactionCommitOrder() async {
+    let backend = OutOfOrderReturnBackend()
+    let storage = AuthStorage(storage: backend)
+
+    let first = Task.detached {
+        storage.set("anthropic", credential: .apiKey(ApiKeyCredential(key: "anthropic-key")))
+    }
+    while !backend.isFirstWriteWaiting() {
+        await Task.yield()
+    }
+
+    let second = Task.detached {
+        storage.set("openai", credential: .apiKey(ApiKeyCredential(key: "openai-key")))
+    }
+    await second.value
+    await first.value
+
+    #expect(storage.has("anthropic"))
+    #expect(storage.has("openai"))
+}
+
 @Test func authStorageLiteralApiKeyReturned() async {
     let tempDir = makeTempDir("auth-storage-literal")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
