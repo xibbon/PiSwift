@@ -3807,6 +3807,46 @@ struct ToolValidationTests {
         let result = try validateToolCall(tools: [tool], toolCall: toolCall)
         #expect(result["items"] != nil)
     }
+
+    @Test func validateToolCallPreservesObjectsInsideArrays() throws {
+        let tool = AITool(
+            name: "replace",
+            description: "Replace text",
+            parameters: [
+                "type": AnyCodable("object"),
+                "properties": AnyCodable([
+                    "edits": [
+                        "type": "array",
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "oldText": ["type": "string"],
+                                "newText": ["type": "string"],
+                            ],
+                            "required": ["oldText", "newText"],
+                        ],
+                    ],
+                ] as [String: Any]),
+                "required": AnyCodable(["edits"]),
+            ]
+        )
+        let toolCall = ToolCall(
+            id: "call_1",
+            name: "replace",
+            arguments: [
+                "edits": AnyCodable([[
+                    "oldText": "before",
+                    "newText": "after",
+                ]] as [[String: Any]]),
+            ]
+        )
+
+        let result = try validateToolCall(tools: [tool], toolCall: toolCall)
+        let edits = result["edits"]?.value as? [Any]
+        let firstEdit = edits?.first as? [String: Any]
+        #expect(firstEdit?["oldText"] as? String == "before")
+        #expect(firstEdit?["newText"] as? String == "after")
+    }
 }
 
 // MARK: - OAuth Tests

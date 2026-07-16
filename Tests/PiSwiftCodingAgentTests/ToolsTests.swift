@@ -126,6 +126,63 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     }
 }
 
+@Test func editToolExecutesValidatedEditsArray() async throws {
+    try await withTempDir { dir in
+        let testFile = URL(fileURLWithPath: dir).appendingPathComponent("vehicle.gd").path
+        let oldText = "@onready var sphere: RigidBody3D = $Sphere\n@onready var raycast: RayCast3D = $Ground\nx\n\n# Vehicle elements\n"
+        let newText = "@onready var sphere: RigidBody3D = $Sphere\n@onready var raycast: RayCast3D = $Ground\n\n# Vehicle elements\n"
+        try oldText.write(toFile: testFile, atomically: true, encoding: .utf8)
+
+        let tool = createEditTool(cwd: dir)
+        let rawArguments: [String: AnyCodable] = [
+            "path": AnyCodable("vehicle.gd"),
+            "edits": AnyCodable([[
+                "oldText": oldText,
+                "newText": newText,
+            ]] as [[String: Any]]),
+        ]
+        let prepared = try await tool.prepareArguments?(rawArguments) ?? rawArguments
+        let validated = try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-array", name: "edit", arguments: prepared)
+        )
+
+        _ = try await runTool(tool, "edit-array", validated)
+
+        let content = try String(contentsOfFile: testFile, encoding: .utf8)
+        #expect(content == newText)
+    }
+}
+
+@Test func editToolExecutesStringifiedEditsAfterValidation() async throws {
+    try await withTempDir { dir in
+        let testFile = URL(fileURLWithPath: dir).appendingPathComponent("vehicle.gd").path
+        let oldText = "@onready var sphere: RigidBody3D = $Sphere\n@onready var raycast: RayCast3D = $Ground\nx\n\n# Vehicle elements\n"
+        let newText = "@onready var sphere: RigidBody3D = $Sphere\n@onready var raycast: RayCast3D = $Ground\n\n# Vehicle elements\n"
+        try oldText.write(toFile: testFile, atomically: true, encoding: .utf8)
+
+        let encodedEdits = try JSONSerialization.data(withJSONObject: [[
+            "oldText": oldText,
+            "newText": newText,
+        ]])
+        let tool = createEditTool(cwd: dir)
+        let rawArguments: [String: AnyCodable] = [
+            "path": AnyCodable("vehicle.gd"),
+            "edits": AnyCodable(String(decoding: encodedEdits, as: UTF8.self)),
+        ]
+        let prepared = try await tool.prepareArguments?(rawArguments) ?? rawArguments
+        let validated = try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-stringified-array", name: "edit", arguments: prepared)
+        )
+
+        _ = try await runTool(tool, "edit-stringified-array", validated)
+
+        let content = try String(contentsOfFile: testFile, encoding: .utf8)
+        #expect(content == newText)
+    }
+}
+
 @Test func readToolOffsetAndLimit() async throws {
     try await withTempDir { dir in
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("offset.txt").path

@@ -129,27 +129,5 @@ private func extractValues(from arguments: [String: AnyCodable]) -> [String: Any
 
 /// Convert a plain dictionary back to AnyCodable.
 private func convertToAnyCodable(_ dict: [String: Any]) -> [String: AnyCodable] {
-    var result: [String: AnyCodable] = [:]
-    for (key, value) in dict {
-        result[key] = AnyCodable(convertValue(value) as Any)
-    }
-    return result
-}
-
-/// Convert a plain value to something AnyCodable can wrap.
-private func convertValue(_ value: Any) -> Any? {
-    if value is NSNull {
-        return nil
-    }
-    if let dict = value as? [String: Any] {
-        var result: [String: AnyCodable] = [:]
-        for (k, v) in dict {
-            result[k] = AnyCodable(convertValue(v) as Any)
-        }
-        return result
-    }
-    if let array = value as? [Any] {
-        return array.map { AnyCodable(convertValue($0) as Any) }
-    }
-    return value
+    dict.mapValues(AnyCodable.init)
 }
