@@ -97,6 +97,55 @@ import PiSwiftAgent
     #expect(!agent.state.messages.contains { $0.role == "user" && $0.timestamp == followUpMessage.timestamp })
 }
 
+private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
+    AssistantMessage(
+        content: [.text(TextContent(text: "partial"))],
+        api: .openAICompletions,
+        provider: "openai",
+        model: "gpt-4o-mini",
+        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: stopReason
+    )
+}
+
+@Test func dropTrailingErroredAssistantRemovesErroredTurn() {
+    let agent = Agent()
+    agent.messages = [
+        .user(UserMessage(content: .text("Hello"))),
+        .assistant(makeAssistant(stopReason: .error)),
+    ]
+
+    #expect(agent.dropTrailingErroredAssistant() == true)
+    #expect(agent.state.messages.count == 1)
+    #expect(agent.state.messages.last?.role == "user")
+}
+
+@Test func dropTrailingErroredAssistantLeavesSuccessfulTurn() {
+    let agent = Agent()
+    agent.messages = [
+        .user(UserMessage(content: .text("Hello"))),
+        .assistant(makeAssistant(stopReason: .stop)),
+    ]
+
+    #expect(agent.dropTrailingErroredAssistant() == false)
+    #expect(agent.state.messages.count == 2)
+    #expect(agent.state.messages.last?.role == "assistant")
+}
+
+@Test func dropTrailingErroredAssistantIgnoresTrailingUserMessage() {
+    let agent = Agent()
+    agent.messages = [.user(UserMessage(content: .text("Hello")))]
+
+    #expect(agent.dropTrailingErroredAssistant() == false)
+    #expect(agent.state.messages.count == 1)
+}
+
+@Test func dropTrailingErroredAssistantOnEmptyHistoryIsNoOp() {
+    let agent = Agent()
+    #expect(agent.dropTrailingErroredAssistant() == false)
+    #expect(agent.state.messages.isEmpty)
+}
+
 @Test func hasQueuedMessages() {
     let agent = Agent()
     #expect(agent.hasQueuedMessages() == false)

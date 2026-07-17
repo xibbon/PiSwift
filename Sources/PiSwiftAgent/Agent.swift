@@ -369,6 +369,27 @@ public final class Agent: Sendable {
         mutateState { $0.messages = [] }
     }
 
+    /// Atomically drops a trailing assistant message that ended in `.error`, if the
+    /// current last message is one. Returns whether a message was removed.
+    ///
+    /// The check (is the last message an errored assistant?) and the removal happen
+    /// inside a single `mutateState` transaction, so a concurrent append cannot
+    /// interleave between a separate get and set and be clobbered by a stale
+    /// snapshot. Used to repair history before a retry so `continue()` does not
+    /// throw `AgentError.lastMessageAssistant`.
+    @discardableResult
+    public func dropTrailingErroredAssistant() -> Bool {
+        var removed = false
+        mutateState { state in
+            if case .assistant(let assistant)? = state.messages.last,
+               assistant.stopReason == .error {
+                state.messages.removeLast()
+                removed = true
+            }
+        }
+        return removed
+    }
+
     public func subscribe(_ fn: @escaping AgentEventListener) -> @Sendable () -> Void {
         let id = UUID()
         stateBox.withLock { $0.listeners[id] = fn }

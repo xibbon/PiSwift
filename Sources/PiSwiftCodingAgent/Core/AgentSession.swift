@@ -970,10 +970,11 @@ public final class AgentSession: Sendable {
             errorMessage: message.errorMessage ?? "Unknown error"
         ))
 
-        let messages = agent.state.messages
-        if let last = messages.last, last.role == "assistant" {
-            agent.messages = Array(messages.dropLast())
-        }
+        // Atomically drop the errored assistant so the retry's `continue()` can
+        // resume. `message` is that errored assistant (it passed `isRetryableError`,
+        // i.e. `stopReason == .error`), so this pops the same trailing message the
+        // previous get-then-set did — but as one locked transaction with no race.
+        agent.dropTrailingErroredAssistant()
 
         let token = CancellationToken()
         retryAbort = token
@@ -1422,6 +1423,20 @@ public final class AgentSession: Sendable {
         try await runUntilSettled { [agent] in
             try await agent.continue()
         }
+    }
+
+    /// Repairs history before a manual retry by atomically removing a trailing
+    /// assistant message that ended in `.error`, so a subsequent `continue()` does
+    /// not throw `AgentError.lastMessageAssistant`. Returns whether a message was
+    /// removed; a no-op (returns `false`) while streaming.
+    ///
+    /// This is the counterpart of the repair the auto-retry path performs in
+    /// `handleRetryableError`, exposed so UI-driven retry does not have to reach
+    /// into `agent.state.messages` with a non-atomic get-then-set.
+    @discardableResult
+    public func dropTrailingErroredAssistant() -> Bool {
+        guard !isStreaming else { return false }
+        return agent.dropTrailingErroredAssistant()
     }
 
     public func steer(_ text: String) {
