@@ -796,8 +796,16 @@ public final class SessionManager: Sendable {
         let cwd = header?.cwd ?? FileManager.default.currentDirectoryPath
         let dir = sessionDir ?? URL(fileURLWithPath: path).deletingLastPathComponent().path
 
-        // If file exists but is corrupted (empty or no valid header), recover it
+        // If the file exists but produced no valid entries (empty, or a torn/garbled header
+        // line — the most likely casualty of a crash mid-write), recover it. Crucially, do NOT
+        // truncate it in place: a single corrupt header line otherwise destroys every intact
+        // message below it. Move the suspect file aside first so the history is recoverable.
         if FileManager.default.fileExists(atPath: path) && entries.isEmpty {
+            let fileSize = ((try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int) ?? 0
+            if fileSize > 0 {
+                let backupPath = "\(path).corrupt-\(Int(Date().timeIntervalSince1970))"
+                try? FileManager.default.moveItem(atPath: path, toPath: backupPath)
+            }
             let sm = SessionManager(cwd, dir, nil, true)
             _ = sm.newSession()
             sm.sessionFile = path
@@ -917,8 +925,10 @@ public final class SessionManager: Sendable {
     public func setSessionFile(_ path: String) {
         sessionDir = URL(fileURLWithPath: path).deletingLastPathComponent().path
         loadFromFile(path)
-        if let header {
-            cwd = header.cwd
+        state.withLock { st in
+            if let header = st.header {
+                st.cwd = header.cwd
+            }
         }
     }
 
@@ -979,45 +989,48 @@ public final class SessionManager: Sendable {
     public func newSession(_ options: NewSessionOptions? = nil) -> String? {
         let newSessionId = options?.id ?? UUID().uuidString
         let timestamp = isoNow()
-        sessionId = newSessionId
-        header = SessionHeader(
-            type: "session",
-            version: CURRENT_SESSION_VERSION,
-            id: newSessionId,
-            timestamp: timestamp,
-            cwd: cwd,
-            parentSession: options?.parentSession,
-            metadata: options?.metadata
-        )
-        entries = []
-        byId = [:]
-        labelsById = [:]
-        leafId = nil
+        return state.withLock { st in
+            st.sessionId = newSessionId
+            let header = SessionHeader(
+                type: "session",
+                version: CURRENT_SESSION_VERSION,
+                id: newSessionId,
+                timestamp: timestamp,
+                cwd: st.cwd,
+                parentSession: options?.parentSession,
+                metadata: options?.metadata
+            )
+            st.header = header
+            st.entries = []
+            st.byId = [:]
+            st.labelsById = [:]
+            st.leafId = nil
 
-        if persist {
-            let dir = defaultSessionDir(cwd: cwd, sessionDir: sessionDir.isEmpty ? nil : sessionDir)
-            let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
-            sessionFile = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(newSessionId).jsonl").path
-            if let header {
-                appendLine(sessionFile!, encodeSessionHeader(header))
+            if persist {
+                let dir = defaultSessionDir(cwd: st.cwd, sessionDir: st.sessionDir.isEmpty ? nil : st.sessionDir)
+                let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
+                let file = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(newSessionId).jsonl").path
+                st.sessionFile = file
+                appendLine(file, encodeSessionHeader(header))
+                return file
             }
-            return sessionFile
-        }
 
-        sessionFile = nil
-        return nil
+            st.sessionFile = nil
+            return nil
+        }
     }
 
     public func startSession(_ initialState: AgentState) {
-        if header != nil { return }
-        let sessionId = self.sessionId
-        let timestamp = isoNow()
-        header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: sessionId, timestamp: timestamp, cwd: cwd, parentSession: nil)
-        self.sessionId = sessionId
-        if persist {
-            ensureSessionFile()
-            if let sessionFile {
-                appendLine(sessionFile, encodeSessionHeader(header!))
+        state.withLock { st in
+            if st.header != nil { return }
+            let timestamp = isoNow()
+            let header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: st.sessionId, timestamp: timestamp, cwd: st.cwd, parentSession: nil)
+            st.header = header
+            if persist {
+                ensureSessionFileLocked(&st)
+                if let file = st.sessionFile {
+                    appendLine(file, encodeSessionHeader(header))
+                }
             }
         }
     }
@@ -1028,68 +1041,51 @@ public final class SessionManager: Sendable {
 
     @discardableResult
     public func appendMessage(_ message: AgentMessage) -> String {
-        let entry = SessionMessageEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), message: message)
-        appendEntry(.message(entry))
-        return entry.id
+        commitEntry(.message(SessionMessageEntry(id: "", timestamp: isoNow(), message: message)))
     }
 
     @discardableResult
     public func appendThinkingLevelChange(_ level: String) -> String {
-        let entry = ThinkingLevelChangeEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), thinkingLevel: level)
-        appendEntry(.thinkingLevel(entry))
-        return entry.id
+        commitEntry(.thinkingLevel(ThinkingLevelChangeEntry(id: "", timestamp: isoNow(), thinkingLevel: level)))
     }
 
     @discardableResult
     public func appendModelChange(_ provider: String, _ modelId: String) -> String {
-        let entry = ModelChangeEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), provider: provider, modelId: modelId)
-        appendEntry(.modelChange(entry))
-        return entry.id
+        commitEntry(.modelChange(ModelChangeEntry(id: "", timestamp: isoNow(), provider: provider, modelId: modelId)))
     }
 
     @discardableResult
     public func appendCompaction(_ summary: String, _ firstKeptEntryId: String, _ tokensBefore: Int, details: AnyCodable? = nil, fromHook: Bool? = nil) -> String {
-        let entry = CompactionEntry(
-            id: generateId(existing: Set(byId.keys)),
-            parentId: leafId,
+        commitEntry(.compaction(CompactionEntry(
+            id: "",
             timestamp: isoNow(),
             summary: summary,
             firstKeptEntryId: firstKeptEntryId,
             tokensBefore: tokensBefore,
             details: details,
             fromHook: fromHook
-        )
-        appendEntry(.compaction(entry))
-        return entry.id
+        )))
     }
 
     @discardableResult
     public func appendBranchSummary(_ fromId: String, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil) -> String {
-        let entry = BranchSummaryEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook)
-        appendEntry(.branchSummary(entry))
-        return entry.id
+        commitEntry(.branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook)))
     }
 
     @discardableResult
     public func appendCustomEntry(_ customType: String, _ data: [String: Any]) -> String {
-        let entry = CustomEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), customType: customType, data: AnyCodable(data))
-        appendEntry(.custom(entry))
-        return entry.id
+        commitEntry(.custom(CustomEntry(id: "", timestamp: isoNow(), customType: customType, data: AnyCodable(data))))
     }
 
     @discardableResult
     public func appendCustomMessage(_ customType: String, _ content: HookMessageContent, _ display: Bool, details: AnyCodable? = nil) -> String {
-        let entry = CustomMessageEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), customType: customType, content: content, details: details, display: display)
-        appendEntry(.customMessage(entry))
-        return entry.id
+        commitEntry(.customMessage(CustomMessageEntry(id: "", timestamp: isoNow(), customType: customType, content: content, details: details, display: display)))
     }
 
     @discardableResult
     public func appendSessionInfo(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let entry = SessionInfoEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), name: trimmed.isEmpty ? nil : trimmed)
-        appendEntry(.sessionInfo(entry))
-        return entry.id
+        return commitEntry(.sessionInfo(SessionInfoEntry(id: "", timestamp: isoNow(), name: trimmed.isEmpty ? nil : trimmed)))
     }
 
     public func getSessionName() -> String? {
@@ -1104,20 +1100,25 @@ public final class SessionManager: Sendable {
 
     @discardableResult
     public func appendLabelChange(_ targetId: String, _ label: String?) throws -> String {
-        guard byId[targetId] != nil else {
-            throw SessionManagerError.entryNotFound(targetId)
+        try state.withLock { st in
+            guard st.byId[targetId] != nil else {
+                throw SessionManagerError.entryNotFound(targetId)
+            }
+            return commitEntryLocked(
+                &st,
+                .label(LabelEntry(id: "", timestamp: isoNow(), targetId: targetId, label: label)),
+                parent: .leaf
+            )
         }
-        let entry = LabelEntry(id: generateId(existing: Set(byId.keys)), parentId: leafId, timestamp: isoNow(), targetId: targetId, label: label)
-        appendEntry(.label(entry))
-        labelsById[targetId] = label
-        return entry.id
     }
 
     public func branch(_ branchFromId: String) throws {
-        guard byId[branchFromId] != nil else {
-            throw SessionManagerError.entryNotFound(branchFromId)
+        try state.withLock { st in
+            guard st.byId[branchFromId] != nil else {
+                throw SessionManagerError.entryNotFound(branchFromId)
+            }
+            st.leafId = branchFromId
         }
-        leafId = branchFromId
     }
 
     public func resetLeaf() {
@@ -1125,13 +1126,17 @@ public final class SessionManager: Sendable {
     }
 
     public func branchWithSummary(_ branchFromId: String?, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil) throws -> String {
-        if let branchFromId, byId[branchFromId] == nil {
-            throw SessionManagerError.entryNotFound(branchFromId)
+        try state.withLock { st in
+            if let branchFromId, st.byId[branchFromId] == nil {
+                throw SessionManagerError.entryNotFound(branchFromId)
+            }
+            st.leafId = branchFromId
+            return commitEntryLocked(
+                &st,
+                .branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: branchFromId ?? "root", summary: summary, details: details, fromHook: fromHook)),
+                parent: .explicit(branchFromId)
+            )
         }
-        leafId = branchFromId
-        let entry = BranchSummaryEntry(id: generateId(existing: Set(byId.keys)), parentId: branchFromId, timestamp: isoNow(), fromId: branchFromId ?? "root", summary: summary, details: details, fromHook: fromHook)
-        appendEntry(.branchSummary(entry))
-        return entry.id
     }
 
     public func createBranchedSession(_ leafId: String) -> String? {
@@ -1184,107 +1189,151 @@ public final class SessionManager: Sendable {
             newEntries.append(.label(labelEntry))
             parentId = labelEntry.id
         }
-        entries = newEntries
-        rebuildIndex()
+        state.withLock { st in
+            st.entries = newEntries
+            rebuildIndexLocked(&st)
+        }
         return nil
     }
 
-    private func appendEntry(_ entry: SessionEntry) {
-        ensureSessionFile()
-        entries.append(entry)
-        byId[entry.id] = entry
-        leafId = entry.id
-        if entry.type == "label", case .label(let labelEntry) = entry {
-            labelsById[labelEntry.targetId] = labelEntry.label
-        }
-        if persist, let sessionFile {
-            // Defer writing the session file until we have at least one assistant message.
-            // This prevents creating empty/useless session files for abandoned prompts.
-            let isAssistant: Bool
-            if case .message(let msg) = entry, case .assistant = msg.message {
-                isAssistant = true
-            } else {
-                isAssistant = false
-            }
-            if isAssistant && !FileManager.default.fileExists(atPath: sessionFile) {
-                // First assistant message: flush the header and all buffered entries
-                if let header {
-                    appendLine(sessionFile, encodeSessionHeader(header))
-                }
-                for buffered in entries {
-                    appendLine(sessionFile, encodeSessionEntry(buffered))
-                }
-            } else if FileManager.default.fileExists(atPath: sessionFile) {
-                appendLine(sessionFile, encodeSessionEntry(entry))
-            }
-            // Otherwise (no file yet and not an assistant message): skip writing
-        }
+    /// How a committed entry's `parentId` is resolved inside the lock.
+    private enum ParentResolution: Sendable {
+        /// Chain onto the current leaf (the common case).
+        case leaf
+        /// Use an explicit parent id (branch operations).
+        case explicit(String?)
     }
 
-    /// Returns true when the entries contain at least one assistant message.
-    private func hasAssistantMessage() -> Bool {
-        entries.contains { entry in
-            if case .message(let msg) = entry, case .assistant = msg.message {
-                return true
-            }
-            return false
-        }
+    /// Commit an entry as a single atomic transaction.
+    ///
+    /// Id generation, parent linking, in-memory index updates, and the disk append all happen
+    /// under one lock. Doing this piecewise (the previous per-property-accessor approach) let
+    /// two concurrent callers — e.g. the agent-event callback persisting a message while the
+    /// user changes model/thinking level or a hook posts a message — read the same `leafId` and
+    /// commit siblings instead of a chain, silently dropping a branch from the resumed context.
+    @discardableResult
+    private func commitEntry(_ entry: SessionEntry, parent: ParentResolution = .leaf) -> String {
+        state.withLock { commitEntryLocked(&$0, entry, parent: parent) }
     }
 
-    private func ensureSessionFile() {
+    /// Locked core of `commitEntry`. Caller must already hold the state lock.
+    @discardableResult
+    private func commitEntryLocked(_ st: inout State, _ entry: SessionEntry, parent: ParentResolution) -> String {
+        ensureSessionFileLocked(&st)
+
+        var committed = entry
+        committed.id = generateId(existing: Set(st.byId.keys))
+        switch parent {
+        case .leaf:
+            committed.parentId = st.leafId
+        case .explicit(let parentId):
+            committed.parentId = parentId
+        }
+
+        st.entries.append(committed)
+        st.byId[committed.id] = committed
+        st.leafId = committed.id
+        if case .label(let labelEntry) = committed {
+            st.labelsById[labelEntry.targetId] = labelEntry.label
+        }
+
+        if persist, let sessionFile = st.sessionFile {
+            writeEntryLocked(&st, committed, sessionFile)
+        }
+        return committed.id
+    }
+
+    /// Persist a freshly-committed entry. Caller must already hold the state lock.
+    private func writeEntryLocked(_ st: inout State, _ entry: SessionEntry, _ sessionFile: String) {
+        // Defer writing the session file until we have at least one assistant message.
+        // This prevents creating empty/useless session files for abandoned prompts.
+        let isAssistant: Bool
+        if case .message(let msg) = entry, case .assistant = msg.message {
+            isAssistant = true
+        } else {
+            isAssistant = false
+        }
+        if isAssistant && !FileManager.default.fileExists(atPath: sessionFile) {
+            // First assistant message: flush the header and all buffered entries
+            if let header = st.header {
+                appendLine(sessionFile, encodeSessionHeader(header))
+            }
+            for buffered in st.entries {
+                appendLine(sessionFile, encodeSessionEntry(buffered))
+            }
+        } else if FileManager.default.fileExists(atPath: sessionFile) {
+            appendLine(sessionFile, encodeSessionEntry(entry))
+        }
+        // Otherwise (no file yet and not an assistant message): skip writing
+    }
+
+    /// Assign a deferred session file (not yet written to disk). Caller holds the state lock.
+    private func ensureSessionFileLocked(_ st: inout State) {
         guard persist else { return }
-        if sessionFile == nil {
-            let dir = defaultSessionDir(cwd: cwd, sessionDir: sessionDir.isEmpty ? nil : sessionDir)
-            let sessionId = self.sessionId
+        if st.sessionFile == nil {
+            let dir = defaultSessionDir(cwd: st.cwd, sessionDir: st.sessionDir.isEmpty ? nil : st.sessionDir)
             let timestamp = isoNow()
             let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
-            let newSessionFile = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(sessionId).jsonl").path
-            sessionFile = newSessionFile
-            header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: sessionId, timestamp: timestamp, cwd: cwd, parentSession: nil)
+            let newSessionFile = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(st.sessionId).jsonl").path
+            st.sessionFile = newSessionFile
+            st.header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: st.sessionId, timestamp: timestamp, cwd: st.cwd, parentSession: nil)
             // Don't write to disk yet — deferred until the first assistant message arrives.
         }
     }
 
     private func rewriteFile() {
-        guard persist, let sessionFile else { return }
+        guard persist else { return }
+        // Snapshot header + entries atomically, then write outside the lock (atomic replace).
+        let snapshot: (file: String, header: SessionHeader?, entries: [SessionEntry])? = state.withLock { st in
+            guard let file = st.sessionFile else { return nil }
+            return (file, st.header, st.entries)
+        }
+        guard let snapshot else { return }
         var lines: [String] = []
-        if let header {
+        if let header = snapshot.header {
             lines.append(encodeSessionHeader(header))
         }
-        for entry in entries {
+        for entry in snapshot.entries {
             lines.append(encodeSessionEntry(entry))
         }
         let content = lines.joined(separator: "\n") + "\n"
-        try? content.write(toFile: sessionFile, atomically: true, encoding: .utf8)
+        try? content.write(toFile: snapshot.file, atomically: true, encoding: .utf8)
     }
 
     private func loadFromFile(_ path: String) {
-        var entries = loadEntriesFromFile(path)
-        let migrated = migrateSessionEntries(&entries)
-        self.entries = entries.compactMap { entry -> SessionEntry? in
-            if case .entry(let entry) = entry { return entry }
-            return nil
+        var fileEntries = loadEntriesFromFile(path)
+        let migrated = migrateSessionEntries(&fileEntries)
+        state.withLock { st in
+            st.entries = fileEntries.compactMap { entry -> SessionEntry? in
+                if case .entry(let entry) = entry { return entry }
+                return nil
+            }
+            if let headerEntry = fileEntries.first, case .session(let header) = headerEntry {
+                st.header = header
+                st.sessionId = header.id
+            }
+            st.sessionFile = path
+            rebuildIndexLocked(&st)
         }
-        if let headerEntry = entries.first, case .session(let header) = headerEntry {
-            self.header = header
-            self.sessionId = header.id
-        }
-        self.sessionFile = path
-        rebuildIndex()
         if migrated {
             rewriteFile()
         }
     }
 
     private func rebuildIndex() {
-        byId = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
-        labelsById = [:]
-        for entry in entries {
+        state.withLock { rebuildIndexLocked(&$0) }
+    }
+
+    /// Rebuild `byId` / `labelsById` / `leafId` from `entries`. Caller holds the state lock.
+    private func rebuildIndexLocked(_ st: inout State) {
+        st.byId = Dictionary(uniqueKeysWithValues: st.entries.map { ($0.id, $0) })
+        st.labelsById = [:]
+        for entry in st.entries {
             if case .label(let label) = entry {
-                labelsById[label.targetId] = label.label
+                st.labelsById[label.targetId] = label.label
             }
         }
-        leafId = entries.last?.id
+        st.leafId = st.entries.last?.id
     }
 }
 

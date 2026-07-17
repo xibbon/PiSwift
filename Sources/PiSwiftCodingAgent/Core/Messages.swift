@@ -365,9 +365,21 @@ private func decodeCompactionSummaryMessage(_ custom: AgentCustomMessage) -> Com
 func contentBlockToDict(_ block: ContentBlock) -> [String: Any] {
     switch block {
     case .text(let text):
-        return ["type": "text", "text": text.text]
+        // `textSignature` carries provider reasoning-item references (OpenAI Responses
+        // item ids, Gemini thought signatures). Dropping it corrupts resume for those
+        // providers, so persist it whenever present.
+        var dict: [String: Any] = ["type": "text", "text": text.text]
+        if let signature = text.textSignature { dict["textSignature"] = signature }
+        return dict
     case .thinking(let thinking):
-        return ["type": "thinking", "thinking": thinking.thinking, "thinkingSignature": thinking.thinkingSignature as Any]
+        // `redacted` marks a `redacted_thinking` block whose `thinkingSignature` holds an
+        // opaque encrypted payload (NOT a normal thinking signature). Losing the flag on
+        // round-trip makes the outbound Anthropic path emit an invalid `thinking` block,
+        // so the whole resumed conversation is rejected. Persist it.
+        var dict: [String: Any] = ["type": "thinking", "thinking": thinking.thinking]
+        if let signature = thinking.thinkingSignature { dict["thinkingSignature"] = signature }
+        if let redacted = thinking.redacted { dict["redacted"] = redacted }
+        return dict
     case .image(let image):
         return ["type": "image", "data": image.data, "mimeType": image.mimeType]
     case .toolCall(let call):
@@ -379,11 +391,15 @@ public func contentBlockFromDict(_ dict: [String: Any]) -> ContentBlock? {
     guard let type = dict["type"] as? String else { return nil }
     switch type {
     case "text":
-        return .text(TextContent(text: dict["text"] as? String ?? ""))
+        return .text(TextContent(
+            text: dict["text"] as? String ?? "",
+            textSignature: dict["textSignature"] as? String
+        ))
     case "thinking":
         return .thinking(ThinkingContent(
             thinking: dict["thinking"] as? String ?? "",
-            thinkingSignature: dict["thinkingSignature"] as? String
+            thinkingSignature: dict["thinkingSignature"] as? String,
+            redacted: dict["redacted"] as? Bool
         ))
     case "image":
         guard let data = dict["data"] as? String else { return nil }

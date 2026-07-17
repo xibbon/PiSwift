@@ -454,6 +454,7 @@ private struct ProxyContentBlockPayload: Encodable {
             try container.encode("thinking", forKey: .type)
             try container.encode(thinking.thinking, forKey: .thinking)
             try container.encodeIfPresent(thinking.thinkingSignature, forKey: .thinkingSignature)
+            try container.encodeIfPresent(thinking.redacted, forKey: .redacted)
         case .image(let image):
             try container.encode("image", forKey: .type)
             try container.encode(image.data, forKey: .data)
@@ -472,6 +473,7 @@ private struct ProxyContentBlockPayload: Encodable {
         case textSignature
         case thinking
         case thinkingSignature
+        case redacted
         case data
         case mimeType
         case id
