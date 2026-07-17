@@ -292,7 +292,7 @@ public func streamBedrock(
                     if options.signal?.isCancelled == true {
                         throw BedrockStreamError.aborted
                     }
-                    if attempt < retryLimit, isRetryableBedrockTransportError(error) {
+                    if attempt < retryLimit, isRetryableTransportError(error) {
                         attempt += 1
                         output.content = []
                         output.usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
@@ -1139,20 +1139,6 @@ private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
     throw BedrockStreamError.missingCredentials
 }
 
-private func isRetryableBedrockTransportError(_ error: Error) -> Bool {
-    let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
-    return text.contains("http2 request did not get a response") ||
-        text.contains("http/2 request did not get a response") ||
-        text.contains("http2") && text.contains("did not get a response") ||
-        text.contains("resourceexhausted") ||
-        text.contains("network connection was lost") ||
-        text.contains("socket connection was closed") ||
-        text.contains("socket is not connected") ||
-        text.contains("you can retry your request") ||
-        text.contains("try your request again") ||
-        text.contains("please retry your request")
-}
-
 private func formatBedrockHTTPError(statusCode: Int, body: String) -> String {
     let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
     let message = trimmed.isEmpty ? "HTTP \(statusCode)" : trimmed
@@ -1466,6 +1452,6 @@ private func errorMessage(for error: Error) -> String {
     case BedrockStreamError.serverError(let message):
         return message
     default:
-        return error.localizedDescription
+        return retryAwareErrorDescription(error)
     }
 }

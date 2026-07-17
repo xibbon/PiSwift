@@ -352,7 +352,7 @@ public func streamAnthropic(
                 logAnthropicDebug("anthropic errorDescription=\(error.localizedDescription)")
             }
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
-            output.errorMessage = error.localizedDescription
+            output.errorMessage = retryAwareErrorDescription(error)
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }

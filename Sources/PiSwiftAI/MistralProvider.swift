@@ -282,7 +282,7 @@ private func formatMistralError(_ error: Error) -> String {
     if let mistralError = error as? MistralStreamError {
         return mistralError.errorDescription ?? "\(mistralError)"
     }
-    return error.localizedDescription
+    return retryAwareErrorDescription(error)
 }
 
 private func truncateMistralErrorText(_ text: String, maxChars: Int) -> String {
@@ -652,7 +652,7 @@ private func fetchMistralStream(request: URLRequest, options: MistralOptions) as
             if options.signal?.isCancelled == true {
                 throw MistralStreamError.aborted
             }
-            if attempt < retryLimit, isRetryableMistralTransportError(error) {
+            if attempt < retryLimit, isRetryableTransportError(error) {
                 attempt += 1
                 continue
             }
@@ -663,29 +663,6 @@ private func fetchMistralStream(request: URLRequest, options: MistralOptions) as
 
 private func isRetryableMistralStatus(_ statusCode: Int) -> Bool {
     statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504 || statusCode == 524
-}
-
-private func isRetryableMistralTransportError(_ error: Error) -> Bool {
-    let nsError = error as NSError
-    if nsError.domain == NSURLErrorDomain {
-        switch URLError.Code(rawValue: nsError.code) {
-        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed, .notConnectedToInternet:
-            return true
-        default:
-            break
-        }
-    }
-    let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
-    return text.contains("timed out") ||
-        text.contains("network connection was lost") ||
-        text.contains("socket connection was closed") ||
-        text.contains("socket is not connected") ||
-        text.contains("connection reset") ||
-        text.contains("temporarily unavailable") ||
-        text.contains("resourceexhausted") ||
-        text.contains("you can retry your request") ||
-        text.contains("try your request again") ||
-        text.contains("please retry your request")
 }
 
 /// Maps `SimpleStreamOptions` onto `MistralOptions`, applying Mistral's reasoning conventions.

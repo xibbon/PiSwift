@@ -25,7 +25,7 @@ public func streamOpenAI(
                 model: model.id,
                 usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
                 stopReason: .error,
-                errorMessage: error.localizedDescription
+                errorMessage: retryAwareErrorDescription(error)
             )
             stream.push(.error(reason: .error, error: message))
             stream.end()

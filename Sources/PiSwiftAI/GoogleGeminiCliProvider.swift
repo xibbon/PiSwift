@@ -397,7 +397,7 @@ public func streamGoogleGeminiCli(
             stream.end()
         } catch {
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
-            output.errorMessage = error.localizedDescription
+            output.errorMessage = retryAwareErrorDescription(error)
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }
@@ -725,7 +725,7 @@ private func isRetryableError(status: Int, errorText: String) -> Bool {
     if status == 429 || status == 500 || status == 502 || status == 503 || status == 504 || status == 524 {
         return true
     }
-    let pattern = "resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed|socket connection was closed|socket is not connected|you can retry your request|try your request again|please retry your request"
+    let pattern = "resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed|socket connection was closed|you can retry your request|try your request again|please retry your request"
     return errorText.range(of: pattern, options: .regularExpression) != nil
 }
 

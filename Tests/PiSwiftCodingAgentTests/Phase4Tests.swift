@@ -388,9 +388,7 @@ import PiSwiftAI
     )
     // Not a context overflow.
     #expect(!isContextOverflow(msg))
-    // Should match the new retry pattern (verified via the regex; we don't have direct access
-    // to AgentSession.isRetryableError from tests, so this just confirms the pattern is
-    // present in the overflow set).
+    #expect(isRetryableAssistantError(msg))
 }
 
 // MARK: - Phase 4 H4 — RPC SessionStats.contextUsage (v0.70.0)

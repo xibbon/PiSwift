@@ -44,5 +44,5 @@ func describeOpenAIError(_ error: Error) -> String {
         }
     }
 
-    return error.localizedDescription
+    return retryAwareErrorDescription(error)
 }

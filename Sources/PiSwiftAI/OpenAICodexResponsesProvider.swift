@@ -360,7 +360,7 @@ public func streamOpenAICodexResponses(
             stream.end()
         } catch {
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
-            output.errorMessage = error.localizedDescription
+            output.errorMessage = retryAwareErrorDescription(error)
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }
