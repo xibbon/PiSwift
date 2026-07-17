@@ -142,6 +142,15 @@ function enumValue(type, value) {
   if (type === "cacheControlFormat") {
     return ".anthropic";
   }
+  if (type === "deferredToolsMode") {
+    if (value !== "kimi") throw new Error(`Unknown deferredToolsMode: ${value}`);
+    return ".kimi";
+  }
+  if (type === "sessionAffinityFormat") {
+    const cases = { "openai": "openai", "openai-nosession": "openaiNosession", "openrouter": "openrouter" };
+    if (!cases[value]) throw new Error(`Unknown sessionAffinityFormat: ${value}`);
+    return `.${cases[value]}`;
+  }
   throw new Error(`Unknown enum field: ${type}`);
 }
 
@@ -224,6 +233,11 @@ function compatLiteral(compat) {
     ["supportsCacheControlOnTools", compat.supportsCacheControlOnTools, "bool"],
     ["forceAdaptiveThinking", compat.forceAdaptiveThinking, "bool"],
     ["zaiToolStream", compat.zaiToolStream, "bool"],
+    ["allowEmptySignature", compat.allowEmptySignature, "bool"],
+    ["deferredToolsMode", compat.deferredToolsMode, "deferredToolsMode"],
+    ["sessionAffinityFormat", compat.sessionAffinityFormat, "sessionAffinityFormat"],
+    ["supportsToolSearch", compat.supportsToolSearch, "bool"],
+    ["supportsToolReferences", compat.supportsToolReferences, "bool"],
   ];
   const rendered = fields.flatMap(([label, value, kind]) => {
     if (value === undefined) return [];

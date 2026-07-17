@@ -322,7 +322,9 @@ private func normalizeVercelGatewayRouting(_ routing: VercelGatewayRouting?) -> 
 private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
     guard let compat else { return nil }
     return optionalFields([
+        ("allowEmptySignature", compat.allowEmptySignature),
         ("cacheControlFormat", compat.cacheControlFormat?.rawValue),
+        ("deferredToolsMode", compat.deferredToolsMode?.rawValue),
         ("forceAdaptiveThinking", compat.forceAdaptiveThinking),
         ("maxTokensField", compat.maxTokensField?.rawValue),
         ("openRouterRouting", normalizeOpenRouterRouting(compat.openRouterRouting)),
@@ -334,6 +336,7 @@ private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
         ("requiresToolResultName", compat.requiresToolResultName),
         ("sendSessionAffinityHeaders", compat.sendSessionAffinityHeaders),
         ("sendSessionIdHeader", compat.sendSessionIdHeader),
+        ("sessionAffinityFormat", compat.sessionAffinityFormat?.rawValue),
         ("supportsCacheControlOnTools", compat.supportsCacheControlOnTools),
         ("supportsDeveloperRole", compat.supportsDeveloperRole),
         ("supportsEagerToolInputStreaming", compat.supportsEagerToolInputStreaming),
@@ -342,6 +345,8 @@ private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
         ("supportsStore", compat.supportsStore),
         ("supportsStrictMode", compat.supportsStrictMode),
         ("supportsTemperature", compat.supportsTemperature),
+        ("supportsToolReferences", compat.supportsToolReferences),
+        ("supportsToolSearch", compat.supportsToolSearch),
         ("supportsUsageInStreaming", compat.supportsUsageInStreaming),
         ("thinkingFormat", compat.thinkingFormat?.rawValue),
         ("vercelGatewayRouting", normalizeVercelGatewayRouting(compat.vercelGatewayRouting)),
@@ -941,12 +946,13 @@ private func runCodexSessionRequest(
 }
 
 @Test func openAICodexSessionIdForwarding() async throws {
-    let sessionId = "test-session-123"
+    let sessionId = String(repeating: "session-", count: 10)
+    let expectedSessionId = String(sessionId.prefix(OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH))
     let capture = try await runCodexSessionRequest(sessionId: sessionId)
-    #expect(capture.conversationId == sessionId)
-    #expect(capture.sessionId == sessionId)
-    #expect(capture.xClientRequestId == sessionId)
-    #expect(capture.promptCacheKey == sessionId)
+    #expect(capture.conversationId == expectedSessionId)
+    #expect(capture.sessionId == expectedSessionId)
+    #expect(capture.xClientRequestId == expectedSessionId)
+    #expect(capture.promptCacheKey == expectedSessionId)
 }
 
 @Test func openAICodexNoSessionId() async throws {
@@ -1637,11 +1643,20 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     request.httpMethod = "POST"
     request.httpBody = body
 
-    let middleware = OpenAIResponsesCacheMiddleware(sessionId: "session-123", cacheRetention: .long, promptCacheRetention: "24h", sendSessionIdHeader: true)
+    let sessionId = String(repeating: "a", count: 70)
+    let middleware = OpenAIResponsesCacheMiddleware(
+        sessionId: sessionId,
+        cacheRetention: .long,
+        promptCacheRetention: "24h",
+        sessionAffinityFormat: .openai
+    )
     let updated = middleware.intercept(request: request)
-    let updatedBody = updated.httpBody.flatMap { String(data: $0, encoding: .utf8) }
-    #expect(updatedBody?.contains("\"prompt_cache_key\":\"session-123\"") == true)
-    #expect(updatedBody?.contains("\"prompt_cache_retention\":\"24h\"") == true)
+    let updatedBody = try #require(updated.httpBody)
+    let updatedPayload = try #require(try JSONSerialization.jsonObject(with: updatedBody) as? [String: Any])
+    #expect(updatedPayload["prompt_cache_key"] as? String == String(repeating: "a", count: 64))
+    #expect(updatedPayload["prompt_cache_retention"] as? String == "24h")
+    #expect(updated.value(forHTTPHeaderField: "session_id") == sessionId)
+    #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == sessionId)
 }
 
 @Test func openAIResponsesCacheMiddlewareDisabled() async throws {
@@ -1654,7 +1669,12 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     request.httpMethod = "POST"
     request.httpBody = body
 
-    let middleware = OpenAIResponsesCacheMiddleware(sessionId: "session-123", cacheRetention: .none, promptCacheRetention: nil, sendSessionIdHeader: true)
+    let middleware = OpenAIResponsesCacheMiddleware(
+        sessionId: "session-123",
+        cacheRetention: .none,
+        promptCacheRetention: nil,
+        sessionAffinityFormat: .openai
+    )
     let updated = middleware.intercept(request: request)
     let updatedBody = updated.httpBody.flatMap { String(data: $0, encoding: .utf8) }
     #expect(updatedBody?.contains("\"prompt_cache_key\"") == false)
@@ -1910,24 +1930,51 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 
 @Test func openAICompletionsSessionAffinityHeaders() {
     let request = URLRequest(url: URL(string: "https://proxy.example.com/v1/chat/completions")!)
+    let sessionId = "session-xyz"
 
-    let updated = applyOpenAICompletionsSessionAffinityHeaders(
+    let openAI = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
-        sessionId: "session-xyz",
-        sendSessionAffinityHeaders: true
+        sessionId: sessionId,
+        sendSessionAffinityHeaders: true,
+        sessionAffinityFormat: .openai
     )
-    #expect(updated.value(forHTTPHeaderField: "session_id") == "session-xyz")
-    #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
-    #expect(updated.value(forHTTPHeaderField: "x-session-affinity") == "session-xyz")
+    #expect(openAI.value(forHTTPHeaderField: "session_id") == sessionId)
+    #expect(openAI.value(forHTTPHeaderField: "x-client-request-id") == sessionId)
+    #expect(openAI.value(forHTTPHeaderField: "x-session-affinity") == sessionId)
+    #expect(openAI.value(forHTTPHeaderField: "x-session-id") == nil)
+
+    let openAINosession = applyOpenAICompletionsSessionAffinityHeaders(
+        request: request,
+        sessionId: sessionId,
+        sendSessionAffinityHeaders: true,
+        sessionAffinityFormat: .openaiNosession
+    )
+    #expect(openAINosession.value(forHTTPHeaderField: "session_id") == nil)
+    #expect(openAINosession.value(forHTTPHeaderField: "x-client-request-id") == sessionId)
+    #expect(openAINosession.value(forHTTPHeaderField: "x-session-affinity") == sessionId)
+    #expect(openAINosession.value(forHTTPHeaderField: "x-session-id") == nil)
+
+    let openRouter = applyOpenAICompletionsSessionAffinityHeaders(
+        request: request,
+        sessionId: sessionId,
+        sendSessionAffinityHeaders: true,
+        sessionAffinityFormat: .openrouter
+    )
+    #expect(openRouter.value(forHTTPHeaderField: "x-session-id") == sessionId)
+    #expect(openRouter.value(forHTTPHeaderField: "session_id") == nil)
+    #expect(openRouter.value(forHTTPHeaderField: "x-client-request-id") == nil)
+    #expect(openRouter.value(forHTTPHeaderField: "x-session-affinity") == nil)
 
     let omitted = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
-        sessionId: "session-xyz",
-        sendSessionAffinityHeaders: false
+        sessionId: sessionId,
+        sendSessionAffinityHeaders: false,
+        sessionAffinityFormat: .openai
     )
     #expect(omitted.value(forHTTPHeaderField: "session_id") == nil)
     #expect(omitted.value(forHTTPHeaderField: "x-client-request-id") == nil)
     #expect(omitted.value(forHTTPHeaderField: "x-session-affinity") == nil)
+    #expect(omitted.value(forHTTPHeaderField: "x-session-id") == nil)
 }
 
 @Test func openAICompletionsPromptCacheFields() throws {
@@ -3856,12 +3903,13 @@ struct OAuthTests {
 
     @Test func oauthProviderListReturnsAllProviders() {
         let providers = getOAuthProviders()
-        #expect(providers.count == 3)
+        #expect(providers.count == 4)
 
         let ids = providers.map { $0.id }
         #expect(ids.contains(.anthropic))
         #expect(ids.contains(.openAICodex))
         #expect(ids.contains(.githubCopilot))
+        #expect(ids.contains(.xai))
         #expect(!ids.contains(.googleGeminiCli))
         #expect(!ids.contains(.googleAntigravity))
     }
@@ -3989,6 +4037,125 @@ struct OAuthTests {
             #expect(credentials.access.contains("proxy-ep=proxy.individual.githubcopilot.com"))
             #expect(credentials.enterpriseUrl == nil)
         }
+    }
+
+    @Test func xaiLoginDeviceFlowPollsAndReturnsBearerApiKey() async throws {
+        try await codexRequestLock.withLock {
+            let tokenPollCount = LockedState(0)
+            let authInfo = LockedState<OAuthAuthInfo?>(nil)
+
+            MockURLProtocol.allowedHosts.withLock { $0 = ["auth.x.ai"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                let url = try #require(request.url)
+                #expect(request.httpMethod == "POST")
+                #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+                #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/x-www-form-urlencoded")
+
+                let form = String(data: try #require(readRequestBody(request)), encoding: .utf8) ?? ""
+                let queryItems = URLComponents(string: "?\(form)")?.queryItems ?? []
+                let fields = Dictionary(uniqueKeysWithValues: queryItems.compactMap { item in
+                    item.value.map { (item.name, $0) }
+                })
+                #expect(fields["client_id"] == "b1a00492-073a-47ea-816f-4c329264a828")
+
+                switch url.path {
+                case "/oauth2/device/code":
+                    #expect(fields["scope"] == "openid profile email offline_access grok-cli:access api:access")
+                    #expect(fields["referrer"] == "pi")
+                    let response = HTTPURLResponse(
+                        url: url,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["content-type": "application/json"]
+                    )!
+                    return (response, Data("""
+                    {"device_code":"xai-device-123","user_code":"GROK-CODE","verification_uri":"https://auth.x.ai/device","verification_uri_complete":"https://auth.x.ai/device?user_code=GROK-CODE","interval":1,"expires_in":60}
+                    """.utf8))
+                case "/oauth2/token":
+                    #expect(fields["grant_type"] == "urn:ietf:params:oauth:grant-type:device_code")
+                    #expect(fields["device_code"] == "xai-device-123")
+                    let poll = tokenPollCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    let response = HTTPURLResponse(
+                        url: url,
+                        statusCode: poll == 1 ? 400 : 200,
+                        httpVersion: nil,
+                        headerFields: ["content-type": "application/json"]
+                    )!
+                    if poll == 1 {
+                        return (response, Data(#"{"error":"authorization_pending"}"#.utf8))
+                    }
+                    return (response, Data(#"{"access_token":"xai-access-token","refresh_token":"xai-refresh-token","expires_in":3600}"#.utf8))
+                default:
+                    throw URLError(.badURL)
+                }
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let credentials = try await loginXai(OAuthLoginCallbacks(
+                onAuth: { info in authInfo.withLock { $0 = info } },
+                onPrompt: { _ in "" }
+            ))
+
+            #expect(tokenPollCount.withLock { $0 } == 2)
+            #expect(authInfo.withLock { $0?.url } == "https://auth.x.ai/device?user_code=GROK-CODE")
+            #expect(authInfo.withLock { $0?.instructions } == "Enter code: GROK-CODE")
+            #expect(credentials.access == "xai-access-token")
+            #expect(credentials.refresh == "xai-refresh-token")
+            #expect(credentials.expires > Date().timeIntervalSince1970 * 1000)
+            #expect(try oauthApiKey(provider: .xai, credentials: credentials) == "xai-access-token")
+        }
+    }
+
+    @Test func refreshXaiTokenPreservesUnrotatedRefreshToken() async throws {
+        try await codexRequestLock.withLock {
+            MockURLProtocol.allowedHosts.withLock { $0 = ["auth.x.ai"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                let url = try #require(request.url)
+                #expect(url.path == "/oauth2/token")
+                let form = String(data: try #require(readRequestBody(request)), encoding: .utf8) ?? ""
+                let queryItems = URLComponents(string: "?\(form)")?.queryItems ?? []
+                let fields = Dictionary(uniqueKeysWithValues: queryItems.compactMap { item in
+                    item.value.map { (item.name, $0) }
+                })
+                #expect(fields["grant_type"] == "refresh_token")
+                #expect(fields["refresh_token"] == "old-refresh-token")
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/json"]
+                )!
+                return (response, Data(#"{"access_token":"new-xai-access","expires_in":3600}"#.utf8))
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let credentials = try await refreshXaiToken("old-refresh-token")
+            #expect(credentials.access == "new-xai-access")
+            #expect(credentials.refresh == "old-refresh-token")
+            #expect(credentials.expires > Date().timeIntervalSince1970 * 1000)
+        }
+    }
+
+    @Test func grok45UsesXaiResponsesRoutingAndReasoningEffort() throws {
+        let model = try #require(getModel(provider: "xai", modelId: "grok-4.5"))
+        #expect(model.api == .openAIResponses)
+        #expect(model.baseUrl == "https://api.x.ai/v1")
+        #expect(mapResponsesReasoningEffort(model: model, requested: .low)?.rawValue == "low")
+        #expect(mapResponsesReasoningEffort(model: model, requested: .medium)?.rawValue == "medium")
+        #expect(mapResponsesReasoningEffort(model: model, requested: .high)?.rawValue == "high")
     }
 
     @Test func oauthCredentialsEncoding() throws {
@@ -5221,9 +5388,7 @@ struct ApiRegistryTests {
     }
 }
 
-/// v0.67.6: OpenAI Responses cache middleware sends aligned `session_id` and `x-client-request-id`
-/// headers when sessionId is provided. v0.70.0 lets `compat.sendSessionIdHeader: false` opt out
-/// of just the `session_id` header (other affinity headers still flow).
+/// OpenAI Responses cache middleware uses the configured session-affinity header format.
 @Test func openAIResponsesCacheMiddlewareSendsAffinityHeaders() throws {
     let payload: [String: Any] = ["model": "gpt-4o-mini", "input": []]
     let body = try JSONSerialization.data(withJSONObject: payload)
@@ -5235,11 +5400,12 @@ struct ApiRegistryTests {
         sessionId: "session-xyz",
         cacheRetention: .none,
         promptCacheRetention: nil,
-        sendSessionIdHeader: true
+        sessionAffinityFormat: .openai
     )
     let updated = middleware.intercept(request: request)
     #expect(updated.value(forHTTPHeaderField: "session_id") == "session-xyz")
     #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+    #expect(updated.value(forHTTPHeaderField: "x-session-affinity") == nil)
 }
 
 @Test func openAIResponsesCacheMiddlewareCanOmitSessionIdHeader() throws {
@@ -5249,17 +5415,38 @@ struct ApiRegistryTests {
     request.httpMethod = "POST"
     request.httpBody = body
 
-    // sendSessionIdHeader: false (strict OpenAI-compatible proxies that reject session_id)
-    let middleware = OpenAIResponsesCacheMiddleware(
+    let openAI = OpenAIResponsesCacheMiddleware(
         sessionId: "session-xyz",
         cacheRetention: .none,
         promptCacheRetention: nil,
-        sendSessionIdHeader: false
-    )
-    let updated = middleware.intercept(request: request)
-    #expect(updated.value(forHTTPHeaderField: "session_id") == nil)
-    // x-client-request-id still flows even when session_id is suppressed.
-    #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+        sessionAffinityFormat: .openai
+    ).intercept(request: request)
+    #expect(openAI.value(forHTTPHeaderField: "session_id") == "session-xyz")
+    #expect(openAI.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+    #expect(openAI.value(forHTTPHeaderField: "x-session-id") == nil)
+    #expect(openAI.value(forHTTPHeaderField: "x-session-affinity") == nil)
+
+    let openAINosession = OpenAIResponsesCacheMiddleware(
+        sessionId: "session-xyz",
+        cacheRetention: .none,
+        promptCacheRetention: nil,
+        sessionAffinityFormat: .openaiNosession
+    ).intercept(request: request)
+    #expect(openAINosession.value(forHTTPHeaderField: "session_id") == nil)
+    #expect(openAINosession.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
+    #expect(openAINosession.value(forHTTPHeaderField: "x-session-id") == nil)
+    #expect(openAINosession.value(forHTTPHeaderField: "x-session-affinity") == nil)
+
+    let openRouter = OpenAIResponsesCacheMiddleware(
+        sessionId: "session-xyz",
+        cacheRetention: .none,
+        promptCacheRetention: nil,
+        sessionAffinityFormat: .openrouter
+    ).intercept(request: request)
+    #expect(openRouter.value(forHTTPHeaderField: "x-session-id") == "session-xyz")
+    #expect(openRouter.value(forHTTPHeaderField: "session_id") == nil)
+    #expect(openRouter.value(forHTTPHeaderField: "x-client-request-id") == nil)
+    #expect(openRouter.value(forHTTPHeaderField: "x-session-affinity") == nil)
 }
 
 /// v0.70.0 / v0.68.0: new compat flags are exposed and round-trip through OpenAICompat.
@@ -5431,6 +5618,68 @@ struct ApiRegistryTests {
     }
 }
 
+@Test func resolveCloudflareModelMaterializesEndpointPlaceholders() {
+    func makeModel(provider: Provider, baseUrl: String) -> PiSwiftAI.Model {
+        PiSwiftAI.Model(
+            id: "test-model",
+            name: "Test Model",
+            api: .openAICompletions,
+            provider: provider,
+            baseUrl: baseUrl,
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 1, output: 2, cacheRead: 0.5, cacheWrite: 0.25),
+            contextWindow: 128_000,
+            maxTokens: 4_096,
+            headers: ["X-Test": "value"]
+        )
+    }
+
+    let workersPlaceholder = "{CLOUDFLARE_ACCOUNT_ID}"
+    let workers = makeModel(
+        provider: "cloudflare-workers-ai",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/\(workersPlaceholder)/ai/run"
+    )
+    let resolvedWorkers = resolveCloudflareModel(
+        workers,
+        env: ["CLOUDFLARE_ACCOUNT_ID": "acct123"]
+    )
+    #expect(resolvedWorkers.baseUrl.contains("acct123"))
+    #expect(!resolvedWorkers.baseUrl.contains(workersPlaceholder))
+
+    let gatewayPlaceholder = "{CLOUDFLARE_GATEWAY_ID}"
+    let gateway = makeModel(
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/\(workersPlaceholder)/\(gatewayPlaceholder)/compat"
+    )
+    let resolvedGateway = resolveCloudflareModel(
+        gateway,
+        env: [
+            "CLOUDFLARE_ACCOUNT_ID": "acct456",
+            "CLOUDFLARE_GATEWAY_ID": "gateway789",
+        ]
+    )
+    #expect(resolvedGateway.baseUrl == "https://gateway.ai.cloudflare.com/v1/acct456/gateway789/compat")
+
+    let partiallyResolvedGateway = resolveCloudflareModel(
+        gateway,
+        env: ["CLOUDFLARE_ACCOUNT_ID": "acct456"]
+    )
+    #expect(partiallyResolvedGateway.baseUrl.contains(gatewayPlaceholder))
+
+    let nonCloudflare = makeModel(
+        provider: "openai",
+        baseUrl: "https://example.com/\(workersPlaceholder)"
+    )
+    let unchanged = resolveCloudflareModel(
+        nonCloudflare,
+        env: ["CLOUDFLARE_ACCOUNT_ID": "must-not-be-used"]
+    )
+    #expect(unchanged.baseUrl == nonCloudflare.baseUrl)
+    #expect(unchanged.provider == nonCloudflare.provider)
+    #expect(unchanged.id == nonCloudflare.id)
+}
+
 @Test func generatedTextCatalogMatchesUpstreamMetadata() throws {
     let upstream = try loadJSONResource("upstream-models.generated")
     #expect(Set(ModelsData.keys) == Set(upstream.keys))
@@ -5459,8 +5708,8 @@ struct ApiRegistryTests {
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
     #expect(getProviders().count == 35)
-    #expect(allModels.count == 1057)
-    #expect(compared == 1057)
+    #expect(allModels.count == 1072)
+    #expect(compared == 1072)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))

@@ -795,6 +795,7 @@ private func finalizeExecutedToolCall(
                 result = AgentToolResult(
                     content: afterResult.content ?? result.content,
                     details: afterResult.details ?? result.details,
+                    addedToolNames: result.addedToolNames,
                     terminate: afterResult.terminate ?? result.terminate
                 )
                 isError = afterResult.isError ?? isError
@@ -863,6 +864,7 @@ private func emitToolResultMessage(
         toolName: toolCall.name,
         content: result.content,
         details: result.details,
+        addedToolNames: result.addedToolNames,
         isError: isError
     )
 

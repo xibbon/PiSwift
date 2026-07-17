@@ -146,12 +146,13 @@ public func streamAzureOpenAIResponses(
 
             let deploymentName = resolveDeploymentName(model: model, options: options)
             let azureConfig = try resolveAzureConfig(model: model, options: options)
+            let isOpenRouter = model.provider == "openrouter" || model.baseUrl.contains("openrouter.ai")
 
             let cacheMiddleware = OpenAIResponsesCacheMiddleware(
                 sessionId: options.sessionId,
                 cacheRetention: .none,
                 promptCacheRetention: nil,
-                sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true
+                sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai)
             )
             let azureMiddleware = AzureOpenAIResponsesMiddleware(
                 apiKey: apiKey,

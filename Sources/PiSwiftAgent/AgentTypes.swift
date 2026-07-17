@@ -188,11 +188,18 @@ public enum AgentMessage: Sendable {
 public struct AgentToolResult: Sendable {
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    public var addedToolNames: [String]?
     public var terminate: Bool?
 
-    public init(content: [ContentBlock], details: AnyCodable? = nil, terminate: Bool? = nil) {
+    public init(
+        content: [ContentBlock],
+        details: AnyCodable? = nil,
+        addedToolNames: [String]? = nil,
+        terminate: Bool? = nil
+    ) {
         self.content = content
         self.details = details
+        self.addedToolNames = addedToolNames
         self.terminate = terminate
     }
 }

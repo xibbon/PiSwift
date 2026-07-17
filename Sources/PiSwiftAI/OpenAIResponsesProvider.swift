@@ -41,29 +41,27 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let sessionId: String?
     let cacheRetention: CacheRetention
     let promptCacheRetention: String?
-    /// v0.70.0 / v0.67.6: when false, omit the underscore-containing `session_id` HTTP header
-    /// (some strict OpenAI-compatible proxies reject it). Other affinity headers still flow.
-    /// Default `true` matches official Codex CLI behavior.
-    let sendSessionIdHeader: Bool
+    let sessionAffinityFormat: SessionAffinityFormat
 
     func intercept(request: URLRequest) -> URLRequest {
         var updated = request
 
-        // v0.67.2 / v0.67.6: send aligned `session_id` and `x-client-request-id` headers
-        // unconditionally when sessionId is provided. This improves prompt cache affinity
-        // for non-`api.openai.com` base URLs (litellm, theclawbay, etc.).
         if let sessionId, !sessionId.isEmpty {
-            if sendSessionIdHeader {
-                updated.setValue(sessionId, forHTTPHeaderField: "session_id")
+            if sessionAffinityFormat == .openrouter {
+                updated.setValue(sessionId, forHTTPHeaderField: "x-session-id")
+            } else {
+                if sessionAffinityFormat == .openai {
+                    updated.setValue(sessionId, forHTTPHeaderField: "session_id")
+                }
+                updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
             }
-            updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
         }
 
         guard let body = readRequestBody(request) else { return updated }
         guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return updated }
 
         if cacheRetention != .none, let sessionId, !sessionId.isEmpty {
-            payload["prompt_cache_key"] = sessionId
+            payload["prompt_cache_key"] = clampOpenAIPromptCacheKey(sessionId)
         } else {
             payload.removeValue(forKey: "prompt_cache_key")
         }
@@ -217,11 +215,12 @@ public func streamOpenAIResponses(
         do {
             let cacheRetention = resolveCacheRetention(options.cacheRetention)
             let promptCacheRetention = getPromptCacheRetention(baseUrl: model.baseUrl, cacheRetention: cacheRetention, compat: model.compat)
+            let isOpenRouter = model.provider == "openrouter" || model.baseUrl.contains("openrouter.ai")
             let middleware = OpenAIResponsesCacheMiddleware(
                 sessionId: options.sessionId,
                 cacheRetention: cacheRetention,
                 promptCacheRetention: promptCacheRetention,
-                sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true
+                sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai)
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(

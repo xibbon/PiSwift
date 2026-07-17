@@ -30,10 +30,11 @@ public func streamOpenAICodexResponses(
                 }
             }
             let baseHeaders = try buildOpenAICodexHeaders(baseHeaders: mergedHeaders, accessToken: apiKey)
+            let codexSessionId = clampOpenAIPromptCacheKey(options.sessionId)
             let headers = buildCodexHeaders(
                 baseHeaders: baseHeaders,
                 accessToken: apiKey,
-                sessionId: options.sessionId
+                sessionId: codexSessionId
             )
 
             var body: [String: Any] = [
@@ -42,8 +43,8 @@ public func streamOpenAICodexResponses(
                 "stream": true,
             ]
 
-            if let sessionId = options.sessionId, !sessionId.isEmpty {
-                body["prompt_cache_key"] = sessionId
+            if let codexSessionId, !codexSessionId.isEmpty {
+                body["prompt_cache_key"] = codexSessionId
             }
 
             if let serviceTier = options.serviceTier {

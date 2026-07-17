@@ -960,6 +960,45 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         maxTokens: 128000,
         thinkingLevelMap: [.xhigh: "xhigh"]
     ),
+    "openai.gpt-5.6-luna": Model(
+        id: "openai.gpt-5.6-luna",
+        name: "GPT-5.6 Luna",
+        api: .bedrockConverseStream,
+        provider: "amazon-bedrock",
+        baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25),
+        contextWindow: 272000,
+        maxTokens: 128000,
+        thinkingLevelMap: [.xhigh: "xhigh"]
+    ),
+    "openai.gpt-5.6-sol": Model(
+        id: "openai.gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        api: .bedrockConverseStream,
+        provider: "amazon-bedrock",
+        baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25),
+        contextWindow: 272000,
+        maxTokens: 128000,
+        thinkingLevelMap: [.xhigh: "xhigh"]
+    ),
+    "openai.gpt-5.6-terra": Model(
+        id: "openai.gpt-5.6-terra",
+        name: "GPT-5.6 Terra",
+        api: .bedrockConverseStream,
+        provider: "amazon-bedrock",
+        baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125),
+        contextWindow: 272000,
+        maxTokens: 128000,
+        thinkingLevelMap: [.xhigh: "xhigh"]
+    ),
     "openai.gpt-oss-120b": Model(
         id: "openai.gpt-oss-120b",
         name: "gpt-oss-120b",
@@ -1242,6 +1281,9 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         maxTokens: 128000,
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"]
     ),
+]
+
+private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
     "us.deepseek.r1-v1:0": Model(
         id: "us.deepseek.r1-v1:0",
         name: "DeepSeek-R1 (US)",
@@ -1278,9 +1320,6 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         contextWindow: 3500000,
         maxTokens: 16384
     ),
-]
-
-private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
     "writer.palmyra-x4-v1:0": Model(
         id: "writer.palmyra-x4-v1:0",
         name: "Palmyra X4",
@@ -2053,6 +2092,18 @@ private let providerModels_azure_openai_responses: [String: Model] = [
         maxTokens: 128000,
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
     ),
+    "gpt-realtime-2.1": Model(
+        id: "gpt-realtime-2.1",
+        name: "GPT-Realtime-2.1",
+        api: .azureOpenAIResponses,
+        provider: "azure-openai-responses",
+        baseUrl: "",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 4, output: 24, cacheRead: 0.4, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 32000
+    ),
     "o1": Model(
         id: "o1",
         name: "o1",
@@ -2186,7 +2237,7 @@ private let providerModels_cerebras: [String: Model] = [
         baseUrl: "https://api.cerebras.ai/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 2.25, output: 2.75, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 2.25, output: 2.75, cacheRead: 2.25, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 40960,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false)
@@ -2573,6 +2624,45 @@ private let providerModels_cloudflare_ai_gateway: [String: Model] = [
         maxTokens: 128000,
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
+    "gpt-5.6-luna": Model(
+        id: "gpt-5.6-luna",
+        name: "GPT-5.6 Luna",
+        api: .openAIResponses,
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-sol": Model(
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        api: .openAIResponses,
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-terra": Model(
+        id: "gpt-5.6-terra",
+        name: "GPT-5.6 Terra",
+        api: .openAIResponses,
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
+    ),
     "o1": Model(
         id: "o1",
         name: "o1",
@@ -2683,6 +2773,19 @@ private let providerModels_cloudflare_ai_gateway: [String: Model] = [
         cost: ModelCost(input: 0.06, output: 0.4, cacheRead: 0, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true)
+    ),
+    "workers-ai/@cf/zai-org/glm-5.2": Model(
+        id: "workers-ai/@cf/zai-org/glm-5.2",
+        name: "Glm 5.2",
+        api: .openAICompletions,
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true)
     ),
 ]
@@ -3116,7 +3219,8 @@ private let providerModels_github_copilot: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 128000,
         headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
     ),
     "claude-haiku-4.5": Model(
         id: "claude-haiku-4.5",
@@ -3285,7 +3389,7 @@ private let providerModels_github_copilot: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 200000,
+        contextWindow: 1000000,
         maxTokens: 64000,
         headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
@@ -3430,6 +3534,48 @@ private let providerModels_github_copilot: [String: Model] = [
         headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
         thinkingLevelMap: [.minimal: "low", .off: nil, .xhigh: "xhigh"]
     ),
+    "gpt-5.6-luna": Model(
+        id: "gpt-5.6-luna",
+        name: "GPT-5.6 Luna",
+        api: .openAIResponses,
+        provider: "github-copilot",
+        baseUrl: "https://api.individual.githubcopilot.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
+        thinkingLevelMap: [.max: "max", .minimal: "low", .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-sol": Model(
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        api: .openAIResponses,
+        provider: "github-copilot",
+        baseUrl: "https://api.individual.githubcopilot.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
+        thinkingLevelMap: [.max: "max", .minimal: "low", .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-terra": Model(
+        id: "gpt-5.6-terra",
+        name: "GPT-5.6 Terra",
+        api: .openAIResponses,
+        provider: "github-copilot",
+        baseUrl: "https://api.individual.githubcopilot.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
+        thinkingLevelMap: [.max: "max", .minimal: "low", .off: nil, .xhigh: "xhigh"]
+    ),
     "kimi-k2.7-code": Model(
         id: "kimi-k2.7-code",
         name: "Kimi K2.7 Code",
@@ -3447,7 +3593,7 @@ private let providerModels_github_copilot: [String: Model] = [
     "mai-code-1-flash-picker": Model(
         id: "mai-code-1-flash-picker",
         name: "MAI-Code-1-Flash",
-        api: .openAICompletions,
+        api: .openAIResponses,
         provider: "github-copilot",
         baseUrl: "https://api.individual.githubcopilot.com",
         reasoning: true,
@@ -3455,8 +3601,7 @@ private let providerModels_github_copilot: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 256000,
         maxTokens: 128000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
+        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"]
     ),
 ]
 
@@ -4536,7 +4681,23 @@ private let providerModels_kimi_coding: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 32768,
-        headers: ["User-Agent": "KimiCLI/1.5"]
+        headers: ["User-Agent": "KimiCLI/1.5"],
+        compat: OpenAICompat(forceAdaptiveThinking: true)
+    ),
+    "k3": Model(
+        id: "k3",
+        name: "Kimi K3",
+        api: .anthropicMessages,
+        provider: "kimi-coding",
+        baseUrl: "https://api.kimi.com/coding",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        headers: ["User-Agent": "KimiCLI/1.5"],
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.high: nil, .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil]
     ),
     "kimi-for-coding": Model(
         id: "kimi-for-coding",
@@ -4549,7 +4710,22 @@ private let providerModels_kimi_coding: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 32768,
-        headers: ["User-Agent": "KimiCLI/1.5"]
+        headers: ["User-Agent": "KimiCLI/1.5"],
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true)
+    ),
+    "kimi-for-coding-highspeed": Model(
+        id: "kimi-for-coding-highspeed",
+        name: "Kimi For Coding HighSpeed",
+        api: .anthropicMessages,
+        provider: "kimi-coding",
+        baseUrl: "https://api.kimi.com/coding",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 32768,
+        headers: ["User-Agent": "KimiCLI/1.5"],
+        compat: OpenAICompat(forceAdaptiveThinking: true)
     ),
     "kimi-k2-thinking": Model(
         id: "kimi-k2-thinking",
@@ -4562,7 +4738,8 @@ private let providerModels_kimi_coding: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 32768,
-        headers: ["User-Agent": "KimiCLI/1.5"]
+        headers: ["User-Agent": "KimiCLI/1.5"],
+        compat: OpenAICompat(forceAdaptiveThinking: true)
     ),
 ]
 
@@ -5127,6 +5304,20 @@ private let providerModels_moonshotai: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsStrictMode: false),
         thinkingLevelMap: [.off: nil]
     ),
+    "kimi-k3": Model(
+        id: "kimi-k3",
+        name: "Kimi K3",
+        api: .openAICompletions,
+        provider: "moonshotai",
+        baseUrl: "https://api.moonshot.ai/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true, deferredToolsMode: .kimi),
+        thinkingLevelMap: [.high: nil, .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil]
+    ),
 ]
 
 private let providerModels_moonshotai_cn: [String: Model] = [
@@ -5248,6 +5439,20 @@ private let providerModels_moonshotai_cn: [String: Model] = [
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsStrictMode: false),
         thinkingLevelMap: [.off: nil]
+    ),
+    "kimi-k3": Model(
+        id: "kimi-k3",
+        name: "Kimi K3",
+        api: .openAICompletions,
+        provider: "moonshotai-cn",
+        baseUrl: "https://api.moonshot.cn/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true, deferredToolsMode: .kimi),
+        thinkingLevelMap: [.high: nil, .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil]
     ),
 ]
 
@@ -5900,6 +6105,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.off: "none", .xhigh: "xhigh"]
     ),
     "gpt-5.4-mini": Model(
@@ -5913,6 +6119,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.off: "none", .xhigh: "xhigh"]
     ),
     "gpt-5.4-nano": Model(
@@ -5939,6 +6146,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 30, output: 180, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 60, output: 270, cacheRead: 0, cacheWrite: 0)]),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.5": Model(
@@ -5952,6 +6160,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.minimal: nil, .off: "none", .xhigh: "xhigh"]
     ),
     "gpt-5.5-pro": Model(
@@ -5978,6 +6187,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 9, cacheRead: 0.2, cacheWrite: 2.5)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.max: "max", .off: "none", .xhigh: "xhigh"]
     ),
     "gpt-5.6-sol": Model(
@@ -5991,6 +6201,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 12.5)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.max: "max", .off: "none", .xhigh: "xhigh"]
     ),
     "gpt-5.6-terra": Model(
@@ -6004,7 +6215,20 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 6.25)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.max: "max", .off: "none", .xhigh: "xhigh"]
+    ),
+    "gpt-realtime-2.1": Model(
+        id: "gpt-realtime-2.1",
+        name: "GPT-Realtime-2.1",
+        api: .openAIResponses,
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 4, output: 24, cacheRead: 0.4, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 32000
     ),
     "o1": Model(
         id: "o1",
@@ -6129,6 +6353,7 @@ private let providerModels_openai_codex: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.minimal: "low", .xhigh: "xhigh"]
     ),
     "gpt-5.4-mini": Model(
@@ -6142,6 +6367,7 @@ private let providerModels_openai_codex: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.minimal: "low", .xhigh: "xhigh"]
     ),
     "gpt-5.5": Model(
@@ -6155,6 +6381,7 @@ private let providerModels_openai_codex: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.minimal: "low", .xhigh: "xhigh"]
     ),
     "gpt-5.6-luna": Model(
@@ -6168,6 +6395,7 @@ private let providerModels_openai_codex: [String: Model] = [
         cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 9, cacheRead: 0.2, cacheWrite: 2.5)]),
         contextWindow: 372000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.max: "max", .minimal: "low", .xhigh: "xhigh"]
     ),
     "gpt-5.6-sol": Model(
@@ -6181,6 +6409,7 @@ private let providerModels_openai_codex: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 12.5)]),
         contextWindow: 372000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.max: "max", .minimal: "low", .xhigh: "xhigh"]
     ),
     "gpt-5.6-terra": Model(
@@ -6194,6 +6423,7 @@ private let providerModels_openai_codex: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 6.25)]),
         contextWindow: 372000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsToolSearch: true),
         thinkingLevelMap: [.max: "max", .minimal: "low", .xhigh: "xhigh"]
     ),
 ]
@@ -6487,6 +6717,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5-codex": Model(
@@ -6500,6 +6731,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5-nano": Model(
@@ -6513,6 +6745,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5.1": Model(
@@ -6526,6 +6759,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5.1-codex": Model(
@@ -6539,6 +6773,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5.1-codex-max": Model(
@@ -6552,6 +6787,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5.1-codex-mini": Model(
@@ -6565,6 +6801,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil]
     ),
     "gpt-5.2": Model(
@@ -6578,6 +6815,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.2-codex": Model(
@@ -6591,6 +6829,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.3-codex": Model(
@@ -6604,6 +6843,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.4": Model(
@@ -6617,6 +6857,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0),
         contextWindow: 272000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.4-mini": Model(
@@ -6630,6 +6871,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.4-nano": Model(
@@ -6643,6 +6885,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.4-pro": Model(
@@ -6656,6 +6899,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 30, output: 180, cacheRead: 30, cacheWrite: 0),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.5": Model(
@@ -6669,6 +6913,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"]
     ),
     "gpt-5.5-pro": Model(
@@ -6682,7 +6927,50 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 30, output: 180, cacheRead: 30, cacheWrite: 0),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.low: nil, .minimal: nil, .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-luna": Model(
+        id: "gpt-5.6-luna",
+        name: "GPT-5.6 Luna",
+        api: .openAIResponses,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/zen/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-sol": Model(
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        api: .openAIResponses,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/zen/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
+    ),
+    "gpt-5.6-terra": Model(
+        id: "gpt-5.6-terra",
+        name: "GPT-5.6 Terra",
+        api: .openAIResponses,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/zen/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
     ),
     "grok-4.5": Model(
         id: "grok-4.5",
@@ -6720,7 +7008,7 @@ private let providerModels_opencode: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 256000,
+        contextWindow: 190000,
         maxTokens: 64000,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens)
     ),
@@ -6923,6 +7211,19 @@ private let providerModels_opencode_go: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens),
         thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: nil]
     ),
+    "grok-4.5": Model(
+        id: "grok-4.5",
+        name: "Grok 4.5",
+        api: .openAICompletions,
+        provider: "opencode-go",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0),
+        contextWindow: 500000,
+        maxTokens: 500000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens)
+    ),
     "kimi-k2.6": Model(
         id: "kimi-k2.6",
         name: "Kimi K2.6",
@@ -6948,6 +7249,19 @@ private let providerModels_opencode_go: [String: Model] = [
         cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens)
+    ),
+    "kimi-k3": Model(
+        id: "kimi-k3",
+        name: "Kimi K3",
+        api: .openAICompletions,
+        provider: "opencode-go",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens)
     ),
     "mimo-v2.5": Model(
@@ -7184,7 +7498,8 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
         contextWindow: 1000000,
         maxTokens: 128000,
-        compat: OpenAICompat(thinkingFormat: .openrouter, cacheControlFormat: .anthropic)
+        compat: OpenAICompat(thinkingFormat: .openrouter, cacheControlFormat: .anthropic),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"]
     ),
     "anthropic/claude-haiku-4.5": Model(
         id: "anthropic/claude-haiku-4.5",
@@ -7317,7 +7632,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
-        contextWindow: 1000000,
+        contextWindow: 200000,
         maxTokens: 64000,
         compat: OpenAICompat(thinkingFormat: .openrouter, cacheControlFormat: .anthropic)
     ),
@@ -7373,19 +7688,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.25, output: 0.8, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 80000,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
-    ),
-    "arcee-ai/trinity-mini": Model(
-        id: "arcee-ai/trinity-mini",
-        name: "Arcee AI: Trinity Mini",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.045, output: 0.15, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "arcee-ai/virtuoso-large": Model(
@@ -7514,7 +7816,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: false,
         input: [.text],
         cost: ModelCost(input: 0.2002, output: 0.8001, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 128000,
         maxTokens: 16000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -7526,9 +7828,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.24, output: 0.9, cacheRead: 0.135, cacheWrite: 0),
+        cost: ModelCost(input: 0.27, output: 1.12, cacheRead: 0.135, cacheWrite: 0),
         contextWindow: 163840,
-        maxTokens: 16384,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "deepseek/deepseek-chat-v3.1": Model(
@@ -7539,7 +7841,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.21, output: 0.79, cacheRead: 0.13, cacheWrite: 0),
+        cost: ModelCost(input: 0.25, output: 0.95, cacheRead: 0.13, cacheWrite: 0),
         contextWindow: 163840,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -7553,7 +7855,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.7, output: 2.5, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 163840,
+        contextWindow: 64000,
         maxTokens: 16000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -7578,8 +7880,8 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.27, output: 0.95, cacheRead: 0.13, cacheWrite: 0),
-        contextWindow: 163840,
+        cost: ModelCost(input: 0.27, output: 1, cacheRead: 0.135, cacheWrite: 0),
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -7591,9 +7893,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.2288, output: 0.3432, cacheRead: 0.02288, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 64000,
+        cost: ModelCost(input: 0.269, output: 0.4, cacheRead: 0.1345, cacheWrite: 0),
+        contextWindow: 163840,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "deepseek/deepseek-v3.2-exp": Model(
@@ -7617,9 +7919,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.09, output: 0.18, cacheRead: 0.018, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 65536,
+        cost: ModelCost(input: 0.098, output: 0.196, cacheRead: 0.0196, cacheWrite: 0),
+        contextWindow: 1048575,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .xhigh: "xhigh"]
     ),
@@ -7776,7 +8078,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0.375),
-        contextWindow: 1048756,
+        contextWindow: 1048576,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -7814,9 +8116,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.08, output: 0.16, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.08, output: 0.45, cacheRead: 0.04, cacheWrite: 0),
         contextWindow: 131072,
-        maxTokens: 16384,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "google/gemma-4-26b-a4b-it": Model(
@@ -7827,9 +8129,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.06, output: 0.33, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 4096,
+        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 256000,
+        maxTokens: 256000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "google/gemma-4-26b-a4b-it:free": Model(
@@ -7841,7 +8143,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -7853,7 +8155,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.12, output: 0.35, cacheRead: 0.09, cacheWrite: 0),
+        cost: ModelCost(input: 0.22, output: 0.55, cacheRead: 0.12, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -7868,7 +8170,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 8192,
+        maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "ibm-granite/granite-4.1-8b": Model(
@@ -7937,6 +8239,19 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
+    "kwaipilot/kat-coder-air-v2.5": Model(
+        id: "kwaipilot/kat-coder-air-v2.5",
+        name: "Kwaipilot: KAT-Coder-Air V2.5",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: false,
+        input: [.text],
+        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.03, cacheWrite: 0),
+        contextWindow: 256000,
+        maxTokens: 80000,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
+    ),
     "kwaipilot/kat-coder-pro-v2": Model(
         id: "kwaipilot/kat-coder-pro-v2",
         name: "Kwaipilot: KAT-Coder-Pro V2",
@@ -7950,17 +8265,17 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         maxTokens: 80000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
-    "liquid/lfm-2.5-1.2b-thinking:free": Model(
-        id: "liquid/lfm-2.5-1.2b-thinking:free",
-        name: "LiquidAI: LFM2.5-1.2B-Thinking (free)",
+    "kwaipilot/kat-coder-pro-v2.5": Model(
+        id: "kwaipilot/kat-coder-pro-v2.5",
+        name: "Kwaipilot: KAT-Coder-Pro V2.5",
         api: .openAICompletions,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
+        reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32768,
-        maxTokens: 4096,
+        cost: ModelCost(input: 0.74, output: 2.96, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 256000,
+        maxTokens: 80000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "meta-llama/llama-3.1-70b-instruct": Model(
@@ -7984,9 +8299,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.02, output: 0.03, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.05, output: 0.08, cacheRead: 0.025, cacheWrite: 0),
         contextWindow: 131072,
-        maxTokens: 16384,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "meta-llama/llama-3.3-70b-instruct": Model(
@@ -7997,9 +8312,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.32, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.13, output: 0.4, cacheRead: 0, cacheWrite: 0),
         contextWindow: 131072,
-        maxTokens: 16384,
+        maxTokens: 128000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "meta-llama/llama-3.3-70b-instruct:free": Model(
@@ -8011,7 +8326,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: false,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 65536,
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -8023,7 +8338,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.2, output: 0.8, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -8037,8 +8352,21 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 10000000,
+        contextWindow: 327680,
         maxTokens: 16384,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
+    ),
+    "meta/muse-spark-1.1": Model(
+        id: "meta/muse-spark-1.1",
+        name: "Meta: Muse Spark 1.1",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "minimax/minimax-m1": Model(
@@ -8049,7 +8377,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.4, output: 2.2, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.55, output: 2.2, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 40000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -8089,7 +8417,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.15, output: 0.9, cacheRead: 0.05, cacheWrite: 0),
-        contextWindow: 204800,
+        contextWindow: 196608,
         maxTokens: 196608,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -8101,9 +8429,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.24, output: 0.96, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 204800,
-        maxTokens: 196608,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "minimax/minimax-m3": Model(
@@ -8115,8 +8443,8 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
+        contextWindow: 524288,
+        maxTokens: 512000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "mistralai/codestral-2508": Model(
@@ -8270,9 +8598,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.02, output: 0.03, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.019, output: 0.03, cacheRead: 0, cacheWrite: 0),
         contextWindow: 131072,
-        maxTokens: 4096,
+        maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "mistralai/mistral-saba": Model(
@@ -8309,9 +8637,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.075, output: 0.2, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 16384,
+        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0.01, cacheWrite: 0),
+        contextWindow: 131072,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "mistralai/mixtral-8x22b-instruct": Model(
@@ -8340,6 +8668,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
+]
+
+private let providerModels_openrouter_chunk2: [String: Model] = [
     "moonshotai/kimi-k2": Model(
         id: "moonshotai/kimi-k2",
         name: "MoonshotAI: Kimi K2 0711",
@@ -8353,9 +8684,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         maxTokens: 100352,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
-]
-
-private let providerModels_openrouter_chunk2: [String: Model] = [
     "moonshotai/kimi-k2-0905": Model(
         id: "moonshotai/kimi-k2-0905",
         name: "MoonshotAI: Kimi K2 0905",
@@ -8377,9 +8705,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0),
+        cost: ModelCost(input: 0.6, output: 2.5, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 100352,
+        maxTokens: 262144,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "moonshotai/kimi-k2.5": Model(
@@ -8403,9 +8731,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.66, output: 3.41, cacheRead: 0.15, cacheWrite: 0),
+        cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 262144,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, requiresReasoningContentOnAssistantMessages: true)
     ),
     "moonshotai/kimi-k2.7-code": Model(
@@ -8416,9 +8744,22 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.72, output: 3.49, cacheRead: 0.159, cacheWrite: 0),
+        cost: ModelCost(input: 0.75, output: 3.5, cacheRead: 0.16, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
+    ),
+    "moonshotai/kimi-k3": Model(
+        id: "moonshotai/kimi-k3",
+        name: "MoonshotAI: Kimi K3",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "nex-agi/nex-n2-mini": Model(
@@ -8507,7 +8848,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.08, output: 0.45, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.21, output: 0.455, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -8521,7 +8862,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1000000,
+        contextWindow: 262144,
         maxTokens: 262144,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -8533,9 +8874,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.5, output: 2.2, cacheRead: 0.1, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 16384,
+        cost: ModelCost(input: 0.6, output: 3.6, cacheRead: 0.2, cacheWrite: 0),
+        contextWindow: 512288,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "nvidia/nemotron-3-ultra-550b-a55b:free": Model(
@@ -8665,7 +9006,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 8, cacheRead: 0.5, cacheWrite: 0),
         contextWindow: 1047576,
-        maxTokens: 4096,
+        maxTokens: 32768,
         compat: OpenAICompat(thinkingFormat: .openrouter)
     ),
     "openai/gpt-4.1-mini": Model(
@@ -8702,7 +9043,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 2.5, output: 10, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 2.5, output: 10, cacheRead: 1.25, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 16384,
         compat: OpenAICompat(thinkingFormat: .openrouter)
@@ -8819,9 +9160,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.05, output: 0.4, cacheRead: 0.01, cacheWrite: 0),
+        cost: ModelCost(input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0),
         contextWindow: 400000,
-        maxTokens: 4096,
+        maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter)
     ),
     "openai/gpt-5-pro": Model(
@@ -8845,7 +9186,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.13, cacheWrite: 0),
+        cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter)
@@ -8858,9 +9199,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.13, cacheWrite: 0),
+        cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0),
         contextWindow: 128000,
-        maxTokens: 32000,
+        maxTokens: 16384,
         compat: OpenAICompat(thinkingFormat: .openrouter)
     ),
     "openai/gpt-5.1-codex": Model(
@@ -8871,7 +9212,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.13, cacheWrite: 0),
+        cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter)
@@ -9201,20 +9542,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.036, output: 0.18, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 4096,
-        compat: OpenAICompat(thinkingFormat: .openrouter)
-    ),
-    "openai/gpt-oss-120b:free": Model(
-        id: "openai/gpt-oss-120b:free",
-        name: "OpenAI: gpt-oss-120b (free)",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.037, output: 0.17, cacheRead: 0, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 131072,
         compat: OpenAICompat(thinkingFormat: .openrouter)
@@ -9227,9 +9555,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.029, output: 0.14, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.03, output: 0.13, cacheRead: 0.03, cacheWrite: 0),
         contextWindow: 131072,
-        maxTokens: 4096,
+        maxTokens: 131072,
         compat: OpenAICompat(thinkingFormat: .openrouter)
     ),
     "openai/gpt-oss-20b:free": Model(
@@ -9475,7 +9803,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: false,
         input: [.text],
         cost: ModelCost(input: 0.36, output: 0.4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 32768,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9488,7 +9816,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: false,
         input: [.text],
         cost: ModelCost(input: 0.04, output: 0.1, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 32768,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9539,9 +9867,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.24, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131702,
-        maxTokens: 40960,
+        cost: ModelCost(input: 0.12, output: 0.24, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 40960,
+        maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3-235b-a22b": Model(
@@ -9565,7 +9893,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.09, output: 0.1, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.09, output: 0.55, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -9579,7 +9907,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.1495, output: 1.495, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
+        contextWindow: 131072,
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9592,7 +9920,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.12, output: 0.5, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 40960,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9604,9 +9932,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.04815, output: 0.19305, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32000,
+        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3-30b-a3b-thinking-2507": Model(
@@ -9618,7 +9946,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.13, output: 1.56, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 81920,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9631,7 +9959,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.08, output: 0.28, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        contextWindow: 40960,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9656,11 +9984,14 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.22, output: 1.8, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
+        cost: ModelCost(input: 0.3, output: 1, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 262144,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
+]
+
+private let providerModels_openrouter_chunk3: [String: Model] = [
     "qwen/qwen3-coder-30b-a3b-instruct": Model(
         id: "qwen/qwen3-coder-30b-a3b-instruct",
         name: "Qwen: Qwen3 Coder 30B A3B Instruct",
@@ -9674,9 +10005,6 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
-]
-
-private let providerModels_openrouter_chunk3: [String: Model] = [
     "qwen/qwen3-coder-flash": Model(
         id: "qwen/qwen3-coder-flash",
         name: "Qwen: Qwen3 Coder Flash",
@@ -9725,7 +10053,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: false,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
+        contextWindow: 262000,
         maxTokens: 262000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9763,9 +10091,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.09, output: 1.1, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 1.1, cacheRead: 0.07, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 16384,
+        maxTokens: 262144,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3-next-80b-a3b-instruct:free": Model(
@@ -9790,7 +10118,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.0975, output: 0.78, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9802,9 +10130,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.2, output: 0.88, cacheRead: 0.11, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 16384,
+        cost: ModelCost(input: 0.21, output: 1.9, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 131072,
+        maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3-vl-235b-a22b-thinking": Model(
@@ -9829,7 +10157,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 0.13, output: 0.52, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9855,7 +10183,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 0.104, output: 0.416, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9868,7 +10196,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 0.117, output: 0.455, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 256000,
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9881,7 +10209,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.117, output: 1.365, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 256000,
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -9895,7 +10223,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 0.26, output: 2.08, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 262144,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3.5-27b": Model(
@@ -9919,9 +10247,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.14, output: 1, cacheRead: 0.05, cacheWrite: 0),
+        cost: ModelCost(input: 0.14, output: 1, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 81920,
+        maxTokens: 262144,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3.5-397b-a17b": Model(
@@ -9932,9 +10260,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.385, output: 2.45, cacheRead: 0.111, cacheWrite: 0),
-        contextWindow: 256000,
-        maxTokens: 4096,
+        cost: ModelCost(input: 0.45, output: 3, cacheRead: 0.225, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3.5-9b": Model(
@@ -9997,9 +10325,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.285, output: 2.4, cacheRead: 0.15, cacheWrite: 0),
+        cost: ModelCost(input: 0.45, output: 2.7, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 262140,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "qwen/qwen3.6-35b-a3b": Model(
@@ -10062,7 +10390,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 1.25, output: 3.75, cacheRead: 0.25, cacheWrite: 1.5625),
+        cost: ModelCost(input: 1.475, output: 4.425, cacheRead: 0.295, cacheWrite: 1.84375),
         contextWindow: 1000000,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -10166,9 +10494,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.14, output: 0.58, cacheRead: 0.035, cacheWrite: 0),
+        cost: ModelCost(input: 0.2, output: 0.8, cacheRead: 0.05, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 4096,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "tencent/hy3-preview": Model(
@@ -10283,9 +10611,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.105, output: 0.28, cacheRead: 0.028, cacheWrite: 0),
+        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 4096,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "xiaomi/mimo-v2.5-pro": Model(
@@ -10348,7 +10676,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.43, output: 1.74, cacheRead: 0.08, cacheWrite: 0),
+        cost: ModelCost(input: 0.5, output: 2, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 202752,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
@@ -10387,9 +10715,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.06, output: 0.4, cacheRead: 0.01, cacheWrite: 0),
-        contextWindow: 202752,
-        maxTokens: 16384,
+        cost: ModelCost(input: 0.0605, output: 0.4, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "z-ai/glm-5": Model(
@@ -10402,7 +10730,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 0.6, output: 1.9, cacheRead: 0.119, cacheWrite: 0),
         contextWindow: 202752,
-        maxTokens: 4096,
+        maxTokens: 202752,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "z-ai/glm-5-turbo": Model(
@@ -10414,7 +10742,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.2, output: 4, cacheRead: 0.24, cacheWrite: 0),
-        contextWindow: 262144,
+        contextWindow: 202752,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -10427,7 +10755,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.966, output: 3.036, cacheRead: 0.1794, cacheWrite: 0),
-        contextWindow: 202752,
+        contextWindow: 200000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
@@ -10439,7 +10767,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.532, output: 1.672, cacheRead: 0.0988, cacheWrite: 0),
+        cost: ModelCost(input: 0.9086, output: 2.8556, cacheRead: 0.16874, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter),
@@ -10544,9 +10872,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.66, output: 3.41, cacheRead: 0.15, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 262144,
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter)
     ),
     "~openai/gpt-latest": Model(
@@ -11219,18 +11547,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 4096
     ),
-    "anthropic/claude-3.5-haiku": Model(
-        id: "anthropic/claude-3.5-haiku",
-        name: "Claude 3.5 Haiku",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1),
-        contextWindow: 200000,
-        maxTokens: 8192
-    ),
     "anthropic/claude-fable-5": Model(
         id: "anthropic/claude-fable-5",
         name: "Claude Fable 5",
@@ -11267,7 +11583,7 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75),
         contextWindow: 200000,
-        maxTokens: 32000
+        maxTokens: 8192
     ),
     "anthropic/claude-opus-4.1": Model(
         id: "anthropic/claude-opus-4.1",
@@ -11321,6 +11637,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"]
     ),
+    "anthropic/claude-opus-4.7-fast": Model(
+        id: "anthropic/claude-opus-4.7-fast",
+        name: "Claude Opus 4.7 (Fast)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 30, output: 150, cacheRead: 3, cacheWrite: 37.5),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"]
+    ),
     "anthropic/claude-opus-4.8": Model(
         id: "anthropic/claude-opus-4.8",
         name: "Claude Opus 4.8",
@@ -11330,6 +11660,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"]
+    ),
+    "anthropic/claude-opus-4.8-fast": Model(
+        id: "anthropic/claude-opus-4.8-fast",
+        name: "Claude Opus 4.8 (Fast)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true),
@@ -11345,7 +11689,7 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
         contextWindow: 1000000,
-        maxTokens: 64000
+        maxTokens: 8192
     ),
     "anthropic/claude-sonnet-4.5": Model(
         id: "anthropic/claude-sonnet-4.5",
@@ -11386,18 +11730,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         maxTokens: 128000,
         compat: OpenAICompat(forceAdaptiveThinking: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"]
-    ),
-    "arcee-ai/trinity-large-preview": Model(
-        id: "arcee-ai/trinity-large-preview",
-        name: "Trinity Large Preview",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.25, output: 1, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131000,
-        maxTokens: 131000
     ),
     "arcee-ai/trinity-large-thinking": Model(
         id: "arcee-ai/trinity-large-thinking",
@@ -11491,8 +11823,8 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.6, output: 1.7, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 128000,
+        cost: ModelCost(input: 0.25, output: 0.95, cacheRead: 0.13, cacheWrite: 0),
+        contextWindow: 163840,
         maxTokens: 128000
     ),
     "deepseek/deepseek-v3.1-terminus": Model(
@@ -11723,6 +12055,18 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 32000
     ),
+    "kwaipilot/kat-coder-air-v2.5": Model(
+        id: "kwaipilot/kat-coder-air-v2.5",
+        name: "Kat Coder Air V2.5",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.03, cacheWrite: 0),
+        contextWindow: 256000,
+        maxTokens: 80000
+    ),
     "kwaipilot/kat-coder-pro-v1": Model(
         id: "kwaipilot/kat-coder-pro-v1",
         name: "KAT-Coder-Pro V1",
@@ -11747,29 +12091,17 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         contextWindow: 256000,
         maxTokens: 256000
     ),
-    "meituan/longcat-flash-chat": Model(
-        id: "meituan/longcat-flash-chat",
-        name: "LongCat Flash Chat",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 100000
-    ),
-    "meituan/longcat-flash-thinking-2601": Model(
-        id: "meituan/longcat-flash-thinking-2601",
-        name: "LongCat Flash Thinking 2601",
+    "kwaipilot/kat-coder-pro-v2.5": Model(
+        id: "kwaipilot/kat-coder-pro-v2.5",
+        name: "Kat Coder Pro V2.5",
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32768,
-        maxTokens: 32768
+        cost: ModelCost(input: 0.74, output: 2.96, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 256000,
+        maxTokens: 80000
     ),
     "meta/llama-3.1-70b": Model(
         id: "meta/llama-3.1-70b",
@@ -11987,18 +12319,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         contextWindow: 256000,
         maxTokens: 256000
     ),
-    "mistral/devstral-small": Model(
-        id: "mistral/devstral-small",
-        name: "Devstral Small 1.1",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 64000
-    ),
     "mistral/devstral-small-2": Model(
         id: "mistral/devstral-small-2",
         name: "Devstral Small 2",
@@ -12083,9 +12403,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         contextWindow: 256000,
         maxTokens: 256000
     ),
-]
-
-private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
     "mistral/mistral-medium": Model(
         id: "mistral/mistral-medium",
         name: "Mistral Medium 3.1",
@@ -12098,6 +12415,9 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         contextWindow: 128000,
         maxTokens: 64000
     ),
+]
+
+private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
     "mistral/mistral-medium-3.5": Model(
         id: "mistral/mistral-medium-3.5",
         name: "Mistral Medium Latest",
@@ -12143,18 +12463,6 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0.15, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 4000
-    ),
-    "mistral/pixtral-large": Model(
-        id: "mistral/pixtral-large",
-        name: "Pixtral Large",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 2, output: 6, cacheRead: 0, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 4000
     ),
@@ -12229,6 +12537,18 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         cost: ModelCost(input: 1.9, output: 8, cacheRead: 0.38, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 32768
+    ),
+    "moonshotai/kimi-k3": Model(
+        id: "moonshotai/kimi-k3",
+        name: "Kimi K3",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 131072
     ),
     "nvidia/nemotron-3-nano-30b-a3b": Model(
         id: "nvidia/nemotron-3-nano-30b-a3b",
@@ -12845,6 +13165,18 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         contextWindow: 256000,
         maxTokens: 256000
     ),
+    "thinkingmachines/inkling": Model(
+        id: "thinkingmachines/inkling",
+        name: "Inkling",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 4.05, cacheRead: 0.17, cacheWrite: 0),
+        contextWindow: 256000,
+        maxTokens: 256000
+    ),
     "xai/grok-4.1-fast-non-reasoning": Model(
         id: "xai/grok-4.1-fast-non-reasoning",
         name: "Grok 4.1 Fast Non-Reasoning",
@@ -12976,30 +13308,6 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         cost: ModelCost(input: 1, output: 2, cacheRead: 0.2, cacheWrite: 0),
         contextWindow: 256000,
         maxTokens: 256000
-    ),
-    "xiaomi/mimo-v2-flash": Model(
-        id: "xiaomi/mimo-v2-flash",
-        name: "MiMo V2 Flash",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0.01, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 32000
-    ),
-    "xiaomi/mimo-v2-pro": Model(
-        id: "xiaomi/mimo-v2-pro",
-        name: "MiMo V2 Pro",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 1, output: 3, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 128000
     ),
     "xiaomi/mimo-v2.5": Model(
         id: "xiaomi/mimo-v2.5",
@@ -13189,7 +13497,7 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 3, output: 10.25, cacheRead: 0.5, cacheWrite: 0),
+        cost: ModelCost(input: 2.1, output: 6.6, cacheRead: 0.21, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 128000
     ),
@@ -13208,58 +13516,6 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
 ]
 
 private let providerModels_xai: [String: Model] = [
-    "grok-3": Model(
-        id: "grok-3",
-        name: "Grok 3",
-        api: .openAICompletions,
-        provider: "xai",
-        baseUrl: "https://api.x.ai/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 3, output: 15, cacheRead: 0.75, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 8192,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
-    ),
-    "grok-3-fast": Model(
-        id: "grok-3-fast",
-        name: "Grok 3 Fast",
-        api: .openAICompletions,
-        provider: "xai",
-        baseUrl: "https://api.x.ai/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 5, output: 25, cacheRead: 1.25, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 8192,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
-    ),
-    "grok-4.20-0309-non-reasoning": Model(
-        id: "grok-4.20-0309-non-reasoning",
-        name: "Grok 4.20 (Non-Reasoning)",
-        api: .openAICompletions,
-        provider: "xai",
-        baseUrl: "https://api.x.ai/v1",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 30000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
-    ),
-    "grok-4.20-0309-reasoning": Model(
-        id: "grok-4.20-0309-reasoning",
-        name: "Grok 4.20 (Reasoning)",
-        api: .openAICompletions,
-        provider: "xai",
-        baseUrl: "https://api.x.ai/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 30000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
-    ),
     "grok-4.3": Model(
         id: "grok-4.3",
         name: "Grok 4.3",
@@ -13276,7 +13532,7 @@ private let providerModels_xai: [String: Model] = [
     "grok-4.5": Model(
         id: "grok-4.5",
         name: "Grok 4.5",
-        api: .openAICompletions,
+        api: .openAIResponses,
         provider: "xai",
         baseUrl: "https://api.x.ai/v1",
         reasoning: true,
@@ -13284,7 +13540,8 @@ private let providerModels_xai: [String: Model] = [
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0),
         contextWindow: 500000,
         maxTokens: 500000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
+        compat: OpenAICompat(supportsLongCacheRetention: false),
+        thinkingLevelMap: [.minimal: nil, .off: nil]
     ),
     "grok-build-0.1": Model(
         id: "grok-build-0.1",
@@ -13297,19 +13554,6 @@ private let providerModels_xai: [String: Model] = [
         cost: ModelCost(input: 1, output: 2, cacheRead: 0.2, cacheWrite: 0),
         contextWindow: 256000,
         maxTokens: 256000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
-    ),
-    "grok-code-fast-1": Model(
-        id: "grok-code-fast-1",
-        name: "Grok Code Fast 1",
-        api: .openAICompletions,
-        provider: "xai",
-        baseUrl: "https://api.x.ai/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.2, output: 1.5, cacheRead: 0.02, cacheWrite: 0),
-        contextWindow: 32768,
-        maxTokens: 8192,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false)
     ),
 ]

@@ -41,6 +41,7 @@ public enum OAuthProvider: String, Sendable, CaseIterable {
     case googleGeminiCli = "google-gemini-cli"
     case googleAntigravity = "google-antigravity"
     case openAICodex = "openai-codex"
+    case xai = "xai"
 }
 
 public struct OAuthPrompt: Sendable {
@@ -147,6 +148,7 @@ public func getOAuthProviders() -> [OAuthProviderInfo] {
         OAuthProviderInfo(id: .anthropic, name: "Anthropic (Claude Pro/Max)", available: true),
         OAuthProviderInfo(id: .openAICodex, name: "ChatGPT Plus/Pro (Codex Subscription)", available: networkAvailable),
         OAuthProviderInfo(id: .githubCopilot, name: "GitHub Copilot", available: true),
+        OAuthProviderInfo(id: .xai, name: "xAI (Grok/X subscription)", available: true),
     ]
 }
 
@@ -168,6 +170,8 @@ public func refreshOAuthToken(provider: OAuthProvider, credentials: OAuthCredent
         return try await refreshAntigravityToken(credentials.refresh, projectId: projectId)
     case .openAICodex:
         return try await refreshOpenAICodexToken(credentials.refresh)
+    case .xai:
+        return try await refreshXaiToken(credentials.refresh)
     }
 }
 
@@ -1131,6 +1135,231 @@ public func loginGitHubCopilot(_ callbacks: OAuthLoginCallbacks) async throws ->
     )
 
     return credentials
+}
+
+// MARK: - xAI OAuth
+
+private let xaiClientId = "b1a00492-073a-47ea-816f-4c329264a828"
+private let xaiScope = "openid profile email offline_access grok-cli:access api:access"
+private let xaiDeviceCodeUrl = URL(string: "https://auth.x.ai/oauth2/device/code")!
+private let xaiTokenUrl = URL(string: "https://auth.x.ai/oauth2/token")!
+private let xaiRefreshSkewMs = 5 * 60 * 1000.0
+private let xaiDefaultTokenLifetimeSeconds = 3600.0
+private let xaiDefaultPollIntervalSeconds = 5.0
+
+private struct XaiDeviceCode {
+    let deviceCode: String
+    let userCode: String
+    let verificationUri: String
+    let verificationUriComplete: String?
+    let intervalSeconds: Double?
+    let expiresInSeconds: Double
+}
+
+private struct XaiHttpResponse {
+    let status: Int
+    let body: [String: Any]
+
+    var isSuccessful: Bool {
+        (200..<300).contains(status)
+    }
+}
+
+private func xaiRequiredString(_ body: [String: Any], field: String) throws -> String {
+    guard let value = body[field] as? String, !value.isEmpty else {
+        throw OAuthError.tokenExchangeFailed("Invalid xAI OAuth response field: \(field)")
+    }
+    return value
+}
+
+private func xaiPositiveNumber(_ body: [String: Any], field: String) throws -> Double {
+    guard let value = body[field] as? NSNumber,
+          value.doubleValue.isFinite,
+          value.doubleValue > 0 else {
+        throw OAuthError.tokenExchangeFailed("Invalid xAI OAuth response field: \(field)")
+    }
+    return value.doubleValue
+}
+
+private func validateXaiVerificationUri(_ raw: String) throws -> String {
+    guard let url = URL(string: raw), url.scheme?.lowercased() == "https" else {
+        throw OAuthError.tokenExchangeFailed("Untrusted verification URI in xAI OAuth response")
+    }
+    return url.absoluteString
+}
+
+private func postXaiForm(url: URL, params: [String: String]) async throws -> XaiHttpResponse {
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+    var components = URLComponents()
+    components.queryItems = params.sorted { $0.key < $1.key }.map {
+        URLQueryItem(name: $0.key, value: $0.value)
+    }
+    request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
+
+    let session = proxySession(for: request.url)
+    let (data, response) = try await session.data(for: request)
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    guard let json = try? JSONSerialization.jsonObject(with: data),
+          let body = json as? [String: Any] else {
+        throw OAuthError.tokenExchangeFailed("xAI OAuth returned invalid JSON (HTTP \(status))")
+    }
+    return XaiHttpResponse(status: status, body: body)
+}
+
+private func xaiRequestFailure(action: String, response: XaiHttpResponse) -> String {
+    let error = response.body["error"] as? String
+    let description = response.body["error_description"] as? String
+    let detail = [error, description].compactMap { $0 }.joined(separator: ": ")
+    let suffix = detail.isEmpty ? "" : ": \(detail)"
+    return "xAI OAuth \(action) failed (HTTP \(response.status))\(suffix)"
+}
+
+private func parseXaiDeviceCode(_ body: [String: Any]) throws -> XaiDeviceCode {
+    let interval = (body["interval"] as? NSNumber)?.doubleValue
+    let intervalSeconds = interval.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+    let verificationUriComplete: String?
+    if let raw = body["verification_uri_complete"] as? String, !raw.isEmpty {
+        verificationUriComplete = try validateXaiVerificationUri(raw)
+    } else {
+        verificationUriComplete = nil
+    }
+
+    return try XaiDeviceCode(
+        deviceCode: xaiRequiredString(body, field: "device_code"),
+        userCode: xaiRequiredString(body, field: "user_code"),
+        verificationUri: validateXaiVerificationUri(xaiRequiredString(body, field: "verification_uri")),
+        verificationUriComplete: verificationUriComplete,
+        intervalSeconds: intervalSeconds,
+        expiresInSeconds: xaiPositiveNumber(body, field: "expires_in")
+    )
+}
+
+private func xaiCredentials(
+    from body: [String: Any],
+    previousRefreshToken: String? = nil
+) throws -> OAuthCredentials {
+    let accessToken = try xaiRequiredString(body, field: "access_token")
+    let refreshToken: String
+    if body["refresh_token"] == nil, let previousRefreshToken {
+        refreshToken = previousRefreshToken
+    } else {
+        refreshToken = try xaiRequiredString(body, field: "refresh_token")
+    }
+    let expiresIn = try body["expires_in"] == nil
+        ? xaiDefaultTokenLifetimeSeconds
+        : xaiPositiveNumber(body, field: "expires_in")
+    return OAuthCredentials(
+        refresh: refreshToken,
+        access: accessToken,
+        expires: nowMs() + expiresIn * 1000 - xaiRefreshSkewMs
+    )
+}
+
+private func requestXaiDeviceCode() async throws -> XaiDeviceCode {
+    let response = try await postXaiForm(
+        url: xaiDeviceCodeUrl,
+        params: [
+            "client_id": xaiClientId,
+            "scope": xaiScope,
+            "referrer": "pi",
+        ]
+    )
+    guard response.isSuccessful else {
+        throw OAuthError.tokenExchangeFailed(xaiRequestFailure(action: "device authorization", response: response))
+    }
+    return try parseXaiDeviceCode(response.body)
+}
+
+private func pollForXaiTokens(
+    device: XaiDeviceCode,
+    signal: CancellationToken?
+) async throws -> OAuthCredentials {
+    let deadline = nowMs() + device.expiresInSeconds * 1000
+    var intervalMs = max(1000, Int(floor((device.intervalSeconds ?? xaiDefaultPollIntervalSeconds) * 1000)))
+
+    let initialRemainingMs = max(0, Int(floor(deadline - nowMs())))
+    if initialRemainingMs > 0 {
+        try await sleepMs(min(intervalMs, initialRemainingMs), signal: signal)
+    }
+
+    while nowMs() < deadline {
+        if signal?.isCancelled == true {
+            throw OAuthError.cancelled
+        }
+
+        let response = try await postXaiForm(
+            url: xaiTokenUrl,
+            params: [
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "client_id": xaiClientId,
+                "device_code": device.deviceCode,
+            ]
+        )
+
+        if response.isSuccessful {
+            return try xaiCredentials(from: response.body)
+        }
+
+        switch response.body["error"] as? String {
+        case "authorization_pending":
+            break
+        case "slow_down":
+            if let serverInterval = (response.body["interval"] as? NSNumber)?.doubleValue,
+               serverInterval.isFinite,
+               serverInterval > 0 {
+                intervalMs = max(1000, Int(floor(serverInterval * 1000)))
+            } else {
+                intervalMs += 5000
+            }
+        case "access_denied", "authorization_denied":
+            throw OAuthError.tokenExchangeFailed("xAI device authorization was denied")
+        case "expired_token":
+            throw OAuthError.tokenExchangeFailed("xAI device code expired")
+        default:
+            throw OAuthError.tokenExchangeFailed(xaiRequestFailure(action: "device token polling", response: response))
+        }
+
+        let remainingMs = max(0, Int(floor(deadline - nowMs())))
+        if remainingMs > 0 {
+            try await sleepMs(min(intervalMs, remainingMs), signal: signal)
+        }
+    }
+
+    throw OAuthError.tokenExchangeFailed("xAI device code expired")
+}
+
+/// Login with xAI OAuth using the RFC 8628 device-code flow.
+public func loginXai(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
+    if callbacks.signal?.isCancelled == true {
+        throw OAuthError.cancelled
+    }
+
+    let device = try await requestXaiDeviceCode()
+    await callbacks.onAuth(OAuthAuthInfo(
+        url: device.verificationUriComplete ?? device.verificationUri,
+        instructions: "Enter code: \(device.userCode)"
+    ))
+    return try await pollForXaiTokens(device: device, signal: callbacks.signal)
+}
+
+/// Refresh an xAI OAuth token, retaining the old refresh token when xAI does not rotate it.
+public func refreshXaiToken(_ refreshToken: String) async throws -> OAuthCredentials {
+    let response = try await postXaiForm(
+        url: xaiTokenUrl,
+        params: [
+            "grant_type": "refresh_token",
+            "client_id": xaiClientId,
+            "refresh_token": refreshToken,
+        ]
+    )
+    guard response.isSuccessful else {
+        throw OAuthError.refreshFailed(xaiRequestFailure(action: "token refresh", response: response))
+    }
+    return try xaiCredentials(from: response.body, previousRefreshToken: refreshToken)
 }
 
 // MARK: - Google Gemini CLI OAuth (Cloud Code Assist)

@@ -79,6 +79,33 @@ private struct ResolvedAnthropicCompat {
     let sendSessionAffinityHeaders: Bool
     let supportsCacheControlOnTools: Bool
     let supportsTemperature: Bool
+    let supportsToolReferences: Bool
+}
+
+func defaultSupportsToolReferences(model: Model) -> Bool {
+    guard model.provider == "anthropic", !model.id.contains("haiku") else { return false }
+
+    let pattern = #"^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)"#
+    guard let expression = try? NSRegularExpression(pattern: pattern),
+          let match = expression.firstMatch(
+              in: model.id,
+              range: NSRange(model.id.startIndex..<model.id.endIndex, in: model.id)
+          ),
+          let majorRange = Range(match.range(at: 1), in: model.id),
+          let major = Int(model.id[majorRange]) else {
+        return false
+    }
+
+    let minor: Int
+    if match.range(at: 2).location != NSNotFound,
+       let minorRange = Range(match.range(at: 2), in: model.id),
+       model.id[minorRange].count < 8 {
+        minor = Int(model.id[minorRange]) ?? 0
+    } else {
+        minor = 0
+    }
+
+    return major > 4 || (major == 4 && minor >= 5)
 }
 
 private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
@@ -92,7 +119,8 @@ private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
         supportsLongCacheRetention: compat?.supportsLongCacheRetention ?? !isFireworks,
         sendSessionAffinityHeaders: compat?.sendSessionAffinityHeaders ?? (isFireworks || isCloudflareAiGatewayAnthropic),
         supportsCacheControlOnTools: compat?.supportsCacheControlOnTools ?? !isFireworks,
-        supportsTemperature: compat?.supportsTemperature ?? true
+        supportsTemperature: compat?.supportsTemperature ?? true,
+        supportsToolReferences: compat?.supportsToolReferences ?? defaultSupportsToolReferences(model: model)
     )
 }
 
@@ -118,6 +146,7 @@ public func streamAnthropic(
     context: Context,
     options: AnthropicOptions
 ) -> AssistantMessageEventStream {
+    let model = resolveCloudflareModel(model)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -139,6 +168,31 @@ public func streamAnthropic(
             }
             let isOAuthToken = isAnthropicOAuthToken(apiKey)
             let compat = resolveAnthropicCompat(model: model)
+            let toolPlacement = isOAuthToken
+                ? splitDeferredTools(
+                    context,
+                    enabled: compat.supportsToolReferences,
+                    normalizeName: toClaudeCodeName
+                )
+                : splitDeferredTools(context, enabled: compat.supportsToolReferences)
+            var immediateTools = toolPlacement.immediate
+            var deferredTools = toolPlacement.deferred
+            if immediateTools.isEmpty && !deferredTools.isEmpty {
+                immediateTools = deferredTools
+                deferredTools = []
+            }
+            let deferredToolNames = Set(deferredTools.map {
+                isOAuthToken ? toClaudeCodeName($0.name) : $0.name
+            })
+            let orderedTools = immediateTools + deferredTools
+            var toolResultAddedNames: [String: [String]] = [:]
+            for message in context.messages {
+                if case .toolResult(let toolResult) = message,
+                   let addedToolNames = toolResult.addedToolNames,
+                   !addedToolNames.isEmpty {
+                    toolResultAddedNames[sanitizeToolCallId(toolResult.toolCallId)] = addedToolNames
+                }
+            }
 
             let betaHeaders = buildAnthropicBetaHeaders(
                 apiKey: apiKey,
@@ -167,7 +221,9 @@ public func streamAnthropic(
                 supportsLongCacheRetention: compat.supportsLongCacheRetention,
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
-                thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil
+                thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
+                deferredToolNames: deferredToolNames,
+                toolResultAddedNames: toolResultAddedNames
             )
             let service = AnthropicServiceFactory.service(
                 apiKey: apiKey,
@@ -177,7 +233,14 @@ public func streamAnthropic(
                 debugEnabled: false
             )
 
-            let parameters = buildAnthropicParameters(model: model, context: context, options: options, isOAuthToken: isOAuthToken, compat: compat)
+            let parameters = buildAnthropicParameters(
+                model: model,
+                context: context,
+                options: options,
+                isOAuthToken: isOAuthToken,
+                compat: compat,
+                orderedTools: orderedTools
+            )
             emitPayload(options.onPayload, payload: parameters)
             debugService = service
             debugParameters = parameters
@@ -366,7 +429,8 @@ private func buildAnthropicParameters(
     context: Context,
     options: AnthropicOptions,
     isOAuthToken: Bool,
-    compat: ResolvedAnthropicCompat
+    compat: ResolvedAnthropicCompat,
+    orderedTools: [AITool]
 ) -> MessageParameter {
     let messages = convertAnthropicMessages(model: model, messages: context.messages, isOAuthToken: isOAuthToken)
     let maxTokens = options.maxTokens ?? max(model.maxTokens / 3, 1024)
@@ -376,7 +440,7 @@ private func buildAnthropicParameters(
         system = .text(sanitizeSurrogates(prompt))
     }
 
-    let tools = context.tools.map { convertAnthropicTools($0, isOAuthToken: isOAuthToken) }
+    let tools = orderedTools.isEmpty ? nil : convertAnthropicTools(orderedTools, isOAuthToken: isOAuthToken)
 
     let thinkingEnabled = options.thinkingEnabled == true && model.reasoning
     let thinking: MessageParameter.Thinking? = {
@@ -1003,7 +1067,9 @@ private func buildAnthropicHttpClient(
     supportsLongCacheRetention: Bool,
     supportsEagerToolInputStreaming: Bool,
     supportsCacheControlOnTools: Bool,
-    thinkingDisabled: Bool
+    thinkingDisabled: Bool,
+    deferredToolNames: Set<String> = [],
+    toolResultAddedNames: [String: [String]] = [:]
 ) -> HTTPClient {
     var merged = extraHeaders
     if isOAuthToken {
@@ -1022,7 +1088,10 @@ private func buildAnthropicHttpClient(
         metadataUserId: metadataUserId,
         supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
         supportsCacheControlOnTools: supportsCacheControlOnTools,
-        thinkingDisabled: thinkingDisabled
+        thinkingDisabled: thinkingDisabled,
+        deferredToolNames: deferredToolNames,
+        toolResultAddedNames: toolResultAddedNames,
+        isOAuthToken: isOAuthToken
     )
 }
 
@@ -1082,6 +1151,9 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let supportsEagerToolInputStreaming: Bool
     let supportsCacheControlOnTools: Bool
     let thinkingDisabled: Bool
+    let deferredToolNames: Set<String>
+    let toolResultAddedNames: [String: [String]]
+    let isOAuthToken: Bool
 
     func data(for request: HTTPRequest) async throws -> (Data, HTTPResponse) {
         let updated = injectingHeaders(request)
@@ -1130,7 +1202,10 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
             metadataUserId: metadataUserId,
             supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
             supportsCacheControlOnTools: supportsCacheControlOnTools,
-            thinkingDisabled: thinkingDisabled
+            thinkingDisabled: thinkingDisabled,
+            deferredToolNames: deferredToolNames,
+            toolResultAddedNames: toolResultAddedNames,
+            isOAuthToken: isOAuthToken
         )
         return HTTPRequest(url: url, method: method, headers: headers, body: updatedBody ?? body)
     }
@@ -1148,7 +1223,10 @@ func injectAnthropicRequestBody(
     metadataUserId: String?,
     supportsEagerToolInputStreaming: Bool = false,
     supportsCacheControlOnTools: Bool = true,
-    thinkingDisabled: Bool = false
+    thinkingDisabled: Bool = false,
+    deferredToolNames: Set<String> = [],
+    toolResultAddedNames: [String: [String]] = [:],
+    isOAuthToken: Bool = false
 ) -> Data? {
     guard let body,
           var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
@@ -1164,6 +1242,56 @@ func injectAnthropicRequestBody(
             }
             payload["system"] = list
         }
+    }
+
+    if !deferredToolNames.isEmpty,
+       var messages = payload["messages"] as? [[String: Any]] {
+        var loadedToolNames = Set<String>()
+
+        for messageIndex in messages.indices {
+            guard (messages[messageIndex]["role"] as? String) == "user",
+                  var blocks = messages[messageIndex]["content"] as? [[String: Any]] else {
+                continue
+            }
+
+            var siblings: [[String: Any]] = []
+            for blockIndex in blocks.indices {
+                guard (blocks[blockIndex]["type"] as? String) == "tool_result",
+                      let toolUseId = blocks[blockIndex]["tool_use_id"] as? String else {
+                    continue
+                }
+
+                var references: [[String: Any]] = []
+                for name in toolResultAddedNames[toolUseId] ?? [] {
+                    let normalizedName = isOAuthToken ? toClaudeCodeName(name) : name
+                    guard deferredToolNames.contains(normalizedName),
+                          !loadedToolNames.contains(normalizedName) else {
+                        continue
+                    }
+                    loadedToolNames.insert(normalizedName)
+                    references.append([
+                        "type": "tool_reference",
+                        "tool_name": isOAuthToken ? toClaudeCodeName(name) : name,
+                    ])
+                }
+
+                guard !references.isEmpty else { continue }
+                let originalContent = blocks[blockIndex]["content"]
+                blocks[blockIndex]["content"] = references
+
+                if let text = originalContent as? String, !text.isEmpty {
+                    siblings.append(["type": "text", "text": text])
+                } else if let originalBlocks = originalContent as? [[String: Any]] {
+                    siblings.append(contentsOf: originalBlocks)
+                }
+            }
+
+            if !siblings.isEmpty {
+                blocks.append(contentsOf: siblings)
+            }
+            messages[messageIndex]["content"] = blocks
+        }
+        payload["messages"] = messages
     }
 
     if var messages = payload["messages"] as? [[String: Any]],
@@ -1193,6 +1321,10 @@ func injectAnthropicRequestBody(
         for index in tools.indices {
             if supportsEagerToolInputStreaming {
                 tools[index]["eager_input_streaming"] = true
+            }
+            if let name = tools[index]["name"] as? String,
+               deferredToolNames.contains(name) {
+                tools[index]["defer_loading"] = true
             }
         }
 

@@ -333,6 +333,16 @@ public enum OpenAICompatCacheControlFormat: String, Sendable {
     case anthropic
 }
 
+public enum SessionAffinityFormat: String, Sendable, Codable, Equatable {
+    case openai
+    case openaiNosession = "openai-nosession"
+    case openrouter
+}
+
+public enum DeferredToolsMode: String, Sendable, Codable, Equatable {
+    case kimi
+}
+
 /// v0.67.0: full OpenRouter provider-selection routing.
 ///
 /// See https://openrouter.ai/docs/guides/routing/provider-selection for upstream docs.
@@ -481,6 +491,11 @@ public struct OpenAICompat: Sendable {
     public var supportsCacheControlOnTools: Bool?
     public var forceAdaptiveThinking: Bool?
     public var zaiToolStream: Bool?
+    public var allowEmptySignature: Bool?
+    public var deferredToolsMode: DeferredToolsMode?
+    public var sessionAffinityFormat: SessionAffinityFormat?
+    public var supportsToolSearch: Bool?
+    public var supportsToolReferences: Bool?
 
     public init(
         supportsStore: Bool? = nil,
@@ -507,7 +522,12 @@ public struct OpenAICompat: Sendable {
         requiresReasoningContentOnAssistantMessages: Bool? = nil,
         supportsCacheControlOnTools: Bool? = nil,
         forceAdaptiveThinking: Bool? = nil,
-        zaiToolStream: Bool? = nil
+        zaiToolStream: Bool? = nil,
+        allowEmptySignature: Bool? = nil,
+        deferredToolsMode: DeferredToolsMode? = nil,
+        sessionAffinityFormat: SessionAffinityFormat? = nil,
+        supportsToolSearch: Bool? = nil,
+        supportsToolReferences: Bool? = nil
     ) {
         self.supportsStore = supportsStore
         self.supportsDeveloperRole = supportsDeveloperRole
@@ -534,6 +554,11 @@ public struct OpenAICompat: Sendable {
         self.supportsCacheControlOnTools = supportsCacheControlOnTools
         self.forceAdaptiveThinking = forceAdaptiveThinking
         self.zaiToolStream = zaiToolStream
+        self.allowEmptySignature = allowEmptySignature
+        self.deferredToolsMode = deferredToolsMode
+        self.sessionAffinityFormat = sessionAffinityFormat
+        self.supportsToolSearch = supportsToolSearch
+        self.supportsToolReferences = supportsToolReferences
     }
 }
 
@@ -916,6 +941,7 @@ public struct ToolResultMessage: Sendable {
     public var toolName: String
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    public var addedToolNames: [String]?
     public var isError: Bool
     public var timestamp: Int64
 
@@ -924,6 +950,7 @@ public struct ToolResultMessage: Sendable {
         toolName: String,
         content: [ContentBlock],
         details: AnyCodable? = nil,
+        addedToolNames: [String]? = nil,
         isError: Bool,
         timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
     ) {
@@ -931,6 +958,7 @@ public struct ToolResultMessage: Sendable {
         self.toolName = toolName
         self.content = content
         self.details = details
+        self.addedToolNames = addedToolNames
         self.isError = isError
         self.timestamp = timestamp
     }

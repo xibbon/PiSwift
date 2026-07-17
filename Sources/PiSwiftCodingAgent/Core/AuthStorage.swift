@@ -509,6 +509,8 @@ public final class AuthStorage: Sendable {
             credentials = try await loginGoogleGeminiCli(callbacks)
         case .googleAntigravity:
             credentials = try await loginAntigravity(callbacks)
+        case .xai:
+            credentials = try await loginXai(callbacks)
         }
         set(provider.rawValue, credential: .oauth(OAuthCredential(credentials)))
     }

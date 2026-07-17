@@ -6,6 +6,7 @@ public func streamOpenAICompletions(
     context: Context,
     options: OpenAICompletionsOptions
 ) -> AssistantMessageEventStream {
+    let model = resolveCloudflareModel(model)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -25,7 +26,7 @@ public func streamOpenAICompletions(
             if compat.thinkingFormat == .zai {
                 openAIStream = try streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat)
             } else {
-                let middlewares = buildCompletionsMiddlewares(model: model, compat: compat, options: options)
+                let middlewares = buildCompletionsMiddlewares(model: model, context: context, compat: compat, options: options)
                 openAIStream = try streamManualOpenAICompletions(
                     model: model,
                     options: options,
@@ -229,8 +230,10 @@ private struct ResolvedOpenAICompat {
     let reasoningEffortMap: [ThinkingLevel: String]?
     let cacheControlFormat: OpenAICompatCacheControlFormat?
     let sendSessionAffinityHeaders: Bool
+    let sessionAffinityFormat: SessionAffinityFormat
     let supportsLongCacheRetention: Bool
     let supportsCacheControlOnTools: Bool
+    let deferredToolsMode: DeferredToolsMode?
     /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
     /// (DeepSeek V4 requirement). Empty string is injected when no thinking content exists.
     let requiresReasoningContentOnAssistantMessages: Bool
@@ -306,8 +309,10 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         reasoningEffortMap: reasoningEffortMap,
         cacheControlFormat: isOpenRouter && model.id.hasPrefix("anthropic/") ? .anthropic : nil,
         sendSessionAffinityHeaders: false,
+        sessionAffinityFormat: isOpenRouter ? .openrouter : .openai,
         supportsLongCacheRetention: !(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isNvidia || isAntLing),
         supportsCacheControlOnTools: true,
+        deferredToolsMode: nil,
         requiresReasoningContentOnAssistantMessages: isDeepSeek
     )
 }
@@ -332,8 +337,10 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap,
         cacheControlFormat: compat.cacheControlFormat ?? detected.cacheControlFormat,
         sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
+        sessionAffinityFormat: compat.sessionAffinityFormat ?? detected.sessionAffinityFormat,
         supportsLongCacheRetention: compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
         supportsCacheControlOnTools: compat.supportsCacheControlOnTools ?? detected.supportsCacheControlOnTools,
+        deferredToolsMode: compat.deferredToolsMode ?? detected.deferredToolsMode,
         requiresReasoningContentOnAssistantMessages: compat.requiresReasoningContentOnAssistantMessages ?? detected.requiresReasoningContentOnAssistantMessages
     )
 }
@@ -377,6 +384,16 @@ private func hasToolHistory(_ messages: [Message]) -> Bool {
     return false
 }
 
+private func getDeferredToolNames(_ messages: [Message]) -> Set<String> {
+    var names = Set<String>()
+    for case .toolResult(let toolResult) in messages {
+        for name in toolResult.addedToolNames ?? [] {
+            names.insert(name)
+        }
+    }
+    return names
+}
+
 private func buildCompletionsQuery(
     model: Model,
     context: Context,
@@ -384,6 +401,10 @@ private func buildCompletionsQuery(
     compat: ResolvedOpenAICompat
 ) throws -> ChatQuery {
     let messages = convertCompletionsMessages(model: model, context: context, compat: compat)
+    let deferredToolNames = compat.deferredToolsMode == .kimi
+        ? getDeferredToolNames(context.messages)
+        : Set<String>()
+    let activeTools = context.tools?.filter { !deferredToolNames.contains($0.name) }
 
     let toolChoice = options.toolChoice.map { choice -> ChatQuery.ChatCompletionFunctionCallOptionParam in
         switch choice {
@@ -403,7 +424,7 @@ private func buildCompletionsQuery(
         // reject `"tools": []` with HTTP 400 `"[] is too short - 'tools'"`. The legacy LiteLLM/
         // Anthropic-proxy workaround (sending `[]` to keep tool history coherent) is preserved
         // only when the conversation actually contains tool history.
-        if let tools = context.tools {
+        if let tools = activeTools {
             let converted = convertCompletionsTools(tools, compat: compat)
             if converted.isEmpty {
                 return hasToolHistory(context.messages) ? [] : nil
@@ -502,10 +523,27 @@ private func convertCompletionsMessages(
     }
 
     var lastRole: String? = nil
+    var kimiPendingAddedNames: [String] = []
+
+    func flushKimiPendingAddedTools() {
+        guard compat.deferredToolsMode == .kimi, !kimiPendingAddedNames.isEmpty else { return }
+        let names = kimiPendingAddedNames.filter { name in
+            context.tools?.contains { $0.name == name } == true
+        }
+        kimiPendingAddedNames = []
+        guard !names.isEmpty,
+              let namesData = try? JSONSerialization.data(withJSONObject: names),
+              let namesJSON = String(data: namesData, encoding: .utf8) else { return }
+        let marker = "\u{0}__PI_KIMI_DEFERRED_TOOLS__:" + namesJSON
+        params.append(.system(.init(content: .textContent(marker))))
+    }
 
     for msg in transformed {
         if compat.requiresAssistantAfterToolResult && lastRole == "toolResult" && msg.role == "user" {
             params.append(.assistant(.init(content: .textContent("I have processed the tool results."))))
+        }
+        if lastRole == "toolResult" && msg.role != "toolResult" {
+            flushKimiPendingAddedTools()
         }
 
         switch msg {
@@ -588,6 +626,12 @@ private func convertCompletionsMessages(
                 params.append(.assistant(assistantMessage))
             }
         case .toolResult(let toolResult):
+            if compat.deferredToolsMode == .kimi {
+                for name in toolResult.addedToolNames ?? [] where !kimiPendingAddedNames.contains(name) {
+                    kimiPendingAddedNames.append(name)
+                }
+            }
+
             let text = toolResult.content.compactMap { block -> String? in
                 if case .text(let textBlock) = block { return textBlock.text }
                 return nil
@@ -623,6 +667,8 @@ private func convertCompletionsMessages(
 
         lastRole = msg.role
     }
+
+    flushKimiPendingAddedTools()
 
     return params
 }
@@ -670,7 +716,8 @@ private func streamZaiCompletions(
     request = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
         sessionId: options.sessionId,
-        sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders
+        sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
+        sessionAffinityFormat: compat.sessionAffinityFormat
     )
 
     var body = try buildZaiRequestBody(query: query, model: model, options: options)
@@ -789,6 +836,7 @@ private func parseCompletionsUsage(_ usage: ChatResult.CompletionUsage) -> Usage
 
 private func buildCompletionsMiddlewares(
     model: Model,
+    context: Context,
     compat: ResolvedOpenAICompat,
     options: OpenAICompletionsOptions
 ) -> [OpenAIMiddleware] {
@@ -799,6 +847,7 @@ private func buildCompletionsMiddlewares(
             sessionId: options.sessionId,
             cacheRetention: resolveCacheRetention(options.cacheRetention),
             sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
+            sessionAffinityFormat: compat.sessionAffinityFormat,
             supportsLongCacheRetention: compat.supportsLongCacheRetention
         ))
     }
@@ -846,12 +895,20 @@ private func buildCompletionsMiddlewares(
             vercelGatewayRouting: model.compat?.vercelGatewayRouting
         ))
     }
+    if compat.deferredToolsMode == .kimi {
+        let deferredToolNames = getDeferredToolNames(context.messages)
+        let orderedDeferredTools: [(name: String, json: [String: Any])] = (context.tools ?? []).compactMap { tool in
+            guard deferredToolNames.contains(tool.name),
+                  let data = try? JSONEncoder().encode(convertCompletionsTools([tool], compat: compat)),
+                  let toolsJSON = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let toolJSON = toolsJSON.first else { return nil }
+            return (name: tool.name, json: toolJSON)
+        }
+        middlewares.append(OpenAICompletionsKimiDeferredToolsMiddleware(
+            orderedDeferredTools: orderedDeferredTools
+        ))
+    }
     return middlewares
-}
-
-private func clampOpenAIPromptCacheKey(_ key: String?) -> String? {
-    guard let key else { return nil }
-    return key.count <= 64 ? key : String(key.prefix(64))
 }
 
 private func shouldSendOpenAICompletionsPromptCache(
@@ -866,13 +923,20 @@ private func shouldSendOpenAICompletionsPromptCache(
 func applyOpenAICompletionsSessionAffinityHeaders(
     request: URLRequest,
     sessionId: String?,
-    sendSessionAffinityHeaders: Bool
+    sendSessionAffinityHeaders: Bool,
+    sessionAffinityFormat: SessionAffinityFormat
 ) -> URLRequest {
     guard sendSessionAffinityHeaders, let sessionId, !sessionId.isEmpty else { return request }
     var updated = request
-    updated.setValue(sessionId, forHTTPHeaderField: "session_id")
-    updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
-    updated.setValue(sessionId, forHTTPHeaderField: "x-session-affinity")
+    if sessionAffinityFormat == .openrouter {
+        updated.setValue(sessionId, forHTTPHeaderField: "x-session-id")
+    } else {
+        if sessionAffinityFormat == .openai {
+            updated.setValue(sessionId, forHTTPHeaderField: "session_id")
+        }
+        updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
+        updated.setValue(sessionId, forHTTPHeaderField: "x-session-affinity")
+    }
     return updated
 }
 
@@ -899,6 +963,71 @@ func applyOpenAICompletionsPromptCache(
     }
 
     return try? JSONSerialization.data(withJSONObject: payload, options: [])
+}
+
+private struct OpenAICompletionsKimiDeferredToolsMiddleware: OpenAIMiddleware {
+    private let markerPrefix = "\u{0}__PI_KIMI_DEFERRED_TOOLS__:"
+    private let orderedDeferredTools: [(name: String, json: AnyCodable)]
+
+    init(orderedDeferredTools: [(name: String, json: [String: Any])]) {
+        self.orderedDeferredTools = orderedDeferredTools.map { tool in
+            (name: tool.name, json: AnyCodable(tool.json))
+        }
+    }
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = readRequestBody(request),
+              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let messages = payload["messages"] as? [[String: Any]] else { return request }
+
+        let rewrittenMessages: [[String: Any]] = messages.compactMap { message in
+            guard message["role"] as? String == "system",
+                  let content = message["content"] as? String,
+                  content.hasPrefix(markerPrefix) else { return message }
+
+            let namesJSON = String(content.dropFirst(markerPrefix.count))
+            let names = namesJSON.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String]
+            } ?? []
+            let nameSet = Set(names)
+            let tools = orderedDeferredTools.compactMap { tool -> [String: Any]? in
+                guard nameSet.contains(tool.name) else { return nil }
+                return tool.json.value as? [String: Any]
+            }
+            guard !tools.isEmpty else { return nil }
+            return ["role": "system", "tools": tools]
+        }
+
+        payload["messages"] = rewrittenMessages
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
+            return request
+        }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+
+    private func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
+    }
 }
 
 private func openAICompatCacheControl(compat: ResolvedOpenAICompat, cacheRetention: CacheRetention) -> [String: Any]? {
@@ -935,13 +1064,15 @@ private struct OpenAICompletionsSessionMiddleware: OpenAIMiddleware {
     let sessionId: String?
     let cacheRetention: CacheRetention
     let sendSessionAffinityHeaders: Bool
+    let sessionAffinityFormat: SessionAffinityFormat
     let supportsLongCacheRetention: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
         var updated = applyOpenAICompletionsSessionAffinityHeaders(
             request: request,
             sessionId: sessionId,
-            sendSessionAffinityHeaders: sendSessionAffinityHeaders
+            sendSessionAffinityHeaders: sendSessionAffinityHeaders,
+            sessionAffinityFormat: sessionAffinityFormat
         )
         guard let body = readRequestBody(updated) else { return updated }
         guard let updatedBody = applyOpenAICompletionsPromptCache(

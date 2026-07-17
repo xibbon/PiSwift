@@ -913,7 +913,10 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         parameters: ["type": AnyCodable("object")]
     ) { _, params, _, _ in
         let value = params["value"]?.value as? String ?? ""
-        return AgentToolResult(content: [.text(TextContent(text: "original:\(value)"))])
+        return AgentToolResult(
+            content: [.text(TextContent(text: "original:\(value)"))],
+            addedToolNames: ["search"]
+        )
     }
 
     let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
@@ -967,6 +970,14 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     } else {
         #expect(Bool(false), "Expected text content in tool result")
     }
+
+    let emittedToolResult = events.compactMap { event -> ToolResultMessage? in
+        if case .messageEnd(let message) = event, case .toolResult(let result) = message {
+            return result
+        }
+        return nil
+    }.first
+    #expect(emittedToolResult?.addedToolNames == ["search"])
 }
 
 @Test func steeringMessagesAtLoopStart() async {
