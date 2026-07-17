@@ -1589,20 +1589,7 @@ private func decodeAgentMessage(_ dict: [String: Any]) -> AgentMessage? {
 }
 
 private func decodeUsage(_ dict: [String: Any]) -> Usage {
-    let input = dict["input"] as? Int ?? 0
-    let output = dict["output"] as? Int ?? 0
-    let cacheRead = dict["cacheRead"] as? Int ?? 0
-    let cacheWrite = dict["cacheWrite"] as? Int ?? 0
-    let totalTokens = dict["totalTokens"] as? Int ?? (input + output + cacheRead + cacheWrite)
-    var usage = Usage(input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite, totalTokens: totalTokens)
-    if let cost = dict["cost"] as? [String: Any] {
-        usage.cost.input = cost["input"] as? Double ?? 0
-        usage.cost.output = cost["output"] as? Double ?? 0
-        usage.cost.cacheRead = cost["cacheRead"] as? Double ?? 0
-        usage.cost.cacheWrite = cost["cacheWrite"] as? Double ?? 0
-        usage.cost.total = cost["total"] as? Double ?? 0
-    }
-    return usage
+    usageFromJSONObject(dict)
 }
 
 private func sessionEntryToDict(_ entry: SessionEntry) -> [String: Any] {
@@ -1667,66 +1654,8 @@ private func sessionEntryToDict(_ entry: SessionEntry) -> [String: Any] {
     return dict
 }
 
+// AgentMessage → dict serialization has a single source of truth in `encodeAgentMessageDict`
+// (AgentMessageEncoding.swift). Delegate so the session-file and session-event encoders can't drift.
 private func agentMessageToDict(_ message: AgentMessage) -> [String: Any] {
-    switch message {
-    case .user(let user):
-        var dict: [String: Any] = [
-            "role": "user",
-            "timestamp": user.timestamp,
-        ]
-        switch user.content {
-        case .text(let text):
-            dict["content"] = text
-        case .blocks(let blocks):
-            dict["content"] = blocks.map { contentBlockToDict($0) }
-        }
-        return dict
-    case .assistant(let assistant):
-        return [
-            "role": "assistant",
-            "content": assistant.content.map { contentBlockToDict($0) },
-            "api": assistant.api.rawValue,
-            "provider": assistant.provider,
-            "model": assistant.model,
-            "usage": encodeUsage(assistant.usage),
-            "stopReason": assistant.stopReason.rawValue,
-            "timestamp": assistant.timestamp,
-            "errorMessage": assistant.errorMessage as Any,
-        ]
-    case .toolResult(let result):
-        return [
-            "role": "toolResult",
-            "toolCallId": result.toolCallId,
-            "toolName": result.toolName,
-            "content": result.content.map { contentBlockToDict($0) },
-            "details": result.details?.jsonValue as Any,
-            "isError": result.isError,
-            "timestamp": result.timestamp,
-        ]
-    case .custom(let custom):
-        var dict: [String: Any] = ["role": custom.role, "timestamp": custom.timestamp]
-        if let payload = custom.payload?.jsonValue as? [String: Any] {
-            for (key, value) in payload {
-                dict[key] = value
-            }
-        }
-        return dict
-    }
-}
-
-private func encodeUsage(_ usage: Usage) -> [String: Any] {
-    [
-        "input": usage.input,
-        "output": usage.output,
-        "cacheRead": usage.cacheRead,
-        "cacheWrite": usage.cacheWrite,
-        "totalTokens": usage.totalTokens,
-        "cost": [
-            "input": usage.cost.input,
-            "output": usage.cost.output,
-            "cacheRead": usage.cost.cacheRead,
-            "cacheWrite": usage.cost.cacheWrite,
-            "total": usage.cost.total,
-        ],
-    ]
+    encodeAgentMessageDict(message)
 }

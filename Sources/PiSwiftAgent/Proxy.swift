@@ -443,76 +443,23 @@ private struct ProxyContentBlockPayload: Encodable {
         self.block = block
     }
 
+    // Delegate to the canonical content-block codec so the proxy wire format can't drift from
+    // session persistence. `AnyCodable` re-encodes the JSON object identically.
     func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        switch block {
-        case .text(let text):
-            try container.encode("text", forKey: .type)
-            try container.encode(text.text, forKey: .text)
-            try container.encodeIfPresent(text.textSignature, forKey: .textSignature)
-        case .thinking(let thinking):
-            try container.encode("thinking", forKey: .type)
-            try container.encode(thinking.thinking, forKey: .thinking)
-            try container.encodeIfPresent(thinking.thinkingSignature, forKey: .thinkingSignature)
-            try container.encodeIfPresent(thinking.redacted, forKey: .redacted)
-        case .image(let image):
-            try container.encode("image", forKey: .type)
-            try container.encode(image.data, forKey: .data)
-            try container.encode(image.mimeType, forKey: .mimeType)
-        case .toolCall(let call):
-            try container.encode("toolCall", forKey: .type)
-            try container.encode(call.id, forKey: .id)
-            try container.encode(call.name, forKey: .name)
-            try container.encode(call.arguments, forKey: .arguments)
-        }
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case text
-        case textSignature
-        case thinking
-        case thinkingSignature
-        case redacted
-        case data
-        case mimeType
-        case id
-        case name
-        case arguments
+        try AnyCodable(contentBlockToJSONObject(block)).encode(to: encoder)
     }
 }
 
 private struct ProxyUsagePayload: Encodable {
-    let input: Int
-    let output: Int
-    let cacheRead: Int
-    let cacheWrite: Int
-    let totalTokens: Int
-    let cost: ProxyUsageCost
+    let usage: Usage
 
     init(_ usage: Usage) {
-        self.input = usage.input
-        self.output = usage.output
-        self.cacheRead = usage.cacheRead
-        self.cacheWrite = usage.cacheWrite
-        self.totalTokens = usage.totalTokens
-        self.cost = ProxyUsageCost(usage.cost)
+        self.usage = usage
     }
-}
 
-private struct ProxyUsageCost: Codable {
-    let input: Double
-    let output: Double
-    let cacheRead: Double
-    let cacheWrite: Double
-    let total: Double
-
-    init(_ cost: UsageCost) {
-        self.input = cost.input
-        self.output = cost.output
-        self.cacheRead = cost.cacheRead
-        self.cacheWrite = cost.cacheWrite
-        self.total = cost.total
+    // Delegate to the canonical usage codec (single source of truth in PiSwiftAI).
+    func encode(to encoder: Encoder) throws {
+        try AnyCodable(usageToJSONObject(usage)).encode(to: encoder)
     }
 }
 
@@ -611,6 +558,14 @@ private enum ProxyAssistantMessageEvent: Decodable {
         let payload = try container.decode(ProxyUsage.self, forKey: .usage)
         return payload.toUsage()
     }
+}
+
+private struct ProxyUsageCost: Decodable {
+    let input: Double
+    let output: Double
+    let cacheRead: Double
+    let cacheWrite: Double
+    let total: Double
 }
 
 private struct ProxyUsage: Decodable {

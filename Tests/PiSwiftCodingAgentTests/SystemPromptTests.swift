@@ -164,14 +164,16 @@ import Testing
 
 // MARK: - Environment info tests
 
-@Test func buildSystemPromptIncludesDate() {
+@Test func buildSystemPromptOmitsDate() {
     let prompt = buildSystemPrompt(BuildSystemPromptOptions(
         contextFiles: [],
         skills: []
     ))
 
-    // v0.61.1: ISO date only, no time component
-    #expect(prompt.contains("Current date:"))
+    // v0.80.x: the current date is no longer injected into the system prompt
+    // (a daily-changing date busted the system-prompt cache). Working directory stays.
+    #expect(!prompt.contains("Current date:"))
+    #expect(prompt.contains("Current working directory:"))
 }
 
 @Test func buildSystemPromptIncludesCwd() {

@@ -128,12 +128,6 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
     let resolvedCustomPrompt = resolvePromptInput(options.customPrompt, "system prompt")
     let resolvedAppendPrompt = resolvePromptInput(options.appendSystemPrompt, "append system prompt")
 
-    // Keep only ISO date in system prompt (no time component) — matches upstream v0.61.1
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "yyyy-MM-dd"
-    let dateTime = formatter.string(from: Date())
-
     let appendSection = resolvedAppendPrompt.map { "\n\n\($0)" } ?? ""
 
     let contextFiles = options.contextFiles ?? loadProjectContextFiles(LoadContextFilesOptions(cwd: resolvedCwd, agentDir: options.agentDir))
@@ -178,7 +172,6 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
             prompt += formatSkillsForPrompt(skills)
         }
 
-        prompt += "\nCurrent date: \(dateTime)"
         prompt += "\nCurrent working directory: \(resolvedCwd)"
         return prompt
     }
@@ -268,7 +261,6 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
         prompt += formatSkillsForPrompt(skills)
     }
 
-    prompt += "\nCurrent date: \(dateTime)"
     prompt += "\nCurrent working directory: \(resolvedCwd)"
 
     return prompt

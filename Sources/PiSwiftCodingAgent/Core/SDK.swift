@@ -249,7 +249,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.githubCopilot, "gpt-4o"),
     (.openrouter, "openai/gpt-5.1-codex"),
     (.vercelAiGateway, "anthropic/claude-opus-4.5"),
-    (.xai, "grok-4-fast-non-reasoning"),
+    (.xai, "grok-4.5"),
     (.groq, "openai/gpt-oss-120b"),
     (.cerebras, "zai-glm-5"),
     (.zai, "glm-5"),

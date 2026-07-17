@@ -50,18 +50,5 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
 }
 
 private func encodeUsage(_ usage: Usage) -> [String: Any] {
-    [
-        "input": usage.input,
-        "output": usage.output,
-        "cacheRead": usage.cacheRead,
-        "cacheWrite": usage.cacheWrite,
-        "totalTokens": usage.totalTokens,
-        "cost": [
-            "input": usage.cost.input,
-            "output": usage.cost.output,
-            "cacheRead": usage.cost.cacheRead,
-            "cacheWrite": usage.cost.cacheWrite,
-            "total": usage.cost.total,
-        ],
-    ]
+    usageToJSONObject(usage)
 }

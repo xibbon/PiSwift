@@ -83,6 +83,31 @@ public func getClipboardImagePngData() -> Data? {
 #endif
 }
 
+/// Read plain text from the system clipboard. Returns nil when empty or unavailable.
+/// Used as a fallback when a clipboard-paste finds no image.
+public func readClipboardText() -> String? {
+#if canImport(AppKit)
+    let text = NSPasteboard.general.string(forType: .string)
+    return (text?.isEmpty == false) ? text : nil
+#elseif canImport(UIKit)
+    let text = UIPasteboard.general.string
+    return (text?.isEmpty == false) ? text : nil
+#elseif os(Linux)
+    let data: Data?
+    if isWaylandSession() {
+        data = runClipboardCommandBinary(command: "wl-paste", args: ["--no-newline"])
+            ?? runClipboardCommandBinary(command: "xclip", args: ["-selection", "clipboard", "-o"])
+    } else {
+        data = runClipboardCommandBinary(command: "xclip", args: ["-selection", "clipboard", "-o"])
+            ?? runClipboardCommandBinary(command: "xsel", args: ["--clipboard", "--output"])
+    }
+    guard let data, let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
+    return text
+#else
+    return nil
+#endif
+}
+
 #if os(Linux)
 private func linuxClipboardHasImage() -> Bool {
     readLinuxClipboardImagePngData() != nil

@@ -13,4 +13,5 @@ public enum AppAction: String, CaseIterable, Sendable {
     case followUp
     case dequeue
     case pasteImage
+    case copyMessage
 }
