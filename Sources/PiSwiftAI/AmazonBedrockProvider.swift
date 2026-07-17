@@ -1147,6 +1147,7 @@ private func isRetryableBedrockTransportError(_ error: Error) -> Bool {
         text.contains("resourceexhausted") ||
         text.contains("network connection was lost") ||
         text.contains("socket connection was closed") ||
+        text.contains("socket is not connected") ||
         text.contains("you can retry your request") ||
         text.contains("try your request again") ||
         text.contains("please retry your request")

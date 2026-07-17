@@ -948,7 +948,8 @@ public final class AgentSession: Sendable {
         //   v0.66.0: `request ended without sending any chunks` (broken upstream connection)
         //   v0.67.67: `Network connection lost.` (dropped provider connection)
         //   v0.70.0: `http2 request did not get a response` (Bedrock/Smithy HTTP/2 transport failure)
-        let pattern = "overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|network.?error|provider.?returned.?error|socket hang up|timed?.?out|timeout|retry.?delay|request ended without sending any chunks|network connection lost|http2 request did not get a response|http/2 request did not get a response"
+        //   `socket is not connected` / ENOTCONN: URLSession transport dropped the socket mid-request
+        let pattern = "overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|network.?error|provider.?returned.?error|socket hang up|socket is not connected|enotconn|timed?.?out|timeout|retry.?delay|request ended without sending any chunks|network connection lost|http2 request did not get a response|http/2 request did not get a response"
         return errorMessage.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 

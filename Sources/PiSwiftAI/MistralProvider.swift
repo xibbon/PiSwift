@@ -679,6 +679,7 @@ private func isRetryableMistralTransportError(_ error: Error) -> Bool {
     return text.contains("timed out") ||
         text.contains("network connection was lost") ||
         text.contains("socket connection was closed") ||
+        text.contains("socket is not connected") ||
         text.contains("connection reset") ||
         text.contains("temporarily unavailable") ||
         text.contains("resourceexhausted") ||
