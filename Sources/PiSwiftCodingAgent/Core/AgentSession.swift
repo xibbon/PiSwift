@@ -1963,7 +1963,9 @@ public final class AgentSession: Sendable {
     public func navigateTree(
         _ targetId: String,
         summarize: Bool = false,
-        customInstructions: String? = nil
+        customInstructions: String? = nil,
+        replaceInstructions: Bool? = nil,
+        label: String? = nil
     ) async -> (editorText: String?, cancelled: Bool, aborted: Bool?, summaryEntry: BranchSummaryEntry?) {
         let oldLeafId = sessionManager.getLeafId()
         if targetId == oldLeafId {
@@ -2018,6 +2020,7 @@ public final class AgentSession: Sendable {
                     headers: request.auth.headers,
                     signal: branchSummaryAbort,
                     customInstructions: customInstructions,
+                    replaceInstructions: replaceInstructions,
                     reserveTokens: settingsManager.getBranchSummarySettings().reserveTokens
                 )
                 let result = await generateBranchSummary(collection.entries, options)
@@ -2066,10 +2069,18 @@ public final class AgentSession: Sendable {
                 if case .branchSummary(let entry) = sessionManager.getEntry(summaryId) {
                     summaryEntry = entry
                 }
+                // Attach label to the summary entry
+                if let label {
+                    _ = try sessionManager.appendLabelChange(summaryId, label)
+                }
             } else if newLeafId == nil {
                 sessionManager.resetLeaf()
             } else if let newLeafId {
                 try sessionManager.branch(newLeafId)
+            }
+            // Attach label to target entry when not summarizing (no summary entry to label)
+            if let label, summaryText == nil {
+                _ = try sessionManager.appendLabelChange(targetId, label)
             }
         } catch {
             return (nil, true, nil, nil)

@@ -56,14 +56,17 @@ public struct GenerateBranchSummaryOptions: Sendable {
     public var headers: [String: String]?
     public var signal: CancellationToken?
     public var customInstructions: String?
+    /// If true, `customInstructions` replaces the default prompt instead of being appended.
+    public var replaceInstructions: Bool?
     public var reserveTokens: Int?
 
-    public init(model: Model, apiKey: String, headers: [String: String]? = nil, signal: CancellationToken?, customInstructions: String?, reserveTokens: Int?) {
+    public init(model: Model, apiKey: String, headers: [String: String]? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?) {
         self.model = model
         self.apiKey = apiKey
         self.headers = headers
         self.signal = signal
         self.customInstructions = customInstructions
+        self.replaceInstructions = replaceInstructions
         self.reserveTokens = reserveTokens
     }
 }
@@ -149,7 +152,11 @@ Include:
     let conversationText = serializeConversation(llmMessages)
     let instructions: String
     if let custom = options.customInstructions, !custom.isEmpty {
-        instructions = "\(summaryPrompt)\n\nAdditional focus: \(custom)"
+        if options.replaceInstructions == true {
+            instructions = custom
+        } else {
+            instructions = "\(summaryPrompt)\n\nAdditional focus: \(custom)"
+        }
     } else {
         instructions = summaryPrompt
     }

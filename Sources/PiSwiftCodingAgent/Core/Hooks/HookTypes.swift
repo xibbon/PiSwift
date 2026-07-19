@@ -408,9 +408,23 @@ public struct HookNewSessionOptions: Sendable {
 
 public struct HookNavigateTreeOptions: Sendable {
     public var summarize: Bool
+    /// Custom instructions for the branch summarizer.
+    public var customInstructions: String?
+    /// If true, `customInstructions` replaces the default summary prompt instead of being appended.
+    public var replaceInstructions: Bool?
+    /// Label to attach to the branch summary entry (or the target entry when not summarizing).
+    public var label: String?
 
-    public init(summarize: Bool = false) {
+    public init(
+        summarize: Bool = false,
+        customInstructions: String? = nil,
+        replaceInstructions: Bool? = nil,
+        label: String? = nil
+    ) {
         self.summarize = summarize
+        self.customInstructions = customInstructions
+        self.replaceInstructions = replaceInstructions
+        self.label = label
     }
 }
 

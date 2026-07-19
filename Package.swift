@@ -41,6 +41,10 @@ let package = Package(
             type: .dynamic,
             targets: ["PiExtensionSDK"]
         ),
+        .library(
+            name: "PiReviewExtension",
+            targets: ["PiReviewExtension"]
+        ),
         .executable(
             name: "pi-ai",
             targets: ["PiSwiftAICLI"]
@@ -104,6 +108,15 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .target(
+            name: "PiReviewExtension",
+            dependencies: [
+                "PiSwiftAI",
+                "PiSwiftAgent",
+                "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
             name: "PiSwiftSyntaxHighlight",
             swiftSettings: strictConcurrencySettings
         ),
@@ -144,6 +157,14 @@ let package = Package(
             name: "PiMCPAdapterTests",
             dependencies: [
                 "PiMCPAdapter",
+                "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiReviewExtensionTests",
+            dependencies: [
+                "PiReviewExtension",
                 "PiSwiftCodingAgent",
             ],
             swiftSettings: strictConcurrencySettings
