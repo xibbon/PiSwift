@@ -1837,6 +1837,35 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(events[2].delta?.text == "bad\\qescape")
 }
 
+// Line-based byte streams (AsyncLineSequence) swallow the blank separator
+// lines, so the parser must also frame events on the next event field.
+@Test func anthropicSSEParserHandlesMissingBlankLineSeparators() throws {
+    let lines = [
+        "event: message_start",
+        "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-test\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}",
+        "event: content_block_start",
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+        "event: ping",
+        "data: {\"type\": \"ping\"}",
+        "event: content_block_delta",
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}",
+        "event: content_block_stop",
+        "data: {\"type\":\"content_block_stop\",\"index\":0   }",
+        "event: message_stop",
+        "data: {\"type\":\"message_stop\"     }",
+    ]
+
+    let events = try decodeAnthropicSSELines(lines)
+    #expect(events.map(\.type) == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_stop",
+    ])
+    #expect(events[2].delta?.text == "hi")
+}
+
 @Test func anthropicSSEParserRequiresMessageStopAfterStart() throws {
     let lines = [
         "event: message_start",

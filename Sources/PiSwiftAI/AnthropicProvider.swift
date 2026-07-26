@@ -500,8 +500,8 @@ private struct AnthropicSSEDecoder {
             return flush()
         }
 
-        raw.append(normalized)
         if normalized.hasPrefix(":") {
+            raw.append(normalized)
             return nil
         }
 
@@ -513,8 +513,16 @@ private struct AnthropicSSEDecoder {
         }
 
         if fieldName == "event" {
+            // Line-based byte streams (AsyncLineSequence) swallow the blank
+            // lines that delimit SSE events, so a new event field arriving
+            // with data buffered means the previous event is complete.
+            let pending = data.isEmpty ? nil : flush()
+            raw.append(normalized)
             event = value
-        } else if fieldName == "data" {
+            return pending
+        }
+        raw.append(normalized)
+        if fieldName == "data" {
             data.append(value)
         }
         return nil
@@ -677,9 +685,15 @@ private func streamAnthropicMessagesTolerant(
     let url = try anthropicMessagesURL(baseUrl: baseUrl)
     var headers: [String: String] = [
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
     ]
+    // OAuth access tokens must be sent as a bearer token (matching upstream
+    // pi's authToken usage); x-api-key is rejected with a 401 for them.
+    if isAnthropicOAuthToken(apiKey) {
+        headers["Authorization"] = "Bearer \(apiKey)"
+    } else {
+        headers["x-api-key"] = apiKey
+    }
     if let betaHeaders, !betaHeaders.isEmpty {
         headers["anthropic-beta"] = betaHeaders.joined(separator: ",")
     }
@@ -1241,6 +1255,18 @@ func injectAnthropicRequestBody(
                 list[index] = ensureCacheControl(in: list[index], ttl: ttl)
             }
             payload["system"] = list
+        }
+    }
+
+    // Anthropic's OAuth endpoint only serves Claude Code-shaped requests: the
+    // first system block must be its identity line (matching upstream pi).
+    if isOAuthToken {
+        let spoof: [String: Any] = ["type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."]
+        if var list = payload["system"] as? [[String: Any]] {
+            list.insert(spoof, at: 0)
+            payload["system"] = list
+        } else {
+            payload["system"] = [spoof]
         }
     }
 
