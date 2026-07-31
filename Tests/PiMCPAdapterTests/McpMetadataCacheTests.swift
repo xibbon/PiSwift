@@ -96,8 +96,34 @@ struct MetadataCacheTests {
 
         let metadata = reconstructToolMetadata(serverName: "srv", entry: entry, prefix: "server", exposeResources: true)
         #expect(metadata.count == 2)
-        #expect(metadata[1].name == "srv_get_test_file")
+        #expect(metadata[1].name == "srv_read_test_file")
         #expect(metadata[1].resourceUri == "file:///test")
+    }
+
+    @Test("cached metadata applies current include and exclude rules")
+    func cachedMetadataUsesFilters() {
+        let entry = ServerCacheEntry(
+            configHash: "abc",
+            tools: [CachedTool(name: "keep"), CachedTool(name: "remove")],
+            resources: [],
+            cachedAt: Date().timeIntervalSince1970 * 1000
+        )
+        let definition = ServerEntry(includeTools: ["keep", "remove"], excludeTools: ["remove"])
+        let metadata = reconstructToolMetadata(
+            serverName: "demo",
+            entry: entry,
+            prefix: "server",
+            exposeResources: true,
+            definition: definition
+        )
+        #expect(metadata.map(\.originalName) == ["keep"])
+    }
+
+    @Test("tool visibility settings invalidate cached metadata")
+    func visibilitySettingsChangeHash() {
+        let baseline = ServerEntry(command: "demo")
+        let filtered = ServerEntry(command: "demo", includeTools: ["search"], excludeTools: ["delete"])
+        #expect(computeServerHash(baseline) != computeServerHash(filtered))
     }
 
     @Test("MetadataCache Codable round-trip")
@@ -118,5 +144,12 @@ struct MetadataCacheTests {
         #expect(decoded.servers["test"]?.tools.count == 1)
         #expect(decoded.servers["test"]?.tools[0].name == "t1")
         #expect(decoded.servers["test"]?.resources.count == 1)
+    }
+
+    @Test("legacy cache entries decode without prompt metadata")
+    func decodesLegacyEntry() throws {
+        let data = Data(#"{"configHash":"hash","tools":[],"resources":[],"cachedAt":1}"#.utf8)
+        let entry = try JSONDecoder().decode(ServerCacheEntry.self, from: data)
+        #expect(entry.prompts.isEmpty)
     }
 }

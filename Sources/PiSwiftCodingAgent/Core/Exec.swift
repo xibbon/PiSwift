@@ -5,11 +5,23 @@ public struct ExecOptions: Sendable {
     public var signal: CancellationToken?
     public var timeout: TimeInterval?
     public var cwd: String?
+    /// Stop the child process when captured stdout exceeds this byte count.
+    public var maxOutputBytes: Int?
+    /// Discard stderr instead of retaining it in memory.
+    public var captureStderr: Bool
 
-    public init(signal: CancellationToken? = nil, timeout: TimeInterval? = nil, cwd: String? = nil) {
+    public init(
+        signal: CancellationToken? = nil,
+        timeout: TimeInterval? = nil,
+        cwd: String? = nil,
+        maxOutputBytes: Int? = nil,
+        captureStderr: Bool = true
+    ) {
         self.signal = signal
         self.timeout = timeout
         self.cwd = cwd
+        self.maxOutputBytes = maxOutputBytes.flatMap { $0 >= 0 ? $0 : nil }
+        self.captureStderr = captureStderr
     }
 }
 
@@ -18,12 +30,14 @@ public struct ExecResult: Sendable {
     public var stderr: String
     public var code: Int
     public var killed: Bool
+    public var outputExceeded: Bool
 
-    public init(stdout: String, stderr: String, code: Int, killed: Bool) {
+    public init(stdout: String, stderr: String, code: Int, killed: Bool, outputExceeded: Bool = false) {
         self.stdout = stdout
         self.stderr = stderr
         self.code = code
         self.killed = killed
+        self.outputExceeded = outputExceeded
     }
 }
 
@@ -77,21 +91,28 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     process.currentDirectoryURL = URL(fileURLWithPath: directory)
 
     let stdoutPipe = Pipe()
-    let stderrPipe = Pipe()
+    let stderrPipe = options?.captureStderr == false ? nil : Pipe()
     process.standardOutput = stdoutPipe
-    process.standardError = stderrPipe
+    process.standardError = stderrPipe ?? FileHandle.nullDevice
 
-    let stdoutBuffer = OutputBuffer()
+    let stdoutBuffer = OutputBuffer(limit: options?.maxOutputBytes)
     let stderrBuffer = OutputBuffer()
+    let outputExceeded = ManagedAtomic(false)
+    let killedFlag = ManagedAtomic(false)
 
     stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-        stdoutBuffer.append(handle.availableData)
+        if !stdoutBuffer.append(handle.availableData) {
+            outputExceeded.store(true)
+            killedFlag.store(true)
+            if process.isRunning {
+                killProcessTree(process.processIdentifier)
+            }
+        }
     }
-    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-        stderrBuffer.append(handle.availableData)
+    stderrPipe?.fileHandleForReading.readabilityHandler = { handle in
+        _ = stderrBuffer.append(handle.availableData)
     }
 
-    let killedFlag = ManagedAtomic(false)
     let cancellationTimer = DispatchSource.makeTimerSource()
     cancellationTimer.schedule(deadline: .now(), repeating: .milliseconds(50))
     cancellationTimer.setEventHandler {
@@ -132,11 +153,11 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     return await withCheckedContinuation { continuation in
         process.terminationHandler = { proc in
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
-            stderrPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe?.fileHandleForReading.readabilityHandler = nil
             let stdoutRemainder = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrRemainder = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            stdoutBuffer.append(stdoutRemainder)
-            stderrBuffer.append(stderrRemainder)
+            let stderrRemainder = stderrPipe?.fileHandleForReading.readDataToEndOfFile() ?? Data()
+            _ = stdoutBuffer.append(stdoutRemainder)
+            _ = stderrBuffer.append(stderrRemainder)
             cancellationTimer.cancel()
             timeoutTimerRef?.cancel()
 
@@ -146,7 +167,13 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             let killed = killedFlag.load()
             let code = Int(proc.terminationStatus)
 
-            continuation.resume(returning: ExecResult(stdout: stdoutText, stderr: stderrText, code: code, killed: killed))
+            continuation.resume(returning: ExecResult(
+                stdout: stdoutText,
+                stderr: stderrText,
+                code: code,
+                killed: killed,
+                outputExceeded: outputExceeded.load()
+            ))
         }
     }
 }
@@ -169,11 +196,25 @@ private final class ManagedAtomic: Sendable {
 
 private final class OutputBuffer: Sendable {
     private let state = LockedState(Data())
+    private let limit: Int?
 
-    func append(_ chunk: Data) {
-        guard !chunk.isEmpty else { return }
-        state.withLock { data in
-            data.append(chunk)
+    init(limit: Int? = nil) {
+        self.limit = limit
+    }
+
+    /// Returns false when a configured size limit was exceeded.
+    func append(_ chunk: Data) -> Bool {
+        guard !chunk.isEmpty else { return true }
+        return state.withLock { data in
+            guard let limit else {
+                data.append(chunk)
+                return true
+            }
+            let remaining = max(0, limit - data.count)
+            if remaining > 0 {
+                data.append(chunk.prefix(remaining))
+            }
+            return chunk.count <= remaining
         }
     }
 

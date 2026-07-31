@@ -56,9 +56,11 @@ public struct ExtensionDylibLoader {
             messageRenderers: api.messageRenderers,
             entryRenderers: api.entryRenderers,
             commands: api.commands,
+            currentCommands: { api.commands },
             flags: api.flags,
             shortcuts: api.shortcuts,
             tools: api.tools,
+            currentTools: { api.tools },
             providerRegistrations: api.providerRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
             setSendUserMessageHandler: api.setSendUserMessageHandler,
@@ -75,6 +77,8 @@ public struct ExtensionDylibLoader {
             setSetThinkingLevelHandler: api.setSetThinkingLevelHandler,
             setRegisterProviderHandler: api.setRegisterProviderHandler,
             setUnregisterProviderHandler: api.setUnregisterProviderHandler,
+            setRegisterToolHandler: api.setRegisterToolHandler,
+            setUnregisterToolHandler: api.setUnregisterToolHandler,
             setFlagValue: api.setFlagValue,
             isExtension: true
         )

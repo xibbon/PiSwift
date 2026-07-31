@@ -115,4 +115,18 @@ struct ContentTransformerTests {
         let blocks = transformMcpContent([])
         #expect(blocks.isEmpty)
     }
+
+    @Test("Structured content is used when a tool result has no content blocks")
+    func structuredContentFallback() {
+        let blocks = resolveMcpResultContent(McpToolResult(
+            content: [],
+            structuredContent: AnyCodable(["answer": 42] as [String: Any])
+        ))
+        guard case .text(let text) = blocks.first else {
+            Issue.record("Expected structured content text")
+            return
+        }
+        #expect(text.text.contains("answer"))
+        #expect(text.text.contains("42"))
+    }
 }

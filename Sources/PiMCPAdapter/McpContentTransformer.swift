@@ -35,3 +35,18 @@ public func transformMcpContent(_ content: [McpContent]) -> [ContentBlock] {
         }
     }
 }
+
+/// Convert an MCP tool result to model content. MCP permits successful calls
+/// to return only `structuredContent`; retain that information instead of
+/// presenting an empty result to the model.
+public func resolveMcpResultContent(_ result: McpToolResult) -> [ContentBlock] {
+    let blocks = transformMcpContent(result.content)
+    guard blocks.isEmpty, let structuredContent = result.structuredContent else {
+        return blocks
+    }
+    if let data = try? JSONSerialization.data(withJSONObject: structuredContent.value, options: [.prettyPrinted]),
+       let text = String(data: data, encoding: .utf8) {
+        return [.text(TextContent(text: text))]
+    }
+    return [.text(TextContent(text: String(describing: structuredContent.value)))]
+}

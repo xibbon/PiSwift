@@ -629,6 +629,8 @@ public final class AgentSession: Sendable {
             setThinkingLevelHandler: { [weak self] level in
                 self?.setThinkingLevel(level)
             },
+            registerToolHandler: { [weak self] tool in self?.registerLiveExtensionTool(tool) },
+            unregisterToolHandler: { [weak self] name in self?.unregisterLiveExtensionTool(name) },
             sendUserMessageHandler: { [weak self] content, options in
                 Task { [weak self] in
                     guard let self else { return }
@@ -1204,6 +1206,40 @@ public final class AgentSession: Sendable {
             baseSystemPrompt = rebuildSystemPrompt(validNames)
             agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
         }
+    }
+
+    /// Apply a tool registered after session creation. This is used by MCP
+    /// metadata refreshes and gives inline extensions the same live tool
+    /// surface as reloaded extensions.
+    private func registerLiveExtensionTool(_ tool: CustomTool) {
+        guard let wrapped = wrapExtensionToolsInternal?([tool]).first else { return }
+        var registry = toolRegistry
+        registry[wrapped.name] = wrapped
+        toolRegistry = registry
+
+        var active = agent.tools
+        if let index = active.firstIndex(where: { $0.name == wrapped.name }) {
+            active[index] = wrapped
+        } else {
+            active.append(wrapped)
+        }
+        agent.tools = active
+        refreshSystemPromptForActiveTools()
+    }
+
+    private func unregisterLiveExtensionTool(_ name: String) {
+        var registry = toolRegistry
+        registry.removeValue(forKey: name)
+        toolRegistry = registry
+        agent.tools.removeAll { $0.name == name }
+        refreshSystemPromptForActiveTools()
+    }
+
+    private func refreshSystemPromptForActiveTools() {
+        guard let rebuildSystemPrompt else { return }
+        let activeNames = getActiveToolNames()
+        baseSystemPrompt = rebuildSystemPrompt(activeNames)
+        agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
     }
 
     public func reload() async {

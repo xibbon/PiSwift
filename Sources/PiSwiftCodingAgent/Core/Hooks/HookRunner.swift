@@ -74,6 +74,8 @@ public final class HookRunner: Sendable {
         var setModelHandler: HookSetModelHandler
         var getThinkingLevelHandler: HookGetThinkingLevelHandler
         var setThinkingLevelHandler: HookSetThinkingLevelHandler
+        var registerToolHandler: HookRegisterToolHandler
+        var unregisterToolHandler: HookUnregisterToolHandler
 
         func apply(to hook: LoadedHook) {
             hook.setSendMessageHandler(sendMessageHandler)
@@ -89,6 +91,8 @@ public final class HookRunner: Sendable {
             hook.setSetModelHandler(setModelHandler)
             hook.setGetThinkingLevelHandler(getThinkingLevelHandler)
             hook.setSetThinkingLevelHandler(setThinkingLevelHandler)
+            hook.setRegisterToolHandler(registerToolHandler)
+            hook.setUnregisterToolHandler(unregisterToolHandler)
         }
     }
 
@@ -274,6 +278,8 @@ public final class HookRunner: Sendable {
         setModelHandler: HookSetModelHandler? = nil,
         getThinkingLevelHandler: HookGetThinkingLevelHandler? = nil,
         setThinkingLevelHandler: HookSetThinkingLevelHandler? = nil,
+        registerToolHandler: HookRegisterToolHandler? = nil,
+        unregisterToolHandler: HookUnregisterToolHandler? = nil,
         sendUserMessageHandler: HookSendUserMessageHandler? = nil,
         setLabelHandler: HookSetLabelHandler? = nil,
         getContextUsage: HookGetContextUsageHandler? = nil,
@@ -341,7 +347,9 @@ public final class HookRunner: Sendable {
             getCommandsHandler: getCommandsHandler ?? { [] },
             setModelHandler: setModelHandler ?? { _ in false },
             getThinkingLevelHandler: getThinkingLevelHandler ?? { .off },
-            setThinkingLevelHandler: setThinkingLevelHandler ?? { _ in }
+            setThinkingLevelHandler: setThinkingLevelHandler ?? { _ in },
+            registerToolHandler: registerToolHandler ?? { _ in },
+            unregisterToolHandler: unregisterToolHandler ?? { _ in }
         )
         state.withLock { $0.wiring = wiring }
         for hook in hooks {
@@ -373,7 +381,7 @@ public final class HookRunner: Sendable {
     public func getExtensionTools() -> [CustomTool] {
         var byName: [String: CustomTool] = [:]
         for hook in hooks where hook.isExtension {
-            for (name, tool) in hook.tools {
+            for (name, tool) in hook.currentTools() {
                 byName[name] = tool
             }
         }
@@ -385,7 +393,7 @@ public final class HookRunner: Sendable {
     public func getExtensionToolNames() -> Set<String> {
         var names: Set<String> = []
         for hook in hooks where hook.isExtension {
-            for name in hook.tools.keys { names.insert(name) }
+            for name in hook.currentTools().keys { names.insert(name) }
         }
         return names
     }
@@ -513,7 +521,7 @@ public final class HookRunner: Sendable {
         var commands: [RegisteredCommand] = []
         var nameCount: [String: Int] = [:]
         for hook in hooks {
-            for command in hook.commands.values {
+            for command in hook.currentCommands().values {
                 let baseName = command.name
                 let count = nameCount[baseName] ?? 0
                 if count == 0 {
@@ -567,7 +575,7 @@ public final class HookRunner: Sendable {
 
     public func getCommand(_ name: String) -> RegisteredCommand? {
         for hook in hooks {
-            if let command = hook.commands[name] {
+            if let command = hook.currentCommands()[name] {
                 return command
             }
         }

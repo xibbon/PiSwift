@@ -23,6 +23,16 @@ struct ToolNameTests {
         #expect(formatToolName("query", serverName: "anything", prefix: "none") == "query")
     }
 
+    @Test("MCP prefix mode and dotted names")
+    func mcpPrefix() {
+        #expect(formatToolName("tools.search", serverName: "my-server", prefix: "mcp") == "mcp__my_server_tools_search")
+    }
+
+    @Test("prompt commands use a stable namespaced form")
+    func formatsPromptCommandName() {
+        #expect(formatPromptCommandName("daily brief", serverName: "demo-mcp", prefix: "short") == "mcp__demo__daily_brief")
+    }
+
     @Test("getServerPrefix edge cases")
     func serverPrefixEdgeCases() {
         // Empty after stripping should become "mcp"
@@ -34,8 +44,22 @@ struct ToolNameTests {
 
     @Test("Resource name to tool name")
     func resourceNames() {
-        #expect(resourceNameToToolName("My Resource") == "get_my_resource")
-        #expect(resourceNameToToolName("123-data") == "get_resource_123_data")
+        #expect(resourceNameToToolName("My Resource") == "my_resource")
+        #expect(resourceNameToToolName("123-data") == "resource_123_data")
+    }
+}
+
+@Suite("Tool Visibility")
+struct ToolVisibilityTests {
+    @Test("exclude patterns take precedence over include patterns")
+    func excludeWins() {
+        let definition = ServerEntry(
+            includeTools: ["demo_*"] ,
+            excludeTools: ["demo_delete"]
+        )
+        #expect(isToolAllowed("search", serverName: "demo", prefix: "server", definition: definition))
+        #expect(!isToolAllowed("delete", serverName: "demo", prefix: "server", definition: definition))
+        #expect(!isToolAllowed("search", serverName: "other", prefix: "server", definition: definition))
     }
 }
 
@@ -96,7 +120,10 @@ struct McpConfigTests {
             "mcpServers": {
                 "test": {"command": "echo", "args": ["hello"]}
             },
-            "settings": {"toolPrefix": "short"}
+            "settings": {
+                "toolPrefix": "short",
+                "authRequiredMessage": "Sign in to ${server}."
+            }
         }
         """.data(using: .utf8)!
 
@@ -105,6 +132,7 @@ struct McpConfigTests {
         #expect(config.mcpServers["test"]?.command == "echo")
         #expect(config.mcpServers["test"]?.args == ["hello"])
         #expect(config.settings?.toolPrefix == "short")
+        #expect(config.settings?.authRequiredMessage == "Sign in to ${server}.")
     }
 
     @Test("Decode with mcp-servers (hyphenated)")
@@ -160,5 +188,12 @@ struct McpConfigTests {
         if case .enabled(true) = entry.directTools {} else {
             Issue.record("Expected .enabled(true)")
         }
+    }
+
+    @Test("OAuth false is accepted as explicit disabled OAuth configuration")
+    func decodesDisabledOAuth() throws {
+        let json = Data(#"{"mcpServers":{"remote":{"url":"https://example.com/mcp","oauth":false}}}"#.utf8)
+        let config = try JSONDecoder().decode(McpConfig.self, from: json)
+        #expect(config.mcpServers["remote"]?.oauth != nil)
     }
 }

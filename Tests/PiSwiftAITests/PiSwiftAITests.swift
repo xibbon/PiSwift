@@ -3486,6 +3486,23 @@ struct JSONSchemaValidatorTests {
             #expect(!invalid.isValid)
             #expect(invalid.errors.first?.message.contains("must be unique") == true)
         }
+
+        @Test func validatesDraft07AndDraft2020Tuples() {
+            let draft07: [String: Any] = [
+                "type": "array",
+                "items": [["type": "string"], ["type": "number"]],
+                "additionalItems": false,
+            ]
+            let draft2020: [String: Any] = [
+                "type": "array",
+                "prefixItems": [["type": "string"], ["type": "number"]],
+                "items": false,
+            ]
+            #expect(validator.validate(["ok", 1], against: draft07).isValid)
+            #expect(!validator.validate(["ok", 1, true], against: draft07).isValid)
+            #expect(validator.validate(["ok", 1], against: draft2020).isValid)
+            #expect(!validator.validate(["ok", 1, true], against: draft2020).isValid)
+        }
     }
 
     // MARK: - Object Validation

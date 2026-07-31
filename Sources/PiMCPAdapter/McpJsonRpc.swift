@@ -34,6 +34,26 @@ struct JsonRpcResponse: Codable, Sendable {
     var error: JsonRpcError?
 }
 
+struct JsonRpcServerRequest: Codable, Sendable {
+    var jsonrpc: String
+    var id: AnyCodable
+    var method: String
+    var params: AnyCodable?
+}
+
+struct JsonRpcServerResponse: Codable, Sendable {
+    var jsonrpc: String = "2.0"
+    var id: AnyCodable
+    var result: AnyCodable?
+    var error: JsonRpcError?
+}
+
+enum JsonRpcIncomingMessage: Sendable {
+    case response(JsonRpcResponse)
+    case request(JsonRpcServerRequest)
+    case notification(JsonRpcNotification)
+}
+
 struct JsonRpcError: Codable, Sendable {
     var code: Int
     var message: String
@@ -63,6 +83,20 @@ enum JsonRpc {
         try decoder.decode(JsonRpcResponse.self, from: data)
     }
 
+    static func decodeIncoming(_ data: Data) throws -> JsonRpcIncomingMessage {
+        let object = try JSONSerialization.jsonObject(with: data)
+        guard let dictionary = object as? [String: Any] else {
+            throw McpError.protocolError("JSON-RPC message is not an object")
+        }
+        if dictionary["method"] != nil {
+            if dictionary["id"] != nil {
+                return .request(try decoder.decode(JsonRpcServerRequest.self, from: data))
+            }
+            return .notification(try decoder.decode(JsonRpcNotification.self, from: data))
+        }
+        return .response(try decoder.decode(JsonRpcResponse.self, from: data))
+    }
+
     static func encodeToLine(_ request: JsonRpcRequest) throws -> Data {
         var data = try encode(request)
         data.append(contentsOf: [UInt8(ascii: "\n")])
@@ -71,6 +105,12 @@ enum JsonRpc {
 
     static func encodeNotificationToLine(_ notification: JsonRpcNotification) throws -> Data {
         var data = try encodeNotification(notification)
+        data.append(contentsOf: [UInt8(ascii: "\n")])
+        return data
+    }
+
+    static func encodeServerResponseToLine(_ response: JsonRpcServerResponse) throws -> Data {
+        var data = try encoder.encode(response)
         data.append(contentsOf: [UInt8(ascii: "\n")])
         return data
     }

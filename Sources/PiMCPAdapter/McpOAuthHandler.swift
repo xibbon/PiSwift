@@ -16,31 +16,24 @@ public struct OAuthTokens: Sendable {
     }
 }
 
-// MARK: - Token Storage
+// MARK: - Host Authorization
 
-private func oauthDir(serverName: String) -> String {
-    let agentDir = (NSHomeDirectory() as NSString).appendingPathComponent(".pi/agent")
-    return ((agentDir as NSString).appendingPathComponent("mcp-oauth") as NSString).appendingPathComponent(serverName)
+/// Supplies an HTTP Authorization header for OAuth-protected MCP servers.
+/// The host owns sign-in, refresh, and secure credential storage. Returning
+/// `nil` rejects the connection without reading from an ambient token store.
+public protocol McpAuthorizationProvider: Sendable {
+    func authorizationHeader(
+        for serverName: String,
+        configuration: ServerEntry
+    ) async -> String?
 }
 
-public func getStoredTokens(serverName: String) -> OAuthTokens? {
-    let path = (oauthDir(serverName: serverName) as NSString).appendingPathComponent("tokens.json")
-    guard let data = FileManager.default.contents(atPath: path) else { return nil }
-
-    guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-    guard let accessToken = dict["access_token"] as? String, !accessToken.isEmpty else { return nil }
-
-    // Check expiration
-    if let expiresAt = dict["expiresAt"] as? Double {
-        if Date().timeIntervalSince1970 * 1000 > expiresAt {
-            return nil
-        }
-    }
-
-    return OAuthTokens(
-        accessToken: accessToken,
-        tokenType: dict["token_type"] as? String ?? "bearer",
-        refreshToken: dict["refresh_token"] as? String,
-        expiresIn: dict["expires_in"] as? Int
-    )
+/// Optional capability for hosts that keep OAuth credentials. The adapter
+/// never deletes credentials itself; `/mcp logout` and native hosts call this
+/// only when the host explicitly supplies a mutable provider.
+public protocol McpMutableAuthorizationProvider: McpAuthorizationProvider {
+    func clearAuthorization(
+        for serverName: String,
+        configuration: ServerEntry
+    ) async
 }

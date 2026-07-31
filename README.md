@@ -15,6 +15,58 @@ in the sibling `../PiSwiftTui` package so this package stays suitable for mobile
 applications. See
 `AGENT_HARNESS_API_BOUNDARY.md` for the parity decision.
 
+## MCP adapter extension
+
+`PiMCPAdapter` is an opt-in inline extension. Applications provide MCP
+configuration in code. The adapter does not read or write project, home, or
+third-party MCP config files.
+
+```swift
+import PiMCPAdapter
+import PiSwiftCodingAgent
+
+let adapter = McpAdapter.makeExtension(McpAdapterOptions(
+    config: McpConfig(mcpServers: [
+        "docs": ServerEntry(url: "https://mcp.example.com/mcp")
+    ])
+))
+
+let result = await createAgentSession(CreateAgentSessionOptions(
+    inlineExtensions: [adapter.inlineExtension()]
+))
+
+let status = await adapter.runtime.status()
+```
+
+The extension registers the `mcp` proxy tool. It also registers direct tools
+when cached or live metadata enables them, and updates direct tools and prompt
+commands during the session after a metadata refresh. Hosts can subscribe to
+`mcpStatusEvent` and use the runtime status API to build native UI. The adapter
+does not include terminal panels or a WebView renderer.
+
+OAuth is closed by default. A host that needs OAuth must supply an
+`McpAuthorizationProvider`, which can use its own secure credential store. The
+adapter does not read token files from the user's home directory.
+
+The runtime also provides `connect`, `disconnect`, `reconnect`, `logout`,
+`callTool`, `readResource`, `listTools`, `listResources`, `listPrompts`, and
+`getPrompt`. MCP prompts register namespaced slash commands. Set `sampling` or
+`elicitation` and provide a
+`serverRequestHandler` to enable server-initiated requests. The adapter does
+not advertise those capabilities without that handler.
+
+MCP text output has a guard by default. It limits inline text to 50 KiB or
+2,000 lines and keeps images. Proxy-tool details limit raw MCP results to
+16 KiB and replace larger values with a compact reference. Hosts can set
+`outputGuard` to `false` or supply an `McpOutputStore` for complete-output
+artifacts.
+
+Tracing is disabled unless both `settings.trace.enabled` (or a server's
+`trace`) and an `McpTraceSink` are supplied. Trace events contain only
+redacted server and method metadata, direction, message type, and byte count.
+They never contain MCP payloads, headers, URLs, or authorization values. The
+host owns trace retention and storage.
+
 ## Subagents (in-process)
 
 PiSwift supports delegating work to specialized subagents without spawning a subprocess. Subagents are defined by user-editable Markdown files and run in-process with isolated context.

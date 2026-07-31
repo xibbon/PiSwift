@@ -185,3 +185,34 @@ private func extensionSurfaceSession(
     #expect(result.hook?.handlers["agent_settled"]?.count == 1)
     #expect(result.hook?.tools["inline-tool"] != nil)
 }
+
+@Test func loadedExtensionReadsToolsAndCommandsRegisteredAfterLoad() {
+    let apiBox = LockedState<HookAPI?>(nil)
+    let result = ExtensionLoader.load(
+        InlineExtension(name: "live-surface") { api in
+            apiBox.withLock { $0 = api }
+        },
+        cwd: FileManager.default.currentDirectoryPath,
+        eventBus: createEventBus()
+    )
+    guard let api = apiBox.withLock({ $0 }), let hook = result.hook else {
+        Issue.record("Expected inline extension API and hook")
+        return
+    }
+
+    api.registerCommand("live-command", description: "Added after load") { _, _ in }
+    api.registerTool(CustomTool(
+        name: "live-tool",
+        label: "Live tool",
+        description: "Added after load",
+        parameters: [:],
+        execute: { _, _, _, _, _ in AgentToolResult(content: [.text(TextContent(text: "ok"))]) }
+    ))
+
+    #expect(hook.currentCommands()["live-command"] != nil)
+    #expect(hook.currentTools()["live-tool"] != nil)
+    #expect(api.unregisterCommand("live-command"))
+    #expect(api.unregisterTool("live-tool"))
+    #expect(hook.currentCommands()["live-command"] == nil)
+    #expect(hook.currentTools()["live-tool"] == nil)
+}

@@ -311,6 +311,10 @@ public typealias HookReloadHandler = @Sendable () async -> Void
 public typealias HookGetActiveToolsSetter = @Sendable (@escaping HookGetActiveToolsHandler) -> Void
 public typealias HookGetAllToolsSetter = @Sendable (@escaping HookGetAllToolsHandler) -> Void
 public typealias HookSetActiveToolsSetter = @Sendable (@escaping HookSetActiveToolsHandler) -> Void
+public typealias HookRegisterToolHandler = @Sendable (_ tool: CustomTool) -> Void
+public typealias HookUnregisterToolHandler = @Sendable (_ name: String) -> Void
+public typealias HookRegisterToolSetter = @Sendable (@escaping HookRegisterToolHandler) -> Void
+public typealias HookUnregisterToolSetter = @Sendable (@escaping HookUnregisterToolHandler) -> Void
 public typealias HookSetFlagValue = @Sendable (_ name: String, _ value: HookFlagValue) -> Void
 public typealias HookRegisterProviderHandler = @Sendable (_ config: HookProviderConfig) -> Void
 public typealias HookUnregisterProviderHandler = @Sendable (_ provider: String) -> Void
@@ -1376,11 +1380,17 @@ public struct LoadedHook: Sendable {
     public var messageRenderers: [String: HookMessageRenderer]
     public var entryRenderers: [String: EntryRenderer]
     public var commands: [String: RegisteredCommand]
+    /// Returns the extension's current commands. This keeps commands registered
+    /// after session start visible to command dispatch and completion.
+    public var currentCommands: @Sendable () -> [String: RegisteredCommand]
     public var flags: [String: HookFlag]
     public var shortcuts: [KeyId: HookShortcut]
     /// Custom tools registered by the extension via `pi.registerTool(_:)`. Empty for
     /// settings-defined hooks (which use the legacy `--tool` flag pathway instead).
     public var tools: [String: CustomTool]
+    /// Returns the extension's current tools. This keeps tools registered after
+    /// session start visible to reload bookkeeping.
+    public var currentTools: @Sendable () -> [String: CustomTool]
     public var providerRegistrations: [String: HookProviderConfig]
     public var setSendMessageHandler: HookSendMessageSetter
     public var setSendUserMessageHandler: HookSendUserMessageSetter
@@ -1397,6 +1407,8 @@ public struct LoadedHook: Sendable {
     public var setSetThinkingLevelHandler: HookSetThinkingLevelSetter
     public var setRegisterProviderHandler: HookRegisterProviderSetter
     public var setUnregisterProviderHandler: HookUnregisterProviderSetter
+    public var setRegisterToolHandler: HookRegisterToolSetter
+    public var setUnregisterToolHandler: HookUnregisterToolSetter
     public var setFlagValue: HookSetFlagValue
     /// True when this hook was loaded from a `.swift`/SPM extension (vs a settings-defined hook).
     /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
@@ -1409,9 +1421,11 @@ public struct LoadedHook: Sendable {
         messageRenderers: [String: HookMessageRenderer] = [:],
         entryRenderers: [String: EntryRenderer] = [:],
         commands: [String: RegisteredCommand] = [:],
+        currentCommands: (@Sendable () -> [String: RegisteredCommand])? = nil,
         flags: [String: HookFlag] = [:],
         shortcuts: [KeyId: HookShortcut] = [:],
         tools: [String: CustomTool] = [:],
+        currentTools: (@Sendable () -> [String: CustomTool])? = nil,
         providerRegistrations: [String: HookProviderConfig] = [:],
         setSendMessageHandler: @escaping HookSendMessageSetter = { _ in },
         setSendUserMessageHandler: @escaping HookSendUserMessageSetter = { _ in },
@@ -1428,6 +1442,8 @@ public struct LoadedHook: Sendable {
         setSetThinkingLevelHandler: @escaping HookSetThinkingLevelSetter = { _ in },
         setRegisterProviderHandler: @escaping HookRegisterProviderSetter = { _ in },
         setUnregisterProviderHandler: @escaping HookUnregisterProviderSetter = { _ in },
+        setRegisterToolHandler: @escaping HookRegisterToolSetter = { _ in },
+        setUnregisterToolHandler: @escaping HookUnregisterToolSetter = { _ in },
         setFlagValue: @escaping HookSetFlagValue = { _, _ in },
         isExtension: Bool = false
     ) {
@@ -1437,9 +1453,11 @@ public struct LoadedHook: Sendable {
         self.messageRenderers = messageRenderers
         self.entryRenderers = entryRenderers
         self.commands = commands
+        self.currentCommands = currentCommands ?? { commands }
         self.flags = flags
         self.shortcuts = shortcuts
         self.tools = tools
+        self.currentTools = currentTools ?? { tools }
         self.providerRegistrations = providerRegistrations
         self.setSendMessageHandler = setSendMessageHandler
         self.setSendUserMessageHandler = setSendUserMessageHandler
@@ -1456,6 +1474,8 @@ public struct LoadedHook: Sendable {
         self.setSetThinkingLevelHandler = setSetThinkingLevelHandler
         self.setRegisterProviderHandler = setRegisterProviderHandler
         self.setUnregisterProviderHandler = setUnregisterProviderHandler
+        self.setRegisterToolHandler = setRegisterToolHandler
+        self.setUnregisterToolHandler = setUnregisterToolHandler
         self.setFlagValue = setFlagValue
         self.isExtension = isExtension
     }
@@ -1494,6 +1514,8 @@ public final class HookAPI: Sendable {
         var providerRegistrations: [String: HookProviderConfig]
         var registerProviderHandler: HookRegisterProviderHandler
         var unregisterProviderHandler: HookUnregisterProviderHandler
+        var registerToolHandler: HookRegisterToolHandler
+        var unregisterToolHandler: HookUnregisterToolHandler
         var sendMessageHandler: HookSendMessageHandler
         var sendUserMessageHandler: HookSendUserMessageHandler
         var appendEntryHandler: HookAppendEntryHandler
@@ -1560,6 +1582,16 @@ public final class HookAPI: Sendable {
     private var unregisterProviderHandler: HookUnregisterProviderHandler {
         get { state.withLock { $0.unregisterProviderHandler } }
         set { state.withLock { $0.unregisterProviderHandler = newValue } }
+    }
+
+    private var registerToolHandler: HookRegisterToolHandler {
+        get { state.withLock { $0.registerToolHandler } }
+        set { state.withLock { $0.registerToolHandler = newValue } }
+    }
+
+    private var unregisterToolHandler: HookUnregisterToolHandler {
+        get { state.withLock { $0.unregisterToolHandler } }
+        set { state.withLock { $0.unregisterToolHandler = newValue } }
     }
 
     private var sendMessageHandler: HookSendMessageHandler {
@@ -1656,6 +1688,8 @@ public final class HookAPI: Sendable {
             providerRegistrations: [:],
             registerProviderHandler: { _ in },
             unregisterProviderHandler: { _ in },
+            registerToolHandler: { _ in },
+            unregisterToolHandler: { _ in },
             sendMessageHandler: { _, _ in },
             sendUserMessageHandler: { _, _ in },
             appendEntryHandler: { _, _ in },
@@ -1741,6 +1775,14 @@ public final class HookAPI: Sendable {
 
     public func setUnregisterProviderHandler(_ handler: @escaping HookUnregisterProviderHandler) {
         unregisterProviderHandler = handler
+    }
+
+    public func setRegisterToolHandler(_ handler: @escaping HookRegisterToolHandler) {
+        registerToolHandler = handler
+    }
+
+    public func setUnregisterToolHandler(_ handler: @escaping HookUnregisterToolHandler) {
+        unregisterToolHandler = handler
     }
 
     public func setFlagValue(_ name: String, _ value: HookFlagValue) {
@@ -1851,12 +1893,28 @@ public final class HookAPI: Sendable {
         commands[name] = RegisteredCommand(name: name, description: description, handler: handler)
     }
 
+    /// Remove a command that this extension registered.
+    @discardableResult
+    public func unregisterCommand(_ name: String) -> Bool {
+        state.withLock { $0.commands.removeValue(forKey: name) != nil }
+    }
+
     /// Register a custom tool callable by the LLM. Mirrors pi-mono's `pi.registerTool(_)`.
     /// The tool's `name` must be unique across the session (collisions overwrite). The
     /// extension that registered the tool owns its lifetime — when the extension is
     /// dropped via `/reload`, its tools are removed from the agent's roster.
     public func registerTool(_ tool: CustomTool) {
         tools[tool.name] = tool
+        registerToolHandler(tool)
+    }
+
+    /// Remove an extension tool from the live agent session when supported.
+    /// Returns false when the tool name was not registered by this hook.
+    @discardableResult
+    public func unregisterTool(_ name: String) -> Bool {
+        let removed = state.withLock { $0.tools.removeValue(forKey: name) != nil }
+        if removed { unregisterToolHandler(name) }
+        return removed
     }
 
     public func registerProvider(_ config: HookProviderConfig) {

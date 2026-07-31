@@ -14,40 +14,6 @@ public struct NpxResolution: Sendable {
     }
 }
 
-struct NpxCache: Codable, Sendable {
-    var entries: [String: NpxCacheEntry]
-}
-
-struct NpxCacheEntry: Codable, Sendable {
-    var binPath: String
-    var isJs: Bool
-    var cachedAt: Double
-}
-
-private let npxCacheTTL: Double = 24 * 60 * 60 * 1000 // 24 hours in ms
-
-// MARK: - Cache File
-
-private func npxCachePath() -> String {
-    let agentDir = (NSHomeDirectory() as NSString).appendingPathComponent(".pi/agent")
-    return (agentDir as NSString).appendingPathComponent("mcp-npx-cache.json")
-}
-
-private func loadNpxCache() -> NpxCache? {
-    let path = npxCachePath()
-    guard let data = FileManager.default.contents(atPath: path) else { return nil }
-    return try? JSONDecoder().decode(NpxCache.self, from: data)
-}
-
-private func saveNpxCache(_ cache: NpxCache) {
-    let path = npxCachePath()
-    let dir = (path as NSString).deletingLastPathComponent
-    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-    if let data = try? JSONEncoder().encode(cache) {
-        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
-    }
-}
-
 // MARK: - Main Resolver
 
 public func resolveNpxBinary(command: String, args: [String]) async -> NpxResolution? {
@@ -64,41 +30,13 @@ public func resolveNpxBinary(command: String, args: [String]) async -> NpxResolu
         return nil
     }
 
-    let cacheKey = parsed.packageSpec
-
-    // Check local cache
-    if var cache = loadNpxCache(), let entry = cache.entries[cacheKey] {
-        let age = Date().timeIntervalSince1970 * 1000 - entry.cachedAt
-        if age < npxCacheTTL && FileManager.default.fileExists(atPath: entry.binPath) {
-            return NpxResolution(binPath: entry.binPath, isJs: entry.isJs, extraArgs: parsed.extraArgs)
-        }
-        // Expired or missing - remove
-        cache.entries.removeValue(forKey: cacheKey)
-        saveNpxCache(cache)
-    }
-
     // Try resolving from npm cache
     if let resolved = resolveFromNpmCache(packageSpec: parsed.packageSpec, binName: parsed.binName) {
-        // Cache the result
-        var cache = loadNpxCache() ?? NpxCache(entries: [:])
-        cache.entries[cacheKey] = NpxCacheEntry(
-            binPath: resolved.binPath,
-            isJs: resolved.isJs,
-            cachedAt: Date().timeIntervalSince1970 * 1000
-        )
-        saveNpxCache(cache)
         return NpxResolution(binPath: resolved.binPath, isJs: resolved.isJs, extraArgs: parsed.extraArgs)
     }
 
     // Force-populate via npm exec
     if let resolved = await forcePopulate(packageSpec: parsed.packageSpec, binName: parsed.binName) {
-        var cache = loadNpxCache() ?? NpxCache(entries: [:])
-        cache.entries[cacheKey] = NpxCacheEntry(
-            binPath: resolved.binPath,
-            isJs: resolved.isJs,
-            cachedAt: Date().timeIntervalSince1970 * 1000
-        )
-        saveNpxCache(cache)
         return NpxResolution(binPath: resolved.binPath, isJs: resolved.isJs, extraArgs: parsed.extraArgs)
     }
 

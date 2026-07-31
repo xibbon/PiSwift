@@ -18,13 +18,48 @@ public struct ServerCacheEntry: Codable, Sendable {
     public var configHash: String
     public var tools: [CachedTool]
     public var resources: [CachedResource]
+    public var prompts: [CachedPrompt]
     public var cachedAt: Double
 
-    public init(configHash: String, tools: [CachedTool], resources: [CachedResource], cachedAt: Double) {
+    enum CodingKeys: String, CodingKey {
+        case configHash, tools, resources, prompts, cachedAt
+    }
+
+    public init(
+        configHash: String,
+        tools: [CachedTool],
+        resources: [CachedResource],
+        prompts: [CachedPrompt] = [],
+        cachedAt: Double
+    ) {
         self.configHash = configHash
         self.tools = tools
         self.resources = resources
+        self.prompts = prompts
         self.cachedAt = cachedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        configHash = try container.decode(String.self, forKey: .configHash)
+        tools = try container.decode([CachedTool].self, forKey: .tools)
+        resources = try container.decode([CachedResource].self, forKey: .resources)
+        prompts = try container.decodeIfPresent([CachedPrompt].self, forKey: .prompts) ?? []
+        cachedAt = try container.decode(Double.self, forKey: .cachedAt)
+    }
+}
+
+public struct CachedPrompt: Codable, Sendable {
+    public var name: String
+    public var title: String?
+    public var description: String?
+    public var arguments: [McpPromptArgument]?
+
+    public init(name: String, title: String? = nil, description: String? = nil, arguments: [McpPromptArgument]? = nil) {
+        self.name = name
+        self.title = title
+        self.description = description
+        self.arguments = arguments
     }
 }
 
@@ -32,11 +67,18 @@ public struct CachedTool: Codable, Sendable {
     public var name: String
     public var description: String?
     public var inputSchema: AnyCodable?
+    public var outputSchema: AnyCodable?
 
-    public init(name: String, description: String? = nil, inputSchema: AnyCodable? = nil) {
+    public init(
+        name: String,
+        description: String? = nil,
+        inputSchema: AnyCodable? = nil,
+        outputSchema: AnyCodable? = nil
+    ) {
         self.name = name
         self.description = description
         self.inputSchema = inputSchema
+        self.outputSchema = outputSchema
     }
 }
 
@@ -113,6 +155,7 @@ public func computeServerHash(_ definition: ServerEntry) -> String {
     // Hash only identity-affecting fields
     var components: [String: Any] = [:]
     if let c = definition.command { components["command"] = c }
+    if let s = definition.socket { components["socket"] = s }
     if let a = definition.args { components["args"] = a }
     if let e = definition.env { components["env"] = e }
     if let c = definition.cwd { components["cwd"] = c }
@@ -122,6 +165,8 @@ public func computeServerHash(_ definition: ServerEntry) -> String {
     if let b = definition.bearerToken { components["bearerToken"] = b }
     if let b = definition.bearerTokenEnv { components["bearerTokenEnv"] = b }
     if let e = definition.exposeResources { components["exposeResources"] = e }
+    if let includeTools = definition.includeTools { components["includeTools"] = includeTools }
+    if let excludeTools = definition.excludeTools { components["excludeTools"] = excludeTools }
 
     // Stable JSON with sorted keys
     guard let data = try? JSONSerialization.data(
@@ -151,12 +196,19 @@ public func reconstructToolMetadata(
     serverName: String,
     entry: ServerCacheEntry,
     prefix: String,
-    exposeResources: Bool?
+    exposeResources: Bool?,
+    definition: ServerEntry? = nil
 ) -> [ToolMetadata] {
     var metadata: [ToolMetadata] = []
+    var seenNames: Set<String> = []
 
     for tool in entry.tools {
+        if let definition,
+           !isToolAllowed(tool.name, serverName: serverName, prefix: prefix, definition: definition) {
+            continue
+        }
         let prefixed = formatToolName(tool.name, serverName: serverName, prefix: prefix)
+        guard seenNames.insert(prefixed).inserted else { continue }
         metadata.append(ToolMetadata(
             name: prefixed,
             originalName: tool.name,
@@ -165,10 +217,15 @@ public func reconstructToolMetadata(
         ))
     }
 
-    if exposeResources == true {
+    if exposeResources != false {
         for resource in entry.resources {
-            let toolName = resourceNameToToolName(resource.name)
+            let toolName = "read_\(resourceNameToToolName(resource.name))"
+            if let definition,
+               !isToolAllowed(toolName, serverName: serverName, prefix: prefix, definition: definition) {
+                continue
+            }
             let prefixed = formatToolName(toolName, serverName: serverName, prefix: prefix)
+            guard seenNames.insert(prefixed).inserted else { continue }
             metadata.append(ToolMetadata(
                 name: prefixed,
                 originalName: toolName,
@@ -181,13 +238,34 @@ public func reconstructToolMetadata(
     return metadata
 }
 
+public func reconstructPromptMetadata(serverName: String, entry: ServerCacheEntry, prefix: String) -> [PromptMetadata] {
+    entry.prompts.map { prompt in
+        PromptMetadata(
+            serverName: serverName,
+            originalName: prompt.name,
+            commandName: formatPromptCommandName(prompt.name, serverName: serverName, prefix: prefix),
+            title: prompt.title,
+            description: prompt.description ?? prompt.title ?? "MCP prompt from \(serverName)",
+            arguments: prompt.arguments ?? []
+        )
+    }
+}
+
 // MARK: - Build Cache Entry from Connection
 
 public func buildCacheEntry(from connection: ServerConnection, definition: ServerEntry) -> ServerCacheEntry {
     ServerCacheEntry(
         configHash: computeServerHash(definition),
-        tools: connection.tools.map { CachedTool(name: $0.name, description: $0.description, inputSchema: $0.inputSchema) },
+        tools: connection.tools.map {
+            CachedTool(
+                name: $0.name,
+                description: $0.description,
+                inputSchema: $0.inputSchema,
+                outputSchema: $0.outputSchema
+            )
+        },
         resources: connection.resources.map { CachedResource(uri: $0.uri, name: $0.name, description: $0.description) },
+        prompts: connection.prompts.map { CachedPrompt(name: $0.name, title: $0.title, description: $0.description, arguments: $0.arguments) },
         cachedAt: Date().timeIntervalSince1970 * 1000
     )
 }

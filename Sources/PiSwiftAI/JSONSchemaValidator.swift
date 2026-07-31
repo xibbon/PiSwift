@@ -478,8 +478,56 @@ public final class JSONSchemaValidator: @unchecked Sendable {
             }
         }
 
-        // Validate items
         var coercedItems: [Any] = []
+
+        // Validate tuple forms. Draft 2020-12 uses `prefixItems`; draft-07
+        // uses an array-valued `items` plus optional `additionalItems`.
+        if let prefixItems = schema["prefixItems"] as? [[String: Any]] {
+            for (index, itemSchema) in prefixItems.enumerated() where index < arrayValue.count {
+                let result = validate(arrayValue[index], against: itemSchema, path: "\(path)[\(index)]", coerceTypes: coerceTypes)
+                if !result.isValid { return result }
+                coercedItems.append(result.coercedValue ?? arrayValue[index])
+            }
+            let remaining = arrayValue.dropFirst(prefixItems.count)
+            if schema["items"] as? Bool == false, !remaining.isEmpty {
+                return .invalid(SchemaValidationError(path: path, message: "must not have additional items"))
+            }
+            if let itemsSchema = schema["items"] as? [String: Any] {
+                for (offset, item) in remaining.enumerated() {
+                    let index = prefixItems.count + offset
+                    let result = validate(item, against: itemsSchema, path: "\(path)[\(index)]", coerceTypes: coerceTypes)
+                    if !result.isValid { return result }
+                    coercedItems.append(result.coercedValue ?? item)
+                }
+            } else {
+                coercedItems.append(contentsOf: remaining)
+            }
+            return .valid(coercedItems)
+        }
+        if let tupleItems = schema["items"] as? [[String: Any]] {
+            for (index, itemSchema) in tupleItems.enumerated() where index < arrayValue.count {
+                let result = validate(arrayValue[index], against: itemSchema, path: "\(path)[\(index)]", coerceTypes: coerceTypes)
+                if !result.isValid { return result }
+                coercedItems.append(result.coercedValue ?? arrayValue[index])
+            }
+            let remaining = arrayValue.dropFirst(tupleItems.count)
+            if schema["additionalItems"] as? Bool == false, !remaining.isEmpty {
+                return .invalid(SchemaValidationError(path: path, message: "must not have additional items"))
+            }
+            if let additionalItems = schema["additionalItems"] as? [String: Any] {
+                for (offset, item) in remaining.enumerated() {
+                    let index = tupleItems.count + offset
+                    let result = validate(item, against: additionalItems, path: "\(path)[\(index)]", coerceTypes: coerceTypes)
+                    if !result.isValid { return result }
+                    coercedItems.append(result.coercedValue ?? item)
+                }
+            } else {
+                coercedItems.append(contentsOf: remaining)
+            }
+            return .valid(coercedItems)
+        }
+
+        // Validate homogeneous items.
         if let itemsSchema = schema["items"] as? [String: Any] {
             for (index, item) in arrayValue.enumerated() {
                 let itemPath = "\(path)[\(index)]"
