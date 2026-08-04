@@ -214,27 +214,6 @@ private func buildGoogleRequestBody(
     if let maxTokens = options.maxTokens {
         generationConfig["maxOutputTokens"] = maxTokens
     }
-
-    var payload: [String: Any] = [
-        "contents": contents,
-    ]
-
-    if !generationConfig.isEmpty {
-        payload["generationConfig"] = generationConfig
-    }
-    if let systemPrompt = context.systemPrompt, !systemPrompt.isEmpty {
-        payload["systemInstruction"] = sanitizeSurrogates(systemPrompt)
-    }
-    if let tools = context.tools, !tools.isEmpty {
-        payload["tools"] = convertGoogleTools(tools)
-    }
-    if let tools = context.tools, !tools.isEmpty, let choice = options.toolChoice {
-        payload["toolConfig"] = [
-            "functionCallingConfig": [
-                "mode": mapGoogleToolChoice(choice),
-            ],
-        ]
-    }
     if let thinking = options.thinking, model.reasoning {
         let config: [String: Any]
         if thinking.enabled {
@@ -248,7 +227,34 @@ private func buildGoogleRequestBody(
         } else {
             config = googleDisabledThinkingConfig(model: model)
         }
-        payload["thinkingConfig"] = config
+        // thinkingConfig belongs to generationConfig; at the top level it is an unknown field.
+        generationConfig["thinkingConfig"] = config
+    }
+
+    var payload: [String: Any] = [
+        "contents": contents,
+    ]
+
+    if !generationConfig.isEmpty {
+        payload["generationConfig"] = generationConfig
+    }
+    if let systemPrompt = context.systemPrompt, !systemPrompt.isEmpty {
+        // system_instruction is a Content, not a bare string.
+        payload["systemInstruction"] = [
+            "parts": [
+                ["text": sanitizeSurrogates(systemPrompt)],
+            ],
+        ]
+    }
+    if let tools = context.tools, !tools.isEmpty {
+        payload["tools"] = convertGoogleTools(tools)
+    }
+    if let tools = context.tools, !tools.isEmpty, let choice = options.toolChoice {
+        payload["toolConfig"] = [
+            "functionCallingConfig": [
+                "mode": mapGoogleToolChoice(choice),
+            ],
+        ]
     }
 
     return try JSONSerialization.data(withJSONObject: payload, options: [])

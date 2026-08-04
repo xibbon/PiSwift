@@ -5265,7 +5265,10 @@ struct ApiRegistryTests {
         )
         let stream = streamGoogle(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("say ok")))]),
+            context: Context(
+                systemPrompt: "be terse",
+                messages: [.user(UserMessage(content: .text("say ok")))]
+            ),
             options: GoogleOptions(
                 apiKey: "google-key",
                 thinking: GoogleOptions.ThinkingConfig(enabled: false),
@@ -5284,13 +5287,22 @@ struct ApiRegistryTests {
         guard let json = capturedPayload.withLock({ $0 }),
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let thinkingConfig = object["thinkingConfig"] as? [String: Any] else {
-            #expect(Bool(false), "Expected Google payload thinkingConfig")
+              let generationConfig = object["generationConfig"] as? [String: Any],
+              let thinkingConfig = generationConfig["thinkingConfig"] as? [String: Any] else {
+            #expect(Bool(false), "Expected Google payload generationConfig.thinkingConfig")
             return
         }
+        // v1beta rejects a top-level thinkingConfig as an unknown field.
+        #expect(object["thinkingConfig"] == nil)
         #expect(thinkingConfig["thinkingLevel"] as? String == GoogleThinkingLevel.low.rawValue)
         #expect(thinkingConfig["includeThoughts"] == nil)
         #expect(thinkingConfig["thinkingBudget"] == nil)
+
+        // system_instruction is a Content, so a bare string is rejected.
+        let systemInstruction = object["systemInstruction"] as? [String: Any]
+        let parts = systemInstruction?["parts"] as? [[String: Any]]
+        #expect(parts?.count == 1)
+        #expect(parts?.first?["text"] as? String == "be terse")
     }
 }
 
@@ -5301,6 +5313,7 @@ struct ApiRegistryTests {
         await withEnv("GOOGLE_CLOUD_API_KEY", value: nil) {
             await withEnv("GOOGLE_ACCESS_TOKEN", value: "vertex-adc-token") {
                 let capturedAuthorization = LockedState<String?>(nil)
+                let capturedPayload = LockedState<String?>(nil)
                 MockURLProtocol.allowedHosts.withLock { $0 = ["vertex-usage.example"] }
                 MockURLProtocol.requestHandler.withLock { $0 = { request in
                     capturedAuthorization.withLock { $0 = request.value(forHTTPHeaderField: "Authorization") }
@@ -5337,11 +5350,16 @@ struct ApiRegistryTests {
                 )
                 let stream = streamGoogleVertex(
                     model: model,
-                    context: Context(messages: [.user(UserMessage(content: .text("say ok")))]),
+                    context: Context(
+                        systemPrompt: "be terse",
+                        messages: [.user(UserMessage(content: .text("say ok")))]
+                    ),
                     options: GoogleVertexOptions(
                         apiKey: "gcp-vertex-credentials",
+                        thinking: GoogleOptions.ThinkingConfig(enabled: false),
                         project: "proj-test",
-                        location: "us-central1"
+                        location: "us-central1",
+                        onPayload: { snapshot in capturedPayload.withLock { $0 = snapshot.json } }
                     )
                 )
                 for await _ in stream {}
@@ -5353,6 +5371,18 @@ struct ApiRegistryTests {
                 #expect(message.usage.cacheRead == 55)
                 #expect(message.usage.output == 5)
                 #expect(message.usage.totalTokens == 85)
+
+                guard let json = capturedPayload.withLock({ $0 }),
+                      let data = json.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    #expect(Bool(false), "Expected Vertex payload")
+                    return
+                }
+                // Vertex shares the GenerateContentRequest shape: nested thinkingConfig, Content system prompt.
+                #expect(object["thinkingConfig"] == nil)
+                #expect((object["generationConfig"] as? [String: Any])?["thinkingConfig"] != nil)
+                let parts = (object["systemInstruction"] as? [String: Any])?["parts"] as? [[String: Any]]
+                #expect(parts?.first?["text"] as? String == "be terse")
             }
         }
     }
