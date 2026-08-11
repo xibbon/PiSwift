@@ -110,8 +110,9 @@ public func createEditTool(cwd: String) -> AgentTool {
 }
 
 /// Normalizes inputs the model produces. Some models (Opus 4.6, GLM-5.1) send `edits` as a
-/// JSON-encoded string. Older callers send a single `oldText`/`newText` pair without `edits[]`
-/// — fold those into a one-element `edits` array and drop the legacy fields from the args.
+/// JSON-encoded string. Others flatten the array into bracket-path keys
+/// (`edits[0].oldText`). Older callers send a single `oldText`/`newText` pair without
+/// `edits[]` — fold those into a one-element `edits` array and drop the legacy fields.
 private func prepareEditArguments(_ params: [String: AnyCodable]) -> [String: AnyCodable] {
     var args = params
 
@@ -119,6 +120,38 @@ private func prepareEditArguments(_ params: [String: AnyCodable]) -> [String: An
         if let data = editsString.data(using: .utf8),
            let parsed = try? JSONSerialization.jsonObject(with: data, options: []) as? [Any] {
             args["edits"] = AnyCodable(parsed)
+        }
+    }
+
+    if args["edits"] == nil || args["edits"]?.value is NSNull {
+        let candidateKeys = args.keys.filter { $0.hasPrefix(flattenedEditKeyPrefix) }.sorted()
+        var fieldsByIndex: [Int: [String: Any]] = [:]
+        var canRebuild = !candidateKeys.isEmpty
+
+        for key in candidateKeys {
+            guard let (index, field) = parseFlattenedEditKey(key),
+                  fieldsByIndex[index]?[field] == nil else {
+                canRebuild = false
+                break
+            }
+            fieldsByIndex[index, default: [:]][field] = args[key]?.value ?? NSNull()
+        }
+
+        let indexes = fieldsByIndex.keys.sorted()
+        if indexes != Array(0..<indexes.count) {
+            canRebuild = false
+        }
+        if fieldsByIndex.values.contains(where: { $0["oldText"] == nil || $0["newText"] == nil }) {
+            canRebuild = false
+        }
+
+        if canRebuild {
+            args["edits"] = AnyCodable(indexes.compactMap { fieldsByIndex[$0] })
+            for key in candidateKeys {
+                args.removeValue(forKey: key)
+            }
+        } else if !candidateKeys.isEmpty {
+            return args
         }
     }
 
@@ -135,6 +168,35 @@ private func prepareEditArguments(_ params: [String: AnyCodable]) -> [String: An
         args.removeValue(forKey: "newText")
     }
     return args
+}
+
+private let flattenedEditKeyPrefix = "edits["
+
+/// Splits `edits[0].oldText` into its zero-based index and field name.
+private func parseFlattenedEditKey(_ key: String) -> (index: Int, field: String)? {
+    guard key.hasPrefix(flattenedEditKeyPrefix),
+          let closeBracket = key.firstIndex(of: "]") else {
+        return nil
+    }
+
+    let indexStart = key.index(key.startIndex, offsetBy: flattenedEditKeyPrefix.count)
+    let indexText = key[indexStart..<closeBracket]
+    guard !indexText.isEmpty,
+          indexText.allSatisfy({ $0.isASCII && $0.isNumber }),
+          let index = Int(indexText),
+          String(index) == indexText else {
+        return nil
+    }
+
+    let period = key.index(after: closeBracket)
+    guard period < key.endIndex, key[period] == "." else {
+        return nil
+    }
+    let fieldStart = key.index(after: period)
+    guard fieldStart < key.endIndex else {
+        return nil
+    }
+    return (index, String(key[fieldStart...]))
 }
 
 private func parseEdits(from value: AnyCodable?) -> [EditReplacement] {

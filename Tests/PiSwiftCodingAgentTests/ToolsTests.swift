@@ -183,6 +183,100 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     }
 }
 
+@Test func editToolExecutesFlattenedEditsAfterValidation() async throws {
+    try await withTempDir { dir in
+        let testFile = URL(fileURLWithPath: dir).appendingPathComponent("multi-edit.gd").path
+        try "alpha\nmiddle\nomega\n".write(toFile: testFile, atomically: true, encoding: .utf8)
+
+        let tool = createEditTool(cwd: dir)
+        let rawArguments: [String: AnyCodable] = [
+            "path": AnyCodable("multi-edit.gd"),
+            "edits[0].oldText": AnyCodable("alpha"),
+            "edits[0].newText": AnyCodable("first"),
+            "edits[1].oldText": AnyCodable("omega"),
+            "edits[1].newText": AnyCodable("last"),
+        ]
+        let prepared = try await tool.prepareArguments?(rawArguments) ?? rawArguments
+        let validated = try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-flattened-array", name: "edit", arguments: prepared)
+        )
+
+        #expect(prepared["edits[0].oldText"] == nil)
+        #expect(prepared["edits[1].newText"] == nil)
+        let edits = try #require(prepared["edits"]?.value as? [Any])
+        #expect(edits.count == 2)
+
+        _ = try await runTool(tool, "edit-flattened-array", validated)
+
+        let content = try String(contentsOfFile: testFile, encoding: .utf8)
+        #expect(content == "first\nmiddle\nlast\n")
+    }
+}
+
+@Test func editToolDoesNotRepairIncompleteFlattenedEdits() async throws {
+    let tool = createEditTool(cwd: FileManager.default.currentDirectoryPath)
+    let rawArguments: [String: AnyCodable] = [
+        "path": AnyCodable("file.txt"),
+        "edits[0].oldText": AnyCodable("old"),
+    ]
+
+    let prepared = try await tool.prepareArguments?(rawArguments) ?? rawArguments
+
+    #expect(prepared["edits"] == nil)
+    #expect(prepared["edits[0].oldText"] != nil)
+    #expect(throws: ValidationError.self) {
+        try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-incomplete-array", name: "edit", arguments: prepared)
+        )
+    }
+}
+
+@Test func editToolDoesNotRepairNoncontiguousFlattenedEdits() async throws {
+    let tool = createEditTool(cwd: FileManager.default.currentDirectoryPath)
+    let rawArguments: [String: AnyCodable] = [
+        "path": AnyCodable("file.txt"),
+        "edits[1].oldText": AnyCodable("old"),
+        "edits[1].newText": AnyCodable("new"),
+    ]
+
+    let prepared = try await tool.prepareArguments?(rawArguments) ?? rawArguments
+
+    #expect(prepared["edits"] == nil)
+    #expect(prepared["edits[1].oldText"] != nil)
+    #expect(throws: ValidationError.self) {
+        try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-noncontiguous-array", name: "edit", arguments: prepared)
+        )
+    }
+}
+
+@Test func editToolDoesNotRepairMalformedFlattenedEditKeys() async throws {
+    let tool = createEditTool(cwd: FileManager.default.currentDirectoryPath)
+    let rawArguments: [String: AnyCodable] = [
+        "path": AnyCodable("file.txt"),
+        "edits[00].oldText": AnyCodable("old"),
+        "edits[00].newText": AnyCodable("new"),
+        "oldText": AnyCodable("legacy old"),
+        "newText": AnyCodable("legacy new"),
+    ]
+
+    let prepared = try await tool.prepareArguments?(rawArguments) ?? rawArguments
+
+    #expect(prepared["edits"] == nil)
+    #expect(prepared["edits[00].oldText"] != nil)
+    #expect(prepared["oldText"] != nil)
+    #expect(prepared["newText"] != nil)
+    #expect(throws: ValidationError.self) {
+        try validateToolArguments(
+            tool: tool.aiTool,
+            toolCall: ToolCall(id: "edit-malformed-array", name: "edit", arguments: prepared)
+        )
+    }
+}
+
 @Test func readToolOffsetAndLimit() async throws {
     try await withTempDir { dir in
         let testFile = URL(fileURLWithPath: dir).appendingPathComponent("offset.txt").path
