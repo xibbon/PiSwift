@@ -1524,6 +1524,53 @@ private func runCodexSessionRequest(
     #expect(unknown.errorMessage == "Provider stopped with: future_reason")
 }
 
+@Test func anthropicRefusalPrefersStopDetailsExplanation() {
+    let explanation = "This request triggered restrictions on violative cyber content."
+
+    let withExplanation = mapAnthropicStopReason("refusal", refusalExplanation: explanation)
+    #expect(withExplanation.stopReason == .error)
+    #expect(withExplanation.errorMessage == explanation)
+
+    // No stop_details at all -> generic fallback.
+    let withoutDetails = mapAnthropicStopReason("refusal")
+    #expect(withoutDetails.stopReason == .error)
+    #expect(withoutDetails.errorMessage == "The model refused to complete the request")
+
+    // Upstream uses `explanation || "..."`, so an empty explanation falls back too.
+    let emptyExplanation = mapAnthropicStopReason("refusal", refusalExplanation: "")
+    #expect(emptyExplanation.stopReason == .error)
+    #expect(emptyExplanation.errorMessage == "The model refused to complete the request")
+}
+
+@Test func anthropicSSEParserExtractsRefusalStopDetails() throws {
+    let explanation = "This request triggered restrictions on violative cyber content."
+    let lines = [
+        "event: message_start",
+        "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-test\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":412,\"output_tokens\":0}}}",
+        "",
+        "event: message_delta",
+        "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"refusal\",\"stop_details\":{\"type\":\"refusal\",\"category\":\"cyber\",\"explanation\":\"\(explanation)\"}},\"usage\":{\"input_tokens\":412,\"output_tokens\":0}}",
+        "",
+        "event: message_stop",
+        "data: {\"type\":\"message_stop\"}",
+        "",
+    ]
+
+    let events = try decodeAnthropicSSEEvents(lines)
+    #expect(events.map(\.response.type) == ["message_start", "message_delta", "message_stop"])
+
+    let delta = try #require(events.first { $0.response.type == "message_delta" })
+    #expect(delta.response.delta?.stopReason == "refusal")
+    #expect(delta.refusalExplanation == explanation)
+
+    // Events without stop_details must not pick one up.
+    #expect(events[0].refusalExplanation == nil)
+    #expect(events[2].refusalExplanation == nil)
+
+    let mapped = mapAnthropicStopReason("refusal", refusalExplanation: delta.refusalExplanation)
+    #expect(mapped.errorMessage == explanation)
+}
+
 @Test func openAICompletionsUsageFallsBackToChoiceUsage() async throws {
     await codexRequestLock.withLock {
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["moonshot.example"] }

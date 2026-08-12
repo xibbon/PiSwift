@@ -429,7 +429,10 @@ public func streamAnthropic(
                 case .messageDelta:
                     if let stopReason = event.delta?.stopReason {
                         output.rawStopReason = stopReason
-                        let result = mapAnthropicStopReason(stopReason)
+                        let result = mapAnthropicStopReason(
+                            stopReason,
+                            refusalExplanation: decodedEvent.refusalExplanation
+                        )
                         output.stopReason = result.stopReason
                         if let errorMessage = result.errorMessage {
                             output.errorMessage = errorMessage
@@ -607,30 +610,35 @@ private struct AnthropicSSEDecoder {
 }
 
 func decodeAnthropicSSELines(_ lines: [String]) throws -> [MessageStreamResponse] {
+    try decodeAnthropicSSEEvents(lines).map(\.response)
+}
+
+/// Same decode as `decodeAnthropicSSELines`, but preserves the fields that `MessageStreamResponse`
+/// cannot carry (thinking signature, refusal explanation).
+func decodeAnthropicSSEEvents(_ lines: [String]) throws -> [AnthropicDecodedMessageEvent] {
     var decoder = AnthropicSSEDecoder()
-    var events: [MessageStreamResponse] = []
+    var events: [AnthropicDecodedMessageEvent] = []
     var sawMessageStart = false
     var sawMessageStop = false
 
-    for line in lines {
-        if let sse = decoder.decode(line: line),
-           let event = try decodeAnthropicMessageEvent(sse) {
-            if event.response.type == "message_start" {
-                sawMessageStart = true
-            } else if event.response.type == "message_stop" {
-                sawMessageStop = true
-            }
-            events.append(event.response)
-        }
-    }
-    if let sse = decoder.flush(),
-       let event = try decodeAnthropicMessageEvent(sse) {
+    func append(_ event: AnthropicDecodedMessageEvent) {
         if event.response.type == "message_start" {
             sawMessageStart = true
         } else if event.response.type == "message_stop" {
             sawMessageStop = true
         }
-        events.append(event.response)
+        events.append(event)
+    }
+
+    for line in lines {
+        if let sse = decoder.decode(line: line),
+           let event = try decodeAnthropicMessageEvent(sse) {
+            append(event)
+        }
+    }
+    if let sse = decoder.flush(),
+       let event = try decodeAnthropicMessageEvent(sse) {
+        append(event)
     }
 
     if sawMessageStart && !sawMessageStop {
@@ -639,9 +647,12 @@ func decodeAnthropicSSELines(_ lines: [String]) throws -> [MessageStreamResponse
     return events
 }
 
-private struct AnthropicDecodedMessageEvent {
+struct AnthropicDecodedMessageEvent {
     let response: MessageStreamResponse
     let initialThinkingSignature: String?
+    /// `delta.stop_details.explanation` from a `message_delta` event. `MessageStreamResponse.Delta`
+    /// (vendored in SwiftAnthropic) has no `stop_details` field, so it is read out of the raw JSON.
+    let refusalExplanation: String?
 }
 
 private func decodeAnthropicMessageEvent(_ sse: AnthropicServerSentEvent) throws -> AnthropicDecodedMessageEvent? {
@@ -667,9 +678,12 @@ private func decodeAnthropicJSONEvent(_ json: String) throws -> AnthropicDecoded
     let response = try decoder.decode(MessageStreamResponse.self, from: data)
     let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     let contentBlock = root?["content_block"] as? [String: Any]
+    let delta = root?["delta"] as? [String: Any]
+    let stopDetails = delta?["stop_details"] as? [String: Any]
     return AnthropicDecodedMessageEvent(
         response: response,
-        initialThinkingSignature: contentBlock?["signature"] as? String
+        initialThinkingSignature: contentBlock?["signature"] as? String,
+        refusalExplanation: stopDetails?["explanation"] as? String
     )
 }
 
@@ -1594,7 +1608,7 @@ private func shouldAddCacheControl(_ block: [String: Any]) -> Bool {
     return type == "text" || type == "image" || type == "tool_result"
 }
 
-func mapAnthropicStopReason(_ reason: String) -> StopReasonResult {
+func mapAnthropicStopReason(_ reason: String, refusalExplanation: String? = nil) -> StopReasonResult {
     switch reason {
     case "end_turn":
         return StopReasonResult(stopReason: .stop)
@@ -1603,7 +1617,12 @@ func mapAnthropicStopReason(_ reason: String) -> StopReasonResult {
     case "tool_use":
         return StopReasonResult(stopReason: .toolUse)
     case "refusal":
-        return StopReasonResult(stopReason: .error, errorMessage: "The model refused to complete the request")
+        // Upstream uses `stopDetails?.explanation || "..."`, so an empty explanation also falls back.
+        let explanation = refusalExplanation.flatMap { $0.isEmpty ? nil : $0 }
+        return StopReasonResult(
+            stopReason: .error,
+            errorMessage: explanation ?? "The model refused to complete the request"
+        )
     case "pause_turn":
         return StopReasonResult(stopReason: .stop)
     case "stop_sequence":
