@@ -16,7 +16,7 @@ public func streamOpenAICompletions(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
 
         do {
@@ -42,6 +42,7 @@ public func streamOpenAICompletions(
             var currentToolCallId: String? = nil
             var currentToolCallIndex: Int? = nil
             var toolCallIdByIndex: [Int: String] = [:]
+            var hasFinishReason = false
 
             func finishCurrentBlock() {
                 guard let index = currentBlockIndex else { return }
@@ -85,12 +86,14 @@ public func streamOpenAICompletions(
                 }
 
                 guard let choice = result.choices.first else { continue }
-                if let finishReason = choice.finishReason {
+                if let finishReason = chunk.rawFinishReason, !finishReason.isEmpty {
+                    output.rawStopReason = finishReason
                     let result = mapStopReason(finishReason)
                     output.stopReason = result.stopReason
                     if let errorMessage = result.errorMessage {
                         output.errorMessage = errorMessage
                     }
+                    hasFinishReason = true
                 }
 
                 let delta = choice.delta
@@ -177,8 +180,17 @@ public func streamOpenAICompletions(
             if output.stopReason == .aborted {
                 throw OpenAICompletionsStreamError.aborted
             }
+            if !hasFinishReason && !compat.supportsFinishReason {
+                output.stopReason = output.content.contains { block in
+                    if case .toolCall = block { return true }
+                    return false
+                } ? .toolUse : .stop
+            }
             if output.stopReason == .error {
                 throw OpenAICompletionsStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
+            }
+            if (compat.supportsFinishReason && !hasFinishReason) || output.stopReason == .pending {
+                throw OpenAICompletionsStreamError.apiError("Stream ended without finish_reason")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -194,23 +206,25 @@ public func streamOpenAICompletions(
     return stream
 }
 
-private struct StopReasonResult {
+struct StopReasonResult: Sendable, Equatable {
     var stopReason: StopReason
     var errorMessage: String?
 }
 
-private func mapStopReason(_ reason: ChatStreamResult.Choice.FinishReason) -> StopReasonResult {
+func mapStopReason(_ reason: String) -> StopReasonResult {
     switch reason {
-    case .stop:
+    case "stop", "end":
         return StopReasonResult(stopReason: .stop)
-    case .length:
+    case "length":
         return StopReasonResult(stopReason: .length)
-    case .toolCalls, .functionCall:
+    case "tool_calls", "function_call":
         return StopReasonResult(stopReason: .toolUse)
-    case .contentFilter:
+    case "content_filter":
         return StopReasonResult(stopReason: .error, errorMessage: "Provider finish_reason: content_filter")
+    case "network_error":
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider finish_reason: network_error")
     default:
-        return StopReasonResult(stopReason: .error, errorMessage: "Provider finish_reason: \(reason)")
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason)")
     }
 }
 
@@ -219,6 +233,7 @@ private struct ResolvedOpenAICompat {
     let supportsDeveloperRole: Bool
     let supportsReasoningEffort: Bool
     let supportsUsageInStreaming: Bool
+    let supportsFinishReason: Bool
     let maxTokensField: OpenAICompatMaxTokensField
     let requiresToolResultName: Bool
     let requiresAssistantAfterToolResult: Bool
@@ -298,6 +313,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         supportsDeveloperRole: !isNonStandard,
         supportsReasoningEffort: !isGrok && !isZai,
         supportsUsageInStreaming: true,
+        supportsFinishReason: true,
         maxTokensField: useMaxTokens ? .maxTokens : .maxCompletionTokens,
         requiresToolResultName: false,
         requiresAssistantAfterToolResult: false,
@@ -326,6 +342,7 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         supportsDeveloperRole: compat.supportsDeveloperRole ?? detected.supportsDeveloperRole,
         supportsReasoningEffort: compat.supportsReasoningEffort ?? detected.supportsReasoningEffort,
         supportsUsageInStreaming: compat.supportsUsageInStreaming ?? detected.supportsUsageInStreaming,
+        supportsFinishReason: compat.supportsFinishReason ?? detected.supportsFinishReason,
         maxTokensField: compat.maxTokensField ?? detected.maxTokensField,
         requiresToolResultName: compat.requiresToolResultName ?? detected.requiresToolResultName,
         requiresAssistantAfterToolResult: compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
@@ -763,6 +780,7 @@ private func buildZaiRequestBody(query: ChatQuery, model: Model, options: OpenAI
 private struct OpenAICompletionsStreamChunk {
     let result: ChatStreamResult
     let rawUsage: OpenAICompletionsRawUsage?
+    let rawFinishReason: String?
 }
 
 private struct OpenAICompletionsRawUsage: Decodable {
@@ -1691,14 +1709,34 @@ private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChu
     guard let json = payload.data(using: .utf8) else { return nil }
     if var object = try? JSONSerialization.jsonObject(with: json) as? [String: Any] {
         let rawUsage = decodeOpenAICompletionsRawUsage(from: object["usage"]) ?? decodeFirstChoiceUsage(from: object["choices"])
+        let rawFinishReason = decodeFirstChoiceFinishReason(from: object["choices"])
+        normalizeUnknownFinishReason(in: &object, rawFinishReason: rawFinishReason)
         object["object"] = object["object"] ?? "chat.completion.chunk"
         if let normalized = try? JSONSerialization.data(withJSONObject: object, options: []) {
             guard let result = try? JSONDecoder().decode(ChatStreamResult.self, from: normalized) else { return nil }
-            return OpenAICompletionsStreamChunk(result: result, rawUsage: rawUsage)
+            return OpenAICompletionsStreamChunk(result: result, rawUsage: rawUsage, rawFinishReason: rawFinishReason)
         }
     }
     guard let result = try? JSONDecoder().decode(ChatStreamResult.self, from: json) else { return nil }
-    return OpenAICompletionsStreamChunk(result: result, rawUsage: nil)
+    return OpenAICompletionsStreamChunk(
+        result: result,
+        rawUsage: nil,
+        rawFinishReason: result.choices.first?.finishReason?.rawValue
+    )
+}
+
+private func decodeFirstChoiceFinishReason(from choices: Any?) -> String? {
+    guard let choices = choices as? [[String: Any]], let first = choices.first else { return nil }
+    return first["finish_reason"] as? String
+}
+
+private func normalizeUnknownFinishReason(in object: inout [String: Any], rawFinishReason: String?) {
+    guard let rawFinishReason,
+          ChatStreamResult.Choice.FinishReason(rawValue: rawFinishReason) == nil,
+          var choices = object["choices"] as? [[String: Any]],
+          !choices.isEmpty else { return }
+    choices[0]["finish_reason"] = NSNull()
+    object["choices"] = choices
 }
 
 private func decodeFirstChoiceUsage(from choices: Any?) -> OpenAICompletionsRawUsage? {

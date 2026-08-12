@@ -213,10 +213,13 @@ private func runLoop(
                 let agentMessage = AgentMessage.assistant(assistantMessage)
                 messages.append(agentMessage)
 
-                if assistantMessage.stopReason == .error || assistantMessage.stopReason == .aborted {
+                switch assistantMessage.stopReason {
+                case .pending, .error, .aborted, .deferred:
                     await emit(.turnEnd(message: agentMessage, toolResults: []))
                     await emit(.agentEnd(messages: messages))
                     return messages
+                case .stop, .length, .toolUse:
+                    break
                 }
 
                 let toolCalls = assistantMessage.content.compactMap { block -> ToolCall? in

@@ -18,7 +18,7 @@ public func streamMistral(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
 
         do {
@@ -108,7 +108,12 @@ public func streamMistral(
                       let choice = choices.first else { continue }
 
                 if let finishReason = choice["finish_reason"] as? String {
-                    output.stopReason = mapMistralStopReason(finishReason)
+                    output.rawStopReason = finishReason
+                    let result = mapMistralStopReason(finishReason)
+                    output.stopReason = result.stopReason
+                    if let errorMessage = result.errorMessage {
+                        output.errorMessage = errorMessage
+                    }
                 }
 
                 guard let delta = choice["delta"] as? [String: Any] else { continue }
@@ -238,8 +243,14 @@ public func streamMistral(
             if options.signal?.isCancelled == true {
                 throw MistralStreamError.aborted
             }
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw MistralStreamError.unknown
+            if output.stopReason == .pending {
+                throw MistralStreamError.streamEndedWithoutFinishReason
+            }
+            if output.stopReason == .aborted {
+                throw MistralStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw MistralStreamError.providerError(output.errorMessage ?? "An unknown error occurred")
             }
             stream.push(.done(reason: output.stopReason, message: output))
             stream.end()
@@ -260,6 +271,8 @@ public enum MistralStreamError: Error, LocalizedError {
     case apiError(Int, String)
     case aborted
     case unknown
+    case streamEndedWithoutFinishReason
+    case providerError(String)
 
     public var errorDescription: String? {
         switch self {
@@ -274,6 +287,10 @@ public enum MistralStreamError: Error, LocalizedError {
             return "Request was aborted"
         case .unknown:
             return "An unknown error occurred"
+        case .streamEndedWithoutFinishReason:
+            return "Mistral stream ended without a finish reason"
+        case .providerError(let message):
+            return message
         }
     }
 }
@@ -299,13 +316,13 @@ private func mistralChatCompletionsUrl(baseUrl: String) -> URL {
     return URL(string: "\(trimmed)/v1/chat/completions")!
 }
 
-private func mapMistralStopReason(_ reason: String) -> StopReason {
+func mapMistralStopReason(_ reason: String) -> StopReasonResult {
     switch reason {
-    case "stop": return .stop
-    case "length", "model_length": return .length
-    case "tool_calls": return .toolUse
-    case "error": return .error
-    default: return .stop
+    case "stop": return StopReasonResult(stopReason: .stop)
+    case "length", "model_length": return StopReasonResult(stopReason: .length)
+    case "tool_calls": return StopReasonResult(stopReason: .toolUse)
+    case "error": return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: error")
+    default: return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason)")
     }
 }
 

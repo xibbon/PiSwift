@@ -277,14 +277,14 @@ func mapGoogleToolChoice(_ choice: String) -> String {
     }
 }
 
-func mapGoogleStopReason(_ reason: String) -> StopReason {
+func mapGoogleStopReason(_ reason: String) -> StopReasonResult {
     switch reason {
     case "STOP":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "MAX_TOKENS":
-        return .length
+        return StopReasonResult(stopReason: .length)
     default:
-        return .error
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason)")
     }
 }
 

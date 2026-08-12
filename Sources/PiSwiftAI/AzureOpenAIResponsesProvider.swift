@@ -134,7 +134,7 @@ public func streamAzureOpenAIResponses(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
         var client: OpenAI? = nil
         var query: CreateModelResponseQuery? = nil
@@ -357,16 +357,25 @@ public func streamAzureOpenAIResponses(
                             output.content[index] = .toolCall(tool)
                         }
                     }
-                case .completed(let completed):
+                case .completed(let completed), .incomplete(let completed):
                     if let usage = completed.response.usage {
                         output.usage = makeOpenAIResponsesUsage(usage)
                         calculateCost(model: model, usage: &output.usage)
                     }
-                    output.stopReason = mapResponsesStopReason(completed.response.status)
+                    let status = completed.response.status
+                    let incompleteDetails = completed.response.incompleteDetails ?? nil
+                    let incompleteReason = incompleteDetails?.reason?.rawValue
+                    output.rawStopReason = incompleteReason.map { "\(status).\($0)" } ?? status
+                    let result = mapResponsesStopReason(status, incompleteReason: incompleteReason)
+                    output.stopReason = result.stopReason
+                    if let errorMessage = result.errorMessage {
+                        output.errorMessage = errorMessage
+                    }
                     if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) && output.stopReason == .stop {
                         output.stopReason = .toolUse
                     }
-                case .failed:
+                case .failed(let failed):
+                    output.rawStopReason = failed.response.status
                     throw AzureOpenAIResponsesStreamError.unknown
                 case .error(let errorEvent):
                     throw AzureOpenAIResponsesStreamError.apiError(errorEvent.message)
@@ -381,8 +390,14 @@ public func streamAzureOpenAIResponses(
                 throw AzureOpenAIResponsesStreamError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw AzureOpenAIResponsesStreamError.unknown
+            if output.stopReason == .pending {
+                throw AzureOpenAIResponsesStreamError.apiError("Azure OpenAI Responses stream ended without a stop reason")
+            }
+            if output.stopReason == .aborted {
+                throw AzureOpenAIResponsesStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw AzureOpenAIResponsesStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -471,10 +486,21 @@ func buildAzureResponsesQuery(
     )
 }
 
-private enum AzureOpenAIResponsesStreamError: Error {
+private enum AzureOpenAIResponsesStreamError: LocalizedError {
     case aborted
     case unknown
     case apiError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .aborted:
+            return "Request was aborted"
+        case .unknown:
+            return "Azure OpenAI Responses request failed"
+        case .apiError(let message):
+            return message
+        }
+    }
 }
 
 private func clampAzureThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel? {

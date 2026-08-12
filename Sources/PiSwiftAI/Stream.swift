@@ -226,8 +226,13 @@ func estimateContextTokens(_ context: Context) -> Int {
     // only estimate messages appended after that turn. Summing the whole history
     // again would unnecessarily shrink the output budget on long conversations.
     if let lastUsageIndex = context.messages.indices.reversed().first(where: { index in
-        guard case .assistant(let assistant) = context.messages[index],
-              assistant.stopReason != .error, assistant.stopReason != .aborted else { return false }
+        guard case .assistant(let assistant) = context.messages[index] else { return false }
+        switch assistant.stopReason {
+        case .stop, .length, .toolUse:
+            break
+        case .pending, .error, .aborted, .deferred:
+            return false
+        }
         return assistant.usage.totalTokens > 0 || assistant.usage.input + assistant.usage.output + assistant.usage.cacheRead + assistant.usage.cacheWrite > 0
     }), case .assistant(let assistant) = context.messages[lastUsageIndex] {
         let usage = assistant.usage.totalTokens > 0

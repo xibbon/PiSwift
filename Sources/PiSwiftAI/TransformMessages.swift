@@ -91,8 +91,11 @@ public func transformMessages(
                 insertSyntheticToolResults()
             }
 
-            if assistant.stopReason == .error || assistant.stopReason == .aborted {
+            switch assistant.stopReason {
+            case .pending, .error, .aborted, .deferred:
                 continue
+            case .stop, .length, .toolUse:
+                break
             }
 
             let toolCalls = assistant.content.compactMap { block -> ToolCall? in

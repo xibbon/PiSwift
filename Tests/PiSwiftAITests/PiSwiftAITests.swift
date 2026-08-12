@@ -161,6 +161,131 @@ private func openAITestSseData(_ payloads: [[String: Any]]) throws -> Data {
     return Data(result.utf8)
 }
 
+private struct StopReasonStreamCapture: Sendable {
+    let message: AssistantMessage
+    let emittedDone: Bool
+    let emittedError: Bool
+}
+
+private func runOpenAICompletionsStopReasonStream(
+    payloads: [[String: Any]],
+    compat: OpenAICompat? = nil
+) async -> StopReasonStreamCapture {
+    let sseData = try! openAITestSseData(payloads)
+    return await codexRequestLock.withLock {
+        let host = "stop-reason.example"
+        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [host] }
+        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, sseData)
+        } }
+        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
+        defer {
+            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
+            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
+            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
+        }
+
+        let model = Model(
+            id: "stop-reason-test",
+            name: "Stop Reason Test",
+            api: .openAICompletions,
+            provider: "openai-compatible",
+            baseUrl: "https://\(host)/v1",
+            reasoning: false,
+            input: [.text],
+            cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+            contextWindow: 8_192,
+            maxTokens: 1_024,
+            compat: compat
+        )
+        let stream = streamOpenAICompletions(
+            model: model,
+            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            options: OpenAICompletionsOptions(apiKey: "test-key")
+        )
+        var emittedDone = false
+        var emittedError = false
+        var finalMessage: AssistantMessage?
+        for await event in stream {
+            switch event {
+            case .done(_, let message):
+                emittedDone = true
+                finalMessage = message
+            case .error(_, let message):
+                emittedError = true
+                finalMessage = message
+            default:
+                break
+            }
+        }
+        let message: AssistantMessage
+        if let finalMessage {
+            message = finalMessage
+        } else {
+            message = await stream.result()
+        }
+        return StopReasonStreamCapture(
+            message: message,
+            emittedDone: emittedDone,
+            emittedError: emittedError
+        )
+    }
+}
+
+private func openAIStopReasonChunk(delta: [String: Any], finishReason: Any) -> [String: Any] {
+    [
+        "id": "chatcmpl-stop-reason",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "stop-reason-test",
+        "choices": [[
+            "index": 0,
+            "delta": delta,
+            "finish_reason": finishReason,
+        ]],
+    ]
+}
+
+private func bedrockMessageStopData(reason: String = "end_turn") -> Data {
+    func uint32Bytes(_ value: Int) -> [UInt8] {
+        [
+            UInt8((value >> 24) & 0xff),
+            UInt8((value >> 16) & 0xff),
+            UInt8((value >> 8) & 0xff),
+            UInt8(value & 0xff),
+        ]
+    }
+
+    func stringHeader(name: String, value: String) -> Data {
+        let nameBytes = Array(name.utf8)
+        let valueBytes = Array(value.utf8)
+        var data = Data([UInt8(nameBytes.count)])
+        data.append(contentsOf: nameBytes)
+        data.append(7)
+        data.append(UInt8((valueBytes.count >> 8) & 0xff))
+        data.append(UInt8(valueBytes.count & 0xff))
+        data.append(contentsOf: valueBytes)
+        return data
+    }
+
+    let headers = stringHeader(name: ":event-type", value: "messageStop")
+    let payload = Data(#"{"stopReason":"\#(reason)"}"#.utf8)
+    let totalLength = 12 + headers.count + payload.count + 4
+    var frame = Data(uint32Bytes(totalLength))
+    frame.append(contentsOf: uint32Bytes(headers.count))
+    frame.append(contentsOf: [0, 0, 0, 0])
+    frame.append(headers)
+    frame.append(payload)
+    frame.append(contentsOf: [0, 0, 0, 0])
+    return frame
+}
+
 private func readRequestBody(_ request: URLRequest) -> Data? {
     if let body = request.httpBody {
         return body
@@ -1278,6 +1403,107 @@ private func runCodexSessionRequest(
     }
 }
 
+@Test func openAICompletionsMissingFinishReasonEmitsError() async {
+    let capture = await runOpenAICompletionsStopReasonStream(payloads: [
+        openAIStopReasonChunk(delta: ["content": "partial"], finishReason: NSNull()),
+    ])
+
+    #expect(capture.emittedError)
+    #expect(!capture.emittedDone)
+    #expect(capture.message.stopReason == .error)
+    #expect(capture.message.errorMessage?.contains("Stream ended without finish_reason") == true)
+}
+
+@Test func openAICompletionsUnknownFinishReasonIsProviderError() async {
+    let capture = await runOpenAICompletionsStopReasonStream(payloads: [
+        openAIStopReasonChunk(delta: ["content": "partial"], finishReason: "future_reason"),
+    ])
+
+    #expect(capture.emittedError)
+    #expect(!capture.emittedDone)
+    #expect(capture.message.stopReason == .error)
+    #expect(capture.message.rawStopReason == "future_reason")
+    #expect(capture.message.errorMessage?.contains("Provider stopped with: future_reason") == true)
+}
+
+@Test func openAICompletionsPreservesRecognizedRawFinishReason() async {
+    let capture = await runOpenAICompletionsStopReasonStream(payloads: [
+        openAIStopReasonChunk(delta: ["content": "done"], finishReason: "stop"),
+    ])
+
+    #expect(capture.emittedDone)
+    #expect(!capture.emittedError)
+    #expect(capture.message.stopReason == .stop)
+    #expect(capture.message.rawStopReason == "stop")
+}
+
+@Test func openAICompletionsWithoutFinishReasonInfersStopWhenUnsupported() async {
+    let capture = await runOpenAICompletionsStopReasonStream(
+        payloads: [openAIStopReasonChunk(delta: ["content": "done"], finishReason: NSNull())],
+        compat: OpenAICompat(supportsFinishReason: false)
+    )
+
+    #expect(capture.emittedDone)
+    #expect(!capture.emittedError)
+    #expect(capture.message.stopReason == .stop)
+    #expect(capture.message.rawStopReason == nil)
+}
+
+@Test func openAICompletionsWithoutFinishReasonInfersToolUseWhenUnsupported() async {
+    let capture = await runOpenAICompletionsStopReasonStream(
+        payloads: [
+            openAIStopReasonChunk(
+                delta: [
+                    "tool_calls": [[
+                        "index": 0,
+                        "id": "call_1",
+                        "type": "function",
+                        "function": ["name": "lookup", "arguments": "{}"],
+                    ]],
+                ],
+                finishReason: NSNull()
+            ),
+        ],
+        compat: OpenAICompat(supportsFinishReason: false)
+    )
+
+    #expect(capture.emittedDone)
+    #expect(!capture.emittedError)
+    #expect(capture.message.stopReason == .toolUse)
+    #expect(capture.message.content.contains { block in
+        if case .toolCall = block { return true }
+        return false
+    })
+}
+
+@Test func responseIncompleteReasonsRemainDistinct() {
+    let limited = mapResponsesStopReason("incomplete", incompleteReason: "max_output_tokens")
+    #expect(limited.stopReason == .length)
+    #expect(limited.errorMessage == nil)
+
+    let filtered = mapResponsesStopReason("incomplete", incompleteReason: "content_filter")
+    #expect(filtered.stopReason == .error)
+    #expect(filtered.errorMessage?.contains("content_filter") == true)
+
+    let unknown = mapResponsesStopReason("future_status")
+    #expect(unknown.stopReason == .error)
+    #expect(unknown.errorMessage == "Provider stopped with: future_status")
+}
+
+@Test func anthropicStopReasonMappingPreservesRecognizedAndRejectsUnknownReasons() {
+    let recognized = mapAnthropicStopReason("end_turn")
+    #expect(recognized.stopReason == .stop)
+    #expect(recognized.errorMessage == nil)
+
+    let sensitive = mapAnthropicStopReason("sensitive")
+    #expect(sensitive.stopReason == .error)
+    #expect(sensitive.errorMessage == "Provider stopped with: sensitive")
+
+    let unknown = mapAnthropicStopReason("future_reason")
+    #expect(unknown.stopReason == .error)
+    #expect(unknown.errorMessage == "Provider stopped with: future_reason")
+}
+
 @Test func openAICompletionsUsageFallsBackToChoiceUsage() async throws {
     await codexRequestLock.withLock {
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["moonshot.example"] }
@@ -2375,7 +2601,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                     httpVersion: nil,
                     headerFields: ["content-type": "application/vnd.amazon.eventstream"]
                 )!
-                return (response, Data())
+                return (response, bedrockMessageStopData())
             } }
             URLProtocol.registerClass(MockURLProtocol.self)
             defer {
@@ -2453,7 +2679,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                     httpVersion: nil,
                     headerFields: ["content-type": "application/vnd.amazon.eventstream"]
                 )!
-                return (response, Data())
+                return (response, bedrockMessageStopData())
             } }
             URLProtocol.registerClass(MockURLProtocol.self)
             defer {
@@ -2502,7 +2728,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                     httpVersion: nil,
                     headerFields: ["content-type": "application/vnd.amazon.eventstream"]
                 )!
-                return (response, Data())
+                return (response, bedrockMessageStopData())
             } }
             URLProtocol.registerClass(MockURLProtocol.self)
             defer {
@@ -2554,7 +2780,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                     httpVersion: nil,
                     headerFields: ["content-type": "application/vnd.amazon.eventstream"]
                 )!
-                return (response, Data())
+                return (response, bedrockMessageStopData())
             } }
             URLProtocol.registerClass(MockURLProtocol.self)
             defer {
@@ -2671,7 +2897,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                     httpVersion: nil,
                     headerFields: ["content-type": "application/vnd.amazon.eventstream"]
                 )!
-                return (response, Data())
+                return (response, bedrockMessageStopData())
             } }
             URLProtocol.registerClass(MockURLProtocol.self)
             defer {
@@ -5688,7 +5914,8 @@ struct ApiRegistryTests {
                 httpVersion: nil,
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
-            return (response, Data())
+            let event = #"data: {"choices":[{"finish_reason":"stop","delta":{}}]}"# + "\n\n"
+            return (response, Data(event.utf8))
         } }
         URLProtocol.registerClass(MockURLProtocol.self)
         defer {

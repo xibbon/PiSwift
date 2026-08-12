@@ -156,7 +156,7 @@ public func streamAnthropic(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
         var debugService: AnthropicService?
         var debugParameters: MessageParameter?
@@ -371,7 +371,12 @@ public func streamAnthropic(
                     }
                 case .messageDelta:
                     if let stopReason = event.delta?.stopReason {
-                        output.stopReason = mapAnthropicStopReason(stopReason)
+                        output.rawStopReason = stopReason
+                        let result = mapAnthropicStopReason(stopReason)
+                        output.stopReason = result.stopReason
+                        if let errorMessage = result.errorMessage {
+                            output.errorMessage = errorMessage
+                        }
                     }
                     if let usage = event.usage {
                         let input = usage.inputTokens ?? output.usage.input
@@ -398,8 +403,14 @@ public func streamAnthropic(
                 throw AnthropicStreamError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw AnthropicStreamError.unknown
+            if output.stopReason == .pending {
+                throw AnthropicStreamError.apiError("Anthropic stream ended without a stop reason")
+            }
+            if output.stopReason == .aborted {
+                throw AnthropicStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw AnthropicStreamError.apiError(output.errorMessage ?? "An unknown error occurred")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -1406,24 +1417,24 @@ private func shouldAddCacheControl(_ block: [String: Any]) -> Bool {
     return type == "text" || type == "image" || type == "tool_result"
 }
 
-private func mapAnthropicStopReason(_ reason: String) -> StopReason {
+func mapAnthropicStopReason(_ reason: String) -> StopReasonResult {
     switch reason {
     case "end_turn":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "max_tokens":
-        return .length
+        return StopReasonResult(stopReason: .length)
     case "tool_use":
-        return .toolUse
+        return StopReasonResult(stopReason: .toolUse)
     case "refusal":
-        return .error
+        return StopReasonResult(stopReason: .error, errorMessage: "The model refused to complete the request")
     case "pause_turn":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "stop_sequence":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "sensitive":
-        return .error
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: sensitive")
     default:
-        return .stop
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason)")
     }
 }
 
@@ -1477,9 +1488,21 @@ private func anthropicMediaType(from mimeType: String) -> MessageParameter.Messa
     }
 }
 
-private enum AnthropicStreamError: Error {
+private enum AnthropicStreamError: LocalizedError {
     case aborted
     case unknown
+    case apiError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .aborted:
+            return "Request was aborted"
+        case .unknown:
+            return "An unknown error occurred"
+        case .apiError(let message):
+            return message
+        }
+    }
 }
 
 private enum AnthropicTolerantStreamError: Error, LocalizedError {

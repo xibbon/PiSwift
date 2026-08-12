@@ -16,7 +16,7 @@ public func streamGoogleVertex(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
 
         do {
@@ -156,8 +156,14 @@ public func streamGoogleVertex(
                     }
 
                     if let finishReason = candidate.finishReason {
-                        output.stopReason = mapGoogleStopReason(finishReason)
-                        if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) {
+                        output.rawStopReason = finishReason
+                        let result = mapGoogleStopReason(finishReason)
+                        output.stopReason = result.stopReason
+                        if let errorMessage = result.errorMessage {
+                            output.errorMessage = errorMessage
+                        }
+                        if output.stopReason != .error,
+                           output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) {
                             output.stopReason = .toolUse
                         }
                     }
@@ -184,8 +190,14 @@ public func streamGoogleVertex(
                 throw GoogleVertexError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw GoogleVertexError.unknown
+            if output.stopReason == .pending {
+                throw GoogleVertexError.apiError("Google Vertex stream ended without a finish reason")
+            }
+            if output.stopReason == .aborted {
+                throw GoogleVertexError.aborted
+            }
+            if output.stopReason == .error {
+                throw GoogleVertexError.apiError(output.errorMessage ?? "An unknown error occurred")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))

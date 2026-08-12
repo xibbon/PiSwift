@@ -169,7 +169,10 @@ Include:
             context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: [message]),
             options: SimpleStreamOptions(maxTokens: Int(Double(reserve) * 0.6), signal: options.signal, apiKey: options.apiKey, headers: options.headers)
         )
-        if response.stopReason == .error {
+        switch response.stopReason {
+        case .stop, .length, .toolUse:
+            break
+        case .pending, .error, .aborted, .deferred:
             return BranchSummaryResult(error: response.errorMessage ?? "Summarization failed")
         }
 

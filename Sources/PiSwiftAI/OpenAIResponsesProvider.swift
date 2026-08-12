@@ -207,7 +207,7 @@ public func streamOpenAIResponses(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
         var client: OpenAI? = nil
         var query: CreateModelResponseQuery? = nil
@@ -412,7 +412,7 @@ public func streamOpenAIResponses(
                     if output.responseId == nil {
                         output.responseId = created.response.id
                     }
-                case .completed(let completed):
+                case .completed(let completed), .incomplete(let completed):
                     // Capture responseId from response.completed event (fallback)
                     if output.responseId == nil {
                         output.responseId = completed.response.id
@@ -422,11 +422,20 @@ public func streamOpenAIResponses(
                         calculateCost(model: model, usage: &output.usage)
                         applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier, model: model)
                     }
-                    output.stopReason = mapResponsesStopReason(completed.response.status)
+                    let status = completed.response.status
+                    let incompleteDetails = completed.response.incompleteDetails ?? nil
+                    let incompleteReason = incompleteDetails?.reason?.rawValue
+                    output.rawStopReason = incompleteReason.map { "\(status).\($0)" } ?? status
+                    let result = mapResponsesStopReason(status, incompleteReason: incompleteReason)
+                    output.stopReason = result.stopReason
+                    if let errorMessage = result.errorMessage {
+                        output.errorMessage = errorMessage
+                    }
                     if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) && output.stopReason == .stop {
                         output.stopReason = .toolUse
                     }
                 case .failed(let failed):
+                    output.rawStopReason = failed.response.status
                     let errorDetail: String
                     if let responseError = failed.response.error {
                         errorDetail = "[\(responseError.code.rawValue)] \(responseError.message)"
@@ -447,8 +456,14 @@ public func streamOpenAIResponses(
                 throw OpenAIResponsesStreamError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw OpenAIResponsesStreamError.unknown
+            if output.stopReason == .pending {
+                throw OpenAIResponsesStreamError.apiError("OpenAI Responses stream ended without a stop reason")
+            }
+            if output.stopReason == .aborted {
+                throw OpenAIResponsesStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw OpenAIResponsesStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -707,7 +722,13 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
             }
         case .assistant(let assistant):
             var items: [InputItem] = []
-            let allowToolCalls = assistant.stopReason != .error && assistant.stopReason != .aborted
+            let allowToolCalls: Bool
+            switch assistant.stopReason {
+            case .stop, .length, .toolUse:
+                allowToolCalls = true
+            case .pending, .error, .aborted, .deferred:
+                allowToolCalls = false
+            }
             let isDifferentModel = assistant.model != model.id &&
                 assistant.provider == model.provider &&
                 assistant.api == model.api
@@ -969,23 +990,39 @@ func parseTextSignature(_ signature: String?) -> (id: String, phase: String?)? {
     return (sig, nil)
 }
 
-func mapResponsesStopReason(_ status: String) -> StopReason {
+func mapResponsesStopReason(_ status: String, incompleteReason: String? = nil) -> StopReasonResult {
     switch status {
     case "completed":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "incomplete":
-        return .length
+        if incompleteReason == "max_output_tokens" {
+            return StopReasonResult(stopReason: .length)
+        }
+        let message = incompleteReason.map { "Response incomplete: \($0)" }
+            ?? "Response incomplete without a provider reason"
+        return StopReasonResult(stopReason: .error, errorMessage: message)
     case "failed", "cancelled":
-        return .error
+        return StopReasonResult(stopReason: .error)
     case "in_progress", "queued":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     default:
-        return .stop
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(status)")
     }
 }
 
-private enum OpenAIResponsesStreamError: Error {
+private enum OpenAIResponsesStreamError: LocalizedError {
     case aborted
     case unknown
     case apiError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .aborted:
+            return "Request was aborted"
+        case .unknown:
+            return "OpenAI Responses request failed"
+        case .apiError(let message):
+            return message
+        }
+    }
 }

@@ -14,7 +14,7 @@ public func streamOpenAICodexResponses(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
 
         do {
@@ -263,11 +263,19 @@ public func streamOpenAICodexResponses(
                             calculateCost(model: model, usage: &output.usage)
                             applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier, model: model)
                         }
-                        let status = responseInfo["status"] as? String
-                        output.stopReason = mapCodexStopReason(status)
-                        if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }),
-                           output.stopReason == .stop {
-                            output.stopReason = .toolUse
+                        if let status = responseInfo["status"] as? String {
+                            let incompleteDetails = responseInfo["incomplete_details"] as? [String: Any]
+                            let incompleteReason = incompleteDetails?["reason"] as? String
+                            output.rawStopReason = incompleteReason.map { "\(status).\($0)" } ?? status
+                            let result = mapCodexStopReason(status, incompleteReason: incompleteReason)
+                            output.stopReason = result.stopReason
+                            if let errorMessage = result.errorMessage {
+                                output.errorMessage = errorMessage
+                            }
+                            if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }),
+                               output.stopReason == .stop {
+                                output.stopReason = .toolUse
+                            }
                         }
                     }
 
@@ -277,6 +285,9 @@ public func streamOpenAICodexResponses(
                     throw OpenAICodexStreamError.apiError(formatCodexErrorEvent(rawEvent, code: code, message: message))
 
                 case "response.failed":
+                    if let responseInfo = rawEvent["response"] as? [String: Any] {
+                        output.rawStopReason = responseInfo["status"] as? String
+                    }
                     let message = formatCodexFailure(rawEvent) ?? "Codex response failed"
                     throw OpenAICodexStreamError.apiError(message)
 
@@ -308,8 +319,14 @@ public func streamOpenAICodexResponses(
                     if options.signal?.isCancelled == true {
                         throw OpenAICodexStreamError.aborted
                     }
-                    if output.stopReason == .aborted || output.stopReason == .error {
-                        throw OpenAICodexStreamError.unknown
+                    if output.stopReason == .pending {
+                        throw OpenAICodexStreamError.apiError("OpenAI Codex Responses stream ended without a stop reason")
+                    }
+                    if output.stopReason == .aborted {
+                        throw OpenAICodexStreamError.aborted
+                    }
+                    if output.stopReason == .error {
+                        throw OpenAICodexStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
                     }
 
                     stream.push(.done(reason: output.stopReason, message: output))
@@ -353,8 +370,14 @@ public func streamOpenAICodexResponses(
                 throw OpenAICodexStreamError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw OpenAICodexStreamError.unknown
+            if output.stopReason == .pending {
+                throw OpenAICodexStreamError.apiError("OpenAI Codex Responses stream ended without a stop reason")
+            }
+            if output.stopReason == .aborted {
+                throw OpenAICodexStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw OpenAICodexStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -835,7 +858,13 @@ func convertCodexMessages(model: Model, context: Context) -> [Any] {
 
         case .assistant(let assistant):
             var outputItems: [Any] = []
-            let allowToolCalls = assistant.stopReason != .error && assistant.stopReason != .aborted
+            let allowToolCalls: Bool
+            switch assistant.stopReason {
+            case .stop, .length, .toolUse:
+                allowToolCalls = true
+            case .pending, .error, .aborted, .deferred:
+                allowToolCalls = false
+            }
             for block in assistant.content {
                 switch block {
                 case .thinking(let thinking) where allowToolCalls:
@@ -989,18 +1018,23 @@ private func parseCodexArguments(_ value: Any?) -> [String: AnyCodable] {
     return dict.mapValues { AnyCodable($0) }
 }
 
-private func mapCodexStopReason(_ status: String?) -> StopReason {
+func mapCodexStopReason(_ status: String, incompleteReason: String? = nil) -> StopReasonResult {
     switch status {
     case "completed":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "incomplete":
-        return .length
+        if incompleteReason == "max_output_tokens" {
+            return StopReasonResult(stopReason: .length)
+        }
+        let message = incompleteReason.map { "Response incomplete: \($0)" }
+            ?? "Response incomplete without a provider reason"
+        return StopReasonResult(stopReason: .error, errorMessage: message)
     case "failed", "cancelled":
-        return .error
+        return StopReasonResult(stopReason: .error)
     case "in_progress", "queued":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     default:
-        return .stop
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(status)")
     }
 }
 

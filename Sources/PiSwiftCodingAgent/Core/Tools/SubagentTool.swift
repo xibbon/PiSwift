@@ -237,8 +237,13 @@ private func resolveTools(
 
 private func isErrorResult(_ result: SubagentRunResult) -> Bool {
     if result.exitCode != 0 { return true }
-    if let stopReason = result.stopReason, stopReason == StopReason.error.rawValue || stopReason == StopReason.aborted.rawValue {
-        return true
+    if let stopReason = result.stopReason {
+        switch StopReason(rawValue: stopReason) {
+        case .pending, .error, .aborted, .deferred, .none:
+            return true
+        case .stop, .length, .toolUse:
+            return false
+        }
     }
     return false
 }
@@ -496,8 +501,13 @@ private func runSingleAgent(
     var exitCode = 0
     if errorMessage != nil || signal?.isCancelled == true {
         exitCode = 1
-    } else if let stopReason, stopReason == StopReason.error.rawValue || stopReason == StopReason.aborted.rawValue {
-        exitCode = 1
+    } else if let stopReason {
+        switch StopReason(rawValue: stopReason) {
+        case .pending, .error, .aborted, .deferred, .none:
+            exitCode = 1
+        case .stop, .length, .toolUse:
+            break
+        }
     }
 
     return SubagentRunResult(

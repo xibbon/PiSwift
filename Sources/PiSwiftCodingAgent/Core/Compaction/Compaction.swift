@@ -90,8 +90,11 @@ public func calculateContextTokens(_ usage: Usage) -> Int {
 public func getLastAssistantUsage(_ entries: [SessionEntry]) -> Usage? {
     for entry in entries.reversed() {
         if case .message(let msgEntry) = entry, case .assistant(let assistant) = msgEntry.message {
-            if assistant.stopReason != .aborted && assistant.stopReason != .error {
+            switch assistant.stopReason {
+            case .stop, .length, .toolUse:
                 return assistant.usage
+            case .pending, .error, .aborted, .deferred:
+                break
             }
         }
     }
@@ -488,7 +491,10 @@ private func generateSummary(
         options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, reasoning: reasoning, headers: headers)
     )
 
-    if response.stopReason == .error {
+    switch response.stopReason {
+    case .stop, .length, .toolUse:
+        break
+    case .pending, .error, .aborted, .deferred:
         throw CompactionError.summarizationFailed(response.errorMessage ?? "Unknown error")
     }
 
@@ -540,7 +546,10 @@ private func generateTurnPrefixSummary(
         options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, headers: headers)
     )
 
-    if response.stopReason == .error {
+    switch response.stopReason {
+    case .stop, .length, .toolUse:
+        break
+    case .pending, .error, .aborted, .deferred:
         throw CompactionError.summarizationFailed(response.errorMessage ?? "Unknown error")
     }
 

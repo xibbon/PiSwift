@@ -319,7 +319,7 @@
           if (entry.type === 'message' && entry.message.role === 'assistant') {
             const msg = entry.message;
             const hasText = hasTextContent(msg.content);
-            const isErrorOrAborted = msg.stopReason && msg.stopReason !== 'stop' && msg.stopReason !== 'toolUse';
+            const isErrorOrAborted = msg.stopReason === 'error' || msg.stopReason === 'aborted';
             if (!hasText && !isErrorOrAborted) return false;
           }
 
@@ -480,6 +480,9 @@
               }
               if (msg.stopReason === 'aborted') {
                 return labelHtml + `<span class="tree-role-assistant">assistant:</span> <span class="tree-muted">(aborted)</span>`;
+              }
+              if (msg.stopReason === 'pending' || msg.stopReason === 'deferred') {
+                return labelHtml + `<span class="tree-role-assistant">assistant:</span> <span class="tree-muted">(${msg.stopReason})</span>`;
               }
               if (msg.errorMessage) {
                 return labelHtml + `<span class="tree-role-assistant">assistant:</span> <span class="tree-error">${escapeHtml(truncate(msg.errorMessage))}</span>`;
@@ -966,6 +969,8 @@
               html += '<div class="error-text">Aborted</div>';
             } else if (msg.stopReason === 'error') {
               html += `<div class="error-text">Error: ${escapeHtml(msg.errorMessage || 'Unknown error')}</div>`;
+            } else if (msg.stopReason === 'pending' || msg.stopReason === 'deferred') {
+              html += `<div class="tree-muted">${escapeHtml(msg.stopReason)}</div>`;
             }
 
             html += '</div>';

@@ -242,7 +242,7 @@ public func streamBedrock(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
 
         do {
@@ -296,7 +296,8 @@ public func streamBedrock(
                         attempt += 1
                         output.content = []
                         output.usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
-                        output.stopReason = .stop
+                        output.stopReason = .pending
+                        output.rawStopReason = nil
                         output.errorMessage = nil
                         continue
                     }
@@ -308,8 +309,14 @@ public func streamBedrock(
                 throw BedrockStreamError.aborted
             }
 
-            if output.stopReason == .error || output.stopReason == .aborted {
-                throw BedrockStreamError.serverError("Unknown Bedrock stream error")
+            if output.stopReason == .pending {
+                throw BedrockStreamError.serverError("Bedrock stream ended without a stop reason")
+            }
+            if output.stopReason == .aborted {
+                throw BedrockStreamError.aborted
+            }
+            if output.stopReason == .error {
+                throw BedrockStreamError.serverError(output.errorMessage ?? "Unknown Bedrock stream error")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -387,7 +394,12 @@ private func handleBedrockEvent(
             payload: message.payload,
             decoder: decoder
         )
-        output.stopReason = mapBedrockStopReason(event?.stopReason)
+        output.rawStopReason = event?.stopReason
+        let result = mapBedrockStopReason(event?.stopReason)
+        output.stopReason = result.stopReason
+        if let errorMessage = result.errorMessage {
+            output.errorMessage = errorMessage
+        }
     case "metadata":
         if let event = decodeEvent(
             direct: BedrockMetadataEvent.self,
@@ -578,16 +590,18 @@ private func decodeEvent<T: Decodable, W: Decodable>(
     return nil
 }
 
-private func mapBedrockStopReason(_ reason: String?) -> StopReason {
+func mapBedrockStopReason(_ reason: String?) -> StopReasonResult {
     switch reason {
     case "end_turn", "stop_sequence":
-        return .stop
+        return StopReasonResult(stopReason: .stop)
     case "max_tokens", "model_context_window_exceeded":
-        return .length
+        return StopReasonResult(stopReason: .length)
     case "tool_use":
-        return .toolUse
+        return StopReasonResult(stopReason: .toolUse)
+    case .none:
+        return StopReasonResult(stopReason: .error)
     default:
-        return .error
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason ?? "unknown")")
     }
 }
 

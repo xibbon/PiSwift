@@ -862,15 +862,18 @@ public final class AgentSession: Sendable {
             if case .assistant(let assistant) = message {
                 lastAssistantMessage = assistant
                 // Track last successful usage for threshold checks after errors (4D-4).
-                if assistant.stopReason != .error {
+                switch assistant.stopReason {
+                case .stop, .length, .toolUse:
                     lastSuccessfulUsage = assistant.usage
-                }
-                if assistant.stopReason != .error, retryAttempt > 0 {
-                    let attempt = retryAttempt
-                    retryAttempt = 0
-                    retryAbort = nil
-                    retryTask = nil
-                    emit(.autoRetryEnd(success: true, attempt: attempt, finalError: nil))
+                    if retryAttempt > 0 {
+                        let attempt = retryAttempt
+                        retryAttempt = 0
+                        retryAbort = nil
+                        retryTask = nil
+                        emit(.autoRetryEnd(success: true, attempt: attempt, finalError: nil))
+                    }
+                case .pending, .error, .aborted, .deferred:
+                    break
                 }
             }
         }
@@ -997,6 +1000,12 @@ public final class AgentSession: Sendable {
     /// pre-compaction usage doesn't retrigger (4D-3).
     private func checkAutoCompaction(_ message: AssistantMessage) async {
         guard autoCompactionEnabled, !isCompactingInternal else { return }
+        switch message.stopReason {
+        case .pending, .aborted, .deferred:
+            return
+        case .stop, .length, .toolUse, .error:
+            break
+        }
 
         let contextWindow = agent.state.model.contextWindow
         guard contextWindow > 0 else { return }

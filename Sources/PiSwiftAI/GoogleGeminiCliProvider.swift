@@ -62,7 +62,7 @@ public func streamGoogleGeminiCli(
             provider: model.provider,
             model: model.id,
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-            stopReason: .stop
+            stopReason: .pending
         )
 
         do {
@@ -197,7 +197,8 @@ public func streamGoogleGeminiCli(
             func resetOutput() {
                 output.content = []
                 output.usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
-                output.stopReason = .stop
+                output.stopReason = .pending
+                output.rawStopReason = nil
                 output.errorMessage = nil
                 output.timestamp = Int64(Date().timeIntervalSince1970 * 1000)
                 started = false
@@ -308,8 +309,14 @@ public func streamGoogleGeminiCli(
                         }
 
                         if let finishReason = candidate.finishReason {
-                            output.stopReason = mapGoogleStopReason(finishReason)
-                            if output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) {
+                            output.rawStopReason = finishReason
+                            let result = mapGoogleStopReason(finishReason)
+                            output.stopReason = result.stopReason
+                            if let errorMessage = result.errorMessage {
+                                output.errorMessage = errorMessage
+                            }
+                            if output.stopReason != .error,
+                               output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) {
                                 output.stopReason = .toolUse
                             }
                         }
@@ -389,8 +396,14 @@ public func streamGoogleGeminiCli(
                 throw GoogleGeminiCliError.aborted
             }
 
-            if output.stopReason == .aborted || output.stopReason == .error {
-                throw GoogleGeminiCliError.unknown
+            if output.stopReason == .pending {
+                throw GoogleGeminiCliError.apiError("Google Gemini CLI stream ended without a finish reason")
+            }
+            if output.stopReason == .aborted {
+                throw GoogleGeminiCliError.aborted
+            }
+            if output.stopReason == .error {
+                throw GoogleGeminiCliError.apiError(output.errorMessage ?? "An unknown error occurred")
             }
 
             stream.push(.done(reason: output.stopReason, message: output))

@@ -263,7 +263,9 @@ private func cloneFauxMessage(_ message: AssistantMessage, api: Api, provider: S
         usage: message.usage,
         stopReason: message.stopReason,
         errorMessage: message.errorMessage,
-        timestamp: message.timestamp
+        timestamp: message.timestamp,
+        deferred: message.deferred,
+        rawStopReason: message.rawStopReason
     )
 }
 
@@ -439,7 +441,9 @@ private func streamFauxWithDeltas(
         usage: message.usage,
         stopReason: message.stopReason,
         errorMessage: message.errorMessage,
-        timestamp: message.timestamp
+        timestamp: message.timestamp,
+        deferred: message.deferred,
+        rawStopReason: message.rawStopReason
     )
 
     if signal?.isCancelled == true {
@@ -529,6 +533,14 @@ private func streamFauxWithDeltas(
         }
     }
 
+    if message.stopReason == .pending {
+        var error = message
+        error.stopReason = .error
+        error.errorMessage = error.errorMessage ?? "Faux stream ended without a stop reason"
+        stream.push(.error(reason: .error, error: error))
+        stream.end()
+        return
+    }
     if message.stopReason == .error || message.stopReason == .aborted {
         stream.push(.error(reason: message.stopReason, error: message))
         stream.end()
