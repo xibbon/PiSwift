@@ -37,9 +37,18 @@ public func streamOpenAICodexResponses(
                 sessionId: codexSessionId
             )
 
+            let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
+            let grammarToolInputProperties = try createGrammarToolInputProperties(
+                tools: context.tools,
+                supportsOpenAIGrammarTools: supportsGrammar
+            )
             var body: [String: Any] = [
                 "model": model.id,
-                "input": convertCodexMessages(model: model, context: context),
+                "input": try convertCodexMessages(
+                    model: model,
+                    context: context,
+                    grammarToolInputProperties: grammarToolInputProperties
+                ),
                 "stream": true,
             ]
 
@@ -58,7 +67,11 @@ public func streamOpenAICodexResponses(
                 body["temperature"] = temperature
             }
             if let tools = context.tools, !tools.isEmpty {
-                body["tools"] = convertCodexTools(tools)
+                body["tools"] = try convertCodexTools(
+                    tools,
+                    supportsStrictMode: model.compat?.supportsStrictMode ?? true,
+                    supportsOpenAIGrammarTools: supportsGrammar
+                )
                 body["tool_choice"] = "auto"
                 body["parallel_tool_calls"] = true
             }
@@ -82,6 +95,8 @@ public func streamOpenAICodexResponses(
             var currentBlockIndex: Int? = nil
             var currentBlockKind: String? = nil
             var currentToolCallPartial = ""
+            var currentGrammarInputProperty: String?
+            var grammarInputBuffer = GrammarToolInputJsonBuffer()
             var hasStartedStream = false
 
             func startBlock(kind: String, block: ContentBlock) {
@@ -123,6 +138,24 @@ public func streamOpenAICodexResponses(
                 tool.arguments = parseStreamingJSON(currentToolCallPartial)
                 output.content[index] = .toolCall(tool)
                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
+            }
+
+            func updateGrammarToolCallInput(_ nextInput: String, close: Bool) throws {
+                guard let index = currentBlockIndex,
+                      currentBlockKind == "toolCall",
+                      let inputProperty = currentGrammarInputProperty,
+                      case .toolCall(var tool) = output.content[index] else { return }
+                if let delta = try appendGrammarToolInputJsonDelta(
+                    buffer: &grammarInputBuffer,
+                    inputProperty: inputProperty,
+                    nextInput: nextInput,
+                    close: close
+                ) {
+                    stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
+                }
+                tool.arguments = [inputProperty: AnyCodable(nextInput)]
+                output.content[index] = .toolCall(tool)
+                currentToolCallPartial = nextInput
             }
 
             func finishToolCallArguments(_ arguments: String) {
@@ -167,6 +200,21 @@ public func streamOpenAICodexResponses(
                         currentToolCallPartial = item["arguments"] as? String ?? ""
                         let toolCall = ToolCall(id: combinedId, name: name, arguments: [:])
                         startBlock(kind: "toolCall", block: .toolCall(toolCall))
+                    } else if type == "custom_tool_call" {
+                        let callId = item["call_id"] as? String ?? ""
+                        let itemId = item["id"] as? String ?? ""
+                        let name = item["name"] as? String ?? ""
+                        let input = item["input"] as? String ?? ""
+                        let inputProperty = grammarToolInputProperties[name] ?? "input"
+                        currentGrammarInputProperty = inputProperty
+                        grammarInputBuffer = GrammarToolInputJsonBuffer()
+                        currentToolCallPartial = input
+                        let toolCall = ToolCall(
+                            id: "\(callId)|\(itemId)",
+                            name: name,
+                            arguments: [inputProperty: AnyCodable(input)]
+                        )
+                        startBlock(kind: "toolCall", block: .toolCall(toolCall))
                     }
 
                 case "response.reasoning_summary_text.delta":
@@ -193,6 +241,14 @@ public func streamOpenAICodexResponses(
                 case "response.function_call_arguments.done":
                     let arguments = rawEvent["arguments"] as? String ?? ""
                     finishToolCallArguments(arguments)
+
+                case "response.custom_tool_call_input.delta":
+                    let delta = rawEvent["delta"] as? String ?? ""
+                    try updateGrammarToolCallInput(currentToolCallPartial + delta, close: false)
+
+                case "response.custom_tool_call_input.done":
+                    let input = rawEvent["input"] as? String ?? ""
+                    try updateGrammarToolCallInput(input, close: true)
 
                 case "response.output_item.done":
                     guard let item = rawEvent["item"] as? [String: Any],
@@ -242,6 +298,16 @@ public func streamOpenAICodexResponses(
                         currentBlockKind = nil
                         currentBlockIndex = nil
                         currentToolCallPartial = ""
+                    } else if type == "custom_tool_call" {
+                        let input = item["input"] as? String ?? currentToolCallPartial
+                        try updateGrammarToolCallInput(input, close: true)
+                        if let index = currentBlockIndex, case .toolCall(let call) = output.content[index] {
+                            stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
+                        }
+                        currentBlockKind = nil
+                        currentBlockIndex = nil
+                        currentToolCallPartial = ""
+                        currentGrammarInputProperty = nil
                     }
 
                 case "response.completed", "response.done":
@@ -791,7 +857,11 @@ private func collectCodexData(from bytes: URLSession.AsyncBytes) async throws ->
     return data
 }
 
-func convertCodexMessages(model: Model, context: Context) -> [Any] {
+func convertCodexMessages(
+    model: Model,
+    context: Context,
+    grammarToolInputProperties: [String: String]
+) throws -> [Any] {
     var messages: [Any] = []
     let codexToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode"]
 
@@ -892,13 +962,27 @@ func convertCodexMessages(model: Model, context: Context) -> [Any] {
                     let parts = toolCall.id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
                     let callId = parts.first.map(String.init) ?? toolCall.id
                     let itemId = parts.count > 1 ? String(parts[1]) : ""
-                    outputItems.append([
-                        "type": "function_call",
-                        "id": itemId,
-                        "call_id": callId,
-                        "name": toolCall.name,
-                        "arguments": jsonString(from: toolCall.arguments),
-                    ])
+                    if let inputProperty = grammarToolInputProperties[toolCall.name] {
+                        outputItems.append([
+                            "type": "custom_tool_call",
+                            "id": itemId,
+                            "call_id": callId,
+                            "name": toolCall.name,
+                            "input": sanitizeSurrogates(try getGrammarToolInput(
+                                toolName: toolCall.name,
+                                arguments: toolCall.arguments,
+                                inputProperty: inputProperty
+                            )),
+                        ])
+                    } else {
+                        outputItems.append([
+                            "type": "function_call",
+                            "id": itemId,
+                            "call_id": callId,
+                            "name": toolCall.name,
+                            "arguments": jsonString(from: toolCall.arguments),
+                        ])
+                    }
                 default:
                     break
                 }
@@ -916,7 +1000,8 @@ func convertCodexMessages(model: Model, context: Context) -> [Any] {
             let callId = toolResult.toolCallId.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? toolResult.toolCallId
 
             messages.append([
-                "type": "function_call_output",
+                "type": grammarToolInputProperties[toolResult.toolName] == nil
+                    ? "function_call_output" : "custom_tool_call_output",
                 "call_id": callId,
                 "output": sanitizeSurrogates(textResult.isEmpty ? "(see attached image)" : textResult),
             ])
@@ -949,6 +1034,14 @@ func convertCodexMessages(model: Model, context: Context) -> [Any] {
     return messages
 }
 
+func convertCodexMessages(model: Model, context: Context) -> [Any] {
+    (try? convertCodexMessages(
+        model: model,
+        context: context,
+        grammarToolInputProperties: [:]
+    )) ?? []
+}
+
 private func codexMessageId(_ id: String?, index: Int) -> String {
     guard let id, !id.isEmpty else {
         return "msg_\(index)"
@@ -971,15 +1064,41 @@ private func codexShortHash(_ value: String) -> String {
     return String(h2, radix: 36) + String(h1, radix: 36)
 }
 
-private func convertCodexTools(_ tools: [AITool]) -> [[String: Any]] {
-    tools.map { tool in
-        [
+private func convertCodexTools(
+    _ tools: [AITool],
+    supportsStrictMode: Bool,
+    supportsOpenAIGrammarTools: Bool
+) throws -> [[String: Any]] {
+    try tools.map { tool in
+        if let grammar = try resolveGrammarConstrainedSampling(
+            tool: tool,
+            supportsOpenAIGrammarTools: supportsOpenAIGrammarTools
+        ) {
+            return [
+                "type": "custom",
+                "name": tool.name,
+                "description": tool.description,
+                "format": [
+                    "type": "grammar",
+                    "syntax": grammar.format.rawValue,
+                    "definition": grammar.definition,
+                ],
+            ]
+        }
+        let constrainedStrict = try resolveJsonSchemaStrictSampling(
+            tool: tool,
+            supportsStrictMode: supportsStrictMode
+        )
+        var result: [String: Any] = [
             "type": "function",
             "name": tool.name,
             "description": tool.description,
             "parameters": tool.parameters.mapValues { $0.value },
-            "strict": NSNull(),
         ]
+        if supportsStrictMode {
+            result["strict"] = constrainedStrict == true ? true : NSNull()
+        }
+        return result
     }
 }
 

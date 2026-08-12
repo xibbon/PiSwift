@@ -125,6 +125,8 @@ public func streamAzureOpenAIResponses(
     context: Context,
     options: AzureOpenAIResponsesOptions
 ) -> AssistantMessageEventStream {
+    var options = options
+    options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -161,6 +163,25 @@ public func streamAzureOpenAIResponses(
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
                 effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
             )
+            let constrainedSamplingMiddleware = try makeOpenAIResponsesConstrainedSamplingMiddleware(
+                tools: context.tools,
+                supportsStrictMode: model.compat?.supportsStrictMode ?? true,
+                supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
+            )
+            try validateResponsesGrammarReplay(
+                messages: context.messages,
+                grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties
+            )
+            var middlewares: [OpenAIMiddleware] = [
+                cacheMiddleware,
+                azureMiddleware,
+                reasoningEffortMiddleware,
+                constrainedSamplingMiddleware,
+            ]
+            if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
+                // Keep this last so custom keys override all named request fields.
+                middlewares.append(OpenAISamplingParamsMiddleware(samplingParams: samplingParams))
+            }
 
             var azureModel = model
             azureModel = Model(
@@ -174,6 +195,7 @@ public func streamAzureOpenAIResponses(
                 cost: model.cost,
                 contextWindow: model.contextWindow,
                 maxTokens: model.maxTokens,
+                samplingParams: model.samplingParams,
                 headers: model.headers,
                 compat: model.compat
             )
@@ -183,12 +205,44 @@ public func streamAzureOpenAIResponses(
                 apiKey: apiKey,
                 headers: options.headers,
                 timeoutMs: options.timeoutMs,
-                middlewares: [cacheMiddleware, azureMiddleware, reasoningEffortMiddleware]
+                middlewares: middlewares
             )
             let builtQuery = try buildAzureResponsesQuery(model: model, context: context, options: options, deploymentName: deploymentName)
-            emitPayload(options.onPayload, payload: builtQuery)
+            let encodedQuery = try JSONEncoder().encode(builtQuery)
+            var capturedRequest = URLRequest(url: openAIResponsesURL(baseUrl: azureConfig.baseUrl))
+            capturedRequest.httpMethod = "POST"
+            capturedRequest.httpBody = encodedQuery
+            capturedRequest = middlewares.reduce(capturedRequest) { $1.intercept(request: $0) }
+            emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
+
+            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty {
+                var request = capturedRequest
+                request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
+                request.setValue("text/event-stream", forHTTPHeaderField: "accept")
+                request.setValue("application/json", forHTTPHeaderField: "content-type")
+                for (key, value) in model.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
+                for (key, value) in options.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
+                try await processRawOpenAIResponsesStream(
+                    request: request,
+                    model: model,
+                    signal: options.signal,
+                    onResponse: options.onResponse,
+                    serviceTier: nil,
+                    grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties,
+                    stream: stream,
+                    output: &output
+                )
+                try finishRawResponsesOutput(
+                    output: output,
+                    signal: options.signal,
+                    providerName: "Azure OpenAI Responses"
+                )
+                stream.push(.done(reason: output.stopReason, message: output))
+                stream.end()
+                return
+            }
 
             let openAIStream: AsyncThrowingStream<ResponseStreamEvent, Error> = builtClient.responses.createResponseStreaming(query: builtQuery)
             stream.push(.start(partial: output))
@@ -427,6 +481,7 @@ public func streamSimpleAzureOpenAIResponses(
 
     let providerOptions = AzureOpenAIResponsesOptions(
         temperature: options?.temperature,
+        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
@@ -467,7 +522,10 @@ func buildAzureResponsesQuery(
         }
     }
 
-    let tools = responsesToolsPayload(context.tools)
+    let tools = try responsesToolsPayload(
+        context.tools,
+        supportsStrictMode: model.compat?.supportsStrictMode ?? true
+    )
 
     return CreateModelResponseQuery(
         input: .inputItemList(inputItems),

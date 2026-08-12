@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OpenAI
 import SwiftAnthropic
@@ -46,6 +47,25 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+final class BlockingOAuthURLProtocol: URLProtocol {
+    static let started = LockedState(false)
+    static let stopped = LockedState(false)
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "auth.x.ai"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.started.withLock { $0 = true }
+    }
+
+    override func stopLoading() {
+        Self.stopped.withLock { $0 = true }
+    }
 }
 
 final class OpenAICompletionsMockURLProtocol: URLProtocol {
@@ -151,7 +171,7 @@ private func codexTestEvent(type: String, payload: [String: Any]) -> String {
     return string
 }
 
-private func openAITestSseData(_ payloads: [[String: Any]]) throws -> Data {
+func openAITestSseData(_ payloads: [[String: Any]]) throws -> Data {
     var result = ""
     for payload in payloads {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
@@ -542,7 +562,7 @@ private func normalizeImagesModel(_ model: ImagesModel) -> [String: Any] {
     ])
 }
 
-private actor CodexRequestLock {
+actor CodexRequestLock {
     private var locked = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
@@ -571,7 +591,7 @@ private actor CodexRequestLock {
     }
 }
 
-private let codexRequestLock = CodexRequestLock()
+let codexRequestLock = CodexRequestLock()
 
 private struct CodexRequestCapture: Sendable {
     let conversationId: String?
@@ -1842,18 +1862,49 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
+@Test func newProvidersResolveTheirDocumentedEnvironmentKeys() async {
+    await withEnv("BASETEN_API_KEY", value: "baseten-test-key") {
+        #expect(findEnvKeys(provider: .baseten) == ["BASETEN_API_KEY"])
+        #expect(getEnvApiKey(provider: .baseten) == "baseten-test-key")
+    }
+    await withEnv("QWEN_TOKEN_PLAN_API_KEY", value: "qwen-shared-test-key") {
+        #expect(findEnvKeys(provider: .qwenTokenPlan) == ["QWEN_TOKEN_PLAN_API_KEY"])
+        #expect(findEnvKeys(provider: .qwenTokenPlanIndividual) == ["QWEN_TOKEN_PLAN_API_KEY"])
+        #expect(getEnvApiKey(provider: .qwenTokenPlan) == "qwen-shared-test-key")
+        #expect(getEnvApiKey(provider: .qwenTokenPlanIndividual) == "qwen-shared-test-key")
+    }
+    await withEnv("QWEN_TOKEN_PLAN_CN_API_KEY", value: "qwen-cn-test-key") {
+        #expect(findEnvKeys(provider: .qwenTokenPlanCn) == ["QWEN_TOKEN_PLAN_CN_API_KEY"])
+        #expect(getEnvApiKey(provider: .qwenTokenPlanCn) == "qwen-cn-test-key")
+    }
+}
+
 @Test func findEnvKeysOnlyReturnsSetProviderKeys() async throws {
-    await withEnv("ANTHROPIC_OAUTH_TOKEN", value: nil) {
-        await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
-            #expect(findEnvKeys(provider: "anthropic") == ["ANTHROPIC_API_KEY"])
-            #expect(getEnvApiKey(provider: "anthropic") == "sk-ant-api")
+    await withEnv("ANTHROPIC_AUTH_TOKEN", value: nil) {
+        await withEnv("ANTHROPIC_OAUTH_TOKEN", value: nil) {
+            await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
+                #expect(findEnvKeys(provider: "anthropic") == ["ANTHROPIC_API_KEY"])
+                #expect(getEnvApiKey(provider: "anthropic") == "sk-ant-api")
+            }
         }
     }
 
-    await withEnv("ANTHROPIC_OAUTH_TOKEN", value: "oauth-token") {
-        await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
-            #expect(findEnvKeys(provider: "anthropic") == ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"])
-            #expect(getEnvApiKey(provider: "anthropic") == "oauth-token")
+    await withEnv("ANTHROPIC_AUTH_TOKEN", value: "gateway-token") {
+        await withEnv("ANTHROPIC_OAUTH_TOKEN", value: "oauth-token") {
+            await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
+                #expect(findEnvKeys(provider: "anthropic") == [
+                    "ANTHROPIC_AUTH_TOKEN",
+                    "ANTHROPIC_OAUTH_TOKEN",
+                    "ANTHROPIC_API_KEY",
+                ])
+                #expect(getEnvApiKey(provider: "anthropic") == "gateway-token")
+                #expect(usesAnthropicBearerTransport("gateway-token"))
+                #expect(!usesAnthropicBearerTransport("sk-ant-api"))
+                #expect(anthropicAuthenticationHeaders(
+                    apiKey: "gateway-token",
+                    usesBearerTransport: usesAnthropicBearerTransport("gateway-token")
+                ) == ["Authorization": "Bearer gateway-token"])
+            }
         }
     }
 }
@@ -4204,12 +4255,14 @@ struct OAuthTests {
 
     @Test func oauthProviderListReturnsAllProviders() {
         let providers = getOAuthProviders()
-        #expect(providers.count == 4)
+        #expect(providers.count == 6)
 
         let ids = providers.map { $0.id }
         #expect(ids.contains(.anthropic))
         #expect(ids.contains(.openAICodex))
         #expect(ids.contains(.githubCopilot))
+        #expect(ids.contains(.openRouter))
+        #expect(ids.contains(.kimiCoding))
         #expect(ids.contains(.xai))
         #expect(!ids.contains(.googleGeminiCli))
         #expect(!ids.contains(.googleAntigravity))
@@ -4220,6 +4273,266 @@ struct OAuthTests {
         for provider in providers {
             #expect(!provider.name.isEmpty)
         }
+        #expect(providers.first { $0.id == .openRouter }?.name == "OpenRouter OAuth")
+        #expect(providers.first { $0.id == .kimiCoding }?.name == "Kimi Code (subscription)")
+    }
+
+    @Test func openRouterPkceExchangesPastedRedirectUrl() async throws {
+        try await assertOpenRouterManualInput(
+            "http://127.0.0.1:4567/oauth/callback/test?code=redirect-code",
+            expectedCode: "redirect-code"
+        )
+    }
+
+    @Test func openRouterPkceExchangesPastedBareCode() async throws {
+        try await assertOpenRouterManualInput("bare-code", expectedCode: "bare-code")
+    }
+
+    @Test func openRouterLoopbackCallbackExchangesCode() async throws {
+        try await codexRequestLock.withLock {
+            let callbackTask = LockedState<Task<Int, Never>?>(nil)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["openrouter.ai"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                let url = try #require(request.url)
+                let bodyData = try #require(readRequestBody(request))
+                let body = try #require(try JSONSerialization.jsonObject(with: bodyData) as? [String: String])
+                #expect(body["code"] == "loopback-code")
+                let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (response, Data(#"{"key":"sk-or-loopback"}"#.utf8))
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let credentials = try await loginOpenRouter(OAuthLoginCallbacks(
+                onAuth: { info in
+                    let authorize = URLComponents(string: info.url)
+                    let callback = authorize?.queryItems?.first { $0.name == "callback_url" }?.value
+                    let task = Task.detached { () -> Int in
+                        guard let callback,
+                              var components = URLComponents(string: callback) else { return 0 }
+                        components.queryItems = [URLQueryItem(name: "code", value: "loopback-code")]
+                        guard let url = components.url else { return 0 }
+                        do {
+                            let (_, response) = try await URLSession.shared.data(from: url)
+                            return (response as? HTTPURLResponse)?.statusCode ?? 0
+                        } catch {
+                            return 0
+                        }
+                    }
+                    callbackTask.withLock { $0 = task }
+                },
+                onPrompt: { _ in
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    return ""
+                }
+            ))
+
+            #expect(credentials.access == "sk-or-loopback")
+            let task = try #require(callbackTask.withLock { $0 })
+            #expect(await task.value == 200)
+        }
+    }
+
+    private func assertOpenRouterManualInput(_ input: String, expectedCode: String) async throws {
+        try await codexRequestLock.withLock {
+            let authInfo = LockedState<OAuthAuthInfo?>(nil)
+            let sawValidPkce = LockedState(false)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["openrouter.ai"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                let url = try #require(request.url)
+                #expect(url.path == "/api/v1/auth/keys")
+                #expect(request.httpMethod == "POST")
+                let bodyData = try #require(readRequestBody(request))
+                let body = try #require(try JSONSerialization.jsonObject(with: bodyData) as? [String: String])
+                #expect(body["code"] == expectedCode)
+                #expect(body["code_challenge_method"] == "S256")
+
+                let authorizeUrl = try #require(authInfo.withLock { $0?.url })
+                let challenge = try #require(
+                    URLComponents(string: authorizeUrl)?.queryItems?
+                        .first { $0.name == "code_challenge" }?.value
+                )
+                let verifier = try #require(body["code_verifier"])
+                let digest = Data(SHA256.hash(data: Data(verifier.utf8)))
+                let derived = digest.base64EncodedString()
+                    .replacingOccurrences(of: "+", with: "-")
+                    .replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: "=", with: "")
+                #expect(derived == challenge)
+                sawValidPkce.withLock { $0 = derived == challenge }
+
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["content-type": "application/json"]
+                )!
+                return (response, Data(#"{"key":"sk-or-minted-key"}"#.utf8))
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let credentials = try await loginOpenRouter(OAuthLoginCallbacks(
+                onAuth: { info in authInfo.withLock { $0 = info } },
+                onPrompt: { prompt in
+                    #expect(prompt.placeholder?.contains("/oauth/callback/") == true)
+                    return input
+                }
+            ))
+
+            #expect(sawValidPkce.withLock { $0 })
+            #expect(credentials.access == "sk-or-minted-key")
+            #expect(credentials.refresh.isEmpty)
+            #expect(credentials.expires == 9_007_199_254_740_991)
+            let authorizeUrl = try #require(authInfo.withLock { $0?.url })
+            let items = URLComponents(string: authorizeUrl)?.queryItems ?? []
+            #expect(items.first { $0.name == "callback_url" }?.value?.contains("/oauth/callback/") == true)
+            #expect(items.first { $0.name == "code_challenge_method" }?.value == "S256")
+        }
+    }
+
+    @Test func kimiCodingDeviceFlowHandlesSlowDown() async throws {
+        try await codexRequestLock.withLock {
+            let pollCount = LockedState(0)
+            let authInfo = LockedState<OAuthAuthInfo?>(nil)
+            MockURLProtocol.allowedHosts.withLock { $0 = ["auth.kimi.com"] }
+            MockURLProtocol.requestHandler.withLock { $0 = { request in
+                let url = try #require(request.url)
+                #expect(request.httpMethod == "POST")
+                #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+                #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/x-www-form-urlencoded")
+                let form = String(data: try #require(readRequestBody(request)), encoding: .utf8) ?? ""
+                let fields = Dictionary(uniqueKeysWithValues: (URLComponents(string: "?\(form)")?.queryItems ?? []).compactMap {
+                    item in item.value.map { (item.name, $0) }
+                })
+                #expect(fields["client_id"] == "17e5f671-d194-4dfb-9706-5516cb48c098")
+                let response: HTTPURLResponse
+                let data: Data
+                switch url.path {
+                case "/api/oauth/device_authorization":
+                    response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                    data = Data(#"{"device_code":"kimi-device","user_code":"KIMI-CODE","verification_uri":"https://auth.kimi.com/device","verification_uri_complete":"https://auth.kimi.com/device?user_code=KIMI-CODE","interval":0.001,"expires_in":30}"#.utf8)
+                case "/api/oauth/token":
+                    #expect(fields["grant_type"] == "urn:ietf:params:oauth:grant-type:device_code")
+                    #expect(fields["device_code"] == "kimi-device")
+                    let poll = pollCount.withLock { count in count += 1; return count }
+                    if poll == 1 {
+                        response = HTTPURLResponse(url: url, statusCode: 400, httpVersion: nil, headerFields: nil)!
+                        data = Data(#"{"error":"slow_down","interval":0.001}"#.utf8)
+                    } else {
+                        response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                        data = Data(#"{"access_token":"kimi-access","refresh_token":"kimi-refresh","expires_in":3600}"#.utf8)
+                    }
+                default:
+                    throw URLError(.badURL)
+                }
+                return (response, data)
+            } }
+            URLProtocol.registerClass(MockURLProtocol.self)
+            defer {
+                URLProtocol.unregisterClass(MockURLProtocol.self)
+                MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                MockURLProtocol.requestHandler.withLock { $0 = nil }
+            }
+
+            let credentials = try await loginKimiCoding(OAuthLoginCallbacks(
+                onAuth: { info in authInfo.withLock { $0 = info } },
+                onPrompt: { _ in "" }
+            ))
+            #expect(pollCount.withLock { $0 } == 2)
+            #expect(authInfo.withLock { $0?.url } == "https://auth.kimi.com/device?user_code=KIMI-CODE")
+            #expect(authInfo.withLock { $0?.instructions } == "Enter code: KIMI-CODE")
+            #expect(credentials.access == "kimi-access")
+            #expect(credentials.refresh == "kimi-refresh")
+        }
+    }
+
+    @Test func kimiCodingRefreshUsesHostOverride() async throws {
+        await codexRequestLock.withLock {
+            await withEnv("KIMI_CODE_OAUTH_HOST", value: "https://kimi-oauth.example/") {
+                MockURLProtocol.allowedHosts.withLock { $0 = ["kimi-oauth.example"] }
+                MockURLProtocol.requestHandler.withLock { $0 = { request in
+                    let url = try #require(request.url)
+                    #expect(url.absoluteString == "https://kimi-oauth.example/api/oauth/token")
+                    let form = String(data: try #require(readRequestBody(request)), encoding: .utf8) ?? ""
+                    let fields = Dictionary(uniqueKeysWithValues: (URLComponents(string: "?\(form)")?.queryItems ?? []).compactMap {
+                        item in item.value.map { (item.name, $0) }
+                    })
+                    #expect(fields["grant_type"] == "refresh_token")
+                    #expect(fields["refresh_token"] == "old-kimi-refresh")
+                    let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                    return (response, Data(#"{"access_token":"new-kimi-access","refresh_token":"new-kimi-refresh","expires_in":3600}"#.utf8))
+                } }
+                URLProtocol.registerClass(MockURLProtocol.self)
+                defer {
+                    URLProtocol.unregisterClass(MockURLProtocol.self)
+                    MockURLProtocol.allowedHosts.withLock { $0 = [] }
+                    MockURLProtocol.requestHandler.withLock { $0 = nil }
+                }
+                do {
+                    let credentials = try await refreshKimiCodingToken("old-kimi-refresh")
+                    #expect(credentials.access == "new-kimi-access")
+                    #expect(credentials.refresh == "new-kimi-refresh")
+                } catch {
+                    Issue.record(error)
+                }
+            }
+        }
+    }
+
+    @Test func refreshCancellationAbortsNetworkRequest() async {
+        await codexRequestLock.withLock {
+            BlockingOAuthURLProtocol.started.withLock { $0 = false }
+            BlockingOAuthURLProtocol.stopped.withLock { $0 = false }
+            URLProtocol.registerClass(BlockingOAuthURLProtocol.self)
+            defer { URLProtocol.unregisterClass(BlockingOAuthURLProtocol.self) }
+
+            let signal = CancellationToken()
+            let task = Task {
+                try await refreshXaiToken("refresh-token", signal: signal)
+            }
+            while !BlockingOAuthURLProtocol.started.withLock({ $0 }) {
+                await Task.yield()
+            }
+            signal.cancel()
+            do {
+                _ = try await task.value
+                Issue.record("Refresh completed after cancellation")
+            } catch let error as OAuthError {
+                if case .cancelled = error {
+                    #expect(Bool(true))
+                } else {
+                    Issue.record("Unexpected OAuth error: \(error)")
+                }
+            } catch {
+                Issue.record(error)
+            }
+            for _ in 0..<100 where !BlockingOAuthURLProtocol.stopped.withLock({ $0 }) {
+                await Task.yield()
+            }
+            #expect(BlockingOAuthURLProtocol.stopped.withLock { $0 })
+        }
+    }
+
+    @Test func oauthMinimumValidityPolicy() {
+        let now = Date().timeIntervalSince1970 * 1000
+        let twoMinutes = OAuthCredentials(refresh: "r", access: "a", expires: now + 2 * 60 * 1000)
+        let thirtyMinutes = OAuthCredentials(refresh: "r", access: "a", expires: now + 30 * 60 * 1000)
+        #expect(oauthCredentialNeedsRefresh(twoMinutes, now: now))
+        #expect(!oauthCredentialNeedsRefresh(thirtyMinutes, now: now))
+        #expect(oauthCredentialNeedsRefresh(
+            thirtyMinutes,
+            minimumValidityMs: 45 * 60 * 1000,
+            now: now
+        ))
     }
 
     @Test func normalizeGitHubDomainHandlesVariousInputs() {

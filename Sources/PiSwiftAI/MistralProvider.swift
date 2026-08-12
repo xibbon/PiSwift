@@ -364,11 +364,12 @@ private func buildMistralPayload(
     payload["messages"] = messages
 
     if let tools = context.tools, !tools.isEmpty {
-        payload["tools"] = tools.map { tool -> [String: Any] in
+        payload["tools"] = try tools.map { tool -> [String: Any] in
+            let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: true)
             var function: [String: Any] = [
                 "name": tool.name,
                 "description": tool.description,
-                "strict": false,
+                "strict": strict ?? false,
             ]
             function["parameters"] = tool.parameters.mapValues { $0.value }
             return ["type": "function", "function": function]

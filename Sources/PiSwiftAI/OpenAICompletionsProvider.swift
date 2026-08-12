@@ -7,6 +7,8 @@ public func streamOpenAICompletions(
     options: OpenAICompletionsOptions
 ) -> AssistantMessageEventStream {
     let model = resolveCloudflareModel(model)
+    var options = options
+    options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -21,6 +23,14 @@ public func streamOpenAICompletions(
 
         do {
             let compat = resolveCompat(model: model)
+            let grammarToolInputProperties = try createGrammarToolInputProperties(
+                tools: context.tools,
+                supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools
+            )
+            try validateGrammarToolCallReplay(
+                messages: context.messages,
+                grammarToolInputProperties: grammarToolInputProperties
+            )
             let query = try buildCompletionsQuery(model: model, context: context, options: options, compat: compat)
             let openAIStream: AsyncThrowingStream<OpenAICompletionsStreamChunk, Error>
             if compat.thinkingFormat == .zai {
@@ -43,8 +53,10 @@ public func streamOpenAICompletions(
             var currentToolCallIndex: Int? = nil
             var toolCallIdByIndex: [Int: String] = [:]
             var hasFinishReason = false
+            var currentGrammarInputProperty: String? = nil
+            var grammarInputBuffer = GrammarToolInputJsonBuffer()
 
-            func finishCurrentBlock() {
+            func finishCurrentBlock() throws {
                 guard let index = currentBlockIndex else { return }
                 switch output.content[index] {
                 case .text(let textContent):
@@ -52,8 +64,19 @@ public func streamOpenAICompletions(
                 case .thinking(let thinkingContent):
                     stream.push(.thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: output))
                 case .toolCall(var toolCall):
-                    let parsed = parseStreamingJSON(currentToolCallArgs)
-                    toolCall.arguments = parsed
+                    if let inputProperty = currentGrammarInputProperty {
+                        if let delta = try appendGrammarToolInputJsonDelta(
+                            buffer: &grammarInputBuffer,
+                            inputProperty: inputProperty,
+                            nextInput: currentToolCallArgs,
+                            close: true
+                        ) {
+                            stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
+                        }
+                        toolCall.arguments = [inputProperty: AnyCodable(currentToolCallArgs)]
+                    } else {
+                        toolCall.arguments = parseStreamingJSON(currentToolCallArgs)
+                    }
                     output.content[index] = .toolCall(toolCall)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                 default:
@@ -64,6 +87,8 @@ public func streamOpenAICompletions(
                 currentToolCallArgs = ""
                 currentToolCallId = nil
                 currentToolCallIndex = nil
+                currentGrammarInputProperty = nil
+                grammarInputBuffer = GrammarToolInputJsonBuffer()
             }
 
             for try await chunk in openAIStream {
@@ -100,7 +125,7 @@ public func streamOpenAICompletions(
 
                 if let content = delta.content, !content.isEmpty {
                     if currentBlockKind != "text" {
-                        finishCurrentBlock()
+                        try finishCurrentBlock()
                         let textBlock = TextContent(text: "")
                         output.content.append(.text(textBlock))
                         currentBlockIndex = output.content.count - 1
@@ -117,7 +142,7 @@ public func streamOpenAICompletions(
 
                 if let reasoning = delta.reasoning, !reasoning.isEmpty {
                     if currentBlockKind != "thinking" {
-                        finishCurrentBlock()
+                        try finishCurrentBlock()
                         let thinkingBlock = ThinkingContent(thinking: "", thinkingSignature: "reasoning")
                         output.content.append(.thinking(thinkingBlock))
                         currentBlockIndex = output.content.count - 1
@@ -132,7 +157,8 @@ public func streamOpenAICompletions(
                     }
                 }
 
-                if let toolCalls = delta.toolCalls {
+                let functionToolCalls = delta.toolCalls?.filter { $0.type != "custom" }
+                if let toolCalls = functionToolCalls {
                     for toolCall in toolCalls {
                         let resolved = resolveToolCallIdentity(
                             toolCall: toolCall,
@@ -145,7 +171,7 @@ public func streamOpenAICompletions(
                         let normalizedId = resolved.id
 
                         if currentBlockKind != "toolCall" || currentToolCallId != normalizedId {
-                            finishCurrentBlock()
+                            try finishCurrentBlock()
                             let tool = ToolCall(id: normalizedId, name: toolCall.function?.name ?? "", arguments: [:])
                             output.content.append(.toolCall(tool))
                             currentBlockIndex = output.content.count - 1
@@ -169,9 +195,49 @@ public func streamOpenAICompletions(
                         }
                     }
                 }
+
+                for customCall in chunk.customToolCalls {
+                    let index = customCall.index ?? currentToolCallIndex ?? 0
+                    let normalizedId = customCall.id ?? currentToolCallId ?? ""
+                    if currentBlockKind != "toolCall" || currentToolCallId != normalizedId {
+                        try finishCurrentBlock()
+                        let inputProperty = grammarToolInputProperties[customCall.name] ?? "input"
+                        let tool = ToolCall(
+                            id: normalizedId,
+                            name: customCall.name,
+                            arguments: [inputProperty: AnyCodable("")]
+                        )
+                        output.content.append(.toolCall(tool))
+                        currentBlockIndex = output.content.count - 1
+                        currentBlockKind = "toolCall"
+                        currentToolCallArgs = ""
+                        currentToolCallId = normalizedId
+                        currentToolCallIndex = index
+                        currentGrammarInputProperty = inputProperty
+                        grammarInputBuffer = GrammarToolInputJsonBuffer()
+                        stream.push(.toolCallStart(contentIndex: currentBlockIndex!, partial: output))
+                    }
+                    guard let contentIndex = currentBlockIndex,
+                          let inputProperty = currentGrammarInputProperty else { continue }
+                    let nextInput = currentToolCallArgs + customCall.input
+                    if let jsonDelta = try appendGrammarToolInputJsonDelta(
+                        buffer: &grammarInputBuffer,
+                        inputProperty: inputProperty,
+                        nextInput: nextInput,
+                        close: false
+                    ) {
+                        stream.push(.toolCallDelta(contentIndex: contentIndex, delta: jsonDelta, partial: output))
+                    }
+                    currentToolCallArgs = nextInput
+                    if case .toolCall(var tool) = output.content[contentIndex] {
+                        if tool.name.isEmpty { tool.name = customCall.name }
+                        tool.arguments = [inputProperty: AnyCodable(nextInput)]
+                        output.content[contentIndex] = .toolCall(tool)
+                    }
+                }
             }
 
-            finishCurrentBlock()
+            try finishCurrentBlock()
 
             if options.signal?.isCancelled == true {
                 throw OpenAICompletionsStreamError.aborted
@@ -241,7 +307,10 @@ private struct ResolvedOpenAICompat {
     let requiresMistralToolIds: Bool
     let thinkingFormat: OpenAICompatThinkingFormat
     let chatTemplateKwargs: [String: ChatTemplateKwargValue]
+    let chatTemplateArgs: [String: ChatTemplateKwargValue]
+    let supportsThinkingTokenBudget: Bool
     let supportsStrictMode: Bool
+    let supportsOpenAIGrammarTools: Bool
     let reasoningEffortMap: [ThinkingLevel: String]?
     let cacheControlFormat: OpenAICompatCacheControlFormat?
     let sendSessionAffinityHeaders: Bool
@@ -321,7 +390,10 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         requiresMistralToolIds: false,
         thinkingFormat: thinkingFormat,
         chatTemplateKwargs: [:],
+        chatTemplateArgs: [:],
+        supportsThinkingTokenBudget: false,
         supportsStrictMode: true,
+        supportsOpenAIGrammarTools: false,
         reasoningEffortMap: reasoningEffortMap,
         cacheControlFormat: isOpenRouter && model.id.hasPrefix("anthropic/") ? .anthropic : nil,
         sendSessionAffinityHeaders: false,
@@ -350,7 +422,10 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         requiresMistralToolIds: compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
         thinkingFormat: compat.thinkingFormat ?? detected.thinkingFormat,
         chatTemplateKwargs: compat.chatTemplateKwargs ?? detected.chatTemplateKwargs,
+        chatTemplateArgs: compat.chatTemplateArgs ?? detected.chatTemplateArgs,
+        supportsThinkingTokenBudget: compat.supportsThinkingTokenBudget ?? detected.supportsThinkingTokenBudget,
         supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
+        supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools ?? detected.supportsOpenAIGrammarTools,
         reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap,
         cacheControlFormat: compat.cacheControlFormat ?? detected.cacheControlFormat,
         sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
@@ -436,19 +511,18 @@ private func buildCompletionsQuery(
         }
     }
 
-    let tools: [ChatQuery.ChatCompletionToolParam]? = {
+    let tools: [ChatQuery.ChatCompletionToolParam]? = try {
         // v0.70.3: omit `tools` field entirely when no tools are active. DashScope/Aliyun Qwen
         // reject `"tools": []` with HTTP 400 `"[] is too short - 'tools'"`. The legacy LiteLLM/
         // Anthropic-proxy workaround (sending `[]` to keep tool history coherent) is preserved
         // only when the conversation actually contains tool history.
-        if let tools = activeTools {
-            let converted = convertCompletionsTools(tools, compat: compat)
+        if let activeTools {
+            let converted = try convertCompletionsTools(activeTools, compat: compat)
             if converted.isEmpty {
                 return hasToolHistory(context.messages) ? [] : nil
             }
             return converted
-        }
-        if hasToolHistory(context.messages) {
+        } else if hasToolHistory(context.messages) {
             return []
         }
         return nil
@@ -690,14 +764,18 @@ private func convertCompletionsMessages(
     return params
 }
 
-private func convertCompletionsTools(_ tools: [AITool], compat: ResolvedOpenAICompat) -> [ChatQuery.ChatCompletionToolParam] {
-    tools.compactMap { tool in
+private func convertCompletionsTools(_ tools: [AITool], compat: ResolvedOpenAICompat) throws -> [ChatQuery.ChatCompletionToolParam] {
+    try tools.compactMap { tool in
         let schema = openAIJSONSchema(from: tool.parameters)
+        let constrainedStrict = try resolveJsonSchemaStrictSampling(
+            tool: tool,
+            supportsStrictMode: compat.supportsStrictMode
+        )
         let definition = ChatQuery.ChatCompletionToolParam.FunctionDefinition(
             name: tool.name,
             description: tool.description,
             parameters: schema,
-            strict: compat.supportsStrictMode ? false : nil
+            strict: compat.supportsStrictMode ? (constrainedStrict ?? false) : nil
         )
         return .init(function: definition)
     }
@@ -755,6 +833,20 @@ private func streamZaiCompletions(
        ) {
         body = updated
     }
+    if compat.supportsThinkingTokenBudget,
+       let effort = options.reasoningEffort,
+       model.reasoning,
+       var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
+        applyThinkingTokenBudget(
+            payload: &payload,
+            modelMaxTokens: model.maxTokens,
+            effort: effort,
+            thinkingBudgets: options.thinkingBudgets
+        )
+        body = try JSONSerialization.data(withJSONObject: payload)
+    }
+    // Keep this last so custom keys override all named request fields.
+    body = applyOpenAISamplingParams(data: body, samplingParams: options.samplingParams)
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
     return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
@@ -781,6 +873,14 @@ private struct OpenAICompletionsStreamChunk {
     let result: ChatStreamResult
     let rawUsage: OpenAICompletionsRawUsage?
     let rawFinishReason: String?
+    let customToolCalls: [OpenAICompletionsCustomToolCall]
+}
+
+private struct OpenAICompletionsCustomToolCall {
+    let index: Int?
+    let id: String?
+    let name: String
+    let input: String
 }
 
 private struct OpenAICompletionsRawUsage: Decodable {
@@ -890,6 +990,14 @@ private func buildCompletionsMiddlewares(
             kwargs: compat.chatTemplateKwargs
         ))
     }
+    if compat.thinkingFormat == .baseten, model.reasoning {
+        middlewares.append(OpenAICompletionsBasetenThinkingMiddleware(
+            model: model,
+            effort: options.reasoningEffort,
+            args: compat.chatTemplateArgs,
+            supportsReasoningEffort: compat.supportsReasoningEffort
+        ))
+    }
     if compat.thinkingFormat == .openrouter, model.reasoning {
         middlewares.append(OpenAICompletionsOpenRouterReasoningMiddleware(model: model, effort: options.reasoningEffort))
     }
@@ -917,7 +1025,8 @@ private func buildCompletionsMiddlewares(
         let deferredToolNames = getDeferredToolNames(context.messages)
         let orderedDeferredTools: [(name: String, json: [String: Any])] = (context.tools ?? []).compactMap { tool in
             guard deferredToolNames.contains(tool.name),
-                  let data = try? JSONEncoder().encode(convertCompletionsTools([tool], compat: compat)),
+                  let converted = try? convertCompletionsTools([tool], compat: compat),
+                  let data = try? JSONEncoder().encode(converted),
                   let toolsJSON = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   let toolJSON = toolsJSON.first else { return nil }
             return (name: tool.name, json: toolJSON)
@@ -926,7 +1035,145 @@ private func buildCompletionsMiddlewares(
             orderedDeferredTools: orderedDeferredTools
         ))
     }
+    if compat.supportsOpenAIGrammarTools,
+       let grammarTools = try? makeOpenAIGrammarToolPayloads(
+           tools: context.tools ?? [],
+           supportsOpenAIGrammarTools: true
+       ), !grammarTools.isEmpty,
+       let properties = try? createGrammarToolInputProperties(
+           tools: context.tools,
+           supportsOpenAIGrammarTools: true
+       ) {
+        middlewares.append(OpenAICompletionsGrammarToolsMiddleware(
+            grammarTools: grammarTools,
+            grammarToolInputProperties: properties
+        ))
+    }
+    if compat.supportsThinkingTokenBudget,
+       let effort = options.reasoningEffort,
+       model.reasoning {
+        middlewares.append(OpenAICompletionsThinkingTokenBudgetMiddleware(
+            modelMaxTokens: model.maxTokens,
+            effort: effort,
+            thinkingBudgets: options.thinkingBudgets
+        ))
+    }
+    if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
+        // Keep this last so custom keys override all named request fields.
+        middlewares.append(OpenAISamplingParamsMiddleware(samplingParams: samplingParams))
+    }
     return middlewares
+}
+
+private struct OpenAICompletionsGrammarToolsMiddleware: OpenAIMiddleware {
+    let grammarTools: [String: OpenAICompletionsGrammarTool]
+    let grammarToolInputProperties: [String: String]
+
+    func intercept(request: URLRequest) -> URLRequest {
+        let body = requestBodyData(request)
+        guard !body.isEmpty,
+              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+            return request
+        }
+
+        if var tools = payload["tools"] as? [[String: Any]] {
+            for index in tools.indices {
+                guard let function = tools[index]["function"] as? [String: Any],
+                      let name = function["name"] as? String,
+                      let grammarTool = grammarTools[name] else { continue }
+                tools[index] = grammarTool.payload
+            }
+            payload["tools"] = tools
+        }
+
+        if var messages = payload["messages"] as? [[String: Any]] {
+            for messageIndex in messages.indices {
+                guard var toolCalls = messages[messageIndex]["tool_calls"] as? [[String: Any]] else { continue }
+                for toolIndex in toolCalls.indices {
+                    guard let function = toolCalls[toolIndex]["function"] as? [String: Any],
+                          let name = function["name"] as? String,
+                          let inputProperty = grammarToolInputProperties[name],
+                          let arguments = function["arguments"] as? String,
+                          let data = arguments.data(using: .utf8),
+                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let input = object[inputProperty] as? String else { continue }
+                    toolCalls[toolIndex].removeValue(forKey: "function")
+                    toolCalls[toolIndex]["type"] = "custom"
+                    toolCalls[toolIndex]["custom"] = ["name": name, "input": sanitizeSurrogates(input)]
+                }
+                messages[messageIndex]["tool_calls"] = toolCalls
+            }
+            payload["messages"] = messages
+        }
+
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+}
+
+private struct OpenAICompletionsGrammarTool: Sendable {
+    let name: String
+    let description: String
+    let format: GrammarConstrainedSampling.Format
+    let definition: String
+
+    var payload: [String: Any] {
+        [
+            "type": "custom",
+            "custom": [
+                "name": name,
+                "description": description,
+                "format": [
+                    "type": "grammar",
+                    "grammar": [
+                        "syntax": format.rawValue,
+                        "definition": definition,
+                    ],
+                ],
+            ],
+        ]
+    }
+}
+
+private func makeOpenAIGrammarToolPayloads(
+    tools: [AITool],
+    supportsOpenAIGrammarTools: Bool
+) throws -> [String: OpenAICompletionsGrammarTool] {
+    var result: [String: OpenAICompletionsGrammarTool] = [:]
+    for tool in tools {
+        guard let grammar = try resolveGrammarConstrainedSampling(
+            tool: tool,
+            supportsOpenAIGrammarTools: supportsOpenAIGrammarTools
+        ) else { continue }
+        result[tool.name] = OpenAICompletionsGrammarTool(
+            name: tool.name,
+            description: tool.description,
+            format: grammar.format,
+            definition: grammar.definition
+        )
+    }
+    return result
+}
+
+private func validateGrammarToolCallReplay(
+    messages: [Message],
+    grammarToolInputProperties: [String: String]
+) throws {
+    guard !grammarToolInputProperties.isEmpty else { return }
+    for message in messages {
+        guard case .assistant(let assistant) = message else { continue }
+        for case .toolCall(let toolCall) in assistant.content {
+            guard let inputProperty = grammarToolInputProperties[toolCall.name] else { continue }
+            _ = try getGrammarToolInput(
+                toolName: toolCall.name,
+                arguments: toolCall.arguments,
+                inputProperty: inputProperty
+            )
+        }
+    }
 }
 
 private func shouldSendOpenAICompletionsPromptCache(
@@ -1335,15 +1582,120 @@ func applyOpenAIChatTemplateKwargs(
         return nil
     }
 
+    let resolved = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: kwargs)
+    guard !resolved.isEmpty else { return nil }
+    payload["chat_template_kwargs"] = resolved
+    return try? JSONSerialization.data(withJSONObject: payload)
+}
+
+private func resolveOpenAIChatTemplateValues(
+    model: Model,
+    effort: ThinkingLevel?,
+    values: [String: ChatTemplateKwargValue]
+) -> [String: Any] {
     var resolved: [String: Any] = [:]
-    for (key, value) in kwargs {
+    for (key, value) in values {
         if let value = resolveChatTemplateKwarg(value, model: model, effort: effort) {
             resolved[key] = value
         }
     }
-    guard !resolved.isEmpty else { return nil }
-    payload["chat_template_kwargs"] = resolved
-    return try? JSONSerialization.data(withJSONObject: payload)
+    return resolved
+}
+
+private struct OpenAICompletionsBasetenThinkingMiddleware: OpenAIMiddleware {
+    let model: Model
+    let effort: ThinkingLevel?
+    let args: [String: ChatTemplateKwargValue]
+    let supportsReasoningEffort: Bool
+
+    func intercept(request: URLRequest) -> URLRequest {
+        let body = requestBodyData(request)
+        guard !body.isEmpty,
+              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+            return request
+        }
+
+        let resolvedArgs = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: args)
+        if !resolvedArgs.isEmpty {
+            payload["chat_template_args"] = resolvedArgs
+        }
+
+        if supportsReasoningEffort, let resolvedEffort = basetenReasoningEffort(model: model, requested: effort) {
+            payload["reasoning_effort"] = resolvedEffort
+        }
+
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+}
+
+private func basetenReasoningEffort(model: Model, requested: ThinkingLevel?) -> String? {
+    guard let requested else {
+        guard let map = model.thinkingLevelMap else { return nil }
+        return map[.off] ?? nil
+    }
+    guard let map = model.thinkingLevelMap else { return requested.rawValue }
+    switch map[ModelThinkingLevel(requested)] {
+    case nil:
+        return requested.rawValue
+    case .some(nil):
+        return nil
+    case .some(.some(let mapped)):
+        return mapped
+    }
+}
+
+private struct OpenAICompletionsThinkingTokenBudgetMiddleware: OpenAIMiddleware {
+    let modelMaxTokens: Int
+    let effort: ThinkingLevel
+    let thinkingBudgets: ThinkingBudgets?
+
+    func intercept(request: URLRequest) -> URLRequest {
+        let body = requestBodyData(request)
+        guard !body.isEmpty,
+              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+            return request
+        }
+
+        applyThinkingTokenBudget(
+            payload: &payload,
+            modelMaxTokens: modelMaxTokens,
+            effort: effort,
+            thinkingBudgets: thinkingBudgets
+        )
+        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = updatedBody
+        return updated
+    }
+}
+
+private func applyThinkingTokenBudget(
+    payload: inout [String: Any],
+    modelMaxTokens: Int,
+    effort: ThinkingLevel,
+    thinkingBudgets: ThinkingBudgets?
+) {
+    let level = clampThinkingLevel(effort) ?? effort
+    let defaults: ThinkingBudgets = [
+        .minimal: 1_024,
+        .low: 2_048,
+        .medium: 8_192,
+        .high: 16_384,
+    ]
+    let budgets = defaults.merging(thinkingBudgets ?? [:]) { _, requestValue in requestValue }
+    guard let requestedBudget = budgets[level] else { return }
+    let ceiling = payload["max_tokens"] as? Int
+        ?? payload["max_completion_tokens"] as? Int
+        ?? modelMaxTokens
+    let budget = min(requestedBudget, max(0, ceiling - minimumAnswerTokens))
+    if budget > 0 {
+        payload["thinking_token_budget"] = budget
+    }
 }
 
 private func resolveChatTemplateKwarg(
@@ -1714,15 +2066,37 @@ private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChu
         object["object"] = object["object"] ?? "chat.completion.chunk"
         if let normalized = try? JSONSerialization.data(withJSONObject: object, options: []) {
             guard let result = try? JSONDecoder().decode(ChatStreamResult.self, from: normalized) else { return nil }
-            return OpenAICompletionsStreamChunk(result: result, rawUsage: rawUsage, rawFinishReason: rawFinishReason)
+            return OpenAICompletionsStreamChunk(
+                result: result,
+                rawUsage: rawUsage,
+                rawFinishReason: rawFinishReason,
+                customToolCalls: decodeCustomToolCalls(from: object["choices"])
+            )
         }
     }
     guard let result = try? JSONDecoder().decode(ChatStreamResult.self, from: json) else { return nil }
     return OpenAICompletionsStreamChunk(
         result: result,
         rawUsage: nil,
-        rawFinishReason: result.choices.first?.finishReason?.rawValue
+        rawFinishReason: result.choices.first?.finishReason?.rawValue,
+        customToolCalls: []
     )
+}
+
+private func decodeCustomToolCalls(from choices: Any?) -> [OpenAICompletionsCustomToolCall] {
+    guard let first = (choices as? [[String: Any]])?.first,
+          let delta = first["delta"] as? [String: Any],
+          let toolCalls = delta["tool_calls"] as? [[String: Any]] else { return [] }
+    return toolCalls.compactMap { toolCall in
+        guard (toolCall["type"] as? String) == "custom",
+              let custom = toolCall["custom"] as? [String: Any] else { return nil }
+        return OpenAICompletionsCustomToolCall(
+            index: toolCall["index"] as? Int,
+            id: toolCall["id"] as? String,
+            name: custom["name"] as? String ?? "",
+            input: custom["input"] as? String ?? ""
+        )
+    }
 }
 
 private func decodeFirstChoiceFinishReason(from choices: Any?) -> String? {

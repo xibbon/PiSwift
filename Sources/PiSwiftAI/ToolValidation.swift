@@ -5,6 +5,7 @@ public enum ValidationError: Error, LocalizedError {
     case toolNotFound(String)
     case validationFailed(toolName: String, errors: [SchemaValidationError], receivedArguments: [String: AnyCodable])
     case schemaMissing(String)
+    case constrainedSampling(String)
 
     public var errorDescription: String? {
         switch self {
@@ -16,6 +17,8 @@ public enum ValidationError: Error, LocalizedError {
             return "Validation failed for tool \"\(toolName)\":\n\(errorMessages)\n\nReceived arguments:\n\(argsJson)"
         case .schemaMissing(let name):
             return "Tool \"\(name)\" has no parameter schema"
+        case .constrainedSampling(let message):
+            return message
         }
     }
 }

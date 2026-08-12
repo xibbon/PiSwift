@@ -45,6 +45,20 @@ private func isAnthropicOAuthToken(_ apiKey: String) -> Bool {
     apiKey.contains("sk-ant-oat")
 }
 
+func usesAnthropicBearerTransport(_ apiKey: String) -> Bool {
+    if isAnthropicOAuthToken(apiKey) {
+        return true
+    }
+    return ProcessInfo.processInfo.environment["ANTHROPIC_AUTH_TOKEN"] == apiKey
+}
+
+func anthropicAuthenticationHeaders(apiKey: String, usesBearerTransport: Bool) -> [String: String] {
+    if usesBearerTransport {
+        return ["Authorization": "Bearer \(apiKey)"]
+    }
+    return ["x-api-key": apiKey]
+}
+
 private func shouldLogAnthropicDebug() -> Bool {
     let env = ProcessInfo.processInfo.environment
     let flag = (env["PI_DEBUG_ANTHROPIC"] ?? env["PI_DEBUG_LIVE_TESTS"] ?? env["PI_DEBUG_API_KEYS"])?.lowercased()
@@ -80,6 +94,7 @@ private struct ResolvedAnthropicCompat {
     let supportsCacheControlOnTools: Bool
     let supportsTemperature: Bool
     let supportsToolReferences: Bool
+    let supportsStrictTools: Bool
 }
 
 func defaultSupportsToolReferences(model: Model) -> Bool {
@@ -120,7 +135,8 @@ private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
         sendSessionAffinityHeaders: compat?.sendSessionAffinityHeaders ?? (isFireworks || isCloudflareAiGatewayAnthropic),
         supportsCacheControlOnTools: compat?.supportsCacheControlOnTools ?? !isFireworks,
         supportsTemperature: compat?.supportsTemperature ?? true,
-        supportsToolReferences: compat?.supportsToolReferences ?? defaultSupportsToolReferences(model: model)
+        supportsToolReferences: compat?.supportsToolReferences ?? defaultSupportsToolReferences(model: model),
+        supportsStrictTools: compat?.supportsStrictTools ?? false
     )
 }
 
@@ -185,6 +201,11 @@ public func streamAnthropic(
                 isOAuthToken ? toClaudeCodeName($0.name) : $0.name
             })
             let orderedTools = immediateTools + deferredTools
+            let strictToolSchemas = try resolveAnthropicStrictToolSchemas(
+                tools: orderedTools,
+                isOAuthToken: isOAuthToken,
+                supportsStrictTools: compat.supportsStrictTools
+            )
             var toolResultAddedNames: [String: [String]] = [:]
             for message in context.messages {
                 if case .toolResult(let toolResult) = message,
@@ -223,7 +244,8 @@ public func streamAnthropic(
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
                 deferredToolNames: deferredToolNames,
-                toolResultAddedNames: toolResultAddedNames
+                toolResultAddedNames: toolResultAddedNames,
+                strictToolSchemas: strictToolSchemas
             )
             let service = AnthropicServiceFactory.service(
                 apiKey: apiKey,
@@ -241,13 +263,37 @@ public func streamAnthropic(
                 compat: compat,
                 orderedTools: orderedTools
             )
-            emitPayload(options.onPayload, payload: parameters)
+            if let encoded = try? JSONEncoder().encode(parameters),
+               let constrained = injectAnthropicRequestBody(
+                   body: encoded,
+                   ttl: anthropicCacheTtl(
+                       baseUrl: model.baseUrl,
+                       supportsLongCacheRetention: compat.supportsLongCacheRetention
+                   ),
+                   metadataUserId: extractAnthropicMetadataUserId(options.metadata),
+                   supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                   supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
+                   thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
+                   deferredToolNames: deferredToolNames,
+                   toolResultAddedNames: toolResultAddedNames,
+                   isOAuthToken: isOAuthToken,
+                   strictToolSchemas: strictToolSchemas
+               ) {
+                emitPayload(options.onPayload, data: constrained)
+            } else {
+                emitPayload(options.onPayload, payload: parameters)
+            }
             debugService = service
             debugParameters = parameters
             let toolCount = context.tools?.count ?? 0
             logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
             let anthropicStream = try await streamAnthropicMessagesTolerant(
                 apiKey: apiKey,
+                usesBearerTransport: usesAnthropicBearerTransport(apiKey)
+                    || mergedHeaders.contains { key, value in
+                        key.caseInsensitiveCompare("Authorization") == .orderedSame
+                            && value.lowercased().hasPrefix("bearer ")
+                    },
                 baseUrl: model.baseUrl,
                 betaHeaders: betaHeaders,
                 httpClient: httpClient,
@@ -684,6 +730,7 @@ private func repairedAnthropicJSON(_ json: String) -> String {
 
 private func streamAnthropicMessagesTolerant(
     apiKey: String,
+    usesBearerTransport: Bool,
     baseUrl: String,
     betaHeaders: [String]?,
     httpClient: HTTPClient,
@@ -700,10 +747,11 @@ private func streamAnthropicMessagesTolerant(
     ]
     // OAuth access tokens must be sent as a bearer token (matching upstream
     // pi's authToken usage); x-api-key is rejected with a 401 for them.
-    if isAnthropicOAuthToken(apiKey) {
-        headers["Authorization"] = "Bearer \(apiKey)"
-    } else {
-        headers["x-api-key"] = apiKey
+    for (name, value) in anthropicAuthenticationHeaders(
+        apiKey: apiKey,
+        usesBearerTransport: usesBearerTransport
+    ) {
+        headers[name] = value
     }
     if let betaHeaders, !betaHeaders.isEmpty {
         headers["anthropic-beta"] = betaHeaders.joined(separator: ",")
@@ -1094,7 +1142,8 @@ private func buildAnthropicHttpClient(
     supportsCacheControlOnTools: Bool,
     thinkingDisabled: Bool,
     deferredToolNames: Set<String> = [],
-    toolResultAddedNames: [String: [String]] = [:]
+    toolResultAddedNames: [String: [String]] = [:],
+    strictToolSchemas: [String: [String: AnyCodable]] = [:]
 ) -> HTTPClient {
     var merged = extraHeaders
     if isOAuthToken {
@@ -1116,6 +1165,7 @@ private func buildAnthropicHttpClient(
         thinkingDisabled: thinkingDisabled,
         deferredToolNames: deferredToolNames,
         toolResultAddedNames: toolResultAddedNames,
+        strictToolSchemas: strictToolSchemas,
         isOAuthToken: isOAuthToken
     )
 }
@@ -1178,6 +1228,7 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let thinkingDisabled: Bool
     let deferredToolNames: Set<String>
     let toolResultAddedNames: [String: [String]]
+    let strictToolSchemas: [String: [String: AnyCodable]]
     let isOAuthToken: Bool
 
     func data(for request: HTTPRequest) async throws -> (Data, HTTPResponse) {
@@ -1230,7 +1281,8 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
             thinkingDisabled: thinkingDisabled,
             deferredToolNames: deferredToolNames,
             toolResultAddedNames: toolResultAddedNames,
-            isOAuthToken: isOAuthToken
+            isOAuthToken: isOAuthToken,
+            strictToolSchemas: strictToolSchemas
         )
         return HTTPRequest(url: url, method: method, headers: headers, body: updatedBody ?? body)
     }
@@ -1251,7 +1303,8 @@ func injectAnthropicRequestBody(
     thinkingDisabled: Bool = false,
     deferredToolNames: Set<String> = [],
     toolResultAddedNames: [String: [String]] = [:],
-    isOAuthToken: Bool = false
+    isOAuthToken: Bool = false,
+    strictToolSchemas: [String: [String: AnyCodable]] = [:]
 ) -> Data? {
     guard let body,
           var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
@@ -1363,6 +1416,11 @@ func injectAnthropicRequestBody(
                deferredToolNames.contains(name) {
                 tools[index]["defer_loading"] = true
             }
+            if let name = tools[index]["name"] as? String,
+               let schema = strictToolSchemas[name] {
+                tools[index]["strict"] = true
+                tools[index]["input_schema"] = schema.mapValues(\.value)
+            }
         }
 
         if supportsCacheControlOnTools, let lastToolIndex = tools.indices.last {
@@ -1382,6 +1440,20 @@ func injectAnthropicRequestBody(
     }
 
     return try? JSONSerialization.data(withJSONObject: payload)
+}
+
+private func resolveAnthropicStrictToolSchemas(
+    tools: [AITool],
+    isOAuthToken: Bool,
+    supportsStrictTools: Bool
+) throws -> [String: [String: AnyCodable]] {
+    var result: [String: [String: AnyCodable]] = [:]
+    for tool in tools {
+        if try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictTools) == true {
+            result[isOAuthToken ? toClaudeCodeName(tool.name) : tool.name] = tool.parameters
+        }
+    }
+    return result
 }
 
 func injectCacheControl(body: Data?, ttl: String?) -> Data? {

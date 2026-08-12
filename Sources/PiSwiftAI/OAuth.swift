@@ -35,12 +35,17 @@ public struct OAuthCredentials: Sendable, Codable {
     }
 }
 
+/// OAuth credentials refresh by default when less than five minutes remain.
+public let defaultOAuthMinimumValidityMs = 5 * 60 * 1000.0
+
 public enum OAuthProvider: String, Sendable, CaseIterable {
     case anthropic = "anthropic"
     case githubCopilot = "github-copilot"
     case googleGeminiCli = "google-gemini-cli"
     case googleAntigravity = "google-antigravity"
     case openAICodex = "openai-codex"
+    case openRouter = "openrouter"
+    case kimiCoding = "kimi-coding"
     case xai = "xai"
 }
 
@@ -148,47 +153,70 @@ public func getOAuthProviders() -> [OAuthProviderInfo] {
         OAuthProviderInfo(id: .anthropic, name: "Anthropic (Claude Pro/Max)", available: true),
         OAuthProviderInfo(id: .openAICodex, name: "ChatGPT Plus/Pro (Codex Subscription)", available: networkAvailable),
         OAuthProviderInfo(id: .githubCopilot, name: "GitHub Copilot", available: true),
+        OAuthProviderInfo(id: .openRouter, name: "OpenRouter OAuth", available: true),
+        OAuthProviderInfo(id: .kimiCoding, name: "Kimi Code (subscription)", available: true),
         OAuthProviderInfo(id: .xai, name: "xAI (Grok/X subscription)", available: true),
     ]
 }
 
-public func refreshOAuthToken(provider: OAuthProvider, credentials: OAuthCredentials) async throws -> OAuthCredentials {
+public func refreshOAuthToken(
+    provider: OAuthProvider,
+    credentials: OAuthCredentials,
+    signal: CancellationToken? = nil
+) async throws -> OAuthCredentials {
+    try throwIfOAuthCancelled(signal)
     switch provider {
     case .anthropic:
-        return try await refreshAnthropicToken(credentials.refresh)
+        return try await refreshAnthropicToken(credentials.refresh, signal: signal)
     case .githubCopilot:
-        return try await refreshGitHubCopilotToken(credentials.refresh, enterpriseDomain: credentials.enterpriseUrl)
+        return try await refreshGitHubCopilotToken(credentials.refresh, enterpriseDomain: credentials.enterpriseUrl, signal: signal)
     case .googleGeminiCli:
         guard let projectId = credentials.projectId else {
             throw OAuthError.missingProjectId(provider.rawValue)
         }
-        return try await refreshGoogleGeminiCliToken(credentials.refresh, projectId: projectId)
+        return try await refreshGoogleGeminiCliToken(credentials.refresh, projectId: projectId, signal: signal)
     case .googleAntigravity:
         guard let projectId = credentials.projectId else {
             throw OAuthError.missingProjectId(provider.rawValue)
         }
-        return try await refreshAntigravityToken(credentials.refresh, projectId: projectId)
+        return try await refreshAntigravityToken(credentials.refresh, projectId: projectId, signal: signal)
     case .openAICodex:
-        return try await refreshOpenAICodexToken(credentials.refresh)
+        return try await refreshOpenAICodexToken(credentials.refresh, signal: signal)
+    case .openRouter:
+        return credentials
+    case .kimiCoding:
+        return try await refreshKimiCodingToken(credentials.refresh, signal: signal)
     case .xai:
-        return try await refreshXaiToken(credentials.refresh)
+        return try await refreshXaiToken(credentials.refresh, signal: signal)
     }
 }
 
 public func getOAuthApiKey(
     provider: OAuthProvider,
-    credentials: [String: OAuthCredentials]
+    credentials: [String: OAuthCredentials],
+    minimumValidityMs: Double? = nil,
+    signal: CancellationToken? = nil
 ) async throws -> (newCredentials: OAuthCredentials, apiKey: String)? {
     guard var creds = credentials[provider.rawValue] else {
         return nil
     }
 
-    if nowMs() >= creds.expires {
-        creds = try await refreshOAuthToken(provider: provider, credentials: creds)
+    if oauthCredentialNeedsRefresh(creds, minimumValidityMs: minimumValidityMs) {
+        creds = try await refreshOAuthToken(provider: provider, credentials: creds, signal: signal)
     }
 
     let apiKey = try oauthApiKey(provider: provider, accessToken: creds.access, projectId: creds.projectId)
     return (creds, apiKey)
+}
+
+public func oauthCredentialNeedsRefresh(
+    _ credentials: OAuthCredentials,
+    minimumValidityMs: Double? = nil,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> Bool {
+    let requested = max(0, minimumValidityMs ?? 0)
+    let minimum = max(defaultOAuthMinimumValidityMs, requested)
+    return now + minimum >= credentials.expires
 }
 
 public func oauthApiKey(provider: OAuthProvider, accessToken: String, projectId: String?) throws -> String {
@@ -228,19 +256,19 @@ public func loginAnthropic(_ callbacks: OAuthLoginCallbacks) async throws -> OAu
     return token
 }
 
-public func refreshAnthropicToken(_ refreshToken: String) async throws -> OAuthCredentials {
+public func refreshAnthropicToken(_ refreshToken: String, signal: CancellationToken? = nil) async throws -> OAuthCredentials {
     let url = URL(string: "https://console.anthropic.com/v1/oauth/token")!
     let body: [String: Any] = [
         "grant_type": "refresh_token",
         "client_id": anthropicClientId(),
         "refresh_token": refreshToken,
     ]
-    let response = try await postJson(url: url, body: body)
+    let response = try await postJson(url: url, body: body, signal: signal)
     let token: AnthropicTokenResponse = try decodeJson(response.data)
     return OAuthCredentials(
         refresh: token.refresh_token,
         access: token.access_token,
-        expires: nowMs() + token.expires_in * 1000 - 5 * 60 * 1000
+        expires: nowMs() + token.expires_in * 1000 - defaultOAuthMinimumValidityMs
     )
 }
 
@@ -314,8 +342,8 @@ public func loginOpenAICodex(_ callbacks: OAuthLoginCallbacks) async throws -> O
     )
 }
 
-public func refreshOpenAICodexToken(_ refreshToken: String) async throws -> OAuthCredentials {
-    let token = try await refreshOpenAICode(refreshToken: refreshToken)
+public func refreshOpenAICodexToken(_ refreshToken: String, signal: CancellationToken? = nil) async throws -> OAuthCredentials {
+    let token = try await refreshOpenAICode(refreshToken: refreshToken, signal: signal)
     guard let accountId = openAICodexAccountId(from: token.access) else {
         throw OAuthError.invalidToken
     }
@@ -376,6 +404,59 @@ private func base64UrlDecode(_ input: String) -> Data? {
 
 private func nowMs() -> Double {
     Date().timeIntervalSince1970 * 1000
+}
+
+private func throwIfOAuthCancelled(_ signal: CancellationToken?) throws {
+    if signal?.isCancelled == true || Task.isCancelled {
+        throw OAuthError.cancelled
+    }
+}
+
+private struct OAuthNetworkResponse: Sendable {
+    let data: Data
+    let status: Int
+}
+
+private func oauthData(
+    for request: URLRequest,
+    signal: CancellationToken?,
+    timeoutMs: Int? = nil
+) async throws -> OAuthNetworkResponse {
+    try throwIfOAuthCancelled(signal)
+    let session = proxySession(for: request.url)
+    let deadline = timeoutMs.map { nowMs() + Double($0) }
+
+    do {
+        return try await withThrowingTaskGroup(of: OAuthNetworkResponse.self) { group in
+            group.addTask {
+                let (data, response) = try await session.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                return OAuthNetworkResponse(data: data, status: status)
+            }
+            group.addTask {
+                while true {
+                    if signal?.isCancelled == true || Task.isCancelled {
+                        throw OAuthError.cancelled
+                    }
+                    if let deadline, nowMs() >= deadline {
+                        throw OAuthError.tokenExchangeFailed("OAuth request timed out")
+                    }
+                    try await Task.sleep(nanoseconds: 25_000_000)
+                }
+            }
+
+            guard let first = try await group.next() else {
+                throw OAuthError.tokenExchangeFailed("OAuth request failed")
+            }
+            group.cancelAll()
+            return first
+        }
+    } catch {
+        if signal?.isCancelled == true || Task.isCancelled {
+            throw OAuthError.cancelled
+        }
+        throw error
+    }
 }
 
 private func randomBytes(count: Int) -> Data {
@@ -442,7 +523,7 @@ private func exchangeAnthropicCode(code: String, state: String?, verifier: Strin
     return OAuthCredentials(
         refresh: token.refresh_token,
         access: token.access_token,
-        expires: nowMs() + token.expires_in * 1000 - 5 * 60 * 1000
+        expires: nowMs() + token.expires_in * 1000 - defaultOAuthMinimumValidityMs
     )
 }
 
@@ -451,15 +532,15 @@ private struct HttpResponse {
     let status: Int
 }
 
-private func postJson(url: URL, body: [String: Any]) async throws -> HttpResponse {
+private func postJson(url: URL, body: [String: Any], signal: CancellationToken? = nil) async throws -> HttpResponse {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
 
-    let session = proxySession(for: request.url)
-    let (data, response) = try await session.data(for: request)
-    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    let response = try await oauthData(for: request, signal: signal)
+    let data = response.data
+    let status = response.status
     if status != 200 {
         let message = String(data: data, encoding: .utf8) ?? ""
         throw OAuthError.tokenExchangeFailed(message)
@@ -467,7 +548,7 @@ private func postJson(url: URL, body: [String: Any]) async throws -> HttpRespons
     return HttpResponse(data: data, status: status)
 }
 
-private func postForm(url: URL, params: [String: String]) async throws -> HttpResponse {
+private func postForm(url: URL, params: [String: String], signal: CancellationToken? = nil) async throws -> HttpResponse {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -476,9 +557,9 @@ private func postForm(url: URL, params: [String: String]) async throws -> HttpRe
         .joined(separator: "&")
     request.httpBody = form.data(using: .utf8)
 
-    let session = proxySession(for: request.url)
-    let (data, response) = try await session.data(for: request)
-    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    let response = try await oauthData(for: request, signal: signal)
+    let data = response.data
+    let status = response.status
     if status != 200 {
         let message = String(data: data, encoding: .utf8) ?? ""
         throw OAuthError.tokenExchangeFailed(message)
@@ -548,7 +629,7 @@ private func exchangeOpenAICode(code: String, verifier: String) async throws -> 
     )
 }
 
-private func refreshOpenAICode(refreshToken: String) async throws -> OpenAICodexToken {
+private func refreshOpenAICode(refreshToken: String, signal: CancellationToken? = nil) async throws -> OpenAICodexToken {
     let url = URL(string: "https://auth.openai.com/oauth/token")!
     let response = try await postForm(
         url: url,
@@ -556,7 +637,8 @@ private func refreshOpenAICode(refreshToken: String) async throws -> OpenAICodex
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,
             "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
-        ]
+        ],
+        signal: signal
     )
     let token: OpenAITokenResponse = try decodeJson(response.data)
     return OpenAICodexToken(
@@ -813,6 +895,372 @@ private func openAICodexSuccessHtml() -> String {
     """
 }
 
+// MARK: - OpenRouter OAuth
+
+private let openRouterAuthorizeUrl = "https://openrouter.ai/auth"
+private let openRouterTokenUrl = URL(string: "https://openrouter.ai/api/v1/auth/keys")!
+private let openRouterLoginTimeoutMs = 5 * 60 * 1000
+private let openRouterTokenExchangeTimeoutMs = 30_000
+
+private func exchangeOpenRouterAuthorizationCode(
+    code: String,
+    verifier: String,
+    signal: CancellationToken?
+) async throws -> OAuthCredentials {
+    try throwIfOAuthCancelled(signal)
+    var request = URLRequest(url: openRouterTokenUrl)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONSerialization.data(withJSONObject: [
+        "code": code,
+        "code_verifier": verifier,
+        "code_challenge_method": "S256",
+    ])
+
+    let response = try await oauthData(
+        for: request,
+        signal: signal,
+        timeoutMs: openRouterTokenExchangeTimeoutMs
+    )
+    let body = (try? JSONSerialization.jsonObject(with: response.data)) as? [String: Any]
+    guard (200..<300).contains(response.status) else {
+        let detail = (body?["error_description"] as? String)
+            ?? (body?["message"] as? String)
+            ?? (body?["error"] as? String)
+            ?? ((body?["error"] as? [String: Any])?["message"] as? String)
+        let suffix = detail.map { ": \($0)" } ?? ""
+        throw OAuthError.tokenExchangeFailed(
+            "OpenRouter OAuth key exchange failed (HTTP \(response.status))\(suffix)"
+        )
+    }
+    guard let key = body?["key"] as? String, !key.isEmpty else {
+        throw OAuthError.invalidToken
+    }
+    return OAuthCredentials(
+        refresh: "",
+        access: key,
+        expires: 9_007_199_254_740_991
+    )
+}
+
+private enum OpenRouterManualResult: Sendable {
+    case input(String)
+    case failed(String)
+}
+
+#if canImport(Network)
+private enum OpenRouterCallbackResult: Sendable {
+    case credential(OAuthCredentials)
+    case failed(String)
+}
+
+private actor OpenRouterCallbackServer {
+    private let listener: NWListener
+    private let callbackHost: String
+    private let callbackPath: String
+    private let verifier: String
+    private let signal: CancellationToken?
+    private let queue = DispatchQueue(label: "pi.oauth.openrouter")
+    private var result: OpenRouterCallbackResult?
+    private var claimed = false
+    private var callbackUrlValue: String?
+
+    private init(
+        listener: NWListener,
+        callbackHost: String,
+        callbackPath: String,
+        verifier: String,
+        signal: CancellationToken?
+    ) {
+        self.listener = listener
+        self.callbackHost = callbackHost
+        self.callbackPath = callbackPath
+        self.verifier = verifier
+        self.signal = signal
+    }
+
+    static func start(
+        callbackPath: String,
+        verifier: String,
+        signal: CancellationToken?
+    ) async -> OpenRouterCallbackServer? {
+        let configuredHost = ProcessInfo.processInfo.environment["PI_OAUTH_CALLBACK_HOST"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = configuredHost.flatMap { $0.isEmpty ? nil : $0 } ?? "127.0.0.1"
+        let port = NWEndpoint.Port.any
+        let listener: NWListener
+        do {
+            listener = try NWListener(using: oauthCallbackParameters(port: port), on: port)
+        } catch {
+            return nil
+        }
+        let server = OpenRouterCallbackServer(
+            listener: listener,
+            callbackHost: host,
+            callbackPath: callbackPath,
+            verifier: verifier,
+            signal: signal
+        )
+        return await server.startListener() ? server : nil
+    }
+
+    func callbackUrl() -> String? {
+        callbackUrlValue
+    }
+
+    func takeResult() -> OpenRouterCallbackResult? {
+        defer { result = nil }
+        return result
+    }
+
+    func handOffToManualInput() -> Bool {
+        guard !claimed else { return false }
+        claimed = true
+        listener.cancel()
+        return true
+    }
+
+    func close() {
+        listener.cancel()
+    }
+
+    private func startListener() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let resumed = LockedState(false)
+            listener.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    guard let self else { return }
+                    Task {
+                        await self.setCallbackUrl()
+                        let shouldResume = resumed.withLock { value in
+                            guard !value else { return false }
+                            value = true
+                            return true
+                        }
+                        if shouldResume { continuation.resume(returning: true) }
+                    }
+                case .failed:
+                    let shouldResume = resumed.withLock { value in
+                        guard !value else { return false }
+                        value = true
+                        return true
+                    }
+                    if shouldResume { continuation.resume(returning: false) }
+                default:
+                    break
+                }
+            }
+            listener.newConnectionHandler = { [weak self] connection in
+                Task { await self?.handle(connection) }
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    private func setCallbackUrl() {
+        guard let port = listener.port else { return }
+        callbackUrlValue = "http://\(callbackHost):\(port.rawValue)\(callbackPath)"
+    }
+
+    private final class ConnectionState: Sendable {
+        let buffer = LockedState(Data())
+    }
+
+    private func handle(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        scheduleReceive(connection, state: ConnectionState())
+    }
+
+    private func scheduleReceive(_ connection: NWConnection, state: ConnectionState) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, _ in
+            var requestLine: String?
+            state.buffer.withLock { buffer in
+                if let data { buffer.append(data) }
+                if let range = buffer.range(of: Data("\r\n".utf8)) {
+                    requestLine = String(data: buffer[..<range.lowerBound], encoding: .utf8)
+                }
+            }
+            if let requestLine {
+                Task { await self?.handleRequestLine(requestLine, connection: connection) }
+            } else if isComplete {
+                connection.cancel()
+            } else {
+                Task { await self?.scheduleReceive(connection, state: state) }
+            }
+        }
+    }
+
+    private func handleRequestLine(_ line: String, connection: NWConnection) async {
+        let parts = line.split(separator: " ")
+        guard parts.count >= 2,
+              let url = URL(string: "http://\(callbackHost)\(parts[1])"),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            sendResponse(connection, status: 400, body: "Bad request")
+            return
+        }
+        guard components.path == callbackPath else {
+            sendResponse(connection, status: 404, body: "OAuth callback route not found.")
+            return
+        }
+        guard !claimed else {
+            sendResponse(connection, status: 409, body: "This OAuth callback has already been used.")
+            return
+        }
+        if let error = components.queryItems?.first(where: { $0.name == "error" })?.value {
+            let description = components.queryItems?.first(where: { $0.name == "error_description" })?.value ?? error
+            claimed = true
+            result = .failed("OpenRouter authorization failed: \(description)")
+            sendResponse(connection, status: 400, body: "OpenRouter authorization was denied.")
+            return
+        }
+        guard let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+              !code.isEmpty else {
+            sendResponse(connection, status: 400, body: "OpenRouter returned no authorization code.")
+            return
+        }
+        claimed = true
+        do {
+            let credential = try await exchangeOpenRouterAuthorizationCode(
+                code: code,
+                verifier: verifier,
+                signal: signal
+            )
+            result = .credential(credential)
+            sendResponse(connection, status: 200, body: "Signed in to OpenRouter. You may now close this page.")
+        } catch {
+            result = .failed(error.localizedDescription)
+            sendResponse(connection, status: 502, body: "OpenRouter key exchange failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func sendResponse(_ connection: NWConnection, status: Int, body: String) {
+        let bodyData = Data(body.utf8)
+        let statusText = status == 200 ? "OK" : "Error"
+        let header = [
+            "HTTP/1.1 \(status) \(statusText)",
+            "Content-Type: text/plain; charset=utf-8",
+            "Content-Length: \(bodyData.count)",
+            "Cache-Control: no-store",
+            "Connection: close",
+            "",
+            "",
+        ].joined(separator: "\r\n")
+        connection.send(content: Data(header.utf8) + bodyData, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
+    }
+}
+#else
+private final class OpenRouterCallbackServer {
+    static func start(
+        callbackPath: String,
+        verifier: String,
+        signal: CancellationToken?
+    ) async -> OpenRouterCallbackServer? { nil }
+    func callbackUrl() -> String? { nil }
+    func close() {}
+}
+#endif
+
+/// Login with OpenRouter PKCE and exchange the code for a permanent API key.
+public func loginOpenRouter(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
+    try throwIfOAuthCancelled(callbacks.signal)
+    let pkce = try generatePKCE()
+    let callbackPath = "/oauth/callback/\(UUID().uuidString.lowercased())"
+    let server = await OpenRouterCallbackServer.start(
+        callbackPath: callbackPath,
+        verifier: pkce.verifier,
+        signal: callbacks.signal
+    )
+    let callbackUrl = await server?.callbackUrl()
+        ?? "http://127.0.0.1:1\(callbackPath)"
+
+    var components = URLComponents(string: openRouterAuthorizeUrl)!
+    components.queryItems = [
+        URLQueryItem(name: "callback_url", value: callbackUrl),
+        URLQueryItem(name: "code_challenge", value: pkce.challenge),
+        URLQueryItem(name: "code_challenge_method", value: "S256"),
+    ]
+    let authorizeUrl = components.url?.absoluteString ?? openRouterAuthorizeUrl
+    if let onProgress = callbacks.onProgress {
+        await onProgress("Listening for OpenRouter OAuth callback on \(callbackUrl)")
+    }
+    await callbacks.onAuth(OAuthAuthInfo(
+        url: authorizeUrl,
+        instructions: "Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here."
+    ))
+
+    let manualResult = LockedState<OpenRouterManualResult?>(nil)
+    let manualTask = Task {
+        do {
+            let input = try await callbacks.onPrompt(OAuthPrompt(
+                message: "Complete sign-in in your browser, or paste the authorization code / redirect URL here:",
+                placeholder: callbackUrl
+            ))
+            manualResult.withLock { $0 = .input(input) }
+        } catch {
+            manualResult.withLock { $0 = .failed(error.localizedDescription) }
+        }
+    }
+    defer {
+        manualTask.cancel()
+        if let server { Task { await server.close() } }
+    }
+
+    let deadline = nowMs() + Double(openRouterLoginTimeoutMs)
+    while nowMs() < deadline {
+        try throwIfOAuthCancelled(callbacks.signal)
+
+        #if canImport(Network)
+        if let callback = await server?.takeResult() {
+            switch callback {
+            case .credential(let credential):
+                manualTask.cancel()
+                return credential
+            case .failed(let message):
+                throw OAuthError.tokenExchangeFailed(message)
+            }
+        }
+        #endif
+
+        let hasManualResult = manualResult.withLock { $0 != nil }
+        #if canImport(Network)
+        var canUseManualResult = true
+        if hasManualResult, let server {
+            canUseManualResult = await server.handOffToManualInput()
+        }
+        #else
+        let canUseManualResult = true
+        #endif
+        if canUseManualResult, let manual = manualResult.withLock({ result -> OpenRouterManualResult? in
+            defer { result = nil }
+            return result
+        }) {
+            switch manual {
+            case .failed(let message):
+                throw OAuthError.tokenExchangeFailed(message)
+            case .input(let input):
+                let parsed = parseAuthorizationInput(input)
+                guard let code = parsed.code, !code.isEmpty else {
+                    throw OAuthError.missingAuthorizationCode
+                }
+                if let onProgress = callbacks.onProgress {
+                    await onProgress("Exchanging authorization code for an API key...")
+                }
+                return try await exchangeOpenRouterAuthorizationCode(
+                    code: code,
+                    verifier: pkce.verifier,
+                    signal: callbacks.signal
+                )
+            }
+        }
+        try await sleepMs(25, signal: callbacks.signal)
+    }
+    throw OAuthError.tokenExchangeFailed("OpenRouter OAuth login timed out")
+}
+
 // MARK: - GitHub Copilot OAuth (Device Code Flow)
 
 private func gitHubCopilotClientId() -> String {
@@ -930,19 +1378,11 @@ private func pollForGitHubAccessToken(
     signal: CancellationToken?
 ) async throws -> String {
     let urls = gitHubUrls(domain: domain)
-    let deadline = Date().addingTimeInterval(Double(expiresIn))
-    var intervalMs = max(1000, intervalSeconds * 1000)
-
-    // RFC 8628 requires clients to wait the advertised interval before the
-    // first poll; polling immediately after opening the browser is rejected by
-    // GitHub's device-code endpoint.
-    try await sleepMs(intervalMs, signal: signal)
-
-    while Date() < deadline {
-        if signal?.isCancelled == true {
-            throw OAuthError.cancelled
-        }
-
+    return try await pollOAuthDeviceCodeFlow(
+        intervalSeconds: Double(intervalSeconds),
+        expiresInSeconds: Double(expiresIn),
+        signal: signal
+    ) {
         var request = URLRequest(url: urls.accessTokenUrl)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -954,55 +1394,92 @@ private func pollForGitHubAccessToken(
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
         ])
 
-        let session = proxySession(for: request.url)
-        let (data, _) = try await session.data(for: request)
+        let response = try await oauthData(for: request, signal: signal)
+        let data = response.data
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            try await sleepMs(intervalMs, signal: signal)
-            continue
+            return .pending
         }
 
         if let accessToken = json["access_token"] as? String {
-            return accessToken
+            return .complete(accessToken)
         }
 
         if let error = json["error"] as? String {
             if error == "authorization_pending" {
-                try await sleepMs(intervalMs, signal: signal)
-                continue
+                return .pending
             }
             if error == "slow_down" {
-                // GitHub can include its new minimum interval in the response.
-                // Use it when present; otherwise follow RFC 8628's +5 seconds.
-                if let serverInterval = json["interval"] as? NSNumber, serverInterval.intValue > 0 {
-                    intervalMs = max(1000, serverInterval.intValue * 1000)
-                } else {
-                    intervalMs += 5000
-                }
-                try await sleepMs(intervalMs, signal: signal)
-                continue
+                let interval = (json["interval"] as? NSNumber)?.doubleValue
+                return .slowDown(intervalSeconds: interval)
             }
-            throw OAuthError.tokenExchangeFailed("Device flow failed: \(error)")
+            return .failed("Device flow failed: \(error)")
         }
 
-        try await sleepMs(intervalMs, signal: signal)
+        return .pending
+    }
+}
+
+private enum OAuthDevicePollResult<Value: Sendable>: Sendable {
+    case pending
+    case slowDown(intervalSeconds: Double?)
+    case complete(Value)
+    case failed(String)
+}
+
+/// Shared RFC 8628 polling driver used by GitHub Copilot, xAI, and Kimi Code.
+private func pollOAuthDeviceCodeFlow<Value: Sendable>(
+    intervalSeconds: Double,
+    expiresInSeconds: Double,
+    signal: CancellationToken?,
+    poll: @escaping @Sendable () async throws -> OAuthDevicePollResult<Value>
+) async throws -> Value {
+    let deadline = nowMs() + expiresInSeconds * 1000
+    var intervalMs = max(1, Int(floor(intervalSeconds * 1000)))
+
+    let initialRemaining = max(0, Int(floor(deadline - nowMs())))
+    if initialRemaining > 0 {
+        try await sleepMs(min(intervalMs, initialRemaining), signal: signal)
+    }
+
+    while nowMs() < deadline {
+        try throwIfOAuthCancelled(signal)
+        switch try await poll() {
+        case .complete(let value):
+            return value
+        case .pending:
+            break
+        case .slowDown(let serverInterval):
+            if let serverInterval, serverInterval.isFinite, serverInterval > 0 {
+                intervalMs = max(1, Int(floor(serverInterval * 1000)))
+            } else {
+                intervalMs += 5000
+            }
+        case .failed(let message):
+            throw OAuthError.tokenExchangeFailed(message)
+        }
+
+        let remaining = max(0, Int(floor(deadline - nowMs())))
+        if remaining > 0 {
+            try await sleepMs(min(intervalMs, remaining), signal: signal)
+        }
     }
 
     throw OAuthError.tokenExchangeFailed("Device flow timed out")
 }
 
 private func sleepMs(_ ms: Int, signal: CancellationToken?) async throws {
-    if signal?.isCancelled == true {
-        throw OAuthError.cancelled
-    }
+    try throwIfOAuthCancelled(signal)
     try await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
-    if signal?.isCancelled == true {
-        throw OAuthError.cancelled
-    }
+    try throwIfOAuthCancelled(signal)
 }
 
 /// Refresh GitHub Copilot token (exchange GitHub access token for Copilot token).
-public func refreshGitHubCopilotToken(_ refreshToken: String, enterpriseDomain: String?) async throws -> OAuthCredentials {
+public func refreshGitHubCopilotToken(
+    _ refreshToken: String,
+    enterpriseDomain: String?,
+    signal: CancellationToken? = nil
+) async throws -> OAuthCredentials {
     let domain = enterpriseDomain ?? "github.com"
     let urls = gitHubUrls(domain: domain)
 
@@ -1014,10 +1491,10 @@ public func refreshGitHubCopilotToken(_ refreshToken: String, enterpriseDomain: 
         request.setValue(value, forHTTPHeaderField: key)
     }
 
-    let session = proxySession(for: request.url)
-    let (data, response) = try await session.data(for: request)
+    let response = try await oauthData(for: request, signal: signal)
+    let data = response.data
 
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+    guard response.status == 200 else {
         let message = String(data: data, encoding: .utf8) ?? "Unknown error"
         throw OAuthError.refreshFailed(message)
     }
@@ -1031,7 +1508,7 @@ public func refreshGitHubCopilotToken(_ refreshToken: String, enterpriseDomain: 
     return OAuthCredentials(
         refresh: refreshToken,
         access: token,
-        expires: Double(expiresAt) * 1000 - 5 * 60 * 1000,
+        expires: Double(expiresAt) * 1000 - defaultOAuthMinimumValidityMs,
         enterpriseUrl: enterpriseDomain
     )
 }
@@ -1122,7 +1599,11 @@ public func loginGitHubCopilot(_ callbacks: OAuthLoginCallbacks) async throws ->
     )
 
     // Exchange GitHub token for Copilot token
-    let credentials = try await refreshGitHubCopilotToken(githubAccessToken, enterpriseDomain: enterpriseDomain)
+    let credentials = try await refreshGitHubCopilotToken(
+        githubAccessToken,
+        enterpriseDomain: enterpriseDomain,
+        signal: callbacks.signal
+    )
 
     // Enable all models
     if let onProgress = callbacks.onProgress {
@@ -1143,7 +1624,6 @@ private let xaiClientId = "b1a00492-073a-47ea-816f-4c329264a828"
 private let xaiScope = "openid profile email offline_access grok-cli:access api:access"
 private let xaiDeviceCodeUrl = URL(string: "https://auth.x.ai/oauth2/device/code")!
 private let xaiTokenUrl = URL(string: "https://auth.x.ai/oauth2/token")!
-private let xaiRefreshSkewMs = 5 * 60 * 1000.0
 private let xaiDefaultTokenLifetimeSeconds = 3600.0
 private let xaiDefaultPollIntervalSeconds = 5.0
 
@@ -1188,7 +1668,11 @@ private func validateXaiVerificationUri(_ raw: String) throws -> String {
     return url.absoluteString
 }
 
-private func postXaiForm(url: URL, params: [String: String]) async throws -> XaiHttpResponse {
+private func postXaiForm(
+    url: URL,
+    params: [String: String],
+    signal: CancellationToken? = nil
+) async throws -> XaiHttpResponse {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1200,9 +1684,9 @@ private func postXaiForm(url: URL, params: [String: String]) async throws -> Xai
     }
     request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
 
-    let session = proxySession(for: request.url)
-    let (data, response) = try await session.data(for: request)
-    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    let response = try await oauthData(for: request, signal: signal)
+    let data = response.data
+    let status = response.status
     guard let json = try? JSONSerialization.jsonObject(with: data),
           let body = json as? [String: Any] else {
         throw OAuthError.tokenExchangeFailed("xAI OAuth returned invalid JSON (HTTP \(status))")
@@ -1255,18 +1739,19 @@ private func xaiCredentials(
     return OAuthCredentials(
         refresh: refreshToken,
         access: accessToken,
-        expires: nowMs() + expiresIn * 1000 - xaiRefreshSkewMs
+        expires: nowMs() + expiresIn * 1000 - defaultOAuthMinimumValidityMs
     )
 }
 
-private func requestXaiDeviceCode() async throws -> XaiDeviceCode {
+private func requestXaiDeviceCode(signal: CancellationToken?) async throws -> XaiDeviceCode {
     let response = try await postXaiForm(
         url: xaiDeviceCodeUrl,
         params: [
             "client_id": xaiClientId,
             "scope": xaiScope,
             "referrer": "pi",
-        ]
+        ],
+        signal: signal
     )
     guard response.isSuccessful else {
         throw OAuthError.tokenExchangeFailed(xaiRequestFailure(action: "device authorization", response: response))
@@ -1278,58 +1763,38 @@ private func pollForXaiTokens(
     device: XaiDeviceCode,
     signal: CancellationToken?
 ) async throws -> OAuthCredentials {
-    let deadline = nowMs() + device.expiresInSeconds * 1000
-    var intervalMs = max(1000, Int(floor((device.intervalSeconds ?? xaiDefaultPollIntervalSeconds) * 1000)))
-
-    let initialRemainingMs = max(0, Int(floor(deadline - nowMs())))
-    if initialRemainingMs > 0 {
-        try await sleepMs(min(intervalMs, initialRemainingMs), signal: signal)
-    }
-
-    while nowMs() < deadline {
-        if signal?.isCancelled == true {
-            throw OAuthError.cancelled
-        }
-
+    return try await pollOAuthDeviceCodeFlow(
+        intervalSeconds: device.intervalSeconds ?? xaiDefaultPollIntervalSeconds,
+        expiresInSeconds: device.expiresInSeconds,
+        signal: signal
+    ) {
         let response = try await postXaiForm(
             url: xaiTokenUrl,
             params: [
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 "client_id": xaiClientId,
                 "device_code": device.deviceCode,
-            ]
+            ],
+            signal: signal
         )
 
         if response.isSuccessful {
-            return try xaiCredentials(from: response.body)
+            return try .complete(xaiCredentials(from: response.body))
         }
 
         switch response.body["error"] as? String {
         case "authorization_pending":
-            break
+            return .pending
         case "slow_down":
-            if let serverInterval = (response.body["interval"] as? NSNumber)?.doubleValue,
-               serverInterval.isFinite,
-               serverInterval > 0 {
-                intervalMs = max(1000, Int(floor(serverInterval * 1000)))
-            } else {
-                intervalMs += 5000
-            }
+            return .slowDown(intervalSeconds: (response.body["interval"] as? NSNumber)?.doubleValue)
         case "access_denied", "authorization_denied":
-            throw OAuthError.tokenExchangeFailed("xAI device authorization was denied")
+            return .failed("xAI device authorization was denied")
         case "expired_token":
-            throw OAuthError.tokenExchangeFailed("xAI device code expired")
+            return .failed("xAI device code expired")
         default:
-            throw OAuthError.tokenExchangeFailed(xaiRequestFailure(action: "device token polling", response: response))
-        }
-
-        let remainingMs = max(0, Int(floor(deadline - nowMs())))
-        if remainingMs > 0 {
-            try await sleepMs(min(intervalMs, remainingMs), signal: signal)
+            return .failed(xaiRequestFailure(action: "device token polling", response: response))
         }
     }
-
-    throw OAuthError.tokenExchangeFailed("xAI device code expired")
 }
 
 /// Login with xAI OAuth using the RFC 8628 device-code flow.
@@ -1338,7 +1803,7 @@ public func loginXai(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCred
         throw OAuthError.cancelled
     }
 
-    let device = try await requestXaiDeviceCode()
+    let device = try await requestXaiDeviceCode(signal: callbacks.signal)
     await callbacks.onAuth(OAuthAuthInfo(
         url: device.verificationUriComplete ?? device.verificationUri,
         instructions: "Enter code: \(device.userCode)"
@@ -1347,19 +1812,261 @@ public func loginXai(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCred
 }
 
 /// Refresh an xAI OAuth token, retaining the old refresh token when xAI does not rotate it.
-public func refreshXaiToken(_ refreshToken: String) async throws -> OAuthCredentials {
+public func refreshXaiToken(_ refreshToken: String, signal: CancellationToken? = nil) async throws -> OAuthCredentials {
     let response = try await postXaiForm(
         url: xaiTokenUrl,
         params: [
             "grant_type": "refresh_token",
             "client_id": xaiClientId,
             "refresh_token": refreshToken,
-        ]
+        ],
+        signal: signal
     )
     guard response.isSuccessful else {
         throw OAuthError.refreshFailed(xaiRequestFailure(action: "token refresh", response: response))
     }
     return try xaiCredentials(from: response.body, previousRefreshToken: refreshToken)
+}
+
+// MARK: - Kimi Code OAuth
+
+private let kimiCodingClientId = "17e5f671-d194-4dfb-9706-5516cb48c098"
+private let kimiCodingDefaultOAuthHost = "https://auth.kimi.com"
+private let kimiCodingDefaultPollIntervalSeconds = 5.0
+private let kimiCodingDefaultDeviceTimeoutSeconds = 15.0 * 60.0
+private let kimiCodingRequestTimeoutMs = 30_000
+private let kimiCodingRefreshMaxRetries = 3
+
+private struct KimiCodingDeviceAuthorization: Sendable {
+    let deviceCode: String
+    let userCode: String
+    let verificationUri: String
+    let verificationUriComplete: String
+    let intervalSeconds: Double
+    let expiresInSeconds: Double
+}
+
+private func kimiCodingOAuthHost() -> String {
+    let env = ProcessInfo.processInfo.environment
+    let override = env["KIMI_CODE_OAUTH_HOST"] ?? env["KIMI_OAUTH_HOST"]
+    let host = override?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return (host.flatMap { $0.isEmpty ? nil : $0 } ?? kimiCodingDefaultOAuthHost)
+        .replacingOccurrences(of: #"/+$"#, with: "", options: .regularExpression)
+}
+
+private func trustedKimiHttpUrl(_ value: Any?) -> String? {
+    guard let value = value as? String,
+          !value.isEmpty,
+          let url = URL(string: value),
+          let scheme = url.scheme?.lowercased(),
+          scheme == "http" || scheme == "https" else {
+        return nil
+    }
+    return url.absoluteString
+}
+
+private func kimiFormBody(_ fields: [String: String]) -> Data? {
+    var components = URLComponents()
+    components.queryItems = fields.sorted { $0.key < $1.key }.map {
+        URLQueryItem(name: $0.key, value: $0.value)
+    }
+    return components.percentEncodedQuery?.data(using: .utf8)
+}
+
+private func requestKimiCoding(
+    path: String,
+    fields: [String: String],
+    signal: CancellationToken?
+) async throws -> OAuthNetworkResponse {
+    guard let url = URL(string: kimiCodingOAuthHost() + path) else {
+        throw OAuthError.tokenExchangeFailed("Invalid Kimi Code OAuth host")
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.httpBody = kimiFormBody(fields)
+    return try await oauthData(for: request, signal: signal, timeoutMs: kimiCodingRequestTimeoutMs)
+}
+
+private func kimiJson(_ data: Data) -> [String: Any]? {
+    (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+
+private func startKimiCodingDeviceAuthorization(
+    signal: CancellationToken?
+) async throws -> KimiCodingDeviceAuthorization {
+    let response = try await requestKimiCoding(
+        path: "/api/oauth/device_authorization",
+        fields: ["client_id": kimiCodingClientId],
+        signal: signal
+    )
+    guard (200..<300).contains(response.status) else {
+        let detail = String(data: response.data, encoding: .utf8) ?? ""
+        let suffix = detail.isEmpty ? "" : ": \(detail)"
+        throw OAuthError.tokenExchangeFailed(
+            "Kimi Code device authorization failed with status \(response.status)\(suffix)"
+        )
+    }
+
+    let json = kimiJson(response.data)
+    guard let deviceCode = json?["device_code"] as? String,
+          !deviceCode.isEmpty,
+          let userCode = json?["user_code"] as? String,
+          !userCode.isEmpty,
+          let verificationUri = trustedKimiHttpUrl(json?["verification_uri"]),
+          let verificationUriComplete = trustedKimiHttpUrl(json?["verification_uri_complete"]) else {
+        throw OAuthError.tokenExchangeFailed("Invalid Kimi Code device authorization response")
+    }
+    let interval = (json?["interval"] as? NSNumber)?.doubleValue
+    let expiresIn = (json?["expires_in"] as? NSNumber)?.doubleValue
+    return KimiCodingDeviceAuthorization(
+        deviceCode: deviceCode,
+        userCode: userCode,
+        verificationUri: verificationUri,
+        verificationUriComplete: verificationUriComplete,
+        intervalSeconds: interval.map { $0.isFinite && $0 > 0 ? $0 : kimiCodingDefaultPollIntervalSeconds }
+            ?? kimiCodingDefaultPollIntervalSeconds,
+        expiresInSeconds: expiresIn.map { $0.isFinite && $0 > 0 ? $0 : kimiCodingDefaultDeviceTimeoutSeconds }
+            ?? kimiCodingDefaultDeviceTimeoutSeconds
+    )
+}
+
+private func kimiCodingCredentials(
+    _ json: [String: Any]?,
+    operation: String
+) throws -> OAuthCredentials {
+    guard let access = json?["access_token"] as? String,
+          !access.isEmpty,
+          let refresh = json?["refresh_token"] as? String,
+          !refresh.isEmpty,
+          let expiresIn = (json?["expires_in"] as? NSNumber)?.doubleValue,
+          expiresIn.isFinite,
+          expiresIn > 0 else {
+        throw OAuthError.tokenExchangeFailed("Kimi Code token \(operation) response missing fields")
+    }
+    return OAuthCredentials(
+        refresh: refresh,
+        access: access,
+        expires: nowMs() + expiresIn * 1000
+    )
+}
+
+private func pollForKimiCodingToken(
+    device: KimiCodingDeviceAuthorization,
+    signal: CancellationToken?
+) async throws -> OAuthCredentials {
+    try await pollOAuthDeviceCodeFlow(
+        intervalSeconds: device.intervalSeconds,
+        expiresInSeconds: device.expiresInSeconds,
+        signal: signal
+    ) {
+        let response = try await requestKimiCoding(
+            path: "/api/oauth/token",
+            fields: [
+                "client_id": kimiCodingClientId,
+                "device_code": device.deviceCode,
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            ],
+            signal: signal
+        )
+        if response.status >= 500 {
+            let detail = String(data: response.data, encoding: .utf8) ?? ""
+            let suffix = detail.isEmpty ? "" : ": \(detail)"
+            return .failed("Kimi Code device token request failed with status \(response.status)\(suffix)")
+        }
+
+        let json = kimiJson(response.data)
+        if (200..<300).contains(response.status), json?["access_token"] is String {
+            do {
+                return .complete(try kimiCodingCredentials(json, operation: "poll"))
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+        }
+
+        switch json?["error"] as? String {
+        case "authorization_pending":
+            return .pending
+        case "slow_down":
+            return .slowDown(intervalSeconds: (json?["interval"] as? NSNumber)?.doubleValue)
+        case "expired_token":
+            return .failed("Kimi Code device authorization expired. Please restart login.")
+        case "access_denied":
+            return .failed("Kimi Code login was denied.")
+        case let error?:
+            let description = json?["error_description"] as? String
+            let suffix = description.map { ": \(error): \($0)" } ?? ": \(error)"
+            return .failed("Kimi Code device token request failed (status \(response.status))\(suffix)")
+        case nil:
+            return .failed("Kimi Code device token request failed (status \(response.status))")
+        }
+    }
+}
+
+/// Login with a Kimi Code subscription by using the RFC 8628 device flow.
+public func loginKimiCoding(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
+    try throwIfOAuthCancelled(callbacks.signal)
+    let device = try await startKimiCodingDeviceAuthorization(signal: callbacks.signal)
+    await callbacks.onAuth(OAuthAuthInfo(
+        url: device.verificationUriComplete,
+        instructions: "Enter code: \(device.userCode)"
+    ))
+    return try await pollForKimiCodingToken(device: device, signal: callbacks.signal)
+}
+
+/// Refresh a Kimi Code OAuth token, with bounded retries for transient failures.
+public func refreshKimiCodingToken(
+    _ refreshToken: String,
+    signal: CancellationToken? = nil
+) async throws -> OAuthCredentials {
+    var lastError: Error?
+    for attempt in 0...kimiCodingRefreshMaxRetries {
+        if attempt > 0 {
+            try await sleepMs(1000 * (1 << (attempt - 1)), signal: signal)
+        }
+        try throwIfOAuthCancelled(signal)
+
+        let response: OAuthNetworkResponse
+        do {
+            response = try await requestKimiCoding(
+                path: "/api/oauth/token",
+                fields: [
+                    "client_id": kimiCodingClientId,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refreshToken,
+                ],
+                signal: signal
+            )
+        } catch {
+            if signal?.isCancelled == true {
+                throw OAuthError.cancelled
+            }
+            lastError = error
+            continue
+        }
+
+        let json = kimiJson(response.data)
+        if (200..<300).contains(response.status) {
+            return try kimiCodingCredentials(json, operation: "refresh")
+        }
+        if response.status == 401 || response.status == 403 || (json?["error"] as? String) == "invalid_grant" {
+            let description = (json?["error_description"] as? String).map { ": \($0)" } ?? ""
+            throw OAuthError.refreshFailed(
+                "Kimi Code token refresh unauthorized (status \(response.status))\(description)"
+            )
+        }
+        if (response.status == 429 || response.status >= 500), attempt < kimiCodingRefreshMaxRetries {
+            lastError = OAuthError.refreshFailed("Kimi Code token refresh failed with status \(response.status)")
+            continue
+        }
+        let detail = String(data: response.data, encoding: .utf8) ?? ""
+        let suffix = detail.isEmpty ? "" : ": \(detail)"
+        throw OAuthError.refreshFailed(
+            "Kimi Code token refresh failed with status \(response.status)\(suffix)"
+        )
+    }
+    throw lastError ?? OAuthError.refreshFailed("Kimi Code token refresh failed")
 }
 
 // MARK: - Google Gemini CLI OAuth (Cloud Code Assist)
@@ -1389,7 +2096,11 @@ private let googleGeminiCliScopes = [
 private let googleGeminiCliRedirectUri = "http://localhost:8085/oauth2callback"
 
 /// Refresh Google Gemini CLI (Cloud Code Assist) token.
-public func refreshGoogleGeminiCliToken(_ refreshToken: String, projectId: String) async throws -> OAuthCredentials {
+public func refreshGoogleGeminiCliToken(
+    _ refreshToken: String,
+    projectId: String,
+    signal: CancellationToken? = nil
+) async throws -> OAuthCredentials {
     let url = URL(string: "https://oauth2.googleapis.com/token")!
     let response = try await postForm(
         url: url,
@@ -1398,7 +2109,8 @@ public func refreshGoogleGeminiCliToken(_ refreshToken: String, projectId: Strin
             "client_secret": googleGeminiCliClientSecret(),
             "refresh_token": refreshToken,
             "grant_type": "refresh_token",
-        ]
+        ],
+        signal: signal
     )
 
     guard let json = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
@@ -1411,7 +2123,7 @@ public func refreshGoogleGeminiCliToken(_ refreshToken: String, projectId: Strin
     return OAuthCredentials(
         refresh: newRefresh,
         access: accessToken,
-        expires: nowMs() + Double(expiresIn) * 1000 - 5 * 60 * 1000,
+        expires: nowMs() + Double(expiresIn) * 1000 - defaultOAuthMinimumValidityMs,
         projectId: projectId
     )
 }
@@ -1749,7 +2461,7 @@ public func loginGoogleGeminiCli(_ callbacks: OAuthLoginCallbacks) async throws 
     return OAuthCredentials(
         refresh: refreshToken,
         access: accessToken,
-        expires: nowMs() + Double(expiresIn) * 1000 - 5 * 60 * 1000,
+        expires: nowMs() + Double(expiresIn) * 1000 - defaultOAuthMinimumValidityMs,
         projectId: projectId,
         email: email
     )
@@ -1785,7 +2497,11 @@ private let antigravityRedirectUri = "http://localhost:51121/oauth-callback"
 private let antigravityDefaultProjectId = "rising-fact-p41fc"
 
 /// Refresh Antigravity token.
-public func refreshAntigravityToken(_ refreshToken: String, projectId: String) async throws -> OAuthCredentials {
+public func refreshAntigravityToken(
+    _ refreshToken: String,
+    projectId: String,
+    signal: CancellationToken? = nil
+) async throws -> OAuthCredentials {
     let url = URL(string: "https://oauth2.googleapis.com/token")!
     let response = try await postForm(
         url: url,
@@ -1794,7 +2510,8 @@ public func refreshAntigravityToken(_ refreshToken: String, projectId: String) a
             "client_secret": antigravityClientSecret(),
             "refresh_token": refreshToken,
             "grant_type": "refresh_token",
-        ]
+        ],
+        signal: signal
     )
 
     guard let json = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
@@ -1807,7 +2524,7 @@ public func refreshAntigravityToken(_ refreshToken: String, projectId: String) a
     return OAuthCredentials(
         refresh: newRefresh,
         access: accessToken,
-        expires: nowMs() + Double(expiresIn) * 1000 - 5 * 60 * 1000,
+        expires: nowMs() + Double(expiresIn) * 1000 - defaultOAuthMinimumValidityMs,
         projectId: projectId
     )
 }
@@ -1988,7 +2705,7 @@ public func loginAntigravity(_ callbacks: OAuthLoginCallbacks) async throws -> O
     return OAuthCredentials(
         refresh: refreshToken,
         access: accessToken,
-        expires: nowMs() + Double(expiresIn) * 1000 - 5 * 60 * 1000,
+        expires: nowMs() + Double(expiresIn) * 1000 - defaultOAuthMinimumValidityMs,
         projectId: projectId,
         email: email
     )

@@ -198,6 +198,8 @@ public func streamOpenAIResponses(
         return streamOpenAICodexResponses(model: model, context: context, options: codexOptions)
     }
 
+    var options = options
+    options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -226,17 +228,70 @@ public func streamOpenAIResponses(
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
                 effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
             )
+            let supportsStrictMode = model.compat?.supportsStrictMode ?? true
+            let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
+            let constrainedSamplingMiddleware = try makeOpenAIResponsesConstrainedSamplingMiddleware(
+                tools: context.tools,
+                supportsStrictMode: supportsStrictMode,
+                supportsOpenAIGrammarTools: supportsGrammar
+            )
+            try validateResponsesGrammarReplay(
+                messages: context.messages,
+                grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties
+            )
+            var middlewares: [OpenAIMiddleware] = [
+                middleware,
+                inlineImagesMiddleware,
+                reasoningEffortMiddleware,
+                constrainedSamplingMiddleware,
+            ]
+            if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
+                // Keep this last so custom keys override all named request fields.
+                middlewares.append(OpenAISamplingParamsMiddleware(samplingParams: samplingParams))
+            }
             let builtClient = try makeOpenAIClient(
                 model: model,
                 apiKey: options.apiKey,
                 headers: options.headers,
                 timeoutMs: options.timeoutMs,
-                middlewares: [middleware, inlineImagesMiddleware, reasoningEffortMiddleware]
+                middlewares: middlewares
             )
             let builtQuery = try buildResponsesQuery(model: model, context: context, options: options)
-            emitPayload(options.onPayload, payload: builtQuery)
+            let encodedQuery = try JSONEncoder().encode(builtQuery)
+            var capturedRequest = URLRequest(url: openAIResponsesURL(baseUrl: model.baseUrl))
+            capturedRequest.httpBody = encodedQuery
+            capturedRequest = middlewares.reduce(capturedRequest) { $1.intercept(request: $0) }
+            emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
+            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty {
+                var request = capturedRequest
+                request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(options.apiKey ?? "")", forHTTPHeaderField: "Authorization")
+                request.setValue("text/event-stream", forHTTPHeaderField: "accept")
+                request.setValue("application/json", forHTTPHeaderField: "content-type")
+                for (key, value) in model.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
+                for (key, value) in options.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
+                try await processRawOpenAIResponsesStream(
+                    request: request,
+                    model: model,
+                    signal: options.signal,
+                    onResponse: options.onResponse,
+                    serviceTier: options.serviceTier,
+                    grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties,
+                    stream: stream,
+                    output: &output
+                )
+                try finishRawResponsesOutput(
+                    output: output,
+                    signal: options.signal,
+                    providerName: "OpenAI Responses"
+                )
+                stream.push(.done(reason: output.stopReason, message: output))
+                stream.end()
+                return
+            }
             let openAIStream: AsyncThrowingStream<ResponseStreamEvent, Error> = builtClient.responses.createResponseStreaming(query: builtQuery)
             stream.push(.start(partial: output))
 
@@ -507,7 +562,10 @@ func buildResponsesQuery(
         }
     }
 
-    let tools = responsesToolsPayload(context.tools)
+    let tools = try responsesToolsPayload(
+        context.tools,
+        supportsStrictMode: model.compat?.supportsStrictMode ?? true
+    )
 
     let query = CreateModelResponseQuery(
         input: .inputItemList(inputItems),
@@ -652,9 +710,13 @@ func finalToolCallArgumentsDelta(previous: String, final: String) -> String? {
     return suffix.isEmpty ? nil : suffix
 }
 
-func responsesToolsPayload(_ tools: [AITool]?) -> [Tool]? {
+func responsesToolsPayload(_ tools: [AITool]?, supportsStrictMode: Bool) throws -> [Tool]? {
     guard let tools, !tools.isEmpty else { return nil }
-    return convertResponsesTools(tools)
+    return try convertResponsesTools(tools, supportsStrictMode: supportsStrictMode)
+}
+
+func responsesToolsPayload(_ tools: [AITool]?) -> [Tool]? {
+    try? responsesToolsPayload(tools, supportsStrictMode: true)
 }
 
 func normalizeIdPart(_ raw: String) -> String {
@@ -842,10 +904,15 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
     return messages
 }
 
-func convertResponsesTools(_ tools: [AITool]) -> [Tool] {
-    tools.compactMap { tool in
+func convertResponsesTools(_ tools: [AITool], supportsStrictMode: Bool) throws -> [Tool] {
+    try tools.compactMap { tool in
         let schema = openAIJSONSchema(from: tool.parameters) ?? .object([:])
-        let function = FunctionTool(name: tool.name, description: tool.description, parameters: schema, strict: false)
+        let constrainedStrict = try resolveJsonSchemaStrictSampling(
+            tool: tool,
+            supportsStrictMode: supportsStrictMode
+        )
+        let strict = constrainedStrict ?? false
+        let function = FunctionTool(name: tool.name, description: tool.description, parameters: schema, strict: strict)
         return .functionTool(function)
     }
 }

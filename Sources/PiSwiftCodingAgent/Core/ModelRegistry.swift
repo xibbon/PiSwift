@@ -293,8 +293,11 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
         requiresThinkingAsText: override.requiresThinkingAsText ?? base.requiresThinkingAsText,
         requiresMistralToolIds: override.requiresMistralToolIds ?? base.requiresMistralToolIds,
         thinkingFormat: override.thinkingFormat ?? base.thinkingFormat,
+        chatTemplateKwargs: override.chatTemplateKwargs ?? base.chatTemplateKwargs,
+        chatTemplateArgs: override.chatTemplateArgs ?? base.chatTemplateArgs,
         openRouterRouting: mergedOpenRouter,
         vercelGatewayRouting: mergedVercel,
+        supportsThinkingTokenBudget: override.supportsThinkingTokenBudget ?? base.supportsThinkingTokenBudget,
         supportsStrictMode: override.supportsStrictMode ?? base.supportsStrictMode,
         // v0.68.0 / v0.70.0 / v0.70.1: new compat fields preserved from base when not overridden.
         supportsLongCacheRetention: override.supportsLongCacheRetention ?? base.supportsLongCacheRetention,
@@ -557,7 +560,13 @@ public final class ModelRegistry: Sendable {
     public func getApiKeyAndHeaders(_ model: Model) async -> ModelAuth {
         let apiKey = await authStorage.getApiKey(model.provider)
         // Re-resolve model.headers each time so `!cmd` values pick up fresh tokens.
-        let resolvedHeaders = resolveHeaders(model.headers)
+        var resolvedHeaders = resolveHeaders(model.headers)
+        if model.provider == OAuthProvider.kimiCoding.rawValue,
+           case .oauth(let credential) = authStorage.get(model.provider) {
+            var headers = resolvedHeaders ?? [:]
+            headers["Authorization"] = "Bearer \(credential.access)"
+            resolvedHeaders = headers
+        }
         if apiKey == nil && (resolvedHeaders?.isEmpty ?? true) {
             return ModelAuth(
                 ok: false,

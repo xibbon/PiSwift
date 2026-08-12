@@ -71,18 +71,21 @@ public func getEnvApiKey(provider: String) -> String? {
     }
 
     if provider == "anthropic" {
+        let authToken = env["ANTHROPIC_AUTH_TOKEN"]
         let oauth = env["ANTHROPIC_OAUTH_TOKEN"]
         let apiKey = env["ANTHROPIC_API_KEY"]
-        let selected = oauth ?? apiKey
+        let selected = authToken ?? oauth ?? apiKey
         let source: String
-        if oauth != nil {
+        if authToken != nil {
+            source = "ANTHROPIC_AUTH_TOKEN"
+        } else if oauth != nil {
             source = "ANTHROPIC_OAUTH_TOKEN"
         } else if apiKey != nil {
             source = "ANTHROPIC_API_KEY"
         } else {
             source = "none"
         }
-        logApiKeyDebug("provider=anthropic env apiKey=\(apiKeyInfo(apiKey)) oauth=\(apiKeyInfo(oauth)) selected=\(source)")
+        logApiKeyDebug("provider=anthropic env apiKey=\(apiKeyInfo(apiKey)) oauth=\(apiKeyInfo(oauth)) authToken=\(apiKeyInfo(authToken)) selected=\(source)")
         return selected
     }
 
@@ -110,7 +113,7 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
     }
 
     if provider == "anthropic" {
-        return ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
+        return ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
     }
 
     let envMap: [String: String] = [
@@ -121,6 +124,10 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "google-vertex": "GOOGLE_CLOUD_API_KEY",
         "groq": "GROQ_API_KEY",
         "cerebras": "CEREBRAS_API_KEY",
+        "baseten": "BASETEN_API_KEY",
+        "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",
+        "qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
+        "qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
         "xai": "XAI_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
@@ -287,7 +294,7 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
     // re-clamp the inflated total against the context window and fit the thinking budget
     // inside it, mirroring upstream `anthropic-messages.ts` clampMaxTokensToContext.
     let clampedMaxTokens = clampSimpleMaxTokensToContext(model: model, context: context, maxTokens: adjusted.maxTokens)
-    let clampedThinkingBudget = min(adjusted.thinkingBudget, max(0, clampedMaxTokens - 1024))
+    let clampedThinkingBudget = min(adjusted.thinkingBudget, max(0, clampedMaxTokens - minimumAnswerTokens))
 
     return AnthropicOptions(
         temperature: options?.temperature,
@@ -324,6 +331,16 @@ func clampThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel? {
     return effort
 }
 
+let minimumAnswerTokens = 1_024
+
+func mergeSamplingParams(
+    model: Model,
+    request: [String: AnyCodable]?
+) -> [String: AnyCodable]? {
+    guard model.samplingParams != nil || request != nil else { return nil }
+    return (model.samplingParams ?? [:]).merging(request ?? [:]) { _, requestValue in requestValue }
+}
+
 /// v0.70.0: GPT-5.5 Codex doesn't support `.minimal` reasoning effort — the API rejects it.
 /// Clamp `.minimal` to `.low` for that model family. Other clamping (xhigh→high) still flows
 /// through `supportsXhigh` / `clampThinkingLevel` callers.
@@ -340,10 +357,12 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICompletionsOptions(
         temperature: options?.temperature,
+        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
         reasoningEffort: reasoningEffort,
+        thinkingBudgets: options?.thinkingBudgets,
         cacheRetention: options?.cacheRetention,
         sessionId: options?.sessionId,
         headers: options?.headers,
@@ -359,6 +378,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAIResponsesOptions(
         temperature: options?.temperature,
+        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
@@ -400,6 +420,7 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return AzureOpenAIResponsesOptions(
         temperature: options?.temperature,
+        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
@@ -549,12 +570,11 @@ func adjustMaxTokensForThinking(
         .max: 16384,
     ]
     let budgets = defaultBudgets.merging(customBudgets ?? [:]) { _, new in new }
-    let minOutputTokens = 1024
     let clamped = clampThinkingLevel(reasoningLevel) ?? reasoningLevel
     var thinkingBudget = budgets[clamped] ?? 1024
     let maxTokens = min(baseMaxTokens + thinkingBudget, modelMaxTokens)
     if maxTokens <= thinkingBudget {
-        thinkingBudget = max(0, maxTokens - minOutputTokens)
+        thinkingBudget = max(0, maxTokens - minimumAnswerTokens)
     }
     return (maxTokens, thinkingBudget)
 }

@@ -51,6 +51,39 @@ struct AuthLockOptions: Sendable {
     var maxDelayMs: Int
 }
 
+private func cancellableAuthStorageSleep(_ milliseconds: Int, signal: CancellationToken?) async throws {
+    var remaining = max(0, milliseconds)
+    while remaining > 0 {
+        if signal?.isCancelled == true || Task.isCancelled { throw OAuthError.cancelled }
+        let slice = min(remaining, 25)
+        try await Task.sleep(nanoseconds: UInt64(slice) * 1_000_000)
+        remaining -= slice
+    }
+    if signal?.isCancelled == true || Task.isCancelled { throw OAuthError.cancelled }
+}
+
+private let oauthRefreshTimeoutMs = 15_000
+
+private func boundedOAuthRefreshSignal(parent: CancellationToken?) -> (CancellationToken, Task<Void, Never>) {
+    let signal = CancellationToken()
+    let monitor = Task {
+        var remaining = oauthRefreshTimeoutMs
+        while remaining > 0 && !Task.isCancelled {
+            if parent?.isCancelled == true {
+                signal.cancel()
+                return
+            }
+            let slice = min(remaining, 25)
+            try? await Task.sleep(nanoseconds: UInt64(slice) * 1_000_000)
+            remaining -= slice
+        }
+        if !Task.isCancelled {
+            signal.cancel()
+        }
+    }
+    return (signal, monitor)
+}
+
 struct OAuthOverrides: Sendable {
     var getOAuthApiKey: (@Sendable (OAuthProvider, [String: OAuthCredentials]) async throws -> (newCredentials: OAuthCredentials, apiKey: String)?)?
     var oauthApiKey: (@Sendable (OAuthProvider, String, String?) throws -> String)?
@@ -93,6 +126,28 @@ public protocol AuthStorageBackend: Sendable {
     func withLockAsync<Result: Sendable>(
         _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
     ) async throws -> Result
+
+    func withLockAsync<Result: Sendable>(
+        signal: CancellationToken?,
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result
+}
+
+public extension AuthStorageBackend {
+    func withLockAsync<Result: Sendable>(
+        signal: CancellationToken?,
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        if signal?.isCancelled == true { throw OAuthError.cancelled }
+        let result = try await withLockAsync { current in
+            if signal?.isCancelled == true { throw OAuthError.cancelled }
+            let transaction = try await body(current)
+            if signal?.isCancelled == true { throw OAuthError.cancelled }
+            return transaction
+        }
+        if signal?.isCancelled == true { throw OAuthError.cancelled }
+        return result
+    }
 }
 
 /// The default `AuthStorageBackend`, which stores credentials in an auth JSON file.
@@ -121,9 +176,17 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
     public func withLockAsync<Result: Sendable>(
         _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
     ) async throws -> Result {
-        try await withFileLock {
+        try await withLockAsync(signal: nil, body)
+    }
+
+    public func withLockAsync<Result: Sendable>(
+        signal: CancellationToken?,
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        try await withFileLock(signal: signal) {
             let current = try String(contentsOfFile: self.authPath, encoding: .utf8)
             let transaction = try await body(current)
+            if signal?.isCancelled == true { throw OAuthError.cancelled }
             if let next = transaction.next {
                 try self.write(next)
             }
@@ -142,6 +205,7 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
     }
 
     private func withFileLock<Result: Sendable>(
+        signal: CancellationToken?,
         _ body: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
         try ensureAuthFileExists()
@@ -161,11 +225,12 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
             throw OAuthError.refreshFailed("failed to acquire auth storage lock")
         }
         for _ in 0..<maxAttempts {
+            if signal?.isCancelled == true { throw OAuthError.cancelled }
             if flock(fd, LOCK_EX | LOCK_NB) == 0 {
                 locked = true
                 break
             }
-            try await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+            try await cancellableAuthStorageSleep(delayMs, signal: signal)
             delayMs = min(delayMs * 2, maxDelayMs)
         }
 
@@ -174,6 +239,7 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
         }
 
         defer { flock(fd, LOCK_UN) }
+        if signal?.isCancelled == true { throw OAuthError.cancelled }
         return try await body()
     }
 
@@ -234,24 +300,18 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
 
 private actor AsyncTransactionGate {
     private var isLocked = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    func acquire() async {
-        guard isLocked else {
-            isLocked = true
-            return
+    func acquire(signal: CancellationToken? = nil) async throws {
+        while isLocked {
+            if signal?.isCancelled == true || Task.isCancelled { throw OAuthError.cancelled }
+            try await Task.sleep(nanoseconds: 25_000_000)
         }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
+        if signal?.isCancelled == true || Task.isCancelled { throw OAuthError.cancelled }
+        isLocked = true
     }
 
     func release() {
-        if waiters.isEmpty {
-            isLocked = false
-        } else {
-            waiters.removeFirst().resume()
-        }
+        isLocked = false
     }
 }
 
@@ -288,14 +348,21 @@ private final class InMemoryTransactionState: @unchecked Sendable {
     }
 
     func withLockAsync<Result: Sendable>(
+        signal: CancellationToken? = nil,
         _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
     ) async throws -> Result {
-        await asyncGate.acquire()
-        beginAsynchronousTransaction()
+        try await asyncGate.acquire(signal: signal)
+        do {
+            try await beginAsynchronousTransaction(signal: signal)
+        } catch {
+            await asyncGate.release()
+            throw error
+        }
 
         do {
             let current = value.withLock { $0 }
             let transaction = try await body(current)
+            if signal?.isCancelled == true || Task.isCancelled { throw OAuthError.cancelled }
             if let next = transaction.next {
                 value.withLock { $0 = next }
             }
@@ -326,13 +393,21 @@ private final class InMemoryTransactionState: @unchecked Sendable {
         condition.unlock()
     }
 
-    private func beginAsynchronousTransaction() {
+    private func beginAsynchronousTransaction(signal: CancellationToken?) async throws {
+        while true {
+            if tryBeginAsynchronousTransaction() { return }
+            try await cancellableAuthStorageSleep(25, signal: signal)
+        }
+    }
+
+    private func tryBeginAsynchronousTransaction() -> Bool {
         condition.lock()
-        while synchronousTransactionInProgress || asynchronousTransactionInProgress {
-            condition.wait()
+        defer { condition.unlock() }
+        guard !synchronousTransactionInProgress && !asynchronousTransactionInProgress else {
+            return false
         }
         asynchronousTransactionInProgress = true
-        condition.unlock()
+        return true
     }
 
     private func endAsynchronousTransaction() {
@@ -360,7 +435,14 @@ public final class InMemoryAuthStorageBackend: AuthStorageBackend {
     public func withLockAsync<Result: Sendable>(
         _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
     ) async throws -> Result {
-        try await state.withLockAsync(body)
+        try await state.withLockAsync(signal: nil, body)
+    }
+
+    public func withLockAsync<Result: Sendable>(
+        signal: CancellationToken?,
+        _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
+    ) async throws -> Result {
+        try await state.withLockAsync(signal: signal, body)
     }
 }
 
@@ -509,6 +591,12 @@ public final class AuthStorage: Sendable {
             credentials = try await loginGoogleGeminiCli(callbacks)
         case .googleAntigravity:
             credentials = try await loginAntigravity(callbacks)
+        case .openRouter:
+            credentials = try await loginOpenRouter(callbacks)
+            set(provider.rawValue, credential: .apiKey(ApiKeyCredential(key: credentials.access)))
+            return
+        case .kimiCoding:
+            credentials = try await loginKimiCoding(callbacks)
         case .xai:
             credentials = try await loginXai(callbacks)
         }
@@ -519,7 +607,12 @@ public final class AuthStorage: Sendable {
         remove(provider.rawValue)
     }
 
-    public func getApiKey(_ provider: String) async -> String? {
+    public func getApiKey(
+        _ provider: String,
+        minimumOAuthValidityMs: Double? = nil,
+        signal: CancellationToken? = nil
+    ) async -> String? {
+        if signal?.isCancelled == true { return nil }
         let snapshot = state.withLock { state in
             let runtime = state.runtimeOverrides[provider]
             let credential = state.data[provider]
@@ -536,12 +629,17 @@ public final class AuthStorage: Sendable {
             case .oauth(let oauth):
                 let oauthProviderId = OAuthProvider(rawValue: provider)
                 let now = Date().timeIntervalSince1970 * 1000
-                let needsRefresh = oauth.expires == nil || now >= (oauth.expires ?? 0)
+                let minimumValidity = max(defaultOAuthMinimumValidityMs, minimumOAuthValidityMs ?? 0)
+                let needsRefresh = oauth.expires == nil || now + minimumValidity >= (oauth.expires ?? 0)
                 if needsRefresh,
                    let providerId = oauthProviderId,
                    oauth.refresh != nil {
                     do {
-                        if let result = try await refreshOAuthTokenWithLock(providerId) {
+                        if let result = try await refreshOAuthTokenWithLock(
+                            providerId,
+                            minimumOAuthValidityMs: minimumValidity,
+                            signal: signal
+                        ) {
                             return result.apiKey
                         }
                     } catch {
@@ -680,8 +778,13 @@ public final class AuthStorage: Sendable {
         var value: (apiKey: String, newCredentials: OAuthCredentials)?
     }
 
-    private func refreshOAuthTokenWithLock(_ provider: OAuthProvider) async throws -> (apiKey: String, newCredentials: OAuthCredentials)? {
-        let lockedResult = try await storage.withLockAsync { current in
+    private func refreshOAuthTokenWithLock(
+        _ provider: OAuthProvider,
+        minimumOAuthValidityMs: Double,
+        signal: CancellationToken?
+    ) async throws -> (apiKey: String, newCredentials: OAuthCredentials)? {
+        let lockedResult = try await storage.withLockAsync(signal: signal) { current in
+            if signal?.isCancelled == true { throw OAuthError.cancelled }
             let currentData = try self.parseAuthData(current)
             let credential = currentData[provider.rawValue]
             guard case .oauth(let oauth) = credential else {
@@ -692,7 +795,7 @@ public final class AuthStorage: Sendable {
             }
 
             let now = Date().timeIntervalSince1970 * 1000
-            if let expires = oauth.expires, now < expires {
+            if let expires = oauth.expires, now + minimumOAuthValidityMs < expires {
                 let apiKey = try oauthApiKey(provider: provider, accessToken: oauth.access, projectId: oauth.projectId)
                 if let creds = oauth.toOAuthCredentials() {
                     return AuthStorageLockResult(result: OAuthRefreshLockedResult(
@@ -715,11 +818,19 @@ public final class AuthStorage: Sendable {
             let oauthCreds = self.oauthCredentialsMap(from: currentData)
             let override = self.state.withLock { $0.oauthOverrides }
             let result: (newCredentials: OAuthCredentials, apiKey: String)?
+            let (refreshSignal, refreshMonitor) = boundedOAuthRefreshSignal(parent: signal)
+            defer { refreshMonitor.cancel() }
             if let overrideFn = override?.getOAuthApiKey {
                 result = try await overrideFn(provider, oauthCreds)
             } else {
-                result = try await getOAuthApiKey(provider: provider, credentials: oauthCreds)
+                result = try await getOAuthApiKey(
+                    provider: provider,
+                    credentials: oauthCreds,
+                    minimumValidityMs: minimumOAuthValidityMs,
+                    signal: refreshSignal
+                )
             }
+            if signal?.isCancelled == true { throw OAuthError.cancelled }
             if let result {
                 var updatedData = currentData
                 updatedData[provider.rawValue] = .oauth(OAuthCredential(result.newCredentials))
@@ -775,6 +886,12 @@ public final class AuthStorage: Sendable {
             return "GROQ_API_KEY"
         case "cerebras":
             return "CEREBRAS_API_KEY"
+        case "baseten":
+            return "BASETEN_API_KEY"
+        case "qwen-token-plan", "qwen-token-plan-individual":
+            return "QWEN_TOKEN_PLAN_API_KEY"
+        case "qwen-token-plan-cn":
+            return "QWEN_TOKEN_PLAN_CN_API_KEY"
         case "xai":
             return "XAI_API_KEY"
         case "zai":

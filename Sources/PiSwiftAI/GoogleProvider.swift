@@ -261,10 +261,15 @@ private func buildGoogleRequestBody(
     if let tools = context.tools, !tools.isEmpty {
         payload["tools"] = convertGoogleTools(tools)
     }
-    if let tools = context.tools, !tools.isEmpty, let choice = options.toolChoice {
+    if let tools = context.tools, !tools.isEmpty,
+       let mode = try resolveGoogleFunctionCallingMode(
+           tools: tools,
+           toolChoice: options.toolChoice,
+           supportsStrictMode: supportsGoogleStrictToolSampling(model.id)
+       ) {
         payload["toolConfig"] = [
             "functionCallingConfig": [
-                "mode": mapGoogleToolChoice(choice),
+                "mode": mode,
             ],
         ]
     }

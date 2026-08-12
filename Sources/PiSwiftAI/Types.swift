@@ -209,6 +209,7 @@ public struct StreamOptions: Sendable {
 
 public struct SimpleStreamOptions: Sendable {
     public var temperature: Double?
+    public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -232,6 +233,7 @@ public struct SimpleStreamOptions: Sendable {
 
     public init(
         temperature: Double? = nil,
+        samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -250,6 +252,7 @@ public struct SimpleStreamOptions: Sendable {
         maxRetries: Int? = nil
     ) {
         self.temperature = temperature
+        self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
@@ -1151,11 +1154,13 @@ public enum OpenAIToolChoice: Sendable {
 
 public struct OpenAICompletionsOptions: Sendable {
     public var temperature: Double?
+    public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
     public var toolChoice: OpenAIToolChoice?
     public var reasoningEffort: ThinkingLevel?
+    public var thinkingBudgets: ThinkingBudgets?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
     public var headers: [String: String]?
@@ -1166,11 +1171,13 @@ public struct OpenAICompletionsOptions: Sendable {
 
     public init(
         temperature: Double? = nil,
+        samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         toolChoice: OpenAIToolChoice? = nil,
         reasoningEffort: ThinkingLevel? = nil,
+        thinkingBudgets: ThinkingBudgets? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
         headers: [String: String]? = nil,
@@ -1180,11 +1187,13 @@ public struct OpenAICompletionsOptions: Sendable {
         maxRetries: Int? = nil
     ) {
         self.temperature = temperature
+        self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
         self.toolChoice = toolChoice
         self.reasoningEffort = reasoningEffort
+        self.thinkingBudgets = thinkingBudgets
         self.cacheRetention = cacheRetention
         self.sessionId = sessionId
         self.headers = headers
@@ -1225,6 +1234,7 @@ public enum OpenAICodexTextVerbosity: String, Sendable {
 
 public struct OpenAIResponsesOptions: Sendable {
     public var temperature: Double?
+    public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -1243,6 +1253,7 @@ public struct OpenAIResponsesOptions: Sendable {
 
     public init(
         temperature: Double? = nil,
+        samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -1260,6 +1271,7 @@ public struct OpenAIResponsesOptions: Sendable {
         websocketConnectTimeoutMs: Int? = nil
     ) {
         self.temperature = temperature
+        self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
@@ -1280,6 +1292,7 @@ public struct OpenAIResponsesOptions: Sendable {
 
 public struct AzureOpenAIResponsesOptions: Sendable {
     public var temperature: Double?
+    public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -1298,6 +1311,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
 
     public init(
         temperature: Double? = nil,
+        samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -1315,6 +1329,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         maxRetries: Int? = nil
     ) {
         self.temperature = temperature
+        self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey

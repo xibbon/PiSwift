@@ -167,7 +167,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
             let credentials = OAuthCredentials(
                 refresh: "refresh-token",
                 access: "fresh-access",
-                expires: now + 60_000
+                expires: now + 10 * 60_000
             )
             return (newCredentials: credentials, apiKey: "fresh-access")
         },
@@ -181,6 +181,89 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(firstKey == "fresh-access")
     #expect(secondKey == "fresh-access")
     #expect(refreshCount.withLock { $0 } == 1)
+}
+
+@Test func authStorageRefreshesWithinMinimumValidityWindow() async {
+    let now = Date().timeIntervalSince1970 * 1000
+
+    func makeStorage(expires: Double, refreshCount: LockedState<Int>) -> AuthStorage {
+        let storage = AuthStorage.inMemory([
+            "anthropic": .oauth(OAuthCredential(
+                access: "current-access",
+                refresh: "refresh-token",
+                expires: expires
+            )),
+        ])
+        storage.setOAuthOverridesForTesting(OAuthOverrides(
+            getOAuthApiKey: { _, _ in
+                refreshCount.withLock { $0 += 1 }
+                let credentials = OAuthCredentials(
+                    refresh: "refresh-token",
+                    access: "refreshed-access",
+                    expires: now + 60 * 60_000
+                )
+                return (newCredentials: credentials, apiKey: "refreshed-access")
+            },
+            oauthApiKey: nil
+        ))
+        return storage
+    }
+
+    let soonCount = LockedState(0)
+    let soonStorage = makeStorage(expires: now + 2 * 60_000, refreshCount: soonCount)
+    #expect(await soonStorage.getApiKey("anthropic") == "refreshed-access")
+    #expect(soonCount.withLock { $0 } == 1)
+
+    let laterCount = LockedState(0)
+    let laterStorage = makeStorage(expires: now + 30 * 60_000, refreshCount: laterCount)
+    #expect(await laterStorage.getApiKey("anthropic") == "current-access")
+    #expect(laterCount.withLock { $0 } == 0)
+
+    let forcedCount = LockedState(0)
+    let forcedStorage = makeStorage(expires: now + 30 * 60_000, refreshCount: forcedCount)
+    #expect(await forcedStorage.getApiKey(
+        "anthropic",
+        minimumOAuthValidityMs: 45 * 60_000
+    ) == "refreshed-access")
+    #expect(forcedCount.withLock { $0 } == 1)
+}
+
+@Test func authStorageCancelledRefreshDoesNotCommit() async {
+    let now = Date().timeIntervalSince1970 * 1000
+    let storage = AuthStorage.inMemory([
+        "xai": .oauth(OAuthCredential(
+            access: "old-access",
+            refresh: "refresh-token",
+            expires: now - 1
+        )),
+    ])
+    let refreshStarted = LockedState(false)
+    storage.setOAuthOverridesForTesting(OAuthOverrides(
+        getOAuthApiKey: { _, _ in
+            refreshStarted.withLock { $0 = true }
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let credentials = OAuthCredentials(
+                refresh: "refresh-token",
+                access: "new-access",
+                expires: now + 60 * 60_000
+            )
+            return (newCredentials: credentials, apiKey: "new-access")
+        },
+        oauthApiKey: nil
+    ))
+
+    let signal = CancellationToken()
+    let request = Task { await storage.getApiKey("xai", signal: signal) }
+    while !refreshStarted.withLock({ $0 }) {
+        await Task.yield()
+    }
+    signal.cancel()
+    #expect(await request.value == nil)
+    guard case .oauth(let stored) = storage.get("xai") else {
+        Issue.record("Missing stored OAuth credential")
+        return
+    }
+    #expect(stored.access == "old-access")
 }
 
 @Test func authStorageCacheFollowsTransactionCommitOrder() async {

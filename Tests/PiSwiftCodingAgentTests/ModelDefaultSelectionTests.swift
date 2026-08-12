@@ -7,6 +7,14 @@ import PiSwiftCodingAgent
     #expect(entry?.1 == "anthropic/claude-opus-4.5")
 }
 
+@Test func defaultModelsIncludeBasetenAndQwenTokenPlans() {
+    let defaults = Dictionary(uniqueKeysWithValues: defaultModelPerProvider)
+    #expect(defaults[.baseten] == "zai-org/GLM-5.2")
+    #expect(defaults[.qwenTokenPlan] == "qwen3.7-max")
+    #expect(defaults[.qwenTokenPlanCn] == "qwen3.7-max")
+    #expect(defaults[.qwenTokenPlanIndividual] == "qwen3.8-max")
+}
+
 @Test func selectDefaultModelPrefersVercelGateway() async {
     let model = Model(
         id: "anthropic/claude-opus-4.5",

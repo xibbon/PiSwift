@@ -277,6 +277,35 @@ func mapGoogleToolChoice(_ choice: String) -> String {
     }
 }
 
+func supportsGoogleStrictToolSampling(_ modelId: String) -> Bool {
+    let pattern = #"(?:^|/)gemini-(\d+)"#
+    guard let expression = try? NSRegularExpression(pattern: pattern),
+          let match = expression.firstMatch(
+              in: modelId,
+              range: NSRange(modelId.startIndex..<modelId.endIndex, in: modelId)
+          ),
+          let range = Range(match.range(at: 1), in: modelId),
+          let major = Int(modelId[range]) else {
+        return false
+    }
+    return major >= 3
+}
+
+func resolveGoogleFunctionCallingMode(
+    tools: [AITool],
+    toolChoice: String?,
+    supportsStrictMode: Bool
+) throws -> String? {
+    let useStrictMode = try tools.contains {
+        try resolveJsonSchemaStrictSampling(tool: $0, supportsStrictMode: supportsStrictMode) == true
+    }
+    if toolChoice == "none" || toolChoice == "any" {
+        return mapGoogleToolChoice(toolChoice!)
+    }
+    if useStrictMode { return "VALIDATED" }
+    return toolChoice.map(mapGoogleToolChoice)
+}
+
 func mapGoogleStopReason(_ reason: String) -> StopReasonResult {
     switch reason {
     case "STOP":

@@ -67,16 +67,17 @@ private struct BedrockTool: Encodable {
     let name: String
     let description: String
     let parameters: [String: AnyCodable]
+    let strict: Bool?
 
     func encode(to encoder: Encoder) throws {
         let schema = parameters.mapValues { $0.value }
-        let payload: [String: Any] = [
-            "toolSpec": [
+        var toolSpec: [String: Any] = [
                 "name": name,
                 "description": description,
                 "inputSchema": ["json": schema],
-            ],
         ]
+        if strict == true { toolSpec["strict"] = true }
+        let payload: [String: Any] = ["toolSpec": toolSpec]
         var container = encoder.singleValueContainer()
         try container.encode(AnyCodable(payload))
     }
@@ -632,7 +633,11 @@ private func buildBedrockRequest(
     let system = buildSystemPrompt(context.systemPrompt, model: model, cacheRetention: cacheRetention)
     let inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : nil)
     let inferenceConfig = BedrockInferenceConfig(maxTokens: inferenceMaxTokens, temperature: options.temperature)
-    let toolConfig = convertToolConfig(context.tools, toolChoice: options.toolChoice)
+    let toolConfig = try convertToolConfig(
+        context.tools,
+        toolChoice: options.toolChoice,
+        supportsStrictMode: model.compat?.supportsStrictMode ?? false
+    )
     let additional = buildAdditionalModelRequestFields(model: model, options: options)
     let requestBody = BedrockRequest(
         messages: messages,
@@ -940,12 +945,18 @@ private func createImageBlock(_ image: ImageContent) -> [String: Any] {
 
 private func convertToolConfig(
     _ tools: [AITool]?,
-    toolChoice: BedrockToolChoice?
-) -> BedrockToolConfig? {
+    toolChoice: BedrockToolChoice?,
+    supportsStrictMode: Bool
+) throws -> BedrockToolConfig? {
     guard let tools, !tools.isEmpty else { return nil }
 
-    let bedrockTools = tools.map {
-        BedrockTool(name: $0.name, description: $0.description, parameters: $0.parameters)
+    let bedrockTools = try tools.map {
+        BedrockTool(
+            name: $0.name,
+            description: $0.description,
+            parameters: $0.parameters,
+            strict: try resolveJsonSchemaStrictSampling(tool: $0, supportsStrictMode: supportsStrictMode)
+        )
     }
 
     let choicePayload: BedrockToolChoicePayload?

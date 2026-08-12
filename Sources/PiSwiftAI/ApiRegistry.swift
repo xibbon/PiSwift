@@ -145,6 +145,7 @@ public func registerBuiltInProviders() {
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
             let providerOptions = OpenAICompletionsOptions(
                 temperature: options?.temperature,
+                samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
@@ -171,6 +172,7 @@ public func registerBuiltInProviders() {
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
             let providerOptions = OpenAIResponsesOptions(
                 temperature: options?.temperature,
+                samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
@@ -226,6 +228,7 @@ public func registerBuiltInProviders() {
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
             let providerOptions = AzureOpenAIResponsesOptions(
                 temperature: options?.temperature,
+                samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,

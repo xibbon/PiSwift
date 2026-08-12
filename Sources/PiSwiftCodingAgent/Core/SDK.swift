@@ -252,6 +252,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.xai, "grok-4.5"),
     (.groq, "openai/gpt-oss-120b"),
     (.cerebras, "zai-glm-5"),
+    (.baseten, "zai-org/GLM-5.2"),
     (.zai, "glm-5"),
     (.mistral, "devstral-medium-latest"),
     (.minimax, "MiniMax-M2.7"),
@@ -259,6 +260,9 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.huggingface, "moonshotai/Kimi-K2.5"),
     (.opencode, "claude-opus-4-5"),
     (.kimiCoding, "kimi-k2-thinking"),
+    (.qwenTokenPlan, "qwen3.7-max"),
+    (.qwenTokenPlanCn, "qwen3.7-max"),
+    (.qwenTokenPlanIndividual, "qwen3.8-max"),
 ]
 
 public func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
