@@ -44,11 +44,16 @@ public func resolvePromptInput(_ input: String?, _ description: String) -> Strin
     return input
 }
 
+private func isRegularContextFile(_ path: String) -> Bool {
+    let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey])
+    return values?.isRegularFile == true
+}
+
 private func loadContextFileFromDir(_ dir: String) -> ContextFile? {
-    let candidates = ["AGENTS.md", "CLAUDE.md"]
+    let candidates = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]
     for filename in candidates {
         let filePath = URL(fileURLWithPath: dir).appendingPathComponent(filename).path
-        if FileManager.default.fileExists(atPath: filePath) {
+        if isRegularContextFile(filePath) {
             do {
                 let content = try String(contentsOfFile: filePath, encoding: .utf8)
                 return ContextFile(path: filePath, content: content)
@@ -58,6 +63,77 @@ private func loadContextFileFromDir(_ dir: String) -> ContextFile? {
         }
     }
     return nil
+}
+
+private struct ContextGitPaths {
+    var repoDir: String
+    var commonGitDir: String
+}
+
+private func canonicalContextPath(_ path: String) -> String {
+    URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
+}
+
+/// Finds the checkout root and common Git directory for regular repositories and linked worktrees.
+private func findContextGitPaths(_ cwd: String) -> ContextGitPaths? {
+    var dir = URL(fileURLWithPath: cwd).standardized.path
+
+    while true {
+        let gitURL = URL(fileURLWithPath: dir).appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: gitURL.path, isDirectory: &isDirectory) {
+            if isDirectory.boolValue {
+                let head = gitURL.appendingPathComponent("HEAD").path
+                guard FileManager.default.fileExists(atPath: head) else { return nil }
+                return ContextGitPaths(repoDir: dir, commonGitDir: gitURL.path)
+            }
+
+            guard let content = try? String(contentsOf: gitURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                content.hasPrefix("gitdir: ") else {
+                return nil
+            }
+            let gitDirText = String(content.dropFirst("gitdir: ".count))
+            let gitDir = URL(fileURLWithPath: gitDirText, relativeTo: URL(fileURLWithPath: dir, isDirectory: true))
+                .standardized.path
+            guard FileManager.default.fileExists(atPath: URL(fileURLWithPath: gitDir).appendingPathComponent("HEAD").path) else {
+                return nil
+            }
+            let commonDirFile = URL(fileURLWithPath: gitDir).appendingPathComponent("commondir")
+            let commonGitDir: String
+            if let commonDirText = try? String(contentsOf: commonDirFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !commonDirText.isEmpty {
+                commonGitDir = URL(fileURLWithPath: commonDirText, relativeTo: URL(fileURLWithPath: gitDir, isDirectory: true))
+                    .standardized.path
+            } else {
+                commonGitDir = gitDir
+            }
+            return ContextGitPaths(repoDir: dir, commonGitDir: commonGitDir)
+        }
+
+        let parent = URL(fileURLWithPath: dir).deletingLastPathComponent().path
+        if parent == dir { return nil }
+        dir = parent
+    }
+}
+
+/// Returns the main checkout context file shadowed by a nested linked worktree.
+private func findShadowedContextFile(_ cwd: String) -> String? {
+    guard let gitPaths = findContextGitPaths(cwd) else { return nil }
+    let commonGitDir = canonicalContextPath(gitPaths.commonGitDir)
+    let worktreeRoot = canonicalContextPath(gitPaths.repoDir)
+    let mainRepoRoot = URL(fileURLWithPath: commonGitDir).deletingLastPathComponent().path
+    let mainPrefix = mainRepoRoot.hasSuffix("/") ? mainRepoRoot : mainRepoRoot + "/"
+
+    guard worktreeRoot.hasPrefix(mainPrefix) else { return nil }
+    guard canonicalContextPath(URL(fileURLWithPath: mainRepoRoot).appendingPathComponent(".git").path) == commonGitDir else {
+        return nil
+    }
+    guard let worktreeContext = loadContextFileFromDir(worktreeRoot) else { return nil }
+    return URL(fileURLWithPath: mainRepoRoot)
+        .appendingPathComponent(URL(fileURLWithPath: worktreeContext.path).lastPathComponent)
+        .path
 }
 
 public func loadProjectContextFiles(_ options: LoadContextFilesOptions = LoadContextFilesOptions()) -> [ContextFile] {
@@ -73,11 +149,14 @@ public func loadProjectContextFiles(_ options: LoadContextFilesOptions = LoadCon
     }
 
     var ancestorFiles: [ContextFile] = []
+    let shadowedContextPath = findShadowedContextFile(resolvedCwd).map(canonicalContextPath)
     var currentDir = resolvedCwd
     let root = URL(fileURLWithPath: "/").path
 
     while true {
-        if let context = loadContextFileFromDir(currentDir), !seenPaths.contains(context.path) {
+        if let context = loadContextFileFromDir(currentDir),
+           canonicalContextPath(context.path) != shadowedContextPath,
+           !seenPaths.contains(context.path) {
             ancestorFiles.insert(context, at: 0)
             seenPaths.insert(context.path)
         }
@@ -205,6 +284,10 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
         guidelinesList.append("Use bash for file operations like ls, grep, find")
     } else if hasBash && (hasGrep || hasFind || hasLs) {
         guidelinesList.append("Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)")
+    }
+
+    if hasBash {
+        guidelinesList.append("You can inspect PI_* environment variables for current model and session details.")
     }
 
     if hasRead && hasEdit {

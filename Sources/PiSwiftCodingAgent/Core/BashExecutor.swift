@@ -5,11 +5,18 @@ public struct BashExecutorOptions: Sendable {
     public var onChunk: (@Sendable (String) -> Void)?
     public var signal: CancellationToken?
     public var timeoutSeconds: Double?
+    public var environment: [String: String]?
 
-    public init(onChunk: (@Sendable (String) -> Void)? = nil, signal: CancellationToken? = nil, timeoutSeconds: Double? = nil) {
+    public init(
+        onChunk: (@Sendable (String) -> Void)? = nil,
+        signal: CancellationToken? = nil,
+        timeoutSeconds: Double? = nil,
+        environment: [String: String]? = nil
+    ) {
         self.onChunk = onChunk
         self.signal = signal
         self.timeoutSeconds = timeoutSeconds
+        self.environment = environment
     }
 }
 
@@ -97,6 +104,14 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
     let shellConfig = try getShellConfig()
     process.executableURL = URL(fileURLWithPath: shellConfig.shell)
     process.arguments = shellConfig.args + [command]
+    var environment = ProcessInfo.processInfo.environment
+    for name in piSessionEnvironmentVariableNames {
+        environment.removeValue(forKey: name)
+    }
+    if let overrides = options?.environment {
+        environment.merge(overrides) { _, override in override }
+    }
+    process.environment = environment
 
     let stdoutPipe = Pipe()
     let stderrPipe = Pipe()

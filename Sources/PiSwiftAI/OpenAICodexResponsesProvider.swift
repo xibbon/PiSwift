@@ -23,19 +23,22 @@ public func streamOpenAICodexResponses(
                 throw StreamError.missingApiKey(model.provider)
             }
 
-            var mergedHeaders = model.headers ?? [:]
-            if let headers = options.headers {
-                for (key, value) in headers {
-                    mergedHeaders[key] = value
-                }
-            }
-            let baseHeaders = try buildOpenAICodexHeaders(baseHeaders: mergedHeaders, accessToken: apiKey)
-            let codexSessionId = clampOpenAIPromptCacheKey(options.sessionId)
-            let headers = buildCodexHeaders(
+            let requestedHeaders = mergeProviderHeaders(model.headers, options.headers)
+            let baseHeaders = try buildOpenAICodexHeaders(
+                baseHeaders: providerHeadersToRecord(requestedHeaders),
+                accessToken: apiKey
+            )
+            let accountId = baseHeaders["chatgpt-account-id"] ?? ""
+            let cacheSessionId = codexCacheSessionId(options.sessionId, cacheRetention: options.cacheRetention)
+            let codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId)
+            let defaultHeaders = buildCodexHeaders(
                 baseHeaders: baseHeaders,
                 accessToken: apiKey,
                 sessionId: codexSessionId
             )
+            let headers = providerHeadersToRecord(
+                mergeProviderHeaders(defaultHeaders, requestedHeaders)
+            ) ?? [:]
 
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
             let grammarToolInputProperties = try createGrammarToolInputProperties(
@@ -348,7 +351,10 @@ public func streamOpenAICodexResponses(
                 case "error":
                     let code = rawEvent["code"] as? String ?? ""
                     let message = rawEvent["message"] as? String ?? ""
-                    throw OpenAICodexStreamError.apiError(formatCodexErrorEvent(rawEvent, code: code, message: message))
+                    throw OpenAICodexStreamError.codedApiError(
+                        code: code,
+                        message: formatCodexErrorEvent(rawEvent, code: code, message: message)
+                    )
 
                 case "response.failed":
                     if let responseInfo = rawEvent["response"] as? [String: Any] {
@@ -362,45 +368,65 @@ public func streamOpenAICodexResponses(
                 }
             }
 
-            let transport = options.transport ?? .auto
+            if options.httpClient != nil,
+               options.transport == .websocket || options.transport == .websocketCached {
+                throw StreamError.unsupportedHTTPClient("OpenAI Codex WebSocket transport")
+            }
+            let transport: Transport = options.httpClient != nil ? .sse : (options.transport ?? .auto)
             if transport != .sse {
                 var websocketStarted = false
-                do {
-                    try await processCodexWebSocketStream(
-                        url: codexWebSocketUrl(baseUrl: model.baseUrl),
-                        body: body,
-                        headers: headers,
-                        sessionId: options.sessionId,
-                        signal: options.signal,
-                        websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
-                        onStart: {
-                            websocketStarted = true
-                            startStreamIfNeeded()
-                        },
-                        onEvent: { event in
-                            try processRawEvent(event)
+                var retriedMissingContinuation = false
+                while true {
+                    websocketStarted = false
+                    do {
+                        try await processCodexWebSocketStream(
+                            url: codexWebSocketUrl(baseUrl: model.baseUrl),
+                            body: body,
+                            headers: headers,
+                            sessionId: cacheSessionId,
+                            accountId: accountId,
+                            signal: options.signal,
+                            websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
+                            onStart: {
+                                websocketStarted = true
+                                startStreamIfNeeded()
+                            },
+                            onEvent: { event in
+                                try processRawEvent(event)
+                            }
+                        )
+
+                        if options.signal?.isCancelled == true {
+                            throw OpenAICodexStreamError.aborted
                         }
-                    )
+                        if output.stopReason == .pending {
+                            throw OpenAICodexStreamError.apiError("OpenAI Codex Responses stream ended without a stop reason")
+                        }
+                        if output.stopReason == .aborted {
+                            throw OpenAICodexStreamError.aborted
+                        }
+                        if output.stopReason == .error {
+                            throw OpenAICodexStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
+                        }
 
-                    if options.signal?.isCancelled == true {
-                        throw OpenAICodexStreamError.aborted
-                    }
-                    if output.stopReason == .pending {
-                        throw OpenAICodexStreamError.apiError("OpenAI Codex Responses stream ended without a stop reason")
-                    }
-                    if output.stopReason == .aborted {
-                        throw OpenAICodexStreamError.aborted
-                    }
-                    if output.stopReason == .error {
-                        throw OpenAICodexStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
-                    }
-
-                    stream.push(.done(reason: output.stopReason, message: output))
-                    stream.end()
-                    return
-                } catch {
-                    if transport == .websocket || websocketStarted {
-                        throw error
+                        stream.push(.done(reason: output.stopReason, message: output))
+                        stream.end()
+                        return
+                    } catch {
+                        if shouldRetryMissingCodexContinuation(
+                            error,
+                            retried: &retriedMissingContinuation
+                        ) {
+                            output.content = []
+                            output.stopReason = .pending
+                            output.rawStopReason = nil
+                            output.errorMessage = nil
+                            continue
+                        }
+                        if transport == .websocket || websocketStarted {
+                            throw error
+                        }
+                        break
                     }
                 }
             }
@@ -413,22 +439,31 @@ public func streamOpenAICodexResponses(
             for (key, value) in headers {
                 request.setValue(value, forHTTPHeaderField: key)
             }
+            let retryRequest = request
 
-            let session = proxySession(for: request.url)
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw OpenAICodexStreamError.invalidResponse
+            let client = options.httpClient ?? DefaultProviderHTTPClient()
+            let response = try await retryProviderRequest(
+                maxRetries: options.maxRetries,
+                maxRetryDelayMs: options.maxRetryDelayMs,
+                signal: options.signal
+            ) {
+                let response = try await client.send(retryRequest)
+                guard (200..<300).contains(response.statusCode) else {
+                    let bodyData = try await collectProviderHTTPBody(response.body)
+                    let rawHeaders = Dictionary(uniqueKeysWithValues: response.headers.map { (AnyHashable($0.key), $0.value as Any) })
+                    let info = parseCodexError(statusCode: response.statusCode, headers: rawHeaders, body: bodyData)
+                    throw StreamError.providerRequest(
+                        statusCode: response.statusCode,
+                        headers: response.headers,
+                        message: info.friendlyMessage ?? info.message
+                    )
+                }
+                return response
             }
-            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-
-            if !(200..<300).contains(http.statusCode) {
-                let bodyData = try await collectCodexData(from: bytes)
-                let info = parseCodexError(statusCode: http.statusCode, headers: http.allHeaderFields, body: bodyData)
-                throw OpenAICodexStreamError.apiError(info.friendlyMessage ?? info.message)
-            }
+            options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
 
             startStreamIfNeeded()
-            for try await rawEvent in parseCodexSseStream(bytes: bytes) {
+            for try await rawEvent in parseCodexSseStream(body: response.body) {
                 try processRawEvent(rawEvent)
             }
 
@@ -459,11 +494,16 @@ public func streamOpenAICodexResponses(
     return stream
 }
 
-private enum OpenAICodexStreamError: Error, LocalizedError {
+func codexCacheSessionId(_ sessionId: String?, cacheRetention: CacheRetention?) -> String? {
+    cacheRetention == CacheRetention.none ? nil : sessionId
+}
+
+enum OpenAICodexStreamError: Error, LocalizedError {
     case aborted
     case unknown
     case invalidResponse
     case apiError(String)
+    case codedApiError(code: String, message: String)
 
     var errorDescription: String? {
         switch self {
@@ -475,8 +515,21 @@ private enum OpenAICodexStreamError: Error, LocalizedError {
             return "Codex response failed: invalid response"
         case .apiError(let message):
             return message
+        case .codedApiError(_, let message):
+            return message
         }
     }
+}
+
+func shouldRetryMissingCodexContinuation(_ error: Error, retried: inout Bool) -> Bool {
+    guard !retried,
+          let codexError = error as? OpenAICodexStreamError,
+          case .codedApiError(let code, _) = codexError,
+          code == "previous_response_not_found" else {
+        return false
+    }
+    retried = true
+    return true
 }
 
 private struct CodexErrorInfo {
@@ -518,110 +571,105 @@ private let codexWebSocketBetaHeader = "responses_websockets=2026-02-06"
 private let codexSessionWebSocketCacheTtl: TimeInterval = 5 * 60
 private let codexSessionWebSocketMaxAge: TimeInterval = 55 * 60
 
-private struct CodexWebSocketLease {
+struct CodexWebSocketCacheKey: Hashable, Sendable {
+    let sessionId: String
+    let accountId: String
+}
+
+func codexWebSocketCacheKey(sessionId: String, accountId: String) -> CodexWebSocketCacheKey {
+    CodexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
+}
+
+private struct CodexWebSocketLease: Sendable {
     let task: URLSessionWebSocketTask
-    let sessionId: String?
+    let cacheKey: CodexWebSocketCacheKey?
     let cached: Bool
 }
 
-/// SAFETY: all cache entry mutation is serialized by `lock`; timers/tasks are
-/// stored and invalidated under that same lock.
-private final class CodexWebSocketCache: @unchecked Sendable {
+private actor CodexWebSocketCache {
     private struct Entry {
         var task: URLSessionWebSocketTask
         var busy: Bool
-        var idleTimer: DispatchSourceTimer?
+        var idleTask: Task<Void, Never>?
         let createdAt: Date
     }
 
     static let shared = CodexWebSocketCache()
 
-    private let lock = NSLock()
-    private var entries: [String: Entry] = [:]
+    private var entries: [CodexWebSocketCacheKey: Entry] = [:]
 
     private init() {}
 
-    func acquire(url: URL, headers: [String: String], sessionId: String?, connectTimeoutMs: Int?) -> CodexWebSocketLease {
+    func acquire(
+        url: URL,
+        headers: [String: String],
+        sessionId: String?,
+        accountId: String,
+        connectTimeoutMs: Int?
+    ) -> CodexWebSocketLease {
         guard let sessionId, !sessionId.isEmpty else {
             let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
-            return CodexWebSocketLease(task: task, sessionId: nil, cached: false)
+            return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
         }
+        let cacheKey = codexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
 
-        lock.lock()
-        if var existing = entries[sessionId] {
-            existing.idleTimer?.cancel()
-            existing.idleTimer = nil
+        if var existing = entries[cacheKey] {
+            existing.idleTask?.cancel()
+            existing.idleTask = nil
             if !existing.busy, isReusable(existing.task), Date().timeIntervalSince(existing.createdAt) < codexSessionWebSocketMaxAge {
                 existing.busy = true
-                entries[sessionId] = existing
-                lock.unlock()
-                return CodexWebSocketLease(task: existing.task, sessionId: sessionId, cached: true)
+                entries[cacheKey] = existing
+                return CodexWebSocketLease(task: existing.task, cacheKey: cacheKey, cached: true)
             }
             if !isReusable(existing.task) || Date().timeIntervalSince(existing.createdAt) >= codexSessionWebSocketMaxAge {
                 closeSilently(existing.task, reason: "connection_rotation")
-                entries.removeValue(forKey: sessionId)
+                entries.removeValue(forKey: cacheKey)
             } else {
-                entries[sessionId] = existing
+                entries[cacheKey] = existing
                 if existing.busy {
-                    lock.unlock()
                     let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
-                    return CodexWebSocketLease(task: task, sessionId: nil, cached: false)
+                    return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
                 }
             }
         }
-        lock.unlock()
 
         let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
-        lock.lock()
-        entries[sessionId] = Entry(task: task, busy: true, idleTimer: nil, createdAt: Date())
-        lock.unlock()
-        return CodexWebSocketLease(task: task, sessionId: sessionId, cached: true)
+        entries[cacheKey] = Entry(task: task, busy: true, idleTask: nil, createdAt: Date())
+        return CodexWebSocketLease(task: task, cacheKey: cacheKey, cached: true)
     }
 
     func release(_ lease: CodexWebSocketLease, keep: Bool) {
-        guard lease.cached, let sessionId = lease.sessionId else {
+        guard lease.cached, let cacheKey = lease.cacheKey else {
             closeSilently(lease.task)
             return
         }
 
-        lock.lock()
-        guard var entry = entries[sessionId], entry.task === lease.task else {
-            lock.unlock()
+        guard var entry = entries[cacheKey], entry.task === lease.task else {
             closeSilently(lease.task)
             return
         }
 
         if !keep || !isReusable(entry.task) {
-            entries.removeValue(forKey: sessionId)
-            lock.unlock()
+            entries.removeValue(forKey: cacheKey)
             closeSilently(entry.task)
             return
         }
 
         entry.busy = false
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        timer.schedule(deadline: .now() + codexSessionWebSocketCacheTtl)
-        timer.setEventHandler { [weak self] in
-            self?.expire(sessionId: sessionId, expectedTask: lease.task)
+        entry.idleTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(codexSessionWebSocketCacheTtl))
+            guard !Task.isCancelled else { return }
+            await self?.expire(cacheKey: cacheKey, expectedTask: lease.task)
         }
-        timer.resume()
-        entry.idleTimer = timer
-        entries[sessionId] = entry
-        lock.unlock()
+        entries[cacheKey] = entry
     }
 
-    private func expire(sessionId: String, expectedTask: URLSessionWebSocketTask) {
-        lock.lock()
-        guard let entry = entries[sessionId], entry.task === expectedTask else {
-            lock.unlock()
-            return
-        }
+    private func expire(cacheKey: CodexWebSocketCacheKey, expectedTask: URLSessionWebSocketTask) {
+        guard let entry = entries[cacheKey], entry.task === expectedTask else { return }
         if entry.busy {
-            lock.unlock()
             return
         }
-        entries.removeValue(forKey: sessionId)
-        lock.unlock()
+        entries.removeValue(forKey: cacheKey)
         closeSilently(entry.task, reason: "idle_timeout")
     }
 
@@ -730,11 +778,40 @@ private func parseCodexSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowingS
     }
 }
 
+private func parseCodexSseStream(body: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<[String: Any], Error> {
+    AsyncThrowingStream { continuation in
+        Task {
+            var buffer = Data()
+            let delimiterCrlf = Data([13, 10, 13, 10])
+            let delimiterLf = Data([10, 10])
+            do {
+                for try await chunk in body {
+                    buffer.append(chunk)
+                    while let range = findCodexDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
+                        let frame = buffer.subdata(in: 0..<range.lowerBound)
+                        buffer.removeSubrange(0..<range.upperBound)
+                        if let event = parseCodexSseEvent(from: frame) {
+                            continuation.yield(event)
+                        }
+                    }
+                }
+                if !buffer.isEmpty, let event = parseCodexSseEvent(from: buffer) {
+                    continuation.yield(event)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+}
+
 private func processCodexWebSocketStream(
     url: URL,
     body: [String: Any],
     headers: [String: String],
     sessionId: String?,
+    accountId: String,
     signal: CancellationToken?,
     websocketConnectTimeoutMs: Int?,
     onStart: () -> Void,
@@ -743,11 +820,14 @@ private func processCodexWebSocketStream(
     var wsHeaders = headers
     wsHeaders["OpenAI-Beta"] = codexWebSocketBetaHeader
 
-    let lease = CodexWebSocketCache.shared.acquire(url: url, headers: wsHeaders, sessionId: sessionId, connectTimeoutMs: websocketConnectTimeoutMs)
+    let lease = await CodexWebSocketCache.shared.acquire(
+        url: url,
+        headers: wsHeaders,
+        sessionId: sessionId,
+        accountId: accountId,
+        connectTimeoutMs: websocketConnectTimeoutMs
+    )
     var keepConnection = true
-    defer {
-        CodexWebSocketCache.shared.release(lease, keep: keepConnection)
-    }
     do {
         var payload = body
         payload["type"] = "response.create"
@@ -784,8 +864,10 @@ private func processCodexWebSocketStream(
         if !sawCompletion {
             throw OpenAICodexStreamError.apiError("WebSocket stream closed before response.completed")
         }
+        await CodexWebSocketCache.shared.release(lease, keep: keepConnection)
     } catch {
         keepConnection = false
+        await CodexWebSocketCache.shared.release(lease, keep: keepConnection)
         throw error
     }
 }

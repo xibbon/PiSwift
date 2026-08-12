@@ -264,6 +264,7 @@ public enum AgentSessionError: LocalizedError, Sendable {
     case missingApiKey(provider: String)
     case nothingToCompact
     case compactionCancelled
+    case compactionInProgress
 
     public var errorDescription: String? {
         switch self {
@@ -288,6 +289,8 @@ public enum AgentSessionError: LocalizedError, Sendable {
             return "Nothing to compact (session too small)"
         case .compactionCancelled:
             return "Compaction cancelled"
+        case .compactionInProgress:
+            return "Compaction is already in progress"
         }
     }
 }
@@ -305,6 +308,59 @@ public final class AgentSession: Sendable {
     /// Ensures tool call/result interception from extensions happens in order.
     private let _agentEventQueue = LockedState<Task<Void, Never>?>(nil)
     private let idleWaiter = AgentSessionIdleWaiter()
+
+    private struct QueuedCompactionPrompt: Sendable {
+        var text: String
+        var options: PromptOptions?
+        var completion: QueuedPromptCompletion
+    }
+
+    private actor QueuedPromptCompletion {
+        private enum Outcome: Sendable {
+            case success
+            case failure(String)
+        }
+
+        private var outcome: Outcome?
+        private var waiters: [CheckedContinuation<Outcome, Never>] = []
+
+        func wait() async throws {
+            let outcome: Outcome
+            if let current = self.outcome {
+                outcome = current
+            } else {
+                outcome = await withCheckedContinuation { continuation in
+                    waiters.append(continuation)
+                }
+            }
+            if case .failure(let message) = outcome {
+                throw QueuedPromptDeliveryError(message: message)
+            }
+        }
+
+        func succeed() {
+            resolve(.success)
+        }
+
+        func fail(_ message: String) {
+            resolve(.failure(message))
+        }
+
+        private func resolve(_ outcome: Outcome) {
+            guard self.outcome == nil else { return }
+            self.outcome = outcome
+            let pending = waiters
+            waiters.removeAll()
+            for waiter in pending {
+                waiter.resume(returning: outcome)
+            }
+        }
+    }
+
+    private struct QueuedPromptDeliveryError: LocalizedError, Sendable {
+        var message: String
+        var errorDescription: String? { message }
+    }
 
     private struct State: Sendable {
         var hookRunner: HookRunner?
@@ -327,9 +383,10 @@ public final class AgentSession: Sendable {
         /// Retry/compaction follow-up work scheduled after an `agent_end` callback.
         /// The run cannot settle while this count is non-zero.
         var pendingPostRunTasks: Int
-        var bashAbort: CancellationToken?
+        var bashAbortTokens: [UUID: CancellationToken]
         var pendingBashMessages: [BashExecutionMessage]
         var isCompactingInternal: Bool
+        var queuedCompactionPrompts: [QueuedCompactionPrompt]
         var overflowRecoveryAttempted: Bool
         var lastSuccessfulUsage: Usage?
         var isBranchSummarizing: Bool
@@ -468,11 +525,6 @@ public final class AgentSession: Sendable {
         set { state.withLock { $0.pendingPostRunTasks = newValue } }
     }
 
-    private var bashAbort: CancellationToken? {
-        get { state.withLock { $0.bashAbort } }
-        set { state.withLock { $0.bashAbort = newValue } }
-    }
-
     private var pendingBashMessages: [BashExecutionMessage] {
         get { state.withLock { $0.pendingBashMessages } }
         set { state.withLock { $0.pendingBashMessages = newValue } }
@@ -583,9 +635,10 @@ public final class AgentSession: Sendable {
             retryAttempt: 0,
             retryTask: nil,
             pendingPostRunTasks: 0,
-            bashAbort: nil,
+            bashAbortTokens: [:],
             pendingBashMessages: [],
             isCompactingInternal: false,
+            queuedCompactionPrompts: [],
             overflowRecoveryAttempted: false,
             lastSuccessfulUsage: nil,
             isBranchSummarizing: false,
@@ -599,8 +652,28 @@ public final class AgentSession: Sendable {
             wrapExtensionTools: config.wrapExtensionTools
         ))
 
+        let existingAfterToolCall = self.agent.afterToolCall
+        let toolImageSettings = config.settingsManager
+        self.agent.afterToolCall = { context, signal in
+            let hookResult = try await existingAfterToolCall?(context, signal)
+            let sourceContent = hookResult?.content ?? context.result.content
+            let normalized = normalizeToolResultImages(
+                sourceContent,
+                autoResizeImages: toolImageSettings.getAutoResizeImages()
+            )
+            guard hookResult != nil || normalized.changed else { return nil }
+            return AfterToolCallResult(
+                content: normalized.content,
+                details: hookResult?.details,
+                isError: hookResult?.isError,
+                usage: hookResult?.usage,
+                terminate: hookResult?.terminate
+            )
+        }
+
         self._hookRunner?.initialize(
             getModel: { [weak agent] in agent?.state.model },
+            getScopedModels: { [weak self] in self?.scopedModels ?? [] },
             getSystemPrompt: { [weak agent] in agent?.state.systemPrompt },
             getSystemPromptOptions: { config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()) },
             isProjectTrusted: { config.projectTrusted },
@@ -706,7 +779,7 @@ public final class AgentSession: Sendable {
     public func dispose() {
         unsubscribeAgent?()
         unsubscribeAgent = nil
-        _hookRunner?.unregisterExtensionProviders()
+        _hookRunner?.dispose()
         // v0.67.4: reap any detached bash subprocesses the user spawned during this session
         // so we don't leave orphans hanging around after `/quit` or session shutdown.
         killTrackedDetachedChildren()
@@ -861,6 +934,9 @@ public final class AgentSession: Sendable {
 
             if case .assistant(let assistant) = message {
                 lastAssistantMessage = assistant
+                if assistant.stopReason != .error, assistant.stopReason != .length {
+                    overflowRecoveryAttempted = false
+                }
                 // Track last successful usage for threshold checks after errors (4D-4).
                 switch assistant.stopReason {
                 case .stop, .length, .toolUse:
@@ -1010,14 +1086,23 @@ public final class AgentSession: Sendable {
         let contextWindow = agent.state.model.contextWindow
         guard contextWindow > 0 else { return }
 
-        // Overflow-based compaction (error says context too large).
-        if isContextOverflow(message, contextWindow: contextWindow) {
-            guard !overflowRecoveryAttempted else { return }
-            overflowRecoveryAttempted = true
-            await runAutoCompaction(reason: .overflow, willRetry: true)
-            // After compaction succeeds, clear the flag so a *new* overflow
-            // (at a genuinely larger context) can still trigger.
-            overflowRecoveryAttempted = false
+        let currentModel = agent.state.model
+        let sameModel = message.provider == currentModel.provider && message.model == currentModel.id
+        let recoverableLength = sameModel && isRecoverableLength(
+            message,
+            desiredMaxOutput: currentModel.maxTokens
+        )
+
+        // Explicit/silent overflow and a length stop below the intended output
+        // limit both get one bounded compact-and-retry recovery attempt.
+        if sameModel && (isContextOverflow(message, contextWindow: contextWindow) || recoverableLength) {
+            let willRetry = message.stopReason != .stop
+            if willRetry {
+                guard !overflowRecoveryAttempted else { return }
+                overflowRecoveryAttempted = true
+                agent.dropTrailingRecoverableAssistant()
+            }
+            await runAutoCompaction(reason: .overflow, willRetry: willRetry)
             return
         }
 
@@ -1047,15 +1132,7 @@ public final class AgentSession: Sendable {
         willRetry: Bool,
         compactBlock: (() async throws -> CompactionResult?)? = nil
     ) async {
-        if isCompactingInternal { return }
-        if compactBlock != nil {
-            isCompactingInternal = true
-        }
-        defer {
-            if compactBlock != nil {
-                isCompactingInternal = false
-            }
-        }
+        guard let compactionToken = beginCompaction() else { return }
 
         emit(.autoCompactionStart(reason: reason))
 
@@ -1065,7 +1142,10 @@ public final class AgentSession: Sendable {
             if let compactBlock {
                 result = try await compactBlock()
             } else {
-                result = try await compact()
+                result = try await performCompaction(
+                    customInstructions: nil,
+                    compactionToken: compactionToken
+                )
             }
         } catch is CancellationError {
             aborted = true
@@ -1075,9 +1155,21 @@ public final class AgentSession: Sendable {
             aborted = false
         }
 
+        let queuedPrompts = finishCompaction(compactionToken)
         emit(.autoCompactionEnd(result: result, aborted: aborted, willRetry: willRetry))
+        await deliverQueuedCompactionPrompts(queuedPrompts)
 
-        if pendingMessageCount == 0, agent.hasQueuedMessages() {
+        guard result != nil, !aborted else { return }
+
+        if willRetry {
+            // Rebuilding context from persisted entries can restore the failed or
+            // truncated assistant that was removed before compaction.
+            agent.dropTrailingRecoverableAssistant()
+            try? await agent.continue()
+            return
+        }
+
+        if queuedPrompts.isEmpty, pendingMessageCount == 0, agent.hasQueuedMessages() {
             try? await agent.continue()
         }
     }
@@ -1442,6 +1534,22 @@ public final class AgentSession: Sendable {
     /// waiting for the whole assistant response while still surfacing immediate rejection.
     @discardableResult
     public func submitPrompt(_ text: String, options: PromptOptions? = nil) async throws -> Task<Void, Error> {
+        let completion = QueuedPromptCompletion()
+        let queued = state.withLock { state -> Bool in
+            guard state.isCompactingInternal else { return false }
+            state.queuedCompactionPrompts.append(QueuedCompactionPrompt(
+                text: text,
+                options: options,
+                completion: completion
+            ))
+            return true
+        }
+        if queued {
+            return Task {
+                try await completion.wait()
+            }
+        }
+
         let messages = try await preparePromptMessages(text, options: options)
         await idleWaiter.beginRun()
         let task = Task { [weak self, agent] in
@@ -1551,25 +1659,47 @@ public final class AgentSession: Sendable {
         await waitForIdle()
         compactionAbort?.cancel()
         branchSummaryAbort?.cancel()
-        bashAbort?.cancel()
+        abortBash()
     }
 
     public var isBashRunning: Bool {
-        bashAbort != nil
+        state.withLock { !$0.bashAbortTokens.isEmpty }
     }
 
     public func executeBash(
         _ command: String,
         excludeFromContext: Bool = false,
-        onChunk: (@Sendable (String) -> Void)? = nil
+        onChunk: (@Sendable (String) -> Void)? = nil,
+        operations: BashOperations? = nil
     ) async throws -> BashResult {
         let abortToken = CancellationToken()
-        bashAbort = abortToken
-        defer { bashAbort = nil }
+        let invocationId = UUID()
+        state.withLock { $0.bashAbortTokens[invocationId] = abortToken }
+        defer { state.withLock { $0.bashAbortTokens.removeValue(forKey: invocationId) } }
 
-        let result = try await PiSwiftCodingAgent.executeBash(command, options: BashExecutorOptions(onChunk: onChunk, signal: abortToken))
+        let options = BashExecutorOptions(
+            onChunk: onChunk,
+            signal: abortToken,
+            environment: bashSessionEnvironment()
+        )
+        let result = if let operations {
+            try await executeBashWithOperations(command, operations: operations, options: options)
+        } else {
+            try await PiSwiftCodingAgent.executeBash(command, options: options)
+        }
         recordBashResult(command, result, excludeFromContext: excludeFromContext)
         return result
+    }
+
+    private func bashSessionEnvironment() -> [String: String] {
+        let current = agent.state
+        return makePiSessionEnvironment(
+            sessionId: sessionManager.getSessionId(),
+            sessionFile: sessionManager.getSessionFile(),
+            provider: current.model.provider,
+            model: current.model.id,
+            reasoningLevel: current.thinkingLevel.rawValue
+        )
     }
 
     public func recordBashResult(_ command: String, _ result: BashResult, excludeFromContext: Bool) {
@@ -1593,7 +1723,10 @@ public final class AgentSession: Sendable {
     }
 
     public func abortBash() {
-        bashAbort?.cancel()
+        let tokens = state.withLock { Array($0.bashAbortTokens.values) }
+        for token in tokens {
+            token.cancel()
+        }
     }
 
     private func flushPendingBashMessages() {
@@ -1644,7 +1777,11 @@ public final class AgentSession: Sendable {
             }
         }
         await abort()
-        agent.reset()
+        do {
+            try agent.reset()
+        } catch {
+            return false
+        }
         _ = sessionManager.newSession(options)
         agent.sessionId = sessionManager.getSessionId()
         steeringMessages.removeAll()
@@ -1666,7 +1803,11 @@ public final class AgentSession: Sendable {
             }
         }
         await abort()
-        agent.reset()
+        do {
+            try agent.reset()
+        } catch {
+            return false
+        }
         steeringMessages.removeAll()
         followUpMessages.removeAll()
         pendingNextTurnMessages.removeAll()
@@ -2057,11 +2198,13 @@ public final class AgentSession: Sendable {
             guard let model = agent.state.model as Model? else {
                 return (nil, true, nil, nil)
             }
-            let request = await modelRegistry.resolveModelRequest(model)
-            if let apiKey = request.auth.apiKey {
+            let request = await resolveModelRequestWithHooks(model)
+            let apiKey = request.auth.apiKey
+            let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
+            if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || hasHeaders {
                 let options = GenerateBranchSummaryOptions(
                     model: request.model,
-                    apiKey: apiKey,
+                    apiKey: apiKey ?? "",
                     headers: request.auth.headers,
                     signal: branchSummaryAbort,
                     customInstructions: customInstructions,
@@ -2151,15 +2294,35 @@ public final class AgentSession: Sendable {
     }
 
     public func compact(customInstructions: String? = nil) async throws -> CompactionResult {
-        isCompactingInternal = true
-        defer { isCompactingInternal = false }
-        compactionAbort = CancellationToken()
-        defer { compactionAbort = nil }
+        guard let compactionToken = beginCompaction() else {
+            throw AgentSessionError.compactionInProgress
+        }
+
+        do {
+            let result = try await performCompaction(
+                customInstructions: customInstructions,
+                compactionToken: compactionToken
+            )
+            let queuedPrompts = finishCompaction(compactionToken)
+            await deliverQueuedCompactionPrompts(queuedPrompts)
+            return result
+        } catch {
+            let queuedPrompts = finishCompaction(compactionToken)
+            await deliverQueuedCompactionPrompts(queuedPrompts)
+            throw error
+        }
+    }
+
+    private func performCompaction(
+        customInstructions: String?,
+        compactionToken: CancellationToken
+    ) async throws -> CompactionResult {
 
         let model = agent.state.model
-        let request = await modelRegistry.resolveModelRequest(model)
+        let request = await resolveModelRequestWithHooks(model)
         let apiKey = request.auth.apiKey
-        if apiKey == nil {
+        let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
+        if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false && !hasHeaders {
             throw AgentSessionError.missingApiKey(provider: model.provider)
         }
 
@@ -2172,7 +2335,7 @@ public final class AgentSession: Sendable {
         var hookCompaction: CompactionResult?
         var fromHook = false
         if let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_compact") {
-            if let result = await hookRunner.emit(SessionBeforeCompactEvent(preparation: preparation, branchEntries: pathEntries, customInstructions: customInstructions, signal: compactionAbort)) as? SessionBeforeCompactResult {
+            if let result = await hookRunner.emit(SessionBeforeCompactEvent(preparation: preparation, branchEntries: pathEntries, customInstructions: customInstructions, signal: compactionToken)) as? SessionBeforeCompactResult {
                 if result.cancel {
                     throw AgentSessionError.compactionCancelled
                 }
@@ -2186,20 +2349,18 @@ public final class AgentSession: Sendable {
         let result: CompactionResult
         if let hookCompaction {
             result = hookCompaction
-        } else if let apiKey {
+        } else {
             result = try await PiSwiftCodingAgent.compact(
                 preparation,
                 request.model,
-                apiKey,
+                apiKey ?? "",
                 headers: request.auth.headers,
                 customInstructions: customInstructions,
-                signal: compactionAbort
+                signal: compactionToken
             )
-        } else {
-            throw AgentSessionError.missingApiKey(provider: model.provider)
         }
 
-        if compactionAbort?.isCancelled == true {
+        if compactionToken.isCancelled {
             throw AgentSessionError.compactionCancelled
         }
 
@@ -2223,6 +2384,58 @@ public final class AgentSession: Sendable {
         }
 
         return result
+    }
+
+    private func beginCompaction() -> CancellationToken? {
+        state.withLock { state in
+            guard !state.isCompactingInternal else { return nil }
+            let token = CancellationToken()
+            state.isCompactingInternal = true
+            state.compactionAbort = token
+            return token
+        }
+    }
+
+    private func resolveModelRequestWithHooks(_ model: Model) async -> ResolvedModelRequest {
+        let request = await modelRegistry.resolveModelRequest(model)
+        guard let hookRunner = _hookRunner,
+              hookRunner.hasHandlers("before_provider_headers") else {
+            return request
+        }
+        let headers = await hookRunner.emitBeforeProviderHeaders(request.auth.headers ?? [:])
+        return ResolvedModelRequest(
+            model: request.model,
+            auth: ModelAuth(
+                ok: request.auth.ok,
+                apiKey: request.auth.apiKey,
+                headers: headers,
+                baseUrl: request.auth.baseUrl,
+                error: request.auth.error
+            )
+        )
+    }
+
+    private func finishCompaction(_ token: CancellationToken) -> [QueuedCompactionPrompt] {
+        state.withLock { state in
+            guard state.compactionAbort === token else { return [] }
+            state.compactionAbort = nil
+            state.isCompactingInternal = false
+            let queued = state.queuedCompactionPrompts
+            state.queuedCompactionPrompts.removeAll()
+            return queued
+        }
+    }
+
+    private func deliverQueuedCompactionPrompts(_ prompts: [QueuedCompactionPrompt]) async {
+        for prompt in prompts {
+            do {
+                let task = try await submitPrompt(prompt.text, options: prompt.options)
+                try await task.value
+                await prompt.completion.succeed()
+            } catch {
+                await prompt.completion.fail(error.localizedDescription)
+            }
+        }
     }
 
     private func syncAgentContext() async {

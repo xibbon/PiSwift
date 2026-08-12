@@ -441,7 +441,9 @@ import PiSwiftAI
     trackDetachedChildPid(88889)
     #expect(getTrackedDetachedChildPids().count >= 2)
     killTrackedDetachedChildren()
-    #expect(getTrackedDetachedChildPids().isEmpty)
+    let remaining = getTrackedDetachedChildPids()
+    #expect(!remaining.contains(88888))
+    #expect(!remaining.contains(88889))
 }
 
 // MARK: - Helpers

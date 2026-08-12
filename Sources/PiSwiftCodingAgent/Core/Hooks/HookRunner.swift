@@ -29,6 +29,7 @@ public final class HookRunner: Sendable {
     private struct State: Sendable {
         var hooks: [LoadedHook]
         var getModel: @Sendable () -> Model?
+        var getScopedModels: @Sendable () -> [ScopedModel]
         var getSystemPrompt: @Sendable () -> String?
         var getSystemPromptOptions: @Sendable () -> BuildSystemPromptOptions
         var isProjectTrusted: @Sendable () -> Bool
@@ -104,6 +105,11 @@ public final class HookRunner: Sendable {
     private var getModel: @Sendable () -> Model? {
         get { state.withLock { $0.getModel } }
         set { state.withLock { $0.getModel = newValue } }
+    }
+
+    private var getScopedModels: @Sendable () -> [ScopedModel] {
+        get { state.withLock { $0.getScopedModels } }
+        set { state.withLock { $0.getScopedModels = newValue } }
     }
 
     private var getSystemPrompt: @Sendable () -> String? {
@@ -218,6 +224,7 @@ public final class HookRunner: Sendable {
         self.state = LockedState(State(
             hooks: hooks,
             getModel: { nil },
+            getScopedModels: { [] },
             getSystemPrompt: { nil },
             getSystemPromptOptions: { BuildSystemPromptOptions(cwd: cwd) },
             isProjectTrusted: { true },
@@ -264,6 +271,7 @@ public final class HookRunner: Sendable {
 
     public func initialize(
         getModel: @escaping @Sendable () -> Model?,
+        getScopedModels: @escaping @Sendable () -> [ScopedModel] = { [] },
         getSystemPrompt: @escaping @Sendable () -> String? = { nil },
         getSystemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
         isProjectTrusted: (@Sendable () -> Bool)? = nil,
@@ -298,6 +306,7 @@ public final class HookRunner: Sendable {
         hasUI: Bool = false
     ) {
         self.getModel = getModel
+        self.getScopedModels = getScopedModels
         self.getSystemPrompt = getSystemPrompt
         self.state.withLock { state in
             state.getSystemPromptOptions = getSystemPromptOptions ?? { BuildSystemPromptOptions(cwd: self.cwd) }
@@ -412,6 +421,7 @@ public final class HookRunner: Sendable {
         }
         for hook in droppedHooks {
             modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
+            hook.dispose()
         }
         for hook in newExtensionHooks {
             wireProviderHandlers(for: hook)
@@ -428,6 +438,20 @@ public final class HookRunner: Sendable {
         let extensionHooks = hooks.filter { $0.isExtension }
         for hook in extensionHooks {
             modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
+        }
+    }
+
+    public func dispose() {
+        let oldHooks = state.withLock { state -> [LoadedHook] in
+            let oldHooks = state.hooks
+            state.hooks = []
+            return oldHooks
+        }
+        for hook in oldHooks {
+            if hook.isExtension {
+                modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
+            }
+            hook.dispose()
         }
     }
 
@@ -499,6 +523,18 @@ public final class HookRunner: Sendable {
             }
         }
         return nil
+    }
+
+    /// Returns display-only Markdown transformers in hook load and registration order.
+    public func getMarkdownTransformers() -> [MarkdownTransformer] {
+        hooks.flatMap(\.markdownTransformers)
+    }
+
+    /// Applies display-only Markdown transforms without changing session or model messages.
+    public func transformMarkdown(_ markdown: String, context: MarkdownTransformContext) -> String {
+        getMarkdownTransformers().reduce(markdown) { current, transformer in
+            transformer(current, context)
+        }
     }
 
     /// Returns the first entry renderer registered for `customType`, in extension
@@ -616,6 +652,9 @@ public final class HookRunner: Sendable {
             model: { [weak self] in
                 self?.getModel()
             },
+            scopedModels: { [weak self] in
+                self?.getScopedModels() ?? []
+            },
             systemPrompt: { [weak self] in
                 self?.getSystemPrompt()
             },
@@ -647,6 +686,9 @@ public final class HookRunner: Sendable {
             modelRegistry: modelRegistry,
             model: { [weak self] in
                 self?.getModel()
+            },
+            scopedModels: { [weak self] in
+                self?.getScopedModels() ?? []
             },
             systemPrompt: { [weak self] in
                 self?.getSystemPrompt()
@@ -741,9 +783,8 @@ public final class HookRunner: Sendable {
     }
 
     /// Emits `before_provider_headers` and applies each returned header set in
-    /// handler order. Swift handlers cannot mutate a value-type dictionary across
-    /// the call boundary, so their explicit results model upstream's in-place API.
-    public func emitBeforeProviderHeaders(_ headers: [String: String]) async -> [String: String] {
+    /// handler order. A `nil` value deletes a provider or API default header.
+    public func emitBeforeProviderHeaders(_ headers: ProviderHeaders) async -> ProviderHeaders {
         let context = createContext()
         var currentHeaders = headers
 
@@ -753,9 +794,7 @@ public final class HookRunner: Sendable {
                 do {
                     let event = BeforeProviderHeadersEvent(headers: currentHeaders)
                     if let result = try await handler(event, context) as? BeforeProviderHeadersEventResult {
-                        for (name, value) in result.headers {
-                            currentHeaders[name] = value
-                        }
+                        currentHeaders = mergeProviderHeaders(currentHeaders, result.headers) ?? [:]
                     }
                 } catch {
                     emitError(HookError(hookPath: hook.path, event: "before_provider_headers", error: error.localizedDescription, stack: captureStack()))

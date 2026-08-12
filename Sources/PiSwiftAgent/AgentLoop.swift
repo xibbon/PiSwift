@@ -259,6 +259,16 @@ private func runLoop(
                 }
 
                 await emit(.turnEnd(message: agentMessage, toolResults: toolResults))
+
+                if await config.shouldStopAfterTurn?(ShouldStopAfterTurnContext(
+                    message: assistantMessage,
+                    toolResults: toolResults,
+                    context: context,
+                    newMessages: messages
+                )) == true {
+                    await emit(.agentEnd(messages: messages))
+                    return messages
+                }
             } catch {
                 let errorMessage = AgentMessage.assistant(buildErrorAssistantMessage(
                     model: config.model,
@@ -273,10 +283,6 @@ private func runLoop(
 
             // Steering is now checked AFTER all tool calls complete (not mid-execution)
             pendingMessages = (await config.getSteeringMessages?()) ?? []
-        }
-
-        if await config.shouldStopAfterTurn?() == true {
-            break
         }
 
         let followUpMessages = (await config.getFollowUpMessages?()) ?? []
@@ -409,14 +415,8 @@ private func streamAssistantResponse(
     return (finalMessage, updatedContext)
 }
 
-private func mergeHeaders(_ base: [String: String]?, _ override: [String: String]?) -> [String: String]? {
-    var merged = base ?? [:]
-    if let override {
-        for (key, value) in override {
-            merged[key] = value
-        }
-    }
-    return merged.isEmpty ? nil : merged
+private func mergeHeaders(_ base: ProviderHeaders?, _ override: ProviderHeaders?) -> ProviderHeaders? {
+    mergeProviderHeaders(base, override)
 }
 
 private func applyBaseUrlOverride(_ model: Model, _ baseUrl: String?) -> Model {
@@ -434,6 +434,7 @@ private func applyBaseUrlOverride(_ model: Model, _ baseUrl: String?) -> Model {
         cost: model.cost,
         contextWindow: model.contextWindow,
         maxTokens: model.maxTokens,
+        samplingParams: model.samplingParams,
         headers: model.headers,
         compat: model.compat,
         thinkingLevelMap: model.thinkingLevelMap
@@ -525,7 +526,7 @@ private func executeToolCallsSequential(
         switch preparation {
         case .immediate(let result, let isError):
             results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: isError, emit: emit))
-            allTerminate = false  // immediate (validation/blocked) results never terminate
+            if result.terminate != true { allTerminate = false }
         case .prepared(let prepared):
             let executed = await executePreparedToolCall(prepared: prepared, signal: signal, emit: emit)
             let finalized = await finalizeExecutedToolCall(
@@ -699,7 +700,10 @@ private func prepareToolCall(
             }
             if beforeResult?.block == true {
                 return .immediate(
-                    result: createErrorToolResult(beforeResult?.reason ?? "Tool execution was blocked"),
+                    result: createErrorToolResult(
+                        beforeResult?.reason ?? "Tool execution was blocked",
+                        terminate: beforeResult?.terminate == true ? true : nil
+                    ),
                     isError: true
                 )
             }
@@ -798,6 +802,7 @@ private func finalizeExecutedToolCall(
                 result = AgentToolResult(
                     content: afterResult.content ?? result.content,
                     details: afterResult.details ?? result.details,
+                    usage: afterResult.usage ?? result.usage,
                     addedToolNames: result.addedToolNames,
                     terminate: afterResult.terminate ?? result.terminate
                 )
@@ -817,10 +822,11 @@ private func finalizeExecutedToolCall(
     )
 }
 
-private func createErrorToolResult(_ message: String) -> AgentToolResult {
+private func createErrorToolResult(_ message: String, terminate: Bool? = nil) -> AgentToolResult {
     AgentToolResult(
         content: [.text(TextContent(text: message))],
-        details: AnyCodable([String: Any]())
+        details: AnyCodable([String: Any]()),
+        terminate: terminate
     )
 }
 
@@ -867,6 +873,7 @@ private func emitToolResultMessage(
         toolName: toolCall.name,
         content: result.content,
         details: result.details,
+        usage: result.usage,
         addedToolNames: result.addedToolNames,
         isError: isError
     )

@@ -18,24 +18,29 @@ private struct RawResponsesSlot {
 func processRawOpenAIResponsesStream(
     request: URLRequest,
     model: Model,
+    httpClient: (any ProviderHTTPClient)?,
     signal: CancellationToken?,
+    maxRetries: Int?,
+    maxRetryDelayMs: Int?,
     onResponse: ResponseHandler?,
     serviceTier: OpenAIServiceTier?,
     grammarToolInputProperties: [String: String],
     stream: AssistantMessageEventStream,
     output: inout AssistantMessage
 ) async throws {
-    let session = proxySession(for: request.url)
-    let (bytes, response) = try await session.bytes(for: request)
-    guard let http = response as? HTTPURLResponse else {
-        throw ValidationError.constrainedSampling("OpenAI Responses request failed: invalid response")
+    let client = httpClient ?? DefaultProviderHTTPClient()
+    let response = try await retryProviderRequest(
+        maxRetries: maxRetries,
+        maxRetryDelayMs: maxRetryDelayMs,
+        signal: signal
+    ) {
+        let response = try await client.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw try await providerHTTPError(from: response)
+        }
+        return response
     }
-    onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-    guard (200..<300).contains(http.statusCode) else {
-        let data = try await collectSseStreamData(from: bytes)
-        let message = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-        throw ValidationError.constrainedSampling(message)
-    }
+    onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
 
     stream.push(.start(partial: output))
     var slots: [Int: RawResponsesSlot] = [:]
@@ -127,7 +132,7 @@ func processRawOpenAIResponsesStream(
         slots[index] = slot
     }
 
-    for try await frame in iterateSseEvents(bytes: bytes, signal: signal) {
+    for try await frame in iterateSseEvents(body: response.body, signal: signal) {
         if signal?.isCancelled == true { throw CancellationError() }
         guard frame.data != "[DONE]", let data = frame.data.data(using: .utf8),
               let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

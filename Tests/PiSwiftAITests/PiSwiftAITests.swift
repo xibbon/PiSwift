@@ -1853,6 +1853,26 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
+@Test func explicitBedrockProfileTakesPrecedenceOverAmbientAccessKeys() async throws {
+    let credentialsUrl = FileManager.default.temporaryDirectory
+        .appendingPathComponent("piswift-bedrock-\(UUID().uuidString).ini")
+    try Data("[selected]\naws_access_key_id = profile-access\naws_secret_access_key = profile-secret\n".utf8)
+        .write(to: credentialsUrl)
+    defer { try? FileManager.default.removeItem(at: credentialsUrl) }
+
+    let resolved = LockedState<String?>(nil)
+    await withCleanBedrockEnv {
+        await withEnv("AWS_SHARED_CREDENTIALS_FILE", value: credentialsUrl.path) {
+            await withEnv("AWS_ACCESS_KEY_ID", value: "ambient-access") {
+                await withEnv("AWS_SECRET_ACCESS_KEY", value: "ambient-secret") {
+                    resolved.withLock { $0 = try? resolvedBedrockAccessKeyId(options: BedrockOptions(profile: "selected")) }
+                }
+            }
+        }
+    }
+    #expect(resolved.withLock { $0 } == "profile-access")
+}
+
 @Test func findEnvKeysReturnsConfiguredNamesWithoutValues() async throws {
     await withEnv("OPENAI_API_KEY", value: "sk-secret-value") {
         #expect(findEnvKeys(provider: "openai") == ["OPENAI_API_KEY"])
@@ -4613,6 +4633,12 @@ struct OAuthTests {
                     return (response, Data("""
                     {"token":"tid=abc;exp=123;proxy-ep=proxy.individual.githubcopilot.com;sku=free","expires_at":2000000000}
                     """.utf8))
+                case ("api.individual.githubcopilot.com", "/models"):
+                    #expect(request.httpMethod == "GET")
+                    #expect(request.value(forHTTPHeaderField: "X-GitHub-Api-Version") == "2026-06-01")
+                    return (response, Data("""
+                    {"data":[{"id":"gpt-4.1","model_picker_enabled":false,"policy":{"state":"enabled"},"capabilities":{"supports":{"tool_calls":true}}}]}
+                    """.utf8))
                 default:
                     if url.host == "api.individual.githubcopilot.com", url.path.hasPrefix("/models/"), url.path.hasSuffix("/policy") {
                         enabledModelCount.withLock { $0 += 1 }
@@ -4650,6 +4676,7 @@ struct OAuthTests {
             #expect(credentials.refresh == "gh_access_token")
             #expect(credentials.access.contains("proxy-ep=proxy.individual.githubcopilot.com"))
             #expect(credentials.enterpriseUrl == nil)
+            #expect(credentials.availableModelIds == ["gpt-4.1"])
         }
     }
 
@@ -6139,16 +6166,19 @@ struct ApiRegistryTests {
     let responses = mapOpenAIResponsesSimpleOptions(model: openAI, options: options, apiKey: "key")
     #expect(responses.timeoutMs == 2345)
     #expect(responses.maxRetries == 2)
+    #expect(responses.maxRetryDelayMs == 1234)
     #expect(responses.websocketConnectTimeoutMs == 3456)
 
     let codex = mapOpenAICodexResponsesSimpleOptions(model: openAI, options: options, apiKey: "key")
     #expect(codex.timeoutMs == 2345)
     #expect(codex.maxRetries == 2)
+    #expect(codex.maxRetryDelayMs == 1234)
     #expect(codex.websocketConnectTimeoutMs == 3456)
 
     let completions = mapOpenAICompletionsSimpleOptions(model: openAI, options: options, apiKey: "key")
     #expect(completions.timeoutMs == 2345)
     #expect(completions.maxRetries == 2)
+    #expect(completions.maxRetryDelayMs == 1234)
     #expect(completions.cacheRetention == .short)
     #expect(completions.sessionId == "session-1")
 
@@ -6156,6 +6186,7 @@ struct ApiRegistryTests {
     let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, context: Context(messages: [.user(UserMessage(content: .text("hello")))]), options: options, apiKey: "key")
     #expect(anthropicOptions.timeoutMs == 2345)
     #expect(anthropicOptions.maxRetries == 2)
+    #expect(anthropicOptions.maxRetryDelayMs == 1234)
 
     let google = getModel(provider: .google, modelId: "gemini-3.1-pro-preview")
     let googleOptions = mapGoogleSimpleOptions(model: google, options: options, apiKey: "key")
@@ -6176,6 +6207,7 @@ struct ApiRegistryTests {
     let mistralOptions = mapMistralSimpleOptions(model: mistral, options: options, apiKey: "key")
     #expect(mistralOptions.timeoutMs == 2345)
     #expect(mistralOptions.maxRetries == 2)
+    #expect(mistralOptions.maxRetryDelayMs == 1234)
 }
 
 /// v0.67.67: Mistral Small 4 / Medium 3.5 use `reasoning_effort`, not `prompt_mode`.

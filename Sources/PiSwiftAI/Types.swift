@@ -1,6 +1,19 @@
 import Foundation
 
-public enum Api: String, Sendable {
+private struct ModelStringCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int? = nil
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(intValue: Int) {
+        return nil
+    }
+}
+
+public enum Api: String, Sendable, Codable {
     case openAICompletions = "openai-completions"
     case openAIResponses = "openai-responses"
     case openAICodexResponses = "openai-codex-responses"
@@ -69,16 +82,24 @@ public enum KnownImagesProvider: String, Sendable {
 
 public typealias ImagesProvider = String
 
-public enum ThinkingLevel: String, Sendable {
+public enum ThinkingLevel: String, Sendable, Codable, CodingKeyRepresentable {
     case minimal
     case low
     case medium
     case high
     case xhigh
     case max
+
+    public var codingKey: any CodingKey {
+        ModelStringCodingKey(stringValue: rawValue)!
+    }
+
+    public init?<Key: CodingKey>(codingKey: Key) {
+        self.init(rawValue: codingKey.stringValue)
+    }
 }
 
-public enum ModelThinkingLevel: String, Sendable, CaseIterable {
+public enum ModelThinkingLevel: String, Sendable, Codable, CodingKeyRepresentable, CaseIterable {
     case off
     case minimal
     case low
@@ -86,6 +107,14 @@ public enum ModelThinkingLevel: String, Sendable, CaseIterable {
     case high
     case xhigh
     case max
+
+    public var codingKey: any CodingKey {
+        ModelStringCodingKey(stringValue: rawValue)!
+    }
+
+    public init?<Key: CodingKey>(codingKey: Key) {
+        self.init(rawValue: codingKey.stringValue)
+    }
 
     public init(_ level: ThinkingLevel) {
         switch level {
@@ -127,6 +156,9 @@ public enum ModelThinkingLevel: String, Sendable, CaseIterable {
 public typealias ReasoningEffort = ThinkingLevel
 public typealias ThinkingBudgets = [ThinkingLevel: Int]
 public typealias ThinkingLevelMap = [ModelThinkingLevel: String?]
+/// Provider request headers. A present key with a `nil` value suppresses a
+/// provider or API default header with the same case-insensitive name.
+public typealias ProviderHeaders = [String: String?]
 
 public enum CacheRetention: String, Sendable {
     case none
@@ -152,10 +184,12 @@ public struct StreamOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    /// Optional per-request HTTP executor. Providers that cannot use it reject the request.
+    public var httpClient: (any ProviderHTTPClient)?
     public var transport: Transport?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var maxRetryDelayMs: Int?
     public var metadata: [String: AnyCodable]?
@@ -176,10 +210,11 @@ public struct StreamOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         transport: Transport? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         maxRetryDelayMs: Int? = nil,
         metadata: [String: AnyCodable]? = nil,
@@ -193,6 +228,7 @@ public struct StreamOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.transport = transport
         self.cacheRetention = cacheRetention
         self.sessionId = sessionId
@@ -213,12 +249,14 @@ public struct SimpleStreamOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    /// Optional per-request HTTP executor. Providers that cannot use it reject the request.
+    public var httpClient: (any ProviderHTTPClient)?
     public var transport: Transport?
     public var reasoning: ThinkingLevel?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
     public var thinkingBudgets: ThinkingBudgets?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var maxRetryDelayMs: Int?
     public var metadata: [String: AnyCodable]?
@@ -237,12 +275,13 @@ public struct SimpleStreamOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         transport: Transport? = nil,
         reasoning: ThinkingLevel? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         maxRetryDelayMs: Int? = nil,
         metadata: [String: AnyCodable]? = nil,
@@ -256,6 +295,7 @@ public struct SimpleStreamOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.transport = transport
         self.reasoning = reasoning
         self.cacheRetention = cacheRetention
@@ -306,12 +346,12 @@ public enum ThinkingDisplay: String, Sendable {
     case omitted
 }
 
-public enum OpenAICompatMaxTokensField: String, Sendable {
+public enum OpenAICompatMaxTokensField: String, Sendable, Codable {
     case maxCompletionTokens = "max_completion_tokens"
     case maxTokens = "max_tokens"
 }
 
-public enum OpenAICompatThinkingFormat: String, Sendable {
+public enum OpenAICompatThinkingFormat: String, Sendable, Codable {
     case openai
     case zai
     case qwen
@@ -329,16 +369,63 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
 }
 
 /// A JSON-compatible value for an OpenAI chat-template kwarg.
-public enum ChatTemplateKwargValue: Sendable {
+public enum ChatTemplateKwargValue: Sendable, Codable {
     case string(String)
     case number(Double)
     case bool(Bool)
     case null
     /// Resolves from Pi's requested thinking state. `omitWhenOff` only applies to effort.
     case variable(ChatTemplateKwargVariable, omitWhenOff: Bool = false)
+
+    private enum VariableCodingKeys: String, CodingKey {
+        case variable = "$var"
+        case omitWhenOff
+    }
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if single.decodeNil() {
+            self = .null
+        } else if let value = try? single.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? single.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? single.decode(String.self) {
+            self = .string(value)
+        } else {
+            let container = try decoder.container(keyedBy: VariableCodingKeys.self)
+            self = .variable(
+                try container.decode(ChatTemplateKwargVariable.self, forKey: .variable),
+                omitWhenOff: try container.decodeIfPresent(Bool.self, forKey: .omitWhenOff) ?? false
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .string(let value):
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+        case .number(let value):
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+        case .bool(let value):
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+        case .null:
+            var container = encoder.singleValueContainer()
+            try container.encodeNil()
+        case .variable(let variable, let omitWhenOff):
+            var container = encoder.container(keyedBy: VariableCodingKeys.self)
+            try container.encode(variable, forKey: .variable)
+            if omitWhenOff {
+                try container.encode(true, forKey: .omitWhenOff)
+            }
+        }
+    }
 }
 
-public enum ChatTemplateKwargVariable: String, Sendable {
+public enum ChatTemplateKwargVariable: String, Sendable, Codable {
     case thinkingEnabled = "thinking.enabled"
     case thinkingEffort = "thinking.effort"
 }
@@ -346,7 +433,7 @@ public enum ChatTemplateKwargVariable: String, Sendable {
 /// v0.68.0: opt-in cache_control formats for OpenAI-compatible providers that expose
 /// Anthropic-style prompt caching via `cache_control` markers (e.g., OpenCode/OpenCode Go
 /// Qwen 3.5/3.6 Plus).
-public enum OpenAICompatCacheControlFormat: String, Sendable {
+public enum OpenAICompatCacheControlFormat: String, Sendable, Codable {
     case anthropic
 }
 
@@ -364,7 +451,7 @@ public enum DeferredToolsMode: String, Sendable, Codable, Equatable {
 ///
 /// See https://openrouter.ai/docs/guides/routing/provider-selection for upstream docs.
 /// All fields map directly to the JSON payload OpenRouter expects under `provider: { ... }`.
-public struct OpenRouterRouting: Sendable {
+public struct OpenRouterRouting: Sendable, Codable {
     /// Whether to allow backup providers to serve requests. Default: true.
     public var allowFallbacks: Bool?
     /// Whether to filter providers to only those that support all parameters in the request.
@@ -422,16 +509,62 @@ public struct OpenRouterRouting: Sendable {
         self.preferredMinThroughput = preferredMinThroughput
         self.preferredMaxLatency = preferredMaxLatency
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case allowFallbacks = "allow_fallbacks"
+        case requireParameters = "require_parameters"
+        case dataCollection = "data_collection"
+        case zdr
+        case enforceDistillableText = "enforce_distillable_text"
+        case order
+        case only
+        case ignore
+        case quantizations
+        case sort
+        case maxPrice = "max_price"
+        case preferredMinThroughput = "preferred_min_throughput"
+        case preferredMaxLatency = "preferred_max_latency"
+    }
 }
 
 /// Sorting metric. Either a bare string ("price"/"throughput"/"latency") or a structured
 /// object with `by` and `partition`.
-public enum OpenRouterRoutingSort: Sendable {
+public enum OpenRouterRoutingSort: Sendable, Codable {
     case named(String)
     case structured(by: String?, partition: String?)
+
+    private enum CodingKeys: String, CodingKey {
+        case by
+        case partition
+    }
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let value = try? single.decode(String.self) {
+            self = .named(value)
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self = .structured(
+            by: try container.decodeIfPresent(String.self, forKey: .by),
+            partition: try container.decodeIfPresent(String.self, forKey: .partition)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .named(let value):
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+        case .structured(let by, let partition):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(by, forKey: .by)
+            try container.encodeIfPresent(partition, forKey: .partition)
+        }
+    }
 }
 
-public struct OpenRouterRoutingPrice: Sendable {
+public struct OpenRouterRoutingPrice: Sendable, Codable {
     public var prompt: Double?
     public var completion: Double?
     public var image: Double?
@@ -445,15 +578,81 @@ public struct OpenRouterRoutingPrice: Sendable {
         self.audio = audio
         self.request = request
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case prompt
+        case completion
+        case image
+        case audio
+        case request
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        prompt = try Self.decodePrice(.prompt, from: container)
+        completion = try Self.decodePrice(.completion, from: container)
+        image = try Self.decodePrice(.image, from: container)
+        audio = try Self.decodePrice(.audio, from: container)
+        request = try Self.decodePrice(.request, from: container)
+    }
+
+    private static func decodePrice(
+        _ key: CodingKeys,
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let value = try container.decodeIfPresent(String.self, forKey: key) {
+            return Double(value)
+        }
+        return nil
+    }
 }
 
 /// Numeric value applies to p50; structured form lets callers set per-percentile cutoffs.
-public enum OpenRouterRoutingPercentile: Sendable {
+public enum OpenRouterRoutingPercentile: Sendable, Codable {
     case scalar(Double)
     case percentiles(p50: Double?, p75: Double?, p90: Double?, p99: Double?)
+
+    private enum CodingKeys: String, CodingKey {
+        case p50
+        case p75
+        case p90
+        case p99
+    }
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let value = try? single.decode(Double.self) {
+            self = .scalar(value)
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self = .percentiles(
+            p50: try container.decodeIfPresent(Double.self, forKey: .p50),
+            p75: try container.decodeIfPresent(Double.self, forKey: .p75),
+            p90: try container.decodeIfPresent(Double.self, forKey: .p90),
+            p99: try container.decodeIfPresent(Double.self, forKey: .p99)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .scalar(let value):
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+        case .percentiles(let p50, let p75, let p90, let p99):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(p50, forKey: .p50)
+            try container.encodeIfPresent(p75, forKey: .p75)
+            try container.encodeIfPresent(p90, forKey: .p90)
+            try container.encodeIfPresent(p99, forKey: .p99)
+        }
+    }
 }
 
-public struct VercelGatewayRouting: Sendable {
+public struct VercelGatewayRouting: Sendable, Codable {
     public var only: [String]?
     public var order: [String]?
     public var allowFallbacks: Bool?
@@ -465,7 +664,7 @@ public struct VercelGatewayRouting: Sendable {
     }
 }
 
-public struct OpenAICompat: Sendable {
+public struct OpenAICompat: Sendable, Codable {
     public var supportsStore: Bool?
     public var supportsDeveloperRole: Bool?
     public var supportsReasoningEffort: Bool?
@@ -615,7 +814,7 @@ public protocol ModelCostRates: Sendable {
     var cacheWrite: Double { get }
 }
 
-public struct ModelCostTier: ModelCostRates, Sendable {
+public struct ModelCostTier: ModelCostRates, Sendable, Codable {
     public var inputTokensAbove: Int
     public var input: Double
     public var output: Double
@@ -631,7 +830,7 @@ public struct ModelCostTier: ModelCostRates, Sendable {
     }
 }
 
-public struct ModelCost: ModelCostRates, Sendable {
+public struct ModelCost: ModelCostRates, Sendable, Codable {
     public var input: Double
     public var output: Double
     public var cacheRead: Double
@@ -655,12 +854,12 @@ public struct ModelCost: ModelCostRates, Sendable {
     }
 }
 
-public enum ModelInput: String, Sendable {
+public enum ModelInput: String, Sendable, Codable {
     case text
     case image
 }
 
-public struct Model: Sendable {
+public struct Model: Sendable, Codable {
     public let id: String
     public let name: String
     public let api: Api
@@ -677,7 +876,7 @@ public struct Model: Sendable {
     /// `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
     /// OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
     public let samplingParams: [String: AnyCodable]?
-    public let headers: [String: String]?
+    public let headers: ProviderHeaders?
     public let compat: OpenAICompat?
     public let thinkingLevelMap: ThinkingLevelMap?
 
@@ -693,7 +892,7 @@ public struct Model: Sendable {
         contextWindow: Int,
         maxTokens: Int,
         samplingParams: [String: AnyCodable]? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         thinkingLevelMap: ThinkingLevelMap? = nil
     ) {
@@ -723,7 +922,7 @@ public struct ImagesModel: Sendable {
     public let input: [ModelInput]
     public let output: [ModelInput]
     public let cost: ModelCost
-    public let headers: [String: String]?
+    public let headers: ProviderHeaders?
 
     public init(
         id: String,
@@ -734,7 +933,7 @@ public struct ImagesModel: Sendable {
         input: [ModelInput],
         output: [ModelInput],
         cost: ModelCost,
-        headers: [String: String]? = nil
+        headers: ProviderHeaders? = nil
     ) {
         self.id = id
         self.name = name
@@ -751,9 +950,10 @@ public struct ImagesModel: Sendable {
 public struct ImagesOptions: Sendable {
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     public var onPayload: PayloadHandler?
     public var onResponse: ImagesResponseHandler?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -762,9 +962,10 @@ public struct ImagesOptions: Sendable {
     public init(
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ImagesResponseHandler? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -772,6 +973,7 @@ public struct ImagesOptions: Sendable {
     ) {
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.onPayload = onPayload
         self.onResponse = onResponse
         self.headers = headers
@@ -953,6 +1155,18 @@ public enum UserContent: Sendable {
     case blocks([ContentBlock])
 }
 
+public struct AssistantMessageDiagnostic: Sendable, Equatable {
+    public var type: String
+    public var timestamp: Int64
+    public var details: [String: AnyCodable]
+
+    public init(type: String, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000), details: [String: AnyCodable]) {
+        self.type = type
+        self.timestamp = timestamp
+        self.details = details
+    }
+}
+
 public struct AssistantMessage: Sendable {
     public let role: String = "assistant"
     public var content: [ContentBlock]
@@ -967,6 +1181,7 @@ public struct AssistantMessage: Sendable {
     public var errorMessage: String?
     /// Provider's own unmapped stop-reason string, preserved for diagnostics.
     public var rawStopReason: String?
+    public var diagnostics: [AssistantMessageDiagnostic]?
     public var timestamp: Int64
 
     public init(
@@ -980,7 +1195,8 @@ public struct AssistantMessage: Sendable {
         errorMessage: String? = nil,
         timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         deferred: DeferredHandle? = nil,
-        rawStopReason: String? = nil
+        rawStopReason: String? = nil,
+        diagnostics: [AssistantMessageDiagnostic]? = nil
     ) {
         self.content = content
         self.api = api
@@ -992,6 +1208,7 @@ public struct AssistantMessage: Sendable {
         self.deferred = deferred
         self.errorMessage = errorMessage
         self.rawStopReason = rawStopReason
+        self.diagnostics = diagnostics
         self.timestamp = timestamp
     }
 }
@@ -1158,16 +1375,18 @@ public struct OpenAICompletionsOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     public var toolChoice: OpenAIToolChoice?
     public var reasoningEffort: ThinkingLevel?
     public var thinkingBudgets: ThinkingBudgets?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1175,22 +1394,25 @@ public struct OpenAICompletionsOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         toolChoice: OpenAIToolChoice? = nil,
         reasoningEffort: ThinkingLevel? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil
     ) {
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.toolChoice = toolChoice
         self.reasoningEffort = reasoningEffort
         self.thinkingBudgets = thinkingBudgets
@@ -1201,6 +1423,7 @@ public struct OpenAICompletionsOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
     }
 }
 
@@ -1238,17 +1461,19 @@ public struct OpenAIResponsesOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     public var cacheRetention: CacheRetention?
     public var reasoningEffort: ThinkingLevel?
     public var reasoningSummary: OpenAIReasoningSummary?
     public var serviceTier: OpenAIServiceTier?
     public var sessionId: String?
     public var transport: Transport?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
     public var websocketConnectTimeoutMs: Int?
 
     public init(
@@ -1257,17 +1482,19 @@ public struct OpenAIResponsesOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         cacheRetention: CacheRetention? = nil,
         reasoningEffort: ThinkingLevel? = nil,
         reasoningSummary: OpenAIReasoningSummary? = nil,
         serviceTier: OpenAIServiceTier? = nil,
         sessionId: String? = nil,
         transport: Transport? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil
     ) {
         self.temperature = temperature
@@ -1275,6 +1502,7 @@ public struct OpenAIResponsesOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.cacheRetention = cacheRetention
         self.reasoningEffort = reasoningEffort
         self.reasoningSummary = reasoningSummary
@@ -1286,6 +1514,7 @@ public struct OpenAIResponsesOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
         self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
     }
 }
@@ -1296,10 +1525,11 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     public var reasoningEffort: ThinkingLevel?
     public var reasoningSummary: OpenAIReasoningSummary?
     public var sessionId: String?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var azureApiVersion: String?
     public var azureResourceName: String?
     public var azureBaseUrl: String?
@@ -1308,6 +1538,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
 
     public init(
         temperature: Double? = nil,
@@ -1315,10 +1546,11 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         reasoningEffort: ThinkingLevel? = nil,
         reasoningSummary: OpenAIReasoningSummary? = nil,
         sessionId: String? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         azureApiVersion: String? = nil,
         azureResourceName: String? = nil,
         azureBaseUrl: String? = nil,
@@ -1326,13 +1558,15 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil
     ) {
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.reasoningEffort = reasoningEffort
         self.reasoningSummary = reasoningSummary
         self.sessionId = sessionId
@@ -1345,6 +1579,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
     }
 }
 
@@ -1353,17 +1588,20 @@ public struct OpenAICodexResponsesOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     public var reasoningEffort: ThinkingLevel?
     public var reasoningSummary: OpenAICodexReasoningSummary?
     public var textVerbosity: OpenAICodexTextVerbosity?
     public var include: [String]?
+    public var cacheRetention: CacheRetention?
     public var sessionId: String?
     public var transport: Transport?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
     public var websocketConnectTimeoutMs: Int?
     /// v0.67.1: forward configured serviceTier to Codex Responses requests so users can choose
     /// flex / priority pricing tiers. v0.67.67: trust the explicitly requested tier when the API
@@ -1375,28 +1613,33 @@ public struct OpenAICodexResponsesOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         reasoningEffort: ThinkingLevel? = nil,
         reasoningSummary: OpenAICodexReasoningSummary? = nil,
         textVerbosity: OpenAICodexTextVerbosity? = nil,
         include: [String]? = nil,
+        cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
         transport: Transport? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         serviceTier: OpenAIServiceTier? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.reasoningEffort = reasoningEffort
         self.reasoningSummary = reasoningSummary
         self.textVerbosity = textVerbosity
         self.include = include
+        self.cacheRetention = cacheRetention
         self.sessionId = sessionId
         self.transport = transport
         self.headers = headers
@@ -1405,6 +1648,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
         self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
     }
 }
@@ -1434,31 +1678,36 @@ public struct GoogleOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
-    public var headers: [String: String]?
+    public var httpClient: (any ProviderHTTPClient)?
+    public var headers: ProviderHeaders?
     public var toolChoice: String?
     public var thinking: ThinkingConfig?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
 
     public init(
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
-        headers: [String: String]? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
+        headers: ProviderHeaders? = nil,
         toolChoice: String? = nil,
         thinking: ThinkingConfig? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.headers = headers
         self.toolChoice = toolChoice
         self.thinking = thinking
@@ -1466,6 +1715,7 @@ public struct GoogleOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
     }
 }
 
@@ -1475,7 +1725,7 @@ public struct GoogleGeminiCliOptions: Sendable {
     public var signal: CancellationToken?
     public var apiKey: String?
     public var maxRetryDelayMs: Int?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var toolChoice: String?
     public var thinking: GoogleOptions.ThinkingConfig?
     public var sessionId: String?
@@ -1491,7 +1741,7 @@ public struct GoogleGeminiCliOptions: Sendable {
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         maxRetryDelayMs: Int? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         toolChoice: String? = nil,
         thinking: GoogleOptions.ThinkingConfig? = nil,
         sessionId: String? = nil,
@@ -1523,7 +1773,8 @@ public struct GoogleVertexOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
-    public var headers: [String: String]?
+    public var httpClient: (any ProviderHTTPClient)?
+    public var headers: ProviderHeaders?
     public var toolChoice: String?
     public var thinking: GoogleOptions.ThinkingConfig?
     public var project: String?
@@ -1532,13 +1783,15 @@ public struct GoogleVertexOptions: Sendable {
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
 
     public init(
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
-        headers: [String: String]? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
+        headers: ProviderHeaders? = nil,
         toolChoice: String? = nil,
         thinking: GoogleOptions.ThinkingConfig? = nil,
         project: String? = nil,
@@ -1546,12 +1799,14 @@ public struct GoogleVertexOptions: Sendable {
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.headers = headers
         self.toolChoice = toolChoice
         self.thinking = thinking
@@ -1561,6 +1816,7 @@ public struct GoogleVertexOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
     }
 }
 
@@ -1576,6 +1832,7 @@ public struct AnthropicOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     public var thinkingEnabled: Bool?
     public var thinkingBudgetTokens: Int?
     /// Adaptive thinking effort level. When set on models that support adaptive
@@ -1586,7 +1843,7 @@ public struct AnthropicOptions: Sendable {
     public var interleavedThinking: Bool?
     public var toolChoice: AnthropicToolChoice?
     public var metadata: [String: AnyCodable]?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     /// v0.67.6: thinking display mode. `summarized` (default) returns thinking text;
     /// `omitted` skips thinking streaming for faster time-to-first-text-token.
@@ -1597,29 +1854,33 @@ public struct AnthropicOptions: Sendable {
     public var timeoutMs: Int?
     /// v0.70.1: SDK max retries.
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
 
     public init(
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         thinkingEnabled: Bool? = nil,
         thinkingBudgetTokens: Int? = nil,
         effort: ThinkingLevel? = nil,
         interleavedThinking: Bool? = nil,
         toolChoice: AnthropicToolChoice? = nil,
         metadata: [String: AnyCodable]? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         thinkingDisplay: ThinkingDisplay? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.thinkingEnabled = thinkingEnabled
         self.thinkingBudgetTokens = thinkingBudgetTokens
         self.effort = effort
@@ -1632,6 +1893,7 @@ public struct AnthropicOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
     }
 }
 
@@ -1653,7 +1915,7 @@ public struct BedrockOptions: Sendable {
     public var thinkingBudgets: ThinkingBudgets?
     public var interleavedThinking: Bool?
     public var cacheRetention: CacheRetention?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     /// v0.62.0: AWS Cost Explorer split cost allocation tags forwarded as Converse `requestMetadata`.
     public var requestMetadata: [String: String]?
@@ -1681,7 +1943,7 @@ public struct BedrockOptions: Sendable {
         thinkingBudgets: ThinkingBudgets? = nil,
         interleavedThinking: Bool? = nil,
         cacheRetention: CacheRetention? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         requestMetadata: [String: String]? = nil,
         bearerToken: String? = nil,
@@ -1716,6 +1978,7 @@ public struct MistralOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
+    public var httpClient: (any ProviderHTTPClient)?
     /// "auto" | "none" | "any" | "required" | { type: function, name: ... }
     public var toolChoice: AnyCodable?
     /// "reasoning" for Magistral models that use prompt-mode reasoning.
@@ -1723,31 +1986,35 @@ public struct MistralOptions: Sendable {
     /// "high" | "none" for mistral-small-2603 / mistral-small-latest.
     public var reasoningEffort: String?
     public var sessionId: String?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
 
     public init(
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
         toolChoice: AnyCodable? = nil,
         promptMode: String? = nil,
         reasoningEffort: String? = nil,
         sessionId: String? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        maxRetryDelayMs: Int? = nil
     ) {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
+        self.httpClient = httpClient
         self.toolChoice = toolChoice
         self.promptMode = promptMode
         self.reasoningEffort = reasoningEffort
@@ -1757,19 +2024,57 @@ public struct MistralOptions: Sendable {
         self.onResponse = onResponse
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
     }
 }
 
 public final class CancellationToken: Sendable {
-    private let state = LockedState(false)
+    private struct State: Sendable {
+        var isCancelled = false
+        var handlers: [UUID: @Sendable () -> Void] = [:]
+    }
+
+    private let state = LockedState(State())
 
     public init() {}
 
     public func cancel() {
-        state.withLock { $0 = true }
+        let handlers = state.withLock { state -> [@Sendable () -> Void] in
+            guard !state.isCancelled else { return [] }
+            state.isCancelled = true
+            let handlers = Array(state.handlers.values)
+            state.handlers.removeAll()
+            return handlers
+        }
+        for handler in handlers {
+            handler()
+        }
     }
 
     public var isCancelled: Bool {
-        state.withLock { $0 }
+        state.withLock { $0.isCancelled }
+    }
+
+    func addCancellationHandler(_ handler: @escaping @Sendable () -> Void) -> UUID? {
+        var invokeImmediately = false
+        let id = state.withLock { state -> UUID? in
+            guard !state.isCancelled else {
+                invokeImmediately = true
+                return nil
+            }
+            let id = UUID()
+            state.handlers[id] = handler
+            return id
+        }
+        if invokeImmediately {
+            handler()
+        }
+        return id
+    }
+
+    func removeCancellationHandler(_ id: UUID) {
+        state.withLock { state in
+            state.handlers.removeValue(forKey: id)
+        }
     }
 }

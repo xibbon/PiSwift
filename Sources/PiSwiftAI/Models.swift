@@ -1,5 +1,10 @@
 import Foundation
 
+/// Generation timestamp for the bundled model catalog, in Unix milliseconds.
+public func getBuiltinModelDataGeneratedAt() -> Double? {
+    builtinModelDataGeneratedAt.map { $0 * 1_000 }
+}
+
 public func getModel(provider: KnownProvider, modelId: String) -> Model {
     guard let model = ModelsData[provider.rawValue]?[modelId] else {
         // API precondition for known-provider convenience lookup. Use the
@@ -22,6 +27,15 @@ public func getModels(provider: KnownProvider) -> [Model] {
         return []
     }
     return Array(values)
+}
+
+public func getModels(provider: KnownProvider, credentials: OAuthCredentials?) -> [Model] {
+    let models = getModels(provider: provider)
+    guard provider == .githubCopilot, let availableModelIds = credentials?.availableModelIds else {
+        return models
+    }
+    let available = Set(availableModelIds)
+    return models.filter { available.contains($0.id) }
 }
 
 @discardableResult

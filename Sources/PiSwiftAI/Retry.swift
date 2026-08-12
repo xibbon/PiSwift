@@ -44,6 +44,9 @@ private let retryableProviderErrorPatterns = [
     "connection.?lost",
     "other side closed",
     "fetch failed",
+    "getaddrinfo",
+    "ENOTFOUND",
+    "EAI_AGAIN",
     "upstream.?connect",
     "reset before headers",
     "socket hang up",
@@ -62,6 +65,7 @@ private let retryableProviderErrorPatterns = [
     // Premature stream endings from SDKs and transports.
     "ended without",
     "stream ended before message_stop",
+    "stream ended before a terminal response event",
     "http2 request did not get a response",
     "http/2 request did not get a response",
 
@@ -79,6 +83,9 @@ private let retryableProviderErrorPatterns = [
 ]
 
 private let retryableTransportErrorPatterns = [
+    "getaddrinfo",
+    "enotfound",
+    "eai_again",
     "http2 request did not get a response",
     "http/2 request did not get a response",
     "resourceexhausted",
@@ -92,6 +99,7 @@ private let retryableTransportErrorPatterns = [
     "you can retry your request",
     "try your request again",
     "please retry your request",
+    "stream ended before a terminal response event",
 ]
 
 private let retryableURLErrorCodes: Set<Int> = [
@@ -102,6 +110,47 @@ private let retryableURLErrorCodes: Set<Int> = [
     URLError.dnsLookupFailed.rawValue,
     URLError.notConnectedToInternet.rawValue,
 ]
+
+/// Bounded retry policy for assistant-producing calls.
+public struct RetryPolicy: Sendable {
+    public var enabled: Bool
+    /// Maximum retry count. The initial call does not count as a retry.
+    public var maxRetries: Int
+    /// Base delay in milliseconds. Each retry doubles this value.
+    public var baseDelayMs: Double
+
+    public init(enabled: Bool, maxRetries: Int, baseDelayMs: Double) {
+        self.enabled = enabled
+        self.maxRetries = maxRetries
+        self.baseDelayMs = baseDelayMs
+    }
+}
+
+/// Lifecycle callbacks for `retryAssistantCall`.
+public struct RetryCallbacks: Sendable {
+    public var onRetryScheduled: (@Sendable (
+        _ attempt: Int,
+        _ maxAttempts: Int,
+        _ delayMs: Double,
+        _ errorMessage: String
+    ) async -> Void)?
+    public var onRetryAttemptStart: (@Sendable () async -> Void)?
+    public var onRetryFinished: (@Sendable (
+        _ success: Bool,
+        _ attempt: Int,
+        _ finalError: String?
+    ) async -> Void)?
+
+    public init(
+        onRetryScheduled: (@Sendable (Int, Int, Double, String) async -> Void)? = nil,
+        onRetryAttemptStart: (@Sendable () async -> Void)? = nil,
+        onRetryFinished: (@Sendable (Bool, Int, String?) async -> Void)? = nil
+    ) {
+        self.onRetryScheduled = onRetryScheduled
+        self.onRetryAttemptStart = onRetryAttemptStart
+        self.onRetryFinished = onRetryFinished
+    }
+}
 
 /// Classifies whether a failed assistant message looks like a transient provider
 /// or transport error. Callers remain responsible for context-overflow handling,

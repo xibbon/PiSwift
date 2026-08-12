@@ -82,7 +82,7 @@ private func extensionSurfaceSession(
 }
 
 @Test func beforeProviderHeadersMergesHandlerResultIntoOutgoingOptions() async throws {
-    let capturedHeaders = LockedState<[String: String]?>(nil)
+    let capturedHeaders = LockedState<ProviderHeaders?>(nil)
     let baseModel = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let model = Model(
         id: baseModel.id,

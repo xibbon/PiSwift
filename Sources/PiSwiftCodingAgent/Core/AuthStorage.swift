@@ -20,6 +20,7 @@ public struct OAuthCredential: Sendable {
     public var projectId: String?
     public var email: String?
     public var accountId: String?
+    public var availableModelIds: [String]?
 
     public init(
         access: String,
@@ -28,7 +29,8 @@ public struct OAuthCredential: Sendable {
         enterpriseUrl: String? = nil,
         projectId: String? = nil,
         email: String? = nil,
-        accountId: String? = nil
+        accountId: String? = nil,
+        availableModelIds: [String]? = nil
     ) {
         self.access = access
         self.refresh = refresh
@@ -37,6 +39,7 @@ public struct OAuthCredential: Sendable {
         self.projectId = projectId
         self.email = email
         self.accountId = accountId
+        self.availableModelIds = availableModelIds
     }
 }
 
@@ -63,6 +66,36 @@ private func cancellableAuthStorageSleep(_ milliseconds: Int, signal: Cancellati
 }
 
 private let oauthRefreshTimeoutMs = 15_000
+
+private struct AuthFileReadSnapshot: Sendable {
+    var data: [String: AuthCredential]
+    var revision: String
+}
+
+private let sharedAuthFileReadSnapshots = LockedState<[String: AuthFileReadSnapshot]>([:])
+
+private func authFileRevision(_ path: String) -> String? {
+    var info = stat()
+    let status = path.withCString { Darwin.lstat($0, &info) }
+    guard status == 0 else { return nil }
+    return "\(info.st_dev):\(info.st_ino):\(info.st_size):" +
+        "\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):" +
+        "\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
+}
+
+private enum AuthStorageDataError: Error, LocalizedError, Sendable {
+    case invalidFormat
+    case encodingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidFormat:
+            return "Invalid auth storage format"
+        case .encodingFailed:
+            return "Unable to encode auth storage"
+        }
+    }
+}
 
 private func boundedOAuthRefreshSignal(parent: CancellationToken?) -> (CancellationToken, Task<Void, Never>) {
     let signal = CancellationToken()
@@ -154,6 +187,7 @@ public extension AuthStorageBackend {
 public final class FileAuthStorageBackend: AuthStorageBackend {
     private let authPath: String
     private let lockOptionsOverride = LockedState<AuthLockOptions?>(nil)
+    private let asyncTransactionGate = AsyncTransactionGate()
 
     public init(_ authPath: String = getAuthPath()) {
         self.authPath = authPath
@@ -183,15 +217,23 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
         signal: CancellationToken?,
         _ body: @escaping @Sendable (String?) async throws -> AuthStorageLockResult<Result>
     ) async throws -> Result {
-        try await withFileLock(signal: signal) {
-            let current = try String(contentsOfFile: self.authPath, encoding: .utf8)
-            let transaction = try await body(current)
-            if signal?.isCancelled == true { throw OAuthError.cancelled }
-            if let next = transaction.next {
-                try self.write(next)
+        try await asyncTransactionGate.acquire(signal: signal)
+        do {
+            let result = try await withFileLock(signal: signal) {
+                let current = try String(contentsOfFile: self.authPath, encoding: .utf8)
+                let transaction = try await body(current)
+                if signal?.isCancelled == true { throw OAuthError.cancelled }
+                if let next = transaction.next {
+                    try self.write(next)
+                }
+                transaction.onCommit()
+                return transaction.result
             }
-            transaction.onCommit()
-            return transaction.result
+            await asyncTransactionGate.release()
+            return result
+        } catch {
+            await asyncTransactionGate.release()
+            throw error
         }
     }
 
@@ -317,15 +359,17 @@ private actor AsyncTransactionGate {
 
 /// Coordinates synchronous and asynchronous in-memory transactions without
 /// holding a thread mutex across an `await`.
-private final class InMemoryTransactionState: @unchecked Sendable {
-    // `condition` protects both transaction flags; `value` has its own mutex.
+private final class InMemoryTransactionState: Sendable {
+    private struct TransactionFlags: Sendable {
+        var synchronousTransactionInProgress = false
+        var asynchronousTransactionInProgress = false
+    }
+
     // The flags ensure no transaction can observe or update `value` while an
     // asynchronous transaction is suspended in its closure.
     private let value: LockedState<String?>
     private let asyncGate = AsyncTransactionGate()
-    private let condition = NSCondition()
-    private var synchronousTransactionInProgress = false
-    private var asynchronousTransactionInProgress = false
+    private let flags = LockedState(TransactionFlags())
 
     init(_ initialValue: String?) {
         value = LockedState(initialValue)
@@ -378,19 +422,20 @@ private final class InMemoryTransactionState: @unchecked Sendable {
     }
 
     private func beginSynchronousTransaction() {
-        condition.lock()
-        while synchronousTransactionInProgress || asynchronousTransactionInProgress {
-            condition.wait()
+        while true {
+            let acquired = flags.withLock { flags in
+                guard !flags.synchronousTransactionInProgress,
+                      !flags.asynchronousTransactionInProgress else { return false }
+                flags.synchronousTransactionInProgress = true
+                return true
+            }
+            if acquired { return }
+            usleep(1_000)
         }
-        synchronousTransactionInProgress = true
-        condition.unlock()
     }
 
     private func endSynchronousTransaction() {
-        condition.lock()
-        synchronousTransactionInProgress = false
-        condition.broadcast()
-        condition.unlock()
+        flags.withLock { $0.synchronousTransactionInProgress = false }
     }
 
     private func beginAsynchronousTransaction(signal: CancellationToken?) async throws {
@@ -401,20 +446,16 @@ private final class InMemoryTransactionState: @unchecked Sendable {
     }
 
     private func tryBeginAsynchronousTransaction() -> Bool {
-        condition.lock()
-        defer { condition.unlock() }
-        guard !synchronousTransactionInProgress && !asynchronousTransactionInProgress else {
-            return false
+        flags.withLock { flags in
+            guard !flags.synchronousTransactionInProgress,
+                  !flags.asynchronousTransactionInProgress else { return false }
+            flags.asynchronousTransactionInProgress = true
+            return true
         }
-        asynchronousTransactionInProgress = true
-        return true
     }
 
     private func endAsynchronousTransaction() {
-        condition.lock()
-        asynchronousTransactionInProgress = false
-        condition.broadcast()
-        condition.unlock()
+        flags.withLock { $0.asynchronousTransactionInProgress = false }
     }
 }
 
@@ -449,6 +490,7 @@ public final class InMemoryAuthStorageBackend: AuthStorageBackend {
 public final class AuthStorage: Sendable {
     private struct State: Sendable {
         var data: [String: AuthCredential] = [:]
+        var fileRevision: String?
         var runtimeOverrides: [String: String] = [:]
         var fallbackResolver: (@Sendable (String) -> String?)?
         var oauthOverrides: OAuthOverrides?
@@ -458,12 +500,25 @@ public final class AuthStorage: Sendable {
 
     private let state = LockedState(State())
     private let storage: any AuthStorageBackend
+    private let authPath: String?
 
     public init(_ authPath: String) {
         if authPath == ":memory:" {
             storage = InMemoryAuthStorageBackend()
+            self.authPath = nil
         } else {
-            storage = FileAuthStorageBackend(authPath)
+            let normalizedPath = URL(fileURLWithPath: authPath).standardized.path
+            storage = FileAuthStorageBackend(normalizedPath)
+            self.authPath = normalizedPath
+            if let revision = authFileRevision(normalizedPath),
+               let snapshot = sharedAuthFileReadSnapshots.withLock({ $0[normalizedPath] }),
+               snapshot.revision == revision {
+                state.withLock {
+                    $0.data = snapshot.data
+                    $0.fileRevision = snapshot.revision
+                }
+                return
+            }
         }
         reload()
     }
@@ -471,11 +526,12 @@ public final class AuthStorage: Sendable {
     /// Creates auth storage backed by a caller-provided persistence implementation.
     public init(storage: any AuthStorageBackend) {
         self.storage = storage
+        self.authPath = nil
         reload()
     }
 
     public static func create(_ authPath: String? = nil) -> AuthStorage {
-        AuthStorage(storage: FileAuthStorageBackend(authPath ?? getAuthPath()))
+        AuthStorage(authPath ?? getAuthPath())
     }
 
     /// Creates auth storage backed by a caller-provided persistence implementation.
@@ -613,15 +669,17 @@ public final class AuthStorage: Sendable {
         signal: CancellationToken? = nil
     ) async -> String? {
         if signal?.isCancelled == true { return nil }
-        let snapshot = state.withLock { state in
-            let runtime = state.runtimeOverrides[provider]
-            let credential = state.data[provider]
-            return (runtime: runtime, credential: credential, fallback: state.fallbackResolver)
-        }
-
-        if let runtime = snapshot.runtime {
+        let runtime = state.withLock { $0.runtimeOverrides[provider] }
+        if let runtime {
             return runtime
         }
+
+        await reloadLatestData(signal: signal)
+        let snapshot = state.withLock { state in
+            let credential = state.data[provider]
+            return (credential: credential, fallback: state.fallbackResolver)
+        }
+
         if let credential = snapshot.credential {
             switch credential {
             case .apiKey(let apiKey):
@@ -678,6 +736,24 @@ public final class AuthStorage: Sendable {
         return snapshot.fallback?(provider)
     }
 
+    private func reloadLatestData(signal: CancellationToken?) async {
+        guard let authPath else { return }
+        if let revision = authFileRevision(authPath),
+           state.withLock({ $0.fileRevision }) == revision {
+            return
+        }
+
+        do {
+            try await storage.withLockAsync(signal: signal) { current in
+                let loaded = try self.parseAuthData(current)
+                return AuthStorageLockResult(result: (), onCommit: self.cacheCommit(loaded))
+            }
+        } catch {
+            // Preserve the last valid snapshot. Request-time reads must not make a
+            // transient lock or parse failure erase usable credentials.
+        }
+    }
+
     private func persistProviderChange(provider: String, credential: AuthCredential?) {
         let blockedByLoadError = state.withLock { $0.loadError != nil }
         if blockedByLoadError {
@@ -709,7 +785,7 @@ public final class AuthStorage: Sendable {
         guard let content, !content.isEmpty else { return [:] }
         let raw = try JSONSerialization.jsonObject(with: Data(content.utf8))
         guard let json = raw as? [String: Any] else {
-            throw NSError(domain: "AuthStorage", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid auth storage format"])
+            throw AuthStorageDataError.invalidFormat
         }
 
         var loaded: [String: AuthCredential] = [:]
@@ -727,6 +803,7 @@ public final class AuthStorage: Sendable {
                 let projectId = dict["projectId"] as? String
                 let email = dict["email"] as? String
                 let accountId = dict["accountId"] as? String
+                let availableModelIds = dict["availableModelIds"] as? [String]
                 loaded[provider] = .oauth(OAuthCredential(
                     access: access,
                     refresh: refresh,
@@ -734,7 +811,8 @@ public final class AuthStorage: Sendable {
                     enterpriseUrl: enterpriseUrl,
                     projectId: projectId,
                     email: email,
-                    accountId: accountId
+                    accountId: accountId,
+                    availableModelIds: availableModelIds
                 ))
             }
         }
@@ -755,21 +833,29 @@ public final class AuthStorage: Sendable {
                 if let projectId = oauth.projectId { entry["projectId"] = projectId }
                 if let email = oauth.email { entry["email"] = email }
                 if let accountId = oauth.accountId { entry["accountId"] = accountId }
+                if let availableModelIds = oauth.availableModelIds { entry["availableModelIds"] = availableModelIds }
                 json[provider] = entry
             }
         }
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted])
         guard let content = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: "AuthStorage", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unable to encode auth storage"])
+            throw AuthStorageDataError.encodingFailed
         }
         return content
     }
 
     private func cacheCommit(_ data: [String: AuthCredential]) -> @Sendable () -> Void {
         { [self] in
+            let revision = authPath.flatMap(authFileRevision)
             state.withLock { state in
                 state.data = data
+                state.fileRevision = revision
                 state.loadError = nil
+            }
+            if let authPath, let revision {
+                sharedAuthFileReadSnapshots.withLock {
+                    $0[authPath] = AuthFileReadSnapshot(data: data, revision: revision)
+                }
             }
         }
     }
@@ -810,7 +896,8 @@ public final class AuthStorage: Sendable {
                         enterpriseUrl: oauth.enterpriseUrl,
                         projectId: oauth.projectId,
                         email: oauth.email,
-                        accountId: oauth.accountId
+                        accountId: oauth.accountId,
+                        availableModelIds: oauth.availableModelIds
                     ))
                 ), onCommit: self.cacheCommit(currentData))
             }
@@ -864,7 +951,8 @@ public final class AuthStorage: Sendable {
                 enterpriseUrl: oauth.enterpriseUrl,
                 projectId: oauth.projectId,
                 email: oauth.email,
-                accountId: oauth.accountId
+                accountId: oauth.accountId,
+                availableModelIds: oauth.availableModelIds
             )
         }
         return creds
@@ -911,7 +999,8 @@ private extension OAuthCredential {
             enterpriseUrl: credentials.enterpriseUrl,
             projectId: credentials.projectId,
             email: credentials.email,
-            accountId: credentials.accountId
+            accountId: credentials.accountId,
+            availableModelIds: credentials.availableModelIds
         )
     }
 
@@ -925,7 +1014,8 @@ private extension OAuthCredential {
             enterpriseUrl: enterpriseUrl,
             projectId: projectId,
             email: email,
-            accountId: accountId
+            accountId: accountId,
+            availableModelIds: availableModelIds
         )
     }
 }

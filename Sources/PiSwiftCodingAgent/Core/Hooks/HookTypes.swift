@@ -201,6 +201,27 @@ public struct HookMessageRenderOptions: Sendable {
 
 public typealias HookMessageRenderer = @Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent?
 
+public enum MarkdownMessageType: String, Sendable {
+    case user
+    case assistant
+    case assistantThinking = "assistant-thinking"
+}
+
+public struct MarkdownTransformContext: Sendable {
+    public var messageType: MarkdownMessageType
+    public var isStreaming: Bool
+    public var availableWidth: Int
+
+    public init(messageType: MarkdownMessageType, isStreaming: Bool, availableWidth: Int) {
+        self.messageType = messageType
+        self.isStreaming = isStreaming
+        self.availableWidth = availableWidth
+    }
+}
+
+/// Display-only transform for user and assistant Markdown.
+public typealias MarkdownTransformer = @Sendable (String, MarkdownTransformContext) -> String
+
 /// Rendering options for persisted display-only custom entries.
 public struct EntryRenderOptions: Sendable {
     public var expanded: Bool
@@ -331,7 +352,8 @@ public struct HookProviderModel: Sendable {
     public var cost: ModelCost
     public var contextWindow: Int
     public var maxTokens: Int
-    public var headers: [String: String]?
+    public var samplingParams: [String: AnyCodable]?
+    public var headers: ProviderHeaders?
     public var compat: OpenAICompat?
     public var thinkingLevelMap: ThinkingLevelMap?
 
@@ -345,7 +367,8 @@ public struct HookProviderModel: Sendable {
         cost: ModelCost = ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: Int = 128_000,
         maxTokens: Int = 16_384,
-        headers: [String: String]? = nil,
+        samplingParams: [String: AnyCodable]? = nil,
+        headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         thinkingLevelMap: ThinkingLevelMap? = nil
     ) {
@@ -358,6 +381,7 @@ public struct HookProviderModel: Sendable {
         self.cost = cost
         self.contextWindow = contextWindow
         self.maxTokens = maxTokens
+        self.samplingParams = samplingParams
         self.headers = headers
         self.compat = compat
         self.thinkingLevelMap = thinkingLevelMap
@@ -369,7 +393,7 @@ public struct HookProviderConfig: Sendable {
     public var api: Api
     public var baseUrl: String
     public var apiKey: String?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var compat: OpenAICompat?
     public var models: [HookProviderModel]
 
@@ -378,7 +402,7 @@ public struct HookProviderConfig: Sendable {
         api: Api,
         baseUrl: String,
         apiKey: String? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         models: [HookProviderModel]
     ) {
@@ -614,6 +638,7 @@ public struct HookContext: Sendable {
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
     private var getModelHandler: @Sendable () -> Model?
+    private var getScopedModelsHandler: @Sendable () -> [ScopedModel]
     private var getSystemPromptHandler: @Sendable () -> String?
     private var isProjectTrustedHandler: @Sendable () -> Bool
     private var getSystemPromptOptionsHandler: @Sendable () -> BuildSystemPromptOptions
@@ -631,6 +656,7 @@ public struct HookContext: Sendable {
         sessionManager: SessionManager,
         modelRegistry: ModelRegistry,
         model: @escaping @Sendable () -> Model?,
+        scopedModels: @escaping @Sendable () -> [ScopedModel] = { [] },
         systemPrompt: @escaping @Sendable () -> String?,
         isProjectTrusted: @escaping @Sendable () -> Bool = { true },
         systemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
@@ -647,6 +673,7 @@ public struct HookContext: Sendable {
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
         self.getModelHandler = model
+        self.getScopedModelsHandler = scopedModels
         self.getSystemPromptHandler = systemPrompt
         self.isProjectTrustedHandler = isProjectTrusted
         self.getSystemPromptOptionsHandler = systemPromptOptions ?? { BuildSystemPromptOptions(cwd: cwd) }
@@ -676,6 +703,10 @@ public struct HookContext: Sendable {
         getModelHandler()
     }
 
+    public var scopedModels: [ScopedModel] {
+        getScopedModelsHandler()
+    }
+
     public func getSystemPrompt() -> String? {
         getSystemPromptHandler()
     }
@@ -697,6 +728,7 @@ public struct HookCommandContext: Sendable {
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
     private var getModelHandler: @Sendable () -> Model?
+    private var getScopedModelsHandler: @Sendable () -> [ScopedModel]
     private var getSystemPromptHandler: @Sendable () -> String?
     private var isProjectTrustedHandler: @Sendable () -> Bool
     private var getSystemPromptOptionsHandler: @Sendable () -> BuildSystemPromptOptions
@@ -726,6 +758,7 @@ public struct HookCommandContext: Sendable {
         sessionManager: SessionManager,
         modelRegistry: ModelRegistry,
         model: @escaping @Sendable () -> Model?,
+        scopedModels: @escaping @Sendable () -> [ScopedModel] = { [] },
         systemPrompt: @escaping @Sendable () -> String?,
         isProjectTrusted: @escaping @Sendable () -> Bool = { true },
         systemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
@@ -754,6 +787,7 @@ public struct HookCommandContext: Sendable {
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
         self.getModelHandler = model
+        self.getScopedModelsHandler = scopedModels
         self.getSystemPromptHandler = systemPrompt
         self.isProjectTrustedHandler = isProjectTrusted
         self.getSystemPromptOptionsHandler = systemPromptOptions ?? { BuildSystemPromptOptions(cwd: cwd) }
@@ -778,6 +812,10 @@ public struct HookCommandContext: Sendable {
 
     public var model: Model? {
         getModelHandler()
+    }
+
+    public var scopedModels: [ScopedModel] {
+        getScopedModelsHandler()
     }
 
     public func getSystemPrompt() -> String? {
@@ -1201,17 +1239,17 @@ public struct BeforeProviderRequestEvent: HookEvent, Sendable {
 /// in handler order, with later values overriding earlier values.
 public struct BeforeProviderHeadersEvent: HookEvent, Sendable {
     public let type: String = "before_provider_headers"
-    public var headers: [String: String]
+    public var headers: ProviderHeaders
 
-    public init(headers: [String: String]) {
+    public init(headers: ProviderHeaders) {
         self.headers = headers
     }
 }
 
 public struct BeforeProviderHeadersEventResult: Sendable {
-    public var headers: [String: String]
+    public var headers: ProviderHeaders
 
-    public init(headers: [String: String]) {
+    public init(headers: ProviderHeaders) {
         self.headers = headers
     }
 }
@@ -1246,10 +1284,12 @@ public struct ToolCallEvent: HookEvent, Sendable {
 public struct ToolCallEventResult: Sendable {
     public var block: Bool
     public var reason: String?
+    public var terminate: Bool?
 
-    public init(block: Bool = false, reason: String? = nil) {
+    public init(block: Bool = false, reason: String? = nil, terminate: Bool? = nil) {
         self.block = block
         self.reason = reason
+        self.terminate = terminate
     }
 }
 
@@ -1378,6 +1418,7 @@ public struct LoadedHook: Sendable {
     public var resolvedPath: String
     public var handlers: [String: [HookHandler]]
     public var messageRenderers: [String: HookMessageRenderer]
+    public var markdownTransformers: [MarkdownTransformer]
     public var entryRenderers: [String: EntryRenderer]
     public var commands: [String: RegisteredCommand]
     /// Returns the extension's current commands. This keeps commands registered
@@ -1410,6 +1451,8 @@ public struct LoadedHook: Sendable {
     public var setRegisterToolHandler: HookRegisterToolSetter
     public var setUnregisterToolHandler: HookUnregisterToolSetter
     public var setFlagValue: HookSetFlagValue
+    /// Removes event-bus listeners registered by this hook.
+    public var dispose: @Sendable () -> Void
     /// True when this hook was loaded from a `.swift`/SPM extension (vs a settings-defined hook).
     /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
     public var isExtension: Bool
@@ -1419,6 +1462,7 @@ public struct LoadedHook: Sendable {
         resolvedPath: String,
         handlers: [String: [HookHandler]],
         messageRenderers: [String: HookMessageRenderer] = [:],
+        markdownTransformers: [MarkdownTransformer] = [],
         entryRenderers: [String: EntryRenderer] = [:],
         commands: [String: RegisteredCommand] = [:],
         currentCommands: (@Sendable () -> [String: RegisteredCommand])? = nil,
@@ -1445,12 +1489,14 @@ public struct LoadedHook: Sendable {
         setRegisterToolHandler: @escaping HookRegisterToolSetter = { _ in },
         setUnregisterToolHandler: @escaping HookUnregisterToolSetter = { _ in },
         setFlagValue: @escaping HookSetFlagValue = { _, _ in },
+        dispose: @escaping @Sendable () -> Void = {},
         isExtension: Bool = false
     ) {
         self.path = path
         self.resolvedPath = resolvedPath
         self.handlers = handlers
         self.messageRenderers = messageRenderers
+        self.markdownTransformers = markdownTransformers
         self.entryRenderers = entryRenderers
         self.commands = commands
         self.currentCommands = currentCommands ?? { commands }
@@ -1477,6 +1523,7 @@ public struct LoadedHook: Sendable {
         self.setRegisterToolHandler = setRegisterToolHandler
         self.setUnregisterToolHandler = setUnregisterToolHandler
         self.setFlagValue = setFlagValue
+        self.dispose = dispose
         self.isExtension = isExtension
     }
 }
@@ -1499,11 +1546,13 @@ public struct TreePreparation: Sendable {
 
 public final class HookAPI: Sendable {
     public let events: EventBus
+    private let trackedEventBus: TrackedEventBus
     private let state: LockedState<State>
 
     private struct State: Sendable {
         var handlers: [String: [HookHandler]]
         var messageRenderers: [String: HookMessageRenderer]
+        var markdownTransformers: [MarkdownTransformer]
         var entryRenderers: [String: EntryRenderer]
         var commands: [String: RegisteredCommand]
         var flags: [String: HookFlag]
@@ -1542,6 +1591,11 @@ public final class HookAPI: Sendable {
     public private(set) var messageRenderers: [String: HookMessageRenderer] {
         get { state.withLock { $0.messageRenderers } }
         set { state.withLock { $0.messageRenderers = newValue } }
+    }
+
+    public private(set) var markdownTransformers: [MarkdownTransformer] {
+        get { state.withLock { $0.markdownTransformers } }
+        set { state.withLock { $0.markdownTransformers = newValue } }
     }
 
     public private(set) var entryRenderers: [String: EntryRenderer] {
@@ -1675,11 +1729,14 @@ public final class HookAPI: Sendable {
     }
 
     public init(events: EventBus = createEventBus(), hookPath: String? = nil) {
-        self.events = events
+        let trackedEventBus = TrackedEventBus(events)
+        self.trackedEventBus = trackedEventBus
+        self.events = trackedEventBus
         let resolvedHookPath = hookPath ?? "<hook>"
         self.state = LockedState(State(
             handlers: [:],
             messageRenderers: [:],
+            markdownTransformers: [],
             entryRenderers: [:],
             commands: [:],
             flags: [:],
@@ -1707,6 +1764,10 @@ public final class HookAPI: Sendable {
             execCwd: nil,
             hookPath: resolvedHookPath
         ))
+    }
+
+    func disposeEventBusListeners() {
+        trackedEventBus.dispose()
     }
 
     public func setExecCwd(_ cwd: String) {
@@ -1882,6 +1943,11 @@ public final class HookAPI: Sendable {
 
     public func registerMessageRenderer(_ customType: String, _ renderer: @escaping HookMessageRenderer) {
         messageRenderers[customType] = renderer
+    }
+
+    /// Register a display-only Markdown transformer. Transformers run in registration order.
+    public func registerMarkdownTransformer(_ transformer: @escaping MarkdownTransformer) {
+        markdownTransformers.append(transformer)
     }
 
     /// Register a renderer for a persisted display-only custom entry.

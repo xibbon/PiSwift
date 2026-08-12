@@ -75,6 +75,12 @@ public func isContextOverflow(_ message: AssistantMessage, contextWindow: Int? =
     return false
 }
 
+/// Returns true when a length stop ended below the output limit that the caller requested.
+/// Callers can use this hook for one bounded recovery attempt.
+public func isRecoverableLength(_ message: AssistantMessage, desiredMaxOutput: Int) -> Bool {
+    message.stopReason == .length && desiredMaxOutput > 0 && message.usage.output < desiredMaxOutput
+}
+
 public func getOverflowPatterns() -> [NSRegularExpression] {
     overflowPatterns
 }

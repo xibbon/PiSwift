@@ -33,7 +33,7 @@ public struct AgentOptions: Sendable {
     /// v0.68.0: prompt cache retention preference forwarded into provider stream options.
     public var cacheRetention: CacheRetention?
     /// HTTP headers forwarded into provider stream options.
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     /// Provider request metadata forwarded into provider stream options.
     public var metadata: [String: AnyCodable]?
     /// v0.70.1: provider SDK request timeout (ms).
@@ -45,6 +45,7 @@ public struct AgentOptions: Sendable {
     public var toolExecution: ToolExecutionMode?
     public var beforeToolCall: BeforeToolCallFn?
     public var afterToolCall: AfterToolCallFn?
+    public var shouldStopAfterTurn: AgentShouldStopAfterTurnFn?
 
     public init(
         initialState: AgentState? = nil,
@@ -62,14 +63,15 @@ public struct AgentOptions: Sendable {
         onPayload: OnPayloadFn? = nil,
         onResponse: ResponseHandler? = nil,
         cacheRetention: CacheRetention? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         metadata: [String: AnyCodable]? = nil,
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
-        afterToolCall: AfterToolCallFn? = nil
+        afterToolCall: AfterToolCallFn? = nil,
+        shouldStopAfterTurn: AgentShouldStopAfterTurnFn? = nil
     ) {
         self.initialState = initialState
         self.convertToLlm = convertToLlm
@@ -94,6 +96,7 @@ public struct AgentOptions: Sendable {
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall
+        self.shouldStopAfterTurn = shouldStopAfterTurn
     }
 }
 
@@ -118,7 +121,7 @@ public final class Agent: Sendable {
         var onPayload: OnPayloadFn?
         var onResponse: ResponseHandler?
         var cacheRetention: CacheRetention?
-        var headers: [String: String]?
+        var headers: ProviderHeaders?
         var metadata: [String: AnyCodable]?
         var timeoutMs: Int?
         var websocketConnectTimeoutMs: Int?
@@ -126,6 +129,7 @@ public final class Agent: Sendable {
         var toolExecution: ToolExecutionMode
         var beforeToolCall: BeforeToolCallFn?
         var afterToolCall: AfterToolCallFn?
+        var shouldStopAfterTurn: AgentShouldStopAfterTurnFn?
         var runningTask: Task<Void, Never>?
     }
 
@@ -235,7 +239,7 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.cacheRetention = newValue } }
     }
 
-    public var headers: [String: String]? {
+    public var headers: ProviderHeaders? {
         get { stateBox.withLock { $0.headers } }
         set { stateBox.withLock { $0.headers = newValue } }
     }
@@ -268,6 +272,11 @@ public final class Agent: Sendable {
     public var afterToolCall: AfterToolCallFn? {
         get { stateBox.withLock { $0.afterToolCall } }
         set { stateBox.withLock { $0.afterToolCall = newValue } }
+    }
+
+    public var shouldStopAfterTurn: AgentShouldStopAfterTurnFn? {
+        get { stateBox.withLock { $0.shouldStopAfterTurn } }
+        set { stateBox.withLock { $0.shouldStopAfterTurn = newValue } }
     }
 
     private var runningTask: Task<Void, Never>? {
@@ -311,6 +320,7 @@ public final class Agent: Sendable {
             toolExecution: options.toolExecution ?? .parallel,
             beforeToolCall: options.beforeToolCall,
             afterToolCall: options.afterToolCall,
+            shouldStopAfterTurn: options.shouldStopAfterTurn,
             runningTask: nil
         ))
     }
@@ -383,6 +393,21 @@ public final class Agent: Sendable {
         mutateState { state in
             if case .assistant(let assistant)? = state.messages.last,
                assistant.stopReason == .error {
+                state.messages.removeLast()
+                removed = true
+            }
+        }
+        return removed
+    }
+
+    /// Atomically drops a trailing assistant response that can be retried after
+    /// compaction: an error or a response truncated with stop reason `.length`.
+    @discardableResult
+    public func dropTrailingRecoverableAssistant() -> Bool {
+        var removed = false
+        mutateState { state in
+            if case .assistant(let assistant)? = state.messages.last,
+               assistant.stopReason == .error || assistant.stopReason == .length {
                 state.messages.removeLast()
                 removed = true
             }
@@ -470,16 +495,20 @@ public final class Agent: Sendable {
         }
     }
 
-    public func reset() {
-        mutateState {
-            $0.messages.removeAll()
-            $0._setStreaming(false)
-            $0._setStreamingMessage(nil)
-            $0._setPendingToolCalls([])
-            $0._setErrorMessage(nil)
+    /// Clears transcript, runtime state, and queued messages while the agent is idle.
+    public func reset() throws {
+        try stateBox.withLock { state in
+            guard state.runningTask == nil, !state.agentState.isStreaming else {
+                throw AgentError.alreadyStreamingReset
+            }
+            state.agentState.messages.removeAll()
+            state.agentState._setStreaming(false)
+            state.agentState._setStreamingMessage(nil)
+            state.agentState._setPendingToolCalls([])
+            state.agentState._setErrorMessage(nil)
+            state.steeringQueue.removeAll()
+            state.followUpQueue.removeAll()
         }
-        steeringQueue.removeAll()
-        followUpQueue.removeAll()
     }
 
     public func prompt(_ message: AgentMessage) async throws {
@@ -605,6 +634,14 @@ public final class Agent: Sendable {
         )
 
         let skipInitialSteeringPoll = LockedState(options?.skipInitialSteeringPoll == true)
+        let loopShouldStopAfterTurn: ShouldStopAfterTurnFn?
+        if let predicate = shouldStopAfterTurn {
+            loopShouldStopAfterTurn = { context in
+                await predicate(context, token)
+            }
+        } else {
+            loopShouldStopAfterTurn = nil
+        }
         let config = AgentLoopConfig(
             model: model,
             reasoning: reasoning,
@@ -644,7 +681,8 @@ public final class Agent: Sendable {
             getFollowUpMessages: { [weak self] in
                 guard let self else { return [] }
                 return self.dequeueFollowUpMessages()
-            }
+            },
+            shouldStopAfterTurn: loopShouldStopAfterTurn
         )
 
         if let messages {
@@ -708,6 +746,7 @@ public enum AgentError: Error, LocalizedError {
     case lastMessageAssistant
     case alreadyStreamingPrompt
     case alreadyStreamingContinue
+    case alreadyStreamingReset
 
     public var errorDescription: String? {
         switch self {
@@ -719,6 +758,8 @@ public enum AgentError: Error, LocalizedError {
             return "Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion."
         case .alreadyStreamingContinue:
             return "Agent is already processing. Wait for completion before continuing."
+        case .alreadyStreamingReset:
+            return "Agent is already processing. Wait for completion before resetting."
         }
     }
 }

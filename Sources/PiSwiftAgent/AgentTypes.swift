@@ -28,13 +28,16 @@ public typealias AgentToolCall = ToolCall
 ///
 /// Returning `BeforeToolCallResult(block: true)` prevents the tool from executing.
 /// The loop emits an error tool result instead. `reason` becomes the text shown in that error result.
+/// Set `terminate` to let the blocked result participate in batch early termination.
 public struct BeforeToolCallResult: Sendable {
     public var block: Bool?
     public var reason: String?
+    public var terminate: Bool?
 
-    public init(block: Bool? = nil, reason: String? = nil) {
+    public init(block: Bool? = nil, reason: String? = nil, terminate: Bool? = nil) {
         self.block = block
         self.reason = reason
+        self.terminate = terminate
     }
 }
 
@@ -44,6 +47,7 @@ public struct BeforeToolCallResult: Sendable {
 /// - `content`: if provided, replaces the tool result content array in full
 /// - `details`: if provided, replaces the tool result details value in full
 /// - `isError`: if provided, replaces the tool result error flag
+/// - `usage`: if provided, replaces the tool execution usage
 /// - `terminate`: if every finalized tool result in the current batch sets `terminate == true`,
 ///   the loop skips the automatic follow-up LLM turn after this batch (v0.69.0).
 ///
@@ -52,17 +56,20 @@ public struct AfterToolCallResult: Sendable {
     public var content: [ContentBlock]?
     public var details: AnyCodable?
     public var isError: Bool?
+    public var usage: Usage?
     public var terminate: Bool?
 
     public init(
         content: [ContentBlock]? = nil,
         details: AnyCodable? = nil,
         isError: Bool? = nil,
+        usage: Usage? = nil,
         terminate: Bool? = nil
     ) {
         self.content = content
         self.details = details
         self.isError = isError
+        self.usage = usage
         self.terminate = terminate
     }
 }
@@ -104,7 +111,29 @@ public struct AfterToolCallContext: Sendable {
 public typealias BeforeToolCallFn = @Sendable (BeforeToolCallContext, CancellationToken?) async -> BeforeToolCallResult?
 public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async throws -> AfterToolCallResult?
 public typealias OnPayloadFn = PayloadHandler
-public typealias ShouldStopAfterTurnFn = @Sendable () async -> Bool
+
+/// Context passed to `shouldStopAfterTurn` after a complete assistant turn.
+public struct ShouldStopAfterTurnContext: Sendable {
+    public var message: AssistantMessage
+    public var toolResults: [ToolResultMessage]
+    public var context: AgentContext
+    public var newMessages: [AgentMessage]
+
+    public init(
+        message: AssistantMessage,
+        toolResults: [ToolResultMessage],
+        context: AgentContext,
+        newMessages: [AgentMessage]
+    ) {
+        self.message = message
+        self.toolResults = toolResults
+        self.context = context
+        self.newMessages = newMessages
+    }
+}
+
+public typealias ShouldStopAfterTurnFn = @Sendable (ShouldStopAfterTurnContext) async -> Bool
+public typealias AgentShouldStopAfterTurnFn = @Sendable (ShouldStopAfterTurnContext, CancellationToken?) async -> Bool
 
 public enum ThinkingLevel: String, Sendable {
     case off
@@ -188,17 +217,21 @@ public enum AgentMessage: Sendable {
 public struct AgentToolResult: Sendable {
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    /// Usage from the tool execution itself. This is not LLM context usage.
+    public var usage: Usage?
     public var addedToolNames: [String]?
     public var terminate: Bool?
 
     public init(
         content: [ContentBlock],
         details: AnyCodable? = nil,
+        usage: Usage? = nil,
         addedToolNames: [String]? = nil,
         terminate: Bool? = nil
     ) {
         self.content = content
         self.details = details
+        self.usage = usage
         self.addedToolNames = addedToolNames
         self.terminate = terminate
     }
@@ -298,7 +331,7 @@ public struct AgentLoopConfig: Sendable {
 
     /// HTTP headers to include on every provider request (auth tokens, custom routing,
     /// instrumentation correlation IDs, etc.). Forwarded as `SimpleStreamOptions.headers`.
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
 
     /// Provider-specific request metadata. Forwarded as `SimpleStreamOptions.metadata`.
     /// Anthropic uses this for `metadata.user_id`; Bedrock for cost-allocation tags; etc.
@@ -362,8 +395,8 @@ public struct AgentLoopConfig: Sendable {
 
     /// Returns whether the loop should stop after the current complete turn.
     ///
-    /// Called after tool-call follow-up handling completes and before queued follow-up messages
-    /// are fetched. Return `false` to continue normal steering/follow-up processing.
+    /// Called after `turnEnd` and before steering or follow-up queues are polled.
+    /// Return `false` to continue normal queued-message processing.
     public var shouldStopAfterTurn: ShouldStopAfterTurnFn?
 
     public init(
@@ -379,7 +412,7 @@ public struct AgentLoopConfig: Sendable {
         onPayload: OnPayloadFn? = nil,
         onResponse: ResponseHandler? = nil,
         cacheRetention: CacheRetention? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         metadata: [String: AnyCodable]? = nil,
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
@@ -427,10 +460,10 @@ public struct AgentLoopConfig: Sendable {
 
 public struct AgentModelAuth: Sendable {
     public var apiKey: String?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var baseUrl: String?
 
-    public init(apiKey: String? = nil, headers: [String: String]? = nil, baseUrl: String? = nil) {
+    public init(apiKey: String? = nil, headers: ProviderHeaders? = nil, baseUrl: String? = nil) {
         self.apiKey = apiKey
         self.headers = headers
         self.baseUrl = baseUrl

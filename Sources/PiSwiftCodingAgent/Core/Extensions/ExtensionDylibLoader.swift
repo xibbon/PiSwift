@@ -54,6 +54,7 @@ public struct ExtensionDylibLoader {
             resolvedPath: extensionPath,
             handlers: api.handlers,
             messageRenderers: api.messageRenderers,
+            markdownTransformers: api.markdownTransformers,
             entryRenderers: api.entryRenderers,
             commands: api.commands,
             currentCommands: { api.commands },
@@ -80,6 +81,7 @@ public struct ExtensionDylibLoader {
             setRegisterToolHandler: api.setRegisterToolHandler,
             setUnregisterToolHandler: api.setUnregisterToolHandler,
             setFlagValue: api.setFlagValue,
+            dispose: api.disposeEventBusListeners,
             isExtension: true
         )
     }

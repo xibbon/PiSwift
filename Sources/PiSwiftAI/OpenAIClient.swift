@@ -4,7 +4,7 @@ import OpenAI
 func makeOpenAIClient(
     model: Model,
     apiKey: String?,
-    headers: [String: String]? = nil,
+    headers: ProviderHeaders? = nil,
     timeoutMs: Int? = nil,
     middlewares: [OpenAIMiddleware] = []
 ) throws -> OpenAI {
@@ -24,12 +24,7 @@ func makeOpenAIClient(
     } else {
         basePath = rawPath.isEmpty || rawPath == "/" ? "/v1" : rawPath
     }
-    var mergedHeaders = model.headers ?? [:]
-    if let headers {
-        for (key, value) in headers {
-            mergedHeaders[key] = value
-        }
-    }
+    let mergedHeaders = mergeProviderHeaders(model.headers, headers)
 
     let timeoutInterval = Double(timeoutMs ?? 60_000) / 1000.0
     let configuration = OpenAI.Configuration(
@@ -40,8 +35,19 @@ func makeOpenAIClient(
         scheme: scheme,
         basePath: basePath,
         timeoutInterval: timeoutInterval,
-        customHeaders: mergedHeaders
+        customHeaders: providerHeadersToRecord(mergedHeaders) ?? [:]
     )
     let session = proxySession(for: url)
-    return OpenAI(configuration: configuration, session: session, middlewares: middlewares)
+    let effectiveMiddlewares = middlewares + [ProviderHeadersMiddleware(headers: mergedHeaders ?? [:])]
+    return OpenAI(configuration: configuration, session: session, middlewares: effectiveMiddlewares)
+}
+
+private struct ProviderHeadersMiddleware: OpenAIMiddleware {
+    let headers: ProviderHeaders
+
+    func intercept(request: URLRequest) -> URLRequest {
+        var updated = request
+        applyProviderHeaders(headers, to: &updated)
+        return updated
+    }
 }

@@ -217,7 +217,9 @@ public func streamAzureOpenAIResponses(
             client = builtClient
             query = builtQuery
 
-            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty {
+            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
+                || options.httpClient != nil
+                || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
                 request.setValue("text/event-stream", forHTTPHeaderField: "accept")
@@ -227,7 +229,10 @@ public func streamAzureOpenAIResponses(
                 try await processRawOpenAIResponsesStream(
                     request: request,
                     model: model,
+                    httpClient: options.httpClient,
                     signal: options.signal,
+                    maxRetries: options.maxRetries,
+                    maxRetryDelayMs: options.maxRetryDelayMs,
                     onResponse: options.onResponse,
                     serviceTier: nil,
                     grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties,

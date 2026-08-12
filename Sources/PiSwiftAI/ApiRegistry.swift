@@ -123,12 +123,14 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 metadata: options?.metadata,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
-                maxRetries: options?.maxRetries
+                maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs
             )
             return streamAnthropic(model: model, context: context, options: providerOptions)
         },
@@ -149,13 +151,15 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 cacheRetention: options?.cacheRetention,
                 sessionId: options?.sessionId,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
-                maxRetries: options?.maxRetries
+                maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs
             )
             return streamOpenAICompletions(model: model, context: context, options: providerOptions)
         },
@@ -176,6 +180,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 cacheRetention: options?.cacheRetention,
                 sessionId: options?.sessionId,
                 transport: options?.transport,
@@ -184,6 +189,7 @@ public func registerBuiltInProviders() {
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs,
                 websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
             )
             return streamOpenAIResponses(model: model, context: context, options: providerOptions)
@@ -204,6 +210,8 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
+                cacheRetention: options?.cacheRetention,
                 sessionId: options?.sessionId,
                 transport: options?.transport,
                 headers: options?.headers,
@@ -211,6 +219,7 @@ public func registerBuiltInProviders() {
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs,
                 websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
             )
             return streamOpenAICodexResponses(model: model, context: context, options: providerOptions)
@@ -232,12 +241,14 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
-                maxRetries: options?.maxRetries
+                maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs
             )
             return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
         },
@@ -257,11 +268,13 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
-                maxRetries: options?.maxRetries
+                maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs
             )
             return streamGoogle(model: model, context: context, options: providerOptions)
         },
@@ -281,11 +294,13 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
-                maxRetries: options?.maxRetries
+                maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs
             )
             return streamGoogleVertex(model: model, context: context, options: providerOptions)
         },
@@ -305,12 +320,14 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
+                httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 timeoutMs: options?.timeoutMs,
-                maxRetries: options?.maxRetries
+                maxRetries: options?.maxRetries,
+                maxRetryDelayMs: options?.maxRetryDelayMs
             )
             return streamMistral(model: model, context: context, options: providerOptions)
         },

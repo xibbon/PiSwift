@@ -1,5 +1,5 @@
 import Foundation
-import SwiftAnthropic
+@preconcurrency import SwiftAnthropic
 
 private let claudeCodeVersion = "2.1.75"
 
@@ -228,15 +228,17 @@ public func streamAnthropic(
             } else {
                 logAnthropicDebug("anthropic betaHeaders=none")
             }
-            var mergedHeaders = mergeHeaders(model.headers, options.headers)
+            var mergedHeaders = model.headers
             // Copilot: add dynamic headers for vision and initiator
             if model.provider == "github-copilot" {
                 let copilotHeaders = buildCopilotDynamicHeaders(messages: context.messages)
-                mergedHeaders = mergeHeaders(mergedHeaders, copilotHeaders)
+                mergedHeaders = mergeProviderHeaders(mergedHeaders, copilotHeaders)
             }
+            mergedHeaders = mergeProviderHeaders(mergedHeaders, options.headers)
             let httpClient = buildAnthropicHttpClient(
+                providerHTTPClient: options.httpClient,
                 isOAuthToken: isOAuthToken,
-                extraHeaders: mergedHeaders,
+                extraHeaders: mergedHeaders ?? [:],
                 baseUrl: model.baseUrl,
                 metadataUserId: extractAnthropicMetadataUserId(options.metadata),
                 supportsLongCacheRetention: compat.supportsLongCacheRetention,
@@ -287,30 +289,36 @@ public func streamAnthropic(
             debugParameters = parameters
             let toolCount = context.tools?.count ?? 0
             logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
-            let anthropicStream = try await streamAnthropicMessagesTolerant(
-                apiKey: apiKey,
-                usesBearerTransport: usesAnthropicBearerTransport(apiKey)
-                    || mergedHeaders.contains { key, value in
-                        key.caseInsensitiveCompare("Authorization") == .orderedSame
-                            && value.lowercased().hasPrefix("bearer ")
-                    },
-                baseUrl: model.baseUrl,
-                betaHeaders: betaHeaders,
-                httpClient: httpClient,
-                parameters: parameters,
-                onResponse: options.onResponse
-            )
+            let usesBearerTransport = usesAnthropicBearerTransport(apiKey)
+                || providerHeaderValue(mergedHeaders, name: "Authorization")?
+                    .lowercased().hasPrefix("bearer ") == true
+            let anthropicStream = try await retryProviderRequest(
+                maxRetries: options.maxRetries,
+                maxRetryDelayMs: options.maxRetryDelayMs,
+                signal: options.signal
+            ) {
+                try await streamAnthropicMessagesTolerant(
+                    apiKey: apiKey,
+                    usesBearerTransport: usesBearerTransport,
+                    baseUrl: model.baseUrl,
+                    betaHeaders: betaHeaders,
+                    httpClient: httpClient,
+                    parameters: parameters,
+                    onResponse: options.onResponse
+                )
+            }
 
             stream.push(.start(partial: output))
 
             var indexMap: [Int: Int] = [:]
             var toolCallPartials: [Int: String] = [:]
 
-            for try await event in anthropicStream {
+            for try await decodedEvent in anthropicStream {
                 if options.signal?.isCancelled == true {
                     throw AnthropicStreamError.aborted
                 }
 
+                let event = decodedEvent.response
                 switch event.streamEvent {
                 case .messageStart:
                     if let messageId = event.message?.id {
@@ -334,12 +342,15 @@ public func streamAnthropic(
                     guard let block = event.contentBlock, let index = event.index else { break }
                     switch block.type {
                     case "text":
-                        let textBlock = TextContent(text: "")
+                        let textBlock = TextContent(text: block.text ?? "")
                         output.content.append(.text(textBlock))
                         indexMap[index] = output.content.count - 1
                         stream.push(.textStart(contentIndex: output.content.count - 1, partial: output))
                     case "thinking":
-                        let thinkingBlock = ThinkingContent(thinking: "")
+                        let thinkingBlock = ThinkingContent(
+                            thinking: block.thinking ?? "",
+                            thinkingSignature: decodedEvent.initialThinkingSignature
+                        )
                         output.content.append(.thinking(thinkingBlock))
                         indexMap[index] = output.content.count - 1
                         stream.push(.thinkingStart(contentIndex: output.content.count - 1, partial: output))
@@ -604,22 +615,22 @@ func decodeAnthropicSSELines(_ lines: [String]) throws -> [MessageStreamResponse
     for line in lines {
         if let sse = decoder.decode(line: line),
            let event = try decodeAnthropicMessageEvent(sse) {
-            if event.type == "message_start" {
+            if event.response.type == "message_start" {
                 sawMessageStart = true
-            } else if event.type == "message_stop" {
+            } else if event.response.type == "message_stop" {
                 sawMessageStop = true
             }
-            events.append(event)
+            events.append(event.response)
         }
     }
     if let sse = decoder.flush(),
        let event = try decodeAnthropicMessageEvent(sse) {
-        if event.type == "message_start" {
+        if event.response.type == "message_start" {
             sawMessageStart = true
-        } else if event.type == "message_stop" {
+        } else if event.response.type == "message_stop" {
             sawMessageStop = true
         }
-        events.append(event)
+        events.append(event.response)
     }
 
     if sawMessageStart && !sawMessageStop {
@@ -628,7 +639,12 @@ func decodeAnthropicSSELines(_ lines: [String]) throws -> [MessageStreamResponse
     return events
 }
 
-private func decodeAnthropicMessageEvent(_ sse: AnthropicServerSentEvent) throws -> MessageStreamResponse? {
+private struct AnthropicDecodedMessageEvent {
+    let response: MessageStreamResponse
+    let initialThinkingSignature: String?
+}
+
+private func decodeAnthropicMessageEvent(_ sse: AnthropicServerSentEvent) throws -> AnthropicDecodedMessageEvent? {
     if sse.event == "error" {
         throw AnthropicTolerantStreamError.sseError(sse.data)
     }
@@ -642,13 +658,19 @@ private func decodeAnthropicMessageEvent(_ sse: AnthropicServerSentEvent) throws
     }
 }
 
-private func decodeAnthropicJSONEvent(_ json: String) throws -> MessageStreamResponse {
+private func decodeAnthropicJSONEvent(_ json: String) throws -> AnthropicDecodedMessageEvent {
     guard let data = repairedAnthropicJSON(json).data(using: .utf8) else {
         throw AnthropicTolerantStreamError.invalidUTF8
     }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try decoder.decode(MessageStreamResponse.self, from: data)
+    let response = try decoder.decode(MessageStreamResponse.self, from: data)
+    let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    let contentBlock = root?["content_block"] as? [String: Any]
+    return AnthropicDecodedMessageEvent(
+        response: response,
+        initialThinkingSignature: contentBlock?["signature"] as? String
+    )
 }
 
 private func repairedAnthropicJSON(_ json: String) -> String {
@@ -736,7 +758,7 @@ private func streamAnthropicMessagesTolerant(
     httpClient: HTTPClient,
     parameters: MessageParameter,
     onResponse: ResponseHandler?
-) async throws -> AsyncThrowingStream<MessageStreamResponse, Error> {
+) async throws -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> {
     var localParameters = parameters
     localParameters.stream = true
     let body = try anthropicJSONBody(localParameters)
@@ -761,7 +783,13 @@ private func streamAnthropicMessagesTolerant(
     let snapshot = anthropicResponseSnapshot(response)
     onResponse?(snapshot)
     guard snapshot.statusCode == 200 else {
-        throw AnthropicTolerantStreamError.unsuccessfulStatus(snapshot.statusCode)
+        let body = try await collectAnthropicHTTPBody(byteStream)
+        let message = String(data: body, encoding: .utf8) ?? "HTTP \(snapshot.statusCode)"
+        throw StreamError.providerRequest(
+            statusCode: snapshot.statusCode,
+            headers: snapshot.headers,
+            message: message
+        )
     }
     return decodeAnthropicSSEStream(byteStream)
 }
@@ -802,15 +830,9 @@ private func anthropicResponseSnapshot(_ response: HTTPResponse) -> ResponseSnap
     return ResponseSnapshot(statusCode: statusCode, headers: headers)
 }
 
-/// SAFETY: the wrapped byte stream is consumed by a single task created
-/// immediately below; the wrapper only moves ownership into that task.
-private struct SendableAnthropicByteStream: @unchecked Sendable {
-    let stream: HTTPByteStream
-}
-
-private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowingStream<MessageStreamResponse, Error> {
-    let sendableStream = SendableAnthropicByteStream(stream: stream)
-    return AsyncThrowingStream<MessageStreamResponse, Error> { continuation in
+private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> {
+    let lines = anthropicLines(from: stream)
+    return AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> { continuation in
         let task = Task {
             var decoder = AnthropicSSEDecoder()
             var sawMessageStart = false
@@ -818,35 +840,17 @@ private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowing
 
             func handle(_ sse: AnthropicServerSentEvent) throws {
                 guard let event = try decodeAnthropicMessageEvent(sse) else { return }
-                if event.type == "message_start" {
+                if event.response.type == "message_start" {
                     sawMessageStart = true
-                } else if event.type == "message_stop" {
+                } else if event.response.type == "message_stop" {
                     sawMessageStop = true
                 }
                 continuation.yield(event)
             }
 
             do {
-                switch sendableStream.stream {
-                case .lines(let lines):
-                    for try await line in lines {
-                        if let sse = decoder.decode(line: line) {
-                            try handle(sse)
-                        }
-                    }
-                case .bytes(let bytes):
-                    var buffer = ""
-                    for try await byte in bytes {
-                        buffer.append(Character(UnicodeScalar(byte)))
-                        while let range = buffer.range(of: #"\r\n|\n|\r"#, options: .regularExpression) {
-                            let line = String(buffer[..<range.lowerBound])
-                            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
-                            if let sse = decoder.decode(line: line) {
-                                try handle(sse)
-                            }
-                        }
-                    }
-                    if !buffer.isEmpty, let sse = decoder.decode(line: buffer) {
+                for try await line in lines {
+                    if let sse = decoder.decode(line: line) {
                         try handle(sse)
                     }
                 }
@@ -863,6 +867,37 @@ private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowing
         }
         continuation.onTermination = { @Sendable _ in
             task.cancel()
+        }
+    }
+}
+
+private func anthropicLines(from stream: HTTPByteStream) -> AsyncThrowingStream<String, Error> {
+    switch stream {
+    case .lines(let lines):
+        return lines
+    case .bytes(let bytes):
+        return AsyncThrowingStream<String, Error> { continuation in
+            let task = Task {
+                do {
+                    var buffer = ""
+                    for try await byte in bytes {
+                        buffer.append(Character(UnicodeScalar(byte)))
+                        while let range = buffer.range(of: #"\r\n|\n|\r"#, options: .regularExpression) {
+                            continuation.yield(String(buffer[..<range.lowerBound]))
+                            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+                        }
+                    }
+                    if !buffer.isEmpty {
+                        continuation.yield(buffer)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
         }
     }
 }
@@ -1133,8 +1168,9 @@ func anthropicCacheTtl(baseUrl: String, supportsLongCacheRetention: Bool = true)
 }
 
 private func buildAnthropicHttpClient(
+    providerHTTPClient: (any ProviderHTTPClient)?,
     isOAuthToken: Bool,
-    extraHeaders: [String: String],
+    extraHeaders: ProviderHeaders,
     baseUrl: String,
     metadataUserId: String?,
     supportsLongCacheRetention: Bool,
@@ -1147,16 +1183,21 @@ private func buildAnthropicHttpClient(
 ) -> HTTPClient {
     var merged = extraHeaders
     if isOAuthToken {
-        if merged["user-agent"] == nil {
-            merged["user-agent"] = "claude-cli/\(claudeCodeVersion) (external, cli)"
+        if !providerHeadersContain(merged, name: "user-agent") {
+            merged.updateValue("claude-cli/\(claudeCodeVersion) (external, cli)", forKey: "user-agent")
         }
-        if merged["x-app"] == nil {
-            merged["x-app"] = "cli"
+        if !providerHeadersContain(merged, name: "x-app") {
+            merged.updateValue("cli", forKey: "x-app")
         }
     }
     let cacheTtl = anthropicCacheTtl(baseUrl: baseUrl, supportsLongCacheRetention: supportsLongCacheRetention)
+    let base: any HTTPClient = if let providerHTTPClient {
+        ProviderAnthropicHTTPClient(base: providerHTTPClient)
+    } else {
+        HTTPClientFactory.createDefault()
+    }
     return AnthropicHeaderInjectingHTTPClient(
-        base: HTTPClientFactory.createDefault(),
+        base: base,
         extraHeaders: merged,
         cacheTtl: cacheTtl,
         metadataUserId: metadataUserId,
@@ -1170,14 +1211,78 @@ private func buildAnthropicHttpClient(
     )
 }
 
-private func mergeHeaders(_ base: [String: String]?, _ extra: [String: String]?) -> [String: String] {
-    var merged = base ?? [:]
-    if let extra {
-        for (key, value) in extra {
-            merged[key] = value
+private struct ProviderAnthropicHTTPClient: HTTPClient {
+    let base: any ProviderHTTPClient
+
+    func data(for request: HTTPRequest) async throws -> (Data, HTTPResponse) {
+        let response = try await base.send(try urlRequest(from: request))
+        return (
+            try await collectProviderHTTPBody(response.body),
+            HTTPResponse(statusCode: response.statusCode, headers: response.headers)
+        )
+    }
+
+    func bytes(for request: HTTPRequest) async throws -> (HTTPByteStream, HTTPResponse) {
+        let response = try await base.send(try urlRequest(from: request))
+        let stream = AsyncThrowingStream<UInt8, Error> { continuation in
+            let task = Task {
+                do {
+                    for try await chunk in response.body {
+                        for byte in chunk {
+                            continuation.yield(byte)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+        return (
+            .bytes(stream),
+            HTTPResponse(statusCode: response.statusCode, headers: response.headers)
+        )
+    }
+
+    private func urlRequest(from request: HTTPRequest) throws -> URLRequest {
+        let mirror = Mirror(reflecting: request)
+        var url: URL?
+        var method: HTTPMethod?
+        var headers: [String: String] = [:]
+        var body: Data?
+        for child in mirror.children {
+            switch child.label {
+            case "url": url = child.value as? URL
+            case "method": method = child.value as? HTTPMethod
+            case "headers": headers = child.value as? [String: String] ?? [:]
+            case "body": body = child.value as? Data
+            default: break
+            }
+        }
+        guard let url, let method else { throw StreamError.invalidHTTPResponse }
+        var result = URLRequest(url: url)
+        result.httpMethod = method.rawValue
+        result.httpBody = body
+        for (name, value) in headers {
+            result.setValue(value, forHTTPHeaderField: name)
+        }
+        return result
+    }
+}
+
+private func collectAnthropicHTTPBody(_ stream: HTTPByteStream) async throws -> Data {
+    var data = Data()
+    switch stream {
+    case .bytes(let bytes):
+        for try await byte in bytes { data.append(byte) }
+    case .lines(let lines):
+        for try await line in lines {
+            data.append(Data(line.utf8))
+            data.append(0x0A)
         }
     }
-    return merged
+    return data
 }
 
 // MARK: - Copilot dynamic headers
@@ -1220,7 +1325,7 @@ private func buildCopilotDynamicHeaders(messages: [Message]) -> [String: String]
 
 private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let base: HTTPClient
-    let extraHeaders: [String: String]
+    let extraHeaders: ProviderHeaders
     let cacheTtl: String?
     let metadataUserId: String?
     let supportsEagerToolInputStreaming: Bool
@@ -1268,10 +1373,10 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
             }
         }
 
-        guard let url, let method, var headers else { return request }
-        for (key, value) in extraHeaders where headers[key] == nil {
-            headers[key] = value
-        }
+        guard let url, let method, let headers else { return request }
+        let mergedHeaders = providerHeadersToRecord(
+            mergeProviderHeaders(headers, extraHeaders)
+        ) ?? [:]
         let updatedBody = injectAnthropicRequestBody(
             body: body,
             ttl: cacheTtl,
@@ -1284,7 +1389,7 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
             isOAuthToken: isOAuthToken,
             strictToolSchemas: strictToolSchemas
         )
-        return HTTPRequest(url: url, method: method, headers: headers, body: updatedBody ?? body)
+        return HTTPRequest(url: url, method: method, headers: mergedHeaders, body: updatedBody ?? body)
     }
 }
 

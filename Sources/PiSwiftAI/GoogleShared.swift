@@ -27,7 +27,18 @@ private func resolveThoughtSignature(isSameProviderAndModel: Bool, signature: St
 }
 
 func requiresToolCallId(_ modelId: String) -> Bool {
-    modelId.hasPrefix("claude-") || modelId.hasPrefix("gpt-oss-")
+    if modelId.hasPrefix("claude-") || modelId.hasPrefix("gpt-oss-") {
+        return true
+    }
+    guard let major = geminiMajorVersion(modelId) else { return false }
+    return major >= 3
+}
+
+private func geminiMajorVersion(_ modelId: String) -> Int? {
+    guard let range = modelId.range(of: #"gemini-(\d+)"#, options: .regularExpression) else {
+        return nil
+    }
+    return Int(modelId[range].dropFirst("gemini-".count))
 }
 
 func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
@@ -84,25 +95,34 @@ func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
                 switch block {
                 case .text(let textBlock):
                     let text = textBlock.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if text.isEmpty { continue }
+                    let signature = resolveThoughtSignature(
+                        isSameProviderAndModel: isSameProviderAndModel,
+                        signature: textBlock.textSignature
+                    )
+                    if text.isEmpty && signature == nil { continue }
                     var part: [String: Any] = ["text": sanitizeSurrogates(textBlock.text)]
-                    if let signature = resolveThoughtSignature(isSameProviderAndModel: isSameProviderAndModel, signature: textBlock.textSignature) {
+                    if let signature {
                         part["thoughtSignature"] = signature
                     }
                     parts.append(part)
                 case .thinking(let thinking):
                     let text = thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if text.isEmpty { continue }
                     if isSameProviderAndModel {
+                        let signature = resolveThoughtSignature(
+                            isSameProviderAndModel: isSameProviderAndModel,
+                            signature: thinking.thinkingSignature
+                        )
+                        if text.isEmpty && signature == nil { continue }
                         var part: [String: Any] = [
                             "thought": true,
                             "text": sanitizeSurrogates(thinking.thinking),
                         ]
-                        if let signature = resolveThoughtSignature(isSameProviderAndModel: isSameProviderAndModel, signature: thinking.thinkingSignature) {
+                        if let signature {
                             part["thoughtSignature"] = signature
                         }
                         parts.append(part)
                     } else {
+                        if text.isEmpty { continue }
                         parts.append(["text": sanitizeSurrogates(thinking.thinking)])
                     }
                 case .toolCall(let toolCall):
@@ -425,6 +445,63 @@ func collectSseStreamData(from bytes: URLSession.AsyncBytes) async throws -> Dat
         data.append(byte)
     }
     return data
+}
+
+func streamSsePayloads(
+    body: AsyncThrowingStream<Data, Error>,
+    signal: CancellationToken?
+) -> AsyncThrowingStream<String, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            var buffer = Data()
+            let delimiterCrlf = Data([13, 10, 13, 10])
+            let delimiterLf = Data([10, 10])
+
+            do {
+                for try await chunk in body {
+                    if signal?.isCancelled == true {
+                        throw GoogleStreamError.aborted
+                    }
+                    buffer.append(chunk)
+                    while let range = findStreamDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
+                        let frame = buffer.subdata(in: 0..<range.lowerBound)
+                        buffer.removeSubrange(0..<range.upperBound)
+                        if let payload = parseSsePayload(from: frame) {
+                            continuation.yield(payload)
+                        }
+                    }
+                }
+                if !buffer.isEmpty, let payload = parseSsePayload(from: buffer) {
+                    continuation.yield(payload)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { @Sendable _ in task.cancel() }
+    }
+}
+
+func retryGoogleRequest(
+    _ request: URLRequest,
+    httpClient: (any ProviderHTTPClient)?,
+    maxRetries: Int?,
+    maxRetryDelayMs: Int?,
+    signal: CancellationToken?
+) async throws -> ProviderHTTPResponse {
+    let client = httpClient ?? DefaultProviderHTTPClient()
+    return try await retryProviderRequest(
+        maxRetries: maxRetries,
+        maxRetryDelayMs: maxRetryDelayMs,
+        signal: signal
+    ) {
+        let response = try await client.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw try await providerHTTPError(from: response)
+        }
+        return response
+    }
 }
 
 private func parseSsePayload(from chunk: Data) -> String? {

@@ -15,6 +15,7 @@ public struct OAuthCredentials: Sendable, Codable {
     public var projectId: String?
     public var email: String?
     public var accountId: String?
+    public var availableModelIds: [String]?
 
     public init(
         refresh: String,
@@ -23,7 +24,8 @@ public struct OAuthCredentials: Sendable, Codable {
         enterpriseUrl: String? = nil,
         projectId: String? = nil,
         email: String? = nil,
-        accountId: String? = nil
+        accountId: String? = nil,
+        availableModelIds: [String]? = nil
     ) {
         self.refresh = refresh
         self.access = access
@@ -32,6 +34,7 @@ public struct OAuthCredentials: Sendable, Codable {
         self.projectId = projectId
         self.email = email
         self.accountId = accountId
+        self.availableModelIds = availableModelIds
     }
 }
 
@@ -1277,6 +1280,7 @@ private let copilotHeaders: [String: String] = [
     "Editor-Plugin-Version": "copilot-chat/0.35.0",
     "Copilot-Integration-Id": "vscode-chat",
 ]
+private let copilotApiVersion = "2026-06-01"
 
 private struct DeviceCodeResponse {
     let deviceCode: String
@@ -1480,6 +1484,24 @@ public func refreshGitHubCopilotToken(
     enterpriseDomain: String?,
     signal: CancellationToken? = nil
 ) async throws -> OAuthCredentials {
+    var credentials = try await refreshGitHubCopilotAccessToken(
+        refreshToken,
+        enterpriseDomain: enterpriseDomain,
+        signal: signal
+    )
+    credentials.availableModelIds = try await fetchAvailableGitHubCopilotModelIds(
+        token: credentials.access,
+        enterpriseDomain: enterpriseDomain,
+        signal: signal
+    )
+    return credentials
+}
+
+private func refreshGitHubCopilotAccessToken(
+    _ refreshToken: String,
+    enterpriseDomain: String?,
+    signal: CancellationToken?
+) async throws -> OAuthCredentials {
     let domain = enterpriseDomain ?? "github.com"
     let urls = gitHubUrls(domain: domain)
 
@@ -1510,6 +1532,52 @@ public func refreshGitHubCopilotToken(
         access: token,
         expires: Double(expiresAt) * 1000 - defaultOAuthMinimumValidityMs,
         enterpriseUrl: enterpriseDomain
+    )
+}
+
+func parseAvailableCopilotModelIds(_ raw: Any, allowPolicyFallback: Bool) throws -> [String] {
+    guard let root = raw as? [String: Any], let data = root["data"] as? [Any] else {
+        throw OAuthError.invalidToken
+    }
+    var pickerIds: [String] = []
+    var policyEnabledIds: [String] = []
+    for rawItem in data {
+        guard let item = rawItem as? [String: Any], let id = item["id"] as? String else { continue }
+        let capabilities = item["capabilities"] as? [String: Any]
+        let supports = capabilities?["supports"] as? [String: Any]
+        if supports?["tool_calls"] as? Bool == false { continue }
+        let policy = item["policy"] as? [String: Any]
+        if item["model_picker_enabled"] as? Bool == true, policy?["state"] as? String != "disabled" {
+            pickerIds.append(id)
+        }
+        if policy?["state"] as? String == "enabled" {
+            policyEnabledIds.append(id)
+        }
+    }
+    return pickerIds.isEmpty && allowPolicyFallback ? policyEnabledIds : pickerIds
+}
+
+private func fetchAvailableGitHubCopilotModelIds(
+    token: String,
+    enterpriseDomain: String?,
+    signal: CancellationToken?
+) async throws -> [String] {
+    let baseUrl = getGitHubCopilotBaseUrl(token: token, enterpriseDomain: enterpriseDomain)
+    guard let url = URL(string: "\(baseUrl)/models") else { throw OAuthError.invalidToken }
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue(copilotApiVersion, forHTTPHeaderField: "X-GitHub-Api-Version")
+    for (key, value) in copilotHeaders { request.setValue(value, forHTTPHeaderField: key) }
+    let response = try await oauthData(for: request, signal: signal, timeoutMs: 5_000)
+    guard response.status >= 200, response.status < 300 else {
+        throw OAuthError.refreshFailed(String(data: response.data, encoding: .utf8) ?? "Copilot models request failed")
+    }
+    let raw = try JSONSerialization.jsonObject(with: response.data)
+    return try parseAvailableCopilotModelIds(
+        raw,
+        allowPolicyFallback: baseUrl == "https://api.individual.githubcopilot.com"
     )
 }
 
@@ -1599,7 +1667,7 @@ public func loginGitHubCopilot(_ callbacks: OAuthLoginCallbacks) async throws ->
     )
 
     // Exchange GitHub token for Copilot token
-    let credentials = try await refreshGitHubCopilotToken(
+    var credentials = try await refreshGitHubCopilotAccessToken(
         githubAccessToken,
         enterpriseDomain: enterpriseDomain,
         signal: callbacks.signal
@@ -1613,6 +1681,12 @@ public func loginGitHubCopilot(_ callbacks: OAuthLoginCallbacks) async throws ->
         token: credentials.access,
         enterpriseDomain: enterpriseDomain,
         onProgress: callbacks.onProgress
+    )
+
+    credentials.availableModelIds = try await fetchAvailableGitHubCopilotModelIds(
+        token: credentials.access,
+        enterpriseDomain: enterpriseDomain,
+        signal: callbacks.signal
     )
 
     return credentials

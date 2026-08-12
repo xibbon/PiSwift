@@ -61,6 +61,49 @@ public func iterateSseEvents(
     }
 }
 
+/// Parses provider-client body chunks into SSE frames.
+public func iterateSseEvents(
+    body: AsyncThrowingStream<Data, Error>,
+    signal: CancellationToken? = nil
+) -> AsyncThrowingStream<ServerSentEvent, Error> {
+    AsyncThrowingStream { continuation in
+        Task {
+            do {
+                var buffer = Data()
+                var state = SseDecoderState()
+                for try await chunk in body {
+                    if signal?.isCancelled == true {
+                        throw CancellationError()
+                    }
+                    buffer.append(chunk)
+                    while let consumed = consumeSseLine(buffer: buffer) {
+                        buffer = consumed.rest
+                        if let event = decodeSseLine(consumed.line, state: &state) {
+                            continuation.yield(event)
+                        }
+                    }
+                }
+                while let consumed = consumeSseLine(buffer: buffer) {
+                    buffer = consumed.rest
+                    if let event = decodeSseLine(consumed.line, state: &state) {
+                        continuation.yield(event)
+                    }
+                }
+                if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8),
+                   let event = decodeSseLine(line, state: &state) {
+                    continuation.yield(event)
+                }
+                if let trailing = flushSseEvent(state: &state) {
+                    continuation.yield(trailing)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+}
+
 private struct SseDecoderState {
     var event: String?
     var data: [String] = []

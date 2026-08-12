@@ -53,14 +53,14 @@ public struct CollectEntriesResult: Sendable {
 public struct GenerateBranchSummaryOptions: Sendable {
     public var model: Model
     public var apiKey: String
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var signal: CancellationToken?
     public var customInstructions: String?
     /// If true, `customInstructions` replaces the default prompt instead of being appended.
     public var replaceInstructions: Bool?
     public var reserveTokens: Int?
 
-    public init(model: Model, apiKey: String, headers: [String: String]? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?) {
+    public init(model: Model, apiKey: String, headers: ProviderHeaders? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?) {
         self.model = model
         self.apiKey = apiKey
         self.headers = headers

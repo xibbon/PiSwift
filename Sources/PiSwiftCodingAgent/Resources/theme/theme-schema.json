@@ -33,7 +33,7 @@
 		},
 		"colors": {
 			"type": "object",
-			"description": "Theme color definitions (thinkingMax is optional and falls back to thinkingXhigh)",
+			"description": "Theme color definitions (thinkingMax and scrollbarThumb have backward-compatible fallbacks)",
 			"required": [
 				"accent",
 				"border",
@@ -268,6 +268,10 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"
+				},
+				"scrollbarThumb": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Fullscreen scrollbar thumb (falls back to selectedBg when omitted)"
 				}
 			},
 			"additionalProperties": false

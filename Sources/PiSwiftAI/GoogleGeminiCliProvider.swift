@@ -93,12 +93,7 @@ public func streamGoogleGeminiCli(
             if isClaudeThinkingModel(model.id) {
                 baseHeaders["anthropic-beta"] = claudeThinkingBetaHeader
             }
-            if let modelHeaders = model.headers {
-                baseHeaders.merge(modelHeaders) { _, new in new }
-            }
-            if let extra = options.headers {
-                baseHeaders.merge(extra) { _, new in new }
-            }
+            let requestHeaders = mergeProviderHeaders(model.headers, options.headers)
 
             var responseBytes: URLSession.AsyncBytes?
             var responseMeta: HTTPURLResponse?
@@ -131,6 +126,7 @@ public func streamGoogleGeminiCli(
                     for (key, value) in headers {
                         request.setValue(value, forHTTPHeaderField: key)
                     }
+                    applyProviderHeaders(requestHeaders, to: &request)
 
                     let session = googleGeminiCliSession(for: request.url)
                     let (bytes, response) = try await session.bytes(for: request)
@@ -366,6 +362,7 @@ public func streamGoogleGeminiCli(
                     for (key, value) in headers {
                         request.setValue(value, forHTTPHeaderField: key)
                     }
+                    applyProviderHeaders(requestHeaders, to: &request)
 
                     let session = googleGeminiCliSession(for: request.url)
                     let (retryBytes, retryResponse) = try await session.bytes(for: request)

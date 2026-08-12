@@ -478,7 +478,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
 @Test func getModelAuthCallbackOverridesProviderAuth() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedApiKey = LockedState<String?>(nil)
-    let receivedHeaders = LockedState<[String: String]?>(nil)
+    let receivedHeaders = LockedState<ProviderHeaders?>(nil)
     let receivedBaseUrl = LockedState<String?>(nil)
 
     let streamFn: StreamFn = { model, _, options in

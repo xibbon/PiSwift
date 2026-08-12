@@ -37,6 +37,14 @@ public struct ResourceExtensionPaths: Sendable {
     }
 }
 
+public struct SystemPromptSource: Sendable {
+    public var path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
 public protocol ResourceLoader: Sendable {
     func getExtensions() -> ExtensionsResult
     func getSkills() -> (skills: [Skill], diagnostics: [ResourceDiagnostic])
@@ -44,10 +52,17 @@ public protocol ResourceLoader: Sendable {
     func getThemes() -> (themes: [HookThemeInfo], diagnostics: [ResourceDiagnostic])
     func getAgentsFiles() -> [ContextFile]
     func getSystemPrompt() -> String?
+    func getSystemPromptSource() -> SystemPromptSource?
     func getAppendSystemPrompt() -> [String]
+    func getAppendSystemPromptSources() -> [SystemPromptSource]
     func getPathMetadata() -> [String: PathMetadata]
     func extendResources(_ paths: ResourceExtensionPaths)
     func reload() async
+}
+
+public extension ResourceLoader {
+    func getSystemPromptSource() -> SystemPromptSource? { nil }
+    func getAppendSystemPromptSources() -> [SystemPromptSource] { [] }
 }
 
 public struct DefaultResourceLoaderOptions: Sendable {
@@ -136,7 +151,9 @@ public final class DefaultResourceLoader: ResourceLoader {
         var themeDiagnostics: [ResourceDiagnostic] = []
         var agentsFiles: [ContextFile] = []
         var systemPrompt: String?
+        var systemPromptSourcePath: String?
         var appendSystemPrompt: [String] = []
+        var appendSystemPromptSourcePaths: [String] = []
         var pathMetadata: [String: PathMetadata] = [:]
         var baseSkillPaths: [String] = []
         var basePromptPaths: [String] = []
@@ -254,8 +271,18 @@ public final class DefaultResourceLoader: ResourceLoader {
         systemPrompt
     }
 
+    public func getSystemPromptSource() -> SystemPromptSource? {
+        state.withLock { state in
+            state.systemPromptSourcePath.map(SystemPromptSource.init(path:))
+        }
+    }
+
     public func getAppendSystemPrompt() -> [String] {
         appendSystemPrompt
+    }
+
+    public func getAppendSystemPromptSources() -> [SystemPromptSource] {
+        state.withLock { $0.appendSystemPromptSourcePaths.map(SystemPromptSource.init(path:)) }
     }
 
     public func getPathMetadata() -> [String: PathMetadata] {
@@ -427,12 +454,19 @@ public final class DefaultResourceLoader: ResourceLoader {
             ? []
             : (projectTrusted ? loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: agentDir)) : [])
 
-        let baseSystemPrompt = resolvePromptInput(systemPromptSource ?? discoverSystemPromptFile(), "system prompt")
+        let resolvedSystemPromptSource = systemPromptSource ?? discoverSystemPromptFile()
+        let baseSystemPrompt = resolvePromptInput(resolvedSystemPromptSource, "system prompt")
         systemPrompt = baseSystemPrompt
+        state.withLock {
+            $0.systemPromptSourcePath = fileBackedPromptPath(resolvedSystemPromptSource)
+        }
 
         let appendSource = appendSystemPromptSource ?? discoverAppendSystemPromptFile()
         let resolvedAppend = resolvePromptInput(appendSource, "append system prompt")
         appendSystemPrompt = resolvedAppend.map { [$0] } ?? []
+        state.withLock {
+            $0.appendSystemPromptSourcePaths = fileBackedPromptPath(appendSource).map { [$0] } ?? []
+        }
     }
 
     private func mergePaths(_ primary: [String], _ additional: [String], _ extra: [String] = []) -> [String] {
@@ -698,6 +732,14 @@ public final class DefaultResourceLoader: ResourceLoader {
             return globalPath
         }
         return nil
+    }
+
+    private func fileBackedPromptPath(_ source: String?) -> String? {
+        guard let source else { return nil }
+        let url = URL(fileURLWithPath: source)
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+        guard values?.isRegularFile == true else { return nil }
+        return url.standardized.path
     }
 
     private func addDefaultMetadataForPath(_ filePath: String) {

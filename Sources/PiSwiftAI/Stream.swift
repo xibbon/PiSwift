@@ -169,6 +169,7 @@ private func hasGoogleVertexCredentials(env: [String: String]) -> Bool {
 }
 
 public func stream(model: Model, context: Context, options: StreamOptions? = nil) throws -> AssistantMessageEventStream {
+    try validateHTTPClientSupport(api: model.api, transport: options?.transport, httpClient: options?.httpClient)
     if getApiProvider(model.api) == nil {
         ensureBuiltInProviders()
     }
@@ -184,6 +185,7 @@ public func complete(model: Model, context: Context, options: StreamOptions? = n
 }
 
 public func streamSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) throws -> AssistantMessageEventStream {
+    try validateHTTPClientSupport(api: model.api, transport: options?.transport, httpClient: options?.httpClient)
     if getApiProvider(model.api) == nil {
         ensureBuiltInProviders()
     }
@@ -194,6 +196,29 @@ public func streamSimple(model: Model, context: Context, options: SimpleStreamOp
     let requestedMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32_000)
     resolvedOptions.maxTokens = clampSimpleMaxTokensToContext(model: model, context: context, maxTokens: requestedMaxTokens)
     return provider.streamSimple(model, context, resolvedOptions)
+}
+
+private func validateHTTPClientSupport(
+    api: Api,
+    transport: Transport?,
+    httpClient: (any ProviderHTTPClient)?
+) throws {
+    guard httpClient != nil else { return }
+    switch api {
+    case .googleGenerativeAI:
+        throw StreamError.unsupportedHTTPClient("Google Generative AI adapter")
+    case .googleVertex:
+        throw StreamError.unsupportedHTTPClient("Google Vertex adapter")
+    case .googleGeminiCli:
+        throw StreamError.unsupportedHTTPClient("Google Gemini CLI adapter")
+    case .bedrockConverseStream:
+        throw StreamError.unsupportedHTTPClient("Amazon Bedrock adapter")
+    case .openAICodexResponses where transport == .websocket || transport == .websocketCached:
+        throw StreamError.unsupportedHTTPClient("OpenAI Codex WebSocket transport")
+    case .anthropicMessages, .openAICompletions, .openAIResponses,
+         .openAICodexResponses, .azureOpenAIResponses, .mistralConversations:
+        return
+    }
 }
 
 /// Leave room for protocol overhead and completion tokens on APIs whose context
@@ -272,13 +297,15 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
             maxTokens: baseMaxTokens,
             signal: options?.signal,
             apiKey: apiKey,
+            httpClient: options?.httpClient,
             thinkingEnabled: false,
             metadata: options?.metadata,
             headers: options?.headers,
             onPayload: options?.onPayload,
             onResponse: options?.onResponse,
             timeoutMs: options?.timeoutMs,
-            maxRetries: options?.maxRetries
+            maxRetries: options?.maxRetries,
+            maxRetryDelayMs: options?.maxRetryDelayMs
         )
     }
 
@@ -301,6 +328,7 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
         maxTokens: clampedMaxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         thinkingEnabled: true,
         thinkingBudgetTokens: clampedThinkingBudget,
         effort: model.compat?.forceAdaptiveThinking == true ? adaptiveEffort : nil,
@@ -309,7 +337,8 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
     )
 }
 
@@ -361,6 +390,7 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         reasoningEffort: reasoningEffort,
         thinkingBudgets: options?.thinkingBudgets,
         cacheRetention: options?.cacheRetention,
@@ -369,7 +399,8 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
     )
 }
 
@@ -382,6 +413,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         cacheRetention: options?.cacheRetention,
         reasoningEffort: reasoningEffort,
         sessionId: options?.sessionId,
@@ -391,6 +423,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs,
         websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
     )
 }
@@ -403,7 +436,9 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         reasoningEffort: reasoningEffort,
+        cacheRetention: options?.cacheRetention,
         sessionId: options?.sessionId,
         transport: options?.transport,
         headers: options?.headers,
@@ -411,6 +446,7 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs,
         websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
     )
 }
@@ -424,13 +460,15 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         reasoningEffort: reasoningEffort,
         sessionId: options?.sessionId,
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
     )
 }
 
@@ -442,12 +480,14 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         headers: options?.headers,
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
     )
 }
 
@@ -459,12 +499,14 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         headers: options?.headers,
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
     )
 }
 
@@ -586,9 +628,14 @@ func mergeThinkingBudgets(_ budgets: ThinkingBudgets?, reasoning: ThinkingLevel,
     return merged
 }
 
-public enum StreamError: Error, LocalizedError {
+public enum StreamError: Error, LocalizedError, Sendable {
     case missingApiKey(String)
     case noApiProvider(String)
+    case providerRequest(statusCode: Int?, headers: [String: String]?, message: String)
+    case retryDelayExceedsMaximum(requestedMs: Double, maximumMs: Double, providerMessage: String)
+    case requestAborted
+    case unsupportedHTTPClient(String)
+    case invalidHTTPResponse
 
     public var errorDescription: String? {
         switch self {
@@ -596,6 +643,18 @@ public enum StreamError: Error, LocalizedError {
             return "No API key for provider: \(provider)"
         case .noApiProvider(let api):
             return "No API provider registered for api: \(api)"
+        case .providerRequest(_, _, let message):
+            return message
+        case .retryDelayExceedsMaximum(let requestedMs, let maximumMs, let providerMessage):
+            let requestedSeconds = String(format: "%.0f", ceil(requestedMs / 1_000))
+            let maximumSeconds = String(format: "%.0f", ceil(maximumMs / 1_000))
+            return "Server requested \(requestedSeconds)s retry delay (max: \(maximumSeconds)s). \(providerMessage)"
+        case .requestAborted:
+            return "Request aborted"
+        case .unsupportedHTTPClient(let adapter):
+            return "\(adapter) does not support a custom HTTP client"
+        case .invalidHTTPResponse:
+            return "Provider returned an invalid HTTP response"
         }
     }
 }

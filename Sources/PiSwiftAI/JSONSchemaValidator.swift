@@ -39,7 +39,7 @@ public struct ValidationResult {
 ///
 /// SAFETY: this type has no mutable instance state; validation uses local
 /// variables only, so sharing `shared` across tasks is safe.
-public final class JSONSchemaValidator: @unchecked Sendable {
+public final class JSONSchemaValidator: Sendable {
     public static let shared = JSONSchemaValidator()
 
     public init() {}
@@ -57,6 +57,52 @@ public final class JSONSchemaValidator: @unchecked Sendable {
         path: String = "root",
         coerceTypes: Bool = true
     ) -> ValidationResult {
+        if let anyOf = schema["anyOf"] as? [[String: Any]] {
+            for subSchema in anyOf {
+                let exact = validate(value, against: subSchema, path: path, coerceTypes: false)
+                if exact.isValid {
+                    return exact
+                }
+            }
+            if coerceTypes {
+                for subSchema in anyOf {
+                    let result = validate(value, against: subSchema, path: path, coerceTypes: true)
+                    if result.isValid {
+                        return result
+                    }
+                }
+            }
+            return .invalid(SchemaValidationError(path: path, message: "does not match any of the allowed schemas"))
+        }
+
+        if let oneOf = schema["oneOf"] as? [[String: Any]] {
+            let exactMatches = oneOf.compactMap { subSchema -> ValidationResult? in
+                let result = validate(value, against: subSchema, path: path, coerceTypes: false)
+                return result.isValid ? result : nil
+            }
+            if exactMatches.count == 1 {
+                return exactMatches[0]
+            }
+            if exactMatches.count > 1 {
+                return .invalid(SchemaValidationError(path: path, message: "matches multiple oneOf schemas"))
+            }
+
+            guard coerceTypes else {
+                return .invalid(SchemaValidationError(path: path, message: "does not match any of the oneOf schemas"))
+            }
+            let coercedMatches = oneOf.compactMap { subSchema -> ValidationResult? in
+                let result = validate(value, against: subSchema, path: path, coerceTypes: true)
+                return result.isValid ? result : nil
+            }
+            if coercedMatches.count == 1 {
+                return coercedMatches[0]
+            }
+            if coercedMatches.isEmpty {
+                return .invalid(SchemaValidationError(path: path, message: "does not match any of the oneOf schemas"))
+            }
+            return .invalid(SchemaValidationError(path: path, message: "matches multiple oneOf schemas"))
+        }
+
         // Handle nullable/optional
         if value == nil || value is NSNull {
             if let nullable = schema["nullable"] as? Bool, nullable {
@@ -86,37 +132,6 @@ public final class JSONSchemaValidator: @unchecked Sendable {
         } else {
             // No type specified, accept any
             expectedTypes = []
-        }
-
-        // Handle anyOf
-        if let anyOf = schema["anyOf"] as? [[String: Any]] {
-            for subSchema in anyOf {
-                let result = validate(value, against: subSchema, path: path, coerceTypes: coerceTypes)
-                if result.isValid {
-                    return result
-                }
-            }
-            return .invalid(SchemaValidationError(path: path, message: "does not match any of the allowed schemas"))
-        }
-
-        // Handle oneOf
-        if let oneOf = schema["oneOf"] as? [[String: Any]] {
-            var matchCount = 0
-            var lastValid: ValidationResult?
-            for subSchema in oneOf {
-                let result = validate(value, against: subSchema, path: path, coerceTypes: coerceTypes)
-                if result.isValid {
-                    matchCount += 1
-                    lastValid = result
-                }
-            }
-            if matchCount == 1 {
-                return lastValid!
-            } else if matchCount == 0 {
-                return .invalid(SchemaValidationError(path: path, message: "does not match any of the oneOf schemas"))
-            } else {
-                return .invalid(SchemaValidationError(path: path, message: "matches multiple oneOf schemas"))
-            }
         }
 
         // Handle allOf

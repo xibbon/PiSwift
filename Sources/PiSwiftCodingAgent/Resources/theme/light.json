@@ -75,7 +75,8 @@
 		"thinkingXhigh": "#8b008b",
 		"thinkingMax": "#af005f",
 
-		"bashMode": "green"
+		"bashMode": "green",
+		"scrollbarThumb": "selectedBg"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

@@ -5,6 +5,30 @@ import PiSwiftCodingAgent
 
 typealias AgentThinkingLevel = PiSwiftAgent.ThinkingLevel
 
+actor ProcessOutputCaptureGate {
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard isLocked else {
+            isLocked = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        guard let next = waiters.first else {
+            isLocked = false
+            return
+        }
+        waiters.removeFirst()
+        next.resume()
+    }
+}
+
+let processOutputCaptureGate = ProcessOutputCaptureGate()
+
 private let RUN_ANTHROPIC_TESTS: Bool = {
     let env = ProcessInfo.processInfo.environment
     let flag = (env["PI_RUN_ANTHROPIC_TESTS"] ?? env["PI_RUN_LIVE_TESTS"])?.lowercased()

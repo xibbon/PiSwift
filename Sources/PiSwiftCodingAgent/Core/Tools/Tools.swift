@@ -28,9 +28,11 @@ internal func shouldIncludeBashTool() -> Bool {
 
 public struct ToolsOptions: Sendable {
     public var read: ReadToolOptions?
+    public var bash: BashToolOptions?
 
-    public init(read: ReadToolOptions? = nil) {
+    public init(read: ReadToolOptions? = nil, bash: BashToolOptions? = nil) {
         self.read = read
+        self.bash = bash
     }
 }
 
@@ -41,7 +43,7 @@ public func createCodingTools(cwd: String) -> [Tool] {
 public func createCodingTools(cwd: String, options: ToolsOptions?, subagentContext: SubagentToolContext?) -> [Tool] {
     var tools: [Tool] = [createReadTool(cwd: cwd, options: options?.read)]
     if shouldIncludeBashTool() {
-        tools.append(createBashTool(cwd: cwd))
+        tools.append(createBashTool(cwd: cwd, options: options?.bash))
     }
     tools.append(contentsOf: [
         createEditTool(cwd: cwd),
@@ -77,7 +79,7 @@ public func createAllTools(cwd: String, options: ToolsOptions?, subagentContext:
         .ls: createLsTool(cwd: cwd),
     ]
     if shouldIncludeBashTool() {
-        tools[.bash] = createBashTool(cwd: cwd)
+        tools[.bash] = createBashTool(cwd: cwd, options: options?.bash)
     }
     if let subagentContext {
         tools[.subagent] = createSubagentTool(subagentContext)

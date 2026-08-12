@@ -50,6 +50,7 @@ public enum ThemeColor: String, CaseIterable, Sendable {
     case thinkingXhigh
     case thinkingMax
     case bashMode
+    case scrollbarThumb
 }
 
 public enum ThemeBg: String, CaseIterable, Sendable {
@@ -456,6 +457,10 @@ private func withThemeColorFallbacks(_ json: ThemeJson) -> ThemeJson {
     if resolved.colors[ThemeColor.thinkingMax.rawValue] == nil,
        let xhigh = resolved.colors[ThemeColor.thinkingXhigh.rawValue] {
         resolved.colors[ThemeColor.thinkingMax.rawValue] = xhigh
+    }
+    if resolved.colors[ThemeColor.scrollbarThumb.rawValue] == nil,
+       let selectedBg = resolved.colors[ThemeBg.selectedBg.rawValue] {
+        resolved.colors[ThemeColor.scrollbarThumb.rawValue] = selectedBg
     }
     return resolved
 }

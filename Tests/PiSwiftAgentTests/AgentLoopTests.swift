@@ -591,7 +591,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
             followUpPolled.withLock { $0 = true }
             return [createUserMessage("follow-up")]
         },
-        shouldStopAfterTurn: {
+        shouldStopAfterTurn: { _ in
             true
         }
     )

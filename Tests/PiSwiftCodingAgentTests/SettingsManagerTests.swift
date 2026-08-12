@@ -185,6 +185,117 @@ import PiSwiftAI
     #expect(markdown?["codeBlockIndent"] as? String == "    ")
 }
 
+@Test func fullscreenSettingsDefaultsAndRoundTrip() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-fullscreen-\(UUID().uuidString)")
+        .path
+    try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    let manager = SettingsManager.create(tempDir, tempDir)
+    #expect(manager.getTuiMode() == "regular")
+    #expect(manager.getFullscreenScrollbar() == "auto")
+    #expect(manager.getMouseWheelStep() == 1)
+    #expect(manager.getMermaidEnabled() == true)
+    #expect(manager.getMermaidRenderWhileStreaming() == true)
+    #expect(manager.getLatexEnabled() == false)
+    #expect(manager.getOutputPad() == 1)
+
+    manager.setTuiMode("fullscreen")
+    manager.setFullscreenScrollbar("hidden")
+    manager.setMouseWheelStep(4)
+    manager.setMermaidEnabled(false)
+    manager.setMermaidRenderWhileStreaming(false)
+    manager.setLatexEnabled(true)
+    manager.setOutputPad(0)
+
+    let settingsPath = URL(fileURLWithPath: tempDir).appendingPathComponent("settings.json")
+    let data = try Data(contentsOf: settingsPath)
+    let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let markdown = try #require(json["markdown"] as? [String: Any])
+    #expect(json["tuiMode"] as? String == "fullscreen")
+    #expect(json["fullscreenScrollbar"] as? String == "hidden")
+    #expect(json["mouseWheelStep"] as? Int == 4)
+    #expect(json["outputPad"] as? Int == 0)
+    #expect(markdown["mermaidEnabled"] as? Bool == false)
+    #expect(markdown["mermaidRenderWhileStreaming"] as? Bool == false)
+    #expect(markdown["latexEnabled"] as? Bool == true)
+
+    let reloaded = SettingsManager.create(tempDir, tempDir)
+    #expect(reloaded.getTuiMode() == "fullscreen")
+    #expect(reloaded.getFullscreenScrollbar() == "hidden")
+    #expect(reloaded.getMouseWheelStep() == 4)
+    #expect(reloaded.getMermaidEnabled() == false)
+    #expect(reloaded.getMermaidRenderWhileStreaming() == false)
+    #expect(reloaded.getLatexEnabled() == true)
+    #expect(reloaded.getOutputPad() == 0)
+}
+
+@Test func fullscreenSettingsRejectInvalidStoredValues() throws {
+    var settings = Settings()
+    settings.outputPad = 2
+    settings.mouseWheelStep = 0
+    settings.tuiMode = "other"
+    settings.fullscreenScrollbar = "sometimes"
+    let manager = SettingsManager.inMemory(settings)
+
+    #expect(manager.getOutputPad() == 1)
+    #expect(manager.getMouseWheelStep() == 1)
+    #expect(manager.getTuiMode() == "regular")
+    #expect(manager.getFullscreenScrollbar() == "auto")
+}
+
+@Test func projectNestedSettingsDeepMergeWithGlobalSettings() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-settings-nested-merge-\(UUID().uuidString)")
+        .path
+    let projectDir = URL(fileURLWithPath: tempDir).appendingPathComponent("project")
+    let agentDir = URL(fileURLWithPath: tempDir).appendingPathComponent("agent")
+    let projectSettingsDir = projectDir.appendingPathComponent(CONFIG_DIR_NAME)
+    try FileManager.default.createDirectory(at: projectSettingsDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: agentDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+    try """
+    {
+      "markdown": {
+        "codeBlockIndent": "    ",
+        "mermaidEnabled": true,
+        "mermaidRenderWhileStreaming": false,
+        "latexEnabled": true
+      },
+      "terminal": {
+        "showImages": false,
+        "imageWidthCells": 88,
+        "showTerminalProgress": true
+      }
+    }
+    """.write(
+        to: agentDir.appendingPathComponent("settings.json"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try """
+    {
+      "markdown": {"mermaidEnabled": false},
+      "terminal": {"showImages": true}
+    }
+    """.write(
+        to: projectSettingsDir.appendingPathComponent("settings.json"),
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let manager = SettingsManager.create(projectDir.path, agentDir.path)
+    #expect(manager.getMermaidEnabled() == false)
+    #expect(manager.getCodeBlockIndent() == "    ")
+    #expect(manager.getMermaidRenderWhileStreaming() == false)
+    #expect(manager.getLatexEnabled() == true)
+    #expect(manager.getShowImages() == true)
+    #expect(manager.getImageWidthCells() == 88)
+    #expect(manager.getShowTerminalProgress() == true)
+}
+
 @Test func settingsAnalyticsOptInGeneratesTrackingId() throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-settings-analytics-\(UUID().uuidString)")

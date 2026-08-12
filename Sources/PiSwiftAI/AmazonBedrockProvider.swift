@@ -1,12 +1,13 @@
 import CryptoKit
 import Foundation
 
-private enum BedrockStreamError: Error {
+enum BedrockStreamError: Error {
     case invalidUrl
     case invalidResponse
     case missingCredentials
     case aborted
     case serverError(String)
+    case responseFailure(message: String, status: Int?, errorCode: String?, requestId: String?)
 }
 
 private struct AwsCredentials: Sendable {
@@ -255,6 +256,7 @@ public func streamBedrock(
 
             let retryLimit = max(0, options.maxRetries ?? 0)
             var attempt = 0
+            var responseRequestId: String?
             while true {
                 do {
                     let session = proxySession(for: signedRequest.url)
@@ -263,10 +265,14 @@ public func streamBedrock(
                         throw BedrockStreamError.invalidResponse
                     }
                     options.onResponse?(ResponseSnapshot(statusCode: httpResponse.statusCode, headers: responseHeaders(httpResponse)))
+                    responseRequestId = normalizedBedrockDiagnosticValue(
+                        httpResponse.value(forHTTPHeaderField: "x-amzn-requestid")
+                            ?? httpResponse.value(forHTTPHeaderField: "x-amz-request-id")
+                    )
                     guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
                         let data = try await collectSseStreamData(from: bytes)
                         let text = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
-                        throw BedrockStreamError.serverError(formatBedrockHTTPError(statusCode: httpResponse.statusCode, body: text))
+                        throw makeBedrockHTTPFailure(response: httpResponse, body: text)
                     }
 
                     var parser = AwsEventStreamParser()
@@ -284,7 +290,8 @@ public func streamBedrock(
                                 model: model,
                                 output: &output,
                                 state: &state,
-                                stream: stream
+                                stream: stream,
+                                responseRequestId: responseRequestId
                             )
                         }
                     }
@@ -325,6 +332,9 @@ public func streamBedrock(
         } catch {
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
             output.errorMessage = errorMessage(for: error)
+            if output.stopReason == .error, let diagnostic = bedrockFailureDiagnostic(for: error) {
+                output.diagnostics = (output.diagnostics ?? []) + [diagnostic]
+            }
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }
@@ -339,12 +349,21 @@ private func handleBedrockEvent(
     model: Model,
     output: inout AssistantMessage,
     state: inout BedrockStreamState,
-    stream: AssistantMessageEventStream
+    stream: AssistantMessageEventStream,
+    responseRequestId: String?
 ) throws {
     let messageType = message.headers[":message-type"]
     if messageType == "exception" {
         let errorText = String(data: message.payload, encoding: .utf8) ?? "Bedrock exception"
-        throw BedrockStreamError.serverError(errorText)
+        let errorCode = normalizedBedrockDiagnosticValue(
+            message.headers[":exception-type"] ?? message.headers[":error-code"]
+        )
+        throw BedrockStreamError.responseFailure(
+            message: errorText,
+            status: nil,
+            errorCode: errorCode,
+            requestId: responseRequestId
+        )
     }
 
     guard let eventType = message.headers[":event-type"] else { return }
@@ -658,10 +677,7 @@ private func buildBedrockRequest(
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("application/vnd.amazon.eventstream", forHTTPHeaderField: "Accept")
     request.setValue(url.host ?? "", forHTTPHeaderField: "Host")
-    var customHeaders = model.headers ?? [:]
-    if let optionHeaders = options.headers {
-        customHeaders.merge(optionHeaders) { _, new in new }
-    }
+    let customHeaders = mergeProviderHeaders(model.headers, options.headers) ?? [:]
     for (key, value) in customHeaders where !isReservedBedrockHeader(key) {
         request.setValue(value, forHTTPHeaderField: key)
     }
@@ -1148,6 +1164,13 @@ private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
         return .sigV4(AwsCredentials(accessKeyId: "dummy-access-key", secretAccessKey: "dummy-secret-key", sessionToken: nil))
     }
 
+    if let profile = options.profile, !profile.isEmpty {
+        guard let credentials = loadAwsProfileCredentials(profile: profile) else {
+            throw BedrockStreamError.missingCredentials
+        }
+        return .sigV4(credentials)
+    }
+
     if let access = env["AWS_ACCESS_KEY_ID"],
        let secret = env["AWS_SECRET_ACCESS_KEY"],
        !access.isEmpty,
@@ -1162,6 +1185,56 @@ private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
     }
 
     throw BedrockStreamError.missingCredentials
+}
+
+func resolvedBedrockAccessKeyId(options: BedrockOptions) throws -> String? {
+    switch try resolveBedrockAuth(options: options) {
+    case .sigV4(let credentials):
+        return credentials.accessKeyId
+    case .bearer:
+        return nil
+    }
+}
+
+private let maxBedrockDiagnosticValueCharacters = 200
+
+func normalizedBedrockDiagnosticValue(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, trimmed.count <= maxBedrockDiagnosticValueCharacters else { return nil }
+    return trimmed
+}
+
+private func makeBedrockHTTPFailure(response: HTTPURLResponse, body: String) -> BedrockStreamError {
+    let headerCode = response.value(forHTTPHeaderField: "x-amzn-errortype")?
+        .split(separator: ":", maxSplits: 1)
+        .first
+        .map(String.init)
+    let parsed = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any]
+    let bodyCode = parsed?["__type"] as? String ?? parsed?["code"] as? String
+    let errorCode = normalizedBedrockDiagnosticValue(headerCode ?? bodyCode)
+    let requestId = normalizedBedrockDiagnosticValue(
+        response.value(forHTTPHeaderField: "x-amzn-requestid")
+            ?? response.value(forHTTPHeaderField: "x-amz-request-id")
+    )
+    return .responseFailure(
+        message: formatBedrockHTTPError(statusCode: response.statusCode, body: body),
+        status: response.statusCode,
+        errorCode: errorCode,
+        requestId: requestId
+    )
+}
+
+func bedrockFailureDiagnostic(for error: Error) -> AssistantMessageDiagnostic? {
+    guard case let BedrockStreamError.responseFailure(_, status, errorCode, requestId) = error else {
+        return nil
+    }
+    var details: [String: AnyCodable] = [:]
+    if let status { details["status"] = AnyCodable(status) }
+    if let errorCode { details["errorCode"] = AnyCodable(errorCode) }
+    if let requestId { details["requestId"] = AnyCodable(requestId) }
+    guard !details.isEmpty else { return nil }
+    return AssistantMessageDiagnostic(type: "bedrock_response_failure", details: details)
 }
 
 private func formatBedrockHTTPError(statusCode: Int, body: String) -> String {
@@ -1475,6 +1548,8 @@ private func errorMessage(for error: Error) -> String {
     case BedrockStreamError.invalidUrl:
         return "Invalid Amazon Bedrock URL"
     case BedrockStreamError.serverError(let message):
+        return message
+    case BedrockStreamError.responseFailure(let message, _, _, _):
         return message
     default:
         return retryAwareErrorDescription(error)

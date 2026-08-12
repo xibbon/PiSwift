@@ -60,20 +60,12 @@ public func generateImagesOpenRouter(
         let body = try JSONSerialization.data(withJSONObject: payload)
 
         let request = try buildOpenRouterImagesRequest(model: model, apiKey: apiKey, options: options, body: body)
-        let maxRetries = max(0, options.maxRetries ?? 0)
         let (data, response) = try await performOpenRouterImagesRequest(
             request,
-            signal: options.signal,
-            maxRetries: maxRetries
+            options: options
         )
 
-        guard let http = response as? HTTPURLResponse else {
-            throw OpenRouterImagesError.invalidResponse
-        }
-        options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-        guard (200..<300).contains(http.statusCode) else {
-            throw OpenRouterImagesError.httpError(http.statusCode, String(data: data, encoding: .utf8) ?? "")
-        }
+        options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
 
         try parseOpenRouterImagesResponse(data, model: model, output: &output)
         return output
@@ -137,53 +129,50 @@ private func buildOpenRouterImagesRequest(
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-    var headers = model.headers ?? [:]
-    if let optionHeaders = options.headers {
-        for (key, value) in optionHeaders {
-            headers[key] = value
-        }
-    }
-    for (key, value) in headers {
-        request.setValue(value, forHTTPHeaderField: key)
-    }
+    applyProviderHeaders(
+        mergeProviderHeaders(model.headers, options.headers),
+        to: &request
+    )
     return request
 }
 
 private func performOpenRouterImagesRequest(
     _ request: URLRequest,
-    signal: CancellationToken?,
-    maxRetries: Int
-) async throws -> (Data, URLResponse) {
-    var attempt = 0
-    var lastError: Error?
-
-    while attempt <= maxRetries {
-        if signal?.isCancelled == true {
-            throw OpenRouterImagesError.aborted
+    options: ImagesOptions
+) async throws -> (Data, ProviderHTTPResponse) {
+    let client = options.httpClient ?? OpenRouterImagesDefaultHTTPClient()
+    return try await retryProviderRequest(
+        maxRetries: options.maxRetries,
+        maxRetryDelayMs: options.maxRetryDelayMs,
+        signal: options.signal
+    ) {
+        let response = try await client.send(request)
+        let data = try await collectProviderHTTPBody(response.body)
+        guard (200..<300).contains(response.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? "HTTP \(response.statusCode)"
+            throw StreamError.providerRequest(
+                statusCode: response.statusCode,
+                headers: response.headers,
+                message: message
+            )
         }
-        do {
-            let session = openRouterImagesSessionFactory.withLock { $0 }(request.url)
-            let (data, response) = try await session.data(for: request)
-            if signal?.isCancelled == true {
-                throw OpenRouterImagesError.aborted
-            }
-            if let http = response as? HTTPURLResponse,
-               [408, 409, 429, 500, 502, 503, 504].contains(http.statusCode),
-               attempt < maxRetries {
-                attempt += 1
-                continue
-            }
-            return (data, response)
-        } catch {
-            lastError = error
-            if attempt >= maxRetries {
-                throw error
-            }
-            attempt += 1
-        }
+        return (data, response)
     }
+}
 
-    throw lastError ?? OpenRouterImagesError.invalidResponse
+private struct OpenRouterImagesDefaultHTTPClient: ProviderHTTPClient {
+    func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
+        let session = openRouterImagesSessionFactory.withLock { $0 }(request.url)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw StreamError.invalidHTTPResponse
+        }
+        return ProviderHTTPResponse(
+            statusCode: http.statusCode,
+            headers: responseHeaders(http),
+            body: data
+        )
+    }
 }
 
 private func parseOpenRouterImagesResponse(_ data: Data, model: ImagesModel, output: inout AssistantImages) throws {

@@ -20,15 +20,34 @@ public struct BranchSummarySettings: Sendable {
     public var skipPrompt: Bool?
 }
 
+public struct ProviderRetrySettings: Sendable {
+    public var timeoutMs: Int?
+    public var maxRetries: Int?
+    public var maxRetryDelayMs: Int?
+
+    public init(timeoutMs: Int? = nil, maxRetries: Int? = nil, maxRetryDelayMs: Int? = nil) {
+        self.timeoutMs = timeoutMs
+        self.maxRetries = maxRetries
+        self.maxRetryDelayMs = maxRetryDelayMs
+    }
+}
+
 public struct RetrySettings: Sendable {
     public var enabled: Bool?
     public var maxRetries: Int?
     public var baseDelayMs: Int?
+    public var provider: ProviderRetrySettings?
 
-    public init(enabled: Bool? = nil, maxRetries: Int? = nil, baseDelayMs: Int? = nil) {
+    public init(
+        enabled: Bool? = nil,
+        maxRetries: Int? = nil,
+        baseDelayMs: Int? = nil,
+        provider: ProviderRetrySettings? = nil
+    ) {
         self.enabled = enabled
         self.maxRetries = maxRetries
         self.baseDelayMs = baseDelayMs
+        self.provider = provider
     }
 }
 
@@ -95,9 +114,20 @@ public struct ImageSettings: Sendable {
 
 public struct MarkdownSettings: Sendable {
     public var codeBlockIndent: String?
+    public var mermaidEnabled: Bool?
+    public var mermaidRenderWhileStreaming: Bool?
+    public var latexEnabled: Bool?
 
-    public init(codeBlockIndent: String? = nil) {
+    public init(
+        codeBlockIndent: String? = nil,
+        mermaidEnabled: Bool? = nil,
+        mermaidRenderWhileStreaming: Bool? = nil,
+        latexEnabled: Bool? = nil
+    ) {
         self.codeBlockIndent = codeBlockIndent
+        self.mermaidEnabled = mermaidEnabled
+        self.mermaidRenderWhileStreaming = mermaidRenderWhileStreaming
+        self.latexEnabled = latexEnabled
     }
 }
 
@@ -156,8 +186,12 @@ public struct Settings: Sendable {
     public var enabledModels: [String]?
     public var doubleEscapeAction: String?
     public var editorPaddingX: Int?
+    public var outputPad: Int?
     public var autocompleteMaxVisible: Int?
     public var showHardwareCursor: Bool?
+    public var tuiMode: String?
+    public var fullscreenScrollbar: String?
+    public var mouseWheelStep: Int?
     public var markdown: MarkdownSettings?
     public var thinkingBudgets: ThinkingBudgetsSettings?
     public var treeFilterMode: String?
@@ -577,7 +611,17 @@ public final class SettingsManager: Sendable {
         return RetrySettings(
             enabled: retry.enabled ?? true,
             maxRetries: retry.maxRetries ?? 3,
-            baseDelayMs: retry.baseDelayMs ?? 2000
+            baseDelayMs: retry.baseDelayMs ?? 2000,
+            provider: retry.provider
+        )
+    }
+
+    public func getProviderRetrySettings() -> ProviderRetrySettings {
+        let provider = settings.retry?.provider ?? ProviderRetrySettings()
+        return ProviderRetrySettings(
+            timeoutMs: provider.timeoutMs,
+            maxRetries: provider.maxRetries,
+            maxRetryDelayMs: provider.maxRetryDelayMs ?? 60_000
         )
     }
 
@@ -819,6 +863,16 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    public func getOutputPad() -> Int {
+        settings.outputPad == 0 ? 0 : 1
+    }
+
+    public func setOutputPad(_ padding: Int) {
+        globalSettings.outputPad = padding == 0 ? 0 : 1
+        markModified("outputPad")
+        save()
+    }
+
     public func getShowHardwareCursor() -> Bool {
         if let show = settings.showHardwareCursor { return show }
         return ProcessInfo.processInfo.environment["PI_HARDWARE_CURSOR"] == "1"
@@ -830,8 +884,75 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    public func getTuiMode() -> String {
+        settings.tuiMode == "fullscreen" ? "fullscreen" : "regular"
+    }
+
+    public func setTuiMode(_ mode: String) {
+        globalSettings.tuiMode = mode == "fullscreen" ? "fullscreen" : "regular"
+        markModified("tuiMode")
+        save()
+    }
+
+    public func getFullscreenScrollbar() -> String {
+        guard let mode = settings.fullscreenScrollbar,
+              mode == "always" || mode == "hidden" else {
+            return "auto"
+        }
+        return mode
+    }
+
+    public func setFullscreenScrollbar(_ mode: String) {
+        globalSettings.fullscreenScrollbar = mode == "always" || mode == "hidden" ? mode : "auto"
+        markModified("fullscreenScrollbar")
+        save()
+    }
+
+    public func getMouseWheelStep() -> Int {
+        max(1, settings.mouseWheelStep ?? 1)
+    }
+
+    public func setMouseWheelStep(_ step: Int) {
+        globalSettings.mouseWheelStep = max(1, step)
+        markModified("mouseWheelStep")
+        save()
+    }
+
     public func getCodeBlockIndent() -> String {
         settings.markdown?.codeBlockIndent ?? "  "
+    }
+
+    public func getMermaidEnabled() -> Bool {
+        settings.markdown?.mermaidEnabled ?? true
+    }
+
+    public func setMermaidEnabled(_ enabled: Bool) {
+        if globalSettings.markdown == nil { globalSettings.markdown = MarkdownSettings() }
+        globalSettings.markdown?.mermaidEnabled = enabled
+        markModified("markdown", "mermaidEnabled")
+        save()
+    }
+
+    public func getMermaidRenderWhileStreaming() -> Bool {
+        settings.markdown?.mermaidRenderWhileStreaming ?? true
+    }
+
+    public func setMermaidRenderWhileStreaming(_ enabled: Bool) {
+        if globalSettings.markdown == nil { globalSettings.markdown = MarkdownSettings() }
+        globalSettings.markdown?.mermaidRenderWhileStreaming = enabled
+        markModified("markdown", "mermaidRenderWhileStreaming")
+        save()
+    }
+
+    public func getLatexEnabled() -> Bool {
+        settings.markdown?.latexEnabled ?? false
+    }
+
+    public func setLatexEnabled(_ enabled: Bool) {
+        if globalSettings.markdown == nil { globalSettings.markdown = MarkdownSettings() }
+        globalSettings.markdown?.latexEnabled = enabled
+        markModified("markdown", "latexEnabled")
+        save()
     }
 
     public func getTerminalSettings() -> TerminalSettings {
@@ -1172,8 +1293,18 @@ public final class SettingsManager: Sendable {
         if let padding = json["editorPaddingX"] as? Int {
             settings.editorPaddingX = max(0, min(3, padding))
         }
+        settings.outputPad = json["outputPad"] as? Int
         settings.autocompleteMaxVisible = json["autocompleteMaxVisible"] as? Int
         settings.showHardwareCursor = json["showHardwareCursor"] as? Bool
+        if let mode = json["tuiMode"] as? String {
+            settings.tuiMode = mode
+        }
+        if let mode = json["fullscreenScrollbar"] as? String {
+            settings.fullscreenScrollbar = mode
+        }
+        if let step = json["mouseWheelStep"] as? Int {
+            settings.mouseWheelStep = max(1, step)
+        }
         settings.treeFilterMode = json["treeFilterMode"] as? String
         settings.promptSnippetsEnabled = json["promptSnippetsEnabled"] as? Bool
         settings.projectTrust = json["projectTrust"] as? [String: Bool]
@@ -1191,10 +1322,18 @@ public final class SettingsManager: Sendable {
         }
 
         if let retry = json["retry"] as? [String: Any] {
+            let provider = (retry["provider"] as? [String: Any]).map {
+                ProviderRetrySettings(
+                    timeoutMs: $0["timeoutMs"] as? Int,
+                    maxRetries: $0["maxRetries"] as? Int,
+                    maxRetryDelayMs: $0["maxRetryDelayMs"] as? Int
+                )
+            }
             settings.retry = RetrySettings(
                 enabled: retry["enabled"] as? Bool,
                 maxRetries: retry["maxRetries"] as? Int,
-                baseDelayMs: retry["baseDelayMs"] as? Int
+                baseDelayMs: retry["baseDelayMs"] as? Int,
+                provider: provider
             )
         }
 
@@ -1258,7 +1397,12 @@ public final class SettingsManager: Sendable {
         settings.websocketConnectTimeoutMs = parseNonNegativeMilliseconds(json["websocketConnectTimeoutMs"])
 
         if let markdown = json["markdown"] as? [String: Any] {
-            settings.markdown = MarkdownSettings(codeBlockIndent: markdown["codeBlockIndent"] as? String)
+            settings.markdown = MarkdownSettings(
+                codeBlockIndent: markdown["codeBlockIndent"] as? String,
+                mermaidEnabled: markdown["mermaidEnabled"] as? Bool,
+                mermaidRenderWhileStreaming: markdown["mermaidRenderWhileStreaming"] as? Bool,
+                latexEnabled: markdown["latexEnabled"] as? Bool
+            )
         }
 
         if let images = json["images"] as? [String: Any] {
@@ -1418,8 +1562,12 @@ public final class SettingsManager: Sendable {
         json["enabledModels"] = settings.enabledModels
         json["doubleEscapeAction"] = settings.doubleEscapeAction
         json["editorPaddingX"] = settings.editorPaddingX
+        json["outputPad"] = settings.outputPad
         json["autocompleteMaxVisible"] = settings.autocompleteMaxVisible
         json["showHardwareCursor"] = settings.showHardwareCursor
+        json["tuiMode"] = settings.tuiMode
+        json["fullscreenScrollbar"] = settings.fullscreenScrollbar
+        json["mouseWheelStep"] = settings.mouseWheelStep
         json["treeFilterMode"] = settings.treeFilterMode
         json["promptSnippetsEnabled"] = settings.promptSnippetsEnabled
         json["projectTrust"] = settings.projectTrust
@@ -1440,11 +1588,19 @@ public final class SettingsManager: Sendable {
         }
 
         if let retry = settings.retry {
-            json["retry"] = [
+            var retryJson: [String: Any] = [
                 "enabled": retry.enabled as Any,
                 "maxRetries": retry.maxRetries as Any,
                 "baseDelayMs": retry.baseDelayMs as Any,
             ]
+            if let provider = retry.provider {
+                retryJson["provider"] = [
+                    "timeoutMs": provider.timeoutMs as Any,
+                    "maxRetries": provider.maxRetries as Any,
+                    "maxRetryDelayMs": provider.maxRetryDelayMs as Any,
+                ]
+            }
+            json["retry"] = retryJson
         }
 
         if settings.skillPaths == nil, let skills = settings.skills {
@@ -1510,6 +1666,9 @@ public final class SettingsManager: Sendable {
         if let markdown = settings.markdown {
             json["markdown"] = [
                 "codeBlockIndent": markdown.codeBlockIndent as Any,
+                "mermaidEnabled": markdown.mermaidEnabled as Any,
+                "mermaidRenderWhileStreaming": markdown.mermaidRenderWhileStreaming as Any,
+                "latexEnabled": markdown.latexEnabled as Any,
             ]
         }
 
@@ -1558,9 +1717,39 @@ public final class SettingsManager: Sendable {
         if override.steeringMode != nil { result.steeringMode = override.steeringMode }
         if override.followUpMode != nil { result.followUpMode = override.followUpMode }
         if override.theme != nil { result.theme = override.theme }
-        if override.compaction != nil { result.compaction = override.compaction }
-        if override.branchSummary != nil { result.branchSummary = override.branchSummary }
-        if override.retry != nil { result.retry = override.retry }
+        if let value = override.compaction {
+            let baseValue = result.compaction ?? CompactionSettingsOverrides()
+            result.compaction = CompactionSettingsOverrides(
+                enabled: value.enabled ?? baseValue.enabled,
+                reserveTokens: value.reserveTokens ?? baseValue.reserveTokens,
+                keepRecentTokens: value.keepRecentTokens ?? baseValue.keepRecentTokens
+            )
+        }
+        if let value = override.branchSummary {
+            let baseValue = result.branchSummary ?? BranchSummarySettings()
+            result.branchSummary = BranchSummarySettings(
+                reserveTokens: value.reserveTokens ?? baseValue.reserveTokens,
+                skipPrompt: value.skipPrompt ?? baseValue.skipPrompt
+            )
+        }
+        if let retryOverride = override.retry {
+            let baseRetry = result.retry ?? RetrySettings()
+            var mergedRetry = RetrySettings(
+                enabled: retryOverride.enabled ?? baseRetry.enabled,
+                maxRetries: retryOverride.maxRetries ?? baseRetry.maxRetries,
+                baseDelayMs: retryOverride.baseDelayMs ?? baseRetry.baseDelayMs,
+                provider: baseRetry.provider
+            )
+            if let providerOverride = retryOverride.provider {
+                let baseProvider = baseRetry.provider ?? ProviderRetrySettings()
+                mergedRetry.provider = ProviderRetrySettings(
+                    timeoutMs: providerOverride.timeoutMs ?? baseProvider.timeoutMs,
+                    maxRetries: providerOverride.maxRetries ?? baseProvider.maxRetries,
+                    maxRetryDelayMs: providerOverride.maxRetryDelayMs ?? baseProvider.maxRetryDelayMs
+                )
+            }
+            result.retry = mergedRetry
+        }
         if override.hideThinkingBlock != nil { result.hideThinkingBlock = override.hideThinkingBlock }
         if override.showCacheMissNotices != nil { result.showCacheMissNotices = override.showCacheMissNotices }
         if override.shellPath != nil { result.shellPath = override.shellPath }
@@ -1575,20 +1764,74 @@ public final class SettingsManager: Sendable {
         if override.enableSkillCommands != nil { result.enableSkillCommands = override.enableSkillCommands }
         if override.hooks != nil { result.hooks = override.hooks }
         if override.customTools != nil { result.customTools = override.customTools }
-        if override.skills != nil { result.skills = override.skills }
-        if override.terminal != nil { result.terminal = override.terminal }
-        if override.images != nil { result.images = override.images }
+        if let value = override.skills {
+            let baseValue = result.skills ?? SkillsSettings()
+            result.skills = SkillsSettings(
+                enabled: value.enabled ?? baseValue.enabled,
+                enableCodexUser: value.enableCodexUser ?? baseValue.enableCodexUser,
+                enableClaudeUser: value.enableClaudeUser ?? baseValue.enableClaudeUser,
+                enableClaudeProject: value.enableClaudeProject ?? baseValue.enableClaudeProject,
+                enablePiUser: value.enablePiUser ?? baseValue.enablePiUser,
+                enablePiProject: value.enablePiProject ?? baseValue.enablePiProject,
+                enableSkillCommands: value.enableSkillCommands ?? baseValue.enableSkillCommands,
+                customDirectories: value.customDirectories ?? baseValue.customDirectories,
+                ignoredSkills: value.ignoredSkills ?? baseValue.ignoredSkills,
+                includeSkills: value.includeSkills ?? baseValue.includeSkills
+            )
+        }
+        if let value = override.terminal {
+            let baseValue = result.terminal ?? TerminalSettings()
+            result.terminal = TerminalSettings(
+                showImages: value.showImages ?? baseValue.showImages,
+                imageWidthCells: value.imageWidthCells ?? baseValue.imageWidthCells,
+                showTerminalProgress: value.showTerminalProgress ?? baseValue.showTerminalProgress
+            )
+        }
+        if let value = override.images {
+            let baseValue = result.images ?? ImageSettings()
+            result.images = ImageSettings(
+                autoResize: value.autoResize ?? baseValue.autoResize,
+                blockImages: value.blockImages ?? baseValue.blockImages
+            )
+        }
         if override.enabledModels != nil { result.enabledModels = override.enabledModels }
         if override.doubleEscapeAction != nil { result.doubleEscapeAction = override.doubleEscapeAction }
         if override.editorPaddingX != nil { result.editorPaddingX = override.editorPaddingX }
+        if override.outputPad != nil { result.outputPad = override.outputPad }
         if override.autocompleteMaxVisible != nil { result.autocompleteMaxVisible = override.autocompleteMaxVisible }
         if override.showHardwareCursor != nil { result.showHardwareCursor = override.showHardwareCursor }
-        if override.markdown != nil { result.markdown = override.markdown }
-        if override.thinkingBudgets != nil { result.thinkingBudgets = override.thinkingBudgets }
+        if override.tuiMode != nil { result.tuiMode = override.tuiMode }
+        if override.fullscreenScrollbar != nil { result.fullscreenScrollbar = override.fullscreenScrollbar }
+        if override.mouseWheelStep != nil { result.mouseWheelStep = override.mouseWheelStep }
+        if let value = override.markdown {
+            let baseValue = result.markdown ?? MarkdownSettings()
+            result.markdown = MarkdownSettings(
+                codeBlockIndent: value.codeBlockIndent ?? baseValue.codeBlockIndent,
+                mermaidEnabled: value.mermaidEnabled ?? baseValue.mermaidEnabled,
+                mermaidRenderWhileStreaming: value.mermaidRenderWhileStreaming ?? baseValue.mermaidRenderWhileStreaming,
+                latexEnabled: value.latexEnabled ?? baseValue.latexEnabled
+            )
+        }
+        if let value = override.thinkingBudgets {
+            let baseValue = result.thinkingBudgets ?? ThinkingBudgetsSettings()
+            result.thinkingBudgets = ThinkingBudgetsSettings(
+                minimal: value.minimal ?? baseValue.minimal,
+                low: value.low ?? baseValue.low,
+                medium: value.medium ?? baseValue.medium,
+                high: value.high ?? baseValue.high
+            )
+        }
         if override.treeFilterMode != nil { result.treeFilterMode = override.treeFilterMode }
         if override.promptSnippetsEnabled != nil { result.promptSnippetsEnabled = override.promptSnippetsEnabled }
-        if override.projectTrust != nil { result.projectTrust = override.projectTrust }
-        if override.warnings != nil { result.warnings = override.warnings }
+        if let value = override.projectTrust {
+            result.projectTrust = (result.projectTrust ?? [:]).merging(value) { _, new in new }
+        }
+        if let value = override.warnings {
+            let baseValue = result.warnings ?? WarningsSettings()
+            result.warnings = WarningsSettings(
+                anthropicExtraUsage: value.anthropicExtraUsage ?? baseValue.anthropicExtraUsage
+            )
+        }
         if override.enableInstallTelemetry != nil { result.enableInstallTelemetry = override.enableInstallTelemetry }
         if override.enableAnalytics != nil { result.enableAnalytics = override.enableAnalytics }
         if override.trackingId != nil { result.trackingId = override.trackingId }

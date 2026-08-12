@@ -19,7 +19,7 @@ public struct ProxyStreamOptions: Sendable {
     public var cacheRetention: CacheRetention?
     public var thinkingBudgets: ThinkingBudgets?
     public var maxRetryDelayMs: Int?
-    public var headers: [String: String]?
+    public var headers: ProviderHeaders?
     public var metadata: [String: AnyCodable]?
 
     public init(
@@ -35,7 +35,7 @@ public struct ProxyStreamOptions: Sendable {
         cacheRetention: CacheRetention? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
-        headers: [String: String]? = nil,
+        headers: ProviderHeaders? = nil,
         metadata: [String: AnyCodable]? = nil
     ) {
         self.temperature = temperature
@@ -268,7 +268,7 @@ private struct ProxyRequestOptions: Encodable {
     let cacheRetention: CacheRetention?
     let thinkingBudgets: ThinkingBudgets?
     let maxRetryDelayMs: Int?
-    let headers: [String: String]?
+    let headers: ProviderHeaders?
     let metadata: [String: AnyCodable]?
 
     private enum CodingKeys: String, CodingKey {
@@ -320,7 +320,7 @@ private struct ProxyModelPayload: Encodable {
     let cost: ProxyModelCost
     let contextWindow: Int
     let maxTokens: Int
-    let headers: [String: String]?
+    let headers: ProviderHeaders?
 
     init(_ model: Model) {
         self.id = model.id

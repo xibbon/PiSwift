@@ -42,6 +42,7 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let cacheRetention: CacheRetention
     let promptCacheRetention: String?
     let sessionAffinityFormat: SessionAffinityFormat
+    var supportsExplicitPromptCacheMode = false
 
     func intercept(request: URLRequest) -> URLRequest {
         var updated = request
@@ -69,6 +70,11 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
             payload["prompt_cache_retention"] = promptCacheRetention
         } else {
             payload.removeValue(forKey: "prompt_cache_retention")
+        }
+        if cacheRetention == .none, supportsExplicitPromptCacheMode {
+            payload["prompt_cache_options"] = ["mode": "explicit"]
+        } else {
+            payload.removeValue(forKey: "prompt_cache_options")
         }
 
         guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return updated }
@@ -183,8 +189,10 @@ public func streamOpenAIResponses(
             maxTokens: options.maxTokens,
             signal: options.signal,
             apiKey: options.apiKey,
+            httpClient: options.httpClient,
             reasoningEffort: options.reasoningEffort,
             reasoningSummary: mapCodexReasoningSummary(options.reasoningSummary),
+            cacheRetention: options.cacheRetention,
             sessionId: options.sessionId,
             transport: options.transport,
             headers: options.headers,
@@ -193,6 +201,7 @@ public func streamOpenAIResponses(
             onResponse: options.onResponse,
             timeoutMs: options.timeoutMs,
             maxRetries: options.maxRetries,
+            maxRetryDelayMs: options.maxRetryDelayMs,
             websocketConnectTimeoutMs: options.websocketConnectTimeoutMs
         )
         return streamOpenAICodexResponses(model: model, context: context, options: codexOptions)
@@ -222,7 +231,8 @@ public func streamOpenAIResponses(
                 sessionId: options.sessionId,
                 cacheRetention: cacheRetention,
                 promptCacheRetention: promptCacheRetention,
-                sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai)
+                sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai),
+                supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
@@ -264,7 +274,9 @@ public func streamOpenAIResponses(
             emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
-            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty {
+            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
+                || options.httpClient != nil
+                || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
                 request.httpMethod = "POST"
@@ -276,7 +288,10 @@ public func streamOpenAIResponses(
                 try await processRawOpenAIResponsesStream(
                     request: request,
                     model: model,
+                    httpClient: options.httpClient,
                     signal: options.signal,
+                    maxRetries: options.maxRetries,
+                    maxRetryDelayMs: options.maxRetryDelayMs,
                     onResponse: options.onResponse,
                     serviceTier: options.serviceTier,
                     grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties,

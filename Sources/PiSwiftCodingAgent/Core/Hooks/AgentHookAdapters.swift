@@ -10,7 +10,11 @@ public func makeHookRunnerBeforeToolCallHook(_ hookRunner: HookRunner) -> Before
             input: context.args
         )
         if let result = await hookRunner.emitToolCall(event), result.block {
-            return BeforeToolCallResult(block: true, reason: result.reason)
+            return BeforeToolCallResult(
+                block: true,
+                reason: result.reason,
+                terminate: result.terminate
+            )
         }
         return nil
     }

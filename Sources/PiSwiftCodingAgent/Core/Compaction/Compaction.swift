@@ -309,7 +309,7 @@ public func compact(
     _ preparation: CompactionPreparation,
     _ model: Model,
     _ apiKey: String,
-    headers: [String: String]? = nil,
+    headers: ProviderHeaders? = nil,
     customInstructions: String? = nil,
     signal: CancellationToken? = nil
 ) async throws -> CompactionResult {
@@ -459,7 +459,7 @@ private func generateSummary(
     model: Model,
     reserveTokens: Int,
     apiKey: String,
-    headers: [String: String]?,
+    headers: ProviderHeaders?,
     signal: CancellationToken?,
     customInstructions: String?,
     previousSummary: String?
@@ -528,7 +528,7 @@ private func generateTurnPrefixSummary(
     model: Model,
     reserveTokens: Int,
     apiKey: String,
-    headers: [String: String]?,
+    headers: ProviderHeaders?,
     signal: CancellationToken?
 ) async throws -> String {
     let maxTokens = Int(Double(reserveTokens) * 0.5)

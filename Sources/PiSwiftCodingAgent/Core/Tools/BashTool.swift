@@ -57,11 +57,45 @@ public struct BashToolOptions: Sendable {
     public var operations: BashOperations?
     /// Command prefix prepended to every command (e.g., "shopt -s expand_aliases" for alias support)
     public var commandPrefix: String?
+    /// Supplies current session metadata at execution time. Default tools expose it.
+    public var sessionEnvironment: (@Sendable () -> [String: String])?
+    public var exposeSessionEnvironment: Bool
 
-    public init(operations: BashOperations? = nil, commandPrefix: String? = nil) {
+    public init(
+        operations: BashOperations? = nil,
+        commandPrefix: String? = nil,
+        sessionEnvironment: (@Sendable () -> [String: String])? = nil,
+        exposeSessionEnvironment: Bool = true
+    ) {
         self.operations = operations
         self.commandPrefix = commandPrefix
+        self.sessionEnvironment = sessionEnvironment
+        self.exposeSessionEnvironment = exposeSessionEnvironment
     }
+}
+
+public let piSessionEnvironmentVariableNames = [
+    "PI_SESSION_ID",
+    "PI_SESSION_FILE",
+    "PI_PROVIDER",
+    "PI_MODEL",
+    "PI_REASONING_LEVEL",
+]
+
+public func makePiSessionEnvironment(
+    sessionId: String,
+    sessionFile: String?,
+    provider: String?,
+    model: String?,
+    reasoningLevel: String?
+) -> [String: String] {
+    [
+        "PI_SESSION_ID": sessionId,
+        "PI_SESSION_FILE": sessionFile ?? "",
+        "PI_PROVIDER": provider ?? "",
+        "PI_MODEL": model ?? "",
+        "PI_REASONING_LEVEL": reasoningLevel ?? "",
+    ]
 }
 
 public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSwiftAgent.AgentTool {
@@ -153,7 +187,12 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
 
         let result: BashResult = try await operations.execute(
             resolvedCommand,
-            options: BashExecutorOptions(onChunk: onChunk, signal: signal, timeoutSeconds: timeoutValue)
+            options: BashExecutorOptions(
+                onChunk: onChunk,
+                signal: signal,
+                timeoutSeconds: timeoutValue,
+                environment: options?.exposeSessionEnvironment == false ? nil : options?.sessionEnvironment?()
+            )
         )
 
         // Get final state and close temp file handle

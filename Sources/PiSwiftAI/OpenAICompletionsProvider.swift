@@ -34,10 +34,10 @@ public func streamOpenAICompletions(
             let query = try buildCompletionsQuery(model: model, context: context, options: options, compat: compat)
             let openAIStream: AsyncThrowingStream<OpenAICompletionsStreamChunk, Error>
             if compat.thinkingFormat == .zai {
-                openAIStream = try streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat)
+                openAIStream = try await streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat)
             } else {
                 let middlewares = buildCompletionsMiddlewares(model: model, context: context, compat: compat, options: options)
-                openAIStream = try streamManualOpenAICompletions(
+                openAIStream = try await streamManualOpenAICompletions(
                     model: model,
                     options: options,
                     query: query,
@@ -330,7 +330,10 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let isGrok = provider == "xai" || baseUrl.contains("api.x.ai")
     let isGroq = provider == "groq" || baseUrl.contains("groq.com")
     let isChutes = baseUrl.contains("chutes.ai")
-    let isZai = provider == "zai" || baseUrl.contains("z.ai")
+    let isZai = provider == "zai"
+        || provider == "zai-coding-cn"
+        || baseUrl.contains("api.z.ai")
+        || baseUrl.contains("open.bigmodel.cn")
     let isDeepSeek = provider == "deepseek" || baseUrl.contains("deepseek.com")
     let isOpencode = provider == "opencode" || baseUrl.contains("opencode.ai")
     let isOpenRouter = provider == "openrouter" || baseUrl.contains("openrouter.ai")
@@ -341,7 +344,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let isAntLing = provider == "ant-ling" || baseUrl.contains("api.ant-ling.com")
 
     let isNonStandard = isCerebras || isGrok || isChutes || isDeepSeek || isZai || isOpencode || isOpenRouter
-    let useMaxTokens = isChutes
+    let useMaxTokens = isChutes || isZai
 
     let thinkingFormat: OpenAICompatThinkingFormat
     if isZai {
@@ -395,7 +398,10 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         supportsStrictMode: true,
         supportsOpenAIGrammarTools: false,
         reasoningEffortMap: reasoningEffortMap,
-        cacheControlFormat: isOpenRouter && model.id.hasPrefix("anthropic/") ? .anthropic : nil,
+        cacheControlFormat: isOpenRouter && model.id.range(
+            of: #"^~?anthropic/"#,
+            options: .regularExpression
+        ) != nil ? .anthropic : nil,
         sendSessionAffinityHeaders: false,
         sessionAffinityFormat: isOpenRouter ? .openrouter : .openai,
         supportsLongCacheRetention: !(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isNvidia || isAntLing),
@@ -403,6 +409,10 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         deferredToolsMode: nil,
         requiresReasoningContentOnAssistantMessages: isDeepSeek
     )
+}
+
+func detectedOpenAICompletionsMaxTokensField(model: Model) -> OpenAICompatMaxTokensField {
+    detectCompat(model: model).maxTokensField
 }
 
 private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
@@ -582,22 +592,7 @@ private func convertCompletionsMessages(
     var params: [ChatQuery.ChatCompletionMessageParam] = []
 
     let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, _ in
-        if id.contains("|") {
-            let callId = id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? id
-            let sanitized = callId.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
-            return String(sanitized.prefix(40))
-        }
-
-        if model.provider == "openai" {
-            return id.count > 40 ? String(id.prefix(40)) : id
-        }
-
-        if model.provider == "github-copilot", model.id.lowercased().contains("claude") {
-            let sanitized = id.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
-            return String(sanitized.prefix(64))
-        }
-
-        return id
+        normalizeCompletionsToolCallId(id, model: model)
     }
 
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
@@ -764,6 +759,24 @@ private func convertCompletionsMessages(
     return params
 }
 
+func normalizeCompletionsToolCallId(_ id: String, model: Model) -> String {
+    if let separator = id.firstIndex(of: "|") {
+        let callId = id[..<separator].map { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" ? $0 : "_" }
+        let itemStart = id.index(after: separator)
+        let itemId = id[itemStart...].map { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" ? $0 : "_" }
+        let combined = String(callId) + (itemId.isEmpty ? "" : "_" + String(itemId))
+        if combined.count <= 40 { return combined }
+        let hash = String(shortHash(id).prefix(8))
+        let prefixLength = max(1, 40 - hash.count - 1)
+        return "\(String(callId.prefix(prefixLength)))_\(hash)"
+    }
+    if model.provider == "openai" { return id.count > 40 ? String(id.prefix(40)) : id }
+    if model.provider == "github-copilot", model.id.lowercased().contains("claude") {
+        return String(id.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }.prefix(64))
+    }
+    return id
+}
+
 private func convertCompletionsTools(_ tools: [AITool], compat: ResolvedOpenAICompat) throws -> [ChatQuery.ChatCompletionToolParam] {
     try tools.compactMap { tool in
         let schema = openAIJSONSchema(from: tool.parameters)
@@ -787,7 +800,7 @@ private func streamZaiCompletions(
     options: OpenAICompletionsOptions,
     query: ChatQuery,
     compat: ResolvedOpenAICompat
-) throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
+) async throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
     }
@@ -799,23 +812,19 @@ private func streamZaiCompletions(
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     request.setValue("application/json", forHTTPHeaderField: "content-type")
 
-    var mergedHeaders = model.headers ?? [:]
-    if let headers = options.headers {
-        for (key, value) in headers {
-            mergedHeaders[key] = value
-        }
-    }
-    for (key, value) in mergedHeaders {
-        request.setValue(value, forHTTPHeaderField: key)
-    }
     request = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
         sessionId: options.sessionId,
         sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
         sessionAffinityFormat: compat.sessionAffinityFormat
     )
+    applyProviderHeaders(
+        mergeProviderHeaders(model.headers, options.headers),
+        to: &request
+    )
 
     var body = try buildZaiRequestBody(query: query, model: model, options: options)
+    body = applyOpenAICompletionsMaxTokensField(data: body, field: compat.maxTokensField)
     if let updated = applyOpenAICompletionsPromptCache(
         data: body,
         baseUrl: model.baseUrl,
@@ -849,7 +858,7 @@ private func streamZaiCompletions(
     body = applyOpenAISamplingParams(data: body, samplingParams: options.samplingParams)
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
-    return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
+    return try await streamChatCompletions(request: request, options: options)
 }
 
 private func buildZaiRequestBody(query: ChatQuery, model: Model, options: OpenAICompletionsOptions) throws -> Data {
@@ -958,7 +967,9 @@ private func buildCompletionsMiddlewares(
     compat: ResolvedOpenAICompat,
     options: OpenAICompletionsOptions
 ) -> [OpenAIMiddleware] {
-    var middlewares: [OpenAIMiddleware] = []
+    var middlewares: [OpenAIMiddleware] = [
+        OpenAICompletionsMaxTokensMiddleware(field: compat.maxTokensField),
+    ]
     if compat.sendSessionAffinityHeaders || shouldSendOpenAICompletionsPromptCache(baseUrl: model.baseUrl, cacheRetention: resolveCacheRetention(options.cacheRetention), compat: compat) {
         middlewares.append(OpenAICompletionsSessionMiddleware(
             baseUrl: model.baseUrl,
@@ -1063,6 +1074,27 @@ private func buildCompletionsMiddlewares(
         middlewares.append(OpenAISamplingParamsMiddleware(samplingParams: samplingParams))
     }
     return middlewares
+}
+
+private struct OpenAICompletionsMaxTokensMiddleware: OpenAIMiddleware {
+    let field: OpenAICompatMaxTokensField
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let body = request.httpBody else { return request }
+        var updated = request
+        updated.httpBody = applyOpenAICompletionsMaxTokensField(data: body, field: field)
+        return updated
+    }
+}
+
+func applyOpenAICompletionsMaxTokensField(data: Data, field: OpenAICompatMaxTokensField) -> Data {
+    guard field == .maxTokens,
+          var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          let limit = payload.removeValue(forKey: OpenAICompatMaxTokensField.maxCompletionTokens.rawValue) else {
+        return data
+    }
+    payload[OpenAICompatMaxTokensField.maxTokens.rawValue] = limit
+    return (try? JSONSerialization.data(withJSONObject: payload)) ?? data
 }
 
 private struct OpenAICompletionsGrammarToolsMiddleware: OpenAIMiddleware {
@@ -1387,7 +1419,8 @@ private func addCacheControlToInstructionMessage(messages: inout [[String: Any]]
 
 private func addCacheControlToLastConversationMessage(messages: inout [[String: Any]], cacheControl: [String: Any]) {
     for index in messages.indices.reversed() {
-        guard let role = messages[index]["role"] as? String, role == "user" || role == "assistant" else {
+        guard let role = messages[index]["role"] as? String,
+              role == "user" || role == "assistant" || role == "tool" else {
             continue
         }
         if addCacheControlToTextContent(message: &messages[index], cacheControl: cacheControl) {
@@ -1466,7 +1499,7 @@ private func streamManualOpenAICompletions(
     options: OpenAICompletionsOptions,
     query: ChatQuery,
     middlewares: [OpenAIMiddleware]
-) throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
+) async throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
     }
@@ -1478,22 +1511,16 @@ private func streamManualOpenAICompletions(
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     request.setValue("application/json", forHTTPHeaderField: "content-type")
 
-    var mergedHeaders = model.headers ?? [:]
-    if let headers = options.headers {
-        for (key, value) in headers {
-            mergedHeaders[key] = value
-        }
-    }
-    for (key, value) in mergedHeaders {
-        request.setValue(value, forHTTPHeaderField: key)
-    }
-
     request.httpBody = try JSONEncoder().encode(query)
     request = middlewares.reduce(request) { current, middleware in
         middleware.intercept(request: current)
     }
+    applyProviderHeaders(
+        mergeProviderHeaders(model.headers, options.headers),
+        to: &request
+    )
     emitPayload(options.onPayload, data: requestBodyData(request))
-    return streamChatCompletions(request: request, signal: options.signal, onResponse: options.onResponse)
+    return try await streamChatCompletions(request: request, options: options)
 }
 
 private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
@@ -1980,33 +2007,34 @@ private func chatCompletionsUrl(baseUrl: String) -> URL {
 
 private func streamChatCompletions(
     request: URLRequest,
-    signal: CancellationToken?,
-    onResponse: ResponseHandler?
-) -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
-    AsyncThrowingStream { continuation in
+    options: OpenAICompletionsOptions
+) async throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
+    let client = options.httpClient ?? DefaultProviderHTTPClient()
+    let response = try await retryProviderRequest(
+        maxRetries: options.maxRetries,
+        maxRetryDelayMs: options.maxRetryDelayMs,
+        signal: options.signal
+    ) {
+        let response = try await client.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw try await providerHTTPError(from: response)
+        }
+        return response
+    }
+    options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
+
+    return AsyncThrowingStream { continuation in
         Task {
             var buffer = Data()
             let delimiterCrlf = Data([13, 10, 13, 10])
             let delimiterLf = Data([10, 10])
 
             do {
-                let session = proxySession(for: request.url)
-                let (bytes, response) = try await session.bytes(for: request)
-                guard let http = response as? HTTPURLResponse else {
-                    throw OpenAICompletionsStreamError.invalidResponse
-                }
-                onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-                if !(200..<300).contains(http.statusCode) {
-                    let body = try await collectStreamData(from: bytes)
-                    let message = String(data: body, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-                    throw OpenAICompletionsStreamError.apiError(message)
-                }
-
-                for try await byte in bytes {
-                    if signal?.isCancelled == true {
+                for try await chunkData in response.body {
+                    if options.signal?.isCancelled == true {
                         throw OpenAICompletionsStreamError.aborted
                     }
-                    buffer.append(byte)
+                    buffer.append(chunkData)
                     while let range = findStreamDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
                         let chunk = buffer.subdata(in: 0..<range.lowerBound)
                         buffer.removeSubrange(0..<range.upperBound)
@@ -2060,6 +2088,7 @@ private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChu
     guard !payload.isEmpty, payload != "[DONE]" else { return nil }
     guard let json = payload.data(using: .utf8) else { return nil }
     if var object = try? JSONSerialization.jsonObject(with: json) as? [String: Any] {
+        preferFunctionToolCallsOverEmptyCustomPayloads(in: &object)
         let rawUsage = decodeOpenAICompletionsRawUsage(from: object["usage"]) ?? decodeFirstChoiceUsage(from: object["choices"])
         let rawFinishReason = decodeFirstChoiceFinishReason(from: object["choices"])
         normalizeUnknownFinishReason(in: &object, rawFinishReason: rawFinishReason)
@@ -2081,6 +2110,27 @@ private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChu
         rawFinishReason: result.choices.first?.finishReason?.rawValue,
         customToolCalls: []
     )
+}
+
+private func preferFunctionToolCallsOverEmptyCustomPayloads(in object: inout [String: Any]) {
+    guard var choices = object["choices"] as? [[String: Any]] else { return }
+    for choiceIndex in choices.indices {
+        guard var delta = choices[choiceIndex]["delta"] as? [String: Any],
+              var toolCalls = delta["tool_calls"] as? [[String: Any]] else { continue }
+        var changed = false
+        for toolIndex in toolCalls.indices {
+            guard toolCalls[toolIndex]["function"] is [String: Any],
+                  toolCalls[toolIndex]["custom"] is [String: Any] else { continue }
+            toolCalls[toolIndex].removeValue(forKey: "custom")
+            toolCalls[toolIndex]["type"] = "function"
+            changed = true
+        }
+        if changed {
+            delta["tool_calls"] = toolCalls
+            choices[choiceIndex]["delta"] = delta
+        }
+    }
+    object["choices"] = choices
 }
 
 private func decodeCustomToolCalls(from choices: Any?) -> [OpenAICompletionsCustomToolCall] {

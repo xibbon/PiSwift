@@ -95,6 +95,7 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             resolvedPath: resolvedPath,
             handlers: api.handlers,
             messageRenderers: api.messageRenderers,
+            markdownTransformers: api.markdownTransformers,
             entryRenderers: api.entryRenderers,
             commands: api.commands,
             currentCommands: { api.commands },
@@ -118,7 +119,8 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             setSetThinkingLevelHandler: api.setSetThinkingLevelHandler,
             setRegisterProviderHandler: api.setRegisterProviderHandler,
             setUnregisterProviderHandler: api.setUnregisterProviderHandler,
-            setFlagValue: api.setFlagValue
+            setFlagValue: api.setFlagValue,
+            dispose: api.disposeEventBusListeners
         )
         return (loaded, nil)
     }

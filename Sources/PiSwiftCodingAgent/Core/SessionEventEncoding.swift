@@ -65,11 +65,20 @@ func encodeAgentEvent(_ event: AgentEvent) -> [String: Any] {
         ]
     case .messageStart(let message):
         return ["type": event.type, "message": encodeAgentMessageDict(message)]
-    case .messageUpdate(let message, let assistantMessageEvent):
+    case .messageUpdate(_, let assistantMessageEvent):
+        // Streaming wire contract: message_update contains only a usable delta event.
+        // The outer object is
+        // {"type":"message_update","assistantMessageEvent":{...}}.
+        // Delta objects use `type`; content-block events also use `contentIndex`;
+        // text/thinking deltas use `delta`; their end events use `content`;
+        // tool-call events use `toolCallId`/`toolName`, argument chunks use `delta`,
+        // and tool_call_end uses the authoritative `toolCall` object. Done/error
+        // events use `reason`, and error can include `errorMessage`. No cumulative
+        // `message` or `partial` assistant snapshot is emitted here. Clients assemble
+        // updates after message_start and replace the result with message_end.
         return [
             "type": event.type,
-            "message": encodeAgentMessageDict(message),
-            "assistantMessageEvent": assistantMessageEventType(assistantMessageEvent),
+            "assistantMessageEvent": encodeAssistantMessageEventDelta(assistantMessageEvent),
         ]
     case .messageEnd(let message):
         return ["type": event.type, "message": encodeAgentMessageDict(message)]
@@ -117,31 +126,67 @@ private func toolResultResultToDict(_ result: AgentToolResult) -> [String: Any] 
     ]
 }
 
-private func assistantMessageEventType(_ event: AssistantMessageEvent) -> String {
+private func toolCall(at contentIndex: Int, in partial: AssistantMessage) -> ToolCall? {
+    guard partial.content.indices.contains(contentIndex),
+          case .toolCall(let toolCall) = partial.content[contentIndex] else {
+        return nil
+    }
+    return toolCall
+}
+
+private func encodeToolCall(_ toolCall: ToolCall) -> [String: Any] {
+    contentBlockToDict(.toolCall(toolCall))
+}
+
+private func encodeAssistantMessageEventDelta(_ event: AssistantMessageEvent) -> [String: Any] {
     switch event {
     case .start:
-        return "start"
-    case .textStart:
-        return "text_start"
-    case .textDelta:
-        return "text_delta"
-    case .textEnd:
-        return "text_end"
-    case .thinkingStart:
-        return "thinking_start"
-    case .thinkingDelta:
-        return "thinking_delta"
-    case .thinkingEnd:
-        return "thinking_end"
-    case .toolCallStart:
-        return "tool_call_start"
-    case .toolCallDelta:
-        return "tool_call_delta"
-    case .toolCallEnd:
-        return "tool_call_end"
-    case .done:
-        return "done"
-    case .error:
-        return "error"
+        return ["type": "start"]
+    case .textStart(let contentIndex, _):
+        return ["type": "text_start", "contentIndex": contentIndex]
+    case .textDelta(let contentIndex, let delta, _):
+        return ["type": "text_delta", "contentIndex": contentIndex, "delta": delta]
+    case .textEnd(let contentIndex, let content, _):
+        return ["type": "text_end", "contentIndex": contentIndex, "content": content]
+    case .thinkingStart(let contentIndex, _):
+        return ["type": "thinking_start", "contentIndex": contentIndex]
+    case .thinkingDelta(let contentIndex, let delta, _):
+        return ["type": "thinking_delta", "contentIndex": contentIndex, "delta": delta]
+    case .thinkingEnd(let contentIndex, let content, _):
+        return ["type": "thinking_end", "contentIndex": contentIndex, "content": content]
+    case .toolCallStart(let contentIndex, let partial):
+        var result: [String: Any] = ["type": "tool_call_start", "contentIndex": contentIndex]
+        if let toolCall = toolCall(at: contentIndex, in: partial) {
+            result["toolCallId"] = toolCall.id
+            result["toolName"] = toolCall.name
+        }
+        return result
+    case .toolCallDelta(let contentIndex, let delta, let partial):
+        var result: [String: Any] = [
+            "type": "tool_call_delta",
+            "contentIndex": contentIndex,
+            "delta": delta,
+        ]
+        if let toolCall = toolCall(at: contentIndex, in: partial) {
+            result["toolCallId"] = toolCall.id
+            result["toolName"] = toolCall.name
+        }
+        return result
+    case .toolCallEnd(let contentIndex, let toolCall, _):
+        return [
+            "type": "tool_call_end",
+            "contentIndex": contentIndex,
+            "toolCallId": toolCall.id,
+            "toolName": toolCall.name,
+            "toolCall": encodeToolCall(toolCall),
+        ]
+    case .done(let reason, _):
+        return ["type": "done", "reason": reason.rawValue]
+    case .error(let reason, let error):
+        var result: [String: Any] = ["type": "error", "reason": reason.rawValue]
+        if let errorMessage = error.errorMessage {
+            result["errorMessage"] = errorMessage
+        }
+        return result
     }
 }

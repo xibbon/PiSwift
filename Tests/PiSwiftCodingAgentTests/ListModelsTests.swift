@@ -43,6 +43,8 @@ private func captureFD(_ fd: Int32, operation: () async -> Void) async -> String
 
 @MainActor
 @Test func listModelsReportsModelsJsonParseErrorToStderr() async throws {
+    await processOutputCaptureGate.acquire()
+    defer { Task { await processOutputCaptureGate.release() } }
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-list-models-invalid-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -66,6 +68,8 @@ private func captureFD(_ fd: Int32, operation: () async -> Void) async -> String
 
 @MainActor
 @Test func listModelsShowsModelsWithConfiguredHeadersOnly() async throws {
+    await processOutputCaptureGate.acquire()
+    defer { Task { await processOutputCaptureGate.release() } }
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-list-models-headers-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)

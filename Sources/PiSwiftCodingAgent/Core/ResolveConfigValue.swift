@@ -16,15 +16,19 @@ public func resolveConfigValue(_ config: String) -> String? {
     return config
 }
 
-public func resolveHeaders(_ headers: [String: String]?) -> [String: String]? {
+public func resolveHeaders(_ headers: ProviderHeaders?) -> ProviderHeaders? {
     guard let headers else { return nil }
-    var resolved: [String: String] = [:]
+    var resolved: ProviderHeaders = [:]
     for (key, value) in headers {
-        if let resolvedValue = resolveConfigValue(value), !resolvedValue.isEmpty {
-            resolved[key] = resolvedValue
+        if let value {
+            if let resolvedValue = resolveConfigValue(value) {
+                resolved.updateValue(resolvedValue, forKey: key)
+            }
+        } else {
+            resolved.updateValue(nil, forKey: key)
         }
     }
-    return resolved.isEmpty ? nil : resolved
+    return resolved
 }
 
 private func executeCommand(_ commandConfig: String) -> String? {

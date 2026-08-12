@@ -2,6 +2,9 @@ import Foundation
 import Testing
 import PiSwiftAI
 @testable import PiSwiftCodingAgent
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // Small 2x2 red PNG image (base64) - generated with ImageMagick
 private let TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQMAAABIeJ9nAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURf8AAP///0EdNBEAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gEOADM5Ddoh/wAAAAxJREFUCNdjYGBgAAAABAABJzQnCgAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wMS0xNFQwMDo1MTo1NyswMDowMOnKzHgAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDEtMTRUMDA6NTE6NTcrMDA6MDCYl3TEAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTAxLTE0VDAwOjUxOjU3KzAwOjAwz4JVGwAAAABJRU5ErkJggg=="
@@ -229,4 +232,39 @@ private func tinyBmp1x1Red24bpp() -> String {
     // Should return original data without crashing
     #expect(result.data == "not-valid-base64!!!")
     #expect(result.wasResized == false)
+}
+
+@Test func toolResultImageNormalizationResizesOversizedImages() throws {
+#if canImport(AppKit)
+    let representation = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: 2_100,
+        pixelsHigh: 1,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ))
+    let png = try #require(representation.representation(using: .png, properties: [:]))
+    let normalized = normalizeToolResultImages([
+        .image(ImageContent(data: png.base64EncodedString(), mimeType: "image/png")),
+    ])
+
+    #expect(normalized.changed == true)
+    #expect(normalized.content.count == 2)
+    guard case .image(let image) = normalized.content[0] else {
+        Issue.record("Expected a normalized image")
+        return
+    }
+    let resized = resizeImage(image)
+    #expect(resized.originalWidth <= 2_000)
+    guard case .text(let note) = normalized.content[1] else {
+        Issue.record("Expected a dimension note")
+        return
+    }
+    #expect(note.text.contains("original 2100x1"))
+#endif
 }

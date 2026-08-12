@@ -128,13 +128,32 @@ public func resolveCliModel(
     cliModel: String? = nil,
     modelRegistry: ModelRegistry
 ) -> ResolveCliModelResult {
-    resolveCliModel(cliProvider: cliProvider, cliModel: cliModel, availableModels: modelRegistry.getAll())
+    resolveCliModel(
+        cliProvider: cliProvider,
+        cliModel: cliModel,
+        availableModels: modelRegistry.getAll(),
+        hasConfiguredAuth: modelRegistry.hasConfiguredAuth
+    )
 }
 
 public func resolveCliModel(
     cliProvider: String? = nil,
     cliModel: String? = nil,
     availableModels: [Model]
+) -> ResolveCliModelResult {
+    resolveCliModel(
+        cliProvider: cliProvider,
+        cliModel: cliModel,
+        availableModels: availableModels,
+        hasConfiguredAuth: { _ in false }
+    )
+}
+
+private func resolveCliModel(
+    cliProvider: String?,
+    cliModel: String?,
+    availableModels: [Model],
+    hasConfiguredAuth: (Model) -> Bool
 ) -> ResolveCliModelResult {
     guard let cliModel, !cliModel.isEmpty else {
         return ResolveCliModelResult(model: nil, thinkingLevel: nil, warning: nil, error: nil)
@@ -167,12 +186,33 @@ public func resolveCliModel(
         provider = canonicalProvider
     }
 
+    // Check the complete ID before treating a leading path component as a
+    // provider. Some gateway model IDs contain a slash that is part of the ID.
+    // Bare exact IDs can also exist under more than one provider.
     if provider == nil {
         let lower = cliModel.lowercased()
-        if let exact = availableModels.first(where: {
-            $0.id.lowercased() == lower || "\($0.provider)/\($0.id)".lowercased() == lower
-        }) {
-            return ResolveCliModelResult(model: exact, thinkingLevel: nil, warning: nil, error: nil)
+        let exactMatches = availableModels.filter { $0.id.lowercased() == lower }
+        if exactMatches.count == 1 {
+            return ResolveCliModelResult(model: exactMatches[0], thinkingLevel: nil, warning: nil, error: nil)
+        }
+        if exactMatches.count > 1 {
+            let authenticatedMatches = exactMatches.filter(hasConfiguredAuth)
+            if authenticatedMatches.count == 1 {
+                return ResolveCliModelResult(model: authenticatedMatches[0], thinkingLevel: nil, warning: nil, error: nil)
+            }
+            let matches = exactMatches
+                .map { "\($0.provider)/\($0.id)" }
+                .sorted()
+                .joined(separator: ", ")
+            let authHint = authenticatedMatches.isEmpty
+                ? "No matching provider is authenticated."
+                : "More than one matching provider is authenticated."
+            return ResolveCliModelResult(
+                model: nil,
+                thinkingLevel: nil,
+                warning: nil,
+                error: "Model \"\(cliModel)\" is ambiguous across providers: \(matches). \(authHint) Use --provider or provider/model."
+            )
         }
     }
 

@@ -35,28 +35,22 @@ public func streamGoogleVertex(
             request.httpMethod = "POST"
             request.httpBody = requestBody
 
-            var headers = model.headers ?? [:]
-            if let extra = options.headers {
-                headers.merge(extra) { _, new in new }
-            }
-            headers["Authorization"] = "Bearer \(accessToken)"
-            headers["Content-Type"] = "application/json"
-            headers["Accept"] = "text/event-stream"
-            for (key, value) in headers {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            applyProviderHeaders(
+                mergeProviderHeaders(model.headers, options.headers),
+                to: &request
+            )
 
-            let session = proxySession(for: request.url)
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw GoogleVertexError.invalidResponse
-            }
-            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-            if !(200..<300).contains(http.statusCode) {
-                let body = try await collectSseStreamData(from: bytes)
-                let message = String(data: body, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-                throw GoogleVertexError.apiError(message)
-            }
+            let response = try await retryGoogleRequest(
+                request,
+                httpClient: options.httpClient,
+                maxRetries: options.maxRetries,
+                maxRetryDelayMs: options.maxRetryDelayMs,
+                signal: options.signal
+            )
+            options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
 
             stream.push(.start(partial: output))
 
@@ -78,7 +72,7 @@ public func streamGoogleVertex(
                 currentBlockKind = nil
             }
 
-            for try await payload in streamSsePayloads(bytes: bytes, signal: options.signal) {
+            for try await payload in streamSsePayloads(body: response.body, signal: options.signal) {
                 guard let data = payload.data(using: .utf8) else { continue }
                 guard let chunk = try? JSONDecoder().decode(GoogleStreamChunk.self, from: data) else { continue }
 

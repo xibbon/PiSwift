@@ -859,10 +859,20 @@ public final class SessionManager: Sendable {
             return await list(FileManager.default.currentDirectoryPath, sessionDir, onProgress)
         }
 
-        let sessionsDir = getSessionsDir()
+        return await listAll(inAgentDir: getAgentDir(), onProgress)
+    }
+
+    /// Lists sessions below an explicit agent directory. This also supports
+    /// callers that keep project session folders behind symbolic links.
+    public static func listAll(
+        inAgentDir agentDir: String,
+        _ onProgress: SessionListProgress? = nil
+    ) async -> [SessionInfo] {
+        let sessionsDir = URL(fileURLWithPath: agentDir).appendingPathComponent("sessions").path
+
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: URL(fileURLWithPath: sessionsDir),
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: []
         ) else {
             return []
@@ -870,8 +880,8 @@ public final class SessionManager: Sendable {
 
         var files: [String] = []
         for entry in entries {
-            let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            guard isDir else { continue }
+            let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values?.isDirectory == true || values?.isSymbolicLink == true else { continue }
             if let dirFiles = try? FileManager.default.contentsOfDirectory(atPath: entry.path) {
                 for file in dirFiles where file.hasSuffix(".jsonl") {
                     files.append(URL(fileURLWithPath: entry.path).appendingPathComponent(file).path)

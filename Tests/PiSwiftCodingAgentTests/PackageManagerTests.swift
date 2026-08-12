@@ -201,6 +201,27 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.skills.contains { $0.path.hasSuffix("my-skill/SKILL.md") && $0.enabled })
 }
 
+@Test func malformedManifestResourceArraysDoNotAbortPackageResolution() async throws {
+    let fixture = try PackageManagerTestFixture()
+    _ = try fixture.createDir("malformed-package")
+    let manifestContent = """
+    {
+        "name": "malformed-package",
+        "pi": {
+            "extensions": ["./extensions/main.ts"],
+            "skills": [42, "./skills"],
+            "prompts": {"path": "./prompts"},
+            "themes": "./themes"
+        }
+    }
+    """
+    _ = try fixture.writeFile("malformed-package/package.json", content: manifestContent)
+    _ = try fixture.writeFile("malformed-package/extensions/main.ts", content: "export default function() {}")
+
+    let result = try await fixture.packageManager.resolveExtensionSources(["malformed-package"])
+    #expect(result.extensions.contains { $0.path.hasSuffix("extensions/main.ts") && $0.enabled })
+}
+
 @Test func resolveExtensionSourcesHandlesAutoDiscoveryLayout() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("auto-pkg")

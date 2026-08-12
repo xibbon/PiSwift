@@ -44,22 +44,15 @@ public func streamMistral(
             request.setValue("text/event-stream", forHTTPHeaderField: "accept")
             request.setValue("application/json", forHTTPHeaderField: "content-type")
 
-            var mergedHeaders: [String: String] = model.headers ?? [:]
-            if let headers = options.headers {
-                for (key, value) in headers {
-                    mergedHeaders[key] = value
-                }
-            }
+            var mergedHeaders = mergeProviderHeaders(model.headers, options.headers) ?? [:]
             // Mistral infrastructure uses `x-affinity` for KV-cache reuse (prefix caching).
-            if let sessionId = options.sessionId, mergedHeaders["x-affinity"] == nil {
-                mergedHeaders["x-affinity"] = sessionId
+            if let sessionId = options.sessionId, !providerHeadersContain(mergedHeaders, name: "x-affinity") {
+                mergedHeaders.updateValue(sessionId, forKey: "x-affinity")
             }
-            for (key, value) in mergedHeaders {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
+            applyProviderHeaders(mergedHeaders, to: &request)
             request.httpBody = bodyData
 
-            let bytes = try await fetchMistralStream(request: request, options: options)
+            let responseBody = try await fetchMistralStream(request: request, options: options)
 
             stream.push(.start(partial: output))
 
@@ -82,7 +75,7 @@ public func streamMistral(
                 currentBlockKind = nil
             }
 
-            for try await event in parseMistralSseStream(bytes: bytes) {
+            for try await event in parseMistralSseStream(body: responseBody) {
                 if options.signal?.isCancelled == true {
                     throw MistralStreamError.aborted
                 }
@@ -604,6 +597,34 @@ private func parseMistralSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowin
     }
 }
 
+private func parseMistralSseStream(body: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<[String: Any], Error> {
+    AsyncThrowingStream { continuation in
+        Task {
+            var buffer = Data()
+            let delimiterCrlf = Data([13, 10, 13, 10])
+            let delimiterLf = Data([10, 10])
+            do {
+                for try await chunk in body {
+                    buffer.append(chunk)
+                    while let range = findMistralDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
+                        let frame = buffer.subdata(in: 0..<range.lowerBound)
+                        buffer.removeSubrange(0..<range.upperBound)
+                        if let event = parseMistralSseEvent(from: frame) {
+                            continuation.yield(event)
+                        }
+                    }
+                }
+                if !buffer.isEmpty, let event = parseMistralSseEvent(from: buffer) {
+                    continuation.yield(event)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+}
+
 private func findMistralDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range<Data.Index>? {
     let crlfRange = buffer.range(of: crlf)
     let lfRange = buffer.range(of: lf)
@@ -643,44 +664,24 @@ private func collectMistralData(from bytes: URLSession.AsyncBytes) async throws 
     return data
 }
 
-private func fetchMistralStream(request: URLRequest, options: MistralOptions) async throws -> URLSession.AsyncBytes {
-    let session = proxySession(for: request.url)
-    let retryLimit = max(0, options.maxRetries ?? 0)
-    var attempt = 0
-
-    while true {
-        do {
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw MistralStreamError.invalidResponse
-            }
-            options.onResponse?(ResponseSnapshot(statusCode: http.statusCode, headers: responseHeaders(http)))
-            if (200..<300).contains(http.statusCode) {
-                return bytes
-            }
-            let bodyText = try await collectMistralData(from: bytes)
-            let snippet = String(data: bodyText, encoding: .utf8) ?? ""
-            let error = MistralStreamError.apiError(http.statusCode, snippet)
-            if attempt < retryLimit, isRetryableMistralStatus(http.statusCode), options.signal?.isCancelled != true {
-                attempt += 1
-                continue
-            }
-            throw error
-        } catch {
-            if options.signal?.isCancelled == true {
-                throw MistralStreamError.aborted
-            }
-            if attempt < retryLimit, isRetryableTransportError(error) {
-                attempt += 1
-                continue
-            }
-            throw error
+private func fetchMistralStream(
+    request: URLRequest,
+    options: MistralOptions
+) async throws -> AsyncThrowingStream<Data, Error> {
+    let client = options.httpClient ?? DefaultProviderHTTPClient()
+    let response = try await retryProviderRequest(
+        maxRetries: options.maxRetries,
+        maxRetryDelayMs: options.maxRetryDelayMs,
+        signal: options.signal
+    ) {
+        let response = try await client.send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            throw try await providerHTTPError(from: response)
         }
+        return response
     }
-}
-
-private func isRetryableMistralStatus(_ statusCode: Int) -> Bool {
-    statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504 || statusCode == 524
+    options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
+    return response.body
 }
 
 /// Maps `SimpleStreamOptions` onto `MistralOptions`, applying Mistral's reasoning conventions.
@@ -700,6 +701,7 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         maxTokens: options?.maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         toolChoice: nil,
         promptMode: promptMode,
         reasoningEffort: reasoningEffort,
@@ -708,7 +710,8 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
     )
 }
 

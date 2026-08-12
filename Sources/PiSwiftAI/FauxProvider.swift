@@ -265,7 +265,8 @@ private func cloneFauxMessage(_ message: AssistantMessage, api: Api, provider: S
         errorMessage: message.errorMessage,
         timestamp: message.timestamp,
         deferred: message.deferred,
-        rawStopReason: message.rawStopReason
+        rawStopReason: message.rawStopReason,
+        diagnostics: message.diagnostics
     )
 }
 
@@ -443,7 +444,8 @@ private func streamFauxWithDeltas(
         errorMessage: message.errorMessage,
         timestamp: message.timestamp,
         deferred: message.deferred,
-        rawStopReason: message.rawStopReason
+        rawStopReason: message.rawStopReason,
+        diagnostics: message.diagnostics
     )
 
     if signal?.isCancelled == true {

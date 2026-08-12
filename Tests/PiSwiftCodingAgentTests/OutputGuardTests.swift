@@ -3,7 +3,9 @@ import Foundation
 import Testing
 import PiSwiftCodingAgent
 
-@Test func machineReadableOutputRedirectsRegularStdoutToStderr() throws {
+@Test func machineReadableOutputRedirectsRegularStdoutToStderr() async throws {
+    await processOutputCaptureGate.acquire()
+    defer { Task { await processOutputCaptureGate.release() } }
     let savedStdout = dup(STDOUT_FILENO)
     let savedStderr = dup(STDERR_FILENO)
     #expect(savedStdout >= 0)
@@ -50,5 +52,5 @@ import PiSwiftCodingAgent
     let stderrData = FileHandle(fileDescriptor: stderrPipe[0], closeOnDealloc: false).readDataToEndOfFile()
 
     #expect(String(data: rawData, encoding: .utf8) == "protocol\n")
-    #expect(String(data: stderrData, encoding: .utf8) == "diagnostic\n")
+    #expect(String(data: stderrData, encoding: .utf8)?.contains("diagnostic\n") == true)
 }

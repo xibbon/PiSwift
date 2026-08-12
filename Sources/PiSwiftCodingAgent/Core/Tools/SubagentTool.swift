@@ -406,6 +406,7 @@ private func runSingleAgent(
         return filtered.messages
     }
 
+    let providerRetrySettings = dependencies.settingsManager.getProviderRetrySettings()
     let agentInstance = Agent(AgentOptions(
         initialState: AgentState(
             systemPrompt: systemPrompt,
@@ -418,6 +419,7 @@ private func runSingleAgent(
         },
         transport: dependencies.settingsManager.getTransport(),
         thinkingBudgets: dependencies.settingsManager.getThinkingBudgets(),
+        maxRetryDelayMs: providerRetrySettings.maxRetryDelayMs,
         getApiKey: { provider in
             await dependencies.modelRegistry.getApiKeyForProvider(provider)
         },
@@ -425,8 +427,9 @@ private func runSingleAgent(
             let auth = await dependencies.modelRegistry.getApiKeyAndHeaders(model)
             return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
         },
-        timeoutMs: dependencies.settingsManager.getHttpIdleTimeoutMs(),
-        websocketConnectTimeoutMs: dependencies.settingsManager.getWebSocketConnectTimeoutMs()
+        timeoutMs: providerRetrySettings.timeoutMs ?? dependencies.settingsManager.getHttpIdleTimeoutMs(),
+        websocketConnectTimeoutMs: dependencies.settingsManager.getWebSocketConnectTimeoutMs(),
+        maxRetries: providerRetrySettings.maxRetries
     ))
 
     let updateState = LockedState(SubagentRunResult(

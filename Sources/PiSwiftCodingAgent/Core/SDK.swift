@@ -413,6 +413,7 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             resolvedPath: path,
             handlers: api.handlers,
             messageRenderers: api.messageRenderers,
+            markdownTransformers: api.markdownTransformers,
             entryRenderers: api.entryRenderers,
             commands: api.commands,
             currentCommands: { api.commands },
@@ -438,7 +439,8 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             setUnregisterProviderHandler: api.setUnregisterProviderHandler,
             setRegisterToolHandler: api.setRegisterToolHandler,
             setUnregisterToolHandler: api.setUnregisterToolHandler,
-            setFlagValue: api.setFlagValue
+            setFlagValue: api.setFlagValue,
+            dispose: api.disposeEventBusListeners
         )
     }
 }
@@ -452,6 +454,9 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
         }
         for (customType, renderer) in loaded.messageRenderers {
             api.registerMessageRenderer(customType, renderer)
+        }
+        for transformer in loaded.markdownTransformers {
+            api.registerMarkdownTransformer(transformer)
         }
         for (customType, renderer) in loaded.entryRenderers {
             api.registerEntryRenderer(customType, renderer)
@@ -662,6 +667,9 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     }
 
     let resolvedThinkingLevel = thinkingLevel ?? .off
+    let agentBox = LockedState<Agent?>(nil)
+    let sessionBox = LockedState<AgentSession?>(nil)
+    let sendMessageHandlerBox = LockedState<HookSendMessageHandler>({ _, _ in })
     let subagentContext = SubagentToolContext()
     subagentContext.update(SubagentToolDependencies(
         cwd: cwd,
@@ -681,10 +689,22 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     time("discoverContextFiles")
 
     let blockImages = settingsManager.getBlockImages()
-    let toolsOptions = ToolsOptions(read: ReadToolOptions(
-        autoResizeImages: settingsManager.getAutoResizeImages(),
-        blockImages: blockImages
-    ))
+    let toolsOptions = ToolsOptions(
+        read: ReadToolOptions(
+            autoResizeImages: settingsManager.getAutoResizeImages(),
+            blockImages: blockImages
+        ),
+        bash: BashToolOptions(sessionEnvironment: { [agentBox, sessionManager] in
+            let current = agentBox.withLock { $0?.state }
+            return makePiSessionEnvironment(
+                sessionId: sessionManager.getSessionId(),
+                sessionFile: sessionManager.getSessionFile(),
+                provider: current?.model.provider,
+                model: current?.model.id,
+                reasoningLevel: current?.thinkingLevel.rawValue
+            )
+        })
+    )
     let excludedToolNames = Set(options.excludeTools ?? [])
     // v0.68.0 / v0.70.0: tool selection layered logic.
     //   noTools == .all       → no built-ins, no extension/custom tools.
@@ -725,9 +745,6 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         }
     }
 
-    let agentBox = LockedState<Agent?>(nil)
-    let sessionBox = LockedState<AgentSession?>(nil)
-    let sendMessageHandlerBox = LockedState<HookSendMessageHandler>({ _, _ in })
     let getCustomToolContext: @Sendable () -> CustomToolContext = { [sessionManager, modelRegistry, eventBus] in
         let agent = agentBox.withLock { $0 }
         let session = sessionBox.withLock { $0 }
@@ -861,6 +878,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         }
     }
 
+    let providerRetrySettings = settingsManager.getProviderRetrySettings()
     let createdAgent = Agent(AgentOptions(
         initialState: AgentState(
             systemPrompt: systemPrompt,
@@ -877,6 +895,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         sessionId: sessionManager.getSessionId(),
         transport: settingsManager.getTransport(),
         thinkingBudgets: settingsManager.getThinkingBudgets(),
+        maxRetryDelayMs: providerRetrySettings.maxRetryDelayMs,
         getApiKey: { provider in
             await modelRegistry.getApiKeyForProvider(provider)
         },
@@ -886,12 +905,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             // `SimpleStreamOptions`. At this point model and auth headers are known,
             // making it the coding-agent boundary equivalent to upstream's provider
             // header assembly hook.
-            var headers = model.headers ?? [:]
-            if let authHeaders = auth.headers {
-                for (name, value) in authHeaders {
-                    headers[name] = value
-                }
-            }
+            var headers = mergeProviderHeaders(model.headers, auth.headers) ?? [:]
             if hookRunner.hasHandlers("before_provider_headers") {
                 headers = await hookRunner.emitBeforeProviderHeaders(headers)
             }
@@ -903,8 +917,9 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         },
         onPayload: onPayloadHook,
         onResponse: onResponseHook,
-        timeoutMs: settingsManager.getHttpIdleTimeoutMs(),
+        timeoutMs: providerRetrySettings.timeoutMs ?? settingsManager.getHttpIdleTimeoutMs(),
         websocketConnectTimeoutMs: settingsManager.getWebSocketConnectTimeoutMs(),
+        maxRetries: providerRetrySettings.maxRetries,
         beforeToolCall: beforeToolCallHook,
         afterToolCall: afterToolCallHook
     ))
