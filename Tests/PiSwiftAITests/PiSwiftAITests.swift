@@ -319,11 +319,35 @@ private func normalizeVercelGatewayRouting(_ routing: VercelGatewayRouting?) -> 
     ])
 }
 
+private func normalizeChatTemplateKwargValue(_ value: ChatTemplateKwargValue) -> Any {
+    switch value {
+    case .string(let value):
+        value
+    case .number(let value):
+        value
+    case .bool(let value):
+        value
+    case .null:
+        NSNull()
+    case .variable(let variable, let omitWhenOff):
+        optionalFields([
+            ("$var", variable.rawValue),
+            ("omitWhenOff", omitWhenOff ? true : nil),
+        ])
+    }
+}
+
+private func normalizeChatTemplateValues(_ values: [String: ChatTemplateKwargValue]?) -> [String: Any]? {
+    values?.mapValues(normalizeChatTemplateKwargValue)
+}
+
 private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
     guard let compat else { return nil }
     return optionalFields([
         ("allowEmptySignature", compat.allowEmptySignature),
         ("cacheControlFormat", compat.cacheControlFormat?.rawValue),
+        ("chatTemplateArgs", normalizeChatTemplateValues(compat.chatTemplateArgs)),
+        ("chatTemplateKwargs", normalizeChatTemplateValues(compat.chatTemplateKwargs)),
         ("deferredToolsMode", compat.deferredToolsMode?.rawValue),
         ("forceAdaptiveThinking", compat.forceAdaptiveThinking),
         ("maxTokensField", compat.maxTokensField?.rawValue),
@@ -340,11 +364,16 @@ private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
         ("supportsCacheControlOnTools", compat.supportsCacheControlOnTools),
         ("supportsDeveloperRole", compat.supportsDeveloperRole),
         ("supportsEagerToolInputStreaming", compat.supportsEagerToolInputStreaming),
+        ("supportsExplicitPromptCacheMode", compat.supportsExplicitPromptCacheMode),
+        ("supportsFinishReason", compat.supportsFinishReason),
         ("supportsLongCacheRetention", compat.supportsLongCacheRetention),
+        ("supportsOpenAIGrammarTools", compat.supportsOpenAIGrammarTools),
         ("supportsReasoningEffort", compat.supportsReasoningEffort),
         ("supportsStore", compat.supportsStore),
         ("supportsStrictMode", compat.supportsStrictMode),
+        ("supportsStrictTools", compat.supportsStrictTools),
         ("supportsTemperature", compat.supportsTemperature),
+        ("supportsThinkingTokenBudget", compat.supportsThinkingTokenBudget),
         ("supportsToolReferences", compat.supportsToolReferences),
         ("supportsToolSearch", compat.supportsToolSearch),
         ("supportsUsageInStreaming", compat.supportsUsageInStreaming),
@@ -5783,9 +5812,9 @@ struct ApiRegistryTests {
     }
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
-    #expect(getProviders().count == 35)
-    #expect(allModels.count == 1072)
-    #expect(compared == 1072)
+    #expect(getProviders().count == 39)
+    #expect(allModels.count == 1224)
+    #expect(compared == 1224)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -5793,6 +5822,10 @@ struct ApiRegistryTests {
     #expect(getProviders().contains(.together))
     #expect(getProviders().contains(.cloudflareWorkersAi))
     #expect(getProviders().contains(.cloudflareAiGateway))
+    #expect(getProviders().contains(.baseten))
+    #expect(getProviders().contains(.qwenTokenPlan))
+    #expect(getProviders().contains(.qwenTokenPlanCn))
+    #expect(getProviders().contains(.qwenTokenPlanIndividual))
     #expect(getProviders().contains(.xiaomi))
     #expect(getProviders().contains(.xiaomiTokenPlanCn))
     #expect(getProviders().contains(.xiaomiTokenPlanAms))
@@ -5837,8 +5870,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 35)
-    #expect(compared == 35)
+    #expect(models.count == 42)
+    #expect(compared == 42)
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)

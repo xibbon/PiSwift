@@ -29,7 +29,11 @@ public enum KnownProvider: String, Sendable {
     case xai
     case groq
     case cerebras
+    case baseten
     case openrouter
+    case qwenTokenPlan = "qwen-token-plan"
+    case qwenTokenPlanCn = "qwen-token-plan-cn"
+    case qwenTokenPlanIndividual = "qwen-token-plan-individual"
     case minimax
     case minimaxCn = "minimax-cn"
     case huggingface
@@ -139,6 +143,12 @@ public enum Transport: String, Sendable {
 
 public struct StreamOptions: Sendable {
     public var temperature: Double?
+    /// Arbitrary sampling parameters merged into the request body as-is, after the named request
+    /// fields, so keys here override them. Lets custom OpenAI-compatible servers (llama.cpp, vLLM,
+    /// SGLang, ...) receive parameters pi does not model, e.g. `top_p`, `top_k`, `min_p`,
+    /// `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
+    /// OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
+    public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -162,6 +172,7 @@ public struct StreamOptions: Sendable {
 
     public init(
         temperature: Double? = nil,
+        samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -178,6 +189,7 @@ public struct StreamOptions: Sendable {
         maxRetries: Int? = nil
     ) {
         self.temperature = temperature
+        self.samplingParams = samplingParams
         self.maxTokens = maxTokens
         self.signal = signal
         self.apiKey = apiKey
@@ -307,6 +319,8 @@ public enum OpenAICompatThinkingFormat: String, Sendable {
     /// expects `reasoning_content` on replayed assistant messages.
     case deepseek
     case together
+    /// Baseten uses configurable `chat_template_args` and `reasoning_effort` when supported.
+    case baseten
     case stringThinking = "string-thinking"
     case antLing = "ant-ling"
 }
@@ -453,6 +467,9 @@ public struct OpenAICompat: Sendable {
     public var supportsDeveloperRole: Bool?
     public var supportsReasoningEffort: Bool?
     public var supportsUsageInStreaming: Bool?
+    /// Whether streamed responses include `finish_reason`.
+    /// When false, Pi infers `stop` or `toolUse` when the stream ends. Default: true.
+    public var supportsFinishReason: Bool?
     public var supportsTemperature: Bool?
     public var maxTokensField: OpenAICompatMaxTokensField?
     public var requiresToolResultName: Bool?
@@ -462,8 +479,17 @@ public struct OpenAICompat: Sendable {
     public var thinkingFormat: OpenAICompatThinkingFormat?
     /// Kwargs sent as `chat_template_kwargs` for the `.chatTemplate` thinking format.
     public var chatTemplateKwargs: [String: ChatTemplateKwargValue]?
+    /// Arguments to send as `chat_template_args` when `thinkingFormat` is `.baseten`.
+    public var chatTemplateArgs: [String: ChatTemplateKwargValue]?
     public var openRouterRouting: OpenRouterRouting?
     public var vercelGatewayRouting: VercelGatewayRouting?
+    /// Whether the provider supports top-level `thinking_token_budget` to cap reasoning tokens
+    /// when it uses vLLM. Default: false.
+    public var supportsThinkingTokenBudget: Bool?
+    /// Whether to emit OpenAI custom tools with Lark or regex grammar formats.
+    /// When false, grammar-constrained tools use normal function tools. Default: false.
+    /// The generated model catalog enables this option for capable models.
+    public var supportsOpenAIGrammarTools: Bool?
     public var supportsStrictMode: Bool?
     /// Maps thinking levels to provider-specific reasoning effort values.
     /// When set, the mapped value is sent instead of the standard level string.
@@ -489,12 +515,17 @@ public struct OpenAICompat: Sendable {
     public var requiresReasoningContentOnAssistantMessages: Bool?
     /// v0.79.4 compat metadata retained from upstream generated model data.
     public var supportsCacheControlOnTools: Bool?
+    /// Whether the provider supports strict JSON-schema function tools.
+    public var supportsStrictTools: Bool?
     public var forceAdaptiveThinking: Bool?
     public var zaiToolStream: Bool?
     public var allowEmptySignature: Bool?
     public var deferredToolsMode: DeferredToolsMode?
     public var sessionAffinityFormat: SessionAffinityFormat?
     public var supportsToolSearch: Bool?
+    /// Whether the model accepts `prompt_cache_options` for OpenAI GPT-5.6+ explicit prompt caching.
+    /// Older OpenAI models reject this parameter. Default: false.
+    public var supportsExplicitPromptCacheMode: Bool?
     public var supportsToolReferences: Bool?
 
     public init(
@@ -502,6 +533,7 @@ public struct OpenAICompat: Sendable {
         supportsDeveloperRole: Bool? = nil,
         supportsReasoningEffort: Bool? = nil,
         supportsUsageInStreaming: Bool? = nil,
+        supportsFinishReason: Bool? = nil,
         supportsTemperature: Bool? = nil,
         maxTokensField: OpenAICompatMaxTokensField? = nil,
         requiresToolResultName: Bool? = nil,
@@ -510,8 +542,11 @@ public struct OpenAICompat: Sendable {
         requiresMistralToolIds: Bool? = nil,
         thinkingFormat: OpenAICompatThinkingFormat? = nil,
         chatTemplateKwargs: [String: ChatTemplateKwargValue]? = nil,
+        chatTemplateArgs: [String: ChatTemplateKwargValue]? = nil,
         openRouterRouting: OpenRouterRouting? = nil,
         vercelGatewayRouting: VercelGatewayRouting? = nil,
+        supportsThinkingTokenBudget: Bool? = nil,
+        supportsOpenAIGrammarTools: Bool? = nil,
         supportsStrictMode: Bool? = nil,
         reasoningEffortMap: [ThinkingLevel: String]? = nil,
         supportsLongCacheRetention: Bool? = nil,
@@ -521,18 +556,21 @@ public struct OpenAICompat: Sendable {
         sendSessionAffinityHeaders: Bool? = nil,
         requiresReasoningContentOnAssistantMessages: Bool? = nil,
         supportsCacheControlOnTools: Bool? = nil,
+        supportsStrictTools: Bool? = nil,
         forceAdaptiveThinking: Bool? = nil,
         zaiToolStream: Bool? = nil,
         allowEmptySignature: Bool? = nil,
         deferredToolsMode: DeferredToolsMode? = nil,
         sessionAffinityFormat: SessionAffinityFormat? = nil,
         supportsToolSearch: Bool? = nil,
+        supportsExplicitPromptCacheMode: Bool? = nil,
         supportsToolReferences: Bool? = nil
     ) {
         self.supportsStore = supportsStore
         self.supportsDeveloperRole = supportsDeveloperRole
         self.supportsReasoningEffort = supportsReasoningEffort
         self.supportsUsageInStreaming = supportsUsageInStreaming
+        self.supportsFinishReason = supportsFinishReason
         self.supportsTemperature = supportsTemperature
         self.maxTokensField = maxTokensField
         self.requiresToolResultName = requiresToolResultName
@@ -541,8 +579,11 @@ public struct OpenAICompat: Sendable {
         self.requiresMistralToolIds = requiresMistralToolIds
         self.thinkingFormat = thinkingFormat
         self.chatTemplateKwargs = chatTemplateKwargs
+        self.chatTemplateArgs = chatTemplateArgs
         self.openRouterRouting = openRouterRouting
         self.vercelGatewayRouting = vercelGatewayRouting
+        self.supportsThinkingTokenBudget = supportsThinkingTokenBudget
+        self.supportsOpenAIGrammarTools = supportsOpenAIGrammarTools
         self.supportsStrictMode = supportsStrictMode
         self.reasoningEffortMap = reasoningEffortMap
         self.supportsLongCacheRetention = supportsLongCacheRetention
@@ -552,12 +593,14 @@ public struct OpenAICompat: Sendable {
         self.sendSessionAffinityHeaders = sendSessionAffinityHeaders
         self.requiresReasoningContentOnAssistantMessages = requiresReasoningContentOnAssistantMessages
         self.supportsCacheControlOnTools = supportsCacheControlOnTools
+        self.supportsStrictTools = supportsStrictTools
         self.forceAdaptiveThinking = forceAdaptiveThinking
         self.zaiToolStream = zaiToolStream
         self.allowEmptySignature = allowEmptySignature
         self.deferredToolsMode = deferredToolsMode
         self.sessionAffinityFormat = sessionAffinityFormat
         self.supportsToolSearch = supportsToolSearch
+        self.supportsExplicitPromptCacheMode = supportsExplicitPromptCacheMode
         self.supportsToolReferences = supportsToolReferences
     }
 }
@@ -625,6 +668,12 @@ public struct Model: Sendable {
     public let cost: ModelCost
     public let contextWindow: Int
     public let maxTokens: Int
+    /// Arbitrary sampling parameters merged into the request body as-is, after the named request
+    /// fields, so keys here override them. Lets custom OpenAI-compatible servers (llama.cpp, vLLM,
+    /// SGLang, ...) receive parameters pi does not model, e.g. `top_p`, `top_k`, `min_p`,
+    /// `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
+    /// OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
+    public let samplingParams: [String: AnyCodable]?
     public let headers: [String: String]?
     public let compat: OpenAICompat?
     public let thinkingLevelMap: ThinkingLevelMap?
@@ -640,6 +689,7 @@ public struct Model: Sendable {
         cost: ModelCost,
         contextWindow: Int,
         maxTokens: Int,
+        samplingParams: [String: AnyCodable]? = nil,
         headers: [String: String]? = nil,
         compat: OpenAICompat? = nil,
         thinkingLevelMap: ThinkingLevelMap? = nil
@@ -654,6 +704,7 @@ public struct Model: Sendable {
         self.cost = cost
         self.contextWindow = contextWindow
         self.maxTokens = maxTokens
+        self.samplingParams = samplingParams
         self.headers = headers
         self.compat = compat
         self.thinkingLevelMap = thinkingLevelMap
@@ -774,11 +825,45 @@ public struct Usage: Sendable {
 }
 
 public enum StopReason: String, Sendable {
+    case pending
     case stop
     case length
     case toolUse
     case error
     case aborted
+    case deferred
+}
+
+public struct DeferredHandle: Sendable {
+    public var provider: String
+    public var modelId: String
+    public var api: String
+    /// Provider token, such as a response id or batch id plus row id.
+    public var id: String
+    /// Unix timestamp in milliseconds.
+    public var expiresAt: Int64?
+    /// Poll delay in milliseconds.
+    public var pollAfterMs: Int?
+    /// Provider conversion data required to reconstruct the final assistant message.
+    public var data: AnyCodable?
+
+    public init(
+        provider: String,
+        modelId: String,
+        api: String,
+        id: String,
+        expiresAt: Int64? = nil,
+        pollAfterMs: Int? = nil,
+        data: AnyCodable? = nil
+    ) {
+        self.provider = provider
+        self.modelId = modelId
+        self.api = api
+        self.id = id
+        self.expiresAt = expiresAt
+        self.pollAfterMs = pollAfterMs
+        self.data = data
+    }
 }
 
 public struct TextContent: Sendable {
@@ -875,7 +960,10 @@ public struct AssistantMessage: Sendable {
     public var responseId: String?
     public var usage: Usage
     public var stopReason: StopReason
+    public var deferred: DeferredHandle?
     public var errorMessage: String?
+    /// Provider's own unmapped stop-reason string, preserved for diagnostics.
+    public var rawStopReason: String?
     public var timestamp: Int64
 
     public init(
@@ -887,7 +975,9 @@ public struct AssistantMessage: Sendable {
         usage: Usage,
         stopReason: StopReason,
         errorMessage: String? = nil,
-        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        deferred: DeferredHandle? = nil,
+        rawStopReason: String? = nil
     ) {
         self.content = content
         self.api = api
@@ -896,7 +986,9 @@ public struct AssistantMessage: Sendable {
         self.responseId = responseId
         self.usage = usage
         self.stopReason = stopReason
+        self.deferred = deferred
         self.errorMessage = errorMessage
+        self.rawStopReason = rawStopReason
         self.timestamp = timestamp
     }
 }
@@ -941,6 +1033,8 @@ public struct ToolResultMessage: Sendable {
     public var toolName: String
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    /// Usage from the tool execution itself, if available. Not part of main LLM context accounting.
+    public var usage: Usage?
     public var addedToolNames: [String]?
     public var isError: Bool
     public var timestamp: Int64
@@ -950,6 +1044,7 @@ public struct ToolResultMessage: Sendable {
         toolName: String,
         content: [ContentBlock],
         details: AnyCodable? = nil,
+        usage: Usage? = nil,
         addedToolNames: [String]? = nil,
         isError: Bool,
         timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
@@ -958,6 +1053,7 @@ public struct ToolResultMessage: Sendable {
         self.toolName = toolName
         self.content = content
         self.details = details
+        self.usage = usage
         self.addedToolNames = addedToolNames
         self.isError = isError
         self.timestamp = timestamp
@@ -981,15 +1077,41 @@ public enum Message: Sendable {
     }
 }
 
+public enum GrammarFormat: String, Sendable, Hashable {
+    case openAILark = "openai_lark"
+    case openAIRegex = "openai_regex"
+}
+
+public enum ConstrainedSamplingStrictness: String, Sendable {
+    case prefer
+    case require
+}
+
+/// Provider-side constrained sampling for a tool.
+/// `.disabled` corresponds to upstream's explicit `constrainedSampling: false`, which opts a tool
+/// out even when the model supports constrained sampling.
+public enum ConstrainedSampling: Sendable {
+    case disabled
+    case jsonSchema(strict: ConstrainedSamplingStrictness)
+    case grammar(variants: [GrammarFormat: String])
+}
+
 public struct AITool: Sendable {
     public var name: String
     public var description: String
     public var parameters: [String: AnyCodable]
+    public var constrainedSampling: ConstrainedSampling?
 
-    public init(name: String, description: String, parameters: [String: AnyCodable]) {
+    public init(
+        name: String,
+        description: String,
+        parameters: [String: AnyCodable],
+        constrainedSampling: ConstrainedSampling? = nil
+    ) {
         self.name = name
         self.description = description
         self.parameters = parameters
+        self.constrainedSampling = constrainedSampling
     }
 }
 

@@ -105,7 +105,7 @@
       "baseUrl": "https://openrouter.ai/api/v1",
       "cost": {
         "cacheRead": 0.03,
-        "cacheWrite": 0.08333333333333334,
+        "cacheWrite": 0.0833333333333333,
         "input": 0.3,
         "output": 2.5
       },
@@ -226,6 +226,66 @@
       ],
       "provider": "openrouter"
     },
+    "krea/krea-2-large": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "krea/krea-2-large",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Krea: Krea 2 Large",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "krea/krea-2-medium": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "krea/krea-2-medium",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Krea: Krea 2 Medium",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "krea/krea-2-medium-turbo": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "krea/krea-2-medium-turbo",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Krea: Krea 2 Medium Turbo",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
     "microsoft/mai-image-2.5": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -241,6 +301,26 @@
         "image"
       ],
       "name": "Microsoft: MAI-Image-2.5",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "microsoft/mai-image-2.5-pro": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 5,
+        "output": 0
+      },
+      "id": "microsoft/mai-image-2.5-pro",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Microsoft: MAI-Image-2.5 Pro",
       "output": [
         "image"
       ],
@@ -386,6 +466,67 @@
       "name": "Auto Router",
       "output": [
         "text",
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "openrouter/auto-beta": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": -1000000,
+        "output": -1000000
+      },
+      "id": "openrouter/auto-beta",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Auto Router (Beta)",
+      "output": [
+        "text",
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "qwen/qwen-image-3": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "qwen/qwen-image-3",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen: Qwen Image 3",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "qwen/qwen-image-3-pro": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "qwen/qwen-image-3-pro",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen: Qwen Image 3 Pro",
+      "output": [
         "image"
       ],
       "provider": "openrouter"
@@ -704,7 +845,7 @@
         "text",
         "image"
       ],
-      "name": "xAI: Grok Imagine Image Quality",
+      "name": "SpaceXAI: Grok Imagine Image Quality",
       "output": [
         "image"
       ],

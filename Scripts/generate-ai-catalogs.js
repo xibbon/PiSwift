@@ -31,21 +31,53 @@ function loadTextModels() {
     imports.set(match[1], match[2]);
   }
 
-  const scope = {};
-  for (const [exportName, providerFile] of imports) {
-    let source = fs.readFileSync(path.join(upstreamRoot, providerFile), "utf8");
-    source = stripTypeScriptSyntax(source);
-    source = source.replace(new RegExp(`export const ${exportName} =`), "module.exports =");
-    const module = { exports: undefined };
-    new Function("module", source)(module);
-    scope[exportName] = module.exports;
+  const models = {};
+  for (const providerFile of imports.values()) {
+    const providerPath = path.join(upstreamRoot, providerFile);
+    const source = fs.readFileSync(providerPath, "utf8");
+    const dataPathMatch = source.match(/import values from "(\.\/data\/[^\"]+\.json)"/);
+    if (!dataPathMatch) {
+      throw new Error(`Could not find model data path in ${providerFile}`);
+    }
+    const providerIdMatch = source.match(/flattenModelCatalog\(\s*"([^"]+)"/);
+    if (!providerIdMatch) {
+      throw new Error(`Could not find provider id in ${providerFile}`);
+    }
+
+    const providerId = providerIdMatch[1];
+    const dataPath = path.resolve(path.dirname(providerPath), dataPathMatch[1]);
+    const groups = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+    models[providerId] = Object.assign({}, ...Object.values(groups));
   }
 
-  let mappingSource = stripTypeScriptSyntax(generatedSource);
-  mappingSource = mappingSource.replace(/export const MODELS =/, "module.exports =");
-  const module = { exports: undefined };
-  new Function("module", ...Object.keys(scope), mappingSource)(module, ...Object.values(scope));
-  return module.exports;
+  const aggregateMatch = generatedSource.match(/export const MODELS:[\s\S]*?}\s*=\s*{([\s\S]*?)^};/m);
+  if (!aggregateMatch) {
+    throw new Error("Could not find MODELS aggregate assignment in models.generated.ts");
+  }
+  const expectedProviderIds = new Set(
+    [...aggregateMatch[1].matchAll(/^\t"([^"]+)":\s*[A-Z]/gm)].map((match) => match[1])
+  );
+  const actualProviderIds = new Set(Object.keys(models));
+  const missingProviderIds = [...expectedProviderIds].filter((providerId) => !actualProviderIds.has(providerId)).sort();
+  const unexpectedProviderIds = [...actualProviderIds].filter((providerId) => !expectedProviderIds.has(providerId)).sort();
+  if (missingProviderIds.length > 0 || unexpectedProviderIds.length > 0) {
+    throw new Error(
+      `Provider ids differ from MODELS aggregate: missing [${missingProviderIds.join(", ")}], unexpected [${unexpectedProviderIds.join(", ")}]`
+    );
+  }
+
+  return models;
+}
+
+function loadBuiltinModelDataGeneratedAt() {
+  try {
+    const manifestPath = path.join(upstreamRoot, "providers/data/.manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    const milliseconds = Date.parse(manifest.generatedAt);
+    return Number.isNaN(milliseconds) ? undefined : milliseconds / 1000;
+  } catch {
+    return undefined;
+  }
 }
 
 function sortJsonValue(value) {
@@ -129,10 +161,12 @@ function enumValue(type, value) {
       openai: "openai",
       zai: "zai",
       qwen: "qwen",
+      "chat-template": "chatTemplate",
       "qwen-chat-template": "qwenChatTemplate",
       openrouter: "openrouter",
       deepseek: "deepseek",
       together: "together",
+      baseten: "baseten",
       "string-thinking": "stringThinking",
       "ant-ling": "antLing",
     };
@@ -206,6 +240,31 @@ function vercelRoutingLiteral(value) {
   return `VercelGatewayRouting(${rendered.join(", ")})`;
 }
 
+function chatTemplateKwargValueLiteral(value) {
+  if (value === null) return ".null";
+  if (typeof value === "string") return `.string(${swiftString(value)})`;
+  if (typeof value === "number") return `.number(${value})`;
+  if (typeof value === "boolean") return `.bool(${swiftBool(value)})`;
+  if (value && typeof value === "object") {
+    const variables = {
+      "thinking.enabled": "thinkingEnabled",
+      "thinking.effort": "thinkingEffort",
+    };
+    const variable = variables[value.$var];
+    if (!variable) throw new Error(`Unknown chat-template variable: ${value.$var}`);
+    const omitWhenOff = value.omitWhenOff === true ? ", omitWhenOff: true" : "";
+    return `.variable(.${variable}${omitWhenOff})`;
+  }
+  throw new Error(`Unsupported chat-template value: ${value}`);
+}
+
+function chatTemplateValuesLiteral(values) {
+  const entries = Object.entries(values)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${swiftString(key)}: ${chatTemplateKwargValueLiteral(value)}`);
+  return entries.length === 0 ? "[:]" : `[${entries.join(", ")}]`;
+}
+
 function compatLiteral(compat) {
   if (!compat) return undefined;
   const fields = [
@@ -213,6 +272,7 @@ function compatLiteral(compat) {
     ["supportsDeveloperRole", compat.supportsDeveloperRole, "bool"],
     ["supportsReasoningEffort", compat.supportsReasoningEffort, "bool"],
     ["supportsUsageInStreaming", compat.supportsUsageInStreaming, "bool"],
+    ["supportsFinishReason", compat.supportsFinishReason, "bool"],
     ["supportsTemperature", compat.supportsTemperature, "bool"],
     ["maxTokensField", compat.maxTokensField, "maxTokensField"],
     ["requiresToolResultName", compat.requiresToolResultName, "bool"],
@@ -220,8 +280,12 @@ function compatLiteral(compat) {
     ["requiresThinkingAsText", compat.requiresThinkingAsText, "bool"],
     ["requiresMistralToolIds", compat.requiresMistralToolIds, "bool"],
     ["thinkingFormat", compat.thinkingFormat, "thinkingFormat"],
+    ["chatTemplateKwargs", compat.chatTemplateKwargs, "chatTemplateValues"],
+    ["chatTemplateArgs", compat.chatTemplateArgs, "chatTemplateValues"],
     ["openRouterRouting", openRouterRoutingLiteral(compat.openRouterRouting), "literal"],
     ["vercelGatewayRouting", vercelRoutingLiteral(compat.vercelGatewayRouting), "literal"],
+    ["supportsThinkingTokenBudget", compat.supportsThinkingTokenBudget, "bool"],
+    ["supportsOpenAIGrammarTools", compat.supportsOpenAIGrammarTools, "bool"],
     ["supportsStrictMode", compat.supportsStrictMode, "bool"],
     ["reasoningEffortMap", compat.reasoningEffortMap, "reasoningEffortMap"],
     ["supportsLongCacheRetention", compat.supportsLongCacheRetention, "bool"],
@@ -231,18 +295,21 @@ function compatLiteral(compat) {
     ["sendSessionAffinityHeaders", compat.sendSessionAffinityHeaders, "bool"],
     ["requiresReasoningContentOnAssistantMessages", compat.requiresReasoningContentOnAssistantMessages, "bool"],
     ["supportsCacheControlOnTools", compat.supportsCacheControlOnTools, "bool"],
+    ["supportsStrictTools", compat.supportsStrictTools, "bool"],
     ["forceAdaptiveThinking", compat.forceAdaptiveThinking, "bool"],
     ["zaiToolStream", compat.zaiToolStream, "bool"],
     ["allowEmptySignature", compat.allowEmptySignature, "bool"],
     ["deferredToolsMode", compat.deferredToolsMode, "deferredToolsMode"],
     ["sessionAffinityFormat", compat.sessionAffinityFormat, "sessionAffinityFormat"],
     ["supportsToolSearch", compat.supportsToolSearch, "bool"],
+    ["supportsExplicitPromptCacheMode", compat.supportsExplicitPromptCacheMode, "bool"],
     ["supportsToolReferences", compat.supportsToolReferences, "bool"],
   ];
   const rendered = fields.flatMap(([label, value, kind]) => {
     if (value === undefined) return [];
     if (kind === "bool") return [`${label}: ${swiftBool(value)}`];
     if (kind === "literal") return [`${label}: ${value}`];
+    if (kind === "chatTemplateValues") return [`${label}: ${chatTemplateValuesLiteral(value)}`];
     if (kind === "reasoningEffortMap") {
       const entries = Object.entries(value)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -307,7 +374,7 @@ function swiftImagesModel(model) {
   return `ImagesModel(\n        ${args.join(",\n        ")}\n    )`;
 }
 
-function writeModelsData(models) {
+function writeModelsData(models, generatedAt) {
   const providers = Object.keys(models).sort();
   const modelsPerDictionaryChunk = 100;
   const lines = [
@@ -315,6 +382,9 @@ function writeModelsData(models) {
     "",
     "// This file is auto-generated by Scripts/generate-ai-catalogs.js.",
     "// Do not edit manually.",
+    "",
+    "/// Generation timestamp shared by all built-in provider catalogs (seconds since 1970).",
+    `internal let builtinModelDataGeneratedAt: Double? = ${generatedAt ?? "nil"}`,
     "",
     "internal let ModelsData: [String: [String: Model]] = [",
     ...providers.map((provider) => `    ${swiftString(provider)}: ${providerVariableName(provider)},`),
@@ -373,8 +443,9 @@ function writeImageModelsData(models) {
 }
 
 const models = loadTextModels();
+const builtinModelDataGeneratedAt = loadBuiltinModelDataGeneratedAt();
 const imageModels = loadGeneratedObject("image-models.generated.ts", "IMAGE_MODELS");
-writeModelsData(models);
+writeModelsData(models, builtinModelDataGeneratedAt);
 writeImageModelsData(imageModels);
 writeJsonFixture("upstream-models.generated.json", models);
 writeJsonFixture("upstream-image-models.generated.json", imageModels);
