@@ -57,6 +57,10 @@ final class PromptHookUIContext: HookUIContext {
     func notify(_ message: String, _ type: HookNotificationType?) { base.notify(message, type) }
     func setStatus(_ key: String, _ text: String?) { base.setStatus(key, text) }
     func setWorkingMessage(_ message: String?) { base.setWorkingMessage(message) }
+    func setWorkingVisible(_ visible: Bool) { base.setWorkingVisible(visible) }
+    func setWorkingIndicator(_ options: WorkingIndicatorOptions?) { base.setWorkingIndicator(options) }
+    func setHiddenThinkingLabel(_ label: String?) { base.setHiddenThinkingLabel(label) }
+    func addAutocompleteProvider(_ factory: @escaping HookAutocompleteProviderFactory) { base.addAutocompleteProvider(factory) }
     func setWidget(_ key: String, _ content: HookWidgetContent?) { base.setWidget(key, content) }
     func setFooter(_ factory: HookFooterFactory?) { base.setFooter(factory) }
     func setTitle(_ title: String) { base.setTitle(title) }

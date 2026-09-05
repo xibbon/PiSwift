@@ -561,6 +561,10 @@ public protocol HookUIContext: Sendable {
     func notify(_ message: String, _ type: HookNotificationType?)
     func setStatus(_ key: String, _ text: String?)
     func setWorkingMessage(_ message: String?)
+    func setWorkingVisible(_ visible: Bool)
+    func setWorkingIndicator(_ options: WorkingIndicatorOptions?)
+    func setHiddenThinkingLabel(_ label: String?)
+    func addAutocompleteProvider(_ factory: @escaping HookAutocompleteProviderFactory)
     func setWidget(_ key: String, _ content: HookWidgetContent?)
     /// Replace the footer. Pass nil to restore the default footer.
     func setFooter(_ factory: HookFooterFactory?)
@@ -614,6 +618,10 @@ public final class NoOpHookUIContext: HookUIContext {
     public func notify(_ message: String, _ type: HookNotificationType?) {}
     public func setStatus(_ key: String, _ text: String?) {}
     public func setWorkingMessage(_ message: String?) {}
+    public func setWorkingVisible(_ visible: Bool) {}
+    public func setWorkingIndicator(_ options: WorkingIndicatorOptions?) {}
+    public func setHiddenThinkingLabel(_ label: String?) {}
+    public func addAutocompleteProvider(_ factory: @escaping HookAutocompleteProviderFactory) {}
     public func setWidget(_ key: String, _ content: HookWidgetContent?) {}
     public func setFooter(_ factory: HookFooterFactory?) {}
     public func setTitle(_ title: String) {}

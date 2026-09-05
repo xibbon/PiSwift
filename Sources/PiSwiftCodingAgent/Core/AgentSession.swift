@@ -369,6 +369,9 @@ public final class AgentSession: Sendable {
 
     private struct State: Sendable {
         var hookRunner: HookRunner?
+        var hookEventObservers: [UUID: @Sendable (any HookEvent) -> Void] = [:]
+        var hookEventUnsubscribe: (@Sendable () -> Void)?
+        var hookEventGeneration = UUID()
         var customToolsInternal: [LoadedCustomTool]
         var scopedModels: [ScopedModel]
         var fileCommands: [FileSlashCommand]
@@ -453,7 +456,20 @@ public final class AgentSession: Sendable {
 
     private var _hookRunner: HookRunner? {
         get { state.withLock { $0.hookRunner } }
-        set { state.withLock { $0.hookRunner = newValue } }
+        set {
+            state.withLock { state in
+                state.hookEventUnsubscribe?()
+                state.hookRunner = newValue
+                let generation = UUID()
+                state.hookEventGeneration = generation
+                state.hookEventUnsubscribe = newValue?.addEventObserver { [weak self] event in
+                    let observers = self?.state.withLock { state in
+                        state.hookEventGeneration == generation ? Array(state.hookEventObservers.values) : []
+                    } ?? []
+                    for observer in observers { observer(event) }
+                }
+            }
+        }
     }
 
     private var customToolsInternal: [LoadedCustomTool] {
@@ -727,6 +743,7 @@ public final class AgentSession: Sendable {
             )
         }
 
+        self._hookRunner = config.hookRunner
         self._hookRunner?.initialize(
             getModel: { [weak agent] in agent?.state.model },
             getScopedModels: { [weak self] in self?.scopedModels ?? [] },
@@ -828,14 +845,17 @@ public final class AgentSession: Sendable {
     public func dispose() {
         unsubscribeAgent?()
         unsubscribeAgent = nil
-        _hookRunner?.dispose()
+        let runner = _hookRunner
+        _hookRunner = nil
+        runner?.dispose()
         // v0.67.4: reap any detached bash subprocesses the user spawned during this session
         // so we don't leave orphans hanging around after `/quit` or session shutdown.
         killTrackedDetachedChildren()
     }
 
-    public var hookRunner: HookRunner? {
-        _hookRunner
+    public internal(set) var hookRunner: HookRunner? {
+        get { _hookRunner }
+        set { _hookRunner = newValue }
     }
 
     public func getCurrentSystemPromptOptions() -> BuildSystemPromptOptions {
@@ -881,6 +901,18 @@ public final class AgentSession: Sendable {
             } catch {
                 // Ignore tool errors during session events
             }
+        }
+    }
+
+    /// Observe hook events on the current runner, including after replacement.
+    /// A subscription can start before a runner exists.
+    /// Calls are synchronous on the emitter's executor, outside the storage lock.
+    /// Unsubscribe excludes later snapshots. An event already in progress can still arrive.
+    public func subscribeToHookEvents(_ observer: @escaping @Sendable (any HookEvent) -> Void) -> @Sendable () -> Void {
+        let id = UUID()
+        state.withLock { $0.hookEventObservers[id] = observer }
+        return { [weak self] in
+            self?.state.withLock { $0.hookEventObservers[id] = nil }
         }
     }
 

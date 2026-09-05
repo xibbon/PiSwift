@@ -25,6 +25,7 @@ public final class HookRunner: Sendable {
     private let sessionManager: SessionManager
     private let modelRegistry: ModelRegistry
     private let state: LockedState<State>
+    private let eventObservers = LockedState<[UUID: @Sendable (any HookEvent) -> Void]>([:])
 
     private struct State: Sendable {
         var hooks: [LoadedHook]
@@ -456,27 +457,17 @@ public final class HookRunner: Sendable {
     }
 
     public func emitResourcesDiscover(cwd: String, reason: ResourcesDiscoverReason) async -> ResourceExtensionPaths {
-        let context = createContext()
-        let extensionHooks = hooks.filter { $0.isExtension }
         var skillPaths: [ResourceExtensionPath] = []
         var promptPaths: [ResourceExtensionPath] = []
         var themePaths: [ResourceExtensionPath] = []
-
-        for hook in extensionHooks {
-            guard let handlers = hook.handlers["resources_discover"], !handlers.isEmpty else { continue }
-            for handler in handlers {
-                do {
-                    let event = ResourcesDiscoverEvent(cwd: cwd, reason: reason)
-                    guard let result = try await handler(event, context) as? ResourcesDiscoverResult else { continue }
-                    let metadata = extensionResourceMetadata(for: hook)
-                    skillPaths.append(contentsOf: result.skillPaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
-                    promptPaths.append(contentsOf: result.promptPaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
-                    themePaths.append(contentsOf: result.themePaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: "resources_discover", error: error.localizedDescription, stack: captureStack()))
-                }
-            }
-        }
+        await dispatchEvent(ResourcesDiscoverEvent(cwd: cwd, reason: reason), extensionsOnly: true, consume: { result, hook in
+            guard let result = result as? ResourcesDiscoverResult else { return false }
+            let metadata = self.extensionResourceMetadata(for: hook)
+            skillPaths.append(contentsOf: result.skillPaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
+            promptPaths.append(contentsOf: result.promptPaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
+            themePaths.append(contentsOf: result.themePaths.map { ResourceExtensionPath(path: $0, metadata: metadata) })
+            return false
+        })
 
         return ResourceExtensionPaths(skillPaths: skillPaths, promptPaths: promptPaths, themePaths: themePaths)
     }
@@ -502,18 +493,7 @@ public final class HookRunner: Sendable {
     /// Used by the reload lifecycle to fire `session_shutdown` / `session_start(reason: .reload)`
     /// at the extensions being swapped, without disturbing built-in hooks.
     public func emitToExtensions(_ event: HookEvent) async {
-        let context = createContext()
-        let extensionHooks = hooks.filter { $0.isExtension }
-        for hook in extensionHooks {
-            guard let handlers = hook.handlers[event.type] else { continue }
-            for handler in handlers {
-                do {
-                    _ = try await handler(event, context)
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
-                }
-            }
-        }
+        await dispatchEvent(event, extensionsOnly: true)
     }
 
     public func getMessageRenderer(_ customType: String) -> HookMessageRenderer? {
@@ -750,181 +730,136 @@ public final class HookRunner: Sendable {
         )
     }
 
-    public func emit(_ event: HookEvent) async -> Any? {
-        let context = createContext()
-        var lastResult: Any? = nil
+    /// Observe each event before its handlers run.
+    /// Calls are synchronous on the emitter's executor, outside the storage lock.
+    /// Concurrent emissions can call the observer concurrently.
+    /// Unsubscribe excludes later snapshots. An event already in progress can still arrive.
+    public func addEventObserver(_ observer: @escaping @Sendable (any HookEvent) -> Void) -> @Sendable () -> Void {
+        let id = UUID()
+        eventObservers.withLock { $0[id] = observer }
+        return { [weak self] in
+            self?.eventObservers.withLock { $0[id] = nil }
+        }
+    }
 
-        for hook in hooks {
+    /// Use this path for all event delivery and handler calls.
+    private func dispatchEvent(
+        _ event: any HookEvent,
+        extensionsOnly: Bool = false,
+        eventForHandler: (() -> any HookEvent)? = nil,
+        consume: (Any, LoadedHook) -> Bool = { _, _ in false }
+    ) async {
+        let observers = eventObservers.withLock { Array($0.values) }
+        for observer in observers { observer(event) }
+        let context = createContext()
+        for hook in hooks where !extensionsOnly || hook.isExtension {
             guard let handlers = hook.handlers[event.type] else { continue }
             for handler in handlers {
                 do {
-                    if let result = try await handler(event, context) {
-                        lastResult = result
-                        if let result = result as? SessionBeforeCompactResult, result.cancel {
-                            return result
-                        }
-                        if let result = result as? SessionBeforeTreeResult, result.cancel {
-                            return result
-                        }
-                        if let result = result as? SessionBeforeForkResult, result.cancel {
-                            return result
-                        }
-                        if let result = result as? SessionBeforeSwitchResult, result.cancel {
-                            return result
-                        }
+                    if let result = try await handler(eventForHandler?() ?? event, context), consume(result, hook) {
+                        return
                     }
                 } catch {
                     emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
                 }
             }
         }
+    }
 
+    public func emit(_ event: HookEvent) async -> Any? {
+        var lastResult: Any?
+        await dispatchEvent(event, consume: { result, _ in
+            lastResult = result
+            if let result = result as? SessionBeforeCompactResult, result.cancel { return true }
+            if let result = result as? SessionBeforeTreeResult, result.cancel { return true }
+            if let result = result as? SessionBeforeForkResult, result.cancel { return true }
+            if let result = result as? SessionBeforeSwitchResult, result.cancel { return true }
+            return false
+        })
         return lastResult
     }
 
-    /// Emits `before_provider_headers` and applies each returned header set in
-    /// handler order. A `nil` value deletes a provider or API default header.
+    /// Apply each returned header set in handler order.
+    /// A nil value deletes a provider or API default header.
     public func emitBeforeProviderHeaders(_ headers: ProviderHeaders) async -> ProviderHeaders {
-        let context = createContext()
         var currentHeaders = headers
-
-        for hook in hooks {
-            guard let handlers = hook.handlers["before_provider_headers"] else { continue }
-            for handler in handlers {
-                do {
-                    let event = BeforeProviderHeadersEvent(headers: currentHeaders)
-                    if let result = try await handler(event, context) as? BeforeProviderHeadersEventResult {
-                        currentHeaders = mergeProviderHeaders(currentHeaders, result.headers) ?? [:]
-                    }
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: "before_provider_headers", error: error.localizedDescription, stack: captureStack()))
-                }
+        await dispatchEvent(BeforeProviderHeadersEvent(headers: headers), eventForHandler: {
+            BeforeProviderHeadersEvent(headers: currentHeaders)
+        }) { result, _ in
+            if let result = result as? BeforeProviderHeadersEventResult {
+                currentHeaders = mergeProviderHeaders(currentHeaders, result.headers) ?? [:]
             }
+            return false
         }
-
         return currentHeaders
     }
 
     public func emitProjectTrust(_ event: ProjectTrustEvent) async -> ProjectTrustEventResult? {
-        let context = createContext()
-
-        for hook in hooks {
-            guard let handlers = hook.handlers[event.type] else { continue }
-            for handler in handlers {
-                do {
-                    if let result = try await handler(event, context) as? ProjectTrustEventResult {
-                        switch result.trusted {
-                        case .yes, .no:
-                            return result
-                        case .undecided:
-                            continue
-                        }
-                    }
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
-                }
+        var decision: ProjectTrustEventResult?
+        await dispatchEvent(event, consume: { result, _ in
+            guard let result = result as? ProjectTrustEventResult else { return false }
+            switch result.trusted {
+            case .yes, .no:
+                decision = result
+                return true
+            case .undecided:
+                return false
             }
-        }
-
-        return nil
+        })
+        return decision
     }
 
     public func emitToolCall(_ event: ToolCallEvent) async -> ToolCallEventResult? {
-        let context = createContext()
-        var lastResult: ToolCallEventResult? = nil
-
-        for hook in hooks {
-            guard let handlers = hook.handlers[event.type] else { continue }
-            for handler in handlers {
-                do {
-                    if let result = try await handler(event, context) as? ToolCallEventResult {
-                        lastResult = result
-                        if result.block {
-                            return result
-                        }
-                    }
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
-                }
-            }
-        }
-
+        var lastResult: ToolCallEventResult?
+        await dispatchEvent(event, consume: { result, _ in
+            guard let result = result as? ToolCallEventResult else { return false }
+            lastResult = result
+            return result.block
+        })
         return lastResult
     }
 
     public func emitUserBash(_ event: UserBashEvent) async -> UserBashEventResult? {
-        let context = createContext()
-
-        for hook in hooks {
-            guard let handlers = hook.handlers[event.type] else { continue }
-            for handler in handlers {
-                do {
-                    if let result = try await handler(event, context) as? UserBashEventResult {
-                        return result
-                    }
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
-                }
-            }
-        }
-
-        return nil
+        var firstResult: UserBashEventResult?
+        await dispatchEvent(event, consume: { result, _ in
+            guard let result = result as? UserBashEventResult else { return false }
+            firstResult = result
+            return true
+        })
+        return firstResult
     }
 
     public func emitContext(_ messages: [AgentMessage], signal: CancellationToken? = nil) async -> [AgentMessage] {
         _ = signal
-        let context = createContext()
         var currentMessages = messages
-
-        for hook in hooks {
-            guard let handlers = hook.handlers["context"] else { continue }
-            for handler in handlers {
-                do {
-                    let safeMessages = deepCopyMessages(currentMessages)
-                    if let result = try await handler(ContextEvent(messages: safeMessages), context) as? ContextEventResult,
-                       let replacement = result.messages {
-                        currentMessages = replacement
-                    }
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: "context", error: error.localizedDescription, stack: captureStack()))
-                }
+        await dispatchEvent(ContextEvent(messages: deepCopyMessages(messages)), eventForHandler: {
+            ContextEvent(messages: deepCopyMessages(currentMessages))
+        }) { result, _ in
+            if let result = result as? ContextEventResult, let replacement = result.messages {
+                currentMessages = replacement
             }
+            return false
         }
-
         return currentMessages
     }
 
     public func emitBeforeAgentStart(_ prompt: String, _ images: [ImageContent]?) async -> BeforeAgentStartCombinedResult? {
-        let context = createContext()
         var messages: [HookMessageInput] = []
         var systemPromptAppends: [String] = []
-
-        for hook in hooks {
-            guard let handlers = hook.handlers["before_agent_start"] else { continue }
-            for handler in handlers {
-                do {
-                    if let handlerResult = try await handler(BeforeAgentStartEvent(prompt: prompt, images: images), context) as? BeforeAgentStartEventResult {
-                        if let message = handlerResult.message {
-                            messages.append(message)
-                        }
-                        if let append = handlerResult.systemPromptAppend, !append.isEmpty {
-                            systemPromptAppends.append(append)
-                        }
-                    }
-                } catch {
-                    emitError(HookError(hookPath: hook.path, event: "before_agent_start", error: error.localizedDescription, stack: captureStack()))
-                }
+        await dispatchEvent(BeforeAgentStartEvent(prompt: prompt, images: images), consume: { result, _ in
+            if let result = result as? BeforeAgentStartEventResult {
+                if let message = result.message { messages.append(message) }
+                if let append = result.systemPromptAppend, !append.isEmpty { systemPromptAppends.append(append) }
             }
-        }
-
-        if messages.isEmpty && systemPromptAppends.isEmpty {
-            return nil
-        }
+            return false
+        })
+        if messages.isEmpty && systemPromptAppends.isEmpty { return nil }
         return BeforeAgentStartCombinedResult(
             messages: messages.isEmpty ? nil : messages,
             systemPromptAppend: systemPromptAppends.isEmpty ? nil : systemPromptAppends.joined(separator: "\n\n")
         )
     }
+
 }
 
 private func logHookWarning(_ message: String) {

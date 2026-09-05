@@ -145,6 +145,27 @@ private func parseRoutingPercentile(_ value: Any?) -> OpenRouterRoutingPercentil
     return nil
 }
 
+private let extendedCompatKeys: Set<String> = [
+    "supportsFinishReason",
+    "vllmPriority",
+    "supportsAdditionalTools",
+    "supportsMaxOutputTokens",
+    "supportsMidConvoEffort",
+    "thinkingTokenBudgetField",
+    "supportsOpenAIGrammarTools",
+    "supportsToolSearch",
+    "supportsTemperature",
+    "supportsCacheControlOnTools",
+    "forceAdaptiveThinking",
+    "allowEmptySignature",
+    "supportsStrictTools",
+    "supportsToolReferences",
+    "deferredToolsMode",
+    "sessionAffinityFormat",
+    "chatTemplateKwargs",
+    "chatTemplateArgs",
+]
+
 private func parseCompat(_ value: Any?) -> OpenAICompat? {
     guard let dict = value as? [String: Any] else { return nil }
 
@@ -214,53 +235,35 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
        cacheControlFormat == nil,
        sendSessionAffinityHeaders == nil,
        requiresReasoningContentOnAssistantMessages == nil {
-        if !["supportsFinishReason", "vllmPriority", "supportsAdditionalTools", "supportsMaxOutputTokens", "supportsMidConvoEffort", "thinkingTokenBudgetField", "supportsOpenAIGrammarTools", "supportsToolSearch", "supportsTemperature", "supportsCacheControlOnTools", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsToolReferences", "deferredToolsMode", "sessionAffinityFormat", "chatTemplateKwargs", "chatTemplateArgs"].contains(where: { dict[$0] != nil }) { return nil }
+        if !extendedCompatKeys.contains(where: { dict[$0] != nil }) { return nil }
     }
 
-    var parsed = OpenAICompat(
-        supportsStore: supportsStore,
-        supportsDeveloperRole: supportsDeveloperRole,
-        supportsReasoningEffort: supportsReasoningEffort,
-        supportsUsageInStreaming: supportsUsageInStreaming,
-        maxTokensField: maxTokensField,
-        requiresToolResultName: requiresToolResultName,
-        requiresAssistantAfterToolResult: requiresAssistantAfterToolResult,
-        requiresThinkingAsText: requiresThinkingAsText,
-        requiresMistralToolIds: requiresMistralToolIds,
-        thinkingFormat: thinkingFormat,
-        openRouterRouting: openRouterRouting,
-        vercelGatewayRouting: vercelGatewayRouting,
-        supportsThinkingTokenBudget: supportsThinkingTokenBudget,
-        supportsStrictMode: supportsStrictMode,
-        supportsLongCacheRetention: supportsLongCacheRetention,
-        sendSessionIdHeader: sendSessionIdHeader,
-        supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
-        cacheControlFormat: cacheControlFormat,
-        sendSessionAffinityHeaders: sendSessionAffinityHeaders,
-        requiresReasoningContentOnAssistantMessages: requiresReasoningContentOnAssistantMessages
-    )
-    let accepted = dict.filter { ["supportsFinishReason", "vllmPriority", "supportsAdditionalTools", "supportsMaxOutputTokens", "supportsMidConvoEffort", "thinkingTokenBudgetField", "supportsOpenAIGrammarTools", "supportsToolSearch", "supportsTemperature", "supportsCacheControlOnTools", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsToolReferences", "deferredToolsMode", "sessionAffinityFormat", "chatTemplateKwargs", "chatTemplateArgs"].contains($0.key) }
+    let accepted = dict.filter { extendedCompatKeys.contains($0.key) }
+    var parsed = OpenAICompat()
     if let data = try? JSONSerialization.data(withJSONObject: accepted),
-       let added = try? JSONDecoder().decode(OpenAICompat.self, from: data) {
-        parsed.supportsFinishReason = added.supportsFinishReason
-        parsed.vllmPriority = added.vllmPriority
-        parsed.supportsAdditionalTools = added.supportsAdditionalTools
-        parsed.supportsMaxOutputTokens = added.supportsMaxOutputTokens
-        parsed.supportsMidConvoEffort = added.supportsMidConvoEffort
-        parsed.thinkingTokenBudgetField = added.thinkingTokenBudgetField
-        parsed.supportsOpenAIGrammarTools = added.supportsOpenAIGrammarTools
-        parsed.supportsToolSearch = added.supportsToolSearch
-        parsed.supportsTemperature = added.supportsTemperature
-        parsed.supportsCacheControlOnTools = added.supportsCacheControlOnTools
-        parsed.forceAdaptiveThinking = added.forceAdaptiveThinking
-        parsed.allowEmptySignature = added.allowEmptySignature
-        parsed.supportsStrictTools = added.supportsStrictTools
-        parsed.supportsToolReferences = added.supportsToolReferences
-        parsed.deferredToolsMode = added.deferredToolsMode
-        parsed.sessionAffinityFormat = added.sessionAffinityFormat
-        parsed.chatTemplateKwargs = added.chatTemplateKwargs
-        parsed.chatTemplateArgs = added.chatTemplateArgs
+       let decoded = try? JSONDecoder().decode(OpenAICompat.self, from: data) {
+        parsed = decoded
     }
+    parsed.supportsStore = supportsStore
+    parsed.supportsDeveloperRole = supportsDeveloperRole
+    parsed.supportsReasoningEffort = supportsReasoningEffort
+    parsed.supportsUsageInStreaming = supportsUsageInStreaming
+    parsed.maxTokensField = maxTokensField
+    parsed.requiresToolResultName = requiresToolResultName
+    parsed.requiresAssistantAfterToolResult = requiresAssistantAfterToolResult
+    parsed.requiresThinkingAsText = requiresThinkingAsText
+    parsed.requiresMistralToolIds = requiresMistralToolIds
+    parsed.thinkingFormat = thinkingFormat
+    parsed.openRouterRouting = openRouterRouting
+    parsed.vercelGatewayRouting = vercelGatewayRouting
+    parsed.supportsThinkingTokenBudget = supportsThinkingTokenBudget
+    parsed.supportsStrictMode = supportsStrictMode
+    parsed.supportsLongCacheRetention = supportsLongCacheRetention
+    parsed.sendSessionIdHeader = sendSessionIdHeader
+    parsed.supportsEagerToolInputStreaming = supportsEagerToolInputStreaming
+    parsed.cacheControlFormat = cacheControlFormat
+    parsed.sendSessionAffinityHeaders = sendSessionAffinityHeaders
+    parsed.requiresReasoningContentOnAssistantMessages = requiresReasoningContentOnAssistantMessages
     return parsed
 }
 
