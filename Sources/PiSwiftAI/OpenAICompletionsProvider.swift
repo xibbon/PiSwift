@@ -1122,10 +1122,10 @@ private struct OpenAICompletionsMaxTokensMiddleware: OpenAIMiddleware {
     let field: OpenAICompatMaxTokensField
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = request.httpBody else { return request }
-        var updated = request
-        updated.httpBody = applyOpenAICompletionsMaxTokensField(data: body, field: field)
-        return updated
+        guard request.httpBody != nil else { return request }
+        return rewritingOpenAIRequestBodyData(request) { body in
+            applyOpenAICompletionsMaxTokensField(data: body, field: field)
+        }
     }
 }
 
@@ -1144,47 +1144,38 @@ private struct OpenAICompletionsGrammarToolsMiddleware: OpenAIMiddleware {
     let grammarToolInputProperties: [String: String]
 
     func intercept(request: URLRequest) -> URLRequest {
-        let body = requestBodyData(request)
-        guard !body.isEmpty,
-              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
-            return request
-        }
-
-        if var tools = payload["tools"] as? [[String: Any]] {
-            for index in tools.indices {
-                guard let function = tools[index]["function"] as? [String: Any],
-                      let name = function["name"] as? String,
-                      let grammarTool = grammarTools[name] else { continue }
-                tools[index] = grammarTool.payload
-            }
-            payload["tools"] = tools
-        }
-
-        if var messages = payload["messages"] as? [[String: Any]] {
-            for messageIndex in messages.indices {
-                guard var toolCalls = messages[messageIndex]["tool_calls"] as? [[String: Any]] else { continue }
-                for toolIndex in toolCalls.indices {
-                    guard let function = toolCalls[toolIndex]["function"] as? [String: Any],
+        return rewritingOpenAIRequestBody(request) { payload in
+            if var tools = payload["tools"] as? [[String: Any]] {
+                for index in tools.indices {
+                    guard let function = tools[index]["function"] as? [String: Any],
                           let name = function["name"] as? String,
-                          let inputProperty = grammarToolInputProperties[name],
-                          let arguments = function["arguments"] as? String,
-                          let data = arguments.data(using: .utf8),
-                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let input = object[inputProperty] as? String else { continue }
-                    toolCalls[toolIndex].removeValue(forKey: "function")
-                    toolCalls[toolIndex]["type"] = "custom"
-                    toolCalls[toolIndex]["custom"] = ["name": name, "input": sanitizeSurrogates(input)]
+                          let grammarTool = grammarTools[name] else { continue }
+                    tools[index] = grammarTool.payload
                 }
-                messages[messageIndex]["tool_calls"] = toolCalls
+                payload["tools"] = tools
             }
-            payload["messages"] = messages
-        }
 
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
+            if var messages = payload["messages"] as? [[String: Any]] {
+                for messageIndex in messages.indices {
+                    guard var toolCalls = messages[messageIndex]["tool_calls"] as? [[String: Any]] else { continue }
+                    for toolIndex in toolCalls.indices {
+                        guard let function = toolCalls[toolIndex]["function"] as? [String: Any],
+                              let name = function["name"] as? String,
+                              let inputProperty = grammarToolInputProperties[name],
+                              let arguments = function["arguments"] as? String,
+                              let data = arguments.data(using: .utf8),
+                              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let input = object[inputProperty] as? String else { continue }
+                        toolCalls[toolIndex].removeValue(forKey: "function")
+                        toolCalls[toolIndex]["type"] = "custom"
+                        toolCalls[toolIndex]["custom"] = ["name": name, "input": sanitizeSurrogates(input)]
+                    }
+                    messages[messageIndex]["tool_calls"] = toolCalls
+                }
+                payload["messages"] = messages
+            }
+            return true
+        }
     }
 }
 
@@ -1315,57 +1306,30 @@ private struct OpenAICompletionsKimiDeferredToolsMiddleware: OpenAIMiddleware {
     }
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request),
-              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
-              let messages = payload["messages"] as? [[String: Any]] else { return request }
+        return rewritingOpenAIRequestBody(request) { payload in
+            guard let messages = payload["messages"] as? [[String: Any]] else { return false }
 
-        let rewrittenMessages: [[String: Any]] = messages.compactMap { message in
-            guard message["role"] as? String == "system",
-                  let content = message["content"] as? String,
-                  content.hasPrefix(markerPrefix) else { return message }
+            let rewrittenMessages: [[String: Any]] = messages.compactMap { message in
+                guard message["role"] as? String == "system",
+                      let content = message["content"] as? String,
+                      content.hasPrefix(markerPrefix) else { return message }
 
-            let namesJSON = String(content.dropFirst(markerPrefix.count))
-            let names = namesJSON.data(using: .utf8).flatMap {
-                try? JSONSerialization.jsonObject(with: $0) as? [String]
-            } ?? []
-            let nameSet = Set(names)
-            let tools = orderedDeferredTools.compactMap { tool -> [String: Any]? in
-                guard nameSet.contains(tool.name) else { return nil }
-                return tool.json.value as? [String: Any]
+                let namesJSON = String(content.dropFirst(markerPrefix.count))
+                let names = namesJSON.data(using: .utf8).flatMap {
+                    try? JSONSerialization.jsonObject(with: $0) as? [String]
+                } ?? []
+                let nameSet = Set(names)
+                let tools = orderedDeferredTools.compactMap { tool -> [String: Any]? in
+                    guard nameSet.contains(tool.name) else { return nil }
+                    return tool.json.value as? [String: Any]
+                }
+                guard !tools.isEmpty else { return nil }
+                return ["role": "system", "tools": tools]
             }
-            guard !tools.isEmpty else { return nil }
-            return ["role": "system", "tools": tools]
-        }
 
-        payload["messages"] = rewrittenMessages
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
-            return request
+            payload["messages"] = rewrittenMessages
+            return true
         }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
-            }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1407,44 +1371,21 @@ private struct OpenAICompletionsSessionMiddleware: OpenAIMiddleware {
     let supportsLongCacheRetention: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
-        var updated = applyOpenAICompletionsSessionAffinityHeaders(
+        let updated = applyOpenAICompletionsSessionAffinityHeaders(
             request: request,
             sessionId: sessionId,
             sendSessionAffinityHeaders: sendSessionAffinityHeaders,
             sessionAffinityFormat: sessionAffinityFormat
         )
-        guard let body = readRequestBody(updated) else { return updated }
-        guard let updatedBody = applyOpenAICompletionsPromptCache(
-            data: body,
-            baseUrl: baseUrl,
-            sessionId: sessionId,
-            cacheRetention: cacheRetention,
-            supportsLongCacheRetention: supportsLongCacheRetention
-        ) else { return updated }
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
+        return rewritingOpenAIRequestBodyData(updated) { body in
+            applyOpenAICompletionsPromptCache(
+                data: body,
+                baseUrl: baseUrl,
+                sessionId: sessionId,
+                cacheRetention: cacheRetention,
+                supportsLongCacheRetention: supportsLongCacheRetention
+            )
         }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
-            }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1500,37 +1441,13 @@ private struct OpenAICompletionsCacheControlMiddleware: OpenAIMiddleware {
     let supportsCacheControlOnTools: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard let updatedBody = applyOpenAICompatCacheControl(
-            data: body,
-            cacheControl: cacheControl.mapValues(\.value),
-            supportsCacheControlOnTools: supportsCacheControlOnTools
-        ) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
+        return rewritingOpenAIRequestBodyData(request) { body in
+            applyOpenAICompatCacheControl(
+                data: body,
+                cacheControl: cacheControl.mapValues(\.value),
+                supportsCacheControlOnTools: supportsCacheControlOnTools
+            )
         }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
-            }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1569,36 +1486,11 @@ private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
     let effort: String?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-        payload["enable_thinking"] = enableThinking
-        if let effort { payload["reasoning_effort"] = effort }
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
+        return rewritingOpenAIRequestBody(request) { payload in
+            payload["enable_thinking"] = enableThinking
+            if let effort { payload["reasoning_effort"] = effort }
+            return true
         }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
-            }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1610,17 +1502,14 @@ private struct OpenAICompletionsChatTemplateMiddleware: OpenAIMiddleware {
     let enableThinking: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = request.httpBody else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-        payload["chat_template_kwargs"] = [
-            "enable_thinking": enableThinking,
-            "preserve_thinking": true,
-        ]
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
+        guard request.httpBody != nil else { return request }
+        return rewritingOpenAIRequestBody(request) { payload in
+            payload["chat_template_kwargs"] = [
+                "enable_thinking": enableThinking,
+                "preserve_thinking": true,
+            ]
+            return true
+        }
     }
 }
 
@@ -1631,15 +1520,10 @@ private struct OpenAICompletionsConfiguredChatTemplateMiddleware: OpenAIMiddlewa
     let thinkingBudget: Int?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = request.httpBody,
-              let updatedBody = applyOpenAIChatTemplateKwargs(data: body, model: model, effort: effort, kwargs: kwargs, thinkingBudget: thinkingBudget) else {
-            return request
+        guard request.httpBody != nil else { return request }
+        return rewritingOpenAIRequestBodyData(request) { body in
+            applyOpenAIChatTemplateKwargs(data: body, model: model, effort: effort, kwargs: kwargs, thinkingBudget: thinkingBudget)
         }
-
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
     }
 }
 
@@ -1683,26 +1567,17 @@ private struct OpenAICompletionsBasetenThinkingMiddleware: OpenAIMiddleware {
     let thinkingBudget: Int?
 
     func intercept(request: URLRequest) -> URLRequest {
-        let body = requestBodyData(request)
-        guard !body.isEmpty,
-              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
-            return request
-        }
+        return rewritingOpenAIRequestBody(request) { payload in
+            let resolvedArgs = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: args, thinkingBudget: thinkingBudget)
+            if !resolvedArgs.isEmpty {
+                payload["chat_template_args"] = resolvedArgs
+            }
 
-        let resolvedArgs = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: args, thinkingBudget: thinkingBudget)
-        if !resolvedArgs.isEmpty {
-            payload["chat_template_args"] = resolvedArgs
+            if supportsReasoningEffort, let resolvedEffort = basetenReasoningEffort(model: model, requested: effort) {
+                payload["reasoning_effort"] = resolvedEffort
+            }
+            return true
         }
-
-        if supportsReasoningEffort, let resolvedEffort = basetenReasoningEffort(model: model, requested: effort) {
-            payload["reasoning_effort"] = resolvedEffort
-        }
-
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
     }
 }
 
@@ -1747,16 +1622,11 @@ private struct OpenAICompletionsBudgetAndPriorityMiddleware: OpenAIMiddleware {
     let priority: Int?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard var payload = (try? JSONSerialization.jsonObject(with: requestBodyData(request))) as? [String: Any] else {
-            return request
+        return rewritingOpenAIRequestBody(request) { payload in
+            if let priority { payload["priority"] = priority }
+            if let field, let budget { payload[field.rawValue] = budget }
+            return true
         }
-        if let priority { payload["priority"] = priority }
-        if let field, let budget { payload[field.rawValue] = budget }
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = body
-        return updated
     }
 }
 
@@ -1795,38 +1665,13 @@ private struct OpenAICompletionsDeepSeekMiddleware: OpenAIMiddleware {
     let mappedEffort: String?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-        payload["thinking"] = ["type": enableThinking ? "enabled" : "disabled"]
-        if enableThinking, let mappedEffort {
-            payload["reasoning_effort"] = mappedEffort
-        }
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
+        return rewritingOpenAIRequestBody(request) { payload in
+            payload["thinking"] = ["type": enableThinking ? "enabled" : "disabled"]
+            if enableThinking, let mappedEffort {
+                payload["reasoning_effort"] = mappedEffort
             }
+            return true
         }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1835,46 +1680,21 @@ private struct OpenAICompletionsDeepSeekMiddleware: OpenAIMiddleware {
 /// no thinking content was produced.
 private struct OpenAICompletionsReasoningContentInjectionMiddleware: OpenAIMiddleware {
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-        guard var messages = payload["messages"] as? [[String: Any]] else { return request }
-        var changed = false
-        for index in messages.indices {
-            let message = messages[index]
-            guard let role = message["role"] as? String, role == "assistant" else { continue }
-            if message["reasoning_content"] == nil {
-                messages[index]["reasoning_content"] = ""
-                changed = true
+        return rewritingOpenAIRequestBody(request) { payload in
+            guard var messages = payload["messages"] as? [[String: Any]] else { return false }
+            var changed = false
+            for index in messages.indices {
+                let message = messages[index]
+                guard let role = message["role"] as? String, role == "assistant" else { continue }
+                if message["reasoning_content"] == nil {
+                    messages[index]["reasoning_content"] = ""
+                    changed = true
+                }
             }
+            guard changed else { return false }
+            payload["messages"] = messages
+            return true
         }
-        guard changed else { return request }
-        payload["messages"] = messages
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
-            }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1886,43 +1706,16 @@ private struct OpenAICompletionsOpenRouterReasoningMiddleware: OpenAIMiddleware 
     let effort: ThinkingLevel?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-
-        var reasoning = payload["reasoning"] as? [String: Any] ?? [:]
-        if let effort {
-            reasoning["effort"] = mappedThinkingLevel(model: model, level: effort) ?? effort.rawValue
-        } else if model.thinkingLevelMap?[.off] != .some(nil) {
-            reasoning["effort"] = mappedOffThinkingLevel(model: model) ?? "none"
-        }
-        if !reasoning.isEmpty { payload["reasoning"] = reasoning }
-
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
+        return rewritingOpenAIRequestBody(request) { payload in
+            var reasoning = payload["reasoning"] as? [String: Any] ?? [:]
+            if let effort {
+                reasoning["effort"] = mappedThinkingLevel(model: model, level: effort) ?? effort.rawValue
+            } else if model.thinkingLevelMap?[.off] != .some(nil) {
+                reasoning["effort"] = mappedOffThinkingLevel(model: model) ?? "none"
             }
+            if !reasoning.isEmpty { payload["reasoning"] = reasoning }
+            return true
         }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1946,86 +1739,59 @@ private struct OpenAICompletionsRoutingMiddleware: OpenAIMiddleware {
     let vercelGatewayRouting: VercelGatewayRouting?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = readRequestBody(request) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
+        return rewritingOpenAIRequestBody(request) { payload in
+            if baseUrl.contains("openrouter.ai"), let routing = openRouterRouting {
+                // v0.67.0: full OpenRouter routing field set. Only emit fields the caller set.
+                var provider: [String: Any] = [:]
+                if let v = routing.allowFallbacks { provider["allow_fallbacks"] = v }
+                if let v = routing.requireParameters { provider["require_parameters"] = v }
+                if let v = routing.dataCollection { provider["data_collection"] = v }
+                if let v = routing.zdr { provider["zdr"] = v }
+                if let v = routing.enforceDistillableText { provider["enforce_distillable_text"] = v }
+                if let only = routing.only { provider["only"] = only }
+                if let order = routing.order { provider["order"] = order }
+                if let ignore = routing.ignore { provider["ignore"] = ignore }
+                if let q = routing.quantizations { provider["quantizations"] = q }
+                if let sort = routing.sort {
+                    switch sort {
+                    case .named(let s):
+                        provider["sort"] = s
+                    case .structured(let by, let partition):
+                        var dict: [String: Any] = [:]
+                        if let by { dict["by"] = by }
+                        if let partition { dict["partition"] = partition }
+                        if !dict.isEmpty { provider["sort"] = dict }
+                    }
+                }
+                if let mp = routing.maxPrice {
+                    var price: [String: Any] = [:]
+                    if let v = mp.prompt { price["prompt"] = v }
+                    if let v = mp.completion { price["completion"] = v }
+                    if let v = mp.image { price["image"] = v }
+                    if let v = mp.audio { price["audio"] = v }
+                    if let v = mp.request { price["request"] = v }
+                    if !price.isEmpty { provider["max_price"] = price }
+                }
+                if let tp = routing.preferredMinThroughput {
+                    provider["preferred_min_throughput"] = encodeRoutingPercentile(tp)
+                }
+                if let lat = routing.preferredMaxLatency {
+                    provider["preferred_max_latency"] = encodeRoutingPercentile(lat)
+                }
+                payload["provider"] = provider
+            }
 
-        if baseUrl.contains("openrouter.ai"), let routing = openRouterRouting {
-            // v0.67.0: full OpenRouter routing field set. Only emit fields the caller set.
-            var provider: [String: Any] = [:]
-            if let v = routing.allowFallbacks { provider["allow_fallbacks"] = v }
-            if let v = routing.requireParameters { provider["require_parameters"] = v }
-            if let v = routing.dataCollection { provider["data_collection"] = v }
-            if let v = routing.zdr { provider["zdr"] = v }
-            if let v = routing.enforceDistillableText { provider["enforce_distillable_text"] = v }
-            if let only = routing.only { provider["only"] = only }
-            if let order = routing.order { provider["order"] = order }
-            if let ignore = routing.ignore { provider["ignore"] = ignore }
-            if let q = routing.quantizations { provider["quantizations"] = q }
-            if let sort = routing.sort {
-                switch sort {
-                case .named(let s):
-                    provider["sort"] = s
-                case .structured(let by, let partition):
-                    var dict: [String: Any] = [:]
-                    if let by { dict["by"] = by }
-                    if let partition { dict["partition"] = partition }
-                    if !dict.isEmpty { provider["sort"] = dict }
+            if baseUrl.contains("ai-gateway.vercel.sh"), let routing = vercelGatewayRouting {
+                var gateway: [String: Any] = [:]
+                if let only = routing.only { gateway["only"] = only }
+                if let order = routing.order { gateway["order"] = order }
+                if let v = routing.allowFallbacks { gateway["allow_fallbacks"] = v }
+                if !gateway.isEmpty {
+                    payload["providerOptions"] = ["gateway": gateway]
                 }
             }
-            if let mp = routing.maxPrice {
-                var price: [String: Any] = [:]
-                if let v = mp.prompt { price["prompt"] = v }
-                if let v = mp.completion { price["completion"] = v }
-                if let v = mp.image { price["image"] = v }
-                if let v = mp.audio { price["audio"] = v }
-                if let v = mp.request { price["request"] = v }
-                if !price.isEmpty { provider["max_price"] = price }
-            }
-            if let tp = routing.preferredMinThroughput {
-                provider["preferred_min_throughput"] = encodeRoutingPercentile(tp)
-            }
-            if let lat = routing.preferredMaxLatency {
-                provider["preferred_max_latency"] = encodeRoutingPercentile(lat)
-            }
-            payload["provider"] = provider
+            return true
         }
-
-        if baseUrl.contains("ai-gateway.vercel.sh"), let routing = vercelGatewayRouting {
-            var gateway: [String: Any] = [:]
-            if let only = routing.only { gateway["only"] = only }
-            if let order = routing.order { gateway["order"] = order }
-            if let v = routing.allowFallbacks { gateway["allow_fallbacks"] = v }
-            if !gateway.isEmpty {
-                payload["providerOptions"] = ["gateway": gateway]
-            }
-        }
-
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        let bufferSize = 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: bufferSize)
-            if read > 0 {
-                data.append(buffer, count: read)
-            } else {
-                break
-            }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -2216,24 +1982,7 @@ private func decodeOpenAICompletionsRawUsage(from value: Any?) -> OpenAICompleti
 }
 
 private func requestBodyData(_ request: URLRequest) -> Data {
-    if let body = request.httpBody {
-        return body
-    }
-    guard let stream = request.httpBodyStream else { return Data() }
-    stream.open()
-    defer { stream.close() }
-    var data = Data()
-    let bufferSize = 1024
-    var buffer = [UInt8](repeating: 0, count: bufferSize)
-    while stream.hasBytesAvailable {
-        let read = stream.read(&buffer, maxLength: bufferSize)
-        if read > 0 {
-            data.append(buffer, count: read)
-        } else {
-            break
-        }
-    }
-    return data
+    openAIRequestBodyData(request) ?? Data()
 }
 
 private func collectStreamData(from bytes: URLSession.AsyncBytes) async throws -> Data {
@@ -2369,17 +2118,14 @@ private struct OpenAICompletionsReplayMiddleware: OpenAIMiddleware {
     let fields: [Int: [String: AnyCodable]]
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard !fields.isEmpty,
-              var payload = (try? JSONSerialization.jsonObject(with: requestBodyData(request))) as? [String: Any],
-              var messages = payload["messages"] as? [[String: Any]] else { return request }
-        for (index, values) in fields where messages.indices.contains(index) {
-            for (key, value) in values { messages[index][key] = value.value }
+        guard !fields.isEmpty else { return request }
+        return rewritingOpenAIRequestBody(request) { payload in
+            guard var messages = payload["messages"] as? [[String: Any]] else { return false }
+            for (index, values) in fields where messages.indices.contains(index) {
+                for (key, value) in values { messages[index][key] = value.value }
+            }
+            payload["messages"] = messages
+            return true
         }
-        payload["messages"] = messages
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = body
-        return updated
     }
 }

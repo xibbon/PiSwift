@@ -421,7 +421,7 @@ public func streamSimpleGoogleGeminiCli(
     context: Context,
     options: SimpleStreamOptions?
 ) -> AssistantMessageEventStream {
-    let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let baseMaxTokens = options?.maxTokens ?? model.maxTokens
     let base = GoogleGeminiCliOptions(
         temperature: options?.temperature,
         maxTokens: baseMaxTokens,

@@ -57,52 +57,24 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
                 updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
             }
         }
-
-        guard let body = readRequestBody(request) else { return updated }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return updated }
-
-        if cacheRetention != .none, let sessionId, !sessionId.isEmpty {
-            payload["prompt_cache_key"] = clampOpenAIPromptCacheKey(sessionId)
-        } else {
-            payload.removeValue(forKey: "prompt_cache_key")
-        }
-        if let promptCacheRetention {
-            payload["prompt_cache_retention"] = promptCacheRetention
-        } else {
-            payload.removeValue(forKey: "prompt_cache_retention")
-        }
-        if cacheRetention == .none, supportsExplicitPromptCacheMode {
-            payload["prompt_cache_options"] = ["mode": "explicit"]
-        } else {
-            payload.removeValue(forKey: "prompt_cache_options")
-        }
-
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return updated }
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readRequestBody(_ request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else {
-            return nil
-        }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 1024)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: buffer.count)
-            if read > 0 {
-                data.append(buffer, count: read)
+        return rewritingOpenAIRequestBody(updated) { payload in
+            if cacheRetention != .none, let sessionId, !sessionId.isEmpty {
+                payload["prompt_cache_key"] = clampOpenAIPromptCacheKey(sessionId)
             } else {
-                break
+                payload.removeValue(forKey: "prompt_cache_key")
             }
+            if let promptCacheRetention {
+                payload["prompt_cache_retention"] = promptCacheRetention
+            } else {
+                payload.removeValue(forKey: "prompt_cache_retention")
+            }
+            if cacheRetention == .none, supportsExplicitPromptCacheMode {
+                payload["prompt_cache_options"] = ["mode": "explicit"]
+            } else {
+                payload.removeValue(forKey: "prompt_cache_options")
+            }
+            return true
         }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -110,15 +82,10 @@ struct OpenAIResponsesReasoningEffortMiddleware: OpenAIMiddleware {
     let effort: String?
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let effort,
-              let body = request.httpBody,
-              let updatedBody = applyOpenAIResponsesReasoningEffort(data: body, effort: effort) else {
-            return request
+        guard let effort, request.httpBody != nil else { return request }
+        return rewritingOpenAIRequestBodyData(request) { body in
+            applyOpenAIResponsesReasoningEffort(data: body, effort: effort)
         }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
     }
 }
 
@@ -138,43 +105,26 @@ private let inlineImageMarker = "__INLINE_IMAGES__"
 
 struct OpenAIResponsesInlineImagesMiddleware: OpenAIMiddleware {
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = request.httpBody ?? readStream(request.httpBodyStream) else { return request }
-        guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
-        guard var input = payload["input"] as? [[String: Any]] else { return request }
+        return rewritingOpenAIRequestBody(request) { payload in
+            guard var input = payload["input"] as? [[String: Any]] else { return false }
 
-        var modified = false
-        for i in input.indices {
-            guard let type = input[i]["type"] as? String, type == "function_call_output" else { continue }
-            guard let output = input[i]["output"] as? String, output.hasPrefix(inlineImageMarker) else { continue }
+            var modified = false
+            for i in input.indices {
+                guard let type = input[i]["type"] as? String, type == "function_call_output" else { continue }
+                guard let output = input[i]["output"] as? String, output.hasPrefix(inlineImageMarker) else { continue }
 
-            let json = String(output.dropFirst(inlineImageMarker.count))
-            guard let data = json.data(using: .utf8),
-                  let parts = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
+                let json = String(output.dropFirst(inlineImageMarker.count))
+                guard let data = json.data(using: .utf8),
+                      let parts = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
 
-            input[i]["output"] = parts
-            modified = true
+                input[i]["output"] = parts
+                modified = true
+            }
+
+            guard modified else { return false }
+            payload["input"] = input
+            return true
         }
-
-        guard modified else { return request }
-        payload["input"] = input
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readStream(_ stream: InputStream?) -> Data? {
-        guard let stream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 1024)
-        while stream.hasBytesAvailable {
-            let read = stream.read(&buffer, maxLength: buffer.count)
-            if read > 0 { data.append(buffer, count: read) } else { break }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 
@@ -1166,19 +1116,16 @@ struct ResponsesReplayMiddleware: OpenAIMiddleware {
     }
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let data = request.httpBody,
-              var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return request }
-        if let input = payload["input"] as? [[String: Any]] { payload["input"] = rewriteInput(input) }
-        if let tools = payload["tools"] as? [[String: Any]] {
-            let immediate = tools.filter { immediateToolNames.contains($0["name"] as? String ?? "") }
-            if immediate.isEmpty { payload.removeValue(forKey: "tools") }
-            else { payload["tools"] = immediate }
+        guard request.httpBody != nil else { return request }
+        return rewritingOpenAIRequestBody(request) { payload in
+            if let input = payload["input"] as? [[String: Any]] { payload["input"] = rewriteInput(input) }
+            if let tools = payload["tools"] as? [[String: Any]] {
+                let immediate = tools.filter { immediateToolNames.contains($0["name"] as? String ?? "") }
+                if immediate.isEmpty { payload.removeValue(forKey: "tools") }
+                else { payload["tools"] = immediate }
+            }
+            return true
         }
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = body
-        return updated
     }
 }
 

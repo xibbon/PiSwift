@@ -744,7 +744,7 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
 
     return MistralOptions(
         temperature: options?.temperature,
-        maxTokens: options?.maxTokens,
+        maxTokens: options?.maxTokens ?? model.maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,

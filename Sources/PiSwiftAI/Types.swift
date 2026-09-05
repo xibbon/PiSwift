@@ -2109,6 +2109,17 @@ public final class CancellationToken: Sendable {
         state.withLock { $0.isCancelled }
     }
 
+    /// Register a handler that runs at most once when this token is cancelled.
+    /// The handler runs synchronously on the cancelling thread and must be short.
+    /// If this token is already cancelled, the handler runs immediately on the calling thread.
+    /// Call the returned closure to remove the handler before cancellation.
+    public func onCancel(_ handler: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
+        guard let id = addCancellationHandler(handler) else { return {} }
+        return { [weak self] in
+            self?.removeCancellationHandler(id)
+        }
+    }
+
     func addCancellationHandler(_ handler: @escaping @Sendable () -> Void) -> UUID? {
         var invokeImmediately = false
         let id = state.withLock { state -> UUID? in

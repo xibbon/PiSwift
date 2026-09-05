@@ -193,7 +193,7 @@ public func streamSimple(model: Model, context: Context, options: SimpleStreamOp
         throw StreamError.noApiProvider(model.api.rawValue)
     }
     var resolvedOptions = options ?? SimpleStreamOptions()
-    let requestedMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32_000)
+    let requestedMaxTokens = options?.maxTokens ?? model.maxTokens
     resolvedOptions.maxTokens = clampSimpleMaxTokensToContext(model: model, context: context, maxTokens: requestedMaxTokens)
     return provider.streamSimple(model, context, resolvedOptions)
 }
@@ -289,7 +289,7 @@ public func completeSimple(model: Model, context: Context, options: SimpleStream
 }
 
 func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleStreamOptions?, apiKey: String) -> AnthropicOptions {
-    let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let baseMaxTokens = options?.maxTokens ?? model.maxTokens
 
     if options?.reasoning == nil {
         return AnthropicOptions(
@@ -384,7 +384,7 @@ func clampForCodexCapability(model: Model, _ effort: ThinkingLevel?) -> Thinking
 }
 
 func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAICompletionsOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICompletionsOptions(
         temperature: options?.temperature,
@@ -408,7 +408,7 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
 }
 
 func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAIResponsesOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAIResponsesOptions(
         temperature: options?.temperature,
@@ -433,7 +433,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
 }
 
 func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> OpenAICodexResponsesOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICodexResponsesOptions(
         temperature: options?.temperature,
@@ -457,7 +457,7 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
 }
 
 func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> AzureOpenAIResponsesOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return AzureOpenAIResponsesOptions(
         temperature: options?.temperature,
@@ -479,7 +479,7 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
 }
 
 func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> GoogleOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = buildGoogleThinkingConfig(model: model, options: options)
     return GoogleOptions(
         temperature: options?.temperature,
@@ -498,7 +498,7 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
 }
 
 func mapGoogleSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?, apiKey: String) throws -> GoogleOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = try buildGoogleThinkingConfigValidated(model: model, options: options)
     return GoogleOptions(
         temperature: options?.temperature,
@@ -518,7 +518,7 @@ func mapGoogleSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?
 }
 
 func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> GoogleVertexOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = buildGoogleThinkingConfig(model: model, options: options)
     return GoogleVertexOptions(
         temperature: options?.temperature,
@@ -537,7 +537,7 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
 }
 
 func mapGoogleVertexSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?, apiKey: String) throws -> GoogleVertexOptions {
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = try buildGoogleThinkingConfigValidated(model: model, options: options)
     return GoogleVertexOptions(
         temperature: options?.temperature,
@@ -623,7 +623,7 @@ func googleThinkingBudget(modelId: String, effort: ThinkingLevel, customBudgets:
 }
 
 func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> BedrockOptions {
-    let baseMaxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let baseMaxTokens = options?.maxTokens ?? model.maxTokens
     let reasoning = clampThinkingLevel(model: model, requested: options?.reasoning)
 
     let bedrockClaudeIdentifier = "\(model.id) \(model.name)".lowercased()

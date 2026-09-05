@@ -27,68 +27,47 @@ struct OpenAIResponsesConstrainedSamplingMiddleware: OpenAIMiddleware {
     let grammarToolInputProperties: [String: String]
 
     func intercept(request: URLRequest) -> URLRequest {
-        guard let body = request.httpBody ?? readStream(request.httpBodyStream),
-              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
-            return request
-        }
-
-        if var tools = payload["tools"] as? [[String: Any]] {
-            for index in tools.indices {
-                guard let name = tools[index]["name"] as? String else { continue }
-                if let grammar = grammarTools[name] {
-                    tools[index] = grammar.payload
-                } else if !supportsStrictMode {
-                    tools[index].removeValue(forKey: "strict")
+        return rewritingOpenAIRequestBody(request) { payload in
+            if var tools = payload["tools"] as? [[String: Any]] {
+                for index in tools.indices {
+                    guard let name = tools[index]["name"] as? String else { continue }
+                    if let grammar = grammarTools[name] {
+                        tools[index] = grammar.payload
+                    } else if !supportsStrictMode {
+                        tools[index].removeValue(forKey: "strict")
+                    }
                 }
+                payload["tools"] = tools
             }
-            payload["tools"] = tools
-        }
 
-        if var input = payload["input"] as? [[String: Any]] {
-            var grammarCallIds = Set<String>()
-            for index in input.indices {
-                guard input[index]["type"] as? String == "function_call",
-                      let name = input[index]["name"] as? String,
-                      let inputProperty = grammarToolInputProperties[name],
-                      let arguments = input[index]["arguments"] as? String,
-                      let data = arguments.data(using: .utf8),
-                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let grammarInput = object[inputProperty] as? String else { continue }
-                if let callId = input[index]["call_id"] as? String {
-                    grammarCallIds.insert(callId)
+            if var input = payload["input"] as? [[String: Any]] {
+                var grammarCallIds = Set<String>()
+                for index in input.indices {
+                    guard input[index]["type"] as? String == "function_call",
+                          let name = input[index]["name"] as? String,
+                          let inputProperty = grammarToolInputProperties[name],
+                          let arguments = input[index]["arguments"] as? String,
+                          let data = arguments.data(using: .utf8),
+                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let grammarInput = object[inputProperty] as? String else { continue }
+                    if let callId = input[index]["call_id"] as? String {
+                        grammarCallIds.insert(callId)
+                    }
+                    input[index]["type"] = "custom_tool_call"
+                    input[index]["input"] = sanitizeSurrogates(grammarInput)
+                    input[index].removeValue(forKey: "arguments")
+                    input[index].removeValue(forKey: "status")
                 }
-                input[index]["type"] = "custom_tool_call"
-                input[index]["input"] = sanitizeSurrogates(grammarInput)
-                input[index].removeValue(forKey: "arguments")
-                input[index].removeValue(forKey: "status")
+                for index in input.indices {
+                    guard input[index]["type"] as? String == "function_call_output",
+                          let callId = input[index]["call_id"] as? String,
+                          grammarCallIds.contains(callId) else { continue }
+                    input[index]["type"] = "custom_tool_call_output"
+                }
+                payload["input"] = input
             }
-            for index in input.indices {
-                guard input[index]["type"] as? String == "function_call_output",
-                      let callId = input[index]["call_id"] as? String,
-                      grammarCallIds.contains(callId) else { continue }
-                input[index]["type"] = "custom_tool_call_output"
-            }
-            payload["input"] = input
+            return true
         }
-
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
-    }
-
-    private func readStream(_ stream: InputStream?) -> Data? {
-        guard let stream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 1024)
-        while stream.hasBytesAvailable {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            if count > 0 { data.append(buffer, count: count) } else { break }
-        }
-        return data.isEmpty ? nil : data
     }
 }
 

@@ -484,7 +484,7 @@ public func streamSimpleAzureOpenAIResponses(
 ) -> AssistantMessageEventStream {
     let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider)
 
-    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
 
     let providerOptions = AzureOpenAIResponsesOptions(
