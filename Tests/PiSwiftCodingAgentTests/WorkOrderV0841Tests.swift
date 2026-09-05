@@ -504,32 +504,30 @@ private func makeV0841CompactionSession(
     )
 }
 
-@Test func manualCompactionCannotOverlapAutoCompactionOrClearItsState() async throws {
+@Test func manualCompactionAbortsAutoCompactionBeforeTakingItsState() async throws {
     let gate = V0841CompactionGate()
-    let context = makeV0841CompactionSession()
-    defer { context.session.dispose() }
-    let autoTask = Task {
-        await context.session.runAutoCompaction(reason: .threshold, willRetry: false) {
-            await gate.block()
-            return CompactionResult(summary: "auto", firstKeptEntryId: "kept", tokensBefore: 1)
+    let calls = LockedState(0)
+    let handler: HookHandler = { event, _ in
+        guard let event = event as? SessionBeforeCompactEvent else { return nil }
+        let call = calls.withLock { $0 += 1; return $0 }
+        if call == 1 {
+            Task { await gate.block() }
+            while event.signal?.isCancelled != true { try await Task.sleep(for: .milliseconds(1)) }
         }
+        return SessionBeforeCompactResult(compaction: CompactionResult(summary: "manual", firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: 1))
     }
+    let context = makeV0841CompactionSession(beforeCompact: handler)
+    defer { context.session.dispose() }
+    let autoTask = Task { await context.session.runAutoCompaction(reason: .threshold, willRetry: false) }
     await gate.waitUntilStarted()
-    #expect(context.session.isCompacting == true)
-
-    do {
-        _ = try await context.session.compact()
-        Issue.record("Manual compaction must not start while auto-compaction owns the state")
-    } catch AgentSessionError.compactionInProgress {
-        // Expected.
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
-    #expect(context.session.isCompacting == true)
-
+    #expect(context.session.isCompacting)
+    let result = try await context.session.compact()
     await gate.release()
     await autoTask.value
-    #expect(context.session.isCompacting == false)
+    #expect(result.summary == "manual")
+    #expect(calls.withLock { $0 } == 2)
+    #expect(!context.session.isCompacting)
+    #expect(context.session.sessionManager.getEntries().filter { if case .compaction = $0 { return true }; return false }.count == 1)
 }
 
 @Test func promptQueuedDuringManualCompactionRunsAfterCompletion() async throws {

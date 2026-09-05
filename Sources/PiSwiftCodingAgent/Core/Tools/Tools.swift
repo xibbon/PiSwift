@@ -90,3 +90,8 @@ public func createAllTools(cwd: String, options: ToolsOptions?, subagentContext:
 public func createAllTools(cwd: String, options: ToolsOptions?) -> [ToolName: Tool] {
     createAllTools(cwd: cwd, options: options, subagentContext: nil)
 }
+
+func resolveToolExecutionCwd(_ context: AgentToolExecutionContext, fallback: String) -> String {
+    guard let cwd = context.cwd, !cwd.isEmpty else { return fallback }
+    return cwd
+}

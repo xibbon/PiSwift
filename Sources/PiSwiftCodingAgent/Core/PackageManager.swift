@@ -383,6 +383,12 @@ public final class DefaultPackageManager: PackageManager {
         switch parsed {
         case .npm(let npm):
             if npm.pinned { return }
+            let installedPath = getNpmInstallPath(npm, scope: scope)
+            if let installed = getInstalledNpmVersion(installedPath: installedPath) {
+                // A failed lookup preserves the existing explicit-update behavior.
+                if let latest = try? await getLatestNpmVersion(packageName: npm.name),
+                   packageVersionIsNewer(latest, than: installed) == false { return }
+            }
             try await withProgress(action: "update", source: source, message: "Updating \(source)...") {
                 try await installNpm(npm, scope: scope, temporary: false)
             }
@@ -520,7 +526,7 @@ public final class DefaultPackageManager: PackageManager {
             return installedVersion != pinned
         }
         guard let latest = try await getLatestNpmVersion(packageName: source.name) else { return false }
-        return latest != installedVersion
+        return packageVersionIsNewer(latest, than: installedVersion) ?? false
     }
 
     private func getInstalledNpmVersion(installedPath: String) -> String? {
@@ -921,9 +927,9 @@ public final class DefaultPackageManager: PackageManager {
     private func collectManifestFiles(packageRoot: String, resourceType: ResourceType) -> (allFiles: [String], enabledByManifest: Set<String>) {
         if let manifest = readPiManifest(packageRoot: packageRoot), let entries = manifest.entries(for: resourceType), !entries.isEmpty {
             let allFiles = collectFilesFromManifestEntries(entries: entries, root: packageRoot, resourceType: resourceType)
-            let manifestPatterns = entries.filter { isPattern($0) }
+            let manifestPatterns = entries.filter { isOverridePattern($0) }
             let enabled = manifestPatterns.isEmpty ? Set(allFiles) : applyPatterns(allPaths: allFiles, patterns: manifestPatterns, baseDir: packageRoot)
-            return (Array(enabled), enabled)
+            return (allFiles.filter { enabled.contains($0) }, enabled)
         }
 
         let conventionDir = URL(fileURLWithPath: packageRoot).appendingPathComponent(resourceType.rawValue).path
@@ -953,7 +959,7 @@ public final class DefaultPackageManager: PackageManager {
     ) {
         guard let entries else { return }
         let allFiles = collectFilesFromManifestEntries(entries: entries, root: root, resourceType: resourceType)
-        let patterns = entries.filter { isPattern($0) }
+        let patterns = entries.filter { isOverridePattern($0) }
         let enabledPaths = applyPatterns(allPaths: allFiles, patterns: patterns, baseDir: root)
         for file in allFiles where enabledPaths.contains(file) {
             accumulator.add(resourceType: resourceType, path: file, metadata: metadata, enabled: true)
@@ -961,8 +967,13 @@ public final class DefaultPackageManager: PackageManager {
     }
 
     private func collectFilesFromManifestEntries(entries: [String], root: String, resourceType: ResourceType) -> [String] {
-        let plain = entries.filter { !isPattern($0) }
-        let resolved = plain.map { URL(fileURLWithPath: root).appendingPathComponent($0).path }
+        let plain = entries.filter { !isOverridePattern($0) }
+        let resolved = plain.flatMap { entry -> [String] in
+            if entry.contains("*") || entry.contains("?") {
+                return expandPackageGlob(entry, root: root)
+            }
+            return [URL(fileURLWithPath: root).appendingPathComponent(entry).standardized.path]
+        }
         return collectFilesFromPaths(paths: resolved, resourceType: resourceType)
     }
 
@@ -1050,7 +1061,7 @@ public final class DefaultPackageManager: PackageManager {
         )
         addResources(
             resourceType: .skills,
-            paths: collectAutoSkillEntries(dir: userDirs.skills.first ?? "") + collectAutoSkillEntries(dir: userAgentsSkillsDir),
+            paths: collectAutoSkillEntries(dir: userDirs.skills.first ?? "") + collectAutoSkillEntries(dir: userAgentsSkillsDir, mode: .agents),
             metadata: userMetadata,
             overrides: userOverrides.skills,
             baseDir: standardGlobalBaseDir
@@ -1080,7 +1091,7 @@ public final class DefaultPackageManager: PackageManager {
             )
             addResources(
                 resourceType: .skills,
-                paths: collectAutoSkillEntries(dir: projectDirs.skills.first ?? "") + projectAgentsSkillDirs.flatMap { collectAutoSkillEntries(dir: $0) },
+                paths: collectAutoSkillEntries(dir: projectDirs.skills.first ?? "") + projectAgentsSkillDirs.flatMap { collectAutoSkillEntries(dir: $0, mode: .agents) },
                 metadata: projectMetadata,
                 overrides: projectOverrides.skills,
                 baseDir: standardProjectBaseDir
@@ -1489,6 +1500,7 @@ private final class ResourceAccumulator {
         var enabled: Bool
     }
 
+    private var order: [ResourceType: [String]] = [:]
     var extensions: [String: Entry] = [:]
     var skills: [String: Entry] = [:]
     var prompts: [String: Entry] = [:]
@@ -1498,25 +1510,39 @@ private final class ResourceAccumulator {
         guard !path.isEmpty else { return }
         switch resourceType {
         case .extensions:
-            if extensions[path] == nil { extensions[path] = Entry(metadata: metadata, enabled: enabled) }
+            if extensions[path] == nil {
+                extensions[path] = Entry(metadata: metadata, enabled: enabled)
+                order[resourceType, default: []].append(path)
+            }
         case .skills:
-            if skills[path] == nil { skills[path] = Entry(metadata: metadata, enabled: enabled) }
+            if skills[path] == nil {
+                skills[path] = Entry(metadata: metadata, enabled: enabled)
+                order[resourceType, default: []].append(path)
+            }
         case .prompts:
-            if prompts[path] == nil { prompts[path] = Entry(metadata: metadata, enabled: enabled) }
+            if prompts[path] == nil {
+                prompts[path] = Entry(metadata: metadata, enabled: enabled)
+                order[resourceType, default: []].append(path)
+            }
         case .themes:
-            if themes[path] == nil { themes[path] = Entry(metadata: metadata, enabled: enabled) }
+            if themes[path] == nil {
+                themes[path] = Entry(metadata: metadata, enabled: enabled)
+                order[resourceType, default: []].append(path)
+            }
         }
     }
 
     func toResolvedPaths() -> ResolvedPaths {
-        func build(_ map: [String: Entry]) -> [ResolvedResource] {
-            map.map { ResolvedResource(path: $0.key, enabled: $0.value.enabled, metadata: $0.value.metadata) }
+        func build(_ map: [String: Entry], type: ResourceType) -> [ResolvedResource] {
+            (order[type] ?? []).compactMap { path in
+                map[path].map { ResolvedResource(path: path, enabled: $0.enabled, metadata: $0.metadata) }
+            }
         }
         return ResolvedPaths(
-            extensions: build(extensions),
-            skills: build(skills),
-            prompts: build(prompts),
-            themes: build(themes)
+            extensions: build(extensions, type: .extensions),
+            skills: build(skills, type: .skills),
+            prompts: build(prompts, type: .prompts),
+            themes: build(themes, type: .themes)
         )
     }
 }
@@ -1722,9 +1748,12 @@ private func collectFiles(
     return files
 }
 
+private enum SkillDiscoveryMode { case pi, agents }
+
 private func collectSkillEntries(
     dir: String,
     includeRootFiles: Bool = true,
+    mode: SkillDiscoveryMode = .pi,
     ignoreMatcher: IgnoreMatcher? = nil,
     rootDir: String? = nil
 ) -> [String] {
@@ -1736,6 +1765,18 @@ private func collectSkillEntries(
     var entries: [String] = []
     guard let dirEntries = try? FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: dir), includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: []) else {
         return entries
+    }
+
+    // A declared skill owns its directory; do not discover its support files as skills.
+    if let declared = dirEntries.first(where: { $0.lastPathComponent == "SKILL.md" }) {
+        let values = try? declared.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        var isFile = values?.isRegularFile == true
+        if values?.isSymbolicLink == true {
+            var isDirectory: ObjCBool = false
+            isFile = FileManager.default.fileExists(atPath: declared.path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        }
+        let relative = toPosixPath(declared.path.replacingOccurrences(of: root + "/", with: ""))
+        if isFile && !ig.ignores(relative) { return [declared.path] }
     }
 
     for entry in dirEntries {
@@ -1761,11 +1802,12 @@ private func collectSkillEntries(
         if ig.ignores(ignorePath) { continue }
 
         if isDir {
-            entries.append(contentsOf: collectSkillEntries(dir: fullPath, includeRootFiles: false, ignoreMatcher: ig, rootDir: root))
+            entries.append(contentsOf: collectSkillEntries(dir: fullPath, includeRootFiles: false, mode: mode, ignoreMatcher: ig, rootDir: root))
         } else if isFile {
-            let isRootMd = includeRootFiles && name.hasSuffix(".md")
+            let isMarkdownSkill = name.hasSuffix(".md") &&
+                ((mode == .pi && includeRootFiles) || (mode == .agents && !includeRootFiles))
             let isSkillMd = !includeRootFiles && name == "SKILL.md"
-            if isRootMd || isSkillMd {
+            if isMarkdownSkill || isSkillMd {
                 entries.append(fullPath)
             }
         }
@@ -1774,8 +1816,8 @@ private func collectSkillEntries(
     return entries
 }
 
-private func collectAutoSkillEntries(dir: String) -> [String] {
-    collectSkillEntries(dir: dir)
+private func collectAutoSkillEntries(dir: String, mode: SkillDiscoveryMode = .pi) -> [String] {
+    collectSkillEntries(dir: dir, mode: mode)
 }
 
 private func findGitRepoRoot(startDir: String) -> String? {
@@ -2095,4 +2137,83 @@ private extension PackageFilter {
             return themes
         }
     }
+}
+
+/// Compare semantic versions, including prereleases; build metadata has no precedence.
+/// Invalid versions return nil so the caller can retain its lookup-failure behavior.
+func packageVersionIsNewer(_ target: String, than installed: String) -> Bool? {
+    func parse(_ version: String) -> (core: [String], prerelease: [String])? {
+        let value = version.hasPrefix("v") ? String(version.dropFirst()) : version
+        let withoutBuild = value.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false)
+        let components = withoutBuild[0].split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        let core = components[0].split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        func numeric(_ value: String) -> Bool {
+            !value.isEmpty && value.allSatisfy { $0.isASCII && $0.isNumber }
+        }
+        guard core.count == 3, core.allSatisfy({ numeric($0) && ($0 == "0" || !$0.hasPrefix("0")) }) else { return nil }
+        let prerelease = components.count == 2 ? components[1].split(separator: ".", omittingEmptySubsequences: false).map(String.init) : []
+        guard prerelease.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") } && (!numeric($0) || $0 == "0" || !$0.hasPrefix("0")) }) else { return nil }
+        if withoutBuild.count == 2 {
+            let identifiers = withoutBuild[1].split(separator: ".", omittingEmptySubsequences: false)
+            guard identifiers.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") } }) else { return nil }
+        }
+        return (core, prerelease)
+    }
+    guard let lhs = parse(target), let rhs = parse(installed) else { return nil }
+    func numericCompare(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.count == rhs.count ? lhs > rhs : lhs.count > rhs.count
+    }
+    for (left, right) in zip(lhs.core, rhs.core) where left != right { return numericCompare(left, right) }
+    if lhs.prerelease.isEmpty || rhs.prerelease.isEmpty {
+        return lhs.prerelease.isEmpty && !rhs.prerelease.isEmpty
+    }
+    for (left, right) in zip(lhs.prerelease, rhs.prerelease) where left != right {
+        let leftNumber = left.allSatisfy(\.isNumber)
+        let rightNumber = right.allSatisfy(\.isNumber)
+        if leftNumber != rightNumber { return !leftNumber }
+        return leftNumber ? numericCompare(left, right) : left > right
+    }
+    return lhs.prerelease.count > rhs.prerelease.count
+}
+
+private func isOverridePattern(_ value: String) -> Bool {
+    value.hasPrefix("!") || value.hasPrefix("+") || value.hasPrefix("-")
+}
+
+/// Discover visible paths in lexical order without following directory symlinks.
+func expandPackageGlob(_ pattern: String, root: String) -> [String] {
+    let components = pattern.split(separator: "/").map(String.init).filter { $0 != "." }
+    let requiresDirectory = pattern.hasSuffix("/")
+    let base = URL(fileURLWithPath: pattern.hasPrefix("/") ? "/" : root)
+    let manager = FileManager.default
+    var matches: Set<String> = []
+    func walk(_ path: URL, _ index: Int) {
+        if index == components.count {
+            var isDirectory: ObjCBool = false
+            if manager.fileExists(atPath: path.path, isDirectory: &isDirectory), !requiresDirectory || isDirectory.boolValue {
+                matches.insert(path.standardized.path)
+            }
+            return
+        }
+        let values = try? path.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values?.isSymbolicLink != true, values?.isDirectory == true else { return }
+        let component = components[index]
+        if component == ".." {
+            walk(path.deletingLastPathComponent(), index + 1)
+            return
+        }
+        guard !component.hasPrefix(".") else { return }
+        if component == "**" { walk(path, index + 1) }
+        let children = (try? manager.contentsOfDirectory(at: path, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles])) ?? []
+        for child in children where !child.lastPathComponent.hasPrefix(".") {
+            if component == "**" {
+                walk(child, index + 1)
+                walk(child, index)
+            } else if matchesGlob(child.lastPathComponent, component) {
+                walk(child, index + 1)
+            }
+        }
+    }
+    walk(base, 0)
+    return matches.sorted()
 }

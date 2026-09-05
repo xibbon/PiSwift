@@ -36,6 +36,7 @@ public func streamGoogleVertex(
             request.httpBody = requestBody
 
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             applyProviderHeaders(
@@ -80,8 +81,8 @@ public func streamGoogleVertex(
                     output.responseId = rid
                 }
 
-                if let candidate = chunk.candidates?.first, let parts = candidate.content?.parts {
-                    for part in parts {
+                if let candidate = chunk.candidates?.first {
+                    for part in candidate.content?.parts ?? [] {
                         if let text = part.text {
                             let isThinking = isThinkingPart(thought: part.thought)
                             if currentBlockIndex == nil || (isThinking && currentBlockKind != "thinking") || (!isThinking && currentBlockKind != "text") {
@@ -156,7 +157,7 @@ public func streamGoogleVertex(
                         if let errorMessage = result.errorMessage {
                             output.errorMessage = errorMessage
                         }
-                        if output.stopReason != .error,
+                        if output.stopReason == .stop,
                            output.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) {
                             output.stopReason = .toolUse
                         }
@@ -254,7 +255,7 @@ private func buildVertexRequestBody(
         ]
     }
     if let tools = context.tools, !tools.isEmpty {
-        payload["tools"] = convertGoogleTools(tools)
+        payload["tools"] = try convertGoogleTools(tools, supportsStrictMode: supportsGoogleStrictToolSampling(model.id))
     }
     if let tools = context.tools, !tools.isEmpty,
        let mode = try resolveGoogleFunctionCallingMode(

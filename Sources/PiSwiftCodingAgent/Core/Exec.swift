@@ -165,7 +165,7 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             let stderrText = String(decoding: stderrBuffer.snapshot(), as: UTF8.self)
 
             let killed = killedFlag.load()
-            let code = Int(proc.terminationStatus)
+            let code = Int(proc.terminationStatus) + (proc.terminationReason == .uncaughtSignal ? 128 : 0)
 
             continuation.resume(returning: ExecResult(
                 stdout: stdoutText,

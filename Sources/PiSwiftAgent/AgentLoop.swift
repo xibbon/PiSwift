@@ -178,18 +178,28 @@ private func runLoop(
 ) async -> [AgentMessage] {
     var context = currentContext
     var messages = newMessages
-    var firstTurn = true
+    var config = config
+    var lastCompletedTurn: PrepareNextTurnContext?
     var pendingMessages = (await config.getSteeringMessages?()) ?? []
 
     while true {
         var hasMoreToolCalls = true
 
         while hasMoreToolCalls || !pendingMessages.isEmpty {
-            if !firstTurn {
-                await emit(.turnStart)
-            } else {
-                firstTurn = false
-            }
+            do {
+                if let lastCompletedTurn {
+                    if let update = try await config.prepareNextTurn?(lastCompletedTurn) {
+                        context = update.context ?? context
+                        config.model = update.model ?? config.model
+                        if let level = update.thinkingLevel {
+                            config.reasoning = ReasoningEffort(rawValue: level.rawValue)
+                        }
+                    }
+                    if pendingMessages.isEmpty {
+                        pendingMessages = (await config.getSteeringMessages?()) ?? []
+                    }
+                    await emit(.turnStart)
+                }
 
             if !pendingMessages.isEmpty {
                 for message in pendingMessages {
@@ -201,7 +211,6 @@ private func runLoop(
                 pendingMessages.removeAll()
             }
 
-            do {
                 let (assistantMessage, updatedContext) = try await streamAssistantResponse(
                     context: context,
                     config: config,
@@ -260,12 +269,14 @@ private func runLoop(
 
                 await emit(.turnEnd(message: agentMessage, toolResults: toolResults))
 
-                if await config.shouldStopAfterTurn?(ShouldStopAfterTurnContext(
+                let completedTurn = PrepareNextTurnContext(
                     message: assistantMessage,
                     toolResults: toolResults,
                     context: context,
                     newMessages: messages
-                )) == true {
+                )
+                lastCompletedTurn = completedTurn
+                if await config.shouldStopAfterTurn?(completedTurn) == true {
                     await emit(.agentEnd(messages: messages))
                     return messages
                 }
@@ -596,6 +607,14 @@ private func executeToolCallsParallel(
     await withTaskGroup(of: (Int, FinalizedToolCall).self) { group in
         for runnable in runnableCalls {
             group.addTask {
+                if signal?.isCancelled == true {
+                    return (runnable.index, FinalizedToolCall(
+                        toolCall: runnable.prepared.toolCall,
+                        result: createErrorToolResult("Operation aborted"),
+                        isError: true,
+                        terminate: false
+                    ))
+                }
                 let executed = await executePreparedToolCall(prepared: runnable.prepared, signal: signal, emit: emit)
                 let finalized = await finalizeExecutedToolCall(
                     context: context,

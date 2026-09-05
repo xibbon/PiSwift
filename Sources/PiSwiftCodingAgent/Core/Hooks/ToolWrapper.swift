@@ -33,7 +33,12 @@ public func wrapToolWithHooks(_ tool: AgentTool, _ hookRunner: HookRunner) -> Ag
             }
 
             do {
-                let result = try await tool.execute(toolCallId, params, signal, onUpdate)
+                let result: AgentToolResult
+                if let execute = tool.executeWithContext {
+                    result = try await execute(toolCallId, params, signal, onUpdate, AgentToolExecutionContext(cwd: hookRunner.cwd))
+                } else {
+                    result = try await tool.execute(toolCallId, params, signal, onUpdate)
+                }
 
                 if hookRunner.hasHandlers("tool_result") {
                     let event = ToolResultEvent(
@@ -69,7 +74,8 @@ public func wrapToolWithHooks(_ tool: AgentTool, _ hookRunner: HookRunner) -> Ag
                 throw error
             }
         },
-        prepareArguments: tool.prepareArguments
+        prepareArguments: tool.prepareArguments,
+        constrainedSampling: tool.constrainedSampling
     )
 }
 

@@ -299,7 +299,8 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
             apiKey: apiKey,
             httpClient: options?.httpClient,
             thinkingEnabled: false,
-            metadata: options?.metadata,
+            toolChoice: options?.toolChoice.map { $0 == .auto ? AnthropicToolChoice.auto : .none },
+        metadata: options?.metadata,
             headers: options?.headers,
             onPayload: options?.onPayload,
             onResponse: options?.onResponse,
@@ -332,6 +333,7 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
         thinkingEnabled: true,
         thinkingBudgetTokens: clampedThinkingBudget,
         effort: model.compat?.forceAdaptiveThinking == true ? adaptiveEffort : nil,
+        toolChoice: options?.toolChoice.map { $0 == .auto ? AnthropicToolChoice.auto : .none },
         metadata: options?.metadata,
         headers: options?.headers,
         onPayload: options?.onPayload,
@@ -391,6 +393,7 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
+        toolChoice: options?.toolChoice.map { $0 == .auto ? OpenAIToolChoice.auto : .none },
         reasoningEffort: reasoningEffort,
         thinkingBudgets: options?.thinkingBudgets,
         cacheRetention: options?.cacheRetention,
@@ -424,7 +427,8 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs,
-        websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
+        websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
+        toolChoice: options?.toolChoice.map { $0 == .auto ? OpenAIToolChoice.auto : .none }
     )
 }
 
@@ -447,7 +451,8 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs,
-        websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs
+        websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
+        toolChoice: options?.toolChoice.map { $0 == .auto ? OpenAIToolChoice.auto : .none }
     )
 }
 
@@ -468,7 +473,8 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
-        maxRetryDelayMs: options?.maxRetryDelayMs
+        maxRetryDelayMs: options?.maxRetryDelayMs,
+        toolChoice: options?.toolChoice.map { $0 == .auto ? OpenAIToolChoice.auto : .none }
     )
 }
 
@@ -482,6 +488,26 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
         apiKey: apiKey,
         httpClient: options?.httpClient,
         headers: options?.headers,
+        thinking: thinking,
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
+    )
+}
+
+func mapGoogleSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?, apiKey: String) throws -> GoogleOptions {
+    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let thinking = try buildGoogleThinkingConfigValidated(model: model, options: options)
+    return GoogleOptions(
+        temperature: options?.temperature,
+        maxTokens: maxTokens,
+        signal: options?.signal,
+        apiKey: apiKey,
+        httpClient: options?.httpClient,
+        headers: options?.headers,
+        toolChoice: options?.toolChoice?.rawValue,
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
@@ -510,11 +536,52 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
     )
 }
 
+func mapGoogleVertexSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?, apiKey: String) throws -> GoogleVertexOptions {
+    let maxTokens = options?.maxTokens ?? min(model.maxTokens, 32000)
+    let thinking = try buildGoogleThinkingConfigValidated(model: model, options: options)
+    return GoogleVertexOptions(
+        temperature: options?.temperature,
+        maxTokens: maxTokens,
+        signal: options?.signal,
+        apiKey: apiKey,
+        httpClient: options?.httpClient,
+        headers: options?.headers,
+        toolChoice: options?.toolChoice?.rawValue,
+        thinking: thinking,
+        onPayload: options?.onPayload,
+        onResponse: options?.onResponse,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs
+    )
+}
+
 func buildGoogleThinkingConfig(model: Model, options: SimpleStreamOptions?) -> GoogleOptions.ThinkingConfig? {
     guard model.reasoning else { return nil }
     guard let reasoning = options?.reasoning else { return nil }
     let clamped = clampThinkingLevel(model: model, requested: reasoning) ?? reasoning
     if model.id.contains("3-pro") || model.id.contains("3-flash") {
+        return GoogleOptions.ThinkingConfig(
+            enabled: true,
+            budgetTokens: nil,
+            level: googleThinkingLevel(for: clamped, modelId: model.id)
+        )
+    }
+    let budget = googleThinkingBudget(modelId: model.id, effort: clamped, customBudgets: options?.thinkingBudgets)
+    return GoogleOptions.ThinkingConfig(
+        enabled: true,
+        budgetTokens: budget,
+        level: nil
+    )
+}
+
+func buildGoogleThinkingConfigValidated(model: Model, options: SimpleStreamOptions?) throws -> GoogleOptions.ThinkingConfig? {
+    guard model.reasoning else { return nil }
+    guard let reasoning = options?.reasoning else { return nil }
+    let level = clampThinkingLevel(model: model, requested: reasoning)
+    let resolved = try resolveGoogleThinkingLevel(model: model, level: level.map(ModelThinkingLevel.init) ?? .off)
+    let clamped = ThinkingLevel(rawValue: resolved.rawValue)!
+    if model.id.lowercased().range(of: #"gemini-3(?:\.\d+)?-(?:pro|flash)|gemma-?4"#, options: .regularExpression) != nil {
         return GoogleOptions.ThinkingConfig(
             enabled: true,
             budgetTokens: nil,
@@ -571,7 +638,8 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
             temperature: options?.temperature,
             maxTokens: adjusted.maxTokens,
             signal: options?.signal,
-            reasoning: reasoning,
+            toolChoice: options?.toolChoice.map { $0 == .auto ? BedrockToolChoice.auto : .none },
+        reasoning: reasoning,
             thinkingBudgets: mergeThinkingBudgets(options?.thinkingBudgets, reasoning: reasoning, thinkingBudget: adjusted.thinkingBudget),
             cacheRetention: options?.cacheRetention,
             headers: options?.headers,
@@ -586,6 +654,7 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
         temperature: options?.temperature,
         maxTokens: baseMaxTokens,
         signal: options?.signal,
+        toolChoice: options?.toolChoice.map { $0 == .auto ? BedrockToolChoice.auto : .none },
         reasoning: reasoning,
         thinkingBudgets: options?.thinkingBudgets,
         cacheRetention: options?.cacheRetention,
@@ -598,25 +667,15 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
 }
 
 func adjustMaxTokensForThinking(
-    baseMaxTokens: Int,
+    baseMaxTokens: Int?,
     modelMaxTokens: Int,
     reasoningLevel: ThinkingLevel,
     customBudgets: ThinkingBudgets?
 ) -> (maxTokens: Int, thinkingBudget: Int) {
-    let defaultBudgets: ThinkingBudgets = [
-        .minimal: 1024,
-        .low: 2048,
-        .medium: 8192,
-        .high: 16384,
-        .xhigh: 16384,
-        .max: 16384,
-    ]
-    let budgets = defaultBudgets.merging(customBudgets ?? [:]) { _, new in new }
-    let clamped = clampThinkingLevel(reasoningLevel) ?? reasoningLevel
-    var thinkingBudget = budgets[clamped] ?? 1024
-    let maxTokens = min(baseMaxTokens + thinkingBudget, modelMaxTokens)
+    var thinkingBudget = thinkingBudgetForLevel(reasoningLevel, custom: customBudgets)
+    let maxTokens = baseMaxTokens.map { min($0 + thinkingBudget, modelMaxTokens) } ?? modelMaxTokens
     if maxTokens <= thinkingBudget {
-        thinkingBudget = max(0, maxTokens - minimumAnswerTokens)
+        thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, ceiling: maxTokens)
     }
     return (maxTokens, thinkingBudget)
 }
@@ -635,6 +694,8 @@ public enum StreamError: Error, LocalizedError, Sendable {
     case retryDelayExceedsMaximum(requestedMs: Double, maximumMs: Double, providerMessage: String)
     case requestAborted
     case unsupportedHTTPClient(String)
+    case invalidUUIDTimestamp
+    case uuidSequenceExhausted
     case invalidHTTPResponse
 
     public var errorDescription: String? {
@@ -653,8 +714,23 @@ public enum StreamError: Error, LocalizedError, Sendable {
             return "Request aborted"
         case .unsupportedHTTPClient(let adapter):
             return "\(adapter) does not support a custom HTTP client"
+        case .invalidUUIDTimestamp:
+            return "UUIDv7 timestamp must be an integer between 0 and 281474976710655"
+        case .uuidSequenceExhausted:
+            return "UUIDv7 generator sequence exhausted"
         case .invalidHTTPResponse:
             return "Provider returned an invalid HTTP response"
         }
     }
+}
+
+public let defaultThinkingBudgets: ThinkingBudgets = [.minimal: 1024, .low: 2048, .medium: 8192, .high: 16384]
+
+public func thinkingBudgetForLevel(_ level: ThinkingLevel, custom: ThinkingBudgets? = nil) -> Int {
+    let clamped = clampThinkingLevel(level) ?? level
+    return custom?[clamped] ?? defaultThinkingBudgets[clamped]!
+}
+
+public func clampThinkingBudgetToAnswerRoom(_ budget: Int, ceiling: Int) -> Int {
+    min(budget, max(0, ceiling - minimumAnswerTokens))
 }

@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import SwiftAnthropic
 
-private let claudeCodeVersion = "2.1.75"
+private let claudeCodeVersion = "2.1.251"
 
 private let claudeCodeTools: [String] = [
     "Read",
@@ -174,6 +174,9 @@ public func streamAnthropic(
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
             stopReason: .pending
         )
+        output.providerThinkingLevel = model.compat?.supportsMidConvoEffort == true ? (options.effort?.rawValue ?? "high") : nil
+        var usageModel = model
+        var inputTransformations: [[String: AnyCodable]]?
         var debugService: AnthropicService?
         var debugParameters: MessageParameter?
 
@@ -215,14 +218,7 @@ public func streamAnthropic(
                 }
             }
 
-            let betaHeaders = buildAnthropicBetaHeaders(
-                apiKey: apiKey,
-                interleavedThinking: options.interleavedThinking ?? true,
-                provider: model.provider,
-                modelId: model.id,
-                hasTools: context.tools?.isEmpty == false,
-                supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming
-            )
+            let betaHeaders = anthropicBetaFeatures(model: model, context: context, options: options)
             if let betaHeaders {
                 logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
             } else {
@@ -235,6 +231,31 @@ public func streamAnthropic(
                 mergedHeaders = mergeProviderHeaders(mergedHeaders, copilotHeaders)
             }
             mergedHeaders = mergeProviderHeaders(mergedHeaders, options.headers)
+            // Apply the resolved beta list after user overrides, including explicit deletion.
+            mergedHeaders = mergeProviderHeaders(mergedHeaders, ["anthropic-beta": betaHeaders?.joined(separator: ",")])
+            let parameters = buildAnthropicParameters(
+                model: model,
+                context: context,
+                options: options,
+                isOAuthToken: isOAuthToken,
+                compat: compat,
+                orderedTools: orderedTools
+            )
+            let encodedBody = try anthropicJSONBody(parameters)
+            let constrainedBody = injectAnthropicRequestBody(
+                body: encodedBody,
+                ttl: anthropicCacheTtl(baseUrl: model.baseUrl, supportsLongCacheRetention: compat.supportsLongCacheRetention),
+                metadataUserId: extractAnthropicMetadataUserId(options.metadata),
+                supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
+                thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
+                deferredToolNames: deferredToolNames,
+                toolResultAddedNames: toolResultAddedNames,
+                isOAuthToken: isOAuthToken,
+                strictToolSchemas: strictToolSchemas
+            ) ?? encodedBody
+            let rawRequestBody = try prepareAnthropicRawPayload(constrainedBody, model: model, context: context, options: options)
+            emitPayload(options.onPayload, data: rawRequestBody)
             let httpClient = buildAnthropicHttpClient(
                 providerHTTPClient: options.httpClient,
                 isOAuthToken: isOAuthToken,
@@ -247,7 +268,8 @@ public func streamAnthropic(
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
                 deferredToolNames: deferredToolNames,
                 toolResultAddedNames: toolResultAddedNames,
-                strictToolSchemas: strictToolSchemas
+                strictToolSchemas: strictToolSchemas,
+                rawRequestBody: rawRequestBody
             )
             let service = AnthropicServiceFactory.service(
                 apiKey: apiKey,
@@ -257,34 +279,6 @@ public func streamAnthropic(
                 debugEnabled: false
             )
 
-            let parameters = buildAnthropicParameters(
-                model: model,
-                context: context,
-                options: options,
-                isOAuthToken: isOAuthToken,
-                compat: compat,
-                orderedTools: orderedTools
-            )
-            if let encoded = try? JSONEncoder().encode(parameters),
-               let constrained = injectAnthropicRequestBody(
-                   body: encoded,
-                   ttl: anthropicCacheTtl(
-                       baseUrl: model.baseUrl,
-                       supportsLongCacheRetention: compat.supportsLongCacheRetention
-                   ),
-                   metadataUserId: extractAnthropicMetadataUserId(options.metadata),
-                   supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
-                   supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
-                   thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
-                   deferredToolNames: deferredToolNames,
-                   toolResultAddedNames: toolResultAddedNames,
-                   isOAuthToken: isOAuthToken,
-                   strictToolSchemas: strictToolSchemas
-               ) {
-                emitPayload(options.onPayload, data: constrained)
-            } else {
-                emitPayload(options.onPayload, payload: parameters)
-            }
             debugService = service
             debugParameters = parameters
             let toolCount = context.tools?.count ?? 0
@@ -321,6 +315,11 @@ public func streamAnthropic(
                 let event = decodedEvent.response
                 switch event.streamEvent {
                 case .messageStart:
+                    if let transformations = decodedEvent.inputTransformations { inputTransformations = transformations }
+                    if let servingModel = decodedEvent.servingModel {
+                        output.model = servingModel
+                        usageModel = anthropicUsageModel(model, servingModel: servingModel)
+                    }
                     if let messageId = event.message?.id {
                         output.responseId = messageId
                     }
@@ -336,11 +335,17 @@ public func streamAnthropic(
                             cacheWrite: cacheWrite,
                             reasoning: usage.thinkingTokens
                         )
-                        calculateCost(model: model, usage: &output.usage)
+                        calculateCost(model: usageModel, usage: &output.usage)
                     }
                 case .contentBlockStart:
                     guard let block = event.contentBlock, let index = event.index else { break }
                     switch block.type {
+                    case "fallback":
+                        if !output.content.isEmpty {
+                            throw AnthropicStreamError.apiError("Anthropic performed an unsupported mid-output model fallback")
+                        }
+                        continue
+
                     case "text":
                         let textBlock = TextContent(text: block.text ?? "")
                         output.content.append(.text(textBlock))
@@ -427,6 +432,7 @@ public func streamAnthropic(
                         break
                     }
                 case .messageDelta:
+                    if let transformations = decodedEvent.inputTransformations { inputTransformations = transformations }
                     if let stopReason = event.delta?.stopReason {
                         output.rawStopReason = stopReason
                         let result = mapAnthropicStopReason(
@@ -450,7 +456,7 @@ public func streamAnthropic(
                             cacheWrite: cacheWrite,
                             reasoning: usage.thinkingTokens ?? output.usage.reasoning
                         )
-                        calculateCost(model: model, usage: &output.usage)
+                        calculateCost(model: usageModel, usage: &output.usage)
                     }
                 case .messageStop:
                     break
@@ -473,6 +479,14 @@ public func streamAnthropic(
                 throw AnthropicStreamError.apiError(output.errorMessage ?? "An unknown error occurred")
             }
 
+            if let inputTransformations, !inputTransformations.isEmpty {
+                var diagnostics = output.diagnostics ?? []
+                diagnostics.append(AssistantMessageDiagnostic(
+                    type: "anthropic_input_transformations",
+                    details: ["transformations": AnyCodable(inputTransformations.map { $0.mapValues(\.value) })]
+                ))
+                output.diagnostics = diagnostics
+            }
             stream.push(.done(reason: output.stopReason, message: output))
             stream.end()
         } catch {
@@ -504,7 +518,7 @@ private func buildAnthropicParameters(
     orderedTools: [AITool]
 ) -> MessageParameter {
     let messages = convertAnthropicMessages(model: model, messages: context.messages, isOAuthToken: isOAuthToken)
-    let maxTokens = options.maxTokens ?? max(model.maxTokens / 3, 1024)
+    let maxTokens = options.maxTokens ?? model.maxTokens
 
     var system: MessageParameter.System? = nil
     if let prompt = context.systemPrompt {
@@ -516,11 +530,6 @@ private func buildAnthropicParameters(
     let thinkingEnabled = options.thinkingEnabled == true && model.reasoning
     let thinking: MessageParameter.Thinking? = {
         guard thinkingEnabled else { return nil }
-        // For adaptive thinking models, map effort level to a token budget
-        if supportsAdaptiveThinking(model.id), let effort = options.effort {
-            let budgetTokens = adaptiveThinkingBudget(effort: effort, maxTokens: maxTokens)
-            return MessageParameter.Thinking(budgetTokens: budgetTokens)
-        }
         return MessageParameter.Thinking(budgetTokens: options.thinkingBudgetTokens ?? 1024)
     }()
 
@@ -653,6 +662,8 @@ struct AnthropicDecodedMessageEvent {
     /// `delta.stop_details.explanation` from a `message_delta` event. `MessageStreamResponse.Delta`
     /// (vendored in SwiftAnthropic) has no `stop_details` field, so it is read out of the raw JSON.
     let refusalExplanation: String?
+    let servingModel: String?
+    let inputTransformations: [[String: AnyCodable]]?
 }
 
 private func decodeAnthropicMessageEvent(_ sse: AnthropicServerSentEvent) throws -> AnthropicDecodedMessageEvent? {
@@ -680,10 +691,21 @@ private func decodeAnthropicJSONEvent(_ json: String) throws -> AnthropicDecoded
     let contentBlock = root?["content_block"] as? [String: Any]
     let delta = root?["delta"] as? [String: Any]
     let stopDetails = delta?["stop_details"] as? [String: Any]
+    let message = root?["message"] as? [String: Any]
+    let transformationSource = response.type == "message_start" ? message : root
+    let transformations = (transformationSource?["input_transformations"] as? [[String: Any]])?.map { item in
+        var result: [String: AnyCodable] = [:]
+        for key in ["type", "path", "reason"] {
+            if let value = item[key], !(value is NSNull) { result[key] = AnyCodable(value) }
+        }
+        return result
+    }
     return AnthropicDecodedMessageEvent(
         response: response,
         initialThinkingSignature: contentBlock?["signature"] as? String,
-        refusalExplanation: stopDetails?["explanation"] as? String
+        refusalExplanation: stopDetails?["explanation"] as? String,
+        servingModel: message?["model"] as? String,
+        inputTransformations: transformations
     )
 }
 
@@ -1193,12 +1215,16 @@ private func buildAnthropicHttpClient(
     thinkingDisabled: Bool,
     deferredToolNames: Set<String> = [],
     toolResultAddedNames: [String: [String]] = [:],
-    strictToolSchemas: [String: [String: AnyCodable]] = [:]
+    strictToolSchemas: [String: [String: AnyCodable]] = [:],
+    rawRequestBody: Data? = nil
 ) -> HTTPClient {
     var merged = extraHeaders
+    if !isOAuthToken && !providerHeadersContain(merged, name: "user-agent") {
+        merged.updateValue(getPiUserAgent(), forKey: "User-Agent")
+    }
     if isOAuthToken {
         if !providerHeadersContain(merged, name: "user-agent") {
-            merged.updateValue("claude-cli/\(claudeCodeVersion) (external, cli)", forKey: "user-agent")
+            merged.updateValue("claude-cli/\(claudeCodeVersion)", forKey: "user-agent")
         }
         if !providerHeadersContain(merged, name: "x-app") {
             merged.updateValue("cli", forKey: "x-app")
@@ -1221,7 +1247,8 @@ private func buildAnthropicHttpClient(
         deferredToolNames: deferredToolNames,
         toolResultAddedNames: toolResultAddedNames,
         strictToolSchemas: strictToolSchemas,
-        isOAuthToken: isOAuthToken
+        isOAuthToken: isOAuthToken,
+        rawRequestBody: rawRequestBody
     )
 }
 
@@ -1349,6 +1376,7 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let toolResultAddedNames: [String: [String]]
     let strictToolSchemas: [String: [String: AnyCodable]]
     let isOAuthToken: Bool
+    let rawRequestBody: Data?
 
     func data(for request: HTTPRequest) async throws -> (Data, HTTPResponse) {
         let updated = injectingHeaders(request)
@@ -1403,7 +1431,7 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
             isOAuthToken: isOAuthToken,
             strictToolSchemas: strictToolSchemas
         )
-        return HTTPRequest(url: url, method: method, headers: mergedHeaders, body: updatedBody ?? body)
+        return HTTPRequest(url: url, method: method, headers: mergedHeaders, body: rawRequestBody ?? updatedBody ?? body)
     }
 }
 
@@ -1569,7 +1597,7 @@ private func resolveAnthropicStrictToolSchemas(
     var result: [String: [String: AnyCodable]] = [:]
     for tool in tools {
         if try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictTools) == true {
-            result[isOAuthToken ? toClaudeCodeName(tool.name) : tool.name] = tool.parameters
+            result[isOAuthToken ? toClaudeCodeName(tool.name) : tool.name] = try getJsonSchemaToolParameters(tool, strict: true)
         }
     }
     return result
@@ -1725,4 +1753,103 @@ private enum AnthropicTolerantStreamError: Error, LocalizedError {
             return "Anthropic stream returned status code \(status)"
         }
     }
+}
+
+func anthropicBetaFeatures(model: Model, context: Context, options: AnthropicOptions) -> [String]? {
+    var configured: String?? = nil
+    for headers in [model.headers, options.headers] {
+        for (name, value) in headers ?? [:] where name.lowercased() == "anthropic-beta" {
+            configured = .some(value)
+        }
+    }
+    if let configured {
+        guard let configured else { return nil }
+        var seen = Set<String>()
+        let values = configured.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        return values.isEmpty ? nil : values
+    }
+    var features: [String] = []
+    if isAnthropicOAuthToken(options.apiKey ?? "") {
+        features += ["claude-code-20250219", "oauth-2025-04-20"]
+    }
+    if context.tools?.isEmpty == false && !resolveAnthropicCompat(model: model).supportsEagerToolInputStreaming {
+        features.append("fine-grained-tool-streaming-2025-05-14")
+    }
+    if model.reasoning && options.thinkingEnabled == true && (options.interleavedThinking ?? true)
+        && model.compat?.forceAdaptiveThinking != true {
+        features.append("interleaved-thinking-2025-05-14")
+    }
+    if model.compat?.allowedFallbackModels?.isEmpty == false {
+        features.append("server-side-fallback-2026-07-01")
+    }
+    if model.compat?.supportsMidConvoEffort == true {
+        features += ["mid-conversation-output-config-2026-07-01", "thinking-binding-controls-2026-08-01"]
+    }
+    return features.isEmpty ? nil : features
+}
+
+func prepareAnthropicRawPayload(_ data: Data, model: Model, context: Context, options: AnthropicOptions) throws -> Data {
+    var payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+    payload["stream"] = true
+    let managed = model.compat?.supportsMidConvoEffort == true
+    let display = options.thinkingDisplay?.rawValue ?? "summarized"
+    if managed {
+        payload["thinking"] = ["type": "adaptive", "display": display,
+            "block_binding": ["prefix_mismatch_behavior": "drop_block"]]
+        payload["output_config"] = ["effort": "high"]
+        payload.removeValue(forKey: "temperature")
+        let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: { id, _, _ in
+            String(id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression).prefix(64))
+        })
+        let levels: [String?] = transformed.compactMap { message -> [String?]? in
+            guard case .assistant(let assistant) = message,
+                  !convertAssistantContent(assistant, isOAuthToken: isAnthropicOAuthToken(options.apiKey ?? "")).isEmpty else { return nil }
+            let level = assistant.providerThinkingLevel
+            let valid = assistant.api == .anthropicMessages && assistant.provider == model.provider
+                && ["low", "medium", "high", "xhigh", "max"].contains(level ?? "")
+            return [valid ? level : nil]
+        }.flatMap { $0 }
+        var messages: [[String: Any]] = []
+        var assistantIndex = 0
+        for message in payload["messages"] as? [[String: Any]] ?? [] {
+            if message["role"] as? String == "assistant" {
+                if assistantIndex < levels.count, let level = levels[assistantIndex] {
+                    messages.append(anthropicEffortMarker(level))
+                }
+                assistantIndex += 1
+            }
+            messages.append(message)
+        }
+        messages.append(anthropicEffortMarker(options.effort?.rawValue ?? "high"))
+        payload["messages"] = messages
+    } else if model.reasoning && options.thinkingEnabled == true {
+        if model.compat?.forceAdaptiveThinking == true {
+            payload["thinking"] = ["type": "adaptive", "display": display]
+            if let effort = options.effort { payload["output_config"] = ["effort": effort.rawValue] }
+        } else {
+            let budget = options.thinkingBudgetTokens ?? 1024
+            payload["thinking"] = ["type": "enabled", "display": display, "budget_tokens": budget == 0 ? 1024 : budget]
+        }
+    }
+    if let fallbacks = model.compat?.allowedFallbackModels, !fallbacks.isEmpty {
+        payload["fallbacks"] = fallbacks.map { ["model": $0.model] }
+    }
+    return try JSONSerialization.data(withJSONObject: payload)
+}
+
+private func anthropicEffortMarker(_ level: String) -> [String: Any] {
+    ["role": "system", "content": [Any](), "output_config": ["effort": level]]
+}
+
+func anthropicUsageModel(_ model: Model, servingModel: String) -> Model {
+    guard servingModel != model.id,
+          let fallback = model.compat?.allowedFallbackModels?.first(where: {
+              $0.provider == model.provider && $0.model == servingModel
+          }) else { return model }
+    return Model(id: servingModel, name: model.name, api: model.api, provider: model.provider,
+        baseUrl: model.baseUrl, reasoning: model.reasoning, input: model.input, cost: fallback.cost,
+        contextWindow: model.contextWindow, maxTokens: model.maxTokens,
+        samplingParams: model.samplingParams, headers: model.headers, compat: model.compat,
+        thinkingLevelMap: model.thinkingLevelMap)
 }

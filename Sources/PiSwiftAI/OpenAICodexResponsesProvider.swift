@@ -63,20 +63,27 @@ public func streamOpenAICodexResponses(
                 body["service_tier"] = serviceTier.rawValue
             }
 
-            if let maxTokens = options.maxTokens {
+            if let maxTokens = options.maxTokens, model.compat?.supportsMaxOutputTokens != false {
                 body["max_output_tokens"] = maxTokens
             }
             if let temperature = options.temperature {
                 body["temperature"] = temperature
             }
-            if let tools = context.tools, !tools.isEmpty {
+            let placement = splitDeferredTools(context, enabled: responsesDeferredToolsEnabled(model))
+            if !placement.immediate.isEmpty {
+                let tools = placement.immediate
                 body["tools"] = try convertCodexTools(
                     tools,
                     supportsStrictMode: model.compat?.supportsStrictMode ?? true,
                     supportsOpenAIGrammarTools: supportsGrammar
                 )
-                body["tool_choice"] = "auto"
                 body["parallel_tool_calls"] = true
+            }
+
+            if let choice = options.toolChoice {
+                body["tool_choice"] = responsesToolChoicePayload(choice)
+            } else if !placement.immediate.isEmpty {
+                body["tool_choice"] = "auto"
             }
 
             if let instructions = context.systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -201,7 +208,7 @@ public func streamOpenAICodexResponses(
                         let name = item["name"] as? String ?? ""
                         let combinedId = "\(callId)|\(itemId)"
                         currentToolCallPartial = item["arguments"] as? String ?? ""
-                        let toolCall = ToolCall(id: combinedId, name: name, arguments: [:])
+                        let toolCall = ToolCall(id: combinedId, name: name, arguments: [:], namespace: item["namespace"] as? String)
                         startBlock(kind: "toolCall", block: .toolCall(toolCall))
                     } else if type == "custom_tool_call" {
                         let callId = item["call_id"] as? String ?? ""
@@ -215,7 +222,8 @@ public func streamOpenAICodexResponses(
                         let toolCall = ToolCall(
                             id: "\(callId)|\(itemId)",
                             name: name,
-                            arguments: [inputProperty: AnyCodable(input)]
+                            arguments: [inputProperty: AnyCodable(input)],
+                            namespace: item["namespace"] as? String
                         )
                         startBlock(kind: "toolCall", block: .toolCall(toolCall))
                     }
@@ -293,7 +301,10 @@ public func streamOpenAICodexResponses(
                                 arguments = existing.arguments
                             }
                         }
-                        let toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: arguments)
+                        var namespace = item["namespace"] as? String
+                        if namespace == nil, let index = currentBlockIndex,
+                           case .toolCall(let existing) = output.content[index] { namespace = existing.namespace }
+                        let toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: arguments, namespace: namespace)
                         if let index = currentBlockIndex {
                             output.content[index] = .toolCall(toolCall)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
@@ -304,7 +315,9 @@ public func streamOpenAICodexResponses(
                     } else if type == "custom_tool_call" {
                         let input = item["input"] as? String ?? currentToolCallPartial
                         try updateGrammarToolCallInput(input, close: true)
-                        if let index = currentBlockIndex, case .toolCall(let call) = output.content[index] {
+                        if let index = currentBlockIndex, case .toolCall(var call) = output.content[index] {
+                            call.namespace = item["namespace"] as? String ?? call.namespace
+                            output.content[index] = .toolCall(call)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
                         }
                         currentBlockKind = nil
@@ -313,8 +326,9 @@ public func streamOpenAICodexResponses(
                         currentGrammarInputProperty = nil
                     }
 
-                case "response.completed", "response.done":
+                case "response.completed", "response.done", "response.incomplete":
                     if let responseInfo = rawEvent["response"] as? [String: Any] {
+                        if let endTurn = responseInfo["end_turn"] as? Bool { output.endTurn = endTurn }
                         if let usage = responseInfo["usage"] as? [String: Any] {
                             let cachedTokens = intValue(usage["input_tokens_details"], key: "cached_tokens") ?? 0
                             let inputTokens = intValue(usage, key: "input_tokens") ?? 0
@@ -702,6 +716,7 @@ private func buildCodexHeaders(
     var headers = baseHeaders
     headers = headers.filter { $0.key.lowercased() != "x-api-key" }
     headers["Authorization"] = "Bearer \(accessToken)"
+    headers["User-Agent"] = getPiUserAgent()
     headers["accept"] = "text/event-stream"
     headers["content-type"] = "application/json"
 
@@ -763,7 +778,12 @@ private func parseCodexSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowingS
                         let chunk = buffer.subdata(in: 0..<range.lowerBound)
                         buffer.removeSubrange(0..<range.upperBound)
                         if let event = parseCodexSseEvent(from: chunk) {
+                            let terminal = ["response.completed", "response.done", "response.incomplete"].contains(event["type"] as? String ?? "")
                             continuation.yield(event)
+                            if terminal {
+                                continuation.finish()
+                                return
+                            }
                         }
                     }
                 }
@@ -791,7 +811,12 @@ private func parseCodexSseStream(body: AsyncThrowingStream<Data, Error>) -> Asyn
                         let frame = buffer.subdata(in: 0..<range.lowerBound)
                         buffer.removeSubrange(0..<range.upperBound)
                         if let event = parseCodexSseEvent(from: frame) {
+                            let terminal = ["response.completed", "response.done", "response.incomplete"].contains(event["type"] as? String ?? "")
                             continuation.yield(event)
+                            if terminal {
+                                continuation.finish()
+                                return
+                            }
                         }
                     }
                 }
@@ -852,7 +877,7 @@ private func processCodexWebSocketStream(
             let message = try await lease.task.receive()
             guard let event = parseCodexWebSocketMessage(message) else { continue }
             let type = event["type"] as? String ?? ""
-            if type == "response.completed" || type == "response.done" {
+            if type == "response.completed" || type == "response.done" || type == "response.incomplete" {
                 sawCompletion = true
             }
             try onEvent(event)
@@ -1113,7 +1138,8 @@ func convertCodexMessages(
         msgIndex += 1
     }
 
-    return messages
+    let replay = try makeResponsesReplayMiddleware(model: model, context: context)
+    return replay.rewriteInput(messages.compactMap { $0 as? [String: Any] })
 }
 
 func convertCodexMessages(model: Model, context: Context) -> [Any] {
@@ -1146,10 +1172,11 @@ private func codexShortHash(_ value: String) -> String {
     return String(h2, radix: 36) + String(h1, radix: 36)
 }
 
-private func convertCodexTools(
+func convertCodexTools(
     _ tools: [AITool],
     supportsStrictMode: Bool,
-    supportsOpenAIGrammarTools: Bool
+    supportsOpenAIGrammarTools: Bool,
+    defaultStrict: Bool? = nil
 ) throws -> [[String: Any]] {
     try tools.map { tool in
         if let grammar = try resolveGrammarConstrainedSampling(
@@ -1175,10 +1202,10 @@ private func convertCodexTools(
             "type": "function",
             "name": tool.name,
             "description": tool.description,
-            "parameters": tool.parameters.mapValues { $0.value },
+            "parameters": try getJsonSchemaToolParameters(tool, strict: (constrainedStrict ?? defaultStrict) == true).mapValues { $0.value },
         ]
         if supportsStrictMode {
-            result["strict"] = constrainedStrict == true ? true : NSNull()
+            result["strict"] = (constrainedStrict ?? defaultStrict).map { $0 as Any } ?? NSNull()
         }
         return result
     }

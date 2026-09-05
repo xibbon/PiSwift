@@ -100,7 +100,7 @@ import Testing
     #expect(prompt.contains("A test skill for testing"))
 }
 
-@Test func buildSystemPromptNoSkillsWhenReadNotIncluded() {
+@Test func buildSystemPromptIncludesSkillsWhenBashCanRead() {
     let skills = [
         Skill(
             name: "test-skill",
@@ -111,13 +111,14 @@ import Testing
         )
     ]
     let prompt = buildSystemPrompt(BuildSystemPromptOptions(
-        selectedTools: [.bash, .edit],  // No .read
+        selectedTools: [.bash, .edit],  // Bash can load skill files without read.
         contextFiles: [],
         skills: skills
     ))
 
-    // Skills should not be included when read tool is not available
-    #expect(!prompt.contains("test-skill"))
+    // v0.85.0 uses bash when the read tool is not available.
+    #expect(prompt.contains("test-skill"))
+    #expect(prompt.contains("Use bash to load a skill's file"))
 }
 
 // MARK: - Guidelines tests

@@ -103,20 +103,28 @@ public final class JSONSchemaValidator: Sendable {
             return .invalid(SchemaValidationError(path: path, message: "matches multiple oneOf schemas"))
         }
 
-        // Handle nullable/optional
+        // A JSON null is a value. An absent Swift value is a missing argument.
         if value == nil || value is NSNull {
-            if let nullable = schema["nullable"] as? Bool, nullable {
-                return .valid(NSNull())
+            if let allOf = schema["allOf"] as? [[String: Any]] {
+                for branch in allOf {
+                    let result = validate(value, against: branch, path: path, coerceTypes: false)
+                    if !result.isValid { return result }
+                }
             }
-            // Check if type includes null
-            if let types = schema["type"] as? [String], types.contains("null") {
-                return .valid(NSNull())
+            let types = schema["type"] as? [String] ?? (schema["type"] as? String).map { [$0] } ?? []
+            if value == nil && !schemaAllowsNull(schema) && schema["nullable"] as? Bool != true {
+                return .invalid(SchemaValidationError(path: path, message: "value is required"))
             }
-            if let type = schema["type"] as? String, type == "null" {
-                return .valid(NSNull())
+            if !types.isEmpty && !types.contains("null") && schema["nullable"] as? Bool != true {
+                return .invalid(SchemaValidationError(path: path, message: "value is required"))
             }
-            // Value is required but missing
-            return .invalid(SchemaValidationError(path: path, message: "value is required"))
+            if let constant = schema["const"], !(constant is NSNull) {
+                return .invalid(SchemaValidationError(path: path, message: "must be equal to constant value"))
+            }
+            if let values = schema["enum"] as? [Any], !values.contains(where: { $0 is NSNull }) {
+                return .invalid(SchemaValidationError(path: path, message: "must be one of the allowed values"))
+            }
+            return .valid(NSNull())
         }
 
         guard let value = value else {

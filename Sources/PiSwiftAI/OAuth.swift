@@ -415,9 +415,10 @@ private func throwIfOAuthCancelled(_ signal: CancellationToken?) throws {
     }
 }
 
-private struct OAuthNetworkResponse: Sendable {
+struct OAuthNetworkResponse: Sendable {
     let data: Data
     let status: Int
+    var headers: [String: String] = [:]
 }
 
 private func oauthData(
@@ -434,7 +435,10 @@ private func oauthData(
             group.addTask {
                 let (data, response) = try await session.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                return OAuthNetworkResponse(data: data, status: status)
+                let headers = (response as? HTTPURLResponse)?.allHeaderFields.reduce(into: [String: String]()) { result, item in
+                    if let name = item.key as? String { result[name] = String(describing: item.value) }
+                } ?? [:]
+                return OAuthNetworkResponse(data: data, status: status, headers: headers)
             }
             group.addTask {
                 while true {
@@ -1474,7 +1478,8 @@ private func pollOAuthDeviceCodeFlow<Value: Sendable>(
 
 private func sleepMs(_ ms: Int, signal: CancellationToken?) async throws {
     try throwIfOAuthCancelled(signal)
-    try await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
+    do { try await abortableSleep(ms: Double(ms), signal: signal) }
+    catch { try throwIfOAuthCancelled(signal); throw error }
     try throwIfOAuthCancelled(signal)
 }
 
@@ -1536,32 +1541,38 @@ private func refreshGitHubCopilotAccessToken(
 }
 
 func parseAvailableCopilotModelIds(_ raw: Any, allowPolicyFallback: Bool) throws -> [String] {
-    guard let root = raw as? [String: Any], let data = root["data"] as? [Any] else {
-        throw OAuthError.invalidToken
-    }
-    var pickerIds: [String] = []
-    var policyEnabledIds: [String] = []
-    for rawItem in data {
-        guard let item = rawItem as? [String: Any], let id = item["id"] as? String else { continue }
-        let capabilities = item["capabilities"] as? [String: Any]
-        let supports = capabilities?["supports"] as? [String: Any]
-        if supports?["tool_calls"] as? Bool == false { continue }
-        let policy = item["policy"] as? [String: Any]
-        if item["model_picker_enabled"] as? Bool == true, policy?["state"] as? String != "disabled" {
-            pickerIds.append(id)
-        }
-        if policy?["state"] as? String == "enabled" {
-            policyEnabledIds.append(id)
-        }
-    }
-    return pickerIds.isEmpty && allowPolicyFallback ? policyEnabledIds : pickerIds
+    try parseGitHubCopilotModelCatalog(raw, allowPolicyFallback: allowPolicyFallback).availableModelIds
 }
 
-private func fetchAvailableGitHubCopilotModelIds(
-    token: String,
-    enterpriseDomain: String?,
-    signal: CancellationToken?
-) async throws -> [String] {
+struct GitHubCopilotModelCatalog: Sendable {
+    let availableModelIds: [String]
+    let policyModelIds: [String]
+}
+
+func parseGitHubCopilotModelCatalog(_ raw: Any, allowPolicyFallback: Bool) throws -> GitHubCopilotModelCatalog {
+    guard let root = raw as? [String: Any], let data = root["data"] as? [Any] else {
+        throw OAuthError.tokenExchangeFailed("Invalid Copilot models response")
+    }
+    let knownIds = Set(getModels(provider: .githubCopilot).map(\.id))
+    let models: [(id: String, picker: Bool, policy: String?)] = data.compactMap { rawItem in
+        guard let item = rawItem as? [String: Any], let id = item["id"] as? String else { return nil }
+        let supports = (item["capabilities"] as? [String: Any])?["supports"] as? [String: Any]
+        guard supports?["tool_calls"] as? Bool != false else { return nil }
+        return (id, item["model_picker_enabled"] as? Bool == true, (item["policy"] as? [String: Any])?["state"] as? String)
+    }
+    let pickerIds = models.filter { $0.picker && $0.policy != "disabled" }.map(\.id)
+    let usePolicyFallback = allowPolicyFallback && pickerIds.isEmpty
+    return GitHubCopilotModelCatalog(
+        availableModelIds: usePolicyFallback ? models.filter { $0.policy == "enabled" }.map(\.id) : pickerIds,
+        policyModelIds: models.filter { $0.policy == "unconfigured" && knownIds.contains($0.id) && ($0.picker || usePolicyFallback) }.map(\.id)
+    )
+}
+
+private func fetchAvailableGitHubCopilotModelIds(token: String, enterpriseDomain: String?, signal: CancellationToken?) async throws -> [String] {
+    try await fetchGitHubCopilotModels(token: token, enterpriseDomain: enterpriseDomain, signal: signal, maxRetries: 0, maxElapsedMs: 0).availableModelIds
+}
+
+private func fetchGitHubCopilotModels(token: String, enterpriseDomain: String?, signal: CancellationToken?, maxRetries: Int, maxElapsedMs: Int) async throws -> GitHubCopilotModelCatalog {
     let baseUrl = getGitHubCopilotBaseUrl(token: token, enterpriseDomain: enterpriseDomain)
     guard let url = URL(string: "\(baseUrl)/models") else { throw OAuthError.invalidToken }
     var request = URLRequest(url: url)
@@ -1570,62 +1581,45 @@ private func fetchAvailableGitHubCopilotModelIds(
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue(copilotApiVersion, forHTTPHeaderField: "X-GitHub-Api-Version")
     for (key, value) in copilotHeaders { request.setValue(value, forHTTPHeaderField: key) }
-    let response = try await oauthData(for: request, signal: signal, timeoutMs: 5_000)
-    guard response.status >= 200, response.status < 300 else {
-        throw OAuthError.refreshFailed(String(data: response.data, encoding: .utf8) ?? "Copilot models request failed")
-    }
-    let raw = try JSONSerialization.jsonObject(with: response.data)
-    return try parseAvailableCopilotModelIds(
-        raw,
-        allowPolicyFallback: baseUrl == "https://api.individual.githubcopilot.com"
-    )
+    let response = try await fetchCopilotWithRateLimitRetry(request, signal: signal, maxRetries: maxRetries, maxElapsedMs: maxElapsedMs)
+    guard (200..<300).contains(response.status) else { throw copilotResponseError(response) }
+    return try parseGitHubCopilotModelCatalog(JSONSerialization.jsonObject(with: response.data), allowPolicyFallback: baseUrl == "https://api.individual.githubcopilot.com")
 }
 
 /// Enable a model for the user's GitHub Copilot account.
-private func enableGitHubCopilotModel(token: String, modelId: String, enterpriseDomain: String?) async -> Bool {
+private func enableGitHubCopilotModel(token: String, modelId: String, enterpriseDomain: String?, signal: CancellationToken?) async throws -> Bool {
     let baseUrl = getGitHubCopilotBaseUrl(token: token, enterpriseDomain: enterpriseDomain)
-    guard let url = URL(string: "\(baseUrl)/models/\(modelId)/policy") else {
-        return false
-    }
-
+    guard let url = URL(string: "\(baseUrl)/models/\(modelId)/policy") else { return false }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("chat-policy", forHTTPHeaderField: "openai-intent")
     request.setValue("chat-policy", forHTTPHeaderField: "x-interaction-type")
-    for (key, value) in copilotHeaders {
-        request.setValue(value, forHTTPHeaderField: key)
-    }
-    request.httpBody = try? JSONSerialization.data(withJSONObject: ["state": "enabled"])
-
+    for (key, value) in copilotHeaders { request.setValue(value, forHTTPHeaderField: key) }
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["state": "enabled"])
+    let response: OAuthNetworkResponse
     do {
-        let session = proxySession(for: request.url)
-        let (_, response) = try await session.data(for: request)
-        return (response as? HTTPURLResponse)?.statusCode == 200
+        response = try await fetchCopilotWithRateLimitRetry(request, signal: signal, maxRetries: 2, maxElapsedMs: 5_000)
     } catch {
+        try throwIfOAuthCancelled(signal)
         return false
     }
+    if response.status == 429 { throw copilotResponseError(response) }
+    return (200..<300).contains(response.status)
 }
 
-/// Enable all known GitHub Copilot models that may require policy acceptance.
-private func enableAllGitHubCopilotModels(
-    token: String,
-    enterpriseDomain: String?,
-    onProgress: (@MainActor @Sendable (String) -> Void)?
-) async {
-    let models = getModels(provider: .githubCopilot)
-    await withTaskGroup(of: Void.self) { group in
-        for model in models {
-            group.addTask {
-                let success = await enableGitHubCopilotModel(token: token, modelId: model.id, enterpriseDomain: enterpriseDomain)
-                if let onProgress {
-                    let message = success ? "Enabled \(model.id)" : "Failed to enable \(model.id)"
-                    await onProgress(message)
-                }
-            }
+func enableGitHubCopilotModels(_ modelIds: [String], signal: CancellationToken?, enable: @Sendable (String) async throws -> Bool) async throws -> [String] {
+    var enabled: [String] = []
+    for modelId in modelIds {
+        do {
+            if try await enable(modelId) { enabled.append(modelId) }
+        } catch {
+            try throwIfOAuthCancelled(signal)
+            break
         }
     }
+    return enabled
 }
 
 /// Login with GitHub Copilot OAuth (device code flow).
@@ -1673,21 +1667,18 @@ public func loginGitHubCopilot(_ callbacks: OAuthLoginCallbacks) async throws ->
         signal: callbacks.signal
     )
 
-    // Enable all models
-    if let onProgress = callbacks.onProgress {
-        await onProgress("Enabling models...")
+    let models = try await fetchGitHubCopilotModels(token: credentials.access, enterpriseDomain: enterpriseDomain,
+        signal: callbacks.signal, maxRetries: 2, maxElapsedMs: 5_000)
+    var enabledModelIds: [String] = []
+    if !models.policyModelIds.isEmpty {
+        if let onProgress = callbacks.onProgress { await onProgress("Enabling models...") }
+        let token = credentials.access
+        enabledModelIds = try await enableGitHubCopilotModels(models.policyModelIds, signal: callbacks.signal) { modelId in
+            try await enableGitHubCopilotModel(token: token, modelId: modelId, enterpriseDomain: enterpriseDomain, signal: callbacks.signal)
+        }
     }
-    await enableAllGitHubCopilotModels(
-        token: credentials.access,
-        enterpriseDomain: enterpriseDomain,
-        onProgress: callbacks.onProgress
-    )
-
-    credentials.availableModelIds = try await fetchAvailableGitHubCopilotModelIds(
-        token: credentials.access,
-        enterpriseDomain: enterpriseDomain,
-        signal: callbacks.signal
-    )
+    var seen = Set<String>()
+    credentials.availableModelIds = (models.availableModelIds + enabledModelIds).filter { seen.insert($0).inserted }
 
     return credentials
 }
@@ -1959,6 +1950,7 @@ private func requestKimiCoding(
     request.httpMethod = "POST"
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
     request.httpBody = kimiFormBody(fields)
     return try await oauthData(for: request, signal: signal, timeoutMs: kimiCodingRequestTimeoutMs)
 }
@@ -2999,4 +2991,55 @@ private func googleErrorHtml(_ error: String) -> String {
     </body>
     </html>
     """
+}
+
+private func copilotResponseError(_ response: OAuthNetworkResponse) -> OAuthError {
+    OAuthError.refreshFailed("\(response.status): \(String(data: response.data, encoding: .utf8) ?? "")")
+}
+
+func copilotRetryDelayMs(retryAfter: String?, retry: Int, now: Double) -> Double? {
+    guard let raw = retryAfter, !raw.isEmpty else { return 500 * pow(2, Double(retry)) }
+    // Number.parseFloat accepts a numeric prefix. Match this before HTTP-date parsing.
+    let pattern = #"^[\s]*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?"#
+    let seconds: Double? = raw.range(of: pattern, options: .regularExpression).flatMap { Double(raw[$0].trimmingCharacters(in: .whitespacesAndNewlines)) }
+    let delay: Double
+    if let seconds { delay = seconds * 1000 }
+    else {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let date = formatter.date(from: raw) else { return nil }
+        delay = date.timeIntervalSince1970 * 1000 - now
+    }
+    return delay.isFinite ? max(0, delay) : nil
+}
+
+private func fetchCopilotWithRateLimitRetry(_ request: URLRequest, signal: CancellationToken?, maxRetries: Int, maxElapsedMs: Int) async throws -> OAuthNetworkResponse {
+    try await copilotRateLimitRetry(signal: signal, maxRetries: maxRetries, maxElapsedMs: maxElapsedMs,
+        request: { timeout in try await oauthData(for: request, signal: signal, timeoutMs: timeout) })
+}
+
+func copilotRateLimitRetry(
+    signal: CancellationToken?,
+    maxRetries: Int,
+    maxElapsedMs: Int,
+    now: @Sendable () -> Double = { Date().timeIntervalSince1970 * 1000 },
+    sleep: @Sendable (Double, CancellationToken?) async throws -> Void = { try await abortableSleep(ms: $0, signal: $1) },
+    request: @Sendable (Int) async throws -> OAuthNetworkResponse
+) async throws -> OAuthNetworkResponse {
+    let deadline = maxRetries > 0 && maxElapsedMs > 0 ? now() + Double(maxElapsedMs) : nil
+    for retry in 0...max(0, maxRetries) {
+        try throwIfOAuthCancelled(signal)
+        let remaining = deadline.map { $0 - now() }
+        if let remaining, remaining <= 0 { throw OAuthError.tokenExchangeFailed("OAuth request timed out") }
+        let timeout = min(5000, remaining.map { max(1, Int(ceil($0))) } ?? 5000)
+        let response = try await request(timeout)
+        guard response.status == 429, retry < maxRetries else { return response }
+        let retryAfter = response.headers.first { $0.key.lowercased() == "retry-after" }?.value
+        guard let delay = copilotRetryDelayMs(retryAfter: retryAfter, retry: retry, now: now()) else { return response }
+        if let deadline, delay >= deadline - now() { return response }
+        try await sleep(delay, signal)
+    }
+    throw OAuthError.tokenExchangeFailed("Copilot request failed")
 }

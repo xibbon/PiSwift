@@ -489,6 +489,12 @@ private func normalizeChatTemplateValues(_ values: [String: ChatTemplateKwargVal
 private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
     guard let compat else { return nil }
     return optionalFields([
+        ("thinkingTokenBudgetField", compat.thinkingTokenBudgetField?.rawValue),
+        ("vllmPriority", compat.vllmPriority),
+        ("supportsAdditionalTools", compat.supportsAdditionalTools),
+        ("supportsMaxOutputTokens", compat.supportsMaxOutputTokens),
+        ("supportsMidConvoEffort", compat.supportsMidConvoEffort),
+        ("allowedFallbackModels", compat.allowedFallbackModels?.map { ["provider": $0.provider, "model": $0.model, "cost": normalizeCost($0.cost)] }),
         ("allowEmptySignature", compat.allowEmptySignature),
         ("cacheControlFormat", compat.cacheControlFormat?.rawValue),
         ("chatTemplateArgs", normalizeChatTemplateValues(compat.chatTemplateArgs)),
@@ -1063,7 +1069,7 @@ private func runCodexSessionRequest(
 }
 
 @Test func transformMessagesRemovesToolCallThoughtSignatureAcrossModels() {
-    let targetModel = getModel(provider: .githubCopilot, modelId: "claude-sonnet-4.5")
+    let targetModel = catalogV0841Model(provider: .githubCopilot, modelId: "claude-sonnet-4.5")
     let toolCall = ToolCall(
         id: "call_123",
         name: "bash",
@@ -1824,7 +1830,7 @@ private func runCodexSessionRequest(
     guard ProcessInfo.processInfo.environment["MINIMAX_API_KEY"] != nil else {
         return
     }
-    let model = getModel(provider: .minimax, modelId: "MiniMax-M2.1")
+    let model = getModel(provider: .minimax, modelId: "MiniMax-M2.7")
     let context = Context(messages: [.user(UserMessage(content: .text("Reply with hi.")))])
     let response = try await complete(model: model, context: context)
     #expect(!response.content.isEmpty)
@@ -1846,7 +1852,7 @@ private func runCodexSessionRequest(
     guard ProcessInfo.processInfo.environment["ZAI_API_KEY"] != nil else {
         return
     }
-    let model = getModel(provider: .zai, modelId: "glm-4.5-air")
+    let model = getModel(provider: .zai, modelId: "glm-4.7")
     let context = Context(messages: [.user(UserMessage(content: .text("Reply with hi.")))])
     let response = try await complete(model: model, context: context)
     #expect(!response.content.isEmpty)
@@ -2537,7 +2543,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 @Test func fireworksAnthropicCompatGatesCacheAndEagerToolMarkers() async throws {
-    let model = getModel(provider: .fireworks, modelId: "accounts/fireworks/models/deepseek-v4-flash")
+    let model = catalogV0841Model(provider: .fireworks, modelId: "accounts/fireworks/models/deepseek-v4-flash")
     #expect(model.api == .anthropicMessages)
     #expect(model.compat?.supportsLongCacheRetention == false)
     #expect(model.compat?.supportsEagerToolInputStreaming == false)
@@ -2641,8 +2647,8 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 @Test func copilotClaudeModelsUseAnthropicApi() {
-    let sonnet = getModel(provider: .githubCopilot, modelId: "claude-sonnet-4.5")
-    let opus = getModel(provider: .githubCopilot, modelId: "claude-opus-4.5")
+    let sonnet = getModel(provider: .githubCopilot, modelId: "claude-sonnet-4.6")
+    let opus = getModel(provider: .githubCopilot, modelId: "claude-opus-4.8")
     #expect(sonnet.api == .anthropicMessages)
     #expect(opus.api == .anthropicMessages)
 }
@@ -4716,10 +4722,10 @@ struct OAuthTests {
             #expect(seenDeviceCode.withLock { $0 })
             #expect(seenAccessToken.withLock { $0 })
             #expect(seenCopilotToken.withLock { $0 })
-            #expect(enabledModelCount.withLock { $0 } == getModels(provider: .githubCopilot).count)
+            #expect(enabledModelCount.withLock { $0 } == 0)
             #expect(authInfo.withLock { $0?.url } == "https://github.com/login/device")
             #expect(authInfo.withLock { $0?.instructions } == "Enter code: ABCD-EFGH")
-            #expect(progressMessages.withLock { $0 }.contains("Enabling models..."))
+            #expect(!progressMessages.withLock { $0 }.contains("Enabling models..."))
             #expect(credentials.refresh == "gh_access_token")
             #expect(credentials.access.contains("proxy-ep=proxy.individual.githubcopilot.com"))
             #expect(credentials.enterpriseUrl == nil)
@@ -6432,8 +6438,8 @@ struct ApiRegistryTests {
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
     #expect(getProviders().count == 39)
-    #expect(allModels.count == 1224)
-    #expect(compared == 1224)
+    #expect(allModels.count == 1342)
+    #expect(compared == 1342)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6489,8 +6495,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 42)
-    #expect(compared == 42)
+    #expect(models.count == 50)
+    #expect(compared == 50)
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)

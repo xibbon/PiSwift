@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import OpenAI
 
 public func streamOpenAICompletions(
@@ -21,6 +22,26 @@ public func streamOpenAICompletions(
             stopReason: .pending
         )
 
+        var streamedReasoningDetails: [[String: AnyCodable]] = []
+        var thinkingBlockIndex: Int?
+        func applyStreamedReasoningDetails() {
+            guard !streamedReasoningDetails.isEmpty,
+                  let index = thinkingBlockIndex,
+                  case .thinking(var thinking) = output.content[index],
+                  let data = try? JSONEncoder().encode(streamedReasoningDetails),
+                  let signature = String(data: data, encoding: .utf8) else { return }
+            thinking.thinkingSignature = signature
+            output.content[index] = .thinking(thinking)
+        }
+        func ensureThinkingBlock(signature: String) -> Int {
+            if let index = thinkingBlockIndex { return index }
+            let index = output.content.count
+            output.content.append(.thinking(ThinkingContent(thinking: "", thinkingSignature: signature)))
+            thinkingBlockIndex = index
+            stream.push(.thinkingStart(contentIndex: index, partial: output))
+            return index
+        }
+
         do {
             let compat = resolveCompat(model: model)
             let grammarToolInputProperties = try createGrammarToolInputProperties(
@@ -31,17 +52,18 @@ public func streamOpenAICompletions(
                 messages: context.messages,
                 grammarToolInputProperties: grammarToolInputProperties
             )
-            let query = try buildCompletionsQuery(model: model, context: context, options: options, compat: compat)
+            var replayFields: [Int: [String: AnyCodable]] = [:]
+            let query = try buildCompletionsQuery(model: model, context: context, options: options, compat: compat, replayFields: &replayFields)
             let openAIStream: AsyncThrowingStream<OpenAICompletionsStreamChunk, Error>
             if compat.thinkingFormat == .zai {
-                openAIStream = try await streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat)
+                openAIStream = try await streamZaiCompletions(model: model, context: context, options: options, query: query, compat: compat, replayFields: replayFields)
             } else {
                 let middlewares = buildCompletionsMiddlewares(model: model, context: context, compat: compat, options: options)
                 openAIStream = try await streamManualOpenAICompletions(
                     model: model,
                     options: options,
                     query: query,
-                    middlewares: middlewares
+                    middlewares: [OpenAICompletionsReplayMiddleware(fields: replayFields)] + middlewares
                 )
             }
             stream.push(.start(partial: output))
@@ -59,10 +81,8 @@ public func streamOpenAICompletions(
             func finishCurrentBlock() throws {
                 guard let index = currentBlockIndex else { return }
                 switch output.content[index] {
-                case .text(let textContent):
-                    stream.push(.textEnd(contentIndex: index, content: textContent.text, partial: output))
-                case .thinking(let thinkingContent):
-                    stream.push(.thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: output))
+                case .text, .thinking:
+                    break
                 case .toolCall(var toolCall):
                     if let inputProperty = currentGrammarInputProperty {
                         if let delta = try appendGrammarToolInputJsonDelta(
@@ -78,7 +98,6 @@ public func streamOpenAICompletions(
                         toolCall.arguments = parseStreamingJSON(currentToolCallArgs)
                     }
                     output.content[index] = .toolCall(toolCall)
-                    stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                 default:
                     break
                 }
@@ -140,23 +159,16 @@ public func streamOpenAICompletions(
                     }
                 }
 
-                if let reasoning = delta.reasoning, !reasoning.isEmpty {
-                    if currentBlockKind != "thinking" {
-                        try finishCurrentBlock()
-                        let thinkingBlock = ThinkingContent(thinking: "", thinkingSignature: "reasoning")
-                        output.content.append(.thinking(thinkingBlock))
-                        currentBlockIndex = output.content.count - 1
-                        currentBlockKind = "thinking"
-                        stream.push(.thinkingStart(contentIndex: currentBlockIndex!, partial: output))
-                    }
-
-                    if let index = currentBlockIndex, case .thinking(var thinkingContent) = output.content[index] {
-                        thinkingContent.thinking += reasoning
-                        output.content[index] = .thinking(thinkingContent)
-                        stream.push(.thinkingDelta(contentIndex: index, delta: reasoning, partial: output))
+                if let reasoning = chunk.reasoning, !reasoning.text.isEmpty {
+                    let signature = model.provider == "opencode-go" && reasoning.field == "reasoning"
+                        ? "reasoning_content" : reasoning.field
+                    let index = ensureThinkingBlock(signature: signature)
+                    if case .thinking(var thinking) = output.content[index] {
+                        thinking.thinking += reasoning.text
+                        output.content[index] = .thinking(thinking)
+                        stream.push(.thinkingDelta(contentIndex: index, delta: reasoning.text, partial: output))
                     }
                 }
-
                 let functionToolCalls = delta.toolCalls?.filter { $0.type != "custom" }
                 if let toolCalls = functionToolCalls {
                     for toolCall in toolCalls {
@@ -235,9 +247,26 @@ public func streamOpenAICompletions(
                         output.content[contentIndex] = .toolCall(tool)
                     }
                 }
+                for detail in chunk.reasoningDetails {
+                    _ = ensureThinkingBlock(signature: "")
+                    appendOpenAIReasoningDetail(detail, to: &streamedReasoningDetails)
+                }
             }
 
             try finishCurrentBlock()
+            applyStreamedReasoningDetails()
+            for (index, block) in output.content.enumerated() {
+                switch block {
+                case .text(let text):
+                    stream.push(.textEnd(contentIndex: index, content: text.text, partial: output))
+                case .thinking(let thinking):
+                    stream.push(.thinkingEnd(contentIndex: index, content: thinking.thinking, partial: output))
+                case .toolCall(let tool):
+                    stream.push(.toolCallEnd(contentIndex: index, toolCall: tool, partial: output))
+                default:
+                    break
+                }
+            }
 
             if options.signal?.isCancelled == true {
                 throw OpenAICompletionsStreamError.aborted
@@ -262,6 +291,7 @@ public func streamOpenAICompletions(
             stream.push(.done(reason: output.stopReason, message: output))
             stream.end()
         } catch {
+            applyStreamedReasoningDetails()
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
             output.errorMessage = describeOpenAIError(error)
             stream.push(.error(reason: output.stopReason, error: output))
@@ -294,7 +324,7 @@ func mapStopReason(_ reason: String) -> StopReasonResult {
     }
 }
 
-private struct ResolvedOpenAICompat {
+private struct ResolvedOpenAICompat: Sendable {
     let supportsStore: Bool
     let supportsDeveloperRole: Bool
     let supportsReasoningEffort: Bool
@@ -309,6 +339,8 @@ private struct ResolvedOpenAICompat {
     let chatTemplateKwargs: [String: ChatTemplateKwargValue]
     let chatTemplateArgs: [String: ChatTemplateKwargValue]
     let supportsThinkingTokenBudget: Bool
+    let thinkingTokenBudgetField: ThinkingTokenBudgetField?
+    let vllmPriority: Int?
     let supportsStrictMode: Bool
     let supportsOpenAIGrammarTools: Bool
     let reasoningEffortMap: [ThinkingLevel: String]?
@@ -344,7 +376,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
     let isAntLing = provider == "ant-ling" || baseUrl.contains("api.ant-ling.com")
 
     let isNonStandard = isCerebras || isGrok || isChutes || isDeepSeek || isZai || isOpencode || isOpenRouter
-    let useMaxTokens = isChutes || isZai
+    let useMaxTokens = isChutes || isZai || isDeepSeek
 
     let thinkingFormat: OpenAICompatThinkingFormat
     if isZai {
@@ -395,6 +427,8 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         chatTemplateKwargs: [:],
         chatTemplateArgs: [:],
         supportsThinkingTokenBudget: false,
+        thinkingTokenBudgetField: nil,
+        vllmPriority: nil,
         supportsStrictMode: true,
         supportsOpenAIGrammarTools: false,
         reasoningEffortMap: reasoningEffortMap,
@@ -434,6 +468,8 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         chatTemplateKwargs: compat.chatTemplateKwargs ?? detected.chatTemplateKwargs,
         chatTemplateArgs: compat.chatTemplateArgs ?? detected.chatTemplateArgs,
         supportsThinkingTokenBudget: compat.supportsThinkingTokenBudget ?? detected.supportsThinkingTokenBudget,
+        thinkingTokenBudgetField: compat.thinkingTokenBudgetField ?? detected.thinkingTokenBudgetField,
+        vllmPriority: compat.vllmPriority,
         supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
         supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools ?? detected.supportsOpenAIGrammarTools,
         reasoningEffortMap: compat.reasoningEffortMap ?? detected.reasoningEffortMap,
@@ -500,9 +536,10 @@ private func buildCompletionsQuery(
     model: Model,
     context: Context,
     options: OpenAICompletionsOptions,
-    compat: ResolvedOpenAICompat
+    compat: ResolvedOpenAICompat,
+    replayFields: inout [Int: [String: AnyCodable]]
 ) throws -> ChatQuery {
-    let messages = convertCompletionsMessages(model: model, context: context, compat: compat)
+    let messages = convertCompletionsMessages(model: model, context: context, compat: compat, replayFields: &replayFields)
     let deferredToolNames = compat.deferredToolsMode == .kimi
         ? getDeferredToolNames(context.messages)
         : Set<String>()
@@ -587,7 +624,8 @@ private func mapChatReasoningEffort(_ effort: ThinkingLevel) -> ChatQuery.Reason
 private func convertCompletionsMessages(
     model: Model,
     context: Context,
-    compat: ResolvedOpenAICompat
+    compat: ResolvedOpenAICompat,
+    replayFields: inout [Int: [String: AnyCodable]]
 ) -> [ChatQuery.ChatCompletionMessageParam] {
     var params: [ChatQuery.ChatCompletionMessageParam] = []
 
@@ -709,6 +747,7 @@ private func convertCompletionsMessages(
             }
 
             if assistantMessage.content != nil || assistantMessage.toolCalls != nil {
+                replayFields[params.count] = completionsReplayFields(assistant, model: model, requiresThinkingAsText: compat.requiresThinkingAsText)
                 params.append(.assistant(assistantMessage))
             }
         case .toolResult(let toolResult):
@@ -779,11 +818,11 @@ func normalizeCompletionsToolCallId(_ id: String, model: Model) -> String {
 
 private func convertCompletionsTools(_ tools: [AITool], compat: ResolvedOpenAICompat) throws -> [ChatQuery.ChatCompletionToolParam] {
     try tools.compactMap { tool in
-        let schema = openAIJSONSchema(from: tool.parameters)
         let constrainedStrict = try resolveJsonSchemaStrictSampling(
             tool: tool,
             supportsStrictMode: compat.supportsStrictMode
         )
+        let schema = openAIJSONSchema(from: try getJsonSchemaToolParameters(tool, strict: constrainedStrict == true))
         let definition = ChatQuery.ChatCompletionToolParam.FunctionDefinition(
             name: tool.name,
             description: tool.description,
@@ -799,7 +838,8 @@ private func streamZaiCompletions(
     context: Context,
     options: OpenAICompletionsOptions,
     query: ChatQuery,
-    compat: ResolvedOpenAICompat
+    compat: ResolvedOpenAICompat,
+    replayFields: [Int: [String: AnyCodable]]
 ) async throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     guard let apiKey = options.apiKey, !apiKey.isEmpty else {
         throw StreamError.missingApiKey(model.provider)
@@ -811,6 +851,7 @@ private func streamZaiCompletions(
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     request.setValue("application/json", forHTTPHeaderField: "content-type")
+    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
 
     request = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
@@ -823,7 +864,9 @@ private func streamZaiCompletions(
         to: &request
     )
 
-    var body = try buildZaiRequestBody(query: query, model: model, options: options)
+    request.httpBody = try buildZaiRequestBody(query: query, model: model, options: options)
+    request = OpenAICompletionsReplayMiddleware(fields: replayFields).intercept(request: request)
+    var body = requestBodyData(request)
     body = applyOpenAICompletionsMaxTokensField(data: body, field: compat.maxTokensField)
     if let updated = applyOpenAICompletionsPromptCache(
         data: body,
@@ -842,16 +885,8 @@ private func streamZaiCompletions(
        ) {
         body = updated
     }
-    if compat.supportsThinkingTokenBudget,
-       let effort = options.reasoningEffort,
-       model.reasoning,
-       var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
-        applyThinkingTokenBudget(
-            payload: &payload,
-            modelMaxTokens: model.maxTokens,
-            effort: effort,
-            thinkingBudgets: options.thinkingBudgets
-        )
+    if var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
+        applyCompletionsBudgetAndPriority(payload: &payload, model: model, options: options, compat: compat)
         body = try JSONSerialization.data(withJSONObject: payload)
     }
     // Keep this last so custom keys override all named request fields.
@@ -883,6 +918,8 @@ private struct OpenAICompletionsStreamChunk {
     let rawUsage: OpenAICompletionsRawUsage?
     let rawFinishReason: String?
     let customToolCalls: [OpenAICompletionsCustomToolCall]
+    var reasoning: (field: String, text: String)? = nil
+    var reasoningDetails: [[String: AnyCodable]] = []
 }
 
 private struct OpenAICompletionsCustomToolCall {
@@ -897,6 +934,7 @@ private struct OpenAICompletionsRawUsage: Decodable {
     let completionTokens: Int?
     let totalTokens: Int?
     let promptCacheHitTokens: Int?
+    let cachedTokens: Int?
     let promptTokensDetails: PromptTokensDetails?
     let completionTokensDetails: CompletionTokensDetails?
 
@@ -923,6 +961,7 @@ private struct OpenAICompletionsRawUsage: Decodable {
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
         case promptCacheHitTokens = "prompt_cache_hit_tokens"
+        case cachedTokens = "cached_tokens"
         case promptTokensDetails = "prompt_tokens_details"
         case completionTokensDetails = "completion_tokens_details"
     }
@@ -930,7 +969,7 @@ private struct OpenAICompletionsRawUsage: Decodable {
 
 private func parseCompletionsUsage(_ rawUsage: OpenAICompletionsRawUsage) -> Usage {
     let promptTokens = rawUsage.promptTokens ?? 0
-    let cacheReadTokens = rawUsage.promptTokensDetails?.cachedTokens ?? rawUsage.promptCacheHitTokens ?? 0
+    let cacheReadTokens = rawUsage.promptTokensDetails?.cachedTokens ?? rawUsage.promptCacheHitTokens ?? rawUsage.cachedTokens ?? 0
     let cacheWriteTokens = rawUsage.promptTokensDetails?.cacheWriteTokens ?? 0
     let input = max(0, promptTokens - cacheReadTokens - cacheWriteTokens)
     let outputTokens = rawUsage.completionTokens ?? 0
@@ -950,6 +989,7 @@ private func parseCompletionsUsage(_ usage: ChatResult.CompletionUsage) -> Usage
         completionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
         promptCacheHitTokens: nil,
+        cachedTokens: nil,
         promptTokensDetails: usage.promptTokensDetails.map {
             OpenAICompletionsRawUsage.PromptTokensDetails(
                 cachedTokens: $0.cachedTokens,
@@ -967,6 +1007,7 @@ private func buildCompletionsMiddlewares(
     compat: ResolvedOpenAICompat,
     options: OpenAICompletionsOptions
 ) -> [OpenAIMiddleware] {
+    let thinkingBudget = resolvedCompletionsThinkingBudget(model: model, options: options)
     var middlewares: [OpenAIMiddleware] = [
         OpenAICompletionsMaxTokensMiddleware(field: compat.maxTokensField),
     ]
@@ -982,13 +1023,21 @@ private func buildCompletionsMiddlewares(
     }
     if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)) {
         middlewares.append(OpenAICompletionsCacheControlMiddleware(
-            cacheControl: cacheControl,
+            cacheControl: cacheControl.mapValues(AnyCodable.init),
             supportsCacheControlOnTools: compat.supportsCacheControlOnTools
         ))
     }
+    middlewares.append(OpenAICompletionsBudgetAndPriorityMiddleware(
+        budget: thinkingBudget,
+        field: compat.thinkingTokenBudgetField ?? (compat.supportsThinkingTokenBudget ? .thinkingTokenBudget : nil),
+        priority: compat.vllmPriority
+    ))
     if compat.thinkingFormat == .qwen, model.reasoning {
         let enabled = options.reasoningEffort != nil
-        middlewares.append(OpenAICompletionsThinkingMiddleware(enableThinking: enabled))
+        let effort = compat.supportsReasoningEffort ? options.reasoningEffort.map {
+            mappedThinkingLevel(model: model, level: $0) ?? $0.rawValue
+        } : nil
+        middlewares.append(OpenAICompletionsThinkingMiddleware(enableThinking: enabled, effort: effort))
     }
     if compat.thinkingFormat == .qwenChatTemplate, model.reasoning {
         let enabled = options.reasoningEffort != nil
@@ -998,7 +1047,8 @@ private func buildCompletionsMiddlewares(
         middlewares.append(OpenAICompletionsConfiguredChatTemplateMiddleware(
             model: model,
             effort: options.reasoningEffort,
-            kwargs: compat.chatTemplateKwargs
+            kwargs: compat.chatTemplateKwargs,
+            thinkingBudget: thinkingBudget
         ))
     }
     if compat.thinkingFormat == .baseten, model.reasoning {
@@ -1006,7 +1056,8 @@ private func buildCompletionsMiddlewares(
             model: model,
             effort: options.reasoningEffort,
             args: compat.chatTemplateArgs,
-            supportsReasoningEffort: compat.supportsReasoningEffort
+            supportsReasoningEffort: compat.supportsReasoningEffort,
+            thinkingBudget: thinkingBudget
         ))
     }
     if compat.thinkingFormat == .openrouter, model.reasoning {
@@ -1058,15 +1109,6 @@ private func buildCompletionsMiddlewares(
         middlewares.append(OpenAICompletionsGrammarToolsMiddleware(
             grammarTools: grammarTools,
             grammarToolInputProperties: properties
-        ))
-    }
-    if compat.supportsThinkingTokenBudget,
-       let effort = options.reasoningEffort,
-       model.reasoning {
-        middlewares.append(OpenAICompletionsThinkingTokenBudgetMiddleware(
-            modelMaxTokens: model.maxTokens,
-            effort: effort,
-            thinkingBudgets: options.thinkingBudgets
         ))
     }
     if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
@@ -1453,17 +1495,15 @@ private func addCacheControlToTextContent(message: inout [String: Any], cacheCon
     return false
 }
 
-/// SAFETY: middleware captures immutable configuration and does not mutate
-/// shared state while intercepting requests.
-private struct OpenAICompletionsCacheControlMiddleware: OpenAIMiddleware, @unchecked Sendable {
-    let cacheControl: [String: Any]
+private struct OpenAICompletionsCacheControlMiddleware: OpenAIMiddleware {
+    let cacheControl: [String: AnyCodable]
     let supportsCacheControlOnTools: Bool
 
     func intercept(request: URLRequest) -> URLRequest {
         guard let body = readRequestBody(request) else { return request }
         guard let updatedBody = applyOpenAICompatCacheControl(
             data: body,
-            cacheControl: cacheControl,
+            cacheControl: cacheControl.mapValues(\.value),
             supportsCacheControlOnTools: supportsCacheControlOnTools
         ) else { return request }
         var updated = request
@@ -1510,6 +1550,7 @@ private func streamManualOpenAICompletions(
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     request.setValue("application/json", forHTTPHeaderField: "content-type")
+    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
 
     request.httpBody = try JSONEncoder().encode(query)
     request = middlewares.reduce(request) { current, middleware in
@@ -1525,11 +1566,13 @@ private func streamManualOpenAICompletions(
 
 private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
     let enableThinking: Bool
+    let effort: String?
 
     func intercept(request: URLRequest) -> URLRequest {
         guard let body = readRequestBody(request) else { return request }
         guard var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return request }
         payload["enable_thinking"] = enableThinking
+        if let effort { payload["reasoning_effort"] = effort }
         guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
         var updated = request
         updated.httpBodyStream = nil
@@ -1585,10 +1628,11 @@ private struct OpenAICompletionsConfiguredChatTemplateMiddleware: OpenAIMiddlewa
     let model: Model
     let effort: ThinkingLevel?
     let kwargs: [String: ChatTemplateKwargValue]
+    let thinkingBudget: Int?
 
     func intercept(request: URLRequest) -> URLRequest {
         guard let body = request.httpBody,
-              let updatedBody = applyOpenAIChatTemplateKwargs(data: body, model: model, effort: effort, kwargs: kwargs) else {
+              let updatedBody = applyOpenAIChatTemplateKwargs(data: body, model: model, effort: effort, kwargs: kwargs, thinkingBudget: thinkingBudget) else {
             return request
         }
 
@@ -1603,13 +1647,14 @@ func applyOpenAIChatTemplateKwargs(
     data: Data,
     model: Model,
     effort: ThinkingLevel?,
-    kwargs: [String: ChatTemplateKwargValue]
+    kwargs: [String: ChatTemplateKwargValue],
+    thinkingBudget: Int? = nil
 ) -> Data? {
     guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
         return nil
     }
 
-    let resolved = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: kwargs)
+    let resolved = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: kwargs, thinkingBudget: thinkingBudget)
     guard !resolved.isEmpty else { return nil }
     payload["chat_template_kwargs"] = resolved
     return try? JSONSerialization.data(withJSONObject: payload)
@@ -1618,11 +1663,12 @@ func applyOpenAIChatTemplateKwargs(
 private func resolveOpenAIChatTemplateValues(
     model: Model,
     effort: ThinkingLevel?,
-    values: [String: ChatTemplateKwargValue]
+    values: [String: ChatTemplateKwargValue],
+    thinkingBudget: Int? = nil
 ) -> [String: Any] {
     var resolved: [String: Any] = [:]
     for (key, value) in values {
-        if let value = resolveChatTemplateKwarg(value, model: model, effort: effort) {
+        if let value = resolveChatTemplateKwarg(value, model: model, effort: effort, thinkingBudget: thinkingBudget) {
             resolved[key] = value
         }
     }
@@ -1634,6 +1680,7 @@ private struct OpenAICompletionsBasetenThinkingMiddleware: OpenAIMiddleware {
     let effort: ThinkingLevel?
     let args: [String: ChatTemplateKwargValue]
     let supportsReasoningEffort: Bool
+    let thinkingBudget: Int?
 
     func intercept(request: URLRequest) -> URLRequest {
         let body = requestBodyData(request)
@@ -1642,7 +1689,7 @@ private struct OpenAICompletionsBasetenThinkingMiddleware: OpenAIMiddleware {
             return request
         }
 
-        let resolvedArgs = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: args)
+        let resolvedArgs = resolveOpenAIChatTemplateValues(model: model, effort: effort, values: args, thinkingBudget: thinkingBudget)
         if !resolvedArgs.isEmpty {
             payload["chat_template_args"] = resolvedArgs
         }
@@ -1675,60 +1722,49 @@ private func basetenReasoningEffort(model: Model, requested: ThinkingLevel?) -> 
     }
 }
 
-private struct OpenAICompletionsThinkingTokenBudgetMiddleware: OpenAIMiddleware {
-    let modelMaxTokens: Int
-    let effort: ThinkingLevel
-    let thinkingBudgets: ThinkingBudgets?
+private func resolvedCompletionsThinkingBudget(model: Model, options: OpenAICompletionsOptions) -> Int? {
+    guard model.reasoning, let effort = options.reasoningEffort else { return nil }
+    let budget = clampThinkingBudgetToAnswerRoom(
+        thinkingBudgetForLevel(effort, custom: options.thinkingBudgets),
+        ceiling: options.maxTokens ?? model.maxTokens
+    )
+    return budget > 0 ? budget : nil
+}
 
-    func intercept(request: URLRequest) -> URLRequest {
-        let body = requestBodyData(request)
-        guard !body.isEmpty,
-              var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
-            return request
-        }
-
-        applyThinkingTokenBudget(
-            payload: &payload,
-            modelMaxTokens: modelMaxTokens,
-            effort: effort,
-            thinkingBudgets: thinkingBudgets
-        )
-        guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
-        var updated = request
-        updated.httpBodyStream = nil
-        updated.httpBody = updatedBody
-        return updated
+private func applyCompletionsBudgetAndPriority(
+    payload: inout [String: Any], model: Model, options: OpenAICompletionsOptions, compat: ResolvedOpenAICompat
+) {
+    if let priority = compat.vllmPriority { payload["priority"] = priority }
+    let field = compat.thinkingTokenBudgetField ?? (compat.supportsThinkingTokenBudget ? .thinkingTokenBudget : nil)
+    if let field, let budget = resolvedCompletionsThinkingBudget(model: model, options: options) {
+        payload[field.rawValue] = budget
     }
 }
 
-private func applyThinkingTokenBudget(
-    payload: inout [String: Any],
-    modelMaxTokens: Int,
-    effort: ThinkingLevel,
-    thinkingBudgets: ThinkingBudgets?
-) {
-    let level = clampThinkingLevel(effort) ?? effort
-    let defaults: ThinkingBudgets = [
-        .minimal: 1_024,
-        .low: 2_048,
-        .medium: 8_192,
-        .high: 16_384,
-    ]
-    let budgets = defaults.merging(thinkingBudgets ?? [:]) { _, requestValue in requestValue }
-    guard let requestedBudget = budgets[level] else { return }
-    let ceiling = payload["max_tokens"] as? Int
-        ?? payload["max_completion_tokens"] as? Int
-        ?? modelMaxTokens
-    let budget = min(requestedBudget, max(0, ceiling - minimumAnswerTokens))
-    if budget > 0 {
-        payload["thinking_token_budget"] = budget
+private struct OpenAICompletionsBudgetAndPriorityMiddleware: OpenAIMiddleware {
+    let budget: Int?
+    let field: ThinkingTokenBudgetField?
+    let priority: Int?
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard var payload = (try? JSONSerialization.jsonObject(with: requestBodyData(request))) as? [String: Any] else {
+            return request
+        }
+        if let priority { payload["priority"] = priority }
+        if let field, let budget { payload[field.rawValue] = budget }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = body
+        return updated
     }
 }
 
 private func resolveChatTemplateKwarg(
     _ value: ChatTemplateKwargValue,
     model: Model,
-    effort: ThinkingLevel?
+    effort: ThinkingLevel?,
+    thinkingBudget: Int?
 ) -> Any? {
     switch value {
     case .string(let value):
@@ -1739,8 +1775,10 @@ private func resolveChatTemplateKwarg(
         return value
     case .null:
         return NSNull()
-    case .variable(.thinkingEnabled, _):
-        return effort != nil
+    case .variable(.thinkingEnabled, let omitWhenOff):
+        return effort == nil && omitWhenOff ? nil : effort != nil
+    case .variable(.thinkingBudget, _):
+        return thinkingBudget
     case .variable(.thinkingEffort, let omitWhenOff):
         guard let effort else {
             guard !omitWhenOff else { return nil }
@@ -1854,10 +1892,10 @@ private struct OpenAICompletionsOpenRouterReasoningMiddleware: OpenAIMiddleware 
         var reasoning = payload["reasoning"] as? [String: Any] ?? [:]
         if let effort {
             reasoning["effort"] = mappedThinkingLevel(model: model, level: effort) ?? effort.rawValue
-        } else {
+        } else if model.thinkingLevelMap?[.off] != .some(nil) {
             reasoning["effort"] = mappedOffThinkingLevel(model: model) ?? "none"
         }
-        payload["reasoning"] = reasoning
+        if !reasoning.isEmpty { payload["reasoning"] = reasoning }
 
         guard let updatedBody = try? JSONSerialization.data(withJSONObject: payload) else { return request }
         var updated = request
@@ -2099,7 +2137,9 @@ private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChu
                 result: result,
                 rawUsage: rawUsage,
                 rawFinishReason: rawFinishReason,
-                customToolCalls: decodeCustomToolCalls(from: object["choices"])
+                customToolCalls: decodeCustomToolCalls(from: object["choices"]),
+                reasoning: decodeCompletionsReasoning(from: object["choices"]),
+                reasoningDetails: decodeCompletionsReasoningDetails(from: object["choices"])
             )
         }
     }
@@ -2221,5 +2261,125 @@ private enum OpenAICompletionsStreamError: Error, LocalizedError {
         case .apiError(let message):
             return message
         }
+    }
+}
+
+private func isOpenAIReasoningDetail(_ detail: [String: Any]) -> Bool {
+    if let id = detail["id"], !(id is NSNull), !(id is String) { return false }
+    if let format = detail["format"], !(format is String) { return false }
+    if let index = detail["index"] {
+        guard let number = index as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return false }
+    }
+    switch detail["type"] as? String {
+    case "reasoning.summary":
+        return detail["summary"] is String
+    case "reasoning.encrypted":
+        return detail["data"] is String
+    case "reasoning.text":
+        if let signature = detail["signature"], !(signature is NSNull), !(signature is String) { return false }
+        return detail["text"] is String
+    default:
+        return false
+    }
+}
+
+private func parseOpenAIReasoningDetails(_ signature: String?) -> [[String: AnyCodable]]? {
+    guard let signature, let data = signature.data(using: .utf8),
+          let details = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+          !details.isEmpty, details.allSatisfy(isOpenAIReasoningDetail) else { return nil }
+    return details.map { $0.mapValues(AnyCodable.init) }
+}
+
+private func parseLegacyEncryptedReasoningDetail(_ signature: String?) -> [String: AnyCodable]? {
+    guard let signature, let data = signature.data(using: .utf8),
+          let detail = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          isOpenAIReasoningDetail(detail), detail["type"] as? String == "reasoning.encrypted",
+          let id = detail["id"] as? String, !id.isEmpty,
+          let encrypted = detail["data"] as? String, !encrypted.isEmpty else { return nil }
+    return detail.mapValues(AnyCodable.init)
+}
+
+private func appendOpenAIReasoningDetail(
+    _ detail: [String: AnyCodable], to details: inout [[String: AnyCodable]]
+) {
+    let type = detail["type"]?.value as? String
+    if let last = details.indices.last, details[last]["type"]?.value as? String == type,
+       type == "reasoning.text" || type == "reasoning.summary" {
+        let field = type == "reasoning.text" ? "text" : "summary"
+        let text = (details[last][field]?.value as? String ?? "") + (detail[field]?.value as? String ?? "")
+        details[last][field] = AnyCodable(text)
+        if type == "reasoning.text", (details[last]["signature"]?.value as? String ?? "").isEmpty {
+            details[last]["signature"] = detail["signature"]
+        }
+        for key in ["id", "index"] where details[last][key] == nil || details[last][key]?.value is NSNull {
+            details[last][key] = detail[key]
+        }
+        if (details[last]["format"]?.value as? String ?? "").isEmpty {
+            details[last]["format"] = detail["format"]
+        }
+    } else {
+        details.append(detail)
+    }
+}
+
+private func decodeCompletionsReasoning(from choices: Any?) -> (field: String, text: String)? {
+    guard let choice = (choices as? [[String: Any]])?.first,
+          let delta = choice["delta"] as? [String: Any] else { return nil }
+    for field in ["reasoning_content", "reasoning", "reasoning_text"] {
+        if let text = delta[field] as? String, !text.isEmpty { return (field, text) }
+    }
+    return nil
+}
+
+private func decodeCompletionsReasoningDetails(from choices: Any?) -> [[String: AnyCodable]] {
+    guard let choice = (choices as? [[String: Any]])?.first,
+          let delta = choice["delta"] as? [String: Any],
+          let details = delta["reasoning_details"] as? [Any] else { return [] }
+    return details.compactMap { value in
+        guard let detail = value as? [String: Any], isOpenAIReasoningDetail(detail) else { return nil }
+        return detail.mapValues(AnyCodable.init)
+    }
+}
+
+private func completionsReplayFields(
+    _ assistant: AssistantMessage, model: Model, requiresThinkingAsText: Bool
+) -> [String: AnyCodable] {
+    let thinkingBlocks = assistant.content.compactMap { block -> ThinkingContent? in
+        if case .thinking(let thinking) = block { return thinking }
+        return nil
+    }
+    let signed = thinkingBlocks.lazy.compactMap { parseOpenAIReasoningDetails($0.thinkingSignature) }.first
+    let legacy = assistant.content.compactMap { block -> [String: AnyCodable]? in
+        guard case .toolCall(let toolCall) = block else { return nil }
+        return parseLegacyEncryptedReasoningDetail(toolCall.thoughtSignature)
+    }
+    if let details = signed ?? (legacy.isEmpty ? nil : legacy) {
+        return ["reasoning_details": AnyCodable(details.map { $0.mapValues(\.value) })]
+    }
+    guard !requiresThinkingAsText else { return [:] }
+    let nonEmpty = thinkingBlocks.filter { !$0.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    guard var signature = nonEmpty.first?.thinkingSignature else { return [:] }
+    if model.provider == "opencode-go", signature == "reasoning" { signature = "reasoning_content" }
+    guard ["reasoning", "reasoning_content", "reasoning_text"].contains(signature) else { return [:] }
+    return [signature: AnyCodable(nonEmpty.map(\.thinking).joined(separator: "\n"))]
+}
+
+private struct OpenAICompletionsReplayMiddleware: OpenAIMiddleware {
+    let fields: [Int: [String: AnyCodable]]
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard !fields.isEmpty,
+              var payload = (try? JSONSerialization.jsonObject(with: requestBodyData(request))) as? [String: Any],
+              var messages = payload["messages"] as? [[String: Any]] else { return request }
+        for (index, values) in fields where messages.indices.contains(index) {
+            for (key, value) in values { messages[index][key] = value.value }
+        }
+        payload["messages"] = messages
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = body
+        return updated
     }
 }

@@ -10,11 +10,14 @@ private func stripControlCharacters(_ text: String) -> String {
     }.map { String($0) }.joined()
 }
 
-enum SessionManagerError: LocalizedError, Sendable {
+public enum SessionManagerError: LocalizedError, Sendable {
     case entryNotFound(String)
+    case invalidSessionFile(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
+        case .invalidSessionFile(let path):
+            return "Session file is not a valid \(APP_NAME) session: \(path)"
         case .entryNotFound(let id):
             return "Entry \(id) not found"
         }
@@ -129,6 +132,7 @@ public struct CompactionEntry: SessionEntryBase, Sendable {
     public var tokensBefore: Int
     public var details: AnyCodable?
     public var fromHook: Bool?
+    public var usage: Usage?
 
     public init(
         type: String = "compaction",
@@ -139,7 +143,8 @@ public struct CompactionEntry: SessionEntryBase, Sendable {
         firstKeptEntryId: String,
         tokensBefore: Int,
         details: AnyCodable? = nil,
-        fromHook: Bool? = nil
+        fromHook: Bool? = nil,
+        usage: Usage? = nil
     ) {
         self.type = type
         self.id = id
@@ -150,6 +155,7 @@ public struct CompactionEntry: SessionEntryBase, Sendable {
         self.tokensBefore = tokensBefore
         self.details = details
         self.fromHook = fromHook
+        self.usage = usage
     }
 }
 
@@ -162,6 +168,7 @@ public struct BranchSummaryEntry: SessionEntryBase, Sendable {
     public var summary: String
     public var details: AnyCodable?
     public var fromHook: Bool?
+    public var usage: Usage?
 
     public init(
         type: String = "branch_summary",
@@ -171,7 +178,8 @@ public struct BranchSummaryEntry: SessionEntryBase, Sendable {
         fromId: String,
         summary: String,
         details: AnyCodable? = nil,
-        fromHook: Bool? = nil
+        fromHook: Bool? = nil,
+        usage: Usage? = nil
     ) {
         self.type = type
         self.id = id
@@ -181,6 +189,7 @@ public struct BranchSummaryEntry: SessionEntryBase, Sendable {
         self.summary = summary
         self.details = details
         self.fromHook = fromHook
+        self.usage = usage
     }
 }
 
@@ -392,7 +401,8 @@ public struct SessionInfo: Sendable {
 }
 
 public func parseSessionEntries(_ content: String) -> [FileEntry] {
-    let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
+    let normalized = content.hasPrefix("\u{FEFF}") ? String(content.dropFirst()) : content
+    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
     var entries: [FileEntry] = []
 
     for line in lines {
@@ -570,6 +580,14 @@ public func loadEntriesFromFile(_ filePath: String) -> [FileEntry] {
     guard let first = entries.first, case .session = first else {
         return []
     }
+    // A later append must not join the last record or a torn fragment.
+    // Do not change files that did not pass the header check above.
+    if !content.isEmpty, !content.hasSuffix("\n"),
+       let handle = FileHandle(forWritingAtPath: filePath) {
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data([0x0a]))
+    }
     return entries
 }
 
@@ -585,7 +603,8 @@ public func isValidSessionFile(_ filePath: String) -> Bool {
         return false
     }
 
-    let firstLine = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let normalized = content.hasPrefix("\u{FEFF}") ? String(content.dropFirst()) : content
+    let firstLine = normalized.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
     guard !firstLine.isEmpty,
           let jsonData = firstLine.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
@@ -816,6 +835,19 @@ public final class SessionManager: Sendable {
         return SessionManager(cwd, dir, path, true)
     }
 
+    /// Open a session without changing a nonempty file that is not a session.
+    public static func openValidated(_ path: String, _ sessionDir: String? = nil) throws -> SessionManager {
+        let resolvedPath = (path as NSString).expandingTildeInPath
+        if FileManager.default.fileExists(atPath: resolvedPath) {
+            let attributes = try FileManager.default.attributesOfItem(atPath: resolvedPath)
+            let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+            if size > 0, loadEntriesFromFile(resolvedPath).isEmpty {
+                throw SessionManagerError.invalidSessionFile(resolvedPath)
+            }
+        }
+        return open(resolvedPath, sessionDir)
+    }
+
     public static func continueRecent(_ cwd: String, _ sessionDir: String? = nil) -> SessionManager {
         let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
         if let mostRecent = findMostRecentSession(dir) {
@@ -824,8 +856,35 @@ public final class SessionManager: Sendable {
         return SessionManager(cwd, dir, nil, true)
     }
 
-    public static func inMemory(_ cwd: String = FileManager.default.currentDirectoryPath) -> SessionManager {
-        SessionManager(cwd, "", nil, false)
+    public static func inMemory(
+        _ cwd: String = FileManager.default.currentDirectoryPath,
+        options: NewSessionOptions? = nil,
+        entries: [FileEntry]? = nil
+    ) -> SessionManager {
+        let session = SessionManager(cwd, "", nil, false, options?.id)
+        session.loadEntries(entries ?? [], options: options)
+        return session
+    }
+
+    private func loadEntries(_ entries: [FileEntry], options: NewSessionOptions? = nil) {
+        var loaded = entries
+        let hasHeader = loaded.contains { if case .session = $0 { return true }; return false }
+        if hasHeader {
+            _ = migrateSessionEntries(&loaded)
+        } else {
+            _ = newSession(options)
+        }
+        state.withLock { st in
+            if let loadedHeader = loaded.compactMap({ entry -> SessionHeader? in
+                if case .session(let header) = entry { return header }
+                return nil
+            }).first {
+                st.header = loadedHeader
+                st.sessionId = loadedHeader.id
+            }
+            st.entries = loaded.compactMap { if case .entry(let entry) = $0 { return entry }; return nil }
+            rebuildIndexLocked(&st)
+        }
     }
 
     public static func list(
@@ -1065,7 +1124,7 @@ public final class SessionManager: Sendable {
     }
 
     @discardableResult
-    public func appendCompaction(_ summary: String, _ firstKeptEntryId: String, _ tokensBefore: Int, details: AnyCodable? = nil, fromHook: Bool? = nil) -> String {
+    public func appendCompaction(_ summary: String, _ firstKeptEntryId: String, _ tokensBefore: Int, details: AnyCodable? = nil, fromHook: Bool? = nil, usage: Usage? = nil) -> String {
         commitEntry(.compaction(CompactionEntry(
             id: "",
             timestamp: isoNow(),
@@ -1073,13 +1132,14 @@ public final class SessionManager: Sendable {
             firstKeptEntryId: firstKeptEntryId,
             tokensBefore: tokensBefore,
             details: details,
-            fromHook: fromHook
+            fromHook: fromHook,
+            usage: usage
         )))
     }
 
     @discardableResult
-    public func appendBranchSummary(_ fromId: String, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil) -> String {
-        commitEntry(.branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook)))
+    public func appendBranchSummary(_ fromId: String, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil, usage: Usage? = nil) -> String {
+        commitEntry(.branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook, usage: usage)))
     }
 
     @discardableResult
@@ -1135,15 +1195,16 @@ public final class SessionManager: Sendable {
         leafId = nil
     }
 
-    public func branchWithSummary(_ branchFromId: String?, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil) throws -> String {
+    public func branchWithSummary(_ branchFromId: String?, _ summary: String, details: AnyCodable? = nil, fromHook: Bool? = nil, usage: Usage? = nil) throws -> String {
         try state.withLock { st in
             if let branchFromId, st.byId[branchFromId] == nil {
                 throw SessionManagerError.entryNotFound(branchFromId)
             }
+            let fromId = st.leafId ?? "root"
             st.leafId = branchFromId
             return commitEntryLocked(
                 &st,
-                .branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: branchFromId ?? "root", summary: summary, details: details, fromHook: fromHook)),
+                .branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook, usage: usage)),
                 parent: .explicit(branchFromId)
             )
         }
@@ -1155,7 +1216,25 @@ public final class SessionManager: Sendable {
             return nil
         }
 
-        let pathWithoutLabels = path.filter { $0.type != "label" }
+        var pathWithoutLabels: [SessionEntry] = []
+        var replacementByLabelId: [String: String] = [:]
+        var pendingLabelIds: [String] = []
+        var pathParentId: String?
+        for var entry in path {
+            if entry.type == "label" {
+                pendingLabelIds.append(entry.id)
+                continue
+            }
+            for id in pendingLabelIds { replacementByLabelId[id] = entry.id }
+            pendingLabelIds.removeAll()
+            entry.parentId = pathParentId
+            if case .compaction(var compaction) = entry {
+                compaction.firstKeptEntryId = replacementByLabelId[compaction.firstKeptEntryId] ?? compaction.firstKeptEntryId
+                entry = .compaction(compaction)
+            }
+            pathWithoutLabels.append(entry)
+            pathParentId = entry.id
+        }
         let labelsToWrite = labelsById.filter { id, _ in pathWithoutLabels.contains(where: { $0.id == id }) }
 
         if persist {
@@ -1348,12 +1427,21 @@ public final class SessionManager: Sendable {
 }
 
 private func isoNow() -> String {
-    ISO8601DateFormatter().string(from: Date())
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date())
+}
+
+/// Read both upstream millisecond timestamps and older Swift second timestamps.
+func sessionTimestampMilliseconds(_ value: String) -> Int64? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let date = formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    return date.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) }
 }
 
 private func parseTimestamp(_ value: String) -> Int64 {
-    let ts = ISO8601DateFormatter().date(from: value)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
-    return Int64(ts * 1000)
+    sessionTimestampMilliseconds(value) ?? Int64(Date().timeIntervalSince1970 * 1000)
 }
 
 private func generateId(existing: Set<String>) -> String {
@@ -1368,30 +1456,13 @@ private func generateId(existing: Set<String>) -> String {
 }
 
 private func uuidV7() -> UUID {
-    let milliseconds = UInt64(Date().timeIntervalSince1970 * 1_000) & 0x0000_FFFF_FFFF_FFFF
-    var generator = SystemRandomNumberGenerator()
-    var randomBytes: [UInt8] = []
-    for _ in 0..<10 {
-        randomBytes.append(UInt8.random(in: .min ... .max, using: &generator))
+    // These existing nonthrowing storage APIs must still allocate IDs if the
+    // ordered generator rejects the clock or exhausts its sequence. UUIDv4
+    // preserves identity uniqueness in that exceptional case, without claiming order.
+    if let value = try? PiSwiftAI.uuidv7(), let uuid = UUID(uuidString: value) {
+        return uuid
     }
-    return UUID(uuid: (
-        UInt8((milliseconds >> 40) & 0xFF),
-        UInt8((milliseconds >> 32) & 0xFF),
-        UInt8((milliseconds >> 24) & 0xFF),
-        UInt8((milliseconds >> 16) & 0xFF),
-        UInt8((milliseconds >> 8) & 0xFF),
-        UInt8(milliseconds & 0xFF),
-        0x70 | (randomBytes[0] & 0x0F),
-        randomBytes[1],
-        0x80 | (randomBytes[2] & 0x3F),
-        randomBytes[3],
-        randomBytes[4],
-        randomBytes[5],
-        randomBytes[6],
-        randomBytes[7],
-        randomBytes[8],
-        randomBytes[9]
-    ))
+    return UUID()
 }
 
 public func getSessionDirEnvironmentOverride(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
@@ -1435,7 +1506,7 @@ private func appendLine(_ path: String, _ line: String) {
     try? data.write(to: URL(fileURLWithPath: path))
 }
 
-private func encodeSessionHeader(_ header: SessionHeader) -> String {
+func encodeSessionHeader(_ header: SessionHeader) -> String {
     var dict: [String: Any] = [
         "type": "session",
         "id": header.id,
@@ -1451,8 +1522,8 @@ private func encodeSessionHeader(_ header: SessionHeader) -> String {
     return String(data: data ?? Data(), encoding: .utf8) ?? ""
 }
 
-private func encodeSessionEntry(_ entry: SessionEntry) -> String {
-    let dict = sessionEntryToDict(entry)
+func encodeSessionEntry(_ entry: SessionEntry) -> String {
+    let dict = codingAgentSessionEntryJSONObject(entry)
     let data = try? JSONSerialization.data(withJSONObject: dict, options: [])
     return String(data: data ?? Data(), encoding: .utf8) ?? ""
 }
@@ -1502,13 +1573,13 @@ private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {
         let tokensBefore = dict["tokensBefore"] as? Int ?? 0
         let details = dict["details"].map { AnyCodable($0) }
         let fromHook = dict["fromHook"] as? Bool
-        return .compaction(CompactionEntry(id: id, parentId: parentId, timestamp: timestamp, summary: summary, firstKeptEntryId: firstKeptEntryId, tokensBefore: tokensBefore, details: details, fromHook: fromHook))
+        return .compaction(CompactionEntry(id: id, parentId: parentId, timestamp: timestamp, summary: summary, firstKeptEntryId: firstKeptEntryId, tokensBefore: tokensBefore, details: details, fromHook: fromHook, usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject)))
     case "branch_summary":
         let summary = dict["summary"] as? String ?? ""
         let fromId = dict["fromId"] as? String ?? ""
         let details = dict["details"].map { AnyCodable($0) }
         let fromHook = dict["fromHook"] as? Bool
-        return .branchSummary(BranchSummaryEntry(id: id, parentId: parentId, timestamp: timestamp, fromId: fromId, summary: summary, details: details, fromHook: fromHook))
+        return .branchSummary(BranchSummaryEntry(id: id, parentId: parentId, timestamp: timestamp, fromId: fromId, summary: summary, details: details, fromHook: fromHook, usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject)))
     case "custom":
         let customType = dict["customType"] as? String ?? ""
         let data = dict["data"].map { AnyCodable($0) }
@@ -1563,20 +1634,7 @@ private func decodeAgentMessage(_ dict: [String: Any]) -> AgentMessage? {
         }
         return .user(UserMessage(content: content, timestamp: timestamp))
     case "assistant":
-        let timestamp = (dict["timestamp"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
-        let api = Api(rawValue: dict["api"] as? String ?? "") ?? .openAIResponses
-        let provider = dict["provider"] as? String ?? ""
-        let model = dict["model"] as? String ?? ""
-        let stopReason = StopReason(rawValue: dict["stopReason"] as? String ?? "stop") ?? .stop
-        let errorMessage = dict["errorMessage"] as? String
-        let usageDict = dict["usage"] as? [String: Any] ?? [:]
-        let usage = decodeUsage(usageDict)
-        let contentBlocks = (dict["content"] as? [Any] ?? []).compactMap { block -> ContentBlock? in
-            guard let dict = block as? [String: Any] else { return nil }
-            return contentBlockFromDict(dict)
-        }
-        let assistant = AssistantMessage(content: contentBlocks, api: api, provider: provider, model: model, usage: usage, stopReason: stopReason, errorMessage: errorMessage, timestamp: timestamp)
-        return .assistant(assistant)
+        return .assistant(assistantMessageFromJSONObject(dict))
     case "toolResult":
         let timestamp = (dict["timestamp"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
         let toolCallId = dict["toolCallId"] as? String ?? ""
@@ -1602,7 +1660,7 @@ private func decodeUsage(_ dict: [String: Any]) -> Usage {
     usageFromJSONObject(dict)
 }
 
-private func sessionEntryToDict(_ entry: SessionEntry) -> [String: Any] {
+func codingAgentSessionEntryJSONObject(_ entry: SessionEntry) -> [String: Any] {
     var dict: [String: Any] = [
         "type": entry.type,
         "id": entry.id,
@@ -1628,6 +1686,7 @@ private func sessionEntryToDict(_ entry: SessionEntry) -> [String: Any] {
         if let fromHook = entry.fromHook {
             dict["fromHook"] = fromHook
         }
+        if let usage = entry.usage { dict["usage"] = usageToJSONObject(usage) }
     case .branchSummary(let entry):
         dict["fromId"] = entry.fromId
         dict["summary"] = entry.summary
@@ -1637,6 +1696,7 @@ private func sessionEntryToDict(_ entry: SessionEntry) -> [String: Any] {
         if let fromHook = entry.fromHook {
             dict["fromHook"] = fromHook
         }
+        if let usage = entry.usage { dict["usage"] = usageToJSONObject(usage) }
     case .custom(let entry):
         dict["customType"] = entry.customType
         if let data = entry.data?.jsonValue {

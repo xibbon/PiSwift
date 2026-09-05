@@ -33,12 +33,10 @@ public func restoreLineEndings(_ content: String, _ ending: LineEnding) -> Strin
     }
 }
 
+/// Compatibility overload for callers that need both the mark and the text.
+@available(*, deprecated, renamed: "splitBom")
 public func stripBom(_ content: String) -> (bom: String, text: String) {
-    if content.hasPrefix("\u{FEFF}") {
-        let start = content.index(after: content.startIndex)
-        return ("\u{FEFF}", String(content[start...]))
-    }
-    return ("", content)
+    splitBom(content)
 }
 
 /// Read file as Data and convert to String, preserving BOM information.
@@ -57,13 +55,13 @@ public func readFilePreservingBom(_ path: String) throws -> (bom: String, text: 
         // Convert text after BOM to String
         let textData = data.dropFirst(3)
         guard let text = String(data: Data(textData), encoding: .utf8) else {
-            throw NSError(domain: "EditTool", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode file as UTF-8"])
+            throw EditFileDecodingError.invalidUTF8
         }
         return ("\u{FEFF}", text)
     } else {
         // No BOM, convert entire data to String
         guard let text = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: "EditTool", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode file as UTF-8"])
+            throw EditFileDecodingError.invalidUTF8
         }
         return ("", text)
     }
@@ -603,4 +601,9 @@ public func generateDiffString(_ oldContent: String, _ newContent: String, conte
     }
 
     return (output.joined(separator: "\n"), firstChangedLine)
+}
+
+private enum EditFileDecodingError: LocalizedError {
+    case invalidUTF8
+    var errorDescription: String? { "Failed to decode file as UTF-8" }
 }

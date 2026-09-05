@@ -275,13 +275,33 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false) -> [[Str
     return [["functionDeclarations": declarations]]
 }
 
+func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false, supportsStrictMode: Bool) throws -> [[String: Any]]? {
+    guard !tools.isEmpty else { return nil }
+    let declarations: [[String: Any]] = try tools.map { tool in
+        var declaration: [String: Any] = [
+            "name": tool.name,
+            "description": tool.description,
+        ]
+        let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictMode)
+        let rawParameters = try getJsonSchemaToolParameters(tool, strict: strict == true).mapValues { $0.jsonValue }
+        let cleanedParameters = stripJsonSchemaMeta(rawParameters) as? [String: Any] ?? rawParameters
+        if useParameters {
+            declaration["parameters"] = cleanedParameters
+        } else {
+            declaration["parametersJsonSchema"] = rawParameters
+        }
+        return declaration
+    }
+    return [["functionDeclarations": declarations]]
+}
+
 func googleDisabledThinkingConfig(model: Model) -> [String: Any] {
     let id = model.id.lowercased()
     if id.range(of: #"gemini-3(?:\.\d+)?-pro"#, options: .regularExpression) != nil {
-        return ["thinkingLevel": GoogleThinkingLevel.low.rawValue]
+        return ["thinkingLevel": GoogleApiThinkingLevel.low.rawValue]
     }
     if id.range(of: #"gemini-3(?:\.\d+)?-flash"#, options: .regularExpression) != nil || id.range(of: #"gemma-?4"#, options: .regularExpression) != nil {
-        return ["thinkingLevel": GoogleThinkingLevel.minimal.rawValue]
+        return ["thinkingLevel": GoogleApiThinkingLevel.minimal.rawValue]
     }
     return ["thinkingBudget": 0]
 }
@@ -337,7 +357,7 @@ func mapGoogleStopReason(_ reason: String) -> StopReasonResult {
     }
 }
 
-func googleThinkingLevel(for effort: ThinkingLevel, modelId: String) -> GoogleThinkingLevel {
+func googleThinkingLevel(for effort: ThinkingLevel, modelId: String) -> GoogleApiThinkingLevel {
     let clamped: ThinkingLevel
     if effort == .xhigh || effort == .max {
         clamped = .high
@@ -539,4 +559,14 @@ private func findStreamDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range
 
 enum GoogleStreamError: Error {
     case aborted
+}
+
+public func resolveGoogleThinkingLevel(model: Model, level: ModelThinkingLevel) throws -> ResolvedGoogleThinkingLevel {
+    if level == .off { return .high }
+    let mapped = model.thinkingLevelMap?[level] ?? nil
+    let resolved = mapped?.lowercased() ?? level.rawValue
+    guard let result = ResolvedGoogleThinkingLevel(rawValue: resolved) else {
+        throw ValidationError.constrainedSampling("Unsupported Google thinking level mapping for \(model.provider)/\(model.id): \(level.rawValue) -> \(mapped ?? (model.thinkingLevelMap?[level] != nil ? "null" : "undefined"))")
+    }
+    return result
 }

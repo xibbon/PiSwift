@@ -13,19 +13,19 @@ struct ThemeTests {
         }
     }
 
-    @Test func themeWithoutScrollbarThumbFallsBackToSelectedBackground() throws {
+    @Test func themeWithoutScrollbarThumbFallsBackToText() throws {
         try withRegisteredTheme(name: "legacy-scrollbar") { dark in
-            dark.replacingOccurrences(of: ",\n\t\t\"scrollbarThumb\": \"selectedBg\"", with: "")
+            dark.replacingOccurrences(of: "\n\t\t\"scrollbarThumb\": \"text\",", with: "")
         } verify: { name in
             _ = try #require(getThemeByName(name))
-            #expect(getResolvedThemeColors(name)["scrollbarThumb"] == "#3a3a4a")
+            #expect(getResolvedThemeColors(name)["scrollbarThumb"] == getResolvedThemeColors(name)["text"])
         }
     }
 
     @Test func explicitScrollbarThumbWinsOverFallback() throws {
         try withRegisteredTheme(name: "explicit-scrollbar") { dark in
             dark.replacingOccurrences(
-                of: "\"scrollbarThumb\": \"selectedBg\"",
+                of: "\"scrollbarThumb\": \"text\"",
                 with: "\"scrollbarThumb\": \"#123456\""
             )
         } verify: { name in
@@ -34,9 +34,39 @@ struct ThemeTests {
         }
     }
 
+    @Test func legacyThemeResolvesSearchAndTrackFallbacks() throws {
+        try withRegisteredTheme(name: "legacy-search") { dark in
+            var json = try #require(JSONSerialization.jsonObject(with: Data(dark.utf8)) as? [String: Any])
+            var colors = try #require(json["colors"] as? [String: Any])
+            for key in ["scrollbarTrack", "scrollbarThumb", "searchMatchBg", "searchMatchText"] {
+                colors.removeValue(forKey: key)
+            }
+            json["colors"] = colors
+            return try #require(String(data: JSONSerialization.data(withJSONObject: json), encoding: .utf8))
+        } verify: { name in
+            _ = try #require(getThemeByName(name))
+            let colors = getResolvedThemeColors(name)
+            #expect(colors["scrollbarTrack"] == colors["muted"])
+            #expect(colors["scrollbarThumb"] == colors["text"])
+            #expect(colors["searchMatchBg"] == colors["selectedBg"])
+            #expect(colors["searchMatchText"] == colors["text"])
+        }
+    }
+
+    @Test func themeNameRejectsSlashReservedForAutomaticThemePairs() throws {
+        try withRegisteredTheme(name: "invalid-theme-name") { dark in
+            dark.replacingOccurrences(of: "\"name\": \"dark\"", with: "\"name\": \"light/dark\"")
+        } verify: { name in
+            #expect(getThemeByName(name) == nil)
+            let result = setTheme(name)
+            #expect(!result.success)
+            #expect(result.error == "Invalid theme name \"light/dark\": theme names cannot contain \"/\" because it is reserved for automatic light/dark theme settings.")
+        }
+    }
+
     private func withRegisteredTheme(
         name: String,
-        transform: (String) -> String,
+        transform: (String) throws -> String,
         verify: (String) throws -> Void
     ) throws {
         let tempDir = FileManager.default.temporaryDirectory

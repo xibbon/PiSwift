@@ -24,7 +24,15 @@ public struct ExtensionLoader {
         let path = "<inline:\(inlineExtension.name)>"
         let api = HookAPI(events: eventBus, hookPath: path)
         api.setExecCwd(cwd)
-        inlineExtension.factory(api)
+        api.beginLoading()
+        do {
+            try inlineExtension.factory(api)
+            try api.validateActive()
+            api.commitLoading()
+        } catch {
+            api.invalidateAfterLoadFailure()
+            return LoadExtensionResult(error: .invalidExtension(path: path, reason: error.localizedDescription))
+        }
         return LoadExtensionResult(hook: LoadedHook(
             path: path,
             resolvedPath: path,

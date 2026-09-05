@@ -2,13 +2,13 @@ import Foundation
 import PiSwiftAI
 import PiSwiftAgent
 
-enum CompactionError: LocalizedError, Sendable {
+public enum CompactionError: LocalizedError, Sendable {
     case summarizationFailed(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .summarizationFailed(let message):
-            return "Summarization failed: \(message)"
+            return message
         }
     }
 }
@@ -23,12 +23,14 @@ public struct CompactionResult: Sendable {
     public var firstKeptEntryId: String
     public var tokensBefore: Int
     public var details: AnyCodable?
+    public var usage: Usage?
 
-    public init(summary: String, firstKeptEntryId: String, tokensBefore: Int, details: AnyCodable? = nil) {
+    public init(summary: String, firstKeptEntryId: String, tokensBefore: Int, details: AnyCodable? = nil, usage: Usage? = nil) {
         self.summary = summary
         self.firstKeptEntryId = firstKeptEntryId
         self.tokensBefore = tokensBefore
         self.details = details
+        self.usage = usage
     }
 }
 
@@ -311,61 +313,57 @@ public func compact(
     _ apiKey: String,
     headers: ProviderHeaders? = nil,
     customInstructions: String? = nil,
-    signal: CancellationToken? = nil
+    signal: CancellationToken? = nil,
+    thinkingLevel: PiSwiftAI.ThinkingLevel? = nil,
+    streamFn: StreamFn? = nil,
+    retry: RetryPolicy? = nil,
+    callbacks: RetryCallbacks? = nil,
+    sessionId: String? = nil
 ) async throws -> CompactionResult {
-    let messagesToSummarize = preparation.messagesToSummarize
-    let turnPrefixMessages = preparation.turnPrefixMessages
-
-    let summary: String
-    if preparation.isSplitTurn && !turnPrefixMessages.isEmpty {
-        summary = try await serializeSplitTurnSummaries(
-            history: {
-                if messagesToSummarize.isEmpty {
-                    return "No prior history."
-                }
-                return try await generateSummary(
-                    currentMessages: messagesToSummarize,
-                    model: model,
-                    reserveTokens: preparation.settings.reserveTokens,
-                    apiKey: apiKey,
-                    headers: headers,
-                    signal: signal,
-                    customInstructions: customInstructions,
-                    previousSummary: preparation.previousSummary
-                )
-            },
-            turnPrefix: {
-                try await generateTurnPrefixSummary(
-                    messages: turnPrefixMessages,
-                    model: model,
-                    reserveTokens: preparation.settings.reserveTokens,
-                    apiKey: apiKey,
-                    headers: headers,
-                    signal: signal
-                )
-            }
-        )
+    let history: SummaryWithUsage
+    if preparation.isSplitTurn, !preparation.turnPrefixMessages.isEmpty, preparation.messagesToSummarize.isEmpty {
+        history = SummaryWithUsage(text: "No prior history.", usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0))
     } else {
-        summary = try await generateSummary(
-            currentMessages: messagesToSummarize,
-            model: model,
-            reserveTokens: preparation.settings.reserveTokens,
-            apiKey: apiKey,
-            headers: headers,
-            signal: signal,
-            customInstructions: customInstructions,
-            previousSummary: preparation.previousSummary
+        history = try await generateSummaryWithUsage(
+            currentMessages: preparation.messagesToSummarize, model: model,
+            reserveTokens: preparation.settings.reserveTokens, apiKey: apiKey,
+            headers: headers, signal: signal, customInstructions: customInstructions,
+            previousSummary: preparation.previousSummary, thinkingLevel: thinkingLevel,
+            streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
         )
     }
-
+    var summary = history.text
+    var usage = history.usage
+    if preparation.isSplitTurn, !preparation.turnPrefixMessages.isEmpty {
+        let prefix = try await generateTurnPrefixSummary(
+            messages: preparation.turnPrefixMessages, model: model,
+            reserveTokens: preparation.settings.reserveTokens, apiKey: apiKey,
+            headers: headers, signal: signal, thinkingLevel: thinkingLevel,
+            streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
+        )
+        summary += "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix.text
+        usage = combineSummaryUsage(usage, prefix.usage)
+    }
     let lists = computeFileLists(preparation.fileOps)
-    let combinedSummary = summary + formatFileOperations(readFiles: lists.readFiles, modifiedFiles: lists.modifiedFiles)
-    let details = AnyCodable([
-        "readFiles": lists.readFiles,
-        "modifiedFiles": lists.modifiedFiles,
-    ])
+    summary += formatFileOperations(readFiles: lists.readFiles, modifiedFiles: lists.modifiedFiles)
+    return CompactionResult(
+        summary: summary, firstKeptEntryId: preparation.firstKeptEntryId,
+        tokensBefore: preparation.tokensBefore,
+        details: AnyCodable(["readFiles": lists.readFiles, "modifiedFiles": lists.modifiedFiles]),
+        usage: usage
+    )
+}
 
-    return CompactionResult(summary: combinedSummary, firstKeptEntryId: preparation.firstKeptEntryId, tokensBefore: preparation.tokensBefore, details: details)
+private func combineSummaryUsage(_ a: Usage, _ b: Usage) -> Usage {
+    Usage(
+        input: a.input + b.input, output: a.output + b.output,
+        cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite,
+        reasoning: a.reasoning == nil && b.reasoning == nil ? nil : (a.reasoning ?? 0) + (b.reasoning ?? 0),
+        totalTokens: a.totalTokens + b.totalTokens,
+        cost: UsageCost(input: a.cost.input + b.cost.input, output: a.cost.output + b.cost.output,
+                        cacheRead: a.cost.cacheRead + b.cost.cacheRead, cacheWrite: a.cost.cacheWrite + b.cost.cacheWrite,
+                        total: a.cost.total + b.cost.total)
+    )
 }
 
 /// Runs split-turn summarization requests in provider-safe sequence.
@@ -413,9 +411,7 @@ Use this EXACT format:
 Keep each section concise. Preserve exact file paths, function names, and error messages.
 """
 
-private let UPDATE_SUMMARIZATION_PROMPT = """
-The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
-
+private let UPDATE_SUMMARIZATION_INSTRUCTIONS = """
 Update the existing structured summary with new information. RULES:
 - PRESERVE all existing information from the previous summary
 - ADD new progress, decisions, and context from the new messages
@@ -454,56 +450,118 @@ Use this EXACT format:
 Keep each section concise. Preserve exact file paths, function names, and error messages.
 """
 
-private func generateSummary(
-    currentMessages: [AgentMessage],
-    model: Model,
-    reserveTokens: Int,
-    apiKey: String,
-    headers: ProviderHeaders?,
-    signal: CancellationToken?,
-    customInstructions: String?,
-    previousSummary: String?
+private let UPDATE_SUMMARIZATION_PROMPT = """
+The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+\(UPDATE_SUMMARIZATION_INSTRUCTIONS)
+"""
+
+/// Explain why a summary response cannot be stored as a checkpoint.
+public func getSummarizationFailure(_ response: AssistantMessage, label: String) -> String? {
+    if response.stopReason == .error {
+        let detail = response.errorMessage.flatMap { $0.isEmpty ? nil : $0 } ?? "Unknown error"
+        return "\(label) failed: \(detail)"
+    }
+    if response.stopReason == .length {
+        return "\(label) failed: generation hit the token cap and the summary is incomplete"
+    }
+    return nil
+}
+
+/// Run a standalone summary request without prompt caching.
+public func completeSummarization(
+    model: Model, context: Context, options: SimpleStreamOptions,
+    streamFn: StreamFn? = nil, retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil
+) async throws -> AssistantMessage {
+    var configured = options
+    configured.cacheRetention = CacheRetention.none
+    configured.sessionId = try options.sessionId ?? PiSwiftAI.uuidv7()
+    let requestOptions = configured
+    return await retryAssistantCall(produce: {
+        do {
+            if let streamFn {
+                let stream = try await streamFn(model, context, requestOptions)
+                return await stream.result()
+            }
+            return try await completeSimple(model: model, context: context, options: requestOptions)
+        } catch {
+            let aborted = error is CancellationError || requestOptions.signal?.isCancelled == true
+            return AssistantMessage(content: [], api: model.api, provider: model.provider, model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: aborted ? .aborted : .error, errorMessage: error.localizedDescription)
+        }
+    }, policy: retry, signal: requestOptions.signal, callbacks: callbacks)
+}
+
+public struct SummaryWithUsage: Sendable {
+    public var text: String
+    public var usage: Usage
+}
+
+private func summaryText(_ response: AssistantMessage, label: String) throws -> String {
+    if response.stopReason == .aborted { throw CancellationError() }
+    if let failure = getSummarizationFailure(response, label: label) {
+        throw CompactionError.summarizationFailed(failure)
+    }
+    if response.content.contains(where: { if case .toolCall = $0 { return true }; return false }) {
+        throw CompactionError.summarizationFailed("\(label) attempted to call a tool")
+    }
+    return response.content.compactMap { if case .text(let text) = $0 { return text.text }; return nil }.joined(separator: "\n")
+}
+
+public func generateSummary(
+    currentMessages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
+    headers: ProviderHeaders? = nil, signal: CancellationToken? = nil,
+    customInstructions: String? = nil, previousSummary: String? = nil,
+    thinkingLevel: PiSwiftAI.ThinkingLevel? = nil, streamFn: StreamFn? = nil,
+    retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil, sessionId: String? = nil
 ) async throws -> String {
-    let maxTokens = Int(Double(reserveTokens) * 0.8)
-    var basePrompt = previousSummary == nil ? SUMMARIZATION_PROMPT : UPDATE_SUMMARIZATION_PROMPT
+    try await generateSummaryWithUsage(
+        currentMessages: currentMessages, model: model, reserveTokens: reserveTokens, apiKey: apiKey,
+        headers: headers, signal: signal, customInstructions: customInstructions, previousSummary: previousSummary,
+        thinkingLevel: thinkingLevel, streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
+    ).text
+}
+
+public func generateSummaryWithUsage(
+    currentMessages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
+    headers: ProviderHeaders? = nil, signal: CancellationToken? = nil,
+    customInstructions: String? = nil, previousSummary: String? = nil,
+    thinkingLevel: PiSwiftAI.ThinkingLevel? = nil, streamFn: StreamFn? = nil,
+    retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil, sessionId: String? = nil
+) async throws -> SummaryWithUsage {
+    let maxTokens = min(Int(Double(reserveTokens) * 0.8), model.maxTokens > 0 ? model.maxTokens : Int.max)
+    var basePrompt = previousSummary?.isEmpty != false ? SUMMARIZATION_PROMPT : UPDATE_SUMMARIZATION_PROMPT
     if let customInstructions, !customInstructions.isEmpty {
         basePrompt += "\n\nAdditional focus: \(customInstructions)"
     }
-
-    let llmMessages = convertToLlm(currentMessages)
-    let conversationText = serializeConversation(llmMessages)
-
+    let conversationText = serializeConversation(convertToLlm(currentMessages))
     var promptText = "<conversation>\n\(conversationText)\n</conversation>\n\n"
-    if let previousSummary {
+    if let previousSummary, !previousSummary.isEmpty {
         promptText += "<previous-summary>\n\(previousSummary)\n</previous-summary>\n\n"
     }
     promptText += basePrompt
-
-    let summarizationMessages: [Message] = [
-        .user(UserMessage(content: .blocks([.text(TextContent(text: promptText))])))
-    ]
-
-    // Only use reasoning for models that support it; non-reasoning models skip the parameter
-    let reasoning: PiSwiftAI.ThinkingLevel? = model.reasoning ? .high : nil
-    let response = try await completeSimple(
-        model: model,
-        context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages),
-        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, reasoning: reasoning, headers: headers)
+    let response = try await completeSummarization(
+        model: model, context: buildSummarizationContext(promptText),
+        options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
+            headers: headers, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
+        streamFn: streamFn, retry: retry, callbacks: callbacks
     )
+    return SummaryWithUsage(text: try summaryText(response, label: "Summarization"), usage: response.usage)
+}
 
-    switch response.stopReason {
-    case .stop, .length, .toolUse:
-        break
-    case .pending, .error, .aborted, .deferred:
-        throw CompactionError.summarizationFailed(response.errorMessage ?? "Unknown error")
-    }
+private func buildSummarizationContext(_ prompt: String) -> Context {
+    Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+        messages: [.user(UserMessage(content: .blocks([.text(TextContent(text: prompt))])))])
+}
 
-    let text = response.content.compactMap { block -> String? in
-        if case .text(let text) = block { return text.text }
-        return nil
-    }.joined(separator: "\n")
-
-    return text
+private func createSummarizationOptions(
+    model: Model, maxTokens: Int, apiKey: String, headers: ProviderHeaders?,
+    signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?, sessionId: String?
+) -> SimpleStreamOptions {
+    SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey,
+        reasoning: model.reasoning ? thinkingLevel : nil,
+        sessionId: sessionId, headers: headers)
 }
 
 private let TURN_PREFIX_SUMMARIZATION_PROMPT = """
@@ -524,39 +582,20 @@ Be concise. Focus on what's needed to understand the kept suffix.
 """
 
 private func generateTurnPrefixSummary(
-    messages: [AgentMessage],
-    model: Model,
-    reserveTokens: Int,
-    apiKey: String,
-    headers: ProviderHeaders?,
-    signal: CancellationToken?
-) async throws -> String {
-    let maxTokens = Int(Double(reserveTokens) * 0.5)
-    let llmMessages = convertToLlm(messages)
-    let conversationText = serializeConversation(llmMessages)
+    messages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
+    headers: ProviderHeaders?, signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?,
+    streamFn: StreamFn?, retry: RetryPolicy?, callbacks: RetryCallbacks?, sessionId: String?
+) async throws -> SummaryWithUsage {
+    let maxTokens = min(Int(Double(reserveTokens) * 0.5), model.maxTokens > 0 ? model.maxTokens : Int.max)
+    let conversationText = serializeConversation(convertToLlm(messages))
     let promptText = "<conversation>\n\(conversationText)\n</conversation>\n\n\(TURN_PREFIX_SUMMARIZATION_PROMPT)"
-
-    let summarizationMessages: [Message] = [
-        .user(UserMessage(content: .blocks([.text(TextContent(text: promptText))])))
-    ]
-
-    let response = try await completeSimple(
-        model: model,
-        context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages),
-        options: SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey, headers: headers)
+    let response = try await completeSummarization(
+        model: model, context: buildSummarizationContext(promptText),
+        options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
+            headers: headers, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
+        streamFn: streamFn, retry: retry, callbacks: callbacks
     )
-
-    switch response.stopReason {
-    case .stop, .length, .toolUse:
-        break
-    case .pending, .error, .aborted, .deferred:
-        throw CompactionError.summarizationFailed(response.errorMessage ?? "Unknown error")
-    }
-
-    return response.content.compactMap { block -> String? in
-        if case .text(let text) = block { return text.text }
-        return nil
-    }.joined(separator: "\n")
+    return SummaryWithUsage(text: try summaryText(response, label: "Turn prefix summarization"), usage: response.usage)
 }
 
 private func messageFromEntry(_ entry: SessionEntry) -> AgentMessage? {

@@ -243,7 +243,6 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
 
     private func write(_ value: String) throws {
         try value.write(toFile: authPath, atomically: false, encoding: .utf8)
-        chmod(authPath, 0o600)
     }
 
     private func withFileLock<Result: Sendable>(

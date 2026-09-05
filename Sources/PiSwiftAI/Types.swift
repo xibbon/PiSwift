@@ -269,6 +269,8 @@ public struct SimpleStreamOptions: Sendable {
     /// v0.70.1: provider SDK max retries.
     public var maxRetries: Int?
 
+    public var toolChoice: ToolChoice?
+
     public init(
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
@@ -288,8 +290,11 @@ public struct SimpleStreamOptions: Sendable {
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        toolChoice: ToolChoice? = nil
     ) {
+        self.toolChoice = toolChoice
+
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
@@ -428,6 +433,7 @@ public enum ChatTemplateKwargValue: Sendable, Codable {
 public enum ChatTemplateKwargVariable: String, Sendable, Codable {
     case thinkingEnabled = "thinking.enabled"
     case thinkingEffort = "thinking.effort"
+    case thinkingBudget = "thinking.budget"
 }
 
 /// v0.68.0: opt-in cache_control formats for OpenAI-compatible providers that expose
@@ -730,6 +736,13 @@ public struct OpenAICompat: Sendable, Codable {
     public var supportsExplicitPromptCacheMode: Bool?
     public var supportsToolReferences: Bool?
 
+    public var thinkingTokenBudgetField: ThinkingTokenBudgetField?
+    public var vllmPriority: Int?
+    public var supportsAdditionalTools: Bool?
+    public var supportsMaxOutputTokens: Bool?
+    public var supportsMidConvoEffort: Bool?
+    public var allowedFallbackModels: [AnthropicAllowedFallbackModel]?
+
     public init(
         supportsStore: Bool? = nil,
         supportsDeveloperRole: Bool? = nil,
@@ -766,8 +779,21 @@ public struct OpenAICompat: Sendable, Codable {
         sessionAffinityFormat: SessionAffinityFormat? = nil,
         supportsToolSearch: Bool? = nil,
         supportsExplicitPromptCacheMode: Bool? = nil,
-        supportsToolReferences: Bool? = nil
+        supportsToolReferences: Bool? = nil,
+        thinkingTokenBudgetField: ThinkingTokenBudgetField? = nil,
+        vllmPriority: Int? = nil,
+        supportsAdditionalTools: Bool? = nil,
+        supportsMaxOutputTokens: Bool? = nil,
+        supportsMidConvoEffort: Bool? = nil,
+        allowedFallbackModels: [AnthropicAllowedFallbackModel]? = nil
     ) {
+        self.thinkingTokenBudgetField = thinkingTokenBudgetField
+        self.vllmPriority = vllmPriority
+        self.supportsAdditionalTools = supportsAdditionalTools
+        self.supportsMaxOutputTokens = supportsMaxOutputTokens
+        self.supportsMidConvoEffort = supportsMidConvoEffort
+        self.allowedFallbackModels = allowedFallbackModels
+
         self.supportsStore = supportsStore
         self.supportsDeveloperRole = supportsDeveloperRole
         self.supportsReasoningEffort = supportsReasoningEffort
@@ -814,7 +840,7 @@ public protocol ModelCostRates: Sendable {
     var cacheWrite: Double { get }
 }
 
-public struct ModelCostTier: ModelCostRates, Sendable, Codable {
+public struct ModelCostTier: ModelCostRates, Sendable, Codable, Equatable {
     public var inputTokensAbove: Int
     public var input: Double
     public var output: Double
@@ -830,7 +856,7 @@ public struct ModelCostTier: ModelCostRates, Sendable, Codable {
     }
 }
 
-public struct ModelCost: ModelCostRates, Sendable, Codable {
+public struct ModelCost: ModelCostRates, Sendable, Codable, Equatable {
     public var input: Double
     public var output: Double
     public var cacheRead: Double
@@ -1123,12 +1149,14 @@ public struct ToolCall: Sendable {
     public var name: String
     public var arguments: [String: AnyCodable]
     public var thoughtSignature: String?
+    public var namespace: String?
 
-    public init(id: String, name: String, arguments: [String: AnyCodable], thoughtSignature: String? = nil) {
+    public init(id: String, name: String, arguments: [String: AnyCodable], thoughtSignature: String? = nil, namespace: String? = nil) {
         self.id = id
         self.name = name
         self.arguments = arguments
         self.thoughtSignature = thoughtSignature
+        self.namespace = namespace
     }
 }
 
@@ -1184,6 +1212,9 @@ public struct AssistantMessage: Sendable {
     public var diagnostics: [AssistantMessageDiagnostic]?
     public var timestamp: Int64
 
+    public var providerThinkingLevel: String?
+    public var endTurn: Bool?
+
     public init(
         content: [ContentBlock],
         api: Api,
@@ -1196,8 +1227,13 @@ public struct AssistantMessage: Sendable {
         timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         deferred: DeferredHandle? = nil,
         rawStopReason: String? = nil,
-        diagnostics: [AssistantMessageDiagnostic]? = nil
+        diagnostics: [AssistantMessageDiagnostic]? = nil,
+        providerThinkingLevel: String? = nil,
+        endTurn: Bool? = nil
     ) {
+        self.providerThinkingLevel = providerThinkingLevel
+        self.endTurn = endTurn
+
         self.content = content
         self.api = api
         self.provider = provider
@@ -1476,6 +1512,8 @@ public struct OpenAIResponsesOptions: Sendable {
     public var maxRetryDelayMs: Int?
     public var websocketConnectTimeoutMs: Int?
 
+    public var toolChoice: OpenAIToolChoice?
+
     public init(
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
@@ -1495,8 +1533,11 @@ public struct OpenAIResponsesOptions: Sendable {
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
-        websocketConnectTimeoutMs: Int? = nil
+        websocketConnectTimeoutMs: Int? = nil,
+        toolChoice: OpenAIToolChoice? = nil
     ) {
+        self.toolChoice = toolChoice
+
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
@@ -1540,6 +1581,8 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
 
+    public var toolChoice: OpenAIToolChoice?
+
     public init(
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
@@ -1559,8 +1602,11 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
-        maxRetryDelayMs: Int? = nil
+        maxRetryDelayMs: Int? = nil,
+        toolChoice: OpenAIToolChoice? = nil
     ) {
+        self.toolChoice = toolChoice
+
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
@@ -1608,6 +1654,8 @@ public struct OpenAICodexResponsesOptions: Sendable {
     /// echoes the default — keeps cost accounting aligned with the caller-selected tier.
     public var serviceTier: OpenAIServiceTier?
 
+    public var toolChoice: OpenAIToolChoice?
+
     public init(
         temperature: Double? = nil,
         maxTokens: Int? = nil,
@@ -1628,8 +1676,11 @@ public struct OpenAICodexResponsesOptions: Sendable {
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
-        websocketConnectTimeoutMs: Int? = nil
+        websocketConnectTimeoutMs: Int? = nil,
+        toolChoice: OpenAIToolChoice? = nil
     ) {
+        self.toolChoice = toolChoice
+
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -1653,7 +1704,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
     }
 }
 
-public enum GoogleThinkingLevel: String, Sendable {
+public enum GoogleApiThinkingLevel: String, Sendable {
     case unspecified = "THINKING_LEVEL_UNSPECIFIED"
     case minimal = "MINIMAL"
     case low = "LOW"
@@ -1665,9 +1716,9 @@ public struct GoogleOptions: Sendable {
     public struct ThinkingConfig: Sendable {
         public var enabled: Bool
         public var budgetTokens: Int?
-        public var level: GoogleThinkingLevel?
+        public var level: GoogleApiThinkingLevel?
 
-        public init(enabled: Bool, budgetTokens: Int? = nil, level: GoogleThinkingLevel? = nil) {
+        public init(enabled: Bool, budgetTokens: Int? = nil, level: GoogleApiThinkingLevel? = nil) {
             self.enabled = enabled
             self.budgetTokens = budgetTokens
             self.level = level
@@ -1974,6 +2025,7 @@ public struct BedrockOptions: Sendable {
 }
 
 public struct MistralOptions: Sendable {
+    public var cacheRetention: CacheRetention?
     public var temperature: Double?
     public var maxTokens: Int?
     public var signal: CancellationToken?
@@ -2008,8 +2060,10 @@ public struct MistralOptions: Sendable {
         onResponse: ResponseHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
-        maxRetryDelayMs: Int? = nil
+        maxRetryDelayMs: Int? = nil,
+        cacheRetention: CacheRetention? = nil
     ) {
+        self.cacheRetention = cacheRetention
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -2077,4 +2131,33 @@ public final class CancellationToken: Sendable {
             state.handlers.removeValue(forKey: id)
         }
     }
+}
+
+public enum ToolChoice: String, Sendable {
+    case auto, none
+}
+
+public enum ThinkingTokenBudgetField: String, Sendable, Codable {
+    case thinkingTokenBudget = "thinking_token_budget"
+    case thinkingBudget = "thinking_budget"
+    case thinkingBudgetTokens = "thinking_budget_tokens"
+}
+
+public struct AnthropicAllowedFallbackModel: Sendable, Equatable, Codable {
+    public var provider: Provider
+    public var model: String
+    public var cost: ModelCost
+
+    public init(provider: Provider, model: String, cost: ModelCost) {
+        self.provider = provider
+        self.model = model
+        self.cost = cost
+    }
+}
+
+@available(*, deprecated, renamed: "GoogleApiThinkingLevel")
+public typealias GoogleThinkingLevel = GoogleApiThinkingLevel
+
+public enum ResolvedGoogleThinkingLevel: String, Sendable {
+    case minimal, low, medium, high
 }

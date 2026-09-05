@@ -6,17 +6,20 @@ public struct BashExecutorOptions: Sendable {
     public var signal: CancellationToken?
     public var timeoutSeconds: Double?
     public var environment: [String: String]?
+    public var cwd: String?
 
     public init(
         onChunk: (@Sendable (String) -> Void)? = nil,
         signal: CancellationToken? = nil,
         timeoutSeconds: Double? = nil,
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        cwd: String? = nil
     ) {
         self.onChunk = onChunk
         self.signal = signal
         self.timeoutSeconds = timeoutSeconds
         self.environment = environment
+        self.cwd = cwd
     }
 }
 
@@ -101,6 +104,7 @@ private let defaultBashProvider: BashExecutorProvider = {
 private func executeSystemBash(_ command: String, options: BashExecutorOptions? = nil) async throws -> BashResult {
     let timeoutSeconds = try validatedShellTimeout(options?.timeoutSeconds)
     let process = Process()
+    if let cwd = options?.cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
     let shellConfig = try getShellConfig()
     process.executableURL = URL(fileURLWithPath: shellConfig.shell)
     process.arguments = shellConfig.args + [command]
@@ -200,11 +204,11 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
                 output = truncation.content
             }
 
-            let cancelled = cancelledFlag.load() || proc.terminationStatus == 9
+            let cancelled = cancelledFlag.load()
 
             continuation.resume(returning: BashResult(
                 output: output.isEmpty ? "" : output,
-                exitCode: cancelled ? nil : Int(proc.terminationStatus),
+                exitCode: cancelled ? nil : Int(proc.terminationStatus) + (proc.terminationReason == .uncaughtSignal ? 128 : 0),
                 cancelled: cancelled,
                 truncated: truncated,
                 fullOutputPath: fullOutputPath

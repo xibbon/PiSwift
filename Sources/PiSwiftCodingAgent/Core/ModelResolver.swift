@@ -296,3 +296,37 @@ public func resolveModelScope(_ patterns: [String], _ modelRegistry: ModelRegist
 
     return scoped
 }
+
+public struct InitialModelResult: Sendable {
+    public var model: Model?
+    public var thinkingLevel: ThinkingLevel
+    public var fallbackMessage: String?
+}
+
+/// Resolves startup defaults without process exits or terminal output.
+public func findInitialModel(
+    scopedModels: [ScopedModel] = [],
+    isContinuing: Bool = false,
+    defaultProvider: String? = nil,
+    defaultModelId: String? = nil,
+    defaultThinkingLevel: ThinkingLevel? = nil,
+    modelThinkingLevels: [String: ThinkingLevel] = [:],
+    modelRegistry: ModelRegistry
+) async -> InitialModelResult {
+    if !isContinuing, let scoped = scopedModels.first {
+        return InitialModelResult(
+            model: scoped.model,
+            thinkingLevel: (scoped.isThinkingExplicit ? scoped.thinkingLevel : nil)
+                ?? modelThinkingLevels["\(scoped.model.provider)/\(scoped.model.id)"]
+                ?? defaultThinkingLevel ?? DEFAULT_THINKING_LEVEL
+        )
+    }
+    if let provider = defaultProvider, let modelId = defaultModelId,
+       let model = modelRegistry.find(provider, modelId), modelRegistry.hasConfiguredAuth(model) {
+        return InitialModelResult(model: model,
+            thinkingLevel: modelThinkingLevels["\(provider)/\(modelId)"] ?? defaultThinkingLevel ?? DEFAULT_THINKING_LEVEL)
+    }
+    let available = await modelRegistry.getAvailable()
+    let preferred = await selectDefaultModel(available: available, registry: modelRegistry)
+    return InitialModelResult(model: preferred ?? available.first, thinkingLevel: DEFAULT_THINKING_LEVEL)
+}

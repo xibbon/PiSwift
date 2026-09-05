@@ -105,7 +105,19 @@ public func resolveJsonSchemaStrictSampling(
         return nil
     }
 
-    if supportsStrictMode { return true }
+    if supportsStrictMode {
+        do {
+            _ = try makeStrictJsonSchema(tool.parameters)
+            return true
+        } catch ValidationError.unsupportedStrictSchema(let reason) {
+            if strictness == .require {
+                throw ValidationError.constrainedSampling(
+                    "Tool \"\(tool.name)\" requires JSON-schema constrained sampling, but \(reason)."
+                )
+            }
+            return nil
+        }
+    }
     if strictness == .require {
         throw ValidationError.constrainedSampling(
             "Tool \"\(tool.name)\" requires JSON-schema constrained sampling, but strict tools are unsupported."
@@ -171,4 +183,80 @@ private func jsonStringLiteral(_ value: String) -> String {
         return "\"\""
     }
     return string
+}
+
+/// True when a schema explicitly accepts JSON null.
+func schemaAllowsNull(_ value: Any) -> Bool {
+    guard let schema = value as? [String: Any] else { return false }
+    if schema["type"] as? String == "null" || (schema["type"] as? [String])?.contains("null") == true { return true }
+    if schema["const"] is NSNull || (schema["enum"] as? [Any])?.contains(where: { $0 is NSNull }) == true { return true }
+    return (schema["anyOf"] as? [Any])?.contains(where: schemaAllowsNull) == true
+}
+
+public func makeStrictJsonSchema(_ schema: [String: AnyCodable]) throws -> [String: AnyCodable] {
+    let result = try makeStrictSchemaNode(schema.mapValues { $0.value })
+    guard result["type"] as? String == "object" else {
+        throw ValidationError.unsupportedStrictSchema("root schema must have type object")
+    }
+    return result.mapValues(AnyCodable.init)
+}
+
+public func getJsonSchemaToolParameters(_ tool: AITool, strict: Bool) throws -> [String: AnyCodable] {
+    try strict ? makeStrictJsonSchema(tool.parameters) : tool.parameters
+}
+
+private func makeStrictSchemaNode(_ value: Any) throws -> [String: Any] {
+    guard var schema = value as? [String: Any] else {
+        throw ValidationError.unsupportedStrictSchema("boolean schemas are unsupported")
+    }
+    for key in ["$ref", "$defs", "definitions", "allOf", "oneOf", "patternProperties", "dependentSchemas", "dependencies", "unevaluatedProperties", "propertyNames", "contains", "prefixItems", "not", "if", "then", "else"] {
+        if schema[key] != nil { throw ValidationError.unsupportedStrictSchema("\(key) schemas are unsupported") }
+    }
+    if let value = schema["anyOf"] {
+        guard let variants = value as? [Any], !variants.isEmpty else {
+            throw ValidationError.unsupportedStrictSchema("anyOf must contain at least one schema")
+        }
+        schema["anyOf"] = try variants.map { variant in
+            if let object = variant as? [String: Any] {
+                let types = object["type"] as? [String] ?? (object["type"] as? String).map { [$0] } ?? []
+                if types.contains("object") || types.contains("array") || object["properties"] != nil || object["items"] != nil {
+                    throw ValidationError.unsupportedStrictSchema("object and array unions are unsupported")
+                }
+            }
+            return try makeStrictSchemaNode(variant)
+        }
+    }
+    if let items = schema["items"] {
+        if items is [Any] { throw ValidationError.unsupportedStrictSchema("tuple schemas are unsupported") }
+        schema["items"] = try makeStrictSchemaNode(items)
+    }
+    let isObject = schema["type"] as? String == "object"
+    if schema["properties"] != nil && !isObject {
+        throw ValidationError.unsupportedStrictSchema("properties require type object")
+    }
+    guard isObject else { return schema }
+    if let additional = schema["additionalProperties"], (additional as? Bool) != false {
+        throw ValidationError.unsupportedStrictSchema("schema-valued or true additionalProperties is unsupported")
+    }
+    if let properties = schema["properties"], !(properties is [String: Any]) {
+        throw ValidationError.unsupportedStrictSchema("object properties must be a schema map")
+    }
+    if let required = schema["required"], !(required is [String]) {
+        throw ValidationError.unsupportedStrictSchema("object required must be a string array")
+    }
+    var properties = schema["properties"] as? [String: Any] ?? [:]
+    let names = properties.keys.sorted()
+    let required = Set(schema["required"] as? [String] ?? [])
+    if !required.isSubset(of: Set(names)) {
+        throw ValidationError.unsupportedStrictSchema("required contains an unknown property")
+    }
+    for name in names {
+        let property = try makeStrictSchemaNode(properties[name]!)
+        properties[name] = !required.contains(name) && !schemaAllowsNull(property)
+            ? ["anyOf": [property, ["type": "null"]]] : property
+    }
+    if schema["properties"] != nil { schema["properties"] = properties }
+    schema["required"] = names
+    schema["additionalProperties"] = false
+    return schema
 }

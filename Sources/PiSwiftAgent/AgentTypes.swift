@@ -132,6 +132,25 @@ public struct ShouldStopAfterTurnContext: Sendable {
     }
 }
 
+/// Completed turn supplied only when another assistant turn will start.
+public typealias PrepareNextTurnContext = ShouldStopAfterTurnContext
+
+public struct AgentLoopTurnUpdate: Sendable {
+    public var context: AgentContext?
+    public var model: Model?
+    public var thinkingLevel: ThinkingLevel?
+
+    public init(context: AgentContext? = nil, model: Model? = nil, thinkingLevel: ThinkingLevel? = nil) {
+        self.context = context
+        self.model = model
+        self.thinkingLevel = thinkingLevel
+    }
+}
+
+public typealias PrepareNextTurnFn = @Sendable (PrepareNextTurnContext) async throws -> AgentLoopTurnUpdate?
+public typealias AgentPrepareNextTurnFn = @Sendable (CancellationToken?) async throws -> AgentLoopTurnUpdate?
+public typealias AgentPrepareNextTurnWithContextFn = @Sendable (PrepareNextTurnContext, CancellationToken?) async throws -> AgentLoopTurnUpdate?
+
 public typealias ShouldStopAfterTurnFn = @Sendable (ShouldStopAfterTurnContext) async -> Bool
 public typealias AgentShouldStopAfterTurnFn = @Sendable (ShouldStopAfterTurnContext, CancellationToken?) async -> Bool
 
@@ -253,6 +272,15 @@ public typealias AgentToolExecute = @Sendable (
 /// returning `nil` keeps the raw arguments unchanged.
 public typealias AgentToolPrepareArguments = @Sendable (_ args: [String: AnyCodable]) async throws -> [String: AnyCodable]?
 
+public struct AgentToolExecutionContext: Sendable {
+    public var cwd: String?
+    public init(cwd: String? = nil) { self.cwd = cwd }
+}
+
+public typealias AgentToolExecuteWithContext = @Sendable (
+    String, [String: AnyCodable], CancellationToken?, AgentToolUpdateCallback?, AgentToolExecutionContext
+) async throws -> AgentToolResult
+
 public struct AgentTool: Sendable {
     public var label: String
     public var name: String
@@ -260,6 +288,8 @@ public struct AgentTool: Sendable {
     public var parameters: [String: AnyCodable]
     public var execute: AgentToolExecute
     public var prepareArguments: AgentToolPrepareArguments?
+    public var executeWithContext: AgentToolExecuteWithContext?
+    public var constrainedSampling: ConstrainedSampling?
 
     public init(
         label: String,
@@ -267,7 +297,9 @@ public struct AgentTool: Sendable {
         description: String,
         parameters: [String: AnyCodable],
         execute: @escaping AgentToolExecute,
-        prepareArguments: AgentToolPrepareArguments? = nil
+        prepareArguments: AgentToolPrepareArguments? = nil,
+        executeWithContext: AgentToolExecuteWithContext? = nil,
+        constrainedSampling: ConstrainedSampling? = nil
     ) {
         self.label = label
         self.name = name
@@ -275,10 +307,12 @@ public struct AgentTool: Sendable {
         self.parameters = parameters
         self.execute = execute
         self.prepareArguments = prepareArguments
+        self.executeWithContext = executeWithContext
+        self.constrainedSampling = constrainedSampling
     }
 
     public var aiTool: AITool {
-        AITool(name: name, description: description, parameters: parameters)
+        AITool(name: name, description: description, parameters: parameters, constrainedSampling: constrainedSampling)
     }
 }
 
@@ -398,6 +432,7 @@ public struct AgentLoopConfig: Sendable {
     /// Called after `turnEnd` and before steering or follow-up queues are polled.
     /// Return `false` to continue normal queued-message processing.
     public var shouldStopAfterTurn: ShouldStopAfterTurnFn?
+    public var prepareNextTurn: PrepareNextTurnFn?
 
     public init(
         model: Model,
@@ -426,7 +461,8 @@ public struct AgentLoopConfig: Sendable {
         getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)? = nil,
         getSteeringMessages: (@Sendable () async -> [AgentMessage])? = nil,
         getFollowUpMessages: (@Sendable () async -> [AgentMessage])? = nil,
-        shouldStopAfterTurn: ShouldStopAfterTurnFn? = nil
+        shouldStopAfterTurn: ShouldStopAfterTurnFn? = nil,
+        prepareNextTurn: PrepareNextTurnFn? = nil
     ) {
         self.model = model
         self.temperature = temperature
@@ -455,6 +491,7 @@ public struct AgentLoopConfig: Sendable {
         self.getSteeringMessages = getSteeringMessages
         self.getFollowUpMessages = getFollowUpMessages
         self.shouldStopAfterTurn = shouldStopAfterTurn
+        self.prepareNextTurn = prepareNextTurn
     }
 }
 

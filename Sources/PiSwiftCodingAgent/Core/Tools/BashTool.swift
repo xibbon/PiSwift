@@ -102,7 +102,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
     let parameters: [String: AnyCodable] = [
         "type": AnyCodable("object"),
         "properties": AnyCodable([
-            "command": ["type": "string", "description": "Bash command to execute"],
+            "command": ["type": "string", "description": "Shell command to execute"],
             "timeout": ["type": "number", "description": "Timeout in seconds (optional)"],
         ]),
     ]
@@ -191,7 +191,8 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
                 onChunk: onChunk,
                 signal: signal,
                 timeoutSeconds: timeoutValue,
-                environment: options?.exposeSessionEnvironment == false ? nil : options?.sessionEnvironment?()
+                environment: options?.exposeSessionEnvironment == false ? nil : options?.sessionEnvironment?(),
+                cwd: cwd
             )
         )
 
@@ -250,7 +251,12 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
         name: "bash",
         description: "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last \(DEFAULT_MAX_LINES) lines or \(DEFAULT_MAX_BYTES / 1024)KB (whichever is hit first). If truncated, full output is saved to a temp file.",
         parameters: parameters,
-        execute: execute
+        execute: execute,
+        executeWithContext: { id, params, signal, onUpdate, context in
+            try await createBashTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: options)
+                .execute(id, params, signal, onUpdate)
+        },
+        constrainedSampling: getExperimentalToolSampling()
     )
 }
 

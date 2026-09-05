@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 public struct AnyCodable: Codable, Sendable, Equatable {
     private let storage: Storage
@@ -76,11 +77,19 @@ public struct AnyCodable: Codable, Sendable, Equatable {
         case unsupported(String)
 
         init(_ value: Any) {
+            // Foundation bridges JSON booleans to NSNumber. Test the CF type before numbers.
+            if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() {
+                self = .bool(number.boolValue)
+                return
+            }
             switch value {
             case is NSNull:
                 self = .null
             case let intVal as Int:
                 self = .int(intVal)
+            case let intVal as Int64:
+                if let exact = Int(exactly: intVal) { self = .int(exact) }
+                else { self = .unsupported(String(intVal)) }
             case let doubleVal as Double:
                 self = .double(doubleVal)
             case let stringVal as String:

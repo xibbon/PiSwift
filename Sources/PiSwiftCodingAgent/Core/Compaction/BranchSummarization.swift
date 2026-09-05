@@ -8,13 +8,15 @@ public struct BranchSummaryResult: Sendable {
     public var modifiedFiles: [String]?
     public var aborted: Bool?
     public var error: String?
+    public var usage: Usage?
 
-    public init(summary: String? = nil, readFiles: [String]? = nil, modifiedFiles: [String]? = nil, aborted: Bool? = nil, error: String? = nil) {
+    public init(summary: String? = nil, readFiles: [String]? = nil, modifiedFiles: [String]? = nil, aborted: Bool? = nil, error: String? = nil, usage: Usage? = nil) {
         self.summary = summary
         self.readFiles = readFiles
         self.modifiedFiles = modifiedFiles
         self.aborted = aborted
         self.error = error
+        self.usage = usage
     }
 }
 
@@ -58,9 +60,13 @@ public struct GenerateBranchSummaryOptions: Sendable {
     public var customInstructions: String?
     /// If true, `customInstructions` replaces the default prompt instead of being appended.
     public var replaceInstructions: Bool?
+    /// Tokens reserved when selecting branch history (default 16384).
     public var reserveTokens: Int?
+    public var streamFn: StreamFn?
+    public var retry: RetryPolicy?
+    public var callbacks: RetryCallbacks?
 
-    public init(model: Model, apiKey: String, headers: ProviderHeaders? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?) {
+    public init(model: Model, apiKey: String, headers: ProviderHeaders? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?, streamFn: StreamFn? = nil, retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil) {
         self.model = model
         self.apiKey = apiKey
         self.headers = headers
@@ -68,6 +74,9 @@ public struct GenerateBranchSummaryOptions: Sendable {
         self.customInstructions = customInstructions
         self.replaceInstructions = replaceInstructions
         self.reserveTokens = reserveTokens
+        self.streamFn = streamFn
+        self.retry = retry
+        self.callbacks = callbacks
     }
 }
 
@@ -134,18 +143,41 @@ public func prepareBranchEntries(_ entries: [SessionEntry], _ tokenBudget: Int =
 
 public func generateBranchSummary(_ entries: [SessionEntry], _ options: GenerateBranchSummaryOptions) async -> BranchSummaryResult {
     let reserve = options.reserveTokens ?? 16384
-    let preparation = prepareBranchEntries(entries, reserve)
+    let contextWindow = options.model.contextWindow > 0 ? options.model.contextWindow : 128000
+    let preparation = prepareBranchEntries(entries, contextWindow - reserve)
     if preparation.messages.isEmpty {
-        return BranchSummaryResult(summary: "No conversation to summarize.", readFiles: [], modifiedFiles: [])
+        return BranchSummaryResult(summary: "No content to summarize", readFiles: [], modifiedFiles: [])
     }
 
     let summaryPrompt = """
-Summarize the abandoned branch for future context. Keep it short and focused.
+Create a structured summary of this conversation branch for context when returning later.
 
-Include:
-- Key decisions
-- Important constraints
-- File changes or reads
+Use this EXACT format:
+
+## Goal
+[What was the user trying to accomplish in this branch?]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Work that was started but not finished]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [What should happen next to continue this work]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.
 """
 
     let llmMessages = convertToLlm(preparation.messages)
@@ -164,16 +196,18 @@ Include:
 
     let message = Message.user(UserMessage(content: .blocks([.text(TextContent(text: prompt))])))
     do {
-        let response = try await completeSimple(
+        let response = try await completeSummarization(
             model: options.model,
             context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: [message]),
-            options: SimpleStreamOptions(maxTokens: Int(Double(reserve) * 0.6), signal: options.signal, apiKey: options.apiKey, headers: options.headers)
+            options: SimpleStreamOptions(maxTokens: min(4096, options.model.maxTokens > 0 ? options.model.maxTokens : Int.max), signal: options.signal, apiKey: options.apiKey, headers: options.headers),
+            streamFn: options.streamFn, retry: options.retry, callbacks: options.callbacks
         )
-        switch response.stopReason {
-        case .stop, .length, .toolUse:
-            break
-        case .pending, .error, .aborted, .deferred:
-            return BranchSummaryResult(error: response.errorMessage ?? "Summarization failed")
+        if response.stopReason == .aborted { return BranchSummaryResult(aborted: true) }
+        if let failure = getSummarizationFailure(response, label: "Branch summarization") {
+            return BranchSummaryResult(error: failure)
+        }
+        if response.content.contains(where: { if case .toolCall = $0 { return true }; return false }) {
+            return BranchSummaryResult(error: "Branch summarization attempted to call a tool")
         }
 
         let text = response.content.compactMap { block -> String? in
@@ -186,7 +220,8 @@ Include:
             summary: text,
             readFiles: lists.readFiles,
             modifiedFiles: lists.modifiedFiles,
-            aborted: options.signal?.isCancelled == true ? true : nil
+            aborted: options.signal?.isCancelled == true ? true : nil,
+            usage: response.usage
         )
     } catch {
         if options.signal?.isCancelled == true {

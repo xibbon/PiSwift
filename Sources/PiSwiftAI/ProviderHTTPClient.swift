@@ -53,7 +53,7 @@ public struct DefaultProviderHTTPClient: ProviderHTTPClient {
                     chunk.reserveCapacity(16_384)
                     for try await byte in bytes {
                         chunk.append(byte)
-                        if chunk.count == 16_384 {
+                        if chunk.count == 16_384 || byte == 10 || byte == 13 {
                             continuation.yield(chunk)
                             chunk.removeAll(keepingCapacity: true)
                         }

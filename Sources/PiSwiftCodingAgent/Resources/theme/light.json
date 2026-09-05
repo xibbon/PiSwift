@@ -2,6 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/theme-schema.json",
 	"name": "light",
 	"vars": {
+		"text": "",
 		"teal": "#5a8080",
 		"blue": "#547da7",
 		"green": "#588458",
@@ -76,7 +77,10 @@
 		"thinkingMax": "#af005f",
 
 		"bashMode": "green",
-		"scrollbarThumb": "selectedBg"
+		"scrollbarTrack": "lightGray",
+		"scrollbarThumb": "text",
+		"searchMatchBg": "selectedBg",
+		"searchMatchText": "text"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

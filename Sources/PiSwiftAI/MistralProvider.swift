@@ -38,21 +38,24 @@ public func streamMistral(
             let bodyData = try JSONSerialization.data(withJSONObject: payload, options: [])
 
             var request = URLRequest(url: mistralChatCompletionsUrl(baseUrl: model.baseUrl))
-            request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
+            request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
             request.httpMethod = "POST"
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
             request.setValue("text/event-stream", forHTTPHeaderField: "accept")
             request.setValue("application/json", forHTTPHeaderField: "content-type")
 
             var mergedHeaders = mergeProviderHeaders(model.headers, options.headers) ?? [:]
             // Mistral infrastructure uses `x-affinity` for KV-cache reuse (prefix caching).
-            if let sessionId = options.sessionId, !providerHeadersContain(mergedHeaders, name: "x-affinity") {
+            if let sessionId = options.sessionId, !sessionId.isEmpty, options.cacheRetention != CacheRetention.none,
+               !providerHeadersContain(mergedHeaders, name: "x-affinity") {
                 mergedHeaders.updateValue(sessionId, forKey: "x-affinity")
             }
             applyProviderHeaders(mergedHeaders, to: &request)
             request.httpBody = bodyData
 
-            let responseBody = try await fetchMistralStream(request: request, options: options)
+            let response = try await fetchMistralStream(request: request, options: options)
+            defer { response.cancel() }
 
             stream.push(.start(partial: output))
 
@@ -75,7 +78,8 @@ public func streamMistral(
                 currentBlockKind = nil
             }
 
-            for try await event in parseMistralSseStream(body: responseBody) {
+            for try await rawEvent in parseMistralSseStream(body: response.body) {
+                let event = rawEvent.mapValues(\.value)
                 if options.signal?.isCancelled == true {
                     throw MistralStreamError.aborted
                 }
@@ -86,11 +90,13 @@ public func streamMistral(
                 if let usage = event["usage"] as? [String: Any] {
                     let promptTokens = (usage["prompt_tokens"] as? Int) ?? 0
                     let completionTokens = (usage["completion_tokens"] as? Int) ?? 0
-                    let totalTokens = (usage["total_tokens"] as? Int) ?? (promptTokens + completionTokens)
+                    let cachedTokens = mistralCachedPromptTokens(usage, promptTokens: promptTokens)
+                    let reportedTotal = usage["total_tokens"] as? Int ?? 0
+                    let totalTokens = reportedTotal == 0 ? promptTokens + completionTokens : reportedTotal
                     output.usage = Usage(
-                        input: promptTokens,
+                        input: max(0, promptTokens - cachedTokens),
                         output: completionTokens,
-                        cacheRead: 0,
+                        cacheRead: cachedTokens,
                         cacheWrite: 0,
                         totalTokens: totalTokens
                     )
@@ -190,7 +196,7 @@ public func streamMistral(
                         } else {
                             callId = MistralToolCallIdNormalizer.derive(from: "toolcall:\(toolIndex)", attempt: 0)
                         }
-                        let key = "\(callId):\(toolIndex)"
+                        let key = (toolCall["index"] as? Int).map { "index:\($0)" } ?? "id:\(callId)"
                         let function = toolCall["function"] as? [String: Any]
                         let name = (function?["name"] as? String) ?? ""
                         let argDelta: String
@@ -216,6 +222,8 @@ public func streamMistral(
                         let combined = prior + argDelta
                         toolCallArgsByIndex[contentIndex] = combined
                         if case .toolCall(var block) = output.content[contentIndex] {
+                            if !name.isEmpty { block.name = name }
+                            if let rawId, !rawId.isEmpty, rawId != "null" { block.id = rawId }
                             block.arguments = parseStreamingJSON(combined)
                             output.content[contentIndex] = .toolCall(block)
                         }
@@ -266,6 +274,8 @@ public enum MistralStreamError: Error, LocalizedError {
     case unknown
     case streamEndedWithoutFinishReason
     case providerError(String)
+    case timeout
+    case invalidStreamingEvent
 
     public var errorDescription: String? {
         switch self {
@@ -274,8 +284,9 @@ public enum MistralStreamError: Error, LocalizedError {
         case .invalidResponse:
             return "Mistral response failed: invalid response"
         case .apiError(let status, let body):
-            let bodyText = body.isEmpty ? "" : ": \(truncateMistralErrorText(body, maxChars: 4000))"
-            return "Mistral API error (\(status))\(bodyText)"
+            let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = trimmed.isEmpty ? "Request failed with status \(status)" : truncateMistralErrorText(trimmed, maxChars: 4000)
+            return "Mistral API error (\(status)): \(detail)"
         case .aborted:
             return "Request was aborted"
         case .unknown:
@@ -284,6 +295,10 @@ public enum MistralStreamError: Error, LocalizedError {
             return "Mistral stream ended without a finish reason"
         case .providerError(let message):
             return message
+        case .timeout:
+            return "Mistral request timeout"
+        case .invalidStreamingEvent:
+            return "Invalid Mistral streaming event"
         }
     }
 }
@@ -291,6 +306,9 @@ public enum MistralStreamError: Error, LocalizedError {
 private func formatMistralError(_ error: Error) -> String {
     if let mistralError = error as? MistralStreamError {
         return mistralError.errorDescription ?? "\(mistralError)"
+    }
+    if case StreamError.providerRequest(let status?, _, let body) = error {
+        return MistralStreamError.apiError(status, body).errorDescription ?? body
     }
     return retryAwareErrorDescription(error)
 }
@@ -364,7 +382,7 @@ private func buildMistralPayload(
                 "description": tool.description,
                 "strict": strict ?? false,
             ]
-            function["parameters"] = tool.parameters.mapValues { $0.value }
+            function["parameters"] = try getJsonSchemaToolParameters(tool, strict: strict == true).mapValues { $0.value }
             return ["type": "function", "function": function]
         }
     }
@@ -383,6 +401,9 @@ private func buildMistralPayload(
     }
     if let effort = options.reasoningEffort {
         payload["reasoning_effort"] = effort
+    }
+    if let sessionId = options.sessionId, !sessionId.isEmpty, options.cacheRetention != CacheRetention.none {
+        payload["prompt_cache_key"] = sessionId
     }
     return payload
 }
@@ -449,6 +470,7 @@ private func encodeMistralAssistantMessage(
             toolCalls.append([
                 "id": normalizer.normalize(toolCall.id),
                 "type": "function",
+                "index": 0,
                 "function": [
                     "name": toolCall.name,
                     "arguments": argsJSON,
@@ -462,7 +484,7 @@ private func encodeMistralAssistantMessage(
     if contentParts.isEmpty && toolCalls.isEmpty {
         return nil
     }
-    var entry: [String: Any] = ["role": "assistant"]
+    var entry: [String: Any] = ["role": "assistant", "prefix": false]
     if !contentParts.isEmpty {
         entry["content"] = contentParts
     }
@@ -537,7 +559,7 @@ private func jsonEncodeMistralArgs(_ args: [String: AnyCodable]) -> String {
 ///
 /// SAFETY: instances are request-local and used synchronously while constructing
 /// one payload, so the mutable maps are not shared across concurrent tasks.
-private final class MistralToolCallIdNormalizer: @unchecked Sendable {
+private final class MistralToolCallIdNormalizer {
     private static let length = 9
     private var idMap: [String: String] = [:]
     private var reverseMap: [String: String] = [:]
@@ -569,52 +591,32 @@ private final class MistralToolCallIdNormalizer: @unchecked Sendable {
     }
 }
 
-private func parseMistralSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<[String: Any], Error> {
-    AsyncThrowingStream { continuation in
-        Task {
-            var buffer = Data()
-            let delimiterCrlf = Data([13, 10, 13, 10])
-            let delimiterLf = Data([10, 10])
-            do {
-                for try await byte in bytes {
-                    buffer.append(byte)
-                    while let range = findMistralDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
-                        let chunk = buffer.subdata(in: 0..<range.lowerBound)
-                        buffer.removeSubrange(0..<range.upperBound)
-                        if let event = parseMistralSseEvent(from: chunk) {
-                            continuation.yield(event)
-                        }
-                    }
-                }
-                if !buffer.isEmpty, let event = parseMistralSseEvent(from: buffer) {
-                    continuation.yield(event)
-                }
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
-            }
-        }
-    }
+private enum MistralSseEvent {
+    case message([String: AnyCodable])
+    case done
+    case ignored
 }
 
-private func parseMistralSseStream(body: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<[String: Any], Error> {
+private func parseMistralSseStream(body: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<[String: AnyCodable], Error> {
     AsyncThrowingStream { continuation in
-        Task {
+        let reader = Task {
             var buffer = Data()
-            let delimiterCrlf = Data([13, 10, 13, 10])
-            let delimiterLf = Data([10, 10])
             do {
                 for try await chunk in body {
                     buffer.append(chunk)
-                    while let range = findMistralDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
+                    while let range = findMistralDelimiter(in: buffer) {
                         let frame = buffer.subdata(in: 0..<range.lowerBound)
                         buffer.removeSubrange(0..<range.upperBound)
-                        if let event = parseMistralSseEvent(from: frame) {
-                            continuation.yield(event)
+                        switch try parseMistralSseEvent(from: frame) {
+                        case .message(let event): continuation.yield(event)
+                        case .done:
+                            continuation.finish()
+                            return
+                        case .ignored: break
                         }
                     }
                 }
-                if !buffer.isEmpty, let event = parseMistralSseEvent(from: buffer) {
+                if !buffer.isEmpty, case .message(let event) = try parseMistralSseEvent(from: buffer) {
                     continuation.yield(event)
                 }
                 continuation.finish()
@@ -622,66 +624,110 @@ private func parseMistralSseStream(body: AsyncThrowingStream<Data, Error>) -> As
                 continuation.finish(throwing: error)
             }
         }
+        continuation.onTermination = { _ in reader.cancel() }
     }
 }
 
-private func findMistralDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range<Data.Index>? {
-    let crlfRange = buffer.range(of: crlf)
-    let lfRange = buffer.range(of: lf)
-    switch (crlfRange, lfRange) {
-    case (nil, nil): return nil
-    case (let r?, nil): return r
-    case (nil, let r?): return r
-    case (let r1?, let r2?): return r1.lowerBound <= r2.lowerBound ? r1 : r2
+private func findMistralDelimiter(in buffer: Data) -> Range<Data.Index>? {
+    let delimiters: [[UInt8]] = [[13,10,13,10], [13,10,13], [13,10,10], [13,13,10], [10,13,10], [13,13], [10,13], [10,10]]
+    return delimiters.compactMap { buffer.range(of: Data($0)) }.min {
+        $0.lowerBound == $1.lowerBound ? $0.count > $1.count : $0.lowerBound < $1.lowerBound
     }
 }
 
-private func parseMistralSseEvent(from chunk: Data) -> [String: Any]? {
-    guard !chunk.isEmpty, let raw = String(data: chunk, encoding: .utf8) else { return nil }
-    let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
+private func parseMistralSseEvent(from chunk: Data) throws -> MistralSseEvent {
+    guard !chunk.isEmpty else { return .ignored }
+    let raw = String(decoding: chunk, as: UTF8.self)
+    let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
-    var dataLines: [String] = []
-    for line in lines {
-        if line.hasPrefix("data:") {
-            let value = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-            dataLines.append(value)
-        }
+    let dataLines = lines.filter { $0.hasPrefix("data:") }.map { line in
+        String(line.dropFirst(5).drop(while: { $0.isWhitespace }))
     }
-    guard !dataLines.isEmpty else { return nil }
     let payload = dataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !payload.isEmpty, payload != "[DONE]" else { return nil }
-    guard let data = payload.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data, options: []),
-          let event = object as? [String: Any] else { return nil }
-    return event
+    guard !payload.isEmpty else { return .ignored }
+    if payload == "[DONE]" { return .done }
+    guard let object = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
+          object["choices"] is [Any] else { throw MistralStreamError.invalidStreamingEvent }
+    return .message(object.mapValues(AnyCodable.init))
 }
 
-private func collectMistralData(from bytes: URLSession.AsyncBytes) async throws -> Data {
-    var data = Data()
-    for try await byte in bytes {
-        data.append(byte)
-    }
-    return data
+private func mistralCachedPromptTokens(_ usage: [String: Any], promptTokens: Int) -> Int {
+    let candidates: [Any?] = [
+        (usage["promptTokensDetails"] as? [String: Any])?["cachedTokens"],
+        (usage["prompt_tokens_details"] as? [String: Any])?["cached_tokens"],
+        (usage["promptTokenDetails"] as? [String: Any])?["cachedTokens"],
+        (usage["prompt_token_details"] as? [String: Any])?["cached_tokens"],
+        usage["numCachedTokens"], usage["num_cached_tokens"],
+    ]
+    let raw = candidates.compactMap { $0 }.first { !($0 is NSNull) }
+    guard let value = raw as? Int else { return 0 }
+    return min(promptTokens, max(0, value))
+}
+
+private struct MistralHTTPStream: Sendable {
+    let body: AsyncThrowingStream<Data, Error>
+    let cancel: @Sendable () -> Void
 }
 
 private func fetchMistralStream(
     request: URLRequest,
     options: MistralOptions
-) async throws -> AsyncThrowingStream<Data, Error> {
+) async throws -> MistralHTTPStream {
     let client = options.httpClient ?? DefaultProviderHTTPClient()
-    let response = try await retryProviderRequest(
-        maxRetries: options.maxRetries,
-        maxRetryDelayMs: options.maxRetryDelayMs,
-        signal: options.signal
-    ) {
-        let response = try await client.send(request)
-        guard (200..<300).contains(response.statusCode) else {
-            throw try await providerHTTPError(from: response)
-        }
-        return response
+    let signal = CancellationToken()
+    let timedOut = LockedState(false)
+    let externalHandler = options.signal?.addCancellationHandler { signal.cancel() }
+    let timeout = Task {
+        do {
+            try await Task.sleep(for: .milliseconds(max(0, options.timeoutMs ?? 60_000)))
+            timedOut.withLock { $0 = true }
+            signal.cancel()
+        } catch {}
     }
-    options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
-    return response.body
+    let response: ProviderHTTPResponse
+    do {
+        response = try await retryProviderRequest(
+            maxRetries: options.maxRetries,
+            maxRetryDelayMs: options.maxRetryDelayMs,
+            signal: signal
+        ) {
+            let response = try await client.send(request)
+            options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
+            guard (200..<300).contains(response.statusCode) else {
+                throw try await providerHTTPError(from: response)
+            }
+            return response
+        }
+    } catch {
+        timeout.cancel()
+        if let externalHandler { options.signal?.removeCancellationHandler(externalHandler) }
+        if timedOut.withLock({ $0 }) { throw MistralStreamError.timeout }
+        throw error
+    }
+    let body = AsyncThrowingStream<Data, Error> { continuation in
+        let reader = Task {
+            do {
+                for try await data in response.body {
+                    try Task.checkCancellation()
+                    continuation.yield(data)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        let cancellationHandler = signal.addCancellationHandler {
+            continuation.finish(throwing: timedOut.withLock({ $0 }) ? MistralStreamError.timeout : MistralStreamError.aborted)
+            reader.cancel()
+        }
+        continuation.onTermination = { _ in
+            reader.cancel()
+            timeout.cancel()
+            if let cancellationHandler { signal.removeCancellationHandler(cancellationHandler) }
+            if let externalHandler { options.signal?.removeCancellationHandler(externalHandler) }
+        }
+    }
+    return MistralHTTPStream(body: body, cancel: { signal.cancel() })
 }
 
 /// Maps `SimpleStreamOptions` onto `MistralOptions`, applying Mistral's reasoning conventions.
@@ -702,7 +748,7 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
-        toolChoice: nil,
+        toolChoice: options?.toolChoice.map { AnyCodable($0.rawValue) },
         promptMode: promptMode,
         reasoningEffort: reasoningEffort,
         sessionId: options?.sessionId,
@@ -711,7 +757,8 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
-        maxRetryDelayMs: options?.maxRetryDelayMs
+        maxRetryDelayMs: options?.maxRetryDelayMs,
+        cacheRetention: options?.cacheRetention
     )
 }
 

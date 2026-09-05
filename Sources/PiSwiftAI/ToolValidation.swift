@@ -6,6 +6,7 @@ public enum ValidationError: Error, LocalizedError {
     case validationFailed(toolName: String, errors: [SchemaValidationError], receivedArguments: [String: AnyCodable])
     case schemaMissing(String)
     case constrainedSampling(String)
+    case unsupportedStrictSchema(String)
 
     public var errorDescription: String? {
         switch self {
@@ -17,7 +18,7 @@ public enum ValidationError: Error, LocalizedError {
             return "Validation failed for tool \"\(toolName)\":\n\(errorMessages)\n\nReceived arguments:\n\(argsJson)"
         case .schemaMissing(let name):
             return "Tool \"\(name)\" has no parameter schema"
-        case .constrainedSampling(let message):
+        case .constrainedSampling(let message), .unsupportedStrictSchema(let message):
             return message
         }
     }
@@ -66,7 +67,7 @@ public func validateToolArguments(tool: AITool, toolCall: ToolCall) throws -> [S
     }
 
     // Convert arguments to plain dictionary for validation
-    let argumentsDict = extractValues(from: toolCall.arguments)
+    let argumentsDict = normalizeOptionalNulls(extractValues(from: toolCall.arguments), schema: schema)
 
     // Validate using JSON Schema validator
     let validator = JSONSchemaValidator.shared
@@ -77,7 +78,7 @@ public func validateToolArguments(tool: AITool, toolCall: ToolCall) throws -> [S
         if let coerced = result.coercedValue as? [String: Any] {
             return convertToAnyCodable(coerced)
         }
-        return toolCall.arguments
+        return (argumentsDict as? [String: Any] ?? [:]).mapValues(AnyCodable.init)
     }
 
     throw ValidationError.validationFailed(
@@ -133,4 +134,28 @@ private func extractValues(from arguments: [String: AnyCodable]) -> [String: Any
 /// Convert a plain dictionary back to AnyCodable.
 private func convertToAnyCodable(_ dict: [String: Any]) -> [String: AnyCodable] {
     dict.mapValues(AnyCodable.init)
+}
+
+func normalizeOptionalNulls(_ value: Any, schema: [String: Any]) -> Any {
+    if let array = value as? [Any] {
+        return array.enumerated().map { index, item in
+            if let tuple = schema["items"] as? [[String: Any]], index < tuple.count {
+                return normalizeOptionalNulls(item, schema: tuple[index])
+            }
+            if let items = schema["items"] as? [String: Any] { return normalizeOptionalNulls(item, schema: items) }
+            return item
+        }
+    }
+    guard var object = value as? [String: Any], let properties = schema["properties"] as? [String: Any] else { return value }
+    let required = Set(schema["required"] as? [String] ?? [])
+    for (key, rawSchema) in properties {
+        guard let item = object[key], let property = rawSchema as? [String: Any] else { continue }
+        if item is NSNull && !required.contains(key) && !(property["$ref"] is String) && !schemaAllowsNull(property)
+            && !JSONSchemaValidator.shared.validate(NSNull(), against: property, coerceTypes: false).isValid {
+            object.removeValue(forKey: key)
+        } else {
+            object[key] = normalizeOptionalNulls(item, schema: property)
+        }
+    }
+    return object
 }

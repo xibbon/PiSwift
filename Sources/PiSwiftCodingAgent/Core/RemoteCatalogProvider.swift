@@ -37,11 +37,14 @@ public struct FetchRetryOptions: Sendable {
     public var retryOnStatus: Bool
     /// Overall time budget shared by all attempts.
     public var timeoutMs: Double?
+    /// A new timeout starts for each attempt. Expiry permits a retry.
+    public var attemptTimeoutMs: Double?
 
-    public init(maxRetries: Int = 2, retryOnStatus: Bool = true, timeoutMs: Double? = nil) {
+    public init(maxRetries: Int = 2, retryOnStatus: Bool = true, timeoutMs: Double? = nil, attemptTimeoutMs: Double? = nil) {
         self.maxRetries = max(0, maxRetries)
         self.retryOnStatus = retryOnStatus
         self.timeoutMs = timeoutMs
+        self.attemptTimeoutMs = attemptTimeoutMs
     }
 }
 
@@ -82,11 +85,22 @@ public func fetchWithRetry(
             value += 1
             return value
         }
+        let attemptSignal = CancellationToken()
+        let attemptTimeoutTask: Task<Void, Never>? = if let timeout = options.attemptTimeoutMs, timeout > 0 {
+            Task {
+                do {
+                    try await Task.sleep(for: .milliseconds(timeout))
+                    attemptSignal.cancel()
+                } catch {}
+            }
+        } else { nil }
+        defer { attemptTimeoutTask?.cancel() }
         do {
-            let response = try await client.send(request)
-            var body = Data()
-            for try await chunk in response.body {
-                body.append(chunk)
+            let response = try await retryProviderRequest(maxRetries: 0, signal: attemptSignal) {
+                let response = try await client.send(request)
+                var body = Data()
+                for try await chunk in response.body { body.append(chunk) }
+                return ManagementHTTPResponse(statusCode: response.statusCode, headers: response.headers, body: body)
             }
             if options.retryOnStatus,
                retryableStatuses.contains(response.statusCode),
@@ -102,13 +116,16 @@ public func fetchWithRetry(
             return ManagementHTTPResponse(
                 statusCode: response.statusCode,
                 headers: response.headers,
-                body: body
+                body: response.body
             )
         } catch {
             if effectiveSignal.isCancelled || Task.isCancelled {
                 throw StreamError.requestAborted
             }
-            if (error as? URLError)?.code == .cancelled { throw error }
+            if !attemptSignal.isCancelled {
+                if (error as? URLError)?.code == .cancelled || error is CancellationError { throw error }
+                if case .requestAborted = error as? StreamError, options.timeoutMs == nil { throw error }
+            }
             if attempt <= retryLimit {
                 throw StreamError.providerRequest(
                     statusCode: nil,
@@ -193,7 +210,7 @@ public struct RemoteCatalogProvider: Sendable {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
 
-        let response = try await fetchWithRetry(request, client: httpClient, signal: context.signal)
+        let response = try await fetchWithRetry(request, client: httpClient, options: .init(attemptTimeoutMs: 4_000), signal: context.signal)
         if context.signal.isCancelled { return }
         let checkedAt = now()
 

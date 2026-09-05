@@ -347,15 +347,15 @@ import PiSwiftCodingAgent
     #expect(model.compat?.sendSessionIdHeader == false)
 }
 
-@Test func modelRegistryRoutesGitHubCopilotClaudeThroughOpenAICompletions() throws {
+@Test func modelRegistryPreservesGitHubCopilotClaudeCatalogAPI() throws {
     let authStorage = AuthStorage(":memory:")
     let registry = ModelRegistry(authStorage)
-    guard let model = registry.find("github-copilot", "claude-sonnet-4.5") else {
+    guard let model = registry.find("github-copilot", "claude-sonnet-4.6") else {
         #expect(Bool(false), "Expected GitHub Copilot Claude model to be available")
         return
     }
 
-    #expect(model.api == .openAICompletions)
+    #expect(model.api == .anthropicMessages)
     #expect(model.compat?.supportsStore == false)
     #expect(model.compat?.supportsDeveloperRole == false)
     #expect(model.compat?.supportsReasoningEffort == false)

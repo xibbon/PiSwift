@@ -77,10 +77,10 @@ public enum HookMessageContent: Sendable {
 
 public struct BranchSummaryMessage: Sendable {
     public var summary: String
-    public var fromId: String
+    public var fromId: String?
     public var timestamp: Int64
 
-    public init(summary: String, fromId: String, timestamp: Int64) {
+    public init(summary: String, fromId: String? = nil, timestamp: Int64) {
         self.summary = summary
         self.fromId = fromId
         self.timestamp = timestamp
@@ -117,7 +117,7 @@ public func bashExecutionToText(_ message: BashExecutionMessage) -> String {
     return text
 }
 
-public func createBranchSummaryMessage(summary: String, fromId: String, timestamp: String) -> BranchSummaryMessage {
+public func createBranchSummaryMessage(summary: String, fromId: String? = nil, timestamp: String) -> BranchSummaryMessage {
     let ts = ISO8601DateFormatter().date(from: timestamp)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
     return BranchSummaryMessage(summary: summary, fromId: fromId, timestamp: Int64(ts * 1000))
 }
@@ -233,10 +233,8 @@ public func makeBashExecutionAgentMessage(_ message: BashExecutionMessage) -> Ag
 }
 
 public func makeBranchSummaryAgentMessage(_ message: BranchSummaryMessage) -> AgentMessage {
-    let payload: [String: Any] = [
-        "summary": message.summary,
-        "fromId": message.fromId,
-    ]
+    var payload: [String: Any] = ["summary": message.summary]
+    if let fromId = message.fromId { payload["fromId"] = fromId }
     return .custom(AgentCustomMessage(role: "branchSummary", payload: AnyCodable(payload), timestamp: message.timestamp))
 }
 
@@ -351,7 +349,7 @@ private func decodeHookMessage(_ custom: AgentCustomMessage) -> HookMessage? {
 private func decodeBranchSummaryMessage(_ custom: AgentCustomMessage) -> BranchSummaryMessage? {
     guard let payload = custom.payload?.value as? [String: Any] else { return nil }
     let summary = payload["summary"] as? String ?? ""
-    let fromId = payload["fromId"] as? String ?? ""
+    let fromId = payload["fromId"] as? String
     return BranchSummaryMessage(summary: summary, fromId: fromId, timestamp: custom.timestamp)
 }
 

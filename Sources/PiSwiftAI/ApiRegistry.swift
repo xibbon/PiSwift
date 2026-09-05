@@ -280,8 +280,18 @@ public func registerBuiltInProviders() {
         },
         streamSimple: { model, context, options in
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
-            let providerOptions = mapGoogleSimpleOptions(model: model, options: options, apiKey: apiKey)
-            return streamGoogle(model: model, context: context, options: providerOptions)
+            do {
+                let providerOptions = try mapGoogleSimpleOptionsValidated(model: model, options: options, apiKey: apiKey)
+                return streamGoogle(model: model, context: context, options: providerOptions)
+            } catch {
+                let stream = AssistantMessageEventStream()
+                let message = AssistantMessage(content: [], api: model.api, provider: model.provider, model: model.id,
+                    usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                    stopReason: .error, errorMessage: error.localizedDescription)
+                stream.push(.error(reason: .error, error: message))
+                stream.end()
+                return stream
+            }
         }
     ), sourceId: "built-in")
 
@@ -306,8 +316,18 @@ public func registerBuiltInProviders() {
         },
         streamSimple: { model, context, options in
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
-            let providerOptions = mapGoogleVertexSimpleOptions(model: model, options: options, apiKey: apiKey)
-            return streamGoogleVertex(model: model, context: context, options: providerOptions)
+            do {
+                let providerOptions = try mapGoogleVertexSimpleOptionsValidated(model: model, options: options, apiKey: apiKey)
+                return streamGoogleVertex(model: model, context: context, options: providerOptions)
+            } catch {
+                let stream = AssistantMessageEventStream()
+                let message = AssistantMessage(content: [], api: model.api, provider: model.provider, model: model.id,
+                    usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                    stopReason: .error, errorMessage: error.localizedDescription)
+                stream.push(.error(reason: .error, error: message))
+                stream.end()
+                return stream
+            }
         }
     ), sourceId: "built-in")
 

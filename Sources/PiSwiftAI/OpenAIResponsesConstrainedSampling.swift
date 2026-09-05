@@ -139,10 +139,12 @@ func validateResponsesGrammarReplay(
     }
 }
 
-func openAIResponsesURL(baseUrl: String) -> URL {
+func openAIResponsesURL(baseUrl: String, provider: String = "") -> URL {
     var trimmed = baseUrl
     while trimmed.hasSuffix("/") { trimmed.removeLast() }
     if trimmed.hasSuffix("/responses") { return URL(string: trimmed)! }
-    if trimmed.hasSuffix("/v1") { return URL(string: "\(trimmed)/responses")! }
+    if provider.lowercased() == "github-copilot" || !(URL(string: trimmed)?.path ?? "").isEmpty {
+        return URL(string: "\(trimmed)/responses")!
+    }
     return URL(string: "\(trimmed)/v1/responses")!
 }

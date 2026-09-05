@@ -178,15 +178,26 @@ private func validateFrontmatterFields(_ keys: [String]) -> [String] {
 
 func loadSkillFromFile(_ filePath: String, source: String) -> (skill: Skill?, warnings: [SkillWarning]) {
     var warnings: [SkillWarning] = []
-    guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else {
-        return (nil, warnings)
+    let content: String
+    do {
+        content = try String(contentsOfFile: filePath, encoding: .utf8)
+    } catch {
+        return (nil, [SkillWarning(skillPath: filePath, message: error.localizedDescription)])
     }
 
+    let isDeclaredSkill = URL(fileURLWithPath: filePath).lastPathComponent == "SKILL.md"
     let parsed = parseFrontmatter(content)
+    if let error = parsed.parseError {
+        return (nil, isDeclaredSkill ? [SkillWarning(skillPath: filePath, message: error)] : [])
+    }
     let skillDir = URL(fileURLWithPath: filePath).deletingLastPathComponent().path
     let parentDirName = URL(fileURLWithPath: skillDir).lastPathComponent
-    let name = parsed.frontmatter["name"] ?? parentDirName
-    let description = parsed.frontmatter["description"]
+    let declaredName = parsed.nonStringKeys.contains("name") ? nil : parsed.frontmatter["name"]
+    let name = declaredName.flatMap { $0.isEmpty ? nil : $0 } ?? parentDirName
+    let description = parsed.nonStringKeys.contains("description") ? nil : parsed.frontmatter["description"]
+    if !isDeclaredSkill && (description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+        return (nil, [])
+    }
     let disableModelInvocation = parsed.frontmatter["disable-model-invocation"]?.lowercased() == "true"
 
     for error in validateFrontmatterFields(parsed.keys) {
@@ -285,12 +296,19 @@ private func loadSkillsFromDirInternal(dir: String, source: String, includeRootF
     return LoadSkillsResult(skills: skills, warnings: warnings)
 }
 
-public func formatSkillsForPrompt(_ skills: [Skill]) -> String {
+public enum SkillFileReadTool: String, Sendable {
+    case read
+    case bash
+}
+
+public func formatSkillsForPrompt(_ skills: [Skill], fileReadTool: SkillFileReadTool = .read) -> String {
     let visible = skills.filter { !$0.disableModelInvocation }
     guard !visible.isEmpty else { return "" }
     var lines: [String] = []
     lines.append("\n\nThe following skills provide specialized instructions for specific tasks.")
-    lines.append("Use the read tool to load a skill's file when the task matches its description.")
+    lines.append(fileReadTool == .read
+        ? "Use the read tool to load a skill's file when the task matches its description."
+        : "Use bash to load a skill's file when the task matches its description.")
     lines.append("")
     lines.append("<available_skills>")
     for skill in visible {

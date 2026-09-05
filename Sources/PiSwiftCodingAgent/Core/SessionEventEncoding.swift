@@ -65,21 +65,16 @@ func encodeAgentEvent(_ event: AgentEvent) -> [String: Any] {
         ]
     case .messageStart(let message):
         return ["type": event.type, "message": encodeAgentMessageDict(message)]
-    case .messageUpdate(_, let assistantMessageEvent):
-        // Streaming wire contract: message_update contains only a usable delta event.
-        // The outer object is
-        // {"type":"message_update","assistantMessageEvent":{...}}.
-        // Delta objects use `type`; content-block events also use `contentIndex`;
-        // text/thinking deltas use `delta`; their end events use `content`;
-        // tool-call events use `toolCallId`/`toolName`, argument chunks use `delta`,
-        // and tool_call_end uses the authoritative `toolCall` object. Done/error
-        // events use `reason`, and error can include `errorMessage`. No cumulative
-        // `message` or `partial` assistant snapshot is emitted here. Clients assemble
-        // updates after message_start and replace the result with message_end.
-        return [
+    case .messageUpdate(let message, let assistantMessageEvent):
+        // Keep cumulative usage, but omit cumulative message and partial snapshots.
+        var result: [String: Any] = [
             "type": event.type,
             "assistantMessageEvent": encodeAssistantMessageEventDelta(assistantMessageEvent),
         ]
+        if case .assistant(let assistant) = message {
+            result["usage"] = usageToJSONObject(assistant.usage)
+        }
+        return result
     case .messageEnd(let message):
         return ["type": event.type, "message": encodeAgentMessageDict(message)]
     case .toolExecutionStart(let toolCallId, let toolName, let args):
@@ -155,9 +150,9 @@ private func encodeAssistantMessageEventDelta(_ event: AssistantMessageEvent) ->
     case .thinkingEnd(let contentIndex, let content, _):
         return ["type": "thinking_end", "contentIndex": contentIndex, "content": content]
     case .toolCallStart(let contentIndex, let partial):
-        var result: [String: Any] = ["type": "tool_call_start", "contentIndex": contentIndex]
+        var result: [String: Any] = ["type": "toolcall_start", "contentIndex": contentIndex]
         if let toolCall = toolCall(at: contentIndex, in: partial) {
-            result["toolCallId"] = toolCall.id
+            result["id"] = toolCall.id
             result["toolName"] = toolCall.name
         }
         return result

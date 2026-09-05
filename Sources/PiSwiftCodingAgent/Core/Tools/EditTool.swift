@@ -40,7 +40,7 @@ public struct EditToolDetails: Sendable {
 }
 
 public func createEditTool(cwd: String) -> AgentTool {
-    AgentTool(
+    var tool = AgentTool(
         label: "edit",
         name: "edit",
         description: "Edit a file with one or more targeted text replacements.",
@@ -107,20 +107,36 @@ public func createEditTool(cwd: String) -> AgentTool {
             prepareEditArguments(params)
         }
     )
+    tool.executeWithContext = { id, params, signal, onUpdate, context in
+        try await createEditTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+    }
+    tool.constrainedSampling = getExperimentalToolSampling()
+    return tool
 }
 
 /// Normalizes inputs the model produces. Some models (Opus 4.6, GLM-5.1) send `edits` as a
 /// JSON-encoded string. Others flatten the array into bracket-path keys
 /// (`edits[0].oldText`). Older callers send a single `oldText`/`newText` pair without
 /// `edits[]` — fold those into a one-element `edits` array and drop the legacy fields.
+private func singleEditObject(_ value: Any?) -> [String: Any]? {
+    guard let object = value as? [String: Any],
+          object["oldText"] is String, object["newText"] is String else { return nil }
+    return object
+}
+
 private func prepareEditArguments(_ params: [String: AnyCodable]) -> [String: AnyCodable] {
     var args = params
 
-    if let editsValue = args["edits"]?.value, let editsString = editsValue as? String {
-        if let data = editsString.data(using: .utf8),
-           let parsed = try? JSONSerialization.jsonObject(with: data, options: []) as? [Any] {
-            args["edits"] = AnyCodable(parsed)
+    if let editsString = args["edits"]?.value as? String,
+       let data = editsString.data(using: .utf8),
+       let parsed = try? JSONSerialization.jsonObject(with: data) {
+        if let array = parsed as? [Any] {
+            args["edits"] = AnyCodable(array)
+        } else if let edit = singleEditObject(parsed) {
+            args["edits"] = AnyCodable([edit])
         }
+    } else if let edit = singleEditObject(args["edits"]?.value) {
+        args["edits"] = AnyCodable([edit])
     }
 
     if args["edits"] == nil || args["edits"]?.value is NSNull {

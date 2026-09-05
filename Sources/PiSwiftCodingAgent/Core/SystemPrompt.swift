@@ -232,6 +232,9 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
         )).skills
     }
 
+    let tools = options.selectedTools ?? [.read, .bash, .edit, .write]
+    let skillFileReadTool: SkillFileReadTool? = tools.contains(.read) ? .read : (tools.contains(.bash) ? .bash : nil)
+
     if let resolvedCustomPrompt {
         var prompt = resolvedCustomPrompt
         if !appendSection.isEmpty {
@@ -246,12 +249,11 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
             }
         }
 
-        let includesRead = options.selectedTools == nil || (options.selectedTools?.contains(.read) ?? false)
-        if includesRead && !skills.isEmpty {
-            prompt += formatSkillsForPrompt(skills)
+        if let skillFileReadTool, !skills.isEmpty {
+            prompt += formatSkillsForPrompt(skills, fileReadTool: skillFileReadTool)
         }
 
-        prompt += "\nCurrent working directory: \(resolvedCwd)"
+        prompt += "\nCurrent working directory: \(resolvedCwd)\n"
         return prompt
     }
 
@@ -259,7 +261,6 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
     let docsPath = getDocsPath()
     let examplesPath = getExamplesPath()
 
-    let tools = options.selectedTools ?? [.read, .bash, .edit, .write]
     let toolsList = tools.isEmpty ? "(none)" : tools.map { "- \($0.rawValue): \(toolDescriptions[$0] ?? "")" }.joined(separator: "\n")
 
     var guidelinesList: [String] = []
@@ -281,7 +282,7 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
     }
 
     if hasBash && !hasGrep && !hasFind && !hasLs {
-        guidelinesList.append("Use bash for file operations like ls, grep, find")
+        guidelinesList.append("Use bash for file operations like ls, rg, find")
     } else if hasBash && (hasGrep || hasFind || hasLs) {
         guidelinesList.append("Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)")
     }
@@ -340,8 +341,8 @@ public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemP
         }
     }
 
-    if hasRead && !skills.isEmpty {
-        prompt += formatSkillsForPrompt(skills)
+    if let skillFileReadTool, !skills.isEmpty {
+        prompt += formatSkillsForPrompt(skills, fileReadTool: skillFileReadTool)
     }
 
     prompt += "\nCurrent working directory: \(resolvedCwd)"

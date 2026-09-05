@@ -55,7 +55,7 @@ public struct ProxyStreamOptions: Sendable {
     }
 }
 
-public func streamProxy(model: Model, context: Context, options: ProxyStreamOptions) -> AssistantMessageEventStream {
+public func streamProxy(model: Model, context: Context, options: ProxyStreamOptions, session: URLSession = .shared) -> AssistantMessageEventStream {
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -83,7 +83,7 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
 
             request.httpBody = try encodeProxyRequestPayload(model: model, context: context, options: options)
 
-            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw ProxyStreamError.invalidResponse
             }
@@ -91,6 +91,7 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
                 throw ProxyStreamError.httpError(httpResponse.statusCode)
             }
 
+            var sawTerminalEvent = false
             for try await line in bytes.lines {
                 if options.signal?.isCancelled == true {
                     throw ProxyStreamError.aborted
@@ -98,8 +99,16 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
                 guard line.hasPrefix("data: ") else { continue }
                 let payload = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !payload.isEmpty else { continue }
-                let event = try JSONDecoder().decode(ProxyAssistantMessageEvent.self, from: Data(payload.utf8))
+                let eventData = Data(payload.utf8)
+                let event = try JSONDecoder().decode(ProxyAssistantMessageEvent.self, from: eventData)
+                let fields = try JSONSerialization.jsonObject(with: eventData) as? [String: Any] ?? [:]
+                if let level = fields["providerThinkingLevel"] as? String { partial.providerThinkingLevel = level }
+                if let endTurn = fields["endTurn"] as? Bool { partial.endTurn = endTurn }
                 if let messageEvent = try processProxyEvent(event, partial: &partial, toolCallPartials: &toolCallPartials) {
+                    switch messageEvent {
+                    case .done, .error: sawTerminalEvent = true
+                    default: break
+                    }
                     stream.push(messageEvent)
                 }
             }
@@ -108,6 +117,9 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
                 throw ProxyStreamError.aborted
             }
 
+            if !sawTerminalEvent {
+                throw ProxyStreamError.invalidEventPayload("Connection closed by proxy server before the response completed")
+            }
             stream.end()
         } catch {
             let reason: StopReason
@@ -197,9 +209,9 @@ private func processProxyEvent(
         setContentBlock(&partial.content, index: index, block: .thinking(thinkingContent))
         return .thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: partial)
 
-    case .toolCallStart(let index, let id, let toolName):
+    case .toolCallStart(let index, let id, let toolName, let namespace):
         toolCallPartials[index] = ""
-        let toolCall = ToolCall(id: id, name: toolName, arguments: [:])
+        let toolCall = ToolCall(id: id, name: toolName, arguments: [:], namespace: namespace)
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
         return .toolCallStart(contentIndex: index, partial: partial)
 
@@ -214,11 +226,15 @@ private func processProxyEvent(
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
         return .toolCallDelta(contentIndex: index, delta: delta, partial: partial)
 
-    case .toolCallEnd(let index):
+    case .toolCallEnd(let index, let finalToolCall):
         toolCallPartials.removeValue(forKey: index)
-        guard case .toolCall(let toolCall) = contentBlock(partial.content, index: index) else {
+        guard case .toolCall(let existing) = contentBlock(partial.content, index: index) else {
             return nil
         }
+        var toolCall = finalToolCall ?? existing
+        toolCall.namespace = toolCall.namespace ?? existing.namespace
+        toolCall.thoughtSignature = toolCall.thoughtSignature ?? existing.thoughtSignature
+        setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
         return .toolCallEnd(contentIndex: index, toolCall: toolCall, partial: partial)
 
     case .done(let reason, let usage):
@@ -390,15 +406,7 @@ private struct ProxyMessagePayload: Encodable {
             try container.encode(user.timestamp, forKey: .timestamp)
             try encodeUserContent(user.content, into: &container)
         case .assistant(let assistant):
-            try container.encode("assistant", forKey: .role)
-            try container.encode(assistant.timestamp, forKey: .timestamp)
-            try container.encode(assistant.api.rawValue, forKey: .api)
-            try container.encode(assistant.provider, forKey: .provider)
-            try container.encode(assistant.model, forKey: .model)
-            try container.encode(ProxyUsagePayload(assistant.usage), forKey: .usage)
-            try container.encode(assistant.stopReason.rawValue, forKey: .stopReason)
-            try container.encodeIfPresent(assistant.errorMessage, forKey: .errorMessage)
-            try container.encode(assistant.content.map(ProxyContentBlockPayload.init), forKey: .content)
+            try AnyCodable(assistantMessageToJSONObject(assistant)).encode(to: encoder)
         case .toolResult(let toolResult):
             try container.encode("toolResult", forKey: .role)
             try container.encode(toolResult.timestamp, forKey: .timestamp)
@@ -471,9 +479,9 @@ private enum ProxyAssistantMessageEvent: Decodable {
     case thinkingStart(contentIndex: Int)
     case thinkingDelta(contentIndex: Int, delta: String)
     case thinkingEnd(contentIndex: Int, contentSignature: String?)
-    case toolCallStart(contentIndex: Int, id: String, toolName: String)
+    case toolCallStart(contentIndex: Int, id: String, toolName: String, namespace: String?)
     case toolCallDelta(contentIndex: Int, delta: String)
-    case toolCallEnd(contentIndex: Int)
+    case toolCallEnd(contentIndex: Int, toolCall: ToolCall?)
     case done(reason: StopReason, usage: Usage)
     case error(reason: StopReason, errorMessage: String?, usage: Usage)
 
@@ -482,8 +490,10 @@ private enum ProxyAssistantMessageEvent: Decodable {
         case contentIndex
         case delta
         case contentSignature
+        case namespace
         case id
         case toolName
+        case toolCall
         case reason
         case usage
         case errorMessage
@@ -524,7 +534,8 @@ private enum ProxyAssistantMessageEvent: Decodable {
             self = .toolCallStart(
                 contentIndex: try container.decode(Int.self, forKey: .contentIndex),
                 id: try container.decode(String.self, forKey: .id),
-                toolName: try container.decode(String.self, forKey: .toolName)
+                toolName: try container.decode(String.self, forKey: .toolName),
+                namespace: try container.decodeIfPresent(String.self, forKey: .namespace)
             )
         case "toolcall_delta":
             self = .toolCallDelta(
@@ -532,7 +543,7 @@ private enum ProxyAssistantMessageEvent: Decodable {
                 delta: try container.decode(String.self, forKey: .delta)
             )
         case "toolcall_end":
-            self = .toolCallEnd(contentIndex: try container.decode(Int.self, forKey: .contentIndex))
+            self = .toolCallEnd(contentIndex: try container.decode(Int.self, forKey: .contentIndex), toolCall: try container.decodeIfPresent(ProxyFinalToolCall.self, forKey: .toolCall)?.value)
         case "done":
             self = .done(
                 reason: try Self.decodeStopReason(from: container),
@@ -557,6 +568,18 @@ private enum ProxyAssistantMessageEvent: Decodable {
     private static func decodeUsage(from container: KeyedDecodingContainer<CodingKeys>) throws -> Usage {
         let payload = try container.decode(ProxyUsage.self, forKey: .usage)
         return payload.toUsage()
+    }
+}
+
+private struct ProxyFinalToolCall: Decodable {
+    let value: ToolCall
+    init(from decoder: Decoder) throws {
+        let payload = try AnyCodable(from: decoder)
+        guard let dict = payload.value as? [String: Any],
+              case .toolCall(let call) = contentBlockFromJSONObject(dict) else {
+            throw ProxyStreamError.invalidEventPayload("Invalid final tool call")
+        }
+        value = call
     }
 }
 

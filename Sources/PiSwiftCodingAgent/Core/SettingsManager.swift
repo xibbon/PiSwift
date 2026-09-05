@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftAgent
 
 public let DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000
 
@@ -88,13 +89,57 @@ public struct SkillsSettings: Sendable {
     public var includeSkills: [String]?
 }
 
+public enum TerminalBooleanSetting: Sendable, Equatable {
+    case auto
+    case enabled(Bool)
+}
+
+public enum TerminalImageSetting: String, Sendable {
+    case auto, kitty, iterm2, disabled
+}
+
+public enum FullscreenExitOutput: String, Sendable {
+    case transcript
+    case resumeHint = "resume-hint"
+}
+
+/// Host-independent terminal overrides. A nil value means automatic detection.
+public struct TerminalCapabilityOverrides: Sendable, Equatable {
+    public var hyperlinks: Bool?
+    public var trueColor: Bool?
+    public var images: TerminalImageSetting?
+}
+
 public struct TerminalSettings: Sendable {
+    public var hyperlinks: TerminalBooleanSetting?
+    public var trueColor: TerminalBooleanSetting?
+    public var images: TerminalImageSetting?
     public var showImages: Bool?
     /// v0.68.1: configurable inline tool image width (cells). Default 60.
     public var imageWidthCells: Int?
     /// v0.70.0: opt-in OSC 9;4 progress indicator during streaming/compaction.
     /// Default `false` — emit progress only when explicitly enabled.
     public var showTerminalProgress: Bool?
+    public var clearOnShrink: Bool?
+
+    public init(
+        hyperlinks: TerminalBooleanSetting? = nil,
+        trueColor: TerminalBooleanSetting? = nil,
+        images: TerminalImageSetting? = nil,
+        showImages: Bool? = nil,
+        imageWidthCells: Int? = nil,
+        showTerminalProgress: Bool? = nil,
+        clearOnShrink: Bool? = nil
+    ) {
+        self.hyperlinks = hyperlinks
+        self.trueColor = trueColor
+        self.images = images
+        self.showImages = showImages
+        self.imageWidthCells = imageWidthCells
+        self.showTerminalProgress = showTerminalProgress
+        self.clearOnShrink = clearOnShrink
+    }
+
 }
 
 /// v0.70.3: opt-out warnings (currently used for the Anthropic third-party-usage billing
@@ -156,6 +201,10 @@ public struct Settings: Sendable {
     public var defaultProvider: String?
     public var defaultModel: String?
     public var defaultThinkingLevel: String?
+    public var modelThinkingLevels: [String: PiSwiftAgent.ThinkingLevel]?
+    public var defaultTools: [String]?
+    public var fullscreenExitOutput: FullscreenExitOutput?
+    public var fullscreenCopyOnSelect: Bool?
     public var transport: Transport?
     public var steeringMode: String?
     public var followUpMode: String?
@@ -223,10 +272,12 @@ public struct Settings: Sendable {
 }
 
 public struct SettingsError: Sendable {
+    public var path: String?
     public var scope: String
     public var message: String
 
-    public init(scope: String, message: String) {
+    public init(scope: String, message: String, path: String? = nil) {
+        self.path = path
         self.scope = scope
         self.message = message
     }
@@ -352,8 +403,8 @@ public final class SettingsManager: Sendable {
         _ agentDir: String = getAgentDir(),
         projectTrusted: Bool = true
     ) -> SettingsManager {
-        let settingsPath = URL(fileURLWithPath: agentDir).appendingPathComponent("settings.json").path
-        let projectSettingsPath = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("settings.json").path
+        let settingsPath = URL(fileURLWithPath: (agentDir as NSString).expandingTildeInPath).standardizedFileURL.appendingPathComponent("settings.json").path
+        let projectSettingsPath = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).standardizedFileURL.appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("settings.json").path
         var loadError: String?
         var projectLoadError: String?
         var errors: [SettingsError] = []
@@ -362,7 +413,7 @@ public final class SettingsManager: Sendable {
             globalSettings = try loadFromFile(settingsPath)
         } catch {
             loadError = error.localizedDescription
-            errors.append(SettingsError(scope: "global", message: error.localizedDescription))
+            errors.append(SettingsError(scope: "global", message: error.localizedDescription, path: settingsPath))
             globalSettings = Settings()
         }
         let projectSettings: Settings
@@ -371,7 +422,7 @@ public final class SettingsManager: Sendable {
                 projectSettings = try loadFromFile(projectSettingsPath)
             } catch {
                 projectLoadError = error.localizedDescription
-                errors.append(SettingsError(scope: "project", message: error.localizedDescription))
+                errors.append(SettingsError(scope: "project", message: error.localizedDescription, path: projectSettingsPath))
                 projectSettings = Settings()
             }
         } else {
@@ -510,6 +561,56 @@ public final class SettingsManager: Sendable {
         markModified("defaultProvider")
         markModified("defaultModel")
         save()
+    }
+
+    public func getModelThinkingLevel(_ provider: String, _ modelId: String) -> PiSwiftAgent.ThinkingLevel? {
+        settings.modelThinkingLevels?["\(provider)/\(modelId)"]
+    }
+
+    public func getAllModelThinkingLevels() -> [String: PiSwiftAgent.ThinkingLevel] {
+        settings.modelThinkingLevels ?? [:]
+    }
+
+    public func setModelThinkingLevel(_ provider: String, _ modelId: String, _ level: PiSwiftAgent.ThinkingLevel) {
+        var levels = globalSettings.modelThinkingLevels ?? [:]
+        levels["\(provider)/\(modelId)"] = level
+        globalSettings.modelThinkingLevels = levels
+        markModified("modelThinkingLevels")
+        save()
+    }
+
+    public func removeModelThinkingLevel(_ provider: String, _ modelId: String) {
+        guard var levels = globalSettings.modelThinkingLevels else { return }
+        levels.removeValue(forKey: "\(provider)/\(modelId)")
+        globalSettings.modelThinkingLevels = levels.isEmpty ? nil : levels
+        markModified("modelThinkingLevels")
+        save()
+    }
+
+    public func getDefaultTools() -> [String]? { settings.defaultTools }
+    public func getFullscreenExitOutput() -> FullscreenExitOutput { settings.fullscreenExitOutput ?? .transcript }
+    public func setFullscreenExitOutput(_ output: FullscreenExitOutput) {
+        globalSettings.fullscreenExitOutput = output
+        markModified("fullscreenExitOutput")
+        save()
+    }
+    public func getFullscreenCopyOnSelect() -> Bool { settings.fullscreenCopyOnSelect ?? true }
+    public func setFullscreenCopyOnSelect(_ enabled: Bool) {
+        globalSettings.fullscreenCopyOnSelect = enabled
+        markModified("fullscreenCopyOnSelect")
+        save()
+    }
+    public func getTerminalCapabilityOverrides() -> TerminalCapabilityOverrides {
+        func boolean(_ setting: TerminalBooleanSetting?) -> Bool? {
+            if case .enabled(let value) = setting { return value }
+            return nil
+        }
+        let terminal = settings.terminal
+        return TerminalCapabilityOverrides(
+            hyperlinks: boolean(terminal?.hyperlinks),
+            trueColor: boolean(terminal?.trueColor),
+            images: terminal?.images == .auto ? nil : terminal?.images
+        )
     }
 
     public func getSteeringMode() -> String {
@@ -994,6 +1095,22 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    public func getClearOnShrink() -> Bool {
+        Self.resolveClearOnShrink(settings.terminal?.clearOnShrink, environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func resolveClearOnShrink(_ setting: Bool?, environment: [String: String]) -> Bool {
+        if let setting { return setting }
+        return environment["PI_CLEAR_ON_SHRINK"] == "1"
+    }
+
+    public func setClearOnShrink(_ enabled: Bool) {
+        if globalSettings.terminal == nil { globalSettings.terminal = TerminalSettings() }
+        globalSettings.terminal?.clearOnShrink = enabled
+        markModified("terminal", "clearOnShrink")
+        save()
+    }
+
     /// v0.70.3: per-warning opt-outs. Returns true (warning enabled) by default.
     public func getAnthropicExtraUsageWarning() -> Bool {
         settings.warnings?.anthropicExtraUsage ?? true
@@ -1121,7 +1238,7 @@ public final class SettingsManager: Sendable {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             return Settings()
         }
-        let json = try JSONSerialization.jsonObject(with: data)
+        let json = try JSONSerialization.jsonObject(with: stripUTF8BOM(data))
         guard let dict = json as? [String: Any] else {
             return Settings()
         }
@@ -1132,8 +1249,13 @@ public final class SettingsManager: Sendable {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             return [:]
         }
-        let json = try JSONSerialization.jsonObject(with: data)
+        let json = try JSONSerialization.jsonObject(with: stripUTF8BOM(data))
         return json as? [String: Any] ?? [:]
+    }
+
+    private static func decodeTerminalBoolean(_ value: Any?) -> TerminalBooleanSetting? {
+        if let value = value as? Bool { return .enabled(value) }
+        return (value as? String) == "auto" ? .auto : nil
     }
 
     private static func parseNonNegativeMilliseconds(_ value: Any?) -> Int? {
@@ -1164,13 +1286,13 @@ public final class SettingsManager: Sendable {
             return Settings()
         }
         do {
-            let json = try JSONSerialization.jsonObject(with: data)
+            let json = try JSONSerialization.jsonObject(with: stripUTF8BOM(data))
             guard let dict = json as? [String: Any] else {
                 return Settings()
             }
             return SettingsManager.decodeSettings(dict)
         } catch {
-            errors.append(SettingsError(scope: "project", message: error.localizedDescription))
+            errors.append(SettingsError(scope: "project", message: error.localizedDescription, path: projectSettingsPath))
             return Settings()
         }
     }
@@ -1246,7 +1368,7 @@ public final class SettingsManager: Sendable {
                     }
                 }
             } catch {
-                errors.append(SettingsError(scope: "project", message: error.localizedDescription))
+                errors.append(SettingsError(scope: "project", message: error.localizedDescription, path: projectSettingsPath))
             }
         }
 
@@ -1262,6 +1384,10 @@ public final class SettingsManager: Sendable {
         settings.defaultProvider = json["defaultProvider"] as? String
         settings.defaultModel = json["defaultModel"] as? String
         settings.defaultThinkingLevel = json["defaultThinkingLevel"] as? String
+        settings.modelThinkingLevels = (json["modelThinkingLevels"] as? [String: String])?.compactMapValues(PiSwiftAgent.ThinkingLevel.init(rawValue:))
+        settings.defaultTools = json["defaultTools"] as? [String]
+        settings.fullscreenExitOutput = (json["fullscreenExitOutput"] as? String).flatMap(FullscreenExitOutput.init(rawValue:))
+        settings.fullscreenCopyOnSelect = json["fullscreenCopyOnSelect"] as? Bool
         if let transport = json["transport"] as? String, let parsed = Transport(rawValue: transport) {
             settings.transport = parsed
         } else if settings.transport == nil, let websockets = json["websockets"] as? Bool {
@@ -1363,9 +1489,13 @@ public final class SettingsManager: Sendable {
 
         if let terminal = json["terminal"] as? [String: Any] {
             settings.terminal = TerminalSettings(
+                hyperlinks: decodeTerminalBoolean(terminal["hyperlinks"]),
+                trueColor: decodeTerminalBoolean(terminal["trueColor"]),
+                images: (terminal["images"] as? Bool) == false ? .disabled : (terminal["images"] as? String).flatMap(TerminalImageSetting.init(rawValue:)),
                 showImages: terminal["showImages"] as? Bool,
                 imageWidthCells: terminal["imageWidthCells"] as? Int,
-                showTerminalProgress: terminal["showTerminalProgress"] as? Bool
+                showTerminalProgress: terminal["showTerminalProgress"] as? Bool,
+                clearOnShrink: terminal["clearOnShrink"] as? Bool
             )
         }
 
@@ -1513,7 +1643,7 @@ public final class SettingsManager: Sendable {
                         }
                     }
                 } catch {
-                    errors.append(SettingsError(scope: "global", message: error.localizedDescription))
+                    errors.append(SettingsError(scope: "global", message: error.localizedDescription, path: settingsPath))
                 }
             }
         }
@@ -1536,6 +1666,10 @@ public final class SettingsManager: Sendable {
         json["defaultProvider"] = settings.defaultProvider
         json["defaultModel"] = settings.defaultModel
         json["defaultThinkingLevel"] = settings.defaultThinkingLevel
+        json["modelThinkingLevels"] = settings.modelThinkingLevels?.mapValues(\.rawValue)
+        json["defaultTools"] = settings.defaultTools
+        json["fullscreenExitOutput"] = settings.fullscreenExitOutput?.rawValue
+        json["fullscreenCopyOnSelect"] = settings.fullscreenCopyOnSelect
         json["transport"] = settings.transport?.rawValue
         json["steeringMode"] = settings.steeringMode
         json["followUpMode"] = settings.followUpMode
@@ -1626,6 +1760,17 @@ public final class SettingsManager: Sendable {
             if let progress = terminal.showTerminalProgress {
                 entry["showTerminalProgress"] = progress
             }
+            if let clearOnShrink = terminal.clearOnShrink {
+                entry["clearOnShrink"] = clearOnShrink
+            }
+            for (key, value) in [("hyperlinks", terminal.hyperlinks), ("trueColor", terminal.trueColor)] {
+                switch value {
+                case .auto: entry[key] = "auto"
+                case .enabled(let enabled): entry[key] = enabled
+                case nil: break
+                }
+            }
+            if let images = terminal.images { entry["images"] = images == .disabled ? false : images.rawValue as Any }
             json["terminal"] = entry
         }
 
@@ -1713,6 +1858,12 @@ public final class SettingsManager: Sendable {
         if override.defaultProvider != nil { result.defaultProvider = override.defaultProvider }
         if override.defaultModel != nil { result.defaultModel = override.defaultModel }
         if override.defaultThinkingLevel != nil { result.defaultThinkingLevel = override.defaultThinkingLevel }
+        if let levels = override.modelThinkingLevels {
+            result.modelThinkingLevels = (result.modelThinkingLevels ?? [:]).merging(levels) { _, new in new }
+        }
+        if override.defaultTools != nil { result.defaultTools = override.defaultTools }
+        if override.fullscreenExitOutput != nil { result.fullscreenExitOutput = override.fullscreenExitOutput }
+        if override.fullscreenCopyOnSelect != nil { result.fullscreenCopyOnSelect = override.fullscreenCopyOnSelect }
         if override.transport != nil { result.transport = override.transport }
         if override.steeringMode != nil { result.steeringMode = override.steeringMode }
         if override.followUpMode != nil { result.followUpMode = override.followUpMode }
@@ -1782,9 +1933,13 @@ public final class SettingsManager: Sendable {
         if let value = override.terminal {
             let baseValue = result.terminal ?? TerminalSettings()
             result.terminal = TerminalSettings(
+                hyperlinks: value.hyperlinks ?? baseValue.hyperlinks,
+                trueColor: value.trueColor ?? baseValue.trueColor,
+                images: value.images ?? baseValue.images,
                 showImages: value.showImages ?? baseValue.showImages,
                 imageWidthCells: value.imageWidthCells ?? baseValue.imageWidthCells,
-                showTerminalProgress: value.showTerminalProgress ?? baseValue.showTerminalProgress
+                showTerminalProgress: value.showTerminalProgress ?? baseValue.showTerminalProgress,
+                clearOnShrink: value.clearOnShrink ?? baseValue.clearOnShrink
             )
         }
         if let value = override.images {

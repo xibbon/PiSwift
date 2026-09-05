@@ -24,7 +24,7 @@ import PiSwiftAI
 /// SAFETY: mutable runtime state is stored in `LockedState`; the factory closure is
 /// `@Sendable` and invoked from async methods that publish the replacement only after
 /// construction succeeds.
-public final class AgentSessionRuntime: @unchecked Sendable {
+public final class AgentSessionRuntime: Sendable {
     private let factory: CreateAgentSessionRuntimeFactory
     private let agentDirState: LockedState<String>
     private let sessionState: LockedState<AgentSession?>
@@ -70,6 +70,11 @@ public final class AgentSessionRuntime: @unchecked Sendable {
     public func fork(_ entryId: String) async throws -> (selectedText: String, cancelled: Bool) {
         guard let s = session else { return ("", true) }
         return try await s.fork(entryId)
+    }
+
+    public func importFromJsonl(_ inputPath: String) async throws -> HookCommandResult {
+        guard let session else { return HookCommandResult(cancelled: true) }
+        return try await session.importFromJsonl(inputPath)
     }
 
     /// Replace the current session with a freshly-built one. Use for cross-cwd switches
@@ -150,4 +155,11 @@ public func createAgentSessionRuntime(
         factory: factory,
         initialSession: initialSession
     )
+}
+
+public enum SessionImportError: LocalizedError, Sendable {
+    case fileNotFound(String)
+    public var errorDescription: String? {
+        switch self { case .fileNotFound(let path): return "File not found: \(path)" }
+    }
 }

@@ -21,7 +21,7 @@ public final class HookRunner: Sendable {
         "enter",
     ]
 
-    private let cwd: String
+    public let cwd: String
     private let sessionManager: SessionManager
     private let modelRegistry: ModelRegistry
     private let state: LockedState<State>
@@ -340,7 +340,7 @@ public final class HookRunner: Sendable {
         if let reloadHandler {
             self.reloadHandler = reloadHandler
         }
-        self.uiContext = uiContext ?? NoOpHookUIContext()
+        self.uiContext = PromptHookUIContext(base: uiContext ?? NoOpHookUIContext(), runner: self)
         self.hasUI = hasUI
 
         let wiring = HookWiring(

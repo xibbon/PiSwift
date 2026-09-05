@@ -133,8 +133,10 @@ public struct CreateAgentSessionResult: Sendable {
     public var session: AgentSession
     public var customToolsResult: CustomToolsLoadResult
     public var modelFallbackMessage: String?
+    public var diagnostics: [ResourceDiagnostic]
 
-    public init(session: AgentSession, customToolsResult: CustomToolsLoadResult, modelFallbackMessage: String?) {
+    public init(session: AgentSession, customToolsResult: CustomToolsLoadResult, modelFallbackMessage: String?, diagnostics: [ResourceDiagnostic] = []) {
+        self.diagnostics = diagnostics
         self.session = session
         self.customToolsResult = customToolsResult
         self.modelFallbackMessage = modelFallbackMessage
@@ -249,11 +251,12 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.githubCopilot, "gpt-4o"),
     (.openrouter, "openai/gpt-5.1-codex"),
     (.vercelAiGateway, "anthropic/claude-opus-4.5"),
-    (.xai, "grok-4.5"),
+    (.xai, "grok-4.6"),
     (.groq, "openai/gpt-oss-120b"),
-    (.cerebras, "zai-glm-5"),
+    (.cerebras, "gpt-oss-120b"),
     (.baseten, "zai-org/GLM-5.2"),
-    (.zai, "glm-5"),
+    (.zai, "glm-5.3"),
+    (.zaiCodingCn, "glm-5.3"),
     (.mistral, "devstral-medium-latest"),
     (.minimax, "MiniMax-M2.7"),
     (.minimaxCn, "MiniMax-M2.7"),
@@ -617,6 +620,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         }
     }
 
+    if model == nil, !hasExistingSession, let scoped = options.scopedModels?.first {
+        model = scoped.model
+    }
+
     if model == nil {
         if let provider = settingsManager.getDefaultProvider(),
            let modelId = settingsManager.getDefaultModel(),
@@ -654,8 +661,17 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     if thinkingLevel == nil, hasExistingSession {
         thinkingLevel = ThinkingLevel(rawValue: existingSession.thinkingLevel) ?? .off
     }
+    if thinkingLevel == nil, options.model == nil, !hasExistingSession,
+       let scoped = options.scopedModels?.first,
+       scoped.model.provider == resolvedModel.provider, scoped.model.id == resolvedModel.id,
+       scoped.isThinkingExplicit {
+        thinkingLevel = scoped.thinkingLevel
+    }
     if thinkingLevel == nil {
-        thinkingLevel = ThinkingLevel(rawValue: settingsManager.getDefaultThinkingLevel() ?? "off") ?? .off
+        thinkingLevel = settingsManager.getModelThinkingLevel(resolvedModel.provider, resolvedModel.id)
+    }
+    if thinkingLevel == nil {
+        thinkingLevel = ThinkingLevel(rawValue: settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL.rawValue) ?? DEFAULT_THINKING_LEVEL
     }
 
     if !resolvedModel.reasoning {
@@ -712,8 +728,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     //   toolNames non-nil     → allowlist by name (intersected with built-ins).
     //   default               → all built-ins (createCodingTools).
     let builtInTools: [Tool] = {
-        if options.noTools == .all || options.noTools == .builtin { return [] }
-        if let names = options.toolNames {
+        if options.toolNames == nil, options.noTools != nil { return [] }
+        if let names = options.toolNames ?? settingsManager.getDefaultTools() {
             let allByName = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
             return names.compactMap { name -> Tool? in
                 guard !excludedToolNames.contains(name) else { return nil }
@@ -727,7 +743,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     time("createCodingTools")
 
     var customToolsResult: CustomToolsLoadResult
-    if options.noTools == .all {
+    if options.noTools == .all, options.toolNames == nil {
         // v0.68.0/v0.70.0: --no-tools disables extension/custom tools too. Don't load any.
         customToolsResult = CustomToolsLoadResult(tools: [], errors: [])
     } else if let customTools = options.customTools {
@@ -753,7 +769,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             sessionManager: sessionManager,
             modelRegistry: modelRegistry,
             model: agent?.state.model,
-            isIdle: { !(session?.isStreaming ?? true) },
+            isIdle: { session?.isIdle ?? false },
             hasPendingMessages: { (session?.pendingMessageCount ?? 0) > 0 },
             abort: { Task { await session?.abort() } },
             events: eventBus,
@@ -789,7 +805,16 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         toolRegistry.removeValue(forKey: name)
     }
 
-    let allTools = builtInTools + wrappedCustomTools + wrappedExtensionTools
+    let allowedNames = options.toolNames.map(Set.init)
+    if let allowedNames {
+        toolRegistry = toolRegistry.filter { allowedNames.contains($0.key) }
+    } else if options.noTools == .all {
+        toolRegistry.removeAll()
+    }
+    let allTools = (builtInTools + wrappedCustomTools + wrappedExtensionTools).filter { tool in
+        if let allowedNames { return allowedNames.contains(tool.name) }
+        return options.noTools != .all
+    }
     time("combineTools")
 
     let makeSystemPromptOptions: @Sendable ([String]) -> BuildSystemPromptOptions = { toolNames in
@@ -964,12 +989,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     sessionBox.withLock { $0 = createdSession }
     let sendMessageHandler: HookSendMessageHandler = { [weak createdSession] message, options in
         guard let session = createdSession else { return }
-        Task {
-            await session.sendHookMessage(message, options: options)
-        }
+        session.enqueueHookMessage(message, options: options)
     }
     customToolsResult.setSendMessageHandler(sendMessageHandler)
     sendMessageHandlerBox.withLock { $0 = sendMessageHandler }
 
-    return CreateAgentSessionResult(session: createdSession, customToolsResult: customToolsResult, modelFallbackMessage: modelFallbackMessage)
+    return CreateAgentSessionResult(session: createdSession, customToolsResult: customToolsResult, modelFallbackMessage: modelFallbackMessage, diagnostics: deduplicateDiagnostics(collectSettingsDiagnostics(settingsManager)))
 }

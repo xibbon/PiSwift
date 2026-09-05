@@ -202,7 +202,8 @@ public func streamOpenAIResponses(
             timeoutMs: options.timeoutMs,
             maxRetries: options.maxRetries,
             maxRetryDelayMs: options.maxRetryDelayMs,
-            websocketConnectTimeoutMs: options.websocketConnectTimeoutMs
+            websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
+            toolChoice: options.toolChoice
         )
         return streamOpenAICodexResponses(model: model, context: context, options: codexOptions)
     }
@@ -254,6 +255,7 @@ public func streamOpenAIResponses(
                 inlineImagesMiddleware,
                 reasoningEffortMiddleware,
                 constrainedSamplingMiddleware,
+                try makeResponsesReplayMiddleware(model: model, context: context),
             ]
             if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
                 // Keep this last so custom keys override all named request fields.
@@ -268,19 +270,21 @@ public func streamOpenAIResponses(
             )
             let builtQuery = try buildResponsesQuery(model: model, context: context, options: options)
             let encodedQuery = try JSONEncoder().encode(builtQuery)
-            var capturedRequest = URLRequest(url: openAIResponsesURL(baseUrl: model.baseUrl))
+            var capturedRequest = URLRequest(url: openAIResponsesURL(baseUrl: model.baseUrl, provider: model.provider))
             capturedRequest.httpBody = encodedQuery
             capturedRequest = middlewares.reduce(capturedRequest) { $1.intercept(request: $0) }
             emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
-            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
+            if model.api == .openAIResponses
+                || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(options.apiKey ?? "")", forHTTPHeaderField: "Authorization")
+                request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
                 request.setValue("text/event-stream", forHTTPHeaderField: "accept")
                 request.setValue("application/json", forHTTPHeaderField: "content-type")
                 for (key, value) in model.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
@@ -568,7 +572,7 @@ func buildResponsesQuery(
                 summary: mapReasoningSummary(options.reasoningSummary) ?? .auto
             )
             include = [.reasoning_encryptedContent]
-        } else if model.provider.lowercased() != "github-copilot",
+        } else if model.provider.lowercased() != "github-copilot", model.provider.lowercased() != "xai",
                   let offEffort = mapDisabledResponsesReasoningEffort(model: model) {
             reasoning = Components.Schemas.Reasoning(
                 effort: offEffort,
@@ -576,6 +580,8 @@ func buildResponsesQuery(
             )
         }
     }
+
+    if model.provider.lowercased() == "xai", model.reasoning { include = [.reasoning_encryptedContent] }
 
     let tools = try responsesToolsPayload(
         context.tools,
@@ -588,13 +594,13 @@ func buildResponsesQuery(
         include: include,
         instructions: nil,
         // OpenAI Responses rejects max_output_tokens below 16.
-        maxOutputTokens: options.maxTokens.map { max($0, 16) },
+        maxOutputTokens: model.compat?.supportsMaxOutputTokens == false ? nil : options.maxTokens.map { max($0, 16) },
         reasoning: reasoning,
         serviceTier: mapResponsesServiceTier(options.serviceTier),
         store: false,
         stream: true,
         temperature: options.temperature,
-        toolChoice: nil,
+        toolChoice: mapResponsesToolChoice(options.toolChoice),
         tools: tools
     )
     logOpenAIResponsesQuery(query)
@@ -921,12 +927,13 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
 
 func convertResponsesTools(_ tools: [AITool], supportsStrictMode: Bool) throws -> [Tool] {
     try tools.compactMap { tool in
-        let schema = openAIJSONSchema(from: tool.parameters) ?? .object([:])
         let constrainedStrict = try resolveJsonSchemaStrictSampling(
             tool: tool,
             supportsStrictMode: supportsStrictMode
         )
         let strict = constrainedStrict ?? false
+        let parameters = try getJsonSchemaToolParameters(tool, strict: strict)
+        let schema = openAIJSONSchema(from: parameters) ?? .object([:])
         let function = FunctionTool(name: tool.name, description: tool.description, parameters: schema, strict: strict)
         return .functionTool(function)
     }
@@ -1107,4 +1114,133 @@ private enum OpenAIResponsesStreamError: LocalizedError {
             return message
         }
     }
+}
+
+func responsesToolChoicePayload(_ choice: OpenAIToolChoice) -> Any {
+    switch choice {
+    case .auto: return "auto"
+    case .none: return "none"
+    case .required: return "required"
+    case .function(let name): return ["type": "function", "name": name]
+    }
+}
+
+func mapResponsesToolChoice(_ choice: OpenAIToolChoice?) -> Components.Schemas.ResponseProperties.ToolChoicePayload? {
+    guard let choice else { return nil }
+    switch choice {
+    case .auto: return .ToolChoiceOptions(.auto)
+    case .none: return .ToolChoiceOptions(.none)
+    case .required: return .ToolChoiceOptions(.required)
+    case .function(let name): return .ToolChoiceFunction(.init(_type: .function, name: name))
+    }
+}
+
+func responsesDeferredToolsEnabled(_ model: Model) -> Bool {
+    model.compat?.supportsAdditionalTools == true || model.compat?.supportsToolSearch == true
+}
+
+/// The SDK does not represent namespaces or deferred-tool input items.
+/// Keep these wire fields in a JSON rewrite after the SDK encodes the request.
+struct ResponsesReplayMiddleware: OpenAIMiddleware {
+    let namespaces: [String: String]
+    let additions: [String: Data]
+    let immediateToolNames: Set<String>
+
+    func rewriteInput(_ input: [[String: Any]]) -> [[String: Any]] {
+        var result: [[String: Any]] = []
+        for var item in input {
+            let type = item["type"] as? String
+            let callId = item["call_id"] as? String ?? ""
+            if type == "function_call" || type == "custom_tool_call" {
+                if let namespace = namespaces[callId] { item["namespace"] = namespace }
+                else { item.removeValue(forKey: "namespace") }
+            }
+            result.append(item)
+            if (type == "function_call_output" || type == "custom_tool_call_output"),
+               let data = additions[callId],
+               let added = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                result.append(contentsOf: added)
+            }
+        }
+        return result
+    }
+
+    func intercept(request: URLRequest) -> URLRequest {
+        guard let data = request.httpBody,
+              var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return request }
+        if let input = payload["input"] as? [[String: Any]] { payload["input"] = rewriteInput(input) }
+        if let tools = payload["tools"] as? [[String: Any]] {
+            let immediate = tools.filter { immediateToolNames.contains($0["name"] as? String ?? "") }
+            if immediate.isEmpty { payload.removeValue(forKey: "tools") }
+            else { payload["tools"] = immediate }
+        }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return request }
+        var updated = request
+        updated.httpBodyStream = nil
+        updated.httpBody = body
+        return updated
+    }
+}
+
+func makeResponsesReplayMiddleware(
+    model: Model,
+    context: Context,
+    supportsDeferredTools: Bool = true
+) throws -> ResponsesReplayMiddleware {
+    let enabled = supportsDeferredTools && responsesDeferredToolsEnabled(model)
+    let placement = splitDeferredTools(context, enabled: enabled)
+    let deferred = Dictionary(uniqueKeysWithValues: placement.deferred.map { ($0.name, $0) })
+    var namespaces: [String: String] = [:]
+    var additions: [String: Data] = [:]
+    var loadedNames: Set<String> = []
+    for message in context.messages {
+        switch message {
+        case .assistant(let assistant):
+            let sameModel = assistant.provider == model.provider && assistant.api == model.api && assistant.model == model.id
+            for case .toolCall(let call) in assistant.content {
+                guard let namespace = call.namespace, sameModel || deferred[call.name] != nil else { continue }
+                let callId = call.id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? call.id
+                namespaces[callId] = namespace
+                namespaces[normalizeIdPart(callId)] = namespace
+                namespaces[normalizeIdPart(call.id)] = namespace
+            }
+        case .toolResult(let result):
+            let tools = (result.addedToolNames ?? []).compactMap { name -> AITool? in
+                guard let tool = deferred[name], loadedNames.insert(name).inserted else { return nil }
+                return tool
+            }
+            guard !tools.isEmpty else { continue }
+            var converted = try convertCodexTools(
+                tools,
+                supportsStrictMode: model.compat?.supportsStrictMode ?? true,
+                supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false,
+                defaultStrict: model.api == .openAICodexResponses ? nil : false
+            )
+            let items: [[String: Any]]
+            if model.compat?.supportsAdditionalTools == true {
+                items = [["type": "additional_tools", "role": "developer", "tools": converted]]
+            } else {
+                let names = tools.map(\.name)
+                let searchId = "pi_tool_load_\(openAIResponsesShortHash("\(result.toolCallId):\(names.joined(separator: ","))"))"
+                for index in converted.indices { converted[index]["defer_loading"] = true }
+                items = [
+                    ["type": "tool_search_call", "call_id": searchId, "execution": "client", "status": "completed",
+                     "arguments": ["query": names.joined(separator: " "), "limit": names.count]],
+                    ["type": "tool_search_output", "call_id": searchId, "execution": "client", "status": "completed", "tools": converted],
+                ]
+            }
+            let callId = result.toolCallId.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? result.toolCallId
+            let data = try JSONSerialization.data(withJSONObject: items)
+            additions[callId] = data
+            additions[normalizeIdPart(callId)] = data
+            additions[normalizeIdPart(result.toolCallId)] = data
+        case .user:
+            break
+        }
+    }
+    return ResponsesReplayMiddleware(
+        namespaces: namespaces,
+        additions: additions,
+        immediateToolNames: Set(placement.immediate.map(\.name))
+    )
 }

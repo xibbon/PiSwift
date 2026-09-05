@@ -214,10 +214,10 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
        cacheControlFormat == nil,
        sendSessionAffinityHeaders == nil,
        requiresReasoningContentOnAssistantMessages == nil {
-        return nil
+        if !["supportsFinishReason", "vllmPriority", "supportsAdditionalTools", "supportsMaxOutputTokens", "supportsMidConvoEffort", "thinkingTokenBudgetField", "supportsOpenAIGrammarTools", "supportsToolSearch", "supportsTemperature", "supportsCacheControlOnTools", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsToolReferences", "deferredToolsMode", "sessionAffinityFormat", "chatTemplateKwargs", "chatTemplateArgs"].contains(where: { dict[$0] != nil }) { return nil }
     }
 
-    return OpenAICompat(
+    var parsed = OpenAICompat(
         supportsStore: supportsStore,
         supportsDeveloperRole: supportsDeveloperRole,
         supportsReasoningEffort: supportsReasoningEffort,
@@ -239,6 +239,29 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
         sendSessionAffinityHeaders: sendSessionAffinityHeaders,
         requiresReasoningContentOnAssistantMessages: requiresReasoningContentOnAssistantMessages
     )
+    let accepted = dict.filter { ["supportsFinishReason", "vllmPriority", "supportsAdditionalTools", "supportsMaxOutputTokens", "supportsMidConvoEffort", "thinkingTokenBudgetField", "supportsOpenAIGrammarTools", "supportsToolSearch", "supportsTemperature", "supportsCacheControlOnTools", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsToolReferences", "deferredToolsMode", "sessionAffinityFormat", "chatTemplateKwargs", "chatTemplateArgs"].contains($0.key) }
+    if let data = try? JSONSerialization.data(withJSONObject: accepted),
+       let added = try? JSONDecoder().decode(OpenAICompat.self, from: data) {
+        parsed.supportsFinishReason = added.supportsFinishReason
+        parsed.vllmPriority = added.vllmPriority
+        parsed.supportsAdditionalTools = added.supportsAdditionalTools
+        parsed.supportsMaxOutputTokens = added.supportsMaxOutputTokens
+        parsed.supportsMidConvoEffort = added.supportsMidConvoEffort
+        parsed.thinkingTokenBudgetField = added.thinkingTokenBudgetField
+        parsed.supportsOpenAIGrammarTools = added.supportsOpenAIGrammarTools
+        parsed.supportsToolSearch = added.supportsToolSearch
+        parsed.supportsTemperature = added.supportsTemperature
+        parsed.supportsCacheControlOnTools = added.supportsCacheControlOnTools
+        parsed.forceAdaptiveThinking = added.forceAdaptiveThinking
+        parsed.allowEmptySignature = added.allowEmptySignature
+        parsed.supportsStrictTools = added.supportsStrictTools
+        parsed.supportsToolReferences = added.supportsToolReferences
+        parsed.deferredToolsMode = added.deferredToolsMode
+        parsed.sessionAffinityFormat = added.sessionAffinityFormat
+        parsed.chatTemplateKwargs = added.chatTemplateKwargs
+        parsed.chatTemplateArgs = added.chatTemplateArgs
+    }
+    return parsed
 }
 
 private struct ProviderOverride: Sendable {
@@ -363,31 +386,50 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
         )
     }()
 
-    return OpenAICompat(
-        supportsStore: override.supportsStore ?? base.supportsStore,
-        supportsDeveloperRole: override.supportsDeveloperRole ?? base.supportsDeveloperRole,
-        supportsReasoningEffort: override.supportsReasoningEffort ?? base.supportsReasoningEffort,
-        supportsUsageInStreaming: override.supportsUsageInStreaming ?? base.supportsUsageInStreaming,
-        maxTokensField: override.maxTokensField ?? base.maxTokensField,
-        requiresToolResultName: override.requiresToolResultName ?? base.requiresToolResultName,
-        requiresAssistantAfterToolResult: override.requiresAssistantAfterToolResult ?? base.requiresAssistantAfterToolResult,
-        requiresThinkingAsText: override.requiresThinkingAsText ?? base.requiresThinkingAsText,
-        requiresMistralToolIds: override.requiresMistralToolIds ?? base.requiresMistralToolIds,
-        thinkingFormat: override.thinkingFormat ?? base.thinkingFormat,
-        chatTemplateKwargs: override.chatTemplateKwargs ?? base.chatTemplateKwargs,
-        chatTemplateArgs: override.chatTemplateArgs ?? base.chatTemplateArgs,
-        openRouterRouting: mergedOpenRouter,
-        vercelGatewayRouting: mergedVercel,
-        supportsThinkingTokenBudget: override.supportsThinkingTokenBudget ?? base.supportsThinkingTokenBudget,
-        supportsStrictMode: override.supportsStrictMode ?? base.supportsStrictMode,
-        // v0.68.0 / v0.70.0 / v0.70.1: new compat fields preserved from base when not overridden.
-        supportsLongCacheRetention: override.supportsLongCacheRetention ?? base.supportsLongCacheRetention,
-        sendSessionIdHeader: override.sendSessionIdHeader ?? base.sendSessionIdHeader,
-        supportsEagerToolInputStreaming: override.supportsEagerToolInputStreaming ?? base.supportsEagerToolInputStreaming,
-        cacheControlFormat: override.cacheControlFormat ?? base.cacheControlFormat,
-        sendSessionAffinityHeaders: override.sendSessionAffinityHeaders ?? base.sendSessionAffinityHeaders,
-        requiresReasoningContentOnAssistantMessages: override.requiresReasoningContentOnAssistantMessages ?? base.requiresReasoningContentOnAssistantMessages
-    )
+    var merged = base
+    merged.supportsStore = override.supportsStore ?? base.supportsStore
+    merged.supportsDeveloperRole = override.supportsDeveloperRole ?? base.supportsDeveloperRole
+    merged.supportsReasoningEffort = override.supportsReasoningEffort ?? base.supportsReasoningEffort
+    merged.supportsUsageInStreaming = override.supportsUsageInStreaming ?? base.supportsUsageInStreaming
+    merged.supportsFinishReason = override.supportsFinishReason ?? base.supportsFinishReason
+    merged.supportsTemperature = override.supportsTemperature ?? base.supportsTemperature
+    merged.maxTokensField = override.maxTokensField ?? base.maxTokensField
+    merged.requiresToolResultName = override.requiresToolResultName ?? base.requiresToolResultName
+    merged.requiresAssistantAfterToolResult = override.requiresAssistantAfterToolResult ?? base.requiresAssistantAfterToolResult
+    merged.requiresThinkingAsText = override.requiresThinkingAsText ?? base.requiresThinkingAsText
+    merged.requiresMistralToolIds = override.requiresMistralToolIds ?? base.requiresMistralToolIds
+    merged.thinkingFormat = override.thinkingFormat ?? base.thinkingFormat
+    merged.chatTemplateKwargs = override.chatTemplateKwargs ?? base.chatTemplateKwargs
+    merged.chatTemplateArgs = override.chatTemplateArgs ?? base.chatTemplateArgs
+    merged.openRouterRouting = mergedOpenRouter
+    merged.vercelGatewayRouting = mergedVercel
+    merged.supportsThinkingTokenBudget = override.supportsThinkingTokenBudget ?? base.supportsThinkingTokenBudget
+    merged.supportsOpenAIGrammarTools = override.supportsOpenAIGrammarTools ?? base.supportsOpenAIGrammarTools
+    merged.supportsStrictMode = override.supportsStrictMode ?? base.supportsStrictMode
+    merged.reasoningEffortMap = override.reasoningEffortMap ?? base.reasoningEffortMap
+    merged.supportsLongCacheRetention = override.supportsLongCacheRetention ?? base.supportsLongCacheRetention
+    merged.sendSessionIdHeader = override.sendSessionIdHeader ?? base.sendSessionIdHeader
+    merged.supportsEagerToolInputStreaming = override.supportsEagerToolInputStreaming ?? base.supportsEagerToolInputStreaming
+    merged.cacheControlFormat = override.cacheControlFormat ?? base.cacheControlFormat
+    merged.sendSessionAffinityHeaders = override.sendSessionAffinityHeaders ?? base.sendSessionAffinityHeaders
+    merged.requiresReasoningContentOnAssistantMessages = override.requiresReasoningContentOnAssistantMessages ?? base.requiresReasoningContentOnAssistantMessages
+    merged.supportsCacheControlOnTools = override.supportsCacheControlOnTools ?? base.supportsCacheControlOnTools
+    merged.supportsStrictTools = override.supportsStrictTools ?? base.supportsStrictTools
+    merged.forceAdaptiveThinking = override.forceAdaptiveThinking ?? base.forceAdaptiveThinking
+    merged.zaiToolStream = override.zaiToolStream ?? base.zaiToolStream
+    merged.allowEmptySignature = override.allowEmptySignature ?? base.allowEmptySignature
+    merged.deferredToolsMode = override.deferredToolsMode ?? base.deferredToolsMode
+    merged.sessionAffinityFormat = override.sessionAffinityFormat ?? base.sessionAffinityFormat
+    merged.supportsToolSearch = override.supportsToolSearch ?? base.supportsToolSearch
+    merged.supportsExplicitPromptCacheMode = override.supportsExplicitPromptCacheMode ?? base.supportsExplicitPromptCacheMode
+    merged.supportsToolReferences = override.supportsToolReferences ?? base.supportsToolReferences
+    merged.thinkingTokenBudgetField = override.thinkingTokenBudgetField ?? base.thinkingTokenBudgetField
+    merged.vllmPriority = override.vllmPriority ?? base.vllmPriority
+    merged.supportsAdditionalTools = override.supportsAdditionalTools ?? base.supportsAdditionalTools
+    merged.supportsMaxOutputTokens = override.supportsMaxOutputTokens ?? base.supportsMaxOutputTokens
+    merged.supportsMidConvoEffort = override.supportsMidConvoEffort ?? base.supportsMidConvoEffort
+    merged.allowedFallbackModels = override.allowedFallbackModels ?? base.allowedFallbackModels
+    return merged
 }
 
 private func applyModelOverride(model: Model, override: ModelOverride) -> Model {
@@ -442,10 +484,17 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
     return updated
 }
 
+func findModelDefaults(_ models: [Model], modelId: String, api: Api? = nil) -> Model? {
+    models.first { $0.id == modelId }
+        ?? api.flatMap { api in models.first { $0.api == api } }
+        ?? models.first { $0.api == .openAICompletions }
+        ?? models.first
+}
+
 private func normalizeProviderModel(_ model: Model) -> Model {
     guard model.provider == OAuthProvider.githubCopilot.rawValue else { return model }
 
-    let api: Api = model.id.lowercased().contains("claude") ? .openAICompletions : model.api
+    let api = model.api
     let copilotCompat = mergeCompat(
         model.compat,
         OpenAICompat(
@@ -801,7 +850,7 @@ public final class ModelRegistry: Sendable {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let root = try JSONSerialization.jsonObject(with: stripUTF8BOM(data)) as? [String: Any],
                   let entries = root["data"] as? [[String: Any]] else {
                 return nil
             }
@@ -980,7 +1029,7 @@ public final class ModelRegistry: Sendable {
         }
 
         do {
-            let root = try JSONSerialization.jsonObject(with: data)
+            let root = try JSONSerialization.jsonObject(with: stripUTF8BOM(data))
             if let entries = root as? [[String: Any]] {
             return parseLegacyModels(entries)
         }
@@ -1100,11 +1149,7 @@ public final class ModelRegistry: Sendable {
                 continue
             }
 
-            let builtInDefaults: (api: Api, baseUrl: String)? = {
-                guard let provider = KnownProvider(rawValue: providerName) else { return nil }
-                guard let model = getModels(provider: provider).first else { return nil }
-                return (api: model.api, baseUrl: model.baseUrl)
-            }()
+            let providerModels = KnownProvider(rawValue: providerName).map { getModels(provider: $0) } ?? []
 
             for modelDef in models {
                 guard let rawId = modelDef["id"] as? String else { continue }
@@ -1117,7 +1162,9 @@ public final class ModelRegistry: Sendable {
                 let maxTokens = modelDef["maxTokens"] as? Int ?? 16384
                 let cost = modelDef["cost"] as? [String: Any] ?? [:]
 
-                let api = ((modelDef["api"] as? String) ?? apiOverride).flatMap(Api.init(rawValue:)) ?? builtInDefaults?.api
+                let requestedAPI = ((modelDef["api"] as? String) ?? apiOverride).flatMap(Api.init(rawValue:))
+                let builtInDefaults = findModelDefaults(providerModels + custom.filter { $0.provider == providerName }, modelId: id, api: requestedAPI)
+                let api = requestedAPI ?? builtInDefaults?.api
                 guard let api else { continue }
 
                 var resolvedHeaders = resolveHeaders(headers)

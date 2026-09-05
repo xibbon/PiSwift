@@ -153,6 +153,11 @@ function thinkingLevelValue(level) {
 }
 
 function enumValue(type, value) {
+  if (type === "thinkingTokenBudgetField") {
+    const cases = {thinking_token_budget: "thinkingTokenBudget", thinking_budget: "thinkingBudget", thinking_budget_tokens: "thinkingBudgetTokens"};
+    if (!cases[value]) throw new Error(`Unknown thinkingTokenBudgetField: ${value}`);
+    return `.${cases[value]}`;
+  }
   if (type === "maxTokensField") {
     return value === "max_tokens" ? ".maxTokens" : ".maxCompletionTokens";
   }
@@ -249,6 +254,7 @@ function chatTemplateKwargValueLiteral(value) {
     const variables = {
       "thinking.enabled": "thinkingEnabled",
       "thinking.effort": "thinkingEffort",
+      "thinking.budget": "thinkingBudget",
     };
     const variable = variables[value.$var];
     if (!variable) throw new Error(`Unknown chat-template variable: ${value.$var}`);
@@ -304,9 +310,19 @@ function compatLiteral(compat) {
     ["supportsToolSearch", compat.supportsToolSearch, "bool"],
     ["supportsExplicitPromptCacheMode", compat.supportsExplicitPromptCacheMode, "bool"],
     ["supportsToolReferences", compat.supportsToolReferences, "bool"],
+    ["thinkingTokenBudgetField", compat.thinkingTokenBudgetField, "thinkingTokenBudgetField"],
+    ["vllmPriority", compat.vllmPriority, "literal"],
+    ["supportsAdditionalTools", compat.supportsAdditionalTools, "bool"],
+    ["supportsMaxOutputTokens", compat.supportsMaxOutputTokens, "bool"],
+    ["supportsMidConvoEffort", compat.supportsMidConvoEffort, "bool"],
+    ["allowedFallbackModels", compat.allowedFallbackModels, "fallbackModels"],
   ];
+  for (const key of Object.keys(compat)) {
+    if (!fields.some(([label]) => label === key)) throw new Error(`Unmapped compat field: ${key}`);
+  }
   const rendered = fields.flatMap(([label, value, kind]) => {
     if (value === undefined) return [];
+    if (kind === "fallbackModels") return [`${label}: [${value.map((fallback) => `AnthropicAllowedFallbackModel(provider: ${swiftString(fallback.provider)}, model: ${swiftString(fallback.model)}, cost: ${costLiteral(fallback.cost)})`).join(", ")}]`];
     if (kind === "bool") return [`${label}: ${swiftBool(value)}`];
     if (kind === "literal") return [`${label}: ${value}`];
     if (kind === "chatTemplateValues") return [`${label}: ${chatTemplateValuesLiteral(value)}`];
@@ -334,9 +350,7 @@ function providerVariableName(provider) {
 }
 
 function swiftModel(model) {
-  const cost = model.cost.tiers?.length
-    ? `ModelCost(input: ${model.cost.input}, output: ${model.cost.output}, cacheRead: ${model.cost.cacheRead}, cacheWrite: ${model.cost.cacheWrite}, tiers: [${model.cost.tiers.map((tier) => `ModelCostTier(inputTokensAbove: ${tier.inputTokensAbove}, input: ${tier.input}, output: ${tier.output}, cacheRead: ${tier.cacheRead}, cacheWrite: ${tier.cacheWrite})`).join(", ")}])`
-    : `ModelCost(input: ${model.cost.input}, output: ${model.cost.output}, cacheRead: ${model.cost.cacheRead}, cacheWrite: ${model.cost.cacheWrite})`;
+  const cost = costLiteral(model.cost);
   const args = [
     `id: ${swiftString(model.id)}`,
     `name: ${swiftString(model.name)}`,
@@ -451,3 +465,9 @@ writeJsonFixture("upstream-models.generated.json", models);
 writeJsonFixture("upstream-image-models.generated.json", imageModels);
 console.log(`Generated ${Object.values(models).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} text models.`);
 console.log(`Generated ${Object.values(imageModels).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} image models.`);
+
+function costLiteral(cost) {
+  return cost.tiers?.length
+    ? `ModelCost(input: ${cost.input}, output: ${cost.output}, cacheRead: ${cost.cacheRead}, cacheWrite: ${cost.cacheWrite}, tiers: [${cost.tiers.map((tier) => `ModelCostTier(inputTokensAbove: ${tier.inputTokensAbove}, input: ${tier.input}, output: ${tier.output}, cacheRead: ${tier.cacheRead}, cacheWrite: ${tier.cacheWrite})`).join(", ")}])`
+    : `ModelCost(input: ${cost.input}, output: ${cost.output}, cacheRead: ${cost.cacheRead}, cacheWrite: ${cost.cacheWrite})`;
+}

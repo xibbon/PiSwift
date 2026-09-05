@@ -78,7 +78,8 @@ func processRawOpenAIResponsesStream(
             let tool = ToolCall(
                 id: "\(callId)|\(itemId)",
                 name: item["name"] as? String ?? "",
-                arguments: parseStreamingJSON(arguments)
+                arguments: parseStreamingJSON(arguments),
+                namespace: item["namespace"] as? String
             )
             output.content.append(.toolCall(tool))
             slots[index] = RawResponsesSlot(
@@ -98,7 +99,8 @@ func processRawOpenAIResponsesStream(
             let tool = ToolCall(
                 id: "\(callId)|\(itemId)",
                 name: name,
-                arguments: [property: AnyCodable(input)]
+                arguments: [property: AnyCodable(input)],
+                namespace: item["namespace"] as? String
             )
             output.content.append(.toolCall(tool))
             slots[index] = RawResponsesSlot(
@@ -193,6 +195,11 @@ func processRawOpenAIResponsesStream(
             guard let item = event["item"] as? [String: Any] else { continue }
             startSlot(index: index, item: item)
             guard let slot = slots[index] else { continue }
+            if case .toolCall(var tool) = output.content[slot.contentIndex],
+               let namespace = item["namespace"] as? String {
+                tool.namespace = namespace
+                output.content[slot.contentIndex] = .toolCall(tool)
+            }
             switch slot.kind {
             case .thinking:
                 if case .thinking(var thinking) = output.content[slot.contentIndex] {
@@ -200,18 +207,26 @@ func processRawOpenAIResponsesStream(
                        let signature = String(data: encoded, encoding: .utf8) {
                         thinking.thinkingSignature = signature
                     }
+                    let summaryText = (item["summary"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n\n")
+                    let contentText = (item["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n\n")
+                    let finalText = summaryText.isEmpty ? contentText : summaryText
+                    if !finalText.isEmpty { thinking.thinking = finalText }
                     output.content[slot.contentIndex] = .thinking(thinking)
                     stream.push(.thinkingEnd(contentIndex: slot.contentIndex, content: thinking.thinking, partial: output))
                 }
             case .text:
                 if case .text(var text) = output.content[slot.contentIndex] {
-                    text.textSignature = (item["id"] as? String).map { encodeTextSignatureV1(id: $0) }
+                    text.textSignature = (item["id"] as? String).map { encodeTextSignatureV1(id: $0, phase: item["phase"] as? String) }
+                    if let parts = item["content"] as? [[String: Any]] {
+                        text.text = parts.compactMap { $0["text"] as? String ?? $0["refusal"] as? String }.joined()
+                    }
                     output.content[slot.contentIndex] = .text(text)
                     stream.push(.textEnd(contentIndex: slot.contentIndex, content: text.text, partial: output))
                 }
             case .function:
                 if case .toolCall(var tool) = output.content[slot.contentIndex] {
-                    let arguments = item["arguments"] as? String ?? slot.partialInput
+                    let finalArguments = item["arguments"] as? String ?? ""
+                    let arguments = finalArguments.isEmpty ? slot.partialInput : finalArguments
                     tool.arguments = parseStreamingJSON(arguments)
                     output.content[slot.contentIndex] = .toolCall(tool)
                     stream.push(.toolCallEnd(contentIndex: slot.contentIndex, toolCall: tool, partial: output))
@@ -241,11 +256,22 @@ func processRawOpenAIResponsesStream(
                    output.content.contains(where: { if case .toolCall = $0 { true } else { false } }) {
                     output.stopReason = .toolUse
                 }
+                return
             }
         case "response.failed":
-            throw ValidationError.constrainedSampling("OpenAI Responses request failed")
+            let response = event["response"] as? [String: Any] ?? [:]
+            output.rawStopReason = response["status"] as? String
+            let message: String
+            if let error = response["error"] as? [String: Any] {
+                message = "\(error["code"] as? String ?? "unknown"): \(error["message"] as? String ?? "no message")"
+            } else if let reason = (response["incomplete_details"] as? [String: Any])?["reason"] as? String {
+                message = "incomplete: \(reason)"
+            } else {
+                message = "Unknown error (no error details in response)"
+            }
+            throw ValidationError.constrainedSampling(message)
         case "error":
-            throw ValidationError.constrainedSampling(event["message"] as? String ?? "OpenAI Responses request failed")
+            throw ValidationError.constrainedSampling("Error Code \(event["code"] as? String ?? "undefined"): \(event["message"] as? String ?? "undefined")")
         default:
             break
         }

@@ -100,6 +100,46 @@
       ],
       "provider": "openrouter"
     },
+    "bytedance-seed/seedream-5-0-lite": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "bytedance-seed/seedream-5-0-lite",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "ByteDance Seed: Seedream 5.0 Lite",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "bytedance-seed/seedream-5-0-pro": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "bytedance-seed/seedream-5-0-pro",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "ByteDance Seed: Seedream 5.0 Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
     "google/gemini-2.5-flash-image": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -281,6 +321,26 @@
         "image"
       ],
       "name": "Krea: Krea 2 Medium Turbo",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "meta/muse-image": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "meta/muse-image",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Meta: Muse Image",
       "output": [
         "image"
       ],
@@ -611,6 +671,86 @@
       ],
       "provider": "openrouter"
     },
+    "recraft/recraft-v4-styles": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4-styles",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Recraft: Recraft V4 Styles",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "recraft/recraft-v4-styles-pro": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4-styles-pro",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Recraft: Recraft V4 Styles Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "recraft/recraft-v4-styles-pro-vector": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4-styles-pro-vector",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Recraft: Recraft V4 Styles Pro Vector",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "recraft/recraft-v4-styles-vector": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4-styles-vector",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Recraft: Recraft V4 Styles Vector",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
     "recraft/recraft-v4-vector": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -826,6 +966,26 @@
         "image"
       ],
       "name": "Sourceful: Riverflow V2.5 Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "x-ai/grok-imagine-image-2.0": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "x-ai/grok-imagine-image-2.0",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "xAI: Grok Imagine Image 2.0",
       "output": [
         "image"
       ],

@@ -25,7 +25,7 @@ public struct FindToolDetails: Sendable {
 }
 
 public func createFindTool(cwd: String) -> AgentTool {
-    AgentTool(
+    var tool = AgentTool(
         label: "find",
         name: "find",
         description: "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore.",
@@ -120,6 +120,10 @@ public func createFindTool(cwd: String) -> AgentTool {
         let details = detailsDict.isEmpty ? nil : AnyCodable(detailsDict)
         return AgentToolResult(content: [.text(TextContent(text: output))], details: details)
     }
+    tool.executeWithContext = { id, params, signal, onUpdate, context in
+        try await createFindTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+    }
+    return tool
 }
 
 private func loadGitignorePatterns(root: String) -> [String] {

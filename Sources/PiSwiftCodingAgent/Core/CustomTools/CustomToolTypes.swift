@@ -6,6 +6,11 @@ public typealias CustomToolUIContext = HookUIContext
 public typealias CustomToolResult = AgentToolResult
 public typealias CustomToolUpdateCallback = AgentToolUpdateCallback
 
+public enum ToolRenderShell: String, Sendable, Codable {
+    case `default`
+    case `self`
+}
+
 public struct CustomToolContext: Sendable {
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
@@ -86,6 +91,7 @@ public struct CustomTool: Sendable {
     public var onSession: CustomToolSessionHandler?
     public var renderCall: CustomToolRenderCall?
     public var renderResult: CustomToolRenderResult?
+    public var renderShell: ToolRenderShell
 
     public init(
         name: String,
@@ -95,7 +101,8 @@ public struct CustomTool: Sendable {
         execute: @escaping CustomToolExecute,
         onSession: CustomToolSessionHandler? = nil,
         renderCall: CustomToolRenderCall? = nil,
-        renderResult: CustomToolRenderResult? = nil
+        renderResult: CustomToolRenderResult? = nil,
+        renderShell: ToolRenderShell = .default
     ) {
         self.name = name
         self.label = label
@@ -105,6 +112,7 @@ public struct CustomTool: Sendable {
         self.onSession = onSession
         self.renderCall = renderCall
         self.renderResult = renderResult
+        self.renderShell = renderShell
     }
 }
 

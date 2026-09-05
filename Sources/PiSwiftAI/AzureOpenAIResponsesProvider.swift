@@ -177,6 +177,7 @@ public func streamAzureOpenAIResponses(
                 azureMiddleware,
                 reasoningEffortMiddleware,
                 constrainedSamplingMiddleware,
+                try makeResponsesReplayMiddleware(model: model, context: context, supportsDeferredTools: false),
             ]
             if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
                 // Keep this last so custom keys override all named request fields.
@@ -217,11 +218,13 @@ public func streamAzureOpenAIResponses(
             client = builtClient
             query = builtQuery
 
-            if !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
+            if model.api == .azureOpenAIResponses
+                || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
+                request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
                 request.setValue("text/event-stream", forHTTPHeaderField: "accept")
                 request.setValue("application/json", forHTTPHeaderField: "content-type")
                 for (key, value) in model.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
@@ -490,6 +493,7 @@ public func streamSimpleAzureOpenAIResponses(
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
+        httpClient: options?.httpClient,
         reasoningEffort: reasoningEffort,
         reasoningSummary: nil,
         sessionId: options?.sessionId,
@@ -497,7 +501,8 @@ public func streamSimpleAzureOpenAIResponses(
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         timeoutMs: options?.timeoutMs,
-        maxRetries: options?.maxRetries
+        maxRetries: options?.maxRetries,
+        toolChoice: options?.toolChoice.map { $0 == .none ? .none : .auto }
     )
     return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
 }
@@ -544,7 +549,7 @@ func buildAzureResponsesQuery(
         store: nil,
         stream: true,
         temperature: options.temperature,
-        toolChoice: nil,
+        toolChoice: mapResponsesToolChoice(options.toolChoice),
         tools: tools
     )
 }

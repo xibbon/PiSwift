@@ -243,10 +243,12 @@ public enum HookDeliverAs: String, Sendable {
 
 public struct HookSendMessageOptions: Sendable {
     public var triggerTurn: Bool
+    public var expandPromptTemplates: Bool
     public var deliverAs: HookDeliverAs?
 
-    public init(triggerTurn: Bool = false, deliverAs: HookDeliverAs? = nil) {
+    public init(triggerTurn: Bool = false, deliverAs: HookDeliverAs? = nil, expandPromptTemplates: Bool = false) {
         self.triggerTurn = triggerTurn
+        self.expandPromptTemplates = expandPromptTemplates
         self.deliverAs = deliverAs
     }
 }
@@ -560,6 +562,7 @@ public protocol HookUIContext: Sendable {
     func setStatus(_ key: String, _ text: String?)
     func setWorkingMessage(_ message: String?)
     func setWidget(_ key: String, _ content: HookWidgetContent?)
+    /// Replace the footer. Pass nil to restore the default footer.
     func setFooter(_ factory: HookFooterFactory?)
     func setTitle(_ title: String)
     func custom(_ factory: @escaping HookCustomFactory, options: HookCustomOptions?) async -> HookCustomResult?
@@ -1162,6 +1165,7 @@ public struct UserBashEventResult: Sendable {
     }
 }
 
+/// Runs before manual and automatic compaction. A returned summary replaces the default summary.
 public struct SessionBeforeCompactEvent: HookEvent, Sendable {
     public let type: String = "session_before_compact"
     public var preparation: CompactionPreparation
@@ -1177,6 +1181,7 @@ public struct SessionBeforeCompactEvent: HookEvent, Sendable {
     }
 }
 
+/// Runs after a successful summary has been stored and the context has been rebuilt.
 public struct SessionCompactEvent: HookEvent, Sendable {
     public let type: String = "session_compact"
     public var compactionEntry: CompactionEntry
@@ -1185,6 +1190,48 @@ public struct SessionCompactEvent: HookEvent, Sendable {
     public init(compactionEntry: CompactionEntry, fromHook: Bool) {
         self.compactionEntry = compactionEntry
         self.fromHook = fromHook
+    }
+}
+
+public enum UIPromptKind: String, Sendable {
+    case select, confirm, input, editor, custom
+}
+
+public struct UIPromptStartEvent: HookEvent, Sendable {
+    public let type = "ui_prompt_start"
+    public let reason = "ui_prompt"
+    public var kind: UIPromptKind
+    public var title: String?
+    public init(kind: UIPromptKind, title: String? = nil) { self.kind = kind; self.title = title }
+}
+
+public struct UIPromptEndEvent: HookEvent, Sendable {
+    public let type = "ui_prompt_end"
+    public let reason = "ui_prompt"
+    public var kind: UIPromptKind
+    public var title: String?
+    public init(kind: UIPromptKind, title: String? = nil) { self.kind = kind; self.title = title }
+}
+
+public enum SessionCompactionReason: String, Sendable {
+    case manual, threshold, overflow
+}
+
+/// A compaction attempt did not produce a stored summary.
+public struct SessionCompactFailedEvent: HookEvent, Sendable {
+    public let type = "session_compact_failed"
+    public var reason: SessionCompactionReason
+    public var errorMessage: String?
+    public var aborted: Bool
+    public var willRetry: Bool
+    public var fromExtension: Bool
+
+    public init(reason: SessionCompactionReason, errorMessage: String? = nil, aborted: Bool, willRetry: Bool, fromExtension: Bool) {
+        self.reason = reason
+        self.errorMessage = errorMessage
+        self.aborted = aborted
+        self.willRetry = willRetry
+        self.fromExtension = fromExtension
     }
 }
 
@@ -1544,7 +1591,38 @@ public struct TreePreparation: Sendable {
     }
 }
 
+public enum HookAPIError: LocalizedError, Sendable {
+    case inactive(String)
+    case invalidFlagDefault(String)
+    public var errorDescription: String? {
+        switch self {
+        case .inactive(let path): return "Extension \"\(path)\" failed to load and its API is no longer active."
+        case .invalidFlagDefault(let name): return "Flag \"\(name)\" default must match its declared type."
+        }
+    }
+}
+
 public final class HookAPI: Sendable {
+    private let loadFailure = LockedState<HookAPIError?>(nil)
+
+    /// Checked access for hosts that retain an API after factory failure.
+    public func validateActive() throws {
+        if let error = loadFailure.withLock({ $0 }) { throw error }
+    }
+
+    func invalidateAfterLoadFailure() {
+        loadFailure.withLock { $0 = .inactive(hookPath) }
+        disposeEventBusListeners()
+        state.withLock { state in
+            state.flags.removeAll()
+            state.flagValues.removeAll()
+            state.providerRegistrations.removeAll()
+            state.handlers.removeAll()
+            state.tools.removeAll()
+            state.commands.removeAll()
+        }
+    }
+
     public let events: EventBus
     private let trackedEventBus: TrackedEventBus
     private let state: LockedState<State>
@@ -1766,6 +1844,9 @@ public final class HookAPI: Sendable {
         ))
     }
 
+    func beginLoading() { trackedEventBus.beginLoading() }
+    func commitLoading() { trackedEventBus.commitLoading() }
+
     func disposeEventBusListeners() {
         trackedEventBus.dispose()
     }
@@ -1847,10 +1928,12 @@ public final class HookAPI: Sendable {
     }
 
     public func setFlagValue(_ name: String, _ value: HookFlagValue) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         flagValues[name] = value
     }
 
     public func on<T: HookEvent>(_ type: String, _ handler: @Sendable @escaping (T, HookContext) async throws -> Any?) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         let wrapper: HookHandler = { event, context in
             guard let typed = event as? T else { return nil }
             return try await handler(typed, context)
@@ -1859,22 +1942,27 @@ public final class HookAPI: Sendable {
     }
 
     public func onAny(_ type: String, _ handler: @Sendable @escaping (HookEvent, HookContext) async throws -> Any?) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         handlers[type, default: []].append(handler)
     }
 
     public func sendMessage(_ message: HookMessageInput, options: HookSendMessageOptions? = nil) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         sendMessageHandler(message, options)
     }
 
     public func sendUserMessage(_ content: String, options: HookSendMessageOptions? = nil) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         sendUserMessageHandler(content, options)
     }
 
     public func appendEntry(_ customType: String, _ data: [String: Any]) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         appendEntryHandler(customType, data)
     }
 
     public func setSessionName(_ name: String) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         setSessionNameHandler(name)
     }
 
@@ -1883,6 +1971,7 @@ public final class HookAPI: Sendable {
     }
 
     public func setLabel(_ entryId: String, _ label: String?) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         setLabelHandler(entryId, label)
     }
 
@@ -1895,6 +1984,7 @@ public final class HookAPI: Sendable {
     }
 
     public func setActiveTools(_ toolNames: [String]) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         setActiveToolsHandler(toolNames)
     }
 
@@ -1911,10 +2001,24 @@ public final class HookAPI: Sendable {
     }
 
     public func setThinkingLevel(_ level: ThinkingLevel) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         setThinkingLevelHandler(level)
     }
 
-    public func registerFlag(_ name: String, _ options: HookFlagOptions) {
+    @discardableResult
+    public func registerFlag(_ name: String, _ options: HookFlagOptions) -> Bool {
+        guard loadFailure.withLock({ $0 == nil }) else { return false }
+        if let value = options.defaultValue {
+            let matches: Bool
+            switch (options.type, value) {
+            case (.boolean, .bool), (.string, .string): matches = true
+            default: matches = false
+            }
+            guard matches else {
+                loadFailure.withLock { $0 = .invalidFlagDefault(name) }
+                return false
+            }
+        }
         let flag = HookFlag(
             name: name,
             hookPath: hookPath,
@@ -1926,6 +2030,7 @@ public final class HookAPI: Sendable {
         if let defaultValue = options.defaultValue {
             flagValues[name] = defaultValue
         }
+        return true
     }
 
     public func getFlag(_ name: String) -> HookFlagValue? {
@@ -1933,6 +2038,7 @@ public final class HookAPI: Sendable {
     }
 
     public func registerShortcut(_ shortcut: KeyId, description: String? = nil, handler: @escaping @Sendable (_ context: HookContext) async -> Void) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         shortcuts[shortcut] = HookShortcut(
             shortcut: shortcut,
             hookPath: hookPath,
@@ -1942,20 +2048,24 @@ public final class HookAPI: Sendable {
     }
 
     public func registerMessageRenderer(_ customType: String, _ renderer: @escaping HookMessageRenderer) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         messageRenderers[customType] = renderer
     }
 
     /// Register a display-only Markdown transformer. Transformers run in registration order.
     public func registerMarkdownTransformer(_ transformer: @escaping MarkdownTransformer) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         markdownTransformers.append(transformer)
     }
 
     /// Register a renderer for a persisted display-only custom entry.
     public func registerEntryRenderer(_ customType: String, _ renderer: @escaping EntryRenderer) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         entryRenderers[customType] = renderer
     }
 
     public func registerCommand(_ name: String, description: String? = nil, handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         commands[name] = RegisteredCommand(name: name, description: description, handler: handler)
     }
 
@@ -1970,6 +2080,7 @@ public final class HookAPI: Sendable {
     /// extension that registered the tool owns its lifetime — when the extension is
     /// dropped via `/reload`, its tools are removed from the agent's roster.
     public func registerTool(_ tool: CustomTool) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         tools[tool.name] = tool
         registerToolHandler(tool)
     }
@@ -1984,17 +2095,20 @@ public final class HookAPI: Sendable {
     }
 
     public func registerProvider(_ config: HookProviderConfig) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         providerRegistrations[config.provider] = config
         registerProviderHandler(config)
     }
 
     public func unregisterProvider(_ provider: String) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
         providerRegistrations.removeValue(forKey: provider)
         unregisterProviderHandler(provider)
     }
 
 #if !canImport(UIKit)
     public func exec(_ command: String, _ args: [String], _ options: ExecOptions? = nil) async throws -> ExecResult {
+        try validateActive()
         let cwd = options?.cwd ?? execCwd ?? FileManager.default.currentDirectoryPath
         return try await execCommand(command, args, cwd, options)
     }

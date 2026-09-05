@@ -17,7 +17,7 @@ enum WriteToolError: LocalizedError, Sendable {
 }
 
 public func createWriteTool(cwd: String) -> AgentTool {
-    AgentTool(
+    var tool = AgentTool(
         label: "write",
         name: "write",
         description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
@@ -44,7 +44,12 @@ public func createWriteTool(cwd: String) -> AgentTool {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             try content.write(toFile: absolutePath, atomically: true, encoding: .utf8)
 
-            return AgentToolResult(content: [.text(TextContent(text: "Successfully wrote \(content.utf8.count) bytes to \(path)"))])
+            return AgentToolResult(content: [.text(TextContent(text: "Successfully wrote to \(path)"))])
         }
     }
+    tool.executeWithContext = { id, params, signal, onUpdate, context in
+        try await createWriteTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+    }
+    tool.constrainedSampling = getExperimentalToolSampling()
+    return tool
 }

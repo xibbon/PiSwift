@@ -3,7 +3,10 @@
 	"title": "Pi Coding Agent Theme",
 	"description": "Theme schema for Pi coding agent",
 	"type": "object",
-	"required": ["name", "colors"],
+	"required": [
+		"name",
+		"colors"
+	],
 	"properties": {
 		"$schema": {
 			"type": "string",
@@ -33,7 +36,7 @@
 		},
 		"colors": {
 			"type": "object",
-			"description": "Theme color definitions (thinkingMax and scrollbarThumb have backward-compatible fallbacks)",
+			"description": "Theme color definitions (thinkingMax, scrollbar colors, and search colors have backward-compatible fallbacks)",
 			"required": [
 				"accent",
 				"border",
@@ -271,7 +274,19 @@
 				},
 				"scrollbarThumb": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Fullscreen scrollbar thumb (falls back to selectedBg when omitted)"
+					"description": "Scrollbar thumb foreground (defaults to text)"
+				},
+				"scrollbarTrack": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Scrollbar track foreground (defaults to muted)"
+				},
+				"searchMatchBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Search match background (defaults to selectedBg)"
+				},
+				"searchMatchText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Search match foreground (defaults to text)"
 				}
 			},
 			"additionalProperties": false

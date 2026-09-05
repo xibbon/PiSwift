@@ -50,10 +50,13 @@ public enum ThemeColor: String, CaseIterable, Sendable {
     case thinkingXhigh
     case thinkingMax
     case bashMode
+    case scrollbarTrack
+    case searchMatchText
     case scrollbarThumb
 }
 
 public enum ThemeBg: String, CaseIterable, Sendable {
+    case searchMatchBg
     case selectedBg
     case userMessageBg
     case customMessageBg
@@ -116,11 +119,13 @@ private enum ThemeLoadError: Error, CustomStringConvertible {
 }
 
 public struct Theme: Sendable {
+    public let name: String
     private var fgColors: [ThemeColor: String]
     private var bgColors: [ThemeBg: String]
     private var mode: ColorMode
 
-    fileprivate init(fgColors: [ThemeColor: String], bgColors: [ThemeBg: String], mode: ColorMode) {
+    fileprivate init(fgColors: [ThemeColor: String], bgColors: [ThemeBg: String], mode: ColorMode, name: String = "dark") {
+        self.name = name
         self.fgColors = fgColors
         self.bgColors = bgColors
         self.mode = mode
@@ -448,6 +453,9 @@ private func validateThemeJson(_ json: ThemeJson, name: String) throws {
         message += "\nSee the built-in themes (dark.json, light.json) for reference values."
         throw ThemeLoadError.invalidTheme(message)
     }
+    if json.name.contains("/") {
+        throw ThemeLoadError.invalidTheme("Invalid theme name \"\(json.name)\": theme names cannot contain \"/\" because it is reserved for automatic light/dark theme settings.")
+    }
 }
 
 /// Applies optional theme-token fallbacks before validation so themes written before a
@@ -458,9 +466,9 @@ private func withThemeColorFallbacks(_ json: ThemeJson) -> ThemeJson {
        let xhigh = resolved.colors[ThemeColor.thinkingXhigh.rawValue] {
         resolved.colors[ThemeColor.thinkingMax.rawValue] = xhigh
     }
-    if resolved.colors[ThemeColor.scrollbarThumb.rawValue] == nil,
-       let selectedBg = resolved.colors[ThemeBg.selectedBg.rawValue] {
-        resolved.colors[ThemeColor.scrollbarThumb.rawValue] = selectedBg
+    for (key, fallback) in [("scrollbarTrack", "muted"), ("scrollbarThumb", "text"),
+                            ("searchMatchBg", "selectedBg"), ("searchMatchText", "text")] {
+        if resolved.colors[key] == nil { resolved.colors[key] = resolved.colors[fallback] }
     }
     return resolved
 }
@@ -508,7 +516,7 @@ private func createTheme(_ themeJson: ThemeJson, mode: ColorMode?) throws -> The
         }
     }
 
-    return Theme(fgColors: fgColors, bgColors: bgColors, mode: colorMode)
+    return Theme(fgColors: fgColors, bgColors: bgColors, mode: colorMode, name: themeJson.name)
 }
 
 private func loadTheme(_ name: String, mode: ColorMode? = nil) throws -> Theme {

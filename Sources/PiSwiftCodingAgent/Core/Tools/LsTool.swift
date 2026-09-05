@@ -25,7 +25,7 @@ public struct LsToolDetails: Sendable {
 }
 
 public func createLsTool(cwd: String) -> AgentTool {
-    AgentTool(
+    var tool = AgentTool(
         label: "ls",
         name: "ls",
         description: "List directory contents. Includes dotfiles.",
@@ -97,4 +97,8 @@ public func createLsTool(cwd: String) -> AgentTool {
         let details = detailsDict.isEmpty ? nil : AnyCodable(detailsDict)
         return AgentToolResult(content: [.text(TextContent(text: output))], details: details)
     }
+    tool.executeWithContext = { id, params, signal, onUpdate, context in
+        try await createLsTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+    }
+    return tool
 }

@@ -46,6 +46,8 @@ public struct AgentOptions: Sendable {
     public var beforeToolCall: BeforeToolCallFn?
     public var afterToolCall: AfterToolCallFn?
     public var shouldStopAfterTurn: AgentShouldStopAfterTurnFn?
+    public var prepareNextTurn: AgentPrepareNextTurnFn?
+    public var prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn?
 
     public init(
         initialState: AgentState? = nil,
@@ -71,7 +73,9 @@ public struct AgentOptions: Sendable {
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
         afterToolCall: AfterToolCallFn? = nil,
-        shouldStopAfterTurn: AgentShouldStopAfterTurnFn? = nil
+        shouldStopAfterTurn: AgentShouldStopAfterTurnFn? = nil,
+        prepareNextTurn: AgentPrepareNextTurnFn? = nil,
+        prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn? = nil
     ) {
         self.initialState = initialState
         self.convertToLlm = convertToLlm
@@ -97,6 +101,8 @@ public struct AgentOptions: Sendable {
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall
         self.shouldStopAfterTurn = shouldStopAfterTurn
+        self.prepareNextTurn = prepareNextTurn
+        self.prepareNextTurnWithContext = prepareNextTurnWithContext
     }
 }
 
@@ -129,6 +135,8 @@ public final class Agent: Sendable {
         var toolExecution: ToolExecutionMode
         var beforeToolCall: BeforeToolCallFn?
         var afterToolCall: AfterToolCallFn?
+        var prepareNextTurn: AgentPrepareNextTurnFn?
+        var prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn?
         var shouldStopAfterTurn: AgentShouldStopAfterTurnFn?
         var runningTask: Task<Void, Never>?
     }
@@ -274,6 +282,16 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.afterToolCall = newValue } }
     }
 
+    public var prepareNextTurn: AgentPrepareNextTurnFn? {
+        get { stateBox.withLock { $0.prepareNextTurn } }
+        set { stateBox.withLock { $0.prepareNextTurn = newValue } }
+    }
+
+    public var prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn? {
+        get { stateBox.withLock { $0.prepareNextTurnWithContext } }
+        set { stateBox.withLock { $0.prepareNextTurnWithContext = newValue } }
+    }
+
     public var shouldStopAfterTurn: AgentShouldStopAfterTurnFn? {
         get { stateBox.withLock { $0.shouldStopAfterTurn } }
         set { stateBox.withLock { $0.shouldStopAfterTurn = newValue } }
@@ -320,6 +338,8 @@ public final class Agent: Sendable {
             toolExecution: options.toolExecution ?? .parallel,
             beforeToolCall: options.beforeToolCall,
             afterToolCall: options.afterToolCall,
+            prepareNextTurn: options.prepareNextTurn,
+            prepareNextTurnWithContext: options.prepareNextTurnWithContext,
             shouldStopAfterTurn: options.shouldStopAfterTurn,
             runningTask: nil
         ))
@@ -682,7 +702,14 @@ public final class Agent: Sendable {
                 guard let self else { return [] }
                 return self.dequeueFollowUpMessages()
             },
-            shouldStopAfterTurn: loopShouldStopAfterTurn
+            shouldStopAfterTurn: loopShouldStopAfterTurn,
+            prepareNextTurn: { [weak self] context in
+                guard let self else { return nil }
+                if let prepare = self.prepareNextTurnWithContext {
+                    return try await prepare(context, token)
+                }
+                return try await self.prepareNextTurn?(token)
+            }
         )
 
         if let messages {

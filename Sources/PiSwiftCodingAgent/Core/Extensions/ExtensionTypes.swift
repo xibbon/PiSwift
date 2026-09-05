@@ -14,9 +14,9 @@ public enum ExtensionFormat: Sendable {
 /// while retaining the same registration surface as file-based extensions.
 public struct InlineExtension: Sendable {
     public let name: String
-    public let factory: HookFactory
+    public let factory: @Sendable (HookAPI) throws -> Void
 
-    public init(name: String, factory: @escaping HookFactory) {
+    public init(name: String, factory: @escaping @Sendable (HookAPI) throws -> Void) {
         self.name = name
         self.factory = factory
     }
@@ -65,7 +65,7 @@ public enum ExtensionLoadError: Sendable, LocalizedError {
 // MARK: - Tool Types
 
 /// Definition of a custom tool that can be registered by extensions
-public struct ToolDefinition: Sendable {
+public struct ToolDefinition: Sendable, Decodable {
     /// Tool name (used in LLM tool calls)
     public let name: String
     
@@ -83,6 +83,8 @@ public struct ToolDefinition: Sendable {
 
     /// Custom rendering for tool results
     public let renderResult: (@Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent)?
+
+    public var renderShell: ToolRenderShell
     
     public init(
         name: String,
@@ -90,7 +92,8 @@ public struct ToolDefinition: Sendable {
         description: String,
         parameters: [String: AnyCodable]? = nil,
         renderCall: (@Sendable ([String: AnyCodable], Theme) -> HookComponent)? = nil,
-        renderResult: (@Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent)? = nil
+        renderResult: (@Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent)? = nil,
+        renderShell: ToolRenderShell = .default
     ) {
         self.name = name
         self.label = label
@@ -98,6 +101,23 @@ public struct ToolDefinition: Sendable {
         self.parameters = parameters
         self.renderCall = renderCall
         self.renderResult = renderResult
+        self.renderShell = renderShell
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, label, description, parameters, renderShell
+    }
+
+    /// Decode metadata. JSON does not contain render functions.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            name: try container.decode(String.self, forKey: .name),
+            label: try container.decode(String.self, forKey: .label),
+            description: try container.decode(String.self, forKey: .description),
+            parameters: try container.decodeIfPresent([String: AnyCodable].self, forKey: .parameters),
+            renderShell: try container.decodeIfPresent(String.self, forKey: .renderShell) == "self" ? .self : .default
+        )
     }
 }
 

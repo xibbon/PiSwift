@@ -1,0 +1,60 @@
+{
+  "github-copilot": {
+    "claude-sonnet-4.5": {
+      "api": "anthropic-messages",
+      "baseUrl": "https://api.individual.githubcopilot.com",
+      "compat": {
+        "supportsEagerToolInputStreaming": false
+      },
+      "contextWindow": 200000,
+      "cost": {
+        "cacheRead": 0.3,
+        "cacheWrite": 3.75,
+        "input": 3,
+        "output": 15
+      },
+      "headers": {
+        "Copilot-Integration-Id": "vscode-chat",
+        "Editor-Plugin-Version": "copilot-chat/0.35.0",
+        "Editor-Version": "vscode/1.107.0",
+        "User-Agent": "GitHubCopilotChat/0.35.0"
+      },
+      "id": "claude-sonnet-4.5",
+      "input": [
+        "text",
+        "image"
+      ],
+      "maxTokens": 32000,
+      "name": "Claude Sonnet 4.5 (latest)",
+      "provider": "github-copilot",
+      "reasoning": true
+    }
+  },
+  "fireworks": {
+    "accounts/fireworks/models/deepseek-v4-flash": {
+      "api": "anthropic-messages",
+      "baseUrl": "https://api.fireworks.ai/inference",
+      "compat": {
+        "sendSessionAffinityHeaders": true,
+        "supportsCacheControlOnTools": false,
+        "supportsEagerToolInputStreaming": false,
+        "supportsLongCacheRetention": false
+      },
+      "contextWindow": 1000000,
+      "cost": {
+        "cacheRead": 0.028,
+        "cacheWrite": 0,
+        "input": 0.14,
+        "output": 0.28
+      },
+      "id": "accounts/fireworks/models/deepseek-v4-flash",
+      "input": [
+        "text"
+      ],
+      "maxTokens": 384000,
+      "name": "DeepSeek V4 Flash",
+      "provider": "fireworks",
+      "reasoning": true
+    }
+  }
+}

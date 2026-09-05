@@ -8,11 +8,17 @@ public struct FrontmatterResult: Sendable {
     public var keys: [String]
     /// Body content after frontmatter
     public var body: String
+    /// Fields whose YAML scalar or collection is not a string.
+    public var nonStringKeys: Set<String>
+    /// A syntax error detected while reading the supported frontmatter subset.
+    public var parseError: String?
 
-    public init(frontmatter: [String: String] = [:], keys: [String] = [], body: String) {
+    public init(frontmatter: [String: String] = [:], keys: [String] = [], body: String, nonStringKeys: Set<String> = [], parseError: String? = nil) {
         self.frontmatter = frontmatter
         self.keys = keys
         self.body = body
+        self.nonStringKeys = nonStringKeys
+        self.parseError = parseError
     }
 }
 
@@ -27,7 +33,7 @@ public struct FrontmatterResult: Sendable {
 /// - Parameter content: The markdown content with optional frontmatter
 /// - Returns: Parsed frontmatter and body content
 public func parseFrontmatter(_ content: String) -> FrontmatterResult {
-    let normalized = content.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+    let normalized = stripBom(content).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     guard normalized.hasPrefix("---") else {
         return FrontmatterResult(body: normalized)
     }
@@ -40,6 +46,8 @@ public func parseFrontmatter(_ content: String) -> FrontmatterResult {
 
     var frontmatter: [String: String] = [:]
     var keys: [String] = []
+    var nonStringKeys: Set<String> = []
+    var parseError: String?
     let lines = frontmatterBlock.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
     var i = 0
 
@@ -104,6 +112,23 @@ public func parseFrontmatter(_ content: String) -> FrontmatterResult {
             continue
         }
 
+        let isQuoted = value.hasPrefix("\"") || value.hasPrefix("'")
+        if isQuoted {
+            if value.count < 2 || value.last != value.first {
+                parseError = "Unterminated quoted frontmatter value for \(key)"
+            }
+        } else {
+            let scalar = value.split(separator: "#", maxSplits: 1).first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
+            if scalar.isEmpty || ["null", "~", "true", "false"].contains(scalar.lowercased()) ||
+                Double(scalar) != nil || scalar.hasPrefix("[") || scalar.hasPrefix("{") {
+                nonStringKeys.insert(key)
+            }
+            if (scalar.hasPrefix("[") && !scalar.hasSuffix("]")) ||
+                (scalar.hasPrefix("{") && !scalar.hasSuffix("}")) {
+                parseError = "Unterminated frontmatter collection for \(key)"
+            }
+        }
+
         // Handle quoted values
         if (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
             value = String(value.dropFirst().dropLast())
@@ -114,5 +139,5 @@ public func parseFrontmatter(_ content: String) -> FrontmatterResult {
         i += 1
     }
 
-    return FrontmatterResult(frontmatter: frontmatter, keys: keys, body: body)
+    return FrontmatterResult(frontmatter: frontmatter, keys: keys, body: body, nonStringKeys: nonStringKeys, parseError: parseError)
 }

@@ -17,17 +17,7 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
         }
         return dict
     case .assistant(let assistant):
-        return [
-            "role": "assistant",
-            "content": assistant.content.map { contentBlockToDict($0) },
-            "api": assistant.api.rawValue,
-            "provider": assistant.provider,
-            "model": assistant.model,
-            "usage": encodeUsage(assistant.usage),
-            "stopReason": assistant.stopReason.rawValue,
-            "timestamp": assistant.timestamp,
-            "errorMessage": assistant.errorMessage as Any,
-        ]
+        return assistantMessageToJSONObject(assistant)
     case .toolResult(let result):
         return [
             "role": "toolResult",

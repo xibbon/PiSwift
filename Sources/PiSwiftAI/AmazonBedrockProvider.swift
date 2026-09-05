@@ -125,6 +125,7 @@ private struct BedrockToolUseDelta: Decodable {
 private struct BedrockReasoningContentDelta: Decodable {
     let text: String?
     let signature: String?
+    let redactedContent: Data?
 }
 
 private struct BedrockContentBlockStopEvent: Decodable {
@@ -225,9 +226,10 @@ private struct AwsEventStreamParser {
     }
 }
 
-private struct BedrockStreamState {
+struct BedrockStreamState {
     var indexMap: [Int: Int] = [:]
     var toolCallPartials: [Int: String] = [:]
+    var redactedChunks: [Int: Data] = [:]
 }
 
 public func streamBedrock(
@@ -247,6 +249,7 @@ public func streamBedrock(
             stopReason: .pending
         )
 
+        var state = BedrockStreamState()
         do {
             let region = resolveBedrockRegion(model: model, options: options)
             let auth = try resolveBedrockAuth(options: options)
@@ -276,7 +279,7 @@ public func streamBedrock(
                     }
 
                     var parser = AwsEventStreamParser()
-                    var state = BedrockStreamState()
+                    state = BedrockStreamState()
                     let decoder = JSONDecoder()
 
                     for try await byte in bytes {
@@ -327,9 +330,11 @@ public func streamBedrock(
                 throw BedrockStreamError.serverError(output.errorMessage ?? "Unknown Bedrock stream error")
             }
 
+            finalizeBedrockBlocks(output: &output, state: &state)
             stream.push(.done(reason: output.stopReason, message: output))
             stream.end()
         } catch {
+            finalizeBedrockBlocks(output: &output, state: &state)
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
             output.errorMessage = errorMessage(for: error)
             if output.stopReason == .error, let diagnostic = bedrockFailureDiagnostic(for: error) {
@@ -495,7 +500,17 @@ private func handleContentBlockDelta(
                 output.content[contentIndex] = .thinking(thinkingContent)
                 stream.push(.thinkingDelta(contentIndex: contentIndex, delta: text, partial: output))
             }
-            if let signature = reasoning.signature, !signature.isEmpty {
+            if let redacted = reasoning.redactedContent, !redacted.isEmpty {
+                state.redactedChunks[blockIndex, default: Data()].append(redacted)
+                if thinkingContent.redacted != true {
+                    thinkingContent.redacted = true
+                    thinkingContent.thinkingSignature = ""
+                    thinkingContent.thinking += "[Reasoning redacted]"
+                    output.content[contentIndex] = .thinking(thinkingContent)
+                    stream.push(.thinkingDelta(contentIndex: contentIndex, delta: "[Reasoning redacted]", partial: output))
+                }
+            }
+            if thinkingContent.redacted != true, let signature = reasoning.signature, !signature.isEmpty {
                 let current = thinkingContent.thinkingSignature ?? ""
                 thinkingContent.thinkingSignature = current + signature
                 output.content[contentIndex] = .thinking(thinkingContent)
@@ -515,6 +530,7 @@ private func handleContentBlockStop(
         return
     }
 
+    finalizeBedrockBlock(blockIndex, output: &output, state: &state)
     switch output.content[contentIndex] {
     case .text(let textContent):
         stream.push(.textEnd(contentIndex: contentIndex, content: textContent.text, partial: output))
@@ -882,7 +898,7 @@ private func convertAssistantContent(_ blocks: [ContentBlock], model: Model) -> 
             if trimmed.isEmpty { continue }
             converted.append(BedrockContentBlock(payload: AnyCodable(["text": sanitizeSurrogates(text.text)])))
         case .toolCall(let toolCall):
-            let input = toolCall.arguments.mapValues { $0.value }
+            let input = sanitizeBedrockDocument(toolCall.arguments.mapValues { $0.value })
             let payload: [String: Any] = [
                 "toolUse": [
                     "toolUseId": toolCall.id,
@@ -892,6 +908,12 @@ private func convertAssistantContent(_ blocks: [ContentBlock], model: Model) -> 
             ]
             converted.append(BedrockContentBlock(payload: AnyCodable(payload)))
         case .thinking(let thinking):
+            if thinking.redacted == true {
+                if let signature = thinking.thinkingSignature, let bytes = Data(base64Encoded: signature), !bytes.isEmpty {
+                    converted.append(BedrockContentBlock(payload: AnyCodable(["reasoningContent": ["redactedContent": bytes.base64EncodedString()]])))
+                }
+                continue
+            }
             let trimmed = thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
             // If thinking signature is missing/empty, fall back to plain text block
@@ -966,12 +988,13 @@ private func convertToolConfig(
 ) throws -> BedrockToolConfig? {
     guard let tools, !tools.isEmpty else { return nil }
 
-    let bedrockTools = try tools.map {
-        BedrockTool(
-            name: $0.name,
-            description: $0.description,
-            parameters: $0.parameters,
-            strict: try resolveJsonSchemaStrictSampling(tool: $0, supportsStrictMode: supportsStrictMode)
+    let bedrockTools = try tools.map { tool in
+        let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictMode)
+        return BedrockTool(
+            name: tool.name,
+            description: tool.description,
+            parameters: try getJsonSchemaToolParameters(tool, strict: strict == true),
+            strict: strict
         )
     }
 
@@ -1554,4 +1577,31 @@ private func errorMessage(for error: Error) -> String {
     default:
         return retryAwareErrorDescription(error)
     }
+}
+
+func sanitizeBedrockDocument(_ value: Any) -> Any {
+    if let array = value as? [Any] { return array.map(sanitizeBedrockDocument) }
+    if let object = value as? [String: Any] {
+        return object.filter { !$0.key.isEmpty }.mapValues(sanitizeBedrockDocument)
+    }
+    return value
+}
+
+private func finalizeBedrockBlock(_ index: Int, output: inout AssistantMessage, state: inout BedrockStreamState) {
+    guard let contentIndex = state.indexMap[index], case .thinking(var block) = output.content[contentIndex], block.redacted == true else { return }
+    if let bytes = state.redactedChunks.removeValue(forKey: index) { block.thinkingSignature = bytes.base64EncodedString() }
+    output.content[contentIndex] = .thinking(block)
+}
+
+func finalizeBedrockBlocks(output: inout AssistantMessage, state: inout BedrockStreamState) {
+    for index in state.indexMap.keys { finalizeBedrockBlock(index, output: &output, state: &state) }
+}
+
+// Internal entry points for the upstream event and replay fixtures.
+func processBedrockFixture(type: String, payload: Data, model: Model, output: inout AssistantMessage, state: inout BedrockStreamState, stream: AssistantMessageEventStream) throws {
+    try handleBedrockEvent(AwsEventStreamMessage(headers: [":event-type": type], payload: payload), decoder: JSONDecoder(), model: model, output: &output, state: &state, stream: stream, responseRequestId: nil)
+}
+
+func bedrockReplayFixture(context: Context, model: Model) throws -> Data {
+    try JSONEncoder().encode(convertMessages(context: context, model: model, cacheRetention: .none))
 }

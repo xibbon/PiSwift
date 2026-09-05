@@ -47,7 +47,15 @@ public struct ExtensionDylibLoader {
 
         // Call the extension's entry point, passing the API as an opaque pointer.
         let opaqueAPI = Unmanaged.passUnretained(api).toOpaque()
+        api.beginLoading()
         entryPoint(opaqueAPI)
+        do {
+            try api.validateActive()
+            api.commitLoading()
+        } catch {
+            api.invalidateAfterLoadFailure()
+            throw error
+        }
 
         return LoadedHook(
             path: extensionPath,

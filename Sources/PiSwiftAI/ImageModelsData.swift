@@ -58,6 +58,26 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
+    "bytedance-seed/seedream-5-0-lite": ImagesModel(
+        id: "bytedance-seed/seedream-5-0-lite",
+        name: "ByteDance Seed: Seedream 5.0 Lite",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "bytedance-seed/seedream-5-0-pro": ImagesModel(
+        id: "bytedance-seed/seedream-5-0-pro",
+        name: "ByteDance Seed: Seedream 5.0 Pro",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
     "google/gemini-2.5-flash-image": ImagesModel(
         id: "google/gemini-2.5-flash-image",
         name: "Google: Nano Banana (Gemini 2.5 Flash Image)",
@@ -141,6 +161,16 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
     "krea/krea-2-medium-turbo": ImagesModel(
         id: "krea/krea-2-medium-turbo",
         name: "Krea: Krea 2 Medium Turbo",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "meta/muse-image": ImagesModel(
+        id: "meta/muse-image",
+        name: "Meta: Muse Image",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -308,6 +338,46 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
+    "recraft/recraft-v4-styles": ImagesModel(
+        id: "recraft/recraft-v4-styles",
+        name: "Recraft: Recraft V4 Styles",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "recraft/recraft-v4-styles-pro": ImagesModel(
+        id: "recraft/recraft-v4-styles-pro",
+        name: "Recraft: Recraft V4 Styles Pro",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "recraft/recraft-v4-styles-pro-vector": ImagesModel(
+        id: "recraft/recraft-v4-styles-pro-vector",
+        name: "Recraft: Recraft V4 Styles Pro Vector",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "recraft/recraft-v4-styles-vector": ImagesModel(
+        id: "recraft/recraft-v4-styles-vector",
+        name: "Recraft: Recraft V4 Styles Vector",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
     "recraft/recraft-v4-vector": ImagesModel(
         id: "recraft/recraft-v4-vector",
         name: "Recraft: Recraft V4 Vector",
@@ -411,6 +481,16 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
     "sourceful/riverflow-v2.5-pro": ImagesModel(
         id: "sourceful/riverflow-v2.5-pro",
         name: "Sourceful: Riverflow V2.5 Pro",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "x-ai/grok-imagine-image-2.0": ImagesModel(
+        id: "x-ai/grok-imagine-image-2.0",
+        name: "xAI: Grok Imagine Image 2.0",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",

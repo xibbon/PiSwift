@@ -39,7 +39,7 @@ public struct ReadToolOptions: Sendable {
 public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> AgentTool {
     let autoResizeImages = options?.autoResizeImages ?? true
     let blockImages = options?.blockImages ?? false
-    return AgentTool(
+    var tool = AgentTool(
         label: "read",
         name: "read",
         description: "Read the contents of a file. Supports text files and images (jpg, png, gif, webp).",
@@ -148,4 +148,9 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
 
         return AgentToolResult(content: [.text(TextContent(text: outputText))], details: details)
     }
+    tool.executeWithContext = { id, params, signal, onUpdate, context in
+        try await createReadTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: options).execute(id, params, signal, onUpdate)
+    }
+    tool.constrainedSampling = getExperimentalToolSampling()
+    return tool
 }

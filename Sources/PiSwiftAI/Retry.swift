@@ -36,6 +36,7 @@ private let retryableProviderErrorPatterns = [
 
     // Wrapper/provider text for transient upstream failures.
     "provider.?returned.?error",
+    "exceeded request buffer limit while retrying upstream",
 
     // Network, proxy, and fetch transport failures.
     "network.?error",

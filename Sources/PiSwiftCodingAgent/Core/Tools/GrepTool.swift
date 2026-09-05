@@ -26,7 +26,7 @@ public struct GrepToolDetails: Sendable {
 }
 
 public func createGrepTool(cwd: String) -> AgentTool {
-    AgentTool(
+    var tool = AgentTool(
         label: "grep",
         name: "grep",
         description: "Search file contents for a pattern. Returns matching lines with file paths and line numbers.",
@@ -171,6 +171,10 @@ public func createGrepTool(cwd: String) -> AgentTool {
         let details = detailsDict.isEmpty ? nil : AnyCodable(detailsDict)
         return AgentToolResult(content: [.text(TextContent(text: output))], details: details)
     }
+    tool.executeWithContext = { id, params, signal, onUpdate, context in
+        try await createGrepTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+    }
+    return tool
 }
 
 private func formatPath(for file: URL, searchPath: String, isDirectory: Bool) -> String {
