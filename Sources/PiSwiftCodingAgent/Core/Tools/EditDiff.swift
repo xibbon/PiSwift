@@ -445,57 +445,49 @@ public enum EditDiffOutcome: Sendable {
     case error(EditDiffError)
 }
 
-/// Compute the diff for an edit operation without applying it.
-/// Used for preview rendering in the TUI before the tool executes.
-public func computeEditDiff(path: String, oldText: String, newText: String, cwd: String) -> EditDiffOutcome {
+/// Compute the diff for one or more edits without a file change.
+public func computeEditsDiff(path: String, edits: [EditReplacement], cwd: String) -> EditDiffOutcome {
     let absolutePath = resolveToCwd(path, cwd: cwd)
-
-    // Check if file exists and is readable
     guard FileManager.default.isReadableFile(atPath: absolutePath) else {
         return .error(EditDiffError(error: "File not found: \(path)"))
     }
 
+    // Report the tool's own wording so a renderer can suppress a duplicate result error.
+    func noChanges() -> EditDiffError {
+        EditDiffError(error: ApplyEditsError.noChange(path: path, totalEdits: edits.count).localizedDescription)
+    }
     do {
-        // Read the file preserving BOM
         let (_, content) = try readFilePreservingBom(absolutePath)
-
         let normalizedContent = normalizeToLF(content)
-        let normalizedOldText = normalizeToLF(oldText)
-        let normalizedNewText = normalizeToLF(newText)
-
-        // Find the old text using fuzzy matching (tries exact match first, then fuzzy)
-        let matchResult = fuzzyFindText(normalizedContent, normalizedOldText)
-
-        guard matchResult.found else {
-            return .error(EditDiffError(error: "Could not find the exact text in \(path). The old text must match exactly including all whitespace and newlines."))
+        guard !edits.isEmpty else {
+            return .error(noChanges())
         }
-
-        // Count occurrences using fuzzy-normalized content for consistency
-        let fuzzyContent = normalizeForFuzzyMatch(normalizedContent)
-        let fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText)
-        let occurrences = fuzzyContent.components(separatedBy: fuzzyOldText).count - 1
-
-        if occurrences > 1 {
-            return .error(EditDiffError(error: "Found \(occurrences) occurrences of the text in \(path). The text must be unique. Please provide more context to make it unique."))
+        let applied = try applyEditsToNormalizedContent(normalizedContent, edits: edits, path: path)
+        guard applied.baseContent != applied.newContent else {
+            return .error(noChanges())
         }
-
-        // Compute the new content using the matched position
-        let baseContent = matchResult.contentForReplacement
-        let startIndex = baseContent.index(baseContent.startIndex, offsetBy: matchResult.index)
-        let endIndex = baseContent.index(startIndex, offsetBy: matchResult.matchLength)
-        let newContent = baseContent.replacingCharacters(in: startIndex..<endIndex, with: normalizedNewText)
-
-        // Check if it would actually change anything
-        if baseContent == newContent {
-            return .error(EditDiffError(error: "No changes would be made to \(path). The replacement produces identical content."))
-        }
-
-        // Generate the diff
-        let result = generateDiffString(baseContent, newContent)
+        let result = generateDiffString(applied.baseContent, applied.newContent)
         return .success(EditDiffResult(diff: result.diff, firstChangedLine: result.firstChangedLine))
+    } catch let error as ApplyEditsError {
+        return .error(EditDiffError(error: error.localizedDescription))
     } catch {
         return .error(EditDiffError(error: error.localizedDescription))
     }
+}
+
+/// Compute the diff for one edit without a file change.
+public func computeEditDiff(path: String, oldText: String, newText: String, cwd: String) -> EditDiffOutcome {
+    let outcome = computeEditsDiff(
+        path: path,
+        edits: [EditReplacement(oldText: oldText, newText: newText)],
+        cwd: cwd
+    )
+    // Keep the previous error for an empty search in the single-edit API.
+    if oldText.isEmpty, case .error(let error) = outcome,
+       error.error == ApplyEditsError.emptyOldText(path: path, editIndex: 0, totalEdits: 1).localizedDescription {
+        return .error(EditDiffError(error: ApplyEditsError.notFound(path: path, editIndex: 0, totalEdits: 1).localizedDescription))
+    }
+    return outcome
 }
 
 /// Generate a unified diff string with line numbers and context.
