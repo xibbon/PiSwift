@@ -534,3 +534,340 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(try await store.read(providerId: "openai", signal: nil) == nil)
     await gate.release()
 }
+
+@Test func remoteCatalogSkipsUndecodableEntriesAndStillPersists() async throws {
+    let good = String(decoding: try JSONEncoder().encode(catalogModel(id: "good-model", name: "Good")), as: UTF8.self)
+    let payload = """
+    [
+      {
+        "id": "future-model",
+        "name": "Future",
+        "api": "future-api",
+        "baseUrl": "https://api.example.invalid/v1",
+        "reasoning": false,
+        "input": ["text"],
+        "cost": {"input": 1, "output": 2, "cacheRead": 0, "cacheWrite": 0},
+        "contextWindow": 128000,
+        "maxTokens": 16384
+      },
+      {"id": "incomplete-model", "name": "Incomplete"},
+      \(good)
+    ]
+    """
+    let store = InMemoryCodingAgentModelsStore()
+    let client = CatalogStubHTTPClient { _ in
+        ProviderHTTPResponse(
+            statusCode: 200,
+            headers: ["Last-Modified": "Wed, 12 Aug 2037 12:00:00 GMT", "ETag": "\"partial\""],
+            body: Data(payload.utf8)
+        )
+    }
+    let registry = catalogRegistry(store: store, client: client)
+    let result = await registry.refresh(ModelsRefreshOptions(providers: ["openai"], force: true))
+
+    #expect(result.errors.isEmpty)
+    #expect(registry.find("openai", "good-model")?.name == "Good")
+    #expect(registry.find("openai", "future-model") == nil)
+    let persisted = try #require(try await store.read(providerId: "openai", signal: nil))
+    #expect(persisted.models.map(\.id) == ["good-model"])
+    #expect(persisted.checkedAt == 2_200_000_000_000)
+    #expect(persisted.etag == nil)
+}
+
+@Test(arguments: [
+    "Wednesday, 12-Aug-37 12:00:00 GMT",
+    "Wed Aug 12 12:00:00 2037"
+])
+func remoteCatalogAcceptsObsoleteLastModifiedFormats(lastModified: String) async throws {
+    let store = InMemoryCodingAgentModelsStore()
+    let client = CatalogStubHTTPClient { _ in
+        try catalogResponse(
+            status: 200,
+            models: [catalogModel(id: "dated", name: "Dated")],
+            lastModified: lastModified
+        )
+    }
+    let registry = catalogRegistry(store: store, client: client)
+    let result = await registry.refresh(ModelsRefreshOptions(providers: ["openai"], force: true))
+
+    #expect(result.errors.isEmpty)
+    #expect(registry.find("openai", "dated") != nil)
+    let persisted = try #require(try await store.read(providerId: "openai", signal: nil))
+    #expect((persisted.lastModified ?? 0) > (getBuiltinModelDataGeneratedAt() ?? 0))
+}
+
+@Test func fileModelsStoreToleratesByteOrderMarkAndRecoversFromATruncatedFile() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-recovery-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let bomPath = directory.appendingPathComponent("bom.json").path
+    let bomEntry = ModelsStoreEntry(models: [catalogModel(id: "bom-model", name: "BOM")], lastModified: 2_100_000_000_000)
+    try (Data([0xEF, 0xBB, 0xBF]) + JSONEncoder().encode(["openai": bomEntry])).write(to: URL(fileURLWithPath: bomPath))
+    #expect(try await FileModelsStore(bomPath).read(providerId: "openai", signal: nil)?.models.first?.id == "bom-model")
+
+    let path = directory.appendingPathComponent("models-store.json").path
+    // Cut off inside a two-byte character: invalid UTF-8 as well as invalid JSON.
+    try (Data("{\"openai\": {\"models\": [{\"name\": \"Caf".utf8) + Data([0xC3])).write(to: URL(fileURLWithPath: path))
+    let store = FileModelsStore(path)
+    let client = CatalogStubHTTPClient { _ in
+        try catalogResponse(
+            status: 200,
+            models: [catalogModel(id: "recovered", name: "Recovered")],
+            etag: "\"v1\"",
+            lastModified: "Wed, 12 Aug 2037 12:00:00 GMT"
+        )
+    }
+    let registry = catalogRegistry(store: store, client: client)
+    let result = await registry.refresh(ModelsRefreshOptions(providers: ["openai"], force: true))
+
+    #expect(result.errors.isEmpty)
+    #expect(registry.find("openai", "recovered") != nil)
+    let rawEntries = try JSONDecoder().decode(
+        [String: ModelsStoreEntry].self,
+        from: Data(contentsOf: URL(fileURLWithPath: path))
+    )
+    #expect(rawEntries["openai"]?.etag == "\"v1\"")
+}
+
+@Test func fileModelsStoreInstancesSerializeConcurrentWrites() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-instances-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("models-store.json").path
+    // First-time creation still races between backends (FileManager.createFile swaps the inode); this test is about serialized writes.
+    try Data("{}".utf8).write(to: URL(fileURLWithPath: path))
+    let stores = [FileModelsStore(path), FileModelsStore(path)]
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        for index in 0..<16 {
+            let store = stores[index % 2]
+            group.addTask {
+                try await store.write(
+                    providerId: "provider-\(index)",
+                    entry: ModelsStoreEntry(models: [catalogModel(id: "model-\(index)", name: "Model \(index)")]),
+                    signal: nil
+                )
+            }
+        }
+        try await group.waitForAll()
+    }
+    let rawEntries = try JSONDecoder().decode(
+        [String: ModelsStoreEntry].self,
+        from: Data(contentsOf: URL(fileURLWithPath: path))
+    )
+    #expect(rawEntries.count == 16)
+}
+
+@Test func fileModelsStoreKeepsProvidersAndModelsItCannotDecode() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-forward-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("models-store.json").path
+    let good = try #require(
+        try JSONSerialization.jsonObject(with: JSONEncoder().encode(catalogModel(id: "good", name: "Good", provider: "google"))) as? [String: Any]
+    )
+    var future = good
+    future["id"] = "future"
+    future["api"] = "future-api"
+    let openAIEntry = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ModelsStoreEntry(
+        models: [catalogModel(id: "openai-cached", name: "Cached")],
+        lastModified: 2_100_000_000_000,
+        etag: "\"o\""
+    )))
+    let raw: [String: Any] = [
+        "openai": openAIEntry,
+        "schemaVersion": 2,
+        "google": ["models": [good, future], "lastModified": 2_100_000_000_000, "etag": "\"g\"", "futureField": "kept"]
+    ]
+    try JSONSerialization.data(withJSONObject: raw).write(to: URL(fileURLWithPath: path))
+    let store = FileModelsStore(path)
+
+    let openAI = try #require(try await store.read(providerId: "openai", signal: nil))
+    #expect(openAI.models.map(\.id) == ["openai-cached"])
+    #expect(openAI.etag == "\"o\"")
+    let google = try #require(try await store.read(providerId: "google", signal: nil))
+    #expect(google.models.map(\.id) == ["good"])
+    #expect(google.etag == nil)
+
+    try await store.write(
+        providerId: "openai",
+        entry: ModelsStoreEntry(models: [catalogModel(id: "openai-new", name: "New")]),
+        signal: nil
+    )
+    let rewritten = try #require(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: Any]
+    )
+    let googleRaw = try #require(rewritten["google"] as? [String: Any])
+    let apis = (googleRaw["models"] as? [[String: Any]] ?? []).compactMap { $0["api"] as? String }
+    #expect(apis == ["openai-responses", "future-api"])
+    #expect(googleRaw["futureField"] as? String == "kept")
+    #expect(googleRaw["etag"] as? String == "\"g\"")
+    #expect(rewritten["schemaVersion"] as? Int == 2)
+
+    try await store.delete(providerId: "openai", signal: nil)
+    let afterDelete = try #require(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: Any]
+    )
+    #expect(afterDelete["openai"] == nil)
+    #expect((afterDelete["google"] as? [String: Any])?["futureField"] as? String == "kept")
+}
+
+@Test func fileModelsStoreDropsOnlyTheProviderJSONSerializationCannotWriteBack() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-infinite-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("models-store.json").path
+    let openAIEntry = String(decoding: try JSONEncoder().encode(ModelsStoreEntry(
+        models: [catalogModel(id: "openai-cached", name: "Cached")],
+        lastModified: 2_100_000_000_000
+    )), as: UTF8.self)
+    try Data(#"{"openai": \#(openAIEntry), "broken": {"models": [], "lastModified": -1e400}}"#.utf8)
+        .write(to: URL(fileURLWithPath: path))
+    let store = FileModelsStore(path)
+
+    #expect(try await store.read(providerId: "openai", signal: nil)?.models.first?.id == "openai-cached")
+    #expect(try await store.read(providerId: "broken", signal: nil) == nil)
+    try await store.write(
+        providerId: "anthropic",
+        entry: ModelsStoreEntry(models: [catalogModel(id: "claude-new", name: "New", provider: "anthropic")]),
+        signal: nil
+    )
+    let rewritten = try #require(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: Any]
+    )
+    #expect(Set(rewritten.keys) == ["openai", "anthropic"])
+}
+
+@Test(arguments: [
+    #"[{"id": "renamed-fields", "title": "No required fields"}]"#,
+    #"[{"modelId": "renamed-id", "name": "Renamed id"}]"#,
+    #"{"object": "list", "data": [{"id": "wrapped"}]}"#
+])
+func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) async throws {
+    let store = InMemoryCodingAgentModelsStore(entries: [
+        "openai": ModelsStoreEntry(
+            models: [catalogModel(id: "cached", name: "Cached")],
+            lastModified: 2_100_000_000_000,
+            checkedAt: 2_000_000_000_000,
+            etag: "\"cached\""
+        )
+    ])
+    let registry = catalogRegistry(
+        store: store,
+        client: CatalogStubHTTPClient { _ in
+            ProviderHTTPResponse(
+                statusCode: 200,
+                headers: ["Last-Modified": "Wed, 12 Aug 2037 12:00:00 GMT", "ETag": "\"new\""],
+                body: Data(payload.utf8)
+            )
+        }
+    )
+    let result = await registry.refresh(ModelsRefreshOptions(providers: ["openai"], force: true))
+
+    #expect(registry.find("openai", "cached") != nil)
+    let persisted = try #require(try await store.read(providerId: "openai", signal: nil))
+    #expect(persisted.models.map(\.id) == ["cached"])
+    #expect(persisted.etag == "\"cached\"")
+    #expect(persisted.lastModified == 2_100_000_000_000)
+    #expect(persisted.checkedAt == 2_200_000_000_000)
+    guard case .invalidCatalog? = result.errors["openai"] as? RemoteCatalogError else {
+        Issue.record("Expected invalidCatalog, got \(String(describing: result.errors["openai"]))")
+        return
+    }
+}
+
+@Test func fileModelsStoreWritesThroughASymlink() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-symlink-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let target = directory.appendingPathComponent("real-store.json")
+    let link = directory.appendingPathComponent("models-store.json")
+    try Data("{}".utf8).write(to: target)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    let store = FileModelsStore(link.path)
+
+    try await store.write(
+        providerId: "openai",
+        entry: ModelsStoreEntry(models: [catalogModel(id: "linked", name: "Linked")]),
+        signal: nil
+    )
+
+    #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: link.path)) != nil)
+    let stored = try JSONSerialization.jsonObject(with: Data(contentsOf: target)) as? [String: Any]
+    #expect(stored?["openai"] != nil)
+}
+
+@Test func fileModelsStoreNoticesATargetRewrittenBehindASymlink() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-symlink-revision-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let target = directory.appendingPathComponent("real-store.json")
+    let link = directory.appendingPathComponent("models-store.json")
+    try JSONEncoder().encode(["openai": ModelsStoreEntry(models: [catalogModel(id: "first", name: "First")])])
+        .write(to: target)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    let store = FileModelsStore(link.path)
+    #expect(try await store.read(providerId: "openai", signal: nil)?.models.first?.id == "first")
+
+    try JSONEncoder().encode(["openai": ModelsStoreEntry(models: [catalogModel(id: "rewritten-elsewhere", name: "Rewritten")])])
+        .write(to: target)
+
+    #expect(try await store.read(providerId: "openai", signal: nil)?.models.first?.id == "rewritten-elsewhere")
+}
+
+@Test func remoteCatalogMetadataOnlyObjectIsAnEmptyCatalog() async throws {
+    let store = InMemoryCodingAgentModelsStore()
+    let registry = catalogRegistry(
+        store: store,
+        client: CatalogStubHTTPClient { _ in
+            ProviderHTTPResponse(
+                statusCode: 200,
+                headers: ["Last-Modified": "Wed, 12 Aug 2037 12:00:00 GMT"],
+                body: Data(#"{"revision": "sha256-abc"}"#.utf8)
+            )
+        }
+    )
+    let result = await registry.refresh(ModelsRefreshOptions(providers: ["openai"], force: true))
+
+    #expect(result.errors.isEmpty)
+    let persisted = try #require(try await store.read(providerId: "openai", signal: nil))
+    #expect(persisted.models.isEmpty)
+}
+
+@Test func remoteCatalogDropsANonFiniteStringPriceSoTheEntryPersists() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-model-store-price-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let payload = #"""
+    [{"id": "priced", "name": "Priced", "api": "openai-responses", "baseUrl": "https://api.example.invalid/v1",
+      "reasoning": false, "input": ["text"], "cost": {"input": 1, "output": 2, "cacheRead": 0, "cacheWrite": 0},
+      "contextWindow": 128000, "maxTokens": 16384,
+      "compat": {"openRouterRouting": {"max_price": {"prompt": "Infinity", "completion": "2.5"}}}}]
+    """#
+    let store = FileModelsStore(directory.appendingPathComponent("models-store.json").path)
+    let registry = catalogRegistry(
+        store: store,
+        client: CatalogStubHTTPClient { _ in
+            ProviderHTTPResponse(
+                statusCode: 200,
+                headers: ["Last-Modified": "Wed, 12 Aug 2037 12:00:00 GMT"],
+                body: Data(payload.utf8)
+            )
+        }
+    )
+    let result = await registry.refresh(ModelsRefreshOptions(providers: ["openai"], force: true))
+
+    #expect(result.errors.isEmpty)
+    let parsed = try #require(registry.find("openai", "priced"))
+    #expect(parsed.compat?.openRouterRouting?.maxPrice?.prompt == nil)
+    #expect(parsed.compat?.openRouterRouting?.maxPrice?.completion == 2.5)
+    #expect(try await store.read(providerId: "openai", signal: nil)?.models.map(\.id) == ["priced"])
+}

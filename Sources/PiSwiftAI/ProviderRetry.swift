@@ -297,7 +297,7 @@ private func providerMetadata(_ error: Error) -> (statusCode: Int?, headers: [St
     return (providerError.providerStatusCode, providerError.providerHeaders)
 }
 
-private func parseHTTPDate(_ value: String) -> Date? {
+package func parseHTTPDate(_ value: String) -> Date? {
     let formats = [
         "EEE',' dd MMM yyyy HH':'mm':'ss z",
         "EEEE',' dd-MMM-yy HH':'mm':'ss z",

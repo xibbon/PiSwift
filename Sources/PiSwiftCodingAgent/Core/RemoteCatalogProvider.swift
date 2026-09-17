@@ -240,11 +240,22 @@ public struct RemoteCatalogProvider: Sendable {
         }
 
         let refreshed = try parseCatalog(response.body)
+        if refreshed.models.isEmpty, refreshed.entries > 0 {
+            // Entries without a single decodable model mean a format change (a renamed field, a new
+            // envelope), not an empty catalog: keep the cached one, throttled like a failure.
+            var entry = stored ?? ModelsStoreEntry(models: [])
+            entry.checkedAt = checkedAt
+            guard await context.publish(ModelsPublication(persist: .write(entry))) else { return }
+            throw RemoteCatalogError.invalidCatalog(providerId)
+        }
         let entry = ModelsStoreEntry(
-            models: refreshed,
-            lastModified: parseHTTPDateMilliseconds(header("last-modified", in: response.headers)) ?? 0,
+            models: refreshed.models,
+            lastModified: header("last-modified", in: response.headers)
+                .flatMap(parseHTTPDate)
+                .map { $0.timeIntervalSince1970 * 1_000 } ?? 0,
             checkedAt: checkedAt,
-            etag: header("etag", in: response.headers)
+            // Without a validator, a client that can decode the skipped entries gets a full response instead of a 304.
+            etag: refreshed.skipped == 0 ? header("etag", in: response.headers) : nil
         )
         if context.signal.isCancelled { return }
         let published = remoteModels(entry)
@@ -274,7 +285,7 @@ public struct RemoteCatalogProvider: Sendable {
         return entry.models
     }
 
-    private func parseCatalog(_ data: Data) throws -> [Model] {
+    private func parseCatalog(_ data: Data) throws -> (models: [Model], skipped: Int, entries: Int) {
         let value = try JSONSerialization.jsonObject(with: data)
         let entries: [Any]
         if let array = value as? [Any] {
@@ -287,27 +298,46 @@ public struct RemoteCatalogProvider: Sendable {
             throw RemoteCatalogError.invalidCatalog(providerId)
         }
 
-        let decoder = JSONDecoder()
-        return try entries.compactMap { value in
-            guard var object = value as? [String: Any], object["id"] != nil else { return nil }
-            object["provider"] = providerId
-            let data = try JSONSerialization.data(withJSONObject: object)
-            return try decoder.decode(Model.self, from: data)
+        let decoded = decodeCatalogModels(entries, provider: providerId)
+        // Scalars (metadata beside an id-keyed map) are not catalog entries.
+        return (decoded.models, decoded.skipped, entries.filter { $0 is [String: Any] || $0 is [Any] }.count)
+    }
+}
+
+/// Decodes catalog models one at a time, so an entry this build cannot read (a newer `api`
+/// value, a renamed field) costs that model rather than the whole catalog.
+func decodeCatalogModels(_ values: [Any], provider: String? = nil) -> (models: [Model], skipped: Int) {
+    let decoder = JSONDecoder()
+    var skipped = 0
+    let models = values.compactMap { value -> Model? in
+        guard var object = value as? [String: Any], object["id"] != nil else { return nil }
+        if let provider {
+            object["provider"] = provider
+        }
+        guard JSONSerialization.isValidJSONObject(object) else {
+            skipped += 1
+            return nil
+        }
+        do {
+            return try decoder.decode(Model.self, from: JSONSerialization.data(withJSONObject: object))
+        } catch {
+            skipped += 1
+            logModelCatalogDebug("skipping model \(object["id"] ?? "") of \(object["provider"] ?? "unknown provider"): \(error)")
+            return nil
         }
     }
+    return (models, skipped)
+}
+
+func logModelCatalogDebug(_ message: String) {
+    let environment = ProcessInfo.processInfo.environment
+    let flag = (environment["PI_DEBUG_CATALOG"] ?? environment["PI_DEBUG"])?.lowercased()
+    guard flag == "1" || flag == "true" || flag == "yes" else { return }
+    FileHandle.standardError.write(Data("PI_DEBUG: \(message)\n".utf8))
 }
 
 private func header(_ name: String, in headers: [String: String]) -> String? {
     headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
-}
-
-private func parseHTTPDateMilliseconds(_ value: String?) -> Double? {
-    guard let value else { return nil }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(secondsFromGMT: 0)
-    formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss z"
-    return formatter.date(from: value).map { $0.timeIntervalSince1970 * 1_000 }
 }
 
 private func piUserAgent(version: String) -> String {

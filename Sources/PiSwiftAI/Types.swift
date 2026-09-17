@@ -610,7 +610,8 @@ public struct OpenRouterRoutingPrice: Sendable, Codable {
             return value
         }
         if let value = try container.decodeIfPresent(String.self, forKey: key) {
-            return Double(value)
+            // Double("Infinity") parses, but a non-finite price cannot be encoded back into a store.
+            return Double(value).flatMap { $0.isFinite ? $0 : nil }
         }
         return nil
     }

@@ -186,18 +186,27 @@ public extension AuthStorageBackend {
 /// The default `AuthStorageBackend`, which stores credentials in an auth JSON file.
 public final class FileAuthStorageBackend: AuthStorageBackend {
     private let authPath: String
+    private let decodesInvalidUTF8: Bool
     private let lockOptionsOverride = LockedState<AuthLockOptions?>(nil)
     private let asyncTransactionGate = AsyncTransactionGate()
 
     public init(_ authPath: String = getAuthPath()) {
         self.authPath = authPath
+        self.decodesInvalidUTF8 = false
+    }
+
+    /// For caches: a file cut off mid-character reads with replacement characters
+    /// instead of failing every transaction until someone deletes it.
+    init(_ path: String, decodesInvalidUTF8: Bool) {
+        self.authPath = path
+        self.decodesInvalidUTF8 = decodesInvalidUTF8
     }
 
     public func withLock<Result: Sendable>(
         _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
     ) throws -> Result {
         try withFileLockSync {
-            let current = try String(contentsOfFile: authPath, encoding: .utf8)
+            let current = try readCurrent()
             let transaction = try body(current)
             if let next = transaction.next {
                 try write(next)
@@ -220,7 +229,7 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
         try await asyncTransactionGate.acquire(signal: signal)
         do {
             let result = try await withFileLock(signal: signal) {
-                let current = try String(contentsOfFile: self.authPath, encoding: .utf8)
+                let current = try self.readCurrent()
                 let transaction = try await body(current)
                 if signal?.isCancelled == true { throw OAuthError.cancelled }
                 if let next = transaction.next {
@@ -243,6 +252,13 @@ public final class FileAuthStorageBackend: AuthStorageBackend {
 
     private func write(_ value: String) throws {
         try value.write(toFile: authPath, atomically: false, encoding: .utf8)
+    }
+
+    private func readCurrent() throws -> String {
+        guard decodesInvalidUTF8 else {
+            return try String(contentsOfFile: authPath, encoding: .utf8)
+        }
+        return String(decoding: try Data(contentsOf: URL(fileURLWithPath: authPath)), as: UTF8.self)
     }
 
     private func withFileLock<Result: Sendable>(

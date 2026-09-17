@@ -72,7 +72,7 @@ private actor ModelsFileReadState {
             let task = Task<ModelsFileReloadResult, Error> {
                 try await storage.withLockAsync(signal: reloadSignal) { content in
                     try checkCancellation(reloadSignal)
-                    let parsed = try parseStoredModels(content)
+                    let parsed = parseStoredModels(content)
                     return AuthStorageLockResult(
                         result: ModelsFileReloadResult(
                             data: parsed,
@@ -96,8 +96,7 @@ private actor ModelsFileReadState {
         }
     }
 
-    func updateAfterMutation(_ latest: [String: ModelsStoreEntry]) {
-        data = latest
+    func invalidateAfterMutation() {
         // Force the next read to compare against storage. This also prevents a late
         // cache update from one writer from hiding a newer writer's commit.
         revision = nil
@@ -137,7 +136,7 @@ public final class FileModelsStore: ModelsStore {
     private let readState: ModelsFileReadState
 
     public convenience init(_ path: String = (getAgentDir() as NSString).appendingPathComponent("models-store.json")) {
-        self.init(path: path, storage: FileAuthStorageBackend(path))
+        self.init(path: path, storage: FileAuthStorageBackend(path, decodesInvalidUTF8: true))
     }
 
     public init(path: String, storage: any AuthStorageBackend) {
@@ -168,39 +167,64 @@ public final class FileModelsStore: ModelsStore {
         entry: ModelsStoreEntry,
         signal: CancellationToken? = nil
     ) async throws {
-        let latest = try await storage.withLockAsync(signal: signal) { content in
+        try await storage.withLockAsync(signal: signal) { content in
             try checkCancellation(signal)
-            var current = try parseStoredModels(content)
-            current[providerId] = entry
+            // Other providers stay raw JSON, so entries this build cannot decode survive its writes.
+            var stored = storedModelsObject(content) ?? [:]
+            stored[providerId] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry))
             try checkCancellation(signal)
-            return AuthStorageLockResult(result: current, next: try encodeStoredModels(current))
+            return AuthStorageLockResult(result: (), next: try encodeStoredModels(stored))
         }
+        await readState.invalidateAfterMutation()
         try checkCancellation(signal)
-        await readState.updateAfterMutation(latest)
     }
 
     public func delete(providerId: String, signal: CancellationToken? = nil) async throws {
-        let latest = try await storage.withLockAsync(signal: signal) { content in
+        try await storage.withLockAsync(signal: signal) { content in
             try checkCancellation(signal)
-            var current = try parseStoredModels(content)
-            current.removeValue(forKey: providerId)
+            var stored = storedModelsObject(content) ?? [:]
+            stored.removeValue(forKey: providerId)
             try checkCancellation(signal)
-            return AuthStorageLockResult(result: current, next: try encodeStoredModels(current))
+            return AuthStorageLockResult(result: (), next: try encodeStoredModels(stored))
         }
+        await readState.invalidateAfterMutation()
         try checkCancellation(signal)
-        await readState.updateAfterMutation(latest)
     }
 }
 
-private func parseStoredModels(_ content: String?) throws -> [String: ModelsStoreEntry] {
-    guard let content, !content.isEmpty else { return [:] }
-    return try JSONDecoder().decode([String: ModelsStoreEntry].self, from: Data(content.utf8))
+/// Decodes each provider, and each model inside it, on its own: an entry this build cannot
+/// read (a newer `api` value, say) costs that model rather than the whole store.
+private func parseStoredModels(_ content: String?) -> [String: ModelsStoreEntry] {
+    var entries: [String: ModelsStoreEntry] = [:]
+    for (providerId, value) in storedModelsObject(content) ?? [:] {
+        guard let fields = value as? [String: Any] else { continue }
+        let decoded = decodeCatalogModels(fields["models"] as? [Any] ?? [])
+        entries[providerId] = ModelsStoreEntry(
+            models: decoded.models,
+            lastModified: fields["lastModified"] as? Double,
+            checkedAt: fields["checkedAt"] as? Double,
+            // A partial restore must not revalidate as current, or the server answers 304 for what was dropped.
+            etag: decoded.skipped == 0 ? fields["etag"] as? String : nil
+        )
+    }
+    return entries
 }
 
-private func encodeStoredModels(_ entries: [String: ModelsStoreEntry]) throws -> String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let encoded = try encoder.encode(entries)
+/// The store is a cache: content that is not a JSON object restores nothing and the next write replaces it.
+private func storedModelsObject(_ content: String?) -> [String: Any]? {
+    guard let content, !content.isEmpty else { return nil }
+    guard let object = try? JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any] else {
+        logModelCatalogDebug("ignoring unreadable model catalog store")
+        return nil
+    }
+    // JSONSerialization reads an out-of-range number such as -1e400 as -inf, then raises an uncatchable
+    // exception writing it back; drop that provider instead of crashing every refresh. Wrapped, so
+    // scalar values a newer build wrote still pass.
+    return object.filter { JSONSerialization.isValidJSONObject([$0.value]) }
+}
+
+private func encodeStoredModels(_ stored: [String: Any]) throws -> String {
+    let encoded = try JSONSerialization.data(withJSONObject: stored, options: [.prettyPrinted, .sortedKeys])
     guard let value = String(data: encoded, encoding: .utf8) else {
         throw OAuthError.refreshFailed("failed to encode model storage")
     }
@@ -208,7 +232,7 @@ private func encodeStoredModels(_ entries: [String: ModelsStoreEntry]) throws ->
 }
 
 private func modelsFileRevision(_ path: String) -> ModelsFileRevision? {
-    guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: URL(fileURLWithPath: path).resolvingSymlinksInPath().path),
           let modificationDate = attributes[.modificationDate] as? Date,
           let size = (attributes[.size] as? NSNumber)?.uint64Value else {
         return nil
