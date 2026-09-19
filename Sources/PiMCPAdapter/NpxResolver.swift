@@ -305,6 +305,7 @@ func isJavaScriptFile(_ path: String) -> Bool {
 // MARK: - Force Populate
 
 private func forcePopulate(packageSpec: String, binName: String?) async -> (binPath: String, isJs: Bool)? {
+#if os(macOS)
     // Run: npm exec --yes --package <spec> -- node -e 1
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -341,4 +342,10 @@ private func forcePopulate(packageSpec: String, binName: String?) async -> (binP
 
     // Now try resolving from cache again
     return resolveFromNpmCache(packageSpec: packageSpec, binName: binName)
+#else
+    // No child processes off macOS, so an npx package cannot be materialized.
+    // Callers already treat nil as "not resolvable", and the stdio transport
+    // that would use the result is itself macOS-only.
+    return nil
+#endif
 }

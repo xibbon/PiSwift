@@ -66,6 +66,12 @@ public actor StdioTransport: McpTransport {
         let stdin = Pipe()
         let stdout = Pipe()
         let stderr = Pipe()
+        // Writing to a pipe whose reader has exited raises SIGPIPE, whose
+        // default disposition kills the host process — a mis-launched server
+        // takes the whole app down with it. F_SETNOSIGPIPE turns that into an
+        // EPIPE error on this descriptor alone, leaving the process signal
+        // disposition untouched.
+        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         proc.standardInput = stdin
         proc.standardOutput = stdout
         proc.standardError = stderr
@@ -105,7 +111,13 @@ public actor StdioTransport: McpTransport {
         guard !isClosed, let pipe = stdinPipe else {
             throw McpError.transportClosed
         }
-        pipe.fileHandleForWriting.write(data)
+        do {
+            // The throwing API surfaces EPIPE as an error; the non-throwing
+            // `write(_:)` raises an ObjC exception that Swift cannot catch.
+            try pipe.fileHandleForWriting.write(contentsOf: data)
+        } catch {
+            throw McpError.transportClosed
+        }
     }
 
     public func receive() async throws -> Data {
