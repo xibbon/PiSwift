@@ -28,13 +28,24 @@ import Foundation
 import PiSwiftAI
 import PiSwiftCodingAgent
 
+/// Host policy for the review extension.
+public struct PiReviewOptions: Sendable {
+    /// PR mode runs `gh pr checkout`, guarded only by a clean `git status`; a host
+    /// holding unsaved work git can't see (an editor) should turn it off.
+    public var allowsPullRequests: Bool
+
+    public init(allowsPullRequests: Bool = true) {
+        self.allowsPullRequests = allowsPullRequests
+    }
+}
+
 #if !canImport(UIKit)
 
 // MARK: - State
 
 // State to track fresh session review (where we branched from).
-// Only one review can be active at a time — the UI and /end-review command
-// assume a single active review, matching the upstream extension.
+// One store per registration (per session): upstream has one session per process;
+// a host with several would otherwise share one review across all of them.
 private actor ReviewSessionStore {
     var reviewOriginId: String?
     var endReviewInProgress = false
@@ -54,8 +65,6 @@ private actor ReviewSessionStore {
 
     func finishEndReview() { endReviewInProgress = false }
 }
-
-private let store = ReviewSessionStore()
 
 private let REVIEW_STATE_TYPE = "review-session"
 private let REVIEW_ANCHOR_TYPE = "review-anchor"
@@ -323,7 +332,7 @@ private func getReviewSettingsCustomInstructions(_ sessionManager: SessionManage
     return (trimmed?.isEmpty ?? true) ? nil : trimmed
 }
 
-private func applyAllReviewState(ui: HookUIContext, hasUI: Bool, sessionManager: SessionManager) async {
+private func applyAllReviewState(_ store: ReviewSessionStore, ui: HookUIContext, hasUI: Bool, sessionManager: SessionManager) async {
     await store.setCustomInstructions(getReviewSettingsCustomInstructions(sessionManager))
 
     let state = getReviewState(sessionManager)
@@ -623,11 +632,9 @@ private func tokenizeArgs(_ value: String) -> [String] {
     return tokens
 }
 
+// Quote-aware, so a path with spaces can be given as "My Scenes".
 private func parseReviewPaths(_ value: String) -> [String] {
-    value
-        .split(whereSeparator: { $0.isWhitespace })
-        .map { $0.trimmingCharacters(in: .whitespaces) }
-        .filter { !$0.isEmpty }
+    tokenizeArgs(value)
 }
 
 private func parseArgs(_ args: String) -> ParsedReviewArgs {
@@ -678,7 +685,7 @@ private func parseArgs(_ args: String) -> ParsedReviewArgs {
         return ParsedReviewArgs(target: .target(.commit(sha: parts[1], title: title)), extraInstruction: extraInstruction)
 
     case "folder":
-        let paths = parseReviewPaths(parts.dropFirst().joined(separator: " "))
+        let paths = Array(parts.dropFirst())
         guard !paths.isEmpty else { return ParsedReviewArgs(extraInstruction: extraInstruction) }
         return ParsedReviewArgs(target: .target(.folder(paths: paths)), extraInstruction: extraInstruction)
 
@@ -703,12 +710,20 @@ public enum PiReview {
         InlineExtension(name: "review", factory: { registerReviewExtension($0) })
     }
 
-    public static func register(_ pi: ExtensionAPI) {
-        registerReviewExtension(pi)
+    public static func register(_ pi: ExtensionAPI, options: PiReviewOptions = PiReviewOptions()) {
+        registerReviewExtension(pi, options: options)
+    }
+
+    /// Whether the session's branch is inside a review. For hosts that build sessions
+    /// without `session_start`, which is what restores the review widget.
+    public static func isReviewActive(in sessionManager: SessionManager) -> Bool {
+        getReviewState(sessionManager)?.active == true
     }
 }
 
-public func registerReviewExtension(_ pi: ExtensionAPI) {
+public func registerReviewExtension(_ pi: ExtensionAPI, options: PiReviewOptions = PiReviewOptions()) {
+    let store = ReviewSessionStore()
+
     // MARK: Settings persistence
 
     @Sendable func persistReviewSettings() async {
@@ -792,12 +807,12 @@ public func registerReviewExtension(_ pi: ExtensionAPI) {
     // MARK: Lifecycle events
 
     pi.on("session_start") { (_: SessionStartEvent, ctx: HookContext) -> Any? in
-        await applyAllReviewState(ui: ctx.ui, hasUI: ctx.hasUI, sessionManager: ctx.sessionManager)
+        await applyAllReviewState(store, ui: ctx.ui, hasUI: ctx.hasUI, sessionManager: ctx.sessionManager)
         return nil
     }
 
     pi.on("session_tree") { (_: SessionTreeEvent, ctx: HookContext) -> Any? in
-        await applyAllReviewState(ui: ctx.ui, hasUI: ctx.hasUI, sessionManager: ctx.sessionManager)
+        await applyAllReviewState(store, ui: ctx.ui, hasUI: ctx.hasUI, sessionManager: ctx.sessionManager)
         return nil
     }
 
@@ -915,7 +930,9 @@ public func registerReviewExtension(_ pi: ExtensionAPI) {
             ("commit", "Review a commit", ""),
             ("pullRequest", "Review a pull request", "(GitHub PR)"),
             ("folder", "Review a folder (or more)", "(snapshot, not diff)"),
-        ]
+        ].filter { preset in
+            options.allowsPullRequests || preset.value != "pullRequest"
+        }
 
         while true {
             let customInstructionsSet = await store.reviewCustomInstructions != nil
@@ -926,7 +943,7 @@ public func registerReviewExtension(_ pi: ExtensionAPI) {
             var options: [String] = presets.map { preset in
                 var label = preset.label
                 if !preset.description.isEmpty { label += " \(preset.description)" }
-                if preset.value == smartDefault { label += " — suggested" }
+                if preset.value == smartDefault { label += " (suggested)" }
                 return label
             }
             options.append(customInstructionsLabel)
@@ -994,7 +1011,7 @@ public func registerReviewExtension(_ pi: ExtensionAPI) {
         extraInstruction: String?
     ) async -> Bool {
         // Check if we're already in a review
-        if await store.reviewOriginId != nil {
+        if await store.reviewOriginId != nil || getReviewState(ctx.sessionManager)?.active == true {
             await ctx.ui.notify("Already in a review. Use /end-review to finish first.", .warning)
             return false
         }
@@ -1076,14 +1093,21 @@ public func registerReviewExtension(_ pi: ExtensionAPI) {
 
     // MARK: /review command
 
-    pi.registerCommand("review", description: "Review code changes (PR, uncommitted, branch, commit, or folder)") { args, ctx in
+    let reviewDescription = options.allowsPullRequests
+        ? "Review code changes (PR, uncommitted, branch, commit, or folder)"
+        : "Review code changes (uncommitted, branch, commit, or folder)"
+    pi.registerCommand("review", description: reviewDescription) { args, ctx in
         if !ctx.hasUI {
             await ctx.ui.notify("Review requires interactive mode", .error)
             return
         }
 
+        // A host-built session never gets session_start; settings are persisted as
+        // they change, so reading them here is always current.
+        await store.setCustomInstructions(getReviewSettingsCustomInstructions(ctx.sessionManager))
+
         // Check if we're already in a review
-        if await store.reviewOriginId != nil {
+        if await store.reviewOriginId != nil || getReviewState(ctx.sessionManager)?.active == true {
             await ctx.ui.notify("Already in a review. Use /end-review to finish first.", .warning)
             return
         }
@@ -1109,6 +1133,10 @@ public func registerReviewExtension(_ pi: ExtensionAPI) {
         case .target(let parsedTarget):
             target = parsedTarget
         case .pr(let ref):
+            guard options.allowsPullRequests else {
+                await ctx.ui.notify("Pull request review is not available here.", .warning)
+                return
+            }
             // Handle PR checkout (async operation)
             target = await resolvePullRequestTarget(ctx, ref)
             if target == nil {
@@ -1297,7 +1325,7 @@ public func piExtensionMain(_ raw: UnsafeMutableRawPointer) {
 /// The review extension shells out to `git`/`gh`, which is unavailable on
 /// UIKit platforms. Registration is a no-op there.
 public enum PiReview {
-    public static func register(_ pi: ExtensionAPI) {}
+    public static func register(_ pi: ExtensionAPI, options: PiReviewOptions = PiReviewOptions()) {}
 }
 
 #endif

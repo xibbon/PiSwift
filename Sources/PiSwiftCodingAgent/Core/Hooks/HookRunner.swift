@@ -368,6 +368,14 @@ public final class HookRunner: Sendable {
         }
     }
 
+    /// Attach a host UI without re-running `initialize`, which resets handlers only
+    /// `AgentSession` can rebuild.
+    public func attachUI(_ ui: HookUIContext, hasUI: Bool, mode: HookMode = .tui) {
+        self.uiContext = PromptHookUIContext(base: ui, runner: self)
+        self.hasUI = hasUI
+        state.withLock { $0.mode = mode }
+    }
+
     public func getUIContext() -> HookUIContext {
         uiContext
     }

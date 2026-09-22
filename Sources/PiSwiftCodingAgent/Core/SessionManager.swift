@@ -1004,17 +1004,19 @@ public final class SessionManager: Sendable {
     public func getBranch(_ leafId: String? = nil) -> [SessionEntry] {
         guard let targetId = leafId ?? self.leafId else { return [] }
         guard let leaf = byId[targetId] else { return [] }
+        // Collected leaf-first and reversed once: inserting at the front made this
+        // quadratic, and hosts call it on every turn boundary.
         var path: [SessionEntry] = []
         var current: SessionEntry? = leaf
         while let entry = current {
-            path.insert(entry, at: 0)
+            path.append(entry)
             if let parentId = entry.parentId {
                 current = byId[parentId]
             } else {
                 current = nil
             }
         }
-        return path
+        return Array(path.reversed())
     }
 
     public func getTree() -> [SessionTreeNode] {

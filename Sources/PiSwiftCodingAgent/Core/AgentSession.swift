@@ -751,6 +751,9 @@ public final class AgentSession: Sendable {
             getSystemPromptOptions: { config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()) },
             isProjectTrusted: { config.projectTrusted },
             sendMessageHandler: { [weak self] message, options in self?.enqueueHookMessage(message, options: options) },
+            appendEntryHandler: { [weak self] customType, data in
+                self?.sessionManager.appendCustomEntry(customType, data)
+            },
             setSessionNameHandler: { [weak self] name in
                 self?.sessionManager.appendSessionInfo(name)
             },
@@ -818,7 +821,13 @@ public final class AgentSession: Sendable {
             },
             navigateTreeHandler: { [weak self] targetId, options in
                 guard let self else { return HookCommandResult(cancelled: true) }
-                let result = await self.navigateTree(targetId, summarize: options?.summarize ?? false)
+                let result = await self.navigateTree(
+                    targetId,
+                    summarize: options?.summarize ?? false,
+                    customInstructions: options?.customInstructions,
+                    replaceInstructions: options?.replaceInstructions,
+                    label: options?.label
+                )
                 return HookCommandResult(cancelled: result.cancelled)
             },
             switchSessionHandler: { [weak self] sessionPath in
