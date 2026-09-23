@@ -4,16 +4,33 @@ import PiSwiftAgent
 
 public let DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000
 
+public struct CompactionModelOverride: Sendable, Equatable {
+    public var reserveTokens: Int?
+    public var keepRecentTokens: Int?
+
+    public init(reserveTokens: Int? = nil, keepRecentTokens: Int? = nil) {
+        self.reserveTokens = reserveTokens
+        self.keepRecentTokens = keepRecentTokens
+    }
+}
+
 public struct CompactionSettingsOverrides: Sendable {
     public var enabled: Bool?
     public var reserveTokens: Int?
     public var keepRecentTokens: Int?
+    public var modelOverrides: [String: CompactionModelOverride]?
 
-    public init(enabled: Bool? = nil, reserveTokens: Int? = nil, keepRecentTokens: Int? = nil) {
+    public init(enabled: Bool? = nil, reserveTokens: Int? = nil, keepRecentTokens: Int? = nil,
+                modelOverrides: [String: CompactionModelOverride]? = nil) {
         self.enabled = enabled
         self.reserveTokens = reserveTokens
         self.keepRecentTokens = keepRecentTokens
+        self.modelOverrides = modelOverrides
     }
+}
+
+public enum CacheWarmingMode: String, Sendable, CaseIterable {
+    case off, streaming, idle
 }
 
 public struct BranchSummarySettings: Sendable {
@@ -37,17 +54,20 @@ public struct RetrySettings: Sendable {
     public var enabled: Bool?
     public var maxRetries: Int?
     public var baseDelayMs: Int?
+    public var maxAgentDelayMs: Int?
     public var provider: ProviderRetrySettings?
 
     public init(
         enabled: Bool? = nil,
         maxRetries: Int? = nil,
         baseDelayMs: Int? = nil,
+        maxAgentDelayMs: Int? = nil,
         provider: ProviderRetrySettings? = nil
     ) {
         self.enabled = enabled
         self.maxRetries = maxRetries
         self.baseDelayMs = baseDelayMs
+        self.maxAgentDelayMs = maxAgentDelayMs
         self.provider = provider
     }
 }
@@ -217,6 +237,8 @@ public struct Settings: Sendable {
     /// Whether significant prompt-cache misses should be surfaced by a presentation layer.
     /// Defaults to false.
     public var showCacheMissNotices: Bool?
+    /// Global setting only: each refresh can incur provider charges.
+    public var cacheWarming: CacheWarmingMode?
     public var shellPath: String?
     public var shellCommandPrefix: String?
     public var quietStartup: Bool?
@@ -280,6 +302,17 @@ public struct SettingsError: Sendable {
         self.path = path
         self.scope = scope
         self.message = message
+    }
+}
+
+public enum CompactionSettingsError: LocalizedError, Sendable {
+    case invalidValue(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidValue(let field):
+            return "Invalid \(field) setting. Expected a non-negative integer."
+        }
     }
 }
 
@@ -684,22 +717,54 @@ public final class SettingsManager: Sendable {
         save()
     }
 
-    public func getCompactionSettingsOverrides() -> CompactionSettingsOverrides {
+    public func getCompactionSettingsOverrides(model: Model? = nil) -> CompactionSettingsOverrides {
         let compaction = settings.compaction ?? CompactionSettingsOverrides()
+        let modelOverride = model.flatMap { compaction.modelOverrides?["\($0.provider)/\($0.id)"] }
         return CompactionSettingsOverrides(
             enabled: compaction.enabled ?? true,
-            reserveTokens: compaction.reserveTokens ?? 16384,
-            keepRecentTokens: compaction.keepRecentTokens ?? 20000
+            reserveTokens: modelOverride?.reserveTokens ?? compaction.reserveTokens ?? 16384,
+            keepRecentTokens: modelOverride?.keepRecentTokens ?? compaction.keepRecentTokens ?? 20000,
+            modelOverrides: compaction.modelOverrides
         )
     }
 
-    public func getCompactionSettings() -> CompactionSettings {
-        let overrides = getCompactionSettingsOverrides()
+    public func getCompactionSettings(model: Model? = nil) -> CompactionSettings {
+        let overrides = getCompactionSettingsOverrides(model: model)
         return CompactionSettings(
             enabled: overrides.enabled ?? true,
             reserveTokens: overrides.reserveTokens ?? 16384,
             keepRecentTokens: overrides.keepRecentTokens ?? 20000
         )
+    }
+
+    /// Validate the merged values before applying a model-specific budget.
+    public func validatedCompactionSettings(model: Model? = nil) throws -> CompactionSettings {
+        let compaction = settings.compaction
+        if let value = compaction?.reserveTokens, value < 0 {
+            throw CompactionSettingsError.invalidValue("compaction.reserveTokens")
+        }
+        if let value = compaction?.keepRecentTokens, value < 0 {
+            throw CompactionSettingsError.invalidValue("compaction.keepRecentTokens")
+        }
+        for (key, override) in compaction?.modelOverrides ?? [:] {
+            if let value = override.reserveTokens, value < 0 {
+                throw CompactionSettingsError.invalidValue("compaction.modelOverrides[\"\(key)\"].reserveTokens")
+            }
+            if let value = override.keepRecentTokens, value < 0 {
+                throw CompactionSettingsError.invalidValue("compaction.modelOverrides[\"\(key)\"].keepRecentTokens")
+            }
+        }
+        return getCompactionSettings(model: model)
+    }
+
+    public func getCacheWarmingMode() -> CacheWarmingMode {
+        globalSettings.cacheWarming ?? .streaming
+    }
+
+    public func setCacheWarmingMode(_ mode: CacheWarmingMode) {
+        globalSettings.cacheWarming = mode
+        markModified("cacheWarming")
+        save()
     }
 
     public func getBranchSummarySettings() -> BranchSummarySettings {
@@ -713,6 +778,7 @@ public final class SettingsManager: Sendable {
             enabled: retry.enabled ?? true,
             maxRetries: retry.maxRetries ?? 3,
             baseDelayMs: retry.baseDelayMs ?? 2000,
+            maxAgentDelayMs: retry.maxAgentDelayMs ?? 60_000,
             provider: retry.provider
         )
     }
@@ -1242,7 +1308,35 @@ public final class SettingsManager: Sendable {
         guard let dict = json as? [String: Any] else {
             return Settings()
         }
+        try validateCompactionJSON(dict)
         return SettingsManager.decodeSettings(dict)
+    }
+
+    private static func validateCompactionJSON(_ json: [String: Any]) throws {
+        guard let raw = json["compaction"] else { return }
+        guard let compaction = raw as? [String: Any] else {
+            throw CompactionSettingsError.invalidValue("compaction")
+        }
+        func validate(_ value: Any?, field: String) throws {
+            guard let value else { return }
+            guard let integer = value as? Int, integer >= 0, !(value is Bool) else {
+                throw CompactionSettingsError.invalidValue(field)
+            }
+        }
+        try validate(compaction["reserveTokens"], field: "compaction.reserveTokens")
+        try validate(compaction["keepRecentTokens"], field: "compaction.keepRecentTokens")
+        if let rawOverrides = compaction["modelOverrides"] {
+            guard let overrides = rawOverrides as? [String: Any] else {
+                throw CompactionSettingsError.invalidValue("compaction.modelOverrides")
+            }
+            for (key, rawOverride) in overrides {
+                guard let entry = rawOverride as? [String: Any] else {
+                    throw CompactionSettingsError.invalidValue("compaction.modelOverrides[\"\(key)\"]")
+                }
+                try validate(entry["reserveTokens"], field: "compaction.modelOverrides[\"\(key)\"].reserveTokens")
+                try validate(entry["keepRecentTokens"], field: "compaction.modelOverrides[\"\(key)\"].keepRecentTokens")
+            }
+        }
     }
 
     private static func loadRawJson(_ path: String) throws -> [String: Any] {
@@ -1401,6 +1495,7 @@ public final class SettingsManager: Sendable {
         }
         settings.hideThinkingBlock = json["hideThinkingBlock"] as? Bool
         settings.showCacheMissNotices = json["showCacheMissNotices"] as? Bool
+        settings.cacheWarming = (json["cacheWarming"] as? String).flatMap(CacheWarmingMode.init(rawValue:))
         settings.shellPath = json["shellPath"] as? String
         settings.shellCommandPrefix = json["shellCommandPrefix"] as? String
         settings.quietStartup = json["quietStartup"] as? Bool
@@ -1436,10 +1531,15 @@ public final class SettingsManager: Sendable {
         settings.projectTrust = json["projectTrust"] as? [String: Bool]
 
         if let compaction = json["compaction"] as? [String: Any] {
+            let modelOverrides = (compaction["modelOverrides"] as? [String: [String: Any]])?.mapValues { value in
+                CompactionModelOverride(reserveTokens: value["reserveTokens"] as? Int,
+                                        keepRecentTokens: value["keepRecentTokens"] as? Int)
+            }
             settings.compaction = CompactionSettingsOverrides(
                 enabled: compaction["enabled"] as? Bool,
                 reserveTokens: compaction["reserveTokens"] as? Int,
-                keepRecentTokens: compaction["keepRecentTokens"] as? Int
+                keepRecentTokens: compaction["keepRecentTokens"] as? Int,
+                modelOverrides: modelOverrides
             )
         }
 
@@ -1459,6 +1559,7 @@ public final class SettingsManager: Sendable {
                 enabled: retry["enabled"] as? Bool,
                 maxRetries: retry["maxRetries"] as? Int,
                 baseDelayMs: retry["baseDelayMs"] as? Int,
+                maxAgentDelayMs: retry["maxAgentDelayMs"] as? Int,
                 provider: provider
             )
         }
@@ -1660,6 +1761,14 @@ public final class SettingsManager: Sendable {
         writeQueue.sync {}
     }
 
+    /// The settings snapshot used by local diagnostics. Callers must redact it before export.
+    public func settingsJSONForDiagnostics(_ settings: Settings) -> [String: AnyCodable] {
+        encodeSettingsToJson(settings).compactMapValues { value in
+            let wrapped = AnyCodable(value)
+            return (try? JSONEncoder().encode(wrapped)) == nil ? nil : wrapped
+        }
+    }
+
     private func encodeSettingsToJson(_ settings: Settings) -> [String: Any] {
         var json: [String: Any] = [:]
         json["lastChangelogVersion"] = settings.lastChangelogVersion
@@ -1677,6 +1786,7 @@ public final class SettingsManager: Sendable {
         json["defaultProjectTrust"] = settings.defaultProjectTrust?.rawValue
         json["hideThinkingBlock"] = settings.hideThinkingBlock
         json["showCacheMissNotices"] = settings.showCacheMissNotices
+        json["cacheWarming"] = settings.cacheWarming?.rawValue
         json["shellPath"] = settings.shellPath
         json["shellCommandPrefix"] = settings.shellCommandPrefix
         json["quietStartup"] = settings.quietStartup
@@ -1707,11 +1817,20 @@ public final class SettingsManager: Sendable {
         json["projectTrust"] = settings.projectTrust
 
         if let compaction = settings.compaction {
-            json["compaction"] = [
+            var compactionJson: [String: Any] = [
                 "enabled": compaction.enabled as Any,
                 "reserveTokens": compaction.reserveTokens as Any,
                 "keepRecentTokens": compaction.keepRecentTokens as Any,
             ]
+            if let overrides = compaction.modelOverrides {
+                compactionJson["modelOverrides"] = overrides.mapValues { value -> [String: Any] in
+                    var result: [String: Any] = [:]
+                    if let reserve = value.reserveTokens { result["reserveTokens"] = reserve }
+                    if let recent = value.keepRecentTokens { result["keepRecentTokens"] = recent }
+                    return result
+                }
+            }
+            json["compaction"] = compactionJson
         }
 
         if let branch = settings.branchSummary {
@@ -1726,6 +1845,7 @@ public final class SettingsManager: Sendable {
                 "enabled": retry.enabled as Any,
                 "maxRetries": retry.maxRetries as Any,
                 "baseDelayMs": retry.baseDelayMs as Any,
+                "maxAgentDelayMs": retry.maxAgentDelayMs as Any,
             ]
             if let provider = retry.provider {
                 retryJson["provider"] = [
@@ -1870,10 +1990,19 @@ public final class SettingsManager: Sendable {
         if override.theme != nil { result.theme = override.theme }
         if let value = override.compaction {
             let baseValue = result.compaction ?? CompactionSettingsOverrides()
+            var modelOverrides = baseValue.modelOverrides ?? [:]
+            for (key, incoming) in value.modelOverrides ?? [:] {
+                let base = modelOverrides[key] ?? CompactionModelOverride()
+                modelOverrides[key] = CompactionModelOverride(
+                    reserveTokens: incoming.reserveTokens ?? base.reserveTokens,
+                    keepRecentTokens: incoming.keepRecentTokens ?? base.keepRecentTokens
+                )
+            }
             result.compaction = CompactionSettingsOverrides(
                 enabled: value.enabled ?? baseValue.enabled,
                 reserveTokens: value.reserveTokens ?? baseValue.reserveTokens,
-                keepRecentTokens: value.keepRecentTokens ?? baseValue.keepRecentTokens
+                keepRecentTokens: value.keepRecentTokens ?? baseValue.keepRecentTokens,
+                modelOverrides: modelOverrides.isEmpty ? nil : modelOverrides
             )
         }
         if let value = override.branchSummary {
@@ -1889,6 +2018,7 @@ public final class SettingsManager: Sendable {
                 enabled: retryOverride.enabled ?? baseRetry.enabled,
                 maxRetries: retryOverride.maxRetries ?? baseRetry.maxRetries,
                 baseDelayMs: retryOverride.baseDelayMs ?? baseRetry.baseDelayMs,
+                maxAgentDelayMs: retryOverride.maxAgentDelayMs ?? baseRetry.maxAgentDelayMs,
                 provider: baseRetry.provider
             )
             if let providerOverride = retryOverride.provider {
@@ -1903,6 +2033,7 @@ public final class SettingsManager: Sendable {
         }
         if override.hideThinkingBlock != nil { result.hideThinkingBlock = override.hideThinkingBlock }
         if override.showCacheMissNotices != nil { result.showCacheMissNotices = override.showCacheMissNotices }
+        // cacheWarming is intentionally global only.
         if override.shellPath != nil { result.shellPath = override.shellPath }
         if override.shellCommandPrefix != nil { result.shellCommandPrefix = override.shellCommandPrefix }
         if override.quietStartup != nil { result.quietStartup = override.quietStartup }

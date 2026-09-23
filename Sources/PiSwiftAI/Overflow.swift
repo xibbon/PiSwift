@@ -1,7 +1,7 @@
 import Foundation
 
 private let overflowPatterns: [NSRegularExpression] = [
-    try! NSRegularExpression(pattern: "prompt is too long", options: [.caseInsensitive]),
+    try! NSRegularExpression(pattern: "prompt (is )?too long", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "input is too long for requested model", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "exceeds the context window", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "input is too long", options: [.caseInsensitive]),
@@ -58,7 +58,7 @@ public func isContextOverflow(_ message: AssistantMessage, contextWindow: Int? =
             }
         }
 
-        if let codeMatch = try? NSRegularExpression(pattern: "^4(00|13)\\s*(status code)?\\s*\\(no body\\)", options: [.caseInsensitive]) {
+        if message.provider == "cerebras", let codeMatch = try? NSRegularExpression(pattern: "^4(00|13)\\s*(status code)?\\s*\\(no body\\)", options: [.caseInsensitive]) {
             if codeMatch.firstMatch(in: errorMessage, options: [], range: range) != nil {
                 return true
             }

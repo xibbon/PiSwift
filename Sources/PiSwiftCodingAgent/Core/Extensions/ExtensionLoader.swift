@@ -37,6 +37,7 @@ public struct ExtensionLoader {
             path: path,
             resolvedPath: path,
             handlers: api.handlers,
+            currentHandlers: { api.handlers },
             messageRenderers: api.messageRenderers,
             markdownTransformers: api.markdownTransformers,
             entryRenderers: api.entryRenderers,

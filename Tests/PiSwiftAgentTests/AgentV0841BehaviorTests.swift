@@ -81,7 +81,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
 
     let stream = agentLoop(
         prompts: [.user(UserMessage(content: .text("start")))],
-        context: AgentContext(systemPrompt: "", messages: [], tools: [tool]),
+        context: testAgentContext(systemPrompt: "", messages: [], tools: [tool]),
         config: config,
         streamFn: streamFn
     )
@@ -151,7 +151,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
 
     let stream = agentLoop(
         prompts: [.user(UserMessage(content: .text("start")))],
-        context: AgentContext(systemPrompt: "", messages: [], tools: [tool]),
+        context: testAgentContext(systemPrompt: "", messages: [], tools: [tool]),
         config: config,
         streamFn: streamFn
     )
@@ -186,7 +186,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
     let agent = Agent(AgentOptions(
         initialState: AgentState(model: v0841Model()),
         streamFn: streamFn,
-        shouldStopAfterTurn: { context, signal in
+        finishTurn: { context, signal in
             sawExpectedContext.withLock {
                 $0 = context.message.stopReason == .stop
                     && context.toolResults.isEmpty
@@ -194,7 +194,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
                     && context.newMessages.count == 2
             }
             sawSignal.withLock { $0 = signal != nil }
-            return true
+            return .end
         }
     ))
     agent.followUp(.user(UserMessage(content: .text("queued follow-up"))))

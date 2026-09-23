@@ -50,6 +50,7 @@ public enum OAuthProvider: String, Sendable, CaseIterable {
     case openRouter = "openrouter"
     case kimiCoding = "kimi-coding"
     case xai = "xai"
+    case meta = "meta"
 }
 
 public struct OAuthPrompt: Sendable {
@@ -159,6 +160,7 @@ public func getOAuthProviders() -> [OAuthProviderInfo] {
         OAuthProviderInfo(id: .openRouter, name: "OpenRouter OAuth", available: true),
         OAuthProviderInfo(id: .kimiCoding, name: "Kimi Code (subscription)", available: true),
         OAuthProviderInfo(id: .xai, name: "xAI (Grok/X subscription)", available: true),
+        OAuthProviderInfo(id: .meta, name: "Meta (Muse subscription)", available: true),
     ]
 }
 
@@ -191,6 +193,8 @@ public func refreshOAuthToken(
         return try await refreshKimiCodingToken(credentials.refresh, signal: signal)
     case .xai:
         return try await refreshXaiToken(credentials.refresh, signal: signal)
+    case .meta:
+        return try await refreshMetaToken(credentials.refresh, signal: signal)
     }
 }
 
@@ -405,11 +409,11 @@ private func base64UrlDecode(_ input: String) -> Data? {
     return Data(base64Encoded: base64)
 }
 
-private func nowMs() -> Double {
+func nowMs() -> Double {
     Date().timeIntervalSince1970 * 1000
 }
 
-private func throwIfOAuthCancelled(_ signal: CancellationToken?) throws {
+func throwIfOAuthCancelled(_ signal: CancellationToken?) throws {
     if signal?.isCancelled == true || Task.isCancelled {
         throw OAuthError.cancelled
     }
@@ -421,7 +425,7 @@ struct OAuthNetworkResponse: Sendable {
     var headers: [String: String] = [:]
 }
 
-private func oauthData(
+func oauthData(
     for request: URLRequest,
     signal: CancellationToken?,
     timeoutMs: Int? = nil
@@ -1428,7 +1432,7 @@ private func pollForGitHubAccessToken(
     }
 }
 
-private enum OAuthDevicePollResult<Value: Sendable>: Sendable {
+enum OAuthDevicePollResult<Value: Sendable>: Sendable {
     case pending
     case slowDown(intervalSeconds: Double?)
     case complete(Value)
@@ -1436,21 +1440,22 @@ private enum OAuthDevicePollResult<Value: Sendable>: Sendable {
 }
 
 /// Shared RFC 8628 polling driver used by GitHub Copilot, xAI, and Kimi Code.
-private func pollOAuthDeviceCodeFlow<Value: Sendable>(
+func pollOAuthDeviceCodeFlow<Value: Sendable>(
     intervalSeconds: Double,
-    expiresInSeconds: Double,
+    expiresInSeconds: Double?,
     signal: CancellationToken?,
+    minimumIntervalMs: Int = 1,
     poll: @escaping @Sendable () async throws -> OAuthDevicePollResult<Value>
 ) async throws -> Value {
-    let deadline = nowMs() + expiresInSeconds * 1000
-    var intervalMs = max(1, Int(floor(intervalSeconds * 1000)))
+    let deadline = expiresInSeconds.map { nowMs() + $0 * 1000 }
+    var intervalMs = max(minimumIntervalMs, Int(floor(intervalSeconds * 1000)))
 
-    let initialRemaining = max(0, Int(floor(deadline - nowMs())))
+    let initialRemaining = deadline.map { max(0, Int(floor($0 - nowMs()))) } ?? intervalMs
     if initialRemaining > 0 {
         try await sleepMs(min(intervalMs, initialRemaining), signal: signal)
     }
 
-    while nowMs() < deadline {
+    while deadline.map({ nowMs() < $0 }) ?? true {
         try throwIfOAuthCancelled(signal)
         switch try await poll() {
         case .complete(let value):
@@ -1459,7 +1464,7 @@ private func pollOAuthDeviceCodeFlow<Value: Sendable>(
             break
         case .slowDown(let serverInterval):
             if let serverInterval, serverInterval.isFinite, serverInterval > 0 {
-                intervalMs = max(1, Int(floor(serverInterval * 1000)))
+                intervalMs = max(minimumIntervalMs, Int(floor(serverInterval * 1000)))
             } else {
                 intervalMs += 5000
             }
@@ -1467,7 +1472,7 @@ private func pollOAuthDeviceCodeFlow<Value: Sendable>(
             throw OAuthError.tokenExchangeFailed(message)
         }
 
-        let remaining = max(0, Int(floor(deadline - nowMs())))
+        let remaining = deadline.map { max(0, Int(floor($0 - nowMs()))) } ?? intervalMs
         if remaining > 0 {
             try await sleepMs(min(intervalMs, remaining), signal: signal)
         }

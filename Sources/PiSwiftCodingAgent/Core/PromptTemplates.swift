@@ -83,11 +83,32 @@ private func resolvePromptPath(_ path: String, cwd: String) -> String {
     return URL(fileURLWithPath: cwd).appendingPathComponent(normalized).path
 }
 
-private func loadTemplateFromFile(_ filePath: String, source: String, sourceLabel: String) -> PromptTemplate? {
+/// The shared frontmatter parser is intentionally permissive for skills. Prompt
+/// templates follow upstream YAML's rejection of an unquoted colon-space scalar.
+private func promptFrontmatterSyntaxError(_ content: String) -> String? {
+    let lines = content.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false)
+    guard lines.first == "---" else { return nil }
+    for (index, line) in lines.dropFirst().enumerated() {
+        if line == "---" { break }
+        if line.hasPrefix(" ") || line.hasPrefix("\t") { continue }
+        let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { continue }
+        let value = parts[1].trimmingCharacters(in: .whitespaces)
+        if !value.hasPrefix("\""), !value.hasPrefix("'"), value.contains(": ") {
+            return "Invalid YAML frontmatter at line \(index + 1), column \(parts[0].count + 3)"
+        }
+    }
+    return nil
+}
+
+private func loadTemplateFromFile(_ filePath: String, source: String, sourceLabel: String) -> (PromptTemplate?, [ResourceDiagnostic]) {
     guard let rawContent = try? String(contentsOfFile: filePath, encoding: .utf8) else {
-        return nil
+        return (nil, [ResourceDiagnostic(type: "warning", message: "Failed to read prompt template", path: filePath)])
     }
     let parsed = parseFrontmatter(rawContent)
+    if let parseError = parsed.parseError ?? promptFrontmatterSyntaxError(rawContent) {
+        return (nil, [ResourceDiagnostic(type: "warning", message: parseError, path: filePath)])
+    }
     let baseName = URL(fileURLWithPath: filePath).deletingPathExtension().lastPathComponent
 
     var description = parsed.frontmatter["description"] ?? ""
@@ -100,13 +121,13 @@ private func loadTemplateFromFile(_ filePath: String, source: String, sourceLabe
 
     description = description.isEmpty ? sourceLabel : "\(description) \(sourceLabel)"
 
-    return PromptTemplate(
+    return (PromptTemplate(
         name: baseName,
         description: description,
         content: parsed.body,
         source: source,
         filePath: filePath
-    )
+    ), [])
 }
 
 private func resolveEntryType(_ entry: URL) -> (isDirectory: Bool, isFile: Bool)? {
@@ -124,14 +145,15 @@ private func resolveEntryType(_ entry: URL) -> (isDirectory: Bool, isFile: Bool)
     return (values?.isDirectory ?? false, values?.isRegularFile ?? false)
 }
 
-private func loadTemplatesFromDir(_ dir: String, source: String, subdir: String = "") -> [PromptTemplate] {
+private func loadTemplatesFromDir(_ dir: String, source: String, subdir: String = "") -> LoadPromptTemplatesResult {
     var templates: [PromptTemplate] = []
+    var diagnostics: [ResourceDiagnostic] = []
     guard let entries = try? FileManager.default.contentsOfDirectory(
         at: URL(fileURLWithPath: dir),
         includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey],
         options: []
     ) else {
-        return templates
+        return LoadPromptTemplatesResult(templates: templates, diagnostics: diagnostics)
     }
 
     for entry in entries {
@@ -141,7 +163,9 @@ private func loadTemplatesFromDir(_ dir: String, source: String, subdir: String 
         let subdirName = subdir.isEmpty ? name : "\(subdir):\(name)"
 
         if type.isDirectory {
-            templates.append(contentsOf: loadTemplatesFromDir(entry.path, source: source, subdir: subdirName))
+            let nested = loadTemplatesFromDir(entry.path, source: source, subdir: subdirName)
+            templates.append(contentsOf: nested.templates)
+            diagnostics.append(contentsOf: nested.diagnostics)
             continue
         }
 
@@ -159,12 +183,24 @@ private func loadTemplatesFromDir(_ dir: String, source: String, subdir: String 
             }
             return subdir.isEmpty ? "(project)" : "(project:\(subdir))"
         }()
-        if let template = loadTemplateFromFile(entry.path, source: source, sourceLabel: sourceStr) {
+        let (template, warnings) = loadTemplateFromFile(entry.path, source: source, sourceLabel: sourceStr)
+        diagnostics.append(contentsOf: warnings)
+        if let template {
             templates.append(template)
         }
     }
 
-    return templates
+    return LoadPromptTemplatesResult(templates: templates, diagnostics: diagnostics)
+}
+
+public struct LoadPromptTemplatesResult: Sendable {
+    public var templates: [PromptTemplate]
+    public var diagnostics: [ResourceDiagnostic]
+
+    public init(templates: [PromptTemplate], diagnostics: [ResourceDiagnostic]) {
+        self.templates = templates
+        self.diagnostics = diagnostics
+    }
 }
 
 public struct LoadPromptTemplatesOptions: Sendable {
@@ -182,20 +218,30 @@ public struct LoadPromptTemplatesOptions: Sendable {
 }
 
 public func loadPromptTemplates(_ options: LoadPromptTemplatesOptions = LoadPromptTemplatesOptions()) -> [PromptTemplate] {
+    loadPromptTemplatesWithDiagnostics(options).templates
+}
+
+public func loadPromptTemplatesWithDiagnostics(_ options: LoadPromptTemplatesOptions = LoadPromptTemplatesOptions()) -> LoadPromptTemplatesResult {
     let resolvedCwd = options.cwd ?? FileManager.default.currentDirectoryPath
     let resolvedAgentDir = options.agentDir ?? getPromptsDir()
     let includeDefaults = options.includeDefaults ?? true
 
     var templates: [PromptTemplate] = []
+    var diagnostics: [ResourceDiagnostic] = []
+
+    func add(_ result: LoadPromptTemplatesResult) {
+        templates.append(contentsOf: result.templates)
+        diagnostics.append(contentsOf: result.diagnostics)
+    }
 
     if includeDefaults {
         let globalPromptsDir = options.agentDir != nil
             ? URL(fileURLWithPath: resolvedAgentDir).appendingPathComponent("prompts").path
             : resolvedAgentDir
-        templates.append(contentsOf: loadTemplatesFromDir(globalPromptsDir, source: "user"))
+        add(loadTemplatesFromDir(globalPromptsDir, source: "user"))
 
         let projectPromptsDir = URL(fileURLWithPath: resolvedCwd).appendingPathComponent(CONFIG_DIR_NAME).appendingPathComponent("prompts").path
-        templates.append(contentsOf: loadTemplatesFromDir(projectPromptsDir, source: "project"))
+        add(loadTemplatesFromDir(projectPromptsDir, source: "project"))
     }
 
     if let promptPaths = options.promptPaths {
@@ -204,14 +250,16 @@ public func loadPromptTemplates(_ options: LoadPromptTemplatesOptions = LoadProm
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: resolved, isDirectory: &isDir) else { continue }
             if isDir.boolValue {
-                templates.append(contentsOf: loadTemplatesFromDir(resolved, source: "path"))
-            } else if resolved.lowercased().hasSuffix(".md"), let template = loadTemplateFromFile(resolved, source: "path", sourceLabel: "(path)") {
-                templates.append(template)
+                add(loadTemplatesFromDir(resolved, source: "path"))
+            } else if resolved.lowercased().hasSuffix(".md") {
+                let (template, warnings) = loadTemplateFromFile(resolved, source: "path", sourceLabel: "(path)")
+                diagnostics.append(contentsOf: warnings)
+                if let template { templates.append(template) }
             }
         }
     }
 
-    return templates
+    return LoadPromptTemplatesResult(templates: templates, diagnostics: diagnostics)
 }
 
 public func expandPromptTemplate(_ text: String, _ templates: [PromptTemplate]) -> String {

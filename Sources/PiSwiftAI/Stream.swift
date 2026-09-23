@@ -129,6 +129,7 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
         "qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
         "xai": "XAI_API_KEY",
+        "meta": "META_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
         "zai": "ZAI_API_KEY",
@@ -176,7 +177,7 @@ public func stream(model: Model, context: Context, options: StreamOptions? = nil
     guard let provider = getApiProvider(model.api) else {
         throw StreamError.noApiProvider(model.api.rawValue)
     }
-    return provider.stream(model, context, options)
+    return provider.stream(model, normalizeContext(context), options)
 }
 
 public func complete(model: Model, context: Context, options: StreamOptions? = nil) async throws -> AssistantMessage {
@@ -185,6 +186,10 @@ public func complete(model: Model, context: Context, options: StreamOptions? = n
 }
 
 public func streamSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) throws -> AssistantMessageEventStream {
+    try streamSimple(model: model, context: normalizeContext(context), options: options)
+}
+
+public func streamSimple(model: Model, context: TranscriptContext, options: SimpleStreamOptions? = nil) throws -> AssistantMessageEventStream {
     try validateHTTPClientSupport(api: model.api, transport: options?.transport, httpClient: options?.httpClient)
     if getApiProvider(model.api) == nil {
         ensureBuiltInProviders()
@@ -224,63 +229,69 @@ private func validateHTTPClientSupport(
 /// Leave room for protocol overhead and completion tokens on APIs whose context
 /// window covers both the prompt and generated output.
 func clampSimpleMaxTokensToContext(model: Model, context: Context, maxTokens: Int) -> Int {
-    guard model.contextWindow > 0 else { return max(1, maxTokens) }
-    let available = model.contextWindow - estimateContextTokens(context) - 4_096
-    return min(maxTokens, max(1, available))
+    clampSimpleMaxTokensToContext(model: model, context: normalizeContext(context), maxTokens: maxTokens)
 }
 
-func estimateContextTokens(_ context: Context) -> Int {
-    func textTokens(_ text: String) -> Int { (text.count + 3) / 4 }
-    func blocksTokens(_ blocks: [ContentBlock]) -> Int {
-        blocks.reduce(0) { total, block in
+func clampSimpleMaxTokensToContext(model: Model, context: TranscriptContext, maxTokens: Int) -> Int {
+    guard model.contextWindow > 0 else { return max(1, maxTokens) }
+    return min(maxTokens, max(1, model.contextWindow - estimateContextTokens(context) - 4_096))
+}
+
+func estimateContextTokens(_ context: TranscriptContext) -> Int {
+    func tokens(_ text: String) -> Int { (text.utf16.count + 3) / 4 }
+    func blocks(_ content: [ContentBlock]) -> Int {
+        var chars = 0
+        for block in content {
             switch block {
-            case .text(let text): return total + textTokens(text.text)
-            case .thinking(let thinking): return total + textTokens(thinking.thinking)
-            case .image: return total + 1_200
-            case .toolCall(let call): return total + textTokens(call.name + jsonString(from: call.arguments))
+            case .text(let text): chars += text.text.utf16.count
+            case .thinking(let thinking): chars += thinking.thinking.utf16.count
+            case .image: chars += 4_800
+            case .toolCall(let call): chars += call.name.utf16.count + jsonString(from: call.arguments).utf16.count
             }
         }
+        return (chars + 3) / 4
     }
-
-    func messageTokens(_ message: Message) -> Int {
+    func tools(_ list: [AITool]?) -> Int {
+        guard let list, !list.isEmpty else { return 0 }
+        let system = SystemMessage(content: .text(""), toolsAdded: list)
+        return systemMessageToOrderedJSON(system)["toolsAdded"].map { tokens($0.serialized(escapeSlashes: false)) } ?? 0
+    }
+    func estimate(_ message: Message) -> Int {
         switch message {
+        case .system(let system):
+            let removed = system.toolsRemoved?.isEmpty == false ? systemMessageToOrderedJSON(system)["toolsRemoved"] : nil
+            return tokens(getSystemMessageText(system)) + tools(system.toolsAdded) + (removed.map { tokens($0.serialized(escapeSlashes: false)) } ?? 0)
         case .user(let user):
             switch user.content {
-            case .text(let text): return textTokens(text)
-            case .blocks(let blocks): return blocksTokens(blocks)
+            case .text(let text): return tokens(text)
+            case .blocks(let content): return blocks(content)
             }
-        case .toolResult(let result): return blocksTokens(result.content)
-        case .assistant(let assistant): return blocksTokens(assistant.content)
+        case .assistant(let assistant): return blocks(assistant.content)
+        case .toolResult(let result): return blocks(result.content)
         }
     }
-
-    // Usage from an assistant turn already represents the entire request context;
-    // only estimate messages appended after that turn. Summing the whole history
-    // again would unnecessarily shrink the output budget on long conversations.
-    if let lastUsageIndex = context.messages.indices.reversed().first(where: { index in
-        guard case .assistant(let assistant) = context.messages[index] else { return false }
-        switch assistant.stopReason {
-        case .stop, .length, .toolUse:
-            break
-        case .pending, .error, .aborted, .deferred:
-            return false
+    var latestTimestamp = Int64.min
+    var usageInfo: (index: Int, tokens: Int)?
+    for (index, message) in context.messages.enumerated() {
+        let timestamp: Int64
+        switch message {
+        case .system(let item): timestamp = item.timestamp
+        case .user(let item): timestamp = item.timestamp
+        case .assistant(let item):
+            timestamp = item.timestamp
+            let amount = item.usage.totalTokens > 0 ? item.usage.totalTokens :
+                item.usage.input + item.usage.output + item.usage.cacheRead + item.usage.cacheWrite
+            if timestamp >= latestTimestamp && item.stopReason != .aborted && item.stopReason != .error && amount > 0 {
+                usageInfo = (index, amount)
+            }
+        case .toolResult(let item): timestamp = item.timestamp
         }
-        return assistant.usage.totalTokens > 0 || assistant.usage.input + assistant.usage.output + assistant.usage.cacheRead + assistant.usage.cacheWrite > 0
-    }), case .assistant(let assistant) = context.messages[lastUsageIndex] {
-        let usage = assistant.usage.totalTokens > 0
-            ? assistant.usage.totalTokens
-            : assistant.usage.input + assistant.usage.output + assistant.usage.cacheRead + assistant.usage.cacheWrite
-        let trailing = lastUsageIndex + 1 < context.messages.endIndex
-            ? context.messages[(lastUsageIndex + 1)...].reduce(0) { $0 + messageTokens($1) }
-            : 0
-        return usage + trailing
+        latestTimestamp = max(latestTimestamp, timestamp)
     }
-
-    var total = textTokens(context.systemPrompt ?? "") + context.messages.reduce(0) { $0 + messageTokens($1) }
-    if let tools = context.tools, !tools.isEmpty {
-        total += textTokens(tools.map { "\($0.name):\($0.description)" }.joined(separator: "\n"))
+    if let usageInfo {
+        return usageInfo.tokens + context.messages.dropFirst(usageInfo.index + 1).reduce(0) { $0 + estimate($1) }
     }
-    return total
+    return context.messages.reduce(0) { $0 + estimate($1) }
 }
 
 public func completeSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) async throws -> AssistantMessage {
@@ -288,7 +299,7 @@ public func completeSimple(model: Model, context: Context, options: SimpleStream
     return await stream.result()
 }
 
-func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleStreamOptions?, apiKey: String) -> AnthropicOptions {
+func mapAnthropicSimpleOptions(model: Model, context: TranscriptContext, options: SimpleStreamOptions?, apiKey: String) -> AnthropicOptions {
     let baseMaxTokens = options?.maxTokens ?? model.maxTokens
 
     if options?.reasoning == nil {
@@ -298,6 +309,8 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
             signal: options?.signal,
             apiKey: apiKey,
             httpClient: options?.httpClient,
+            cacheRetention: options?.cacheRetention,
+            sessionId: options?.sessionId,
             thinkingEnabled: false,
             toolChoice: options?.toolChoice.map { $0 == .auto ? AnthropicToolChoice.auto : .none },
         metadata: options?.metadata,
@@ -330,6 +343,8 @@ func mapAnthropicSimpleOptions(model: Model, context: Context, options: SimpleSt
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
+        cacheRetention: options?.cacheRetention,
+        sessionId: options?.sessionId,
         thinkingEnabled: true,
         thinkingBudgetTokens: clampedThinkingBudget,
         effort: model.compat?.forceAdaptiveThinking == true ? adaptiveEffort : nil,
@@ -487,6 +502,7 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
+        sessionId: options?.sessionId,
         headers: options?.headers,
         thinking: thinking,
         onPayload: options?.onPayload,
@@ -506,6 +522,7 @@ func mapGoogleSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
+        sessionId: options?.sessionId,
         headers: options?.headers,
         toolChoice: options?.toolChoice?.rawValue,
         thinking: thinking,
@@ -526,6 +543,7 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
+        sessionId: options?.sessionId,
         headers: options?.headers,
         thinking: thinking,
         onPayload: options?.onPayload,
@@ -545,6 +563,7 @@ func mapGoogleVertexSimpleOptionsValidated(model: Model, options: SimpleStreamOp
         signal: options?.signal,
         apiKey: apiKey,
         httpClient: options?.httpClient,
+        sessionId: options?.sessionId,
         headers: options?.headers,
         toolChoice: options?.toolChoice?.rawValue,
         thinking: thinking,
@@ -557,35 +576,25 @@ func mapGoogleVertexSimpleOptionsValidated(model: Model, options: SimpleStreamOp
 }
 
 func buildGoogleThinkingConfig(model: Model, options: SimpleStreamOptions?) -> GoogleOptions.ThinkingConfig? {
-    guard model.reasoning else { return nil }
-    guard let reasoning = options?.reasoning else { return nil }
-    let clamped = clampThinkingLevel(model: model, requested: reasoning) ?? reasoning
-    if model.id.contains("3-pro") || model.id.contains("3-flash") {
-        return GoogleOptions.ThinkingConfig(
-            enabled: true,
-            budgetTokens: nil,
-            level: googleThinkingLevel(for: clamped, modelId: model.id)
-        )
-    }
-    let budget = googleThinkingBudget(modelId: model.id, effort: clamped, customBudgets: options?.thinkingBudgets)
-    return GoogleOptions.ThinkingConfig(
-        enabled: true,
-        budgetTokens: budget,
-        level: nil
-    )
+    try? buildGoogleThinkingConfigValidated(model: model, options: options)
 }
 
 func buildGoogleThinkingConfigValidated(model: Model, options: SimpleStreamOptions?) throws -> GoogleOptions.ThinkingConfig? {
     guard model.reasoning else { return nil }
-    guard let reasoning = options?.reasoning else { return nil }
-    let level = clampThinkingLevel(model: model, requested: reasoning)
-    let resolved = try resolveGoogleThinkingLevel(model: model, level: level.map(ModelThinkingLevel.init) ?? .off)
-    let clamped = ThinkingLevel(rawValue: resolved.rawValue)!
-    if model.id.lowercased().range(of: #"gemini-3(?:\.\d+)?-(?:pro|flash)|gemma-?4"#, options: .regularExpression) != nil {
+    guard let reasoning = options?.reasoning else {
+        return GoogleOptions.ThinkingConfig(enabled: false)
+    }
+    let level = clampThinkingLevel(model: model, requested: ModelThinkingLevel(reasoning))
+    guard level != .off else { return GoogleOptions.ThinkingConfig(enabled: false) }
+    let resolved = try resolveGoogleThinkingLevel(model: model, level: level)
+    guard let clamped = ThinkingLevel(rawValue: resolved.rawValue) else {
+        return nil
+    }
+    if usesGoogleThinkingLevel(model: model) {
         return GoogleOptions.ThinkingConfig(
             enabled: true,
             budgetTokens: nil,
-            level: googleThinkingLevel(for: clamped, modelId: model.id)
+            level: GoogleApiThinkingLevel(rawValue: resolved.rawValue.uppercased())
         )
     }
     let budget = googleThinkingBudget(modelId: model.id, effort: clamped, customBudgets: options?.thinkingBudgets)

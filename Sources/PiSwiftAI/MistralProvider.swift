@@ -6,9 +6,11 @@ import Foundation
 /// 9-character tool-call IDs, and `x-affinity` session headers for KV-cache reuse.
 public func streamMistral(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: MistralOptions
 ) -> AssistantMessageEventStream {
+    let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
+    let context = Context(systemPrompt: nil, messages: transcript.messages, tools: getCurrentTools(transcript.messages))
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -352,14 +354,11 @@ private func buildMistralPayload(
 
     let supportsImages = model.input.contains(.image)
     var messages: [[String: Any]] = []
-    if let systemPrompt = context.systemPrompt, !systemPrompt.isEmpty {
-        messages.append([
-            "role": "system",
-            "content": sanitizeSurrogates(systemPrompt),
-        ])
-    }
-    for message in context.messages {
+    for (index, message) in context.messages.enumerated() {
         switch message {
+        case .system(let system):
+            let text = index == 0 ? getSystemMessageText(system) : renderSystemMessageUpdate(system)
+            if !text.isEmpty { messages.append(["role": "system", "content": sanitizeSurrogates(text)]) }
         case .user(let user):
             if let entry = encodeMistralUserMessage(user, supportsImages: supportsImages) {
                 messages.append(entry)
@@ -765,6 +764,6 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
 private func mistralUsesReasoningEffort(model: Model) -> Bool {
     return model.id == "mistral-small-2603" ||
         model.id == "mistral-small-latest" ||
-        model.id == "mistral-medium-2604" ||
-        model.id == "mistral-medium-3.5"
+        model.id.hasPrefix("mistral-medium-") ||
+        model.id == "zai-glm-5-2"
 }

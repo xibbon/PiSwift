@@ -36,7 +36,7 @@ import PiSwiftAI
         metadata: ["traceId": AnyCodable("trace-1")]
     )
 
-    let data = try encodeProxyRequestPayload(model: model, context: context, options: options)
+    let data = try encodeProxyRequestPayload(model: model, context: normalizeContext(context), options: options)
     let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     let encodedOptions = try #require(json["options"] as? [String: Any])
 
@@ -53,4 +53,18 @@ import PiSwiftAI
     let budgets = try #require(encodedOptions["thinkingBudgets"] as? [String: Int])
     #expect(budgets["low"] == 1024)
     #expect(budgets["high"] == 8192)
+}
+
+@Test func proxyRequestCarriesSystemTranscript() throws {
+    let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
+    let context = normalizeContext(Context(systemPrompt: "rules", messages: [.user(UserMessage(content: .text("hello")))]))
+    let data = try encodeProxyRequestPayload(model: model, context: context,
+                                             options: ProxyStreamOptions(authToken: "token", proxyUrl: "https://example.invalid"))
+    let payload = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let encoded = try #require(payload["context"] as? [String: Any])
+    let messages = try #require(encoded["messages"] as? [[String: Any]])
+    #expect(messages.map { $0["role"] as? String } == ["system", "user"])
+    #expect(messages[0]["content"] as? String == "rules")
+    #expect(encoded["systemPrompt"] == nil)
+    #expect(encoded["tools"] == nil)
 }

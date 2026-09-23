@@ -4,12 +4,21 @@ import OpenAI
 
 public func streamOpenAICompletions(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: OpenAICompletionsOptions
 ) -> AssistantMessageEventStream {
     let model = resolveCloudflareModel(model)
+    let supportsSystem = model.compat?.supportsMidConvoSystemMessages == true
+    let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: supportsSystem)
+    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: supportsSystem && model.compat?.supportsMidConvoToolAdditions == true)
+    let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     var options = options
     options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
+    options.headers = openCodeSessionHeaders(
+        model: model,
+        sessionId: options.sessionId,
+        headers: mergeProviderHeaders(model.headers, options.headers)
+    )
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -45,7 +54,7 @@ public func streamOpenAICompletions(
         do {
             let compat = resolveCompat(model: model)
             let grammarToolInputProperties = try createGrammarToolInputProperties(
-                tools: context.tools,
+                tools: getDeclaredTools(context.messages),
                 supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools
             )
             try validateGrammarToolCallReplay(
@@ -349,7 +358,8 @@ private struct ResolvedOpenAICompat: Sendable {
     let sessionAffinityFormat: SessionAffinityFormat
     let supportsLongCacheRetention: Bool
     let supportsCacheControlOnTools: Bool
-    let deferredToolsMode: DeferredToolsMode?
+    let supportsMidConvoSystemMessages: Bool
+    let supportsMidConvoToolAdditions: Bool
     /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
     /// (DeepSeek V4 requirement). Empty string is injected when no thinking content exists.
     let requiresReasoningContentOnAssistantMessages: Bool
@@ -429,18 +439,19 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         supportsThinkingTokenBudget: false,
         thinkingTokenBudgetField: nil,
         vllmPriority: nil,
-        supportsStrictMode: true,
+        supportsStrictMode: false,
         supportsOpenAIGrammarTools: false,
         reasoningEffortMap: reasoningEffortMap,
         cacheControlFormat: isOpenRouter && model.id.range(
             of: #"^~?anthropic/"#,
             options: .regularExpression
         ) != nil ? .anthropic : nil,
-        sendSessionAffinityHeaders: false,
+        sendSessionAffinityHeaders: isOpenRouter,
         sessionAffinityFormat: isOpenRouter ? .openrouter : .openai,
         supportsLongCacheRetention: !(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isNvidia || isAntLing),
         supportsCacheControlOnTools: true,
-        deferredToolsMode: nil,
+        supportsMidConvoSystemMessages: false,
+        supportsMidConvoToolAdditions: false,
         requiresReasoningContentOnAssistantMessages: isDeepSeek
     )
 }
@@ -478,7 +489,8 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         sessionAffinityFormat: compat.sessionAffinityFormat ?? detected.sessionAffinityFormat,
         supportsLongCacheRetention: compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
         supportsCacheControlOnTools: compat.supportsCacheControlOnTools ?? detected.supportsCacheControlOnTools,
-        deferredToolsMode: compat.deferredToolsMode ?? detected.deferredToolsMode,
+        supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages ?? detected.supportsMidConvoSystemMessages,
+        supportsMidConvoToolAdditions: compat.supportsMidConvoToolAdditions ?? detected.supportsMidConvoToolAdditions,
         requiresReasoningContentOnAssistantMessages: compat.requiresReasoningContentOnAssistantMessages ?? detected.requiresReasoningContentOnAssistantMessages
     )
 }
@@ -515,21 +527,11 @@ private func hasToolHistory(_ messages: [Message]) -> Bool {
             if assistant.content.contains(where: { if case .toolCall = $0 { return true } else { return false } }) {
                 return true
             }
-        case .user:
+        case .system, .user:
             continue
         }
     }
     return false
-}
-
-private func getDeferredToolNames(_ messages: [Message]) -> Set<String> {
-    var names = Set<String>()
-    for case .toolResult(let toolResult) in messages {
-        for name in toolResult.addedToolNames ?? [] {
-            names.insert(name)
-        }
-    }
-    return names
 }
 
 private func buildCompletionsQuery(
@@ -540,10 +542,7 @@ private func buildCompletionsQuery(
     replayFields: inout [Int: [String: AnyCodable]]
 ) throws -> ChatQuery {
     let messages = convertCompletionsMessages(model: model, context: context, compat: compat, replayFields: &replayFields)
-    let deferredToolNames = compat.deferredToolsMode == .kimi
-        ? getDeferredToolNames(context.messages)
-        : Set<String>()
-    let activeTools = context.tools?.filter { !deferredToolNames.contains($0.name) }
+    let activeTools = context.tools
 
     let toolChoice = options.toolChoice.map { choice -> ChatQuery.ChatCompletionFunctionCallOptionParam in
         switch choice {
@@ -635,42 +634,23 @@ private func convertCompletionsMessages(
 
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
 
-    if let systemPrompt = context.systemPrompt {
-        let role: ChatQuery.ChatCompletionMessageParam.Role = (model.reasoning && compat.supportsDeveloperRole) ? .developer : .system
-        let content = ChatQuery.ChatCompletionMessageParam.TextContent.textContent(sanitizeSurrogates(systemPrompt))
-        switch role {
-        case .developer:
-            params.append(.developer(.init(content: content)))
-        default:
-            params.append(.system(.init(content: content)))
-        }
-    }
-
     var lastRole: String? = nil
-    var kimiPendingAddedNames: [String] = []
-
-    func flushKimiPendingAddedTools() {
-        guard compat.deferredToolsMode == .kimi, !kimiPendingAddedNames.isEmpty else { return }
-        let names = kimiPendingAddedNames.filter { name in
-            context.tools?.contains { $0.name == name } == true
-        }
-        kimiPendingAddedNames = []
-        guard !names.isEmpty,
-              let namesData = try? JSONSerialization.data(withJSONObject: names),
-              let namesJSON = String(data: namesData, encoding: .utf8) else { return }
-        let marker = "\u{0}__PI_KIMI_DEFERRED_TOOLS__:" + namesJSON
-        params.append(.system(.init(content: .textContent(marker))))
-    }
-
-    for msg in transformed {
+    let toolPlan = resolveTranscriptTools(context.messages, supportsToolAdditions: compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions)
+    for (index, msg) in transformed.enumerated() {
         if compat.requiresAssistantAfterToolResult && lastRole == "toolResult" && msg.role == "user" {
             params.append(.assistant(.init(content: .textContent("I have processed the tool results."))))
         }
-        if lastRole == "toolResult" && msg.role != "toolResult" {
-            flushKimiPendingAddedTools()
-        }
-
         switch msg {
+        case .system(let system):
+            if index > 0 && toolPlan.anchorsAdditions && system.toolsAdded?.isEmpty == false {
+                params.append(.system(.init(content: .textContent("\u{0}__PI_TRANSCRIPT_TOOLS__:\(index)"))))
+            }
+            let text = index == 0 ? getSystemMessageText(system) : renderSystemMessageUpdate(system)
+            if !text.isEmpty {
+                let content = ChatQuery.ChatCompletionMessageParam.TextContent.textContent(sanitizeSurrogates(text))
+                if model.reasoning && compat.supportsDeveloperRole { params.append(.developer(.init(content: content))) }
+                else { params.append(.system(.init(content: content))) }
+            }
         case .user(let user):
             switch user.content {
             case .text(let text):
@@ -679,6 +659,7 @@ private func convertCompletionsMessages(
                 let parts = blocks.compactMap { block -> ChatQuery.ChatCompletionMessageParam.UserMessageParam.Content.ContentPart? in
                     switch block {
                     case .text(let textContent):
+                        guard !textContent.text.isEmpty else { return nil }
                         return .text(.init(text: sanitizeSurrogates(textContent.text)))
                     case .image(let imageContent):
                         return .image(.init(imageUrl: .init(url: "data:\(imageContent.mimeType);base64,\(imageContent.data)", detail: .auto)))
@@ -751,12 +732,6 @@ private func convertCompletionsMessages(
                 params.append(.assistant(assistantMessage))
             }
         case .toolResult(let toolResult):
-            if compat.deferredToolsMode == .kimi {
-                for name in toolResult.addedToolNames ?? [] where !kimiPendingAddedNames.contains(name) {
-                    kimiPendingAddedNames.append(name)
-                }
-            }
-
             let text = toolResult.content.compactMap { block -> String? in
                 if case .text(let textBlock) = block { return textBlock.text }
                 return nil
@@ -792,8 +767,6 @@ private func convertCompletionsMessages(
 
         lastRole = msg.role
     }
-
-    flushKimiPendingAddedTools()
 
     return params
 }
@@ -855,7 +828,7 @@ private func streamZaiCompletions(
 
     request = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
-        sessionId: options.sessionId,
+        sessionId: resolveCacheRetention(options.cacheRetention) == .none ? nil : options.sessionId,
         sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
         sessionAffinityFormat: compat.sessionAffinityFormat
     )
@@ -1014,7 +987,7 @@ private func buildCompletionsMiddlewares(
     if compat.sendSessionAffinityHeaders || shouldSendOpenAICompletionsPromptCache(baseUrl: model.baseUrl, cacheRetention: resolveCacheRetention(options.cacheRetention), compat: compat) {
         middlewares.append(OpenAICompletionsSessionMiddleware(
             baseUrl: model.baseUrl,
-            sessionId: options.sessionId,
+            sessionId: resolveCacheRetention(options.cacheRetention) == .none ? nil : options.sessionId,
             cacheRetention: resolveCacheRetention(options.cacheRetention),
             sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
             sessionAffinityFormat: compat.sessionAffinityFormat,
@@ -1083,27 +1056,20 @@ private func buildCompletionsMiddlewares(
             vercelGatewayRouting: model.compat?.vercelGatewayRouting
         ))
     }
-    if compat.deferredToolsMode == .kimi {
-        let deferredToolNames = getDeferredToolNames(context.messages)
-        let orderedDeferredTools: [(name: String, json: [String: Any])] = (context.tools ?? []).compactMap { tool in
-            guard deferredToolNames.contains(tool.name),
-                  let converted = try? convertCompletionsTools([tool], compat: compat),
-                  let data = try? JSONEncoder().encode(converted),
-                  let toolsJSON = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                  let toolJSON = toolsJSON.first else { return nil }
-            return (name: tool.name, json: toolJSON)
-        }
-        middlewares.append(OpenAICompletionsKimiDeferredToolsMiddleware(
-            orderedDeferredTools: orderedDeferredTools
-        ))
+    let additions = Dictionary(uniqueKeysWithValues: context.messages.enumerated().compactMap { index, message -> (Int, [AITool])? in
+        guard index > 0, case .system(let system) = message, let tools = system.toolsAdded, !tools.isEmpty else { return nil }
+        return (index, tools)
+    })
+    if compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions && !hasNonAdditiveToolChanges(context.messages) && !additions.isEmpty {
+        middlewares.append(OpenAICompletionsTranscriptToolsMiddleware(additions: additions, compat: compat))
     }
     if compat.supportsOpenAIGrammarTools,
        let grammarTools = try? makeOpenAIGrammarToolPayloads(
-           tools: context.tools ?? [],
+           tools: getDeclaredTools(context.messages),
            supportsOpenAIGrammarTools: true
        ), !grammarTools.isEmpty,
        let properties = try? createGrammarToolInputProperties(
-           tools: context.tools,
+           tools: getDeclaredTools(context.messages),
            supportsOpenAIGrammarTools: true
        ) {
         middlewares.append(OpenAICompletionsGrammarToolsMiddleware(
@@ -1295,15 +1261,10 @@ func applyOpenAICompletionsPromptCache(
     return try? JSONSerialization.data(withJSONObject: payload, options: [])
 }
 
-private struct OpenAICompletionsKimiDeferredToolsMiddleware: OpenAIMiddleware {
-    private let markerPrefix = "\u{0}__PI_KIMI_DEFERRED_TOOLS__:"
-    private let orderedDeferredTools: [(name: String, json: AnyCodable)]
-
-    init(orderedDeferredTools: [(name: String, json: [String: Any])]) {
-        self.orderedDeferredTools = orderedDeferredTools.map { tool in
-            (name: tool.name, json: AnyCodable(tool.json))
-        }
-    }
+private struct OpenAICompletionsTranscriptToolsMiddleware: OpenAIMiddleware {
+    private let markerPrefix = "\u{0}__PI_TRANSCRIPT_TOOLS__:"
+    let additions: [Int: [AITool]]
+    let compat: ResolvedOpenAICompat
 
     func intercept(request: URLRequest) -> URLRequest {
         return rewritingOpenAIRequestBody(request) { payload in
@@ -1314,15 +1275,10 @@ private struct OpenAICompletionsKimiDeferredToolsMiddleware: OpenAIMiddleware {
                       let content = message["content"] as? String,
                       content.hasPrefix(markerPrefix) else { return message }
 
-                let namesJSON = String(content.dropFirst(markerPrefix.count))
-                let names = namesJSON.data(using: .utf8).flatMap {
-                    try? JSONSerialization.jsonObject(with: $0) as? [String]
-                } ?? []
-                let nameSet = Set(names)
-                let tools = orderedDeferredTools.compactMap { tool -> [String: Any]? in
-                    guard nameSet.contains(tool.name) else { return nil }
-                    return tool.json.value as? [String: Any]
-                }
+                let index = Int(content.dropFirst(markerPrefix.count)) ?? -1
+                let tools = additions[index].flatMap { try? convertCompletionsTools($0, compat: compat) }
+                    .flatMap { try? JSONEncoder().encode($0) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
                 guard !tools.isEmpty else { return nil }
                 return ["role": "system", "tools": tools]
             }

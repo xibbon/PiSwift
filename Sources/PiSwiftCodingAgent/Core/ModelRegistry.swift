@@ -73,6 +73,18 @@ public struct ResolvedModelRequest: Sendable {
     }
 }
 
+private enum ModelRegistryStreamError: LocalizedError {
+    case cancelled
+    case authentication(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .cancelled: "Authentication cancelled"
+        case .authentication(let message): message
+        }
+    }
+}
+
 private struct ParsedRouting {
     var allowFallbacks: Bool?
     var requireParameters: Bool?
@@ -151,6 +163,9 @@ private let extendedCompatKeys: Set<String> = [
     "supportsAdditionalTools",
     "supportsMaxOutputTokens",
     "supportsMidConvoEffort",
+    "supportsMidConvoSystemMessages",
+    "supportsMidConvoToolAdditions",
+    "supportsMidConvoToolChanges",
     "thinkingTokenBudgetField",
     "supportsOpenAIGrammarTools",
     "supportsToolSearch",
@@ -159,11 +174,10 @@ private let extendedCompatKeys: Set<String> = [
     "forceAdaptiveThinking",
     "allowEmptySignature",
     "supportsStrictTools",
-    "supportsToolReferences",
-    "deferredToolsMode",
     "sessionAffinityFormat",
     "chatTemplateKwargs",
     "chatTemplateArgs",
+    "allowedFallbackModels",
 ]
 
 private func parseCompat(_ value: Any?) -> OpenAICompat? {
@@ -286,6 +300,8 @@ private struct ModelOverride: Sendable {
     var headers: ProviderHeaders?
     var compat: OpenAICompat?
     var thinkingLevelMap: ThinkingLevelMap?
+    var inputLimits: ModelInputLimits?
+    var promptCache: ModelPromptCache?
 }
 
 private struct ModelCostOverride: Sendable {
@@ -312,6 +328,12 @@ private func parseProviderHeaders(_ value: Any?) -> ProviderHeaders? {
 private func parseSamplingParams(_ value: Any?) -> [String: AnyCodable]? {
     guard let values = value as? [String: Any] else { return nil }
     return values.mapValues(AnyCodable.init)
+}
+
+private func parseModelMetadata<T: Decodable>(_ value: Any?, as type: T.Type) -> T? {
+    guard let value, JSONSerialization.isValidJSONObject(value),
+          let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+    return try? JSONDecoder().decode(type, from: data)
 }
 
 private func parseThinkingLevelMap(_ value: Any?) -> ThinkingLevelMap? {
@@ -421,46 +443,47 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
     merged.forceAdaptiveThinking = override.forceAdaptiveThinking ?? base.forceAdaptiveThinking
     merged.zaiToolStream = override.zaiToolStream ?? base.zaiToolStream
     merged.allowEmptySignature = override.allowEmptySignature ?? base.allowEmptySignature
-    merged.deferredToolsMode = override.deferredToolsMode ?? base.deferredToolsMode
     merged.sessionAffinityFormat = override.sessionAffinityFormat ?? base.sessionAffinityFormat
     merged.supportsToolSearch = override.supportsToolSearch ?? base.supportsToolSearch
     merged.supportsExplicitPromptCacheMode = override.supportsExplicitPromptCacheMode ?? base.supportsExplicitPromptCacheMode
-    merged.supportsToolReferences = override.supportsToolReferences ?? base.supportsToolReferences
     merged.thinkingTokenBudgetField = override.thinkingTokenBudgetField ?? base.thinkingTokenBudgetField
     merged.vllmPriority = override.vllmPriority ?? base.vllmPriority
     merged.supportsAdditionalTools = override.supportsAdditionalTools ?? base.supportsAdditionalTools
     merged.supportsMaxOutputTokens = override.supportsMaxOutputTokens ?? base.supportsMaxOutputTokens
     merged.supportsMidConvoEffort = override.supportsMidConvoEffort ?? base.supportsMidConvoEffort
+    merged.supportsMidConvoSystemMessages = override.supportsMidConvoSystemMessages ?? base.supportsMidConvoSystemMessages
+    merged.supportsMidConvoToolAdditions = override.supportsMidConvoToolAdditions ?? base.supportsMidConvoToolAdditions
+    merged.supportsMidConvoToolChanges = override.supportsMidConvoToolChanges ?? base.supportsMidConvoToolChanges
     merged.allowedFallbackModels = override.allowedFallbackModels ?? base.allowedFallbackModels
     return merged
 }
 
 private func applyModelOverride(model: Model, override: ModelOverride) -> Model {
     var updated = model
-    if let name = override.name { updated = Model(id: updated.id, name: name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap) }
+    if let name = override.name { updated = Model(id: updated.id, name: name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache) }
     if let baseUrl = override.baseUrl {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
     if let reasoning = override.reasoning {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
     if let input = override.input {
         let mapped = input.compactMap { ModelInput(rawValue: $0) }
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: mapped, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: mapped, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
     if let contextWindow = override.contextWindow {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
     if let maxTokens = override.maxTokens {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
     if let samplingParams = override.samplingParams {
         let mergedSamplingParams = (updated.samplingParams ?? [:]).merging(samplingParams) { _, value in value }
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: mergedSamplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: mergedSamplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
     if let thinkingLevelMap = override.thinkingLevelMap {
         let mergedThinkingLevelMap = (updated.thinkingLevelMap ?? [:]).merging(thinkingLevelMap) { _, value in value }
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: mergedThinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: mergedThinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
 
     if let cost = override.cost {
@@ -471,17 +494,29 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
             cacheWrite: cost.cacheWrite ?? updated.cost.cacheWrite,
             tiers: cost.tiers ?? updated.cost.tiers
         )
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: mergedCost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: mergedCost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
 
     if let headers = resolveHeaders(override.headers) {
         let mergedHeaders = mergeProviderHeaders(updated.headers, headers)
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: mergedHeaders, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: mergedHeaders, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
 
     let mergedCompat = mergeCompat(updated.compat, override.compat)
     if mergedCompat != nil {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: mergedCompat, thinkingLevelMap: updated.thinkingLevelMap)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: mergedCompat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+    }
+
+    if override.inputLimits != nil || override.promptCache != nil {
+        updated = Model(
+            id: updated.id, name: updated.name, api: updated.api, provider: updated.provider,
+            baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input,
+            cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens,
+            samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat,
+            thinkingLevelMap: updated.thinkingLevelMap,
+            inputLimits: override.inputLimits ?? updated.inputLimits,
+            promptCache: override.promptCache ?? updated.promptCache
+        )
     }
 
     return updated
@@ -524,7 +559,9 @@ private func normalizeProviderModel(_ model: Model) -> Model {
         samplingParams: model.samplingParams,
         headers: model.headers,
         compat: copilotCompat,
-        thinkingLevelMap: model.thinkingLevelMap
+        thinkingLevelMap: model.thinkingLevelMap,
+        inputLimits: model.inputLimits,
+        promptCache: model.promptCache
     )
 }
 
@@ -544,6 +581,7 @@ public final class ModelRegistry: Sendable {
         var configuredModelOverrides: [String: [String: ModelOverride]] = [:]
         var dynamicModelsBySource: [String: [String: [Model]]] = [:]
         var dynamicProviderApiKeysBySource: [String: [String: String]] = [:]
+        var dynamicProviderStreamsBySource: [String: [String: ApiStreamSimpleFunction]] = [:]
         var dynamicSourceOrder: [String] = [remoteCatalogSourceId]
         var errorMessage: String?
         var githubCopilotSupportedModelIds: Set<String>?
@@ -677,6 +715,9 @@ public final class ModelRegistry: Sendable {
                 sourceKeys.removeValue(forKey: config.provider)
             }
             state.dynamicProviderApiKeysBySource[sourceId] = sourceKeys.isEmpty ? nil : sourceKeys
+            var sourceStreams = state.dynamicProviderStreamsBySource[sourceId] ?? [:]
+            sourceStreams[config.provider] = config.streamSimple
+            state.dynamicProviderStreamsBySource[sourceId] = sourceStreams.isEmpty ? nil : sourceStreams
             rebuildModelsLocked(&state)
         }
     }
@@ -688,10 +729,14 @@ public final class ModelRegistry: Sendable {
                 state.dynamicModelsBySource[sourceId] = nil
             }
             state.dynamicProviderApiKeysBySource[sourceId]?[provider] = nil
+            state.dynamicProviderStreamsBySource[sourceId]?[provider] = nil
             if state.dynamicProviderApiKeysBySource[sourceId]?.isEmpty == true {
                 state.dynamicProviderApiKeysBySource[sourceId] = nil
             }
-            if state.dynamicModelsBySource[sourceId] == nil && state.dynamicProviderApiKeysBySource[sourceId] == nil {
+            if state.dynamicProviderStreamsBySource[sourceId]?.isEmpty == true {
+                state.dynamicProviderStreamsBySource[sourceId] = nil
+            }
+            if state.dynamicModelsBySource[sourceId] == nil && state.dynamicProviderApiKeysBySource[sourceId] == nil && state.dynamicProviderStreamsBySource[sourceId] == nil {
                 state.dynamicSourceOrder.removeAll { $0 == sourceId }
             }
             rebuildModelsLocked(&state)
@@ -702,6 +747,7 @@ public final class ModelRegistry: Sendable {
         state.withLock { state in
             state.dynamicModelsBySource[sourceId] = nil
             state.dynamicProviderApiKeysBySource[sourceId] = nil
+            state.dynamicProviderStreamsBySource[sourceId] = nil
             state.dynamicSourceOrder.removeAll { $0 == sourceId }
             rebuildModelsLocked(&state)
         }
@@ -756,8 +802,11 @@ public final class ModelRegistry: Sendable {
     /// `"Authorization": "!my-token-cmd"` re-execute their underlying command instead
     /// of returning a long-lived stale token. Pi leaves caching/TTL/recovery to the
     /// user-provided wrapper command.
-    public func getApiKeyAndHeaders(_ model: Model) async -> ModelAuth {
-        let apiKey = await authStorage.getApiKey(model.provider)
+    public func getApiKeyAndHeaders(_ model: Model, signal: CancellationToken? = nil) async -> ModelAuth {
+        let apiKey = await authStorage.getApiKey(model.provider, signal: signal)
+        if signal?.isCancelled == true {
+            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "Authentication cancelled")
+        }
         // Re-resolve model.headers each time so `!cmd` values pick up fresh tokens.
         var resolvedHeaders = resolveHeaders(model.headers)
         if model.provider == OAuthProvider.kimiCoding.rawValue,
@@ -779,9 +828,104 @@ public final class ModelRegistry: Sendable {
         return ModelAuth(ok: true, apiKey: apiKey, headers: resolvedHeaders, baseUrl: baseUrl, error: nil)
     }
 
-    public func resolveModelRequest(_ model: Model) async -> ResolvedModelRequest {
-        let auth = await getApiKeyAndHeaders(model)
+    public func resolveModelRequest(_ model: Model, signal: CancellationToken? = nil) async -> ResolvedModelRequest {
+        let auth = await getApiKeyAndHeaders(model, signal: signal)
         return ResolvedModelRequest(model: applyBaseUrlOverride(model, auth.baseUrl), auth: auth)
+    }
+
+    /// Stream with the provider registered for this model. Credentials are resolved when the
+    /// returned stream starts, including credentials supplied by an extension provider.
+    public func stream(model: Model, context: Context, options: StreamOptions? = nil) -> AssistantMessageEventStream {
+        let output = AssistantMessageEventStream()
+        Task {
+            await forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output)
+        }
+        return output
+    }
+
+    /// Stream with provider-neutral options and request-time authentication.
+    public func streamSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) -> AssistantMessageEventStream {
+        let output = AssistantMessageEventStream()
+        Task {
+            await forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output)
+        }
+        return output
+    }
+
+    private func extensionStream(for model: Model) -> ApiStreamSimpleFunction? {
+        state.withLock { state in
+            for source in state.dynamicSourceOrder.reversed() {
+                if let callback = state.dynamicProviderStreamsBySource[source]?[model.provider],
+                   state.dynamicModelsBySource[source]?[model.provider]?.contains(where: { $0.api == model.api }) == true {
+                    return callback
+                }
+            }
+            return nil
+        }
+    }
+
+    private func forwardStream(
+        model: Model,
+        context: Context,
+        fullOptions: StreamOptions?,
+        simpleOptions: SimpleStreamOptions?,
+        output: AssistantMessageEventStream
+    ) async {
+        do {
+            let signal = fullOptions?.signal ?? simpleOptions?.signal
+            let resolved = await resolveModelRequest(model, signal: signal)
+            let suppliedKey = fullOptions?.apiKey ?? simpleOptions?.apiKey
+            let suppliedHeaders = fullOptions?.headers ?? simpleOptions?.headers
+            guard signal?.isCancelled != true else { throw ModelRegistryStreamError.cancelled }
+            guard resolved.auth.ok || suppliedKey != nil || suppliedHeaders?.isEmpty == false else {
+                throw ModelRegistryStreamError.authentication(resolved.auth.error ?? "Provider is not configured: \(model.provider)")
+            }
+
+            let input: AssistantMessageEventStream
+            if let customStream = extensionStream(for: model) {
+                var options = simpleOptions ?? SimpleStreamOptions(
+                    temperature: fullOptions?.temperature,
+                    samplingParams: fullOptions?.samplingParams,
+                    maxTokens: fullOptions?.maxTokens,
+                    signal: fullOptions?.signal,
+                    apiKey: fullOptions?.apiKey,
+                    httpClient: fullOptions?.httpClient,
+                    transport: fullOptions?.transport,
+                    cacheRetention: fullOptions?.cacheRetention,
+                    sessionId: fullOptions?.sessionId,
+                    headers: fullOptions?.headers,
+                    onPayload: fullOptions?.onPayload,
+                    maxRetryDelayMs: fullOptions?.maxRetryDelayMs,
+                    metadata: fullOptions?.metadata,
+                    onResponse: fullOptions?.onResponse,
+                    timeoutMs: fullOptions?.timeoutMs,
+                    websocketConnectTimeoutMs: fullOptions?.websocketConnectTimeoutMs,
+                    maxRetries: fullOptions?.maxRetries
+                )
+                options.apiKey = options.apiKey ?? resolved.auth.apiKey
+                options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
+                input = customStream(resolved.model, normalizeContext(context), options)
+            } else if var options = simpleOptions {
+                options.apiKey = options.apiKey ?? resolved.auth.apiKey
+                options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
+                input = try PiSwiftAI.streamSimple(model: resolved.model, context: context, options: options)
+            } else {
+                var options = fullOptions ?? StreamOptions()
+                options.apiKey = options.apiKey ?? resolved.auth.apiKey
+                options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
+                input = try PiSwiftAI.stream(model: resolved.model, context: context, options: options)
+            }
+            for await event in input { output.push(event) }
+            output.end(await input.result())
+        } catch {
+            let failed = AssistantMessage(
+                content: [], api: model.api, provider: model.provider, model: model.id,
+                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                stopReason: .error, errorMessage: error.localizedDescription
+            )
+            output.push(.error(reason: .error, error: failed))
+            output.end()
+        }
     }
 
     private func dynamicBaseUrl(for model: Model, apiKey: String?) -> String? {
@@ -813,7 +957,9 @@ public final class ModelRegistry: Sendable {
             samplingParams: model.samplingParams,
             headers: model.headers,
             compat: model.compat,
-            thinkingLevelMap: model.thinkingLevelMap
+            thinkingLevelMap: model.thinkingLevelMap,
+            inputLimits: model.inputLimits,
+            promptCache: model.promptCache
         )
     }
 
@@ -935,7 +1081,9 @@ public final class ModelRegistry: Sendable {
             samplingParams: model.samplingParams,
             headers: headers,
             compat: mergeCompat(model.compat, providerOverride?.compat),
-            thinkingLevelMap: model.thinkingLevelMap
+            thinkingLevelMap: model.thinkingLevelMap,
+            inputLimits: model.inputLimits,
+            promptCache: model.promptCache
         )
         if let override = state.configuredModelOverrides[model.provider]?[model.id] {
             configured = applyModelOverride(model: configured, override: override)
@@ -977,7 +1125,9 @@ public final class ModelRegistry: Sendable {
                     samplingParams: model.samplingParams,
                     headers: mergedHeaders,
                     compat: mergedCompat,
-                    thinkingLevelMap: model.thinkingLevelMap
+                    thinkingLevelMap: model.thinkingLevelMap,
+                    inputLimits: model.inputLimits,
+                    promptCache: model.promptCache
                 )
 
                 if let override = perModelOverrides[model.id] {
@@ -1015,7 +1165,9 @@ public final class ModelRegistry: Sendable {
                     samplingParams: custom.samplingParams,
                     headers: custom.headers,
                     compat: mergedCompat,
-                    thinkingLevelMap: custom.thinkingLevelMap
+                    thinkingLevelMap: custom.thinkingLevelMap,
+                    inputLimits: custom.inputLimits,
+                    promptCache: custom.promptCache
                 )
                 merged[index] = normalizeProviderModel(withCompat)
             } else {
@@ -1084,7 +1236,9 @@ public final class ModelRegistry: Sendable {
                 samplingParams: parseSamplingParams(entry["samplingParams"]),
                 headers: parseProviderHeaders(entry["headers"]),
                 compat: parseCompat(entry["compat"]),
-                thinkingLevelMap: parseThinkingLevelMap(entry["thinkingLevelMap"])
+                thinkingLevelMap: parseThinkingLevelMap(entry["thinkingLevelMap"]),
+                inputLimits: parseModelMetadata(entry["inputLimits"], as: ModelInputLimits.self),
+                promptCache: parseModelMetadata(entry["promptCache"], as: ModelPromptCache.self)
             )
             custom.append(model)
         }
@@ -1142,7 +1296,9 @@ public final class ModelRegistry: Sendable {
                         samplingParams: parseSamplingParams(dict["samplingParams"]),
                         headers: parseProviderHeaders(dict["headers"]),
                         compat: parseCompat(dict["compat"]),
-                        thinkingLevelMap: parseThinkingLevelMap(dict["thinkingLevelMap"])
+                        thinkingLevelMap: parseThinkingLevelMap(dict["thinkingLevelMap"]),
+                        inputLimits: parseModelMetadata(dict["inputLimits"], as: ModelInputLimits.self),
+                        promptCache: parseModelMetadata(dict["promptCache"], as: ModelPromptCache.self)
                     )
                 }
                 modelOverrides[providerName] = parsed
@@ -1205,7 +1361,9 @@ public final class ModelRegistry: Sendable {
                     samplingParams: parseSamplingParams(modelDef["samplingParams"]),
                     headers: resolvedHeaders,
                     compat: compat,
-                    thinkingLevelMap: parseThinkingLevelMap(modelDef["thinkingLevelMap"])
+                    thinkingLevelMap: parseThinkingLevelMap(modelDef["thinkingLevelMap"]),
+                    inputLimits: parseModelMetadata(modelDef["inputLimits"], as: ModelInputLimits.self),
+                    promptCache: parseModelMetadata(modelDef["promptCache"], as: ModelPromptCache.self)
                 )
                 custom.append(model)
             }

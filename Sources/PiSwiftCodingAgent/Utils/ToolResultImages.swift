@@ -9,7 +9,8 @@ struct NormalizedToolResultContent: Sendable {
 /// extension hooks are included because AgentSession calls this after the hook.
 func normalizeToolResultImages(
     _ content: [ContentBlock],
-    autoResizeImages: Bool = true
+    autoResizeImages: Bool = true,
+    resizeOptions: ModelImageResizeOptions? = nil
 ) -> NormalizedToolResultContent {
     guard autoResizeImages, content.contains(where: {
         if case .image = $0 { return true }
@@ -26,7 +27,12 @@ func normalizeToolResultImages(
             continue
         }
 
-        let resized = resizeImage(image)
+        let limits = ImageResizeOptions(modelProfile: resizeOptions)
+        let resized = resizeImage(image, options: limits)
+        guard imageFitsResizeLimits(resized, options: limits) else {
+            normalized.append(block)
+            continue
+        }
         guard resized.wasResized else {
             normalized.append(block)
             continue

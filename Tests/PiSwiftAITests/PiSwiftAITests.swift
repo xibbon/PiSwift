@@ -226,7 +226,7 @@ private func runOpenAICompletionsStopReasonStream(
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key")
         )
         var emittedDone = false
@@ -494,12 +494,14 @@ private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
         ("supportsAdditionalTools", compat.supportsAdditionalTools),
         ("supportsMaxOutputTokens", compat.supportsMaxOutputTokens),
         ("supportsMidConvoEffort", compat.supportsMidConvoEffort),
+        ("supportsMidConvoSystemMessages", compat.supportsMidConvoSystemMessages),
+        ("supportsMidConvoToolAdditions", compat.supportsMidConvoToolAdditions),
+        ("supportsMidConvoToolChanges", compat.supportsMidConvoToolChanges),
         ("allowedFallbackModels", compat.allowedFallbackModels?.map { ["provider": $0.provider, "model": $0.model, "cost": normalizeCost($0.cost)] }),
         ("allowEmptySignature", compat.allowEmptySignature),
         ("cacheControlFormat", compat.cacheControlFormat?.rawValue),
         ("chatTemplateArgs", normalizeChatTemplateValues(compat.chatTemplateArgs)),
         ("chatTemplateKwargs", normalizeChatTemplateValues(compat.chatTemplateKwargs)),
-        ("deferredToolsMode", compat.deferredToolsMode?.rawValue),
         ("forceAdaptiveThinking", compat.forceAdaptiveThinking),
         ("maxTokensField", compat.maxTokensField?.rawValue),
         ("openRouterRouting", normalizeOpenRouterRouting(compat.openRouterRouting)),
@@ -525,7 +527,6 @@ private func normalizeCompat(_ compat: OpenAICompat?) -> [String: Any]? {
         ("supportsStrictTools", compat.supportsStrictTools),
         ("supportsTemperature", compat.supportsTemperature),
         ("supportsThinkingTokenBudget", compat.supportsThinkingTokenBudget),
-        ("supportsToolReferences", compat.supportsToolReferences),
         ("supportsToolSearch", compat.supportsToolSearch),
         ("supportsUsageInStreaming", compat.supportsUsageInStreaming),
         ("thinkingFormat", compat.thinkingFormat?.rawValue),
@@ -544,14 +545,21 @@ private func normalizeModel(_ model: PiSwiftAI.Model) -> [String: Any] {
         ("headers", model.headers),
         ("id", model.id),
         ("input", model.input.map(\.rawValue)),
+        ("inputLimits", normalizeCatalogMetadata(model.inputLimits)),
         ("maxTokens", model.maxTokens),
         ("name", model.name),
         ("provider", model.provider),
+        ("promptCache", normalizeCatalogMetadata(model.promptCache)),
         ("reasoning", model.reasoning),
         ("thinkingLevelMap", normalizeThinkingLevelMap(model.thinkingLevelMap)),
     ])
     result.removeValue(forKey: "nil")
     return result
+}
+
+private func normalizeCatalogMetadata<T: Encodable>(_ value: T?) -> Any? {
+    guard let value, let data = try? JSONEncoder().encode(value) else { return nil }
+    return try? JSONSerialization.jsonObject(with: data)
 }
 
 private func normalizeImagesModel(_ model: ImagesModel) -> [String: Any] {
@@ -740,11 +748,11 @@ private func runCodexToolCallRequest(
             URLProtocol.unregisterClass(MockURLProtocol.self)
         }
 
-        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
+        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
         let context = Context(messages: [.user(UserMessage(content: .text("Use read tool")))])
         let stream = streamOpenAICodexResponses(
             model: model,
-            context: context,
+            context: normalizeContext(context),
             options: OpenAICodexResponsesOptions(apiKey: token, transport: .sse)
         )
         var deltas: [String] = []
@@ -901,11 +909,11 @@ private func runCodexSessionRequest(
             URLProtocol.unregisterClass(MockURLProtocol.self)
         }
 
-        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
+        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
         let context = Context(messages: [.user(UserMessage(content: .text("Say hello")))], tools: tools)
         let stream = streamOpenAICodexResponses(
             model: model,
-            context: context,
+            context: normalizeContext(context),
             options: OpenAICodexResponsesOptions(apiKey: token, sessionId: sessionId, transport: .sse, serviceTier: serviceTier)
         )
         let message = await stream.result()
@@ -1171,9 +1179,9 @@ private func runCodexSessionRequest(
     let capture = try await runCodexSessionRequest(sessionId: "tier-session", serviceTier: .priority)
     #expect(capture.serviceTier == "priority")
 
-    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
-    let expectedInput = model.cost.input / 1_000_000 * Double(capture.usage.input) * 2
-    let expectedOutput = model.cost.output / 1_000_000 * Double(capture.usage.output) * 2
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
+    let expectedInput = model.cost.input / 1_000_000 * Double(capture.usage.input) * 2.5
+    let expectedOutput = model.cost.output / 1_000_000 * Double(capture.usage.output) * 2.5
     #expect(abs(capture.usage.cost.input - expectedInput) < 0.000000001)
     #expect(abs(capture.usage.cost.output - expectedOutput) < 0.000000001)
     #expect(abs(capture.usage.cost.total - (expectedInput + expectedOutput)) < 0.000000001)
@@ -1187,7 +1195,7 @@ private func runCodexSessionRequest(
 
 @Test func openAICodexForeignToolCallItemIdsAreHashed() async throws {
     let rawItemId = "foreign.item/id with punctuation and a very very very very very long suffix"
-    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.4")
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
     let foreignAssistant = AssistantMessage(
         content: [
             .toolCall(ToolCall(id: "call.foreign|\(rawItemId)", name: "lookup", arguments: ["q": AnyCodable("weather")]))
@@ -1415,7 +1423,7 @@ private func runCodexSessionRequest(
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key")
         )
         let message = await stream.result()
@@ -1630,7 +1638,7 @@ private func runCodexSessionRequest(
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key")
         )
         let message = await stream.result()
@@ -1692,7 +1700,7 @@ private func runCodexSessionRequest(
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key")
         )
         let message = await stream.result()
@@ -1767,10 +1775,10 @@ private func runCodexSessionRequest(
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [
+            context: normalizeContext(Context(messages: [
                 .assistant(assistant),
                 .user(UserMessage(content: .text("continue"))),
-            ]),
+            ])),
             options: OpenAICompletionsOptions(
                 apiKey: "test-key",
                 onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json } }
@@ -2000,16 +2008,13 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func openAIPromptCacheRetentionHelper() async throws {
-    await withEnv("PI_CACHE_RETENTION", value: nil) {
-        #expect(resolveCacheRetention(nil) == .short)
-        #expect(getPromptCacheRetention(baseUrl: "https://api.openai.com/v1", cacheRetention: .short) == nil)
-    }
-    await withEnv("PI_CACHE_RETENTION", value: "long") {
-        #expect(resolveCacheRetention(nil) == .long)
-        #expect(getPromptCacheRetention(baseUrl: "https://api.openai.com/v1", cacheRetention: .long) == "24h")
-        #expect(getPromptCacheRetention(baseUrl: "https://proxy.example.com/v1", cacheRetention: .long) == nil)
-    }
+@Test func openAIPromptCacheRetentionHelper() {
+    // A4 item 1: pass the cache choice explicitly because other tests change process env.
+    #expect(resolveCacheRetention(.short) == .short)
+    #expect(resolveCacheRetention(.long) == .long)
+    #expect(getPromptCacheRetention(baseUrl: "https://api.openai.com/v1", cacheRetention: .short) == nil)
+    #expect(getPromptCacheRetention(baseUrl: "https://api.openai.com/v1", cacheRetention: .long) == "24h")
+    #expect(getPromptCacheRetention(baseUrl: "https://proxy.example.com/v1", cacheRetention: .long) == "24h")
 }
 
 @Test func openAIResponsesCacheMiddlewareInjection() async throws {
@@ -2617,7 +2622,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     let model = getModel(provider: .anthropic, modelId: "claude-haiku-4-5")
     let options = SimpleStreamOptions(metadata: ["user_id": AnyCodable("user-123")])
     let context = Context(messages: [.user(UserMessage(content: .text("hello")))])
-    let mapped = mapAnthropicSimpleOptions(model: model, context: context, options: options, apiKey: "sk-ant-api")
+    let mapped = mapAnthropicSimpleOptions(model: model, context: normalizeContext(context), options: options, apiKey: "sk-ant-api")
     #expect(mapped.metadata?["user_id"]?.value as? String == "user-123")
 }
 
@@ -2748,7 +2753,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             )
             let stream = streamBedrock(
                 model: model,
-                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
                 options: BedrockOptions(
                     reasoning: .high,
                     cacheRetention: CacheRetention.none,
@@ -2826,7 +2831,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             )
             let stream = streamBedrock(
                 model: model,
-                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
                 options: BedrockOptions(region: "us-west-2", cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token")
             )
             for await _ in stream {}
@@ -2875,7 +2880,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             )
             let stream = streamBedrock(
                 model: model,
-                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
                 options: BedrockOptions(cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token")
             )
             for await _ in stream {}
@@ -2927,7 +2932,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             )
             let stream = streamBedrock(
                 model: model,
-                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
                 options: BedrockOptions(cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token")
             )
             for await _ in stream {}
@@ -3044,7 +3049,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             )
             let stream = streamBedrock(
                 model: model,
-                context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+                context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
                 options: BedrockOptions(cacheRetention: CacheRetention.none, bearerToken: "bedrock-bearer-token", maxRetries: 1)
             )
             for await _ in stream {}
@@ -3168,7 +3173,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         let credentials = #"{"token":"tok_test","projectId":"proj_test"}"#
         let stream = streamGoogleGeminiCli(
             model: model,
-            context: context,
+            context: normalizeContext(context),
             options: GoogleGeminiCliOptions(apiKey: credentials)
         )
 
@@ -3239,7 +3244,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 
         let stream = streamOpenAICompletions(
             model: model,
-            context: context,
+            context: normalizeContext(context),
             options: OpenAICompletionsOptions(
                 apiKey: "test-key",
                 toolChoice: .required,
@@ -3321,7 +3326,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key")
         )
         for await _ in stream {}
@@ -3404,10 +3409,10 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             )
             let stream = streamOpenAICompletions(
                 model: model,
-                context: Context(messages: [
+                context: normalizeContext(Context(messages: [
                     .assistant(assistant),
                     .user(UserMessage(content: .text("continue"))),
-                ]),
+                ])),
                 options: OpenAICompletionsOptions(
                     apiKey: "test-key",
                     reasoningEffort: .xhigh,
@@ -3502,7 +3507,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key")
         )
         for await _ in stream {}
@@ -3595,7 +3600,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         )
         let stream = streamOpenAICompletions(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: OpenAICompletionsOptions(apiKey: "test-key", reasoningEffort: .high)
         )
         for await _ in stream {}
@@ -4328,7 +4333,7 @@ struct OAuthTests {
 
     @Test func oauthProviderListReturnsAllProviders() {
         let providers = getOAuthProviders()
-        #expect(providers.count == 6)
+        #expect(providers.count == 7)
 
         let ids = providers.map { $0.id }
         #expect(ids.contains(.anthropic))
@@ -4337,6 +4342,7 @@ struct OAuthTests {
         #expect(ids.contains(.openRouter))
         #expect(ids.contains(.kimiCoding))
         #expect(ids.contains(.xai))
+        #expect(ids.contains(.meta))
         #expect(!ids.contains(.googleGeminiCli))
         #expect(!ids.contains(.googleAntigravity))
     }
@@ -5802,7 +5808,7 @@ struct ApiRegistryTests {
 
 /// v0.62.0: explicit disabled thinking uses the lowest supported Gemini 3 level instead of
 /// a zero thinking budget on models that do not support full disable.
-@Test func googleDisabledThinkingConfigMatchesUpstreamFallbacks() {
+@Test func googleDisabledThinkingConfigMatchesUpstreamFallbacks() throws {
     let pro = Model(
         id: "gemini-3.1-pro-preview",
         name: "Gemini 3.1 Pro",
@@ -5852,22 +5858,23 @@ struct ApiRegistryTests {
         maxTokens: 65_536
     )
 
-    let proConfig = googleDisabledThinkingConfig(model: pro)
-    #expect(proConfig["thinkingLevel"] as? String == GoogleThinkingLevel.low.rawValue)
+    let proConfig = try googleDisabledThinkingConfig(model: pro)
+    // A4 item 7: models without a thinking map support Off and use a zero budget.
+    #expect(proConfig["thinkingBudget"] as? Int == 0)
     #expect(proConfig["includeThoughts"] == nil)
-    #expect(proConfig["thinkingBudget"] == nil)
+    #expect(proConfig["thinkingLevel"] == nil)
 
-    let flashConfig = googleDisabledThinkingConfig(model: flash)
-    #expect(flashConfig["thinkingLevel"] as? String == GoogleThinkingLevel.minimal.rawValue)
+    let flashConfig = try googleDisabledThinkingConfig(model: flash)
+    #expect(flashConfig["thinkingBudget"] as? Int == 0)
     #expect(flashConfig["includeThoughts"] == nil)
-    #expect(flashConfig["thinkingBudget"] == nil)
+    #expect(flashConfig["thinkingLevel"] == nil)
 
-    let gemmaConfig = googleDisabledThinkingConfig(model: gemma)
-    #expect(gemmaConfig["thinkingLevel"] as? String == GoogleThinkingLevel.minimal.rawValue)
+    let gemmaConfig = try googleDisabledThinkingConfig(model: gemma)
+    #expect(gemmaConfig["thinkingBudget"] as? Int == 0)
     #expect(gemmaConfig["includeThoughts"] == nil)
-    #expect(gemmaConfig["thinkingBudget"] == nil)
+    #expect(gemmaConfig["thinkingLevel"] == nil)
 
-    let gemini2Config = googleDisabledThinkingConfig(model: gemini2)
+    let gemini2Config = try googleDisabledThinkingConfig(model: gemini2)
     #expect(gemini2Config["thinkingBudget"] as? Int == 0)
     #expect(gemini2Config["includeThoughts"] == nil)
     #expect(gemini2Config["thinkingLevel"] == nil)
@@ -5913,10 +5920,10 @@ struct ApiRegistryTests {
         )
         let stream = streamGoogle(
             model: model,
-            context: Context(
+            context: normalizeContext(Context(
                 systemPrompt: "be terse",
                 messages: [.user(UserMessage(content: .text("say ok")))]
-            ),
+            )),
             options: GoogleOptions(
                 apiKey: "google-key",
                 thinking: GoogleOptions.ThinkingConfig(enabled: false),
@@ -5942,9 +5949,10 @@ struct ApiRegistryTests {
         }
         // v1beta rejects a top-level thinkingConfig as an unknown field.
         #expect(object["thinkingConfig"] == nil)
-        #expect(thinkingConfig["thinkingLevel"] as? String == GoogleThinkingLevel.low.rawValue)
+        // A4 item 7: a Gemini 3 fixture without a thinkingLevelMap keeps Off as a zero budget.
+        #expect(thinkingConfig["thinkingLevel"] == nil)
         #expect(thinkingConfig["includeThoughts"] == nil)
-        #expect(thinkingConfig["thinkingBudget"] == nil)
+        #expect(thinkingConfig["thinkingBudget"] as? Int == 0)
 
         // system_instruction is a Content, so a bare string is rejected.
         let systemInstruction = object["systemInstruction"] as? [String: Any]
@@ -5998,10 +6006,10 @@ struct ApiRegistryTests {
                 )
                 let stream = streamGoogleVertex(
                     model: model,
-                    context: Context(
+                    context: normalizeContext(Context(
                         systemPrompt: "be terse",
                         messages: [.user(UserMessage(content: .text("say ok")))]
-                    ),
+                    )),
                     options: GoogleVertexOptions(
                         apiKey: "gcp-vertex-credentials",
                         thinking: GoogleOptions.ThinkingConfig(enabled: false),
@@ -6084,7 +6092,7 @@ struct ApiRegistryTests {
             )
             let stream = streamGoogleGeminiCli(
                 model: model,
-                context: Context(messages: [.user(UserMessage(content: .text("say pong")))]),
+                context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("say pong")))])),
                 options: GoogleGeminiCliOptions(
                     apiKey: #"{"token":"tok_test","projectId":"proj_test"}"#,
                     thinking: GoogleOptions.ThinkingConfig(enabled: false)
@@ -6105,9 +6113,10 @@ struct ApiRegistryTests {
                 #expect(Bool(false), "Expected Gemini CLI request thinkingConfig")
                 return
             }
-            #expect(thinkingConfig["thinkingLevel"] as? String == GoogleThinkingLevel.minimal.rawValue)
+            // A4 item 7: this fixture has no supported-level map, so Off uses a zero budget.
+            #expect(thinkingConfig["thinkingLevel"] == nil)
             #expect(thinkingConfig["includeThoughts"] == nil)
-            #expect(thinkingConfig["thinkingBudget"] == nil)
+            #expect(thinkingConfig["thinkingBudget"] as? Int == 0)
         }
     }
 }
@@ -6236,7 +6245,7 @@ struct ApiRegistryTests {
     #expect(completions.sessionId == "session-1")
 
     let anthropic = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
-    let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, context: Context(messages: [.user(UserMessage(content: .text("hello")))]), options: options, apiKey: "key")
+    let anthropicOptions = mapAnthropicSimpleOptions(model: anthropic, context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])), options: options, apiKey: "key")
     #expect(anthropicOptions.timeoutMs == 2345)
     #expect(anthropicOptions.maxRetries == 2)
     #expect(anthropicOptions.maxRetryDelayMs == 1234)
@@ -6330,7 +6339,7 @@ struct ApiRegistryTests {
         )
         let stream = streamMistral(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: mapped
         )
         for await _ in stream {}
@@ -6437,9 +6446,9 @@ struct ApiRegistryTests {
     }
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
-    #expect(getProviders().count == 39)
-    #expect(allModels.count == 1342)
-    #expect(compared == 1342)
+    #expect(getProviders().count == 40)
+    #expect(allModels.count == 1467)
+    #expect(compared == 1467)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6495,8 +6504,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 50)
-    #expect(compared == 50)
+    #expect(models.count == 55)
+    #expect(compared == 55)
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)

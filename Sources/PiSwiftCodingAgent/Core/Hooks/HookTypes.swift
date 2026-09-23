@@ -397,6 +397,8 @@ public struct HookProviderConfig: Sendable {
     public var apiKey: String?
     public var headers: ProviderHeaders?
     public var compat: OpenAICompat?
+    /// Custom provider stream. The registry resolves credentials before invoking it.
+    public var streamSimple: ApiStreamSimpleFunction?
     public var models: [HookProviderModel]
 
     public init(
@@ -406,6 +408,7 @@ public struct HookProviderConfig: Sendable {
         apiKey: String? = nil,
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
+        streamSimple: ApiStreamSimpleFunction? = nil,
         models: [HookProviderModel]
     ) {
         self.provider = provider
@@ -414,6 +417,7 @@ public struct HookProviderConfig: Sendable {
         self.apiKey = apiKey
         self.headers = headers
         self.compat = compat
+        self.streamSimple = streamSimple
         self.models = models
     }
 }
@@ -969,6 +973,14 @@ public struct ContextEvent: HookEvent, Sendable {
     }
 }
 
+/// Runs after `context`; handlers receive the complete provider transcript.
+public struct ContextWithSystemEvent: HookEvent, Sendable {
+    public let type: String = "context_with_system"
+    public var messages: [AgentMessage]
+
+    public init(messages: [AgentMessage]) { self.messages = messages }
+}
+
 public enum ResourcesDiscoverReason: String, Sendable {
     case startup
     case reload
@@ -1012,6 +1024,36 @@ public struct BeforeAgentStartEvent: HookEvent, Sendable {
     }
 }
 
+public enum HookInputSource: String, Sendable {
+    case interactive, rpc, `extension`
+}
+
+public enum HookInputStreamingBehavior: String, Sendable {
+    case steer, followUp
+}
+
+public struct InputEvent: HookEvent, Sendable {
+    public let type = "input"
+    public var text: String
+    public var images: [ImageContent]?
+    public var source: HookInputSource
+    public var streamingBehavior: HookInputStreamingBehavior?
+
+    public init(text: String, images: [ImageContent]? = nil, source: HookInputSource,
+                streamingBehavior: HookInputStreamingBehavior? = nil) {
+        self.text = text
+        self.images = images
+        self.source = source
+        self.streamingBehavior = streamingBehavior
+    }
+}
+
+public enum InputEventResult: Sendable {
+    case `continue`
+    case transform(text: String, images: [ImageContent]? = nil)
+    case handled
+}
+
 public struct AgentStartEvent: HookEvent, Sendable {
     public let type: String = "agent_start"
 
@@ -1046,17 +1088,153 @@ public struct TurnStartEvent: HookEvent, Sendable {
     }
 }
 
-public struct TurnEndEvent: HookEvent, Sendable {
+public enum AgentActivityOutcome: String, Sendable {
+    case completed
+    case aborted
+    case error
+}
+
+/// An entry proposed at a turn or settlement boundary. Pi validates and commits the
+/// complete ordered draft list after all handlers have run.
+public enum SessionBoundaryDraft: Sendable {
+    case custom(customType: String, data: AnyCodable?)
+    case customMessage(customType: String, content: HookMessageContent, display: Bool, details: AnyCodable?)
+    case contextEdit(targetId: String, replacement: HookMessageContent?)
+    case compaction(summary: String, firstKeptEntryId: String?, details: AnyCodable?, usage: Usage?)
+}
+
+public struct BoundaryContextPreview: Sendable {
+    public var contextEntries: [ProjectedSessionEntry]
+    public var contextMessages: [AgentMessage]
+    public var llmMessages: [Message]
+    public var pendingMessages: [AgentMessage]
+    public var canContinue: Bool
+
+    public init(contextEntries: [ProjectedSessionEntry], contextMessages: [AgentMessage], llmMessages: [Message], pendingMessages: [AgentMessage], canContinue: Bool) {
+        self.contextEntries = contextEntries
+        self.contextMessages = contextMessages
+        self.llmMessages = llmMessages
+        self.pendingMessages = pendingMessages
+        self.canContinue = canContinue
+    }
+}
+
+public struct BoundaryResult: Sendable {
+    public var entries: [SessionBoundaryDraft]?
+    public var shouldContinue: Bool?
+
+    public init(entries: [SessionBoundaryDraft]? = nil, shouldContinue: Bool? = nil) {
+        self.entries = entries
+        self.shouldContinue = shouldContinue
+    }
+}
+
+public typealias TurnEndEventResult = BoundaryResult
+public typealias AgentBeforeSettleEventResult = BoundaryResult
+
+public struct BoundaryDispatchResult: Sendable {
+    public var entries: [SessionBoundaryDraft]
+    public var shouldContinue: Bool
+    public var context: BoundaryContextPreview
+    public var valid: Bool
+
+    public init(entries: [SessionBoundaryDraft], shouldContinue: Bool, context: BoundaryContextPreview, valid: Bool) {
+        self.entries = entries
+        self.shouldContinue = shouldContinue
+        self.context = context
+        self.valid = valid
+    }
+}
+
+public protocol HookBoundaryBaseEvent: Sendable {
+    var type: String { get }
+    func makeEvent(entries: [SessionBoundaryDraft], shouldContinue: Bool, context: BoundaryContextPreview) -> any HookBoundaryEvent
+}
+
+public protocol HookBoundaryEvent: HookEvent, Sendable {
+    var entries: [SessionBoundaryDraft] { get }
+    var shouldContinue: Bool { get }
+    var context: BoundaryContextPreview { get }
+    var outcome: AgentActivityOutcome { get }
+}
+
+public struct AgentBeforeSettleBoundaryBaseEvent: HookBoundaryBaseEvent {
+    public let type = "agent_before_settle"
+    public var outcome: AgentActivityOutcome
+
+    public init(outcome: AgentActivityOutcome) { self.outcome = outcome }
+
+    public func makeEvent(entries: [SessionBoundaryDraft], shouldContinue: Bool, context: BoundaryContextPreview) -> any HookBoundaryEvent {
+        AgentBeforeSettleEvent(outcome: outcome, entries: entries, shouldContinue: shouldContinue, context: context)
+    }
+}
+
+public struct TurnEndBoundaryBaseEvent: HookBoundaryBaseEvent {
+    public let type = "turn_end"
+    public var turnIndex: Int
+    public var message: AgentMessage
+    public var toolResults: [ToolResultMessage]
+    public var messageEntryId: String
+    public var toolResultEntryIds: [String]
+    public var outcome: AgentActivityOutcome
+
+    public init(turnIndex: Int, message: AgentMessage, toolResults: [ToolResultMessage], messageEntryId: String, toolResultEntryIds: [String], outcome: AgentActivityOutcome) {
+        self.turnIndex = turnIndex
+        self.message = message
+        self.toolResults = toolResults
+        self.messageEntryId = messageEntryId
+        self.toolResultEntryIds = toolResultEntryIds
+        self.outcome = outcome
+    }
+
+    public func makeEvent(entries: [SessionBoundaryDraft], shouldContinue: Bool, context: BoundaryContextPreview) -> any HookBoundaryEvent {
+        TurnEndEvent(turnIndex: turnIndex, message: message, toolResults: toolResults,
+                     messageEntryId: messageEntryId, toolResultEntryIds: toolResultEntryIds,
+                     outcome: outcome, entries: entries, shouldContinue: shouldContinue, context: context)
+    }
+}
+
+/// Fired before final settlement. A handler can append entries or request one more provider call.
+public struct AgentBeforeSettleEvent: HookBoundaryEvent, Sendable {
+    public let type: String = "agent_before_settle"
+    public var entries: [SessionBoundaryDraft]
+    public var shouldContinue: Bool
+    public var context: BoundaryContextPreview
+    public var outcome: AgentActivityOutcome
+
+    public init(outcome: AgentActivityOutcome, entries: [SessionBoundaryDraft], shouldContinue: Bool, context: BoundaryContextPreview) {
+        self.outcome = outcome
+        self.entries = entries
+        self.shouldContinue = shouldContinue
+        self.context = context
+    }
+
+}
+
+public struct TurnEndEvent: HookBoundaryEvent, Sendable {
     public let type: String = "turn_end"
     public var turnIndex: Int
     public var message: AgentMessage
     public var toolResults: [ToolResultMessage]
+    public var messageEntryId: String
+    public var toolResultEntryIds: [String]
+    public var entries: [SessionBoundaryDraft]
+    public var shouldContinue: Bool
+    public var context: BoundaryContextPreview
+    public var outcome: AgentActivityOutcome
 
-    public init(turnIndex: Int, message: AgentMessage, toolResults: [ToolResultMessage]) {
+    public init(turnIndex: Int, message: AgentMessage, toolResults: [ToolResultMessage], messageEntryId: String, toolResultEntryIds: [String], outcome: AgentActivityOutcome, entries: [SessionBoundaryDraft], shouldContinue: Bool, context: BoundaryContextPreview) {
         self.turnIndex = turnIndex
         self.message = message
         self.toolResults = toolResults
+        self.messageEntryId = messageEntryId
+        self.toolResultEntryIds = toolResultEntryIds
+        self.outcome = outcome
+        self.entries = entries
+        self.shouldContinue = shouldContinue
+        self.context = context
     }
+
 }
 
 public struct MessageStartEvent: HookEvent, Sendable {
@@ -1289,6 +1467,14 @@ public struct BeforeProviderRequestEvent: HookEvent, Sendable {
     }
 }
 
+public struct CacheWarmingDecisionEventResult: Sendable {
+    public var action: CacheWarmingAction?
+
+    public init(action: CacheWarmingAction? = nil) {
+        self.action = action
+    }
+}
+
 /// Fired after provider headers have been assembled and immediately before the
 /// provider request. Handlers return optional header changes; results are applied
 /// in handler order, with later values overriding earlier values.
@@ -1399,20 +1585,24 @@ public struct SessionBeforeCompactResult: Sendable {
 public struct BeforeAgentStartEventResult: Sendable {
     public var message: HookMessageInput?
     public var systemPromptAppend: String?
+    public var systemPrompt: String?
 
-    public init(message: HookMessageInput? = nil, systemPromptAppend: String? = nil) {
+    public init(message: HookMessageInput? = nil, systemPromptAppend: String? = nil, systemPrompt: String? = nil) {
         self.message = message
         self.systemPromptAppend = systemPromptAppend
+        self.systemPrompt = systemPrompt
     }
 }
 
 public struct BeforeAgentStartCombinedResult: Sendable {
     public var messages: [HookMessageInput]?
     public var systemPromptAppend: String?
+    public var systemPrompt: String?
 
-    public init(messages: [HookMessageInput]? = nil, systemPromptAppend: String? = nil) {
+    public init(messages: [HookMessageInput]? = nil, systemPromptAppend: String? = nil, systemPrompt: String? = nil) {
         self.messages = messages
         self.systemPromptAppend = systemPromptAppend
+        self.systemPrompt = systemPrompt
     }
 }
 
@@ -1454,6 +1644,16 @@ public struct ContextEventResult: Sendable {
 
 public typealias HookHandler = @Sendable (_ event: HookEvent, _ context: HookContext) async throws -> Any?
 
+public struct HookHandlerRegistration: Sendable {
+    public let id: UUID
+    public let handler: HookHandler
+
+    public init(id: UUID = UUID(), handler: @escaping HookHandler) {
+        self.id = id
+        self.handler = handler
+    }
+}
+
 public struct HookError: Sendable {
     public var hookPath: String
     public var event: String
@@ -1472,6 +1672,8 @@ public struct LoadedHook: Sendable {
     public var path: String
     public var resolvedPath: String
     public var handlers: [String: [HookHandler]]
+    /// Returns live handlers. Dispatch takes one snapshot before calling any handler.
+    public var currentHandlers: @Sendable () -> [String: [HookHandler]]
     public var messageRenderers: [String: HookMessageRenderer]
     public var markdownTransformers: [MarkdownTransformer]
     public var entryRenderers: [String: EntryRenderer]
@@ -1516,6 +1718,7 @@ public struct LoadedHook: Sendable {
         path: String,
         resolvedPath: String,
         handlers: [String: [HookHandler]],
+        currentHandlers: (@Sendable () -> [String: [HookHandler]])? = nil,
         messageRenderers: [String: HookMessageRenderer] = [:],
         markdownTransformers: [MarkdownTransformer] = [],
         entryRenderers: [String: EntryRenderer] = [:],
@@ -1550,6 +1753,7 @@ public struct LoadedHook: Sendable {
         self.path = path
         self.resolvedPath = resolvedPath
         self.handlers = handlers
+        self.currentHandlers = currentHandlers ?? { handlers }
         self.messageRenderers = messageRenderers
         self.markdownTransformers = markdownTransformers
         self.entryRenderers = entryRenderers
@@ -1602,10 +1806,13 @@ public struct TreePreparation: Sendable {
 public enum HookAPIError: LocalizedError, Sendable {
     case inactive(String)
     case invalidFlagDefault(String)
+    case missingToolParameters(name: String, path: String)
     public var errorDescription: String? {
         switch self {
         case .inactive(let path): return "Extension \"\(path)\" failed to load and its API is no longer active."
         case .invalidFlagDefault(let name): return "Flag \"\(name)\" default must match its declared type."
+        case .missingToolParameters(let name, let path):
+            return "Tool \"\(name)\" registered by extension \"\(path)\" must define an object parameter schema."
         }
     }
 }
@@ -1636,7 +1843,7 @@ public final class HookAPI: Sendable {
     private let state: LockedState<State>
 
     private struct State: Sendable {
-        var handlers: [String: [HookHandler]]
+        var handlers: [String: [HookHandlerRegistration]]
         var messageRenderers: [String: HookMessageRenderer]
         var markdownTransformers: [MarkdownTransformer]
         var entryRenderers: [String: EntryRenderer]
@@ -1670,8 +1877,8 @@ public final class HookAPI: Sendable {
     }
 
     public private(set) var handlers: [String: [HookHandler]] {
-        get { state.withLock { $0.handlers } }
-        set { state.withLock { $0.handlers = newValue } }
+        get { state.withLock { $0.handlers.mapValues { $0.map(\.handler) } } }
+        set { state.withLock { $0.handlers = newValue.mapValues { $0.map { HookHandlerRegistration(handler: $0) } } } }
     }
 
     public private(set) var messageRenderers: [String: HookMessageRenderer] {
@@ -1940,18 +2147,30 @@ public final class HookAPI: Sendable {
         flagValues[name] = value
     }
 
-    public func on<T: HookEvent>(_ type: String, _ handler: @Sendable @escaping (T, HookContext) async throws -> Any?) {
-        guard loadFailure.withLock({ $0 == nil }) else { return }
+    @discardableResult
+    public func on<T: HookEvent>(_ type: String, _ handler: @Sendable @escaping (T, HookContext) async throws -> Any?) -> @Sendable () -> Void {
+        guard loadFailure.withLock({ $0 == nil }) else { return {} }
         let wrapper: HookHandler = { event, context in
             guard let typed = event as? T else { return nil }
             return try await handler(typed, context)
         }
-        handlers[type, default: []].append(wrapper)
+        return addHandler(type, wrapper)
     }
 
-    public func onAny(_ type: String, _ handler: @Sendable @escaping (HookEvent, HookContext) async throws -> Any?) {
-        guard loadFailure.withLock({ $0 == nil }) else { return }
-        handlers[type, default: []].append(handler)
+    @discardableResult
+    public func onAny(_ type: String, _ handler: @Sendable @escaping (HookEvent, HookContext) async throws -> Any?) -> @Sendable () -> Void {
+        guard loadFailure.withLock({ $0 == nil }) else { return {} }
+        return addHandler(type, handler)
+    }
+
+    private func addHandler(_ type: String, _ handler: @escaping HookHandler) -> @Sendable () -> Void {
+        let id = UUID()
+        state.withLock { $0.handlers[type, default: []].append(HookHandlerRegistration(id: id, handler: handler)) }
+        return { [weak self] in
+            self?.state.withLock { state in
+                state.handlers[type]?.removeAll { $0.id == id }
+            }
+        }
     }
 
     public func sendMessage(_ message: HookMessageInput, options: HookSendMessageOptions? = nil) {
@@ -2087,10 +2306,17 @@ public final class HookAPI: Sendable {
     /// The tool's `name` must be unique across the session (collisions overwrite). The
     /// extension that registered the tool owns its lifetime — when the extension is
     /// dropped via `/reload`, its tools are removed from the agent's roster.
-    public func registerTool(_ tool: CustomTool) {
-        guard loadFailure.withLock({ $0 == nil }) else { return }
+    @discardableResult
+    public func registerTool(_ tool: CustomTool) -> Result<Void, HookAPIError> {
+        if let failure = loadFailure.withLock({ $0 }) { return .failure(failure) }
+        guard tool.parameters != nil else {
+            let error = HookAPIError.missingToolParameters(name: tool.name, path: hookPath)
+            loadFailure.withLock { $0 = error }
+            return .failure(error)
+        }
         tools[tool.name] = tool
         registerToolHandler(tool)
+        return .success(())
     }
 
     /// Remove an extension tool from the live agent session when supported.

@@ -67,7 +67,7 @@ private func storageTempDir() throws -> URL {
     }
 
     @Test func standaloneRoutingThinkingAndSplitUsage() async throws {
-        let calls = LockedState<[(Context, SimpleStreamOptions)]>([])
+        let calls = LockedState<[(TranscriptContext, SimpleStreamOptions)]>([])
         let result = try await compact(storagePreparation(split: true), storageModel(maxTokens: 3000), "key",
             thinkingLevel: .medium,
             streamFn: { _, context, options in
@@ -77,8 +77,8 @@ private func storageTempDir() throws -> URL {
         let captured = calls.withLock { $0 }
         #expect(captured.count == 2)
         for (context, options) in captured {
-            #expect(context.tools == nil || context.tools?.isEmpty == true)
-            #expect(context.messages.count == 1)
+            #expect(getCurrentTools(context.messages).isEmpty)
+            #expect(context.messages.filter { $0.role != "system" }.count == 1)
             #expect(options.sessionId == "caller-route")
             #expect(options.cacheRetention == CacheRetention.none)
             #expect(options.toolChoice == nil)

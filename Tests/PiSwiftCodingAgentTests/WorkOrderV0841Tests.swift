@@ -73,7 +73,7 @@ private func v0841Stream(_ message: AssistantMessage) -> AssistantMessageEventSt
 
     _ = await streamOpenAICompletions(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: OpenAICompletionsOptions(
             apiKey: "placeholder-key",
             httpClient: client,
@@ -367,7 +367,7 @@ private func v0841Stream(_ message: AssistantMessage) -> AssistantMessageEventSt
     }
     let stream = agentLoop(
         prompts: [.user(UserMessage(content: .text("start")))],
-        context: AgentContext(systemPrompt: "", messages: [], tools: [tool]),
+        context: AgentContext(messages: [], tools: [tool]),
         config: AgentLoopConfig(
             model: model,
             toolExecution: .sequential,

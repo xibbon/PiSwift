@@ -74,6 +74,8 @@ public struct ToolDefinition: Sendable, Decodable {
     
     /// Description shown to the LLM
     public let description: String
+    /// Rule bullets in the default system prompt while this tool is active.
+    public let promptGuidelines: [String]?
     
     /// Tool parameters schema (JSON Schema-like)
     public let parameters: [String: AnyCodable]?
@@ -91,6 +93,7 @@ public struct ToolDefinition: Sendable, Decodable {
         label: String,
         description: String,
         parameters: [String: AnyCodable]? = nil,
+        promptGuidelines: [String]? = nil,
         renderCall: (@Sendable ([String: AnyCodable], Theme) -> HookComponent)? = nil,
         renderResult: (@Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent)? = nil,
         renderShell: ToolRenderShell = .default
@@ -98,6 +101,7 @@ public struct ToolDefinition: Sendable, Decodable {
         self.name = name
         self.label = label
         self.description = description
+        self.promptGuidelines = promptGuidelines
         self.parameters = parameters
         self.renderCall = renderCall
         self.renderResult = renderResult
@@ -105,7 +109,7 @@ public struct ToolDefinition: Sendable, Decodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, label, description, parameters, renderShell
+        case name, label, description, parameters, promptGuidelines, renderShell
     }
 
     /// Decode metadata. JSON does not contain render functions.
@@ -116,6 +120,7 @@ public struct ToolDefinition: Sendable, Decodable {
             label: try container.decode(String.self, forKey: .label),
             description: try container.decode(String.self, forKey: .description),
             parameters: try container.decodeIfPresent([String: AnyCodable].self, forKey: .parameters),
+            promptGuidelines: try container.decodeIfPresent([String].self, forKey: .promptGuidelines),
             renderShell: try container.decodeIfPresent(String.self, forKey: .renderShell) == "self" ? .self : .default
         )
     }

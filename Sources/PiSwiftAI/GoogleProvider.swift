@@ -4,9 +4,10 @@ private let googleToolCallCounter = LockedState(0)
 
 public func streamGoogle(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: GoogleOptions
 ) -> AssistantMessageEventStream {
+    let context = collapsedProviderContext(context)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -39,7 +40,8 @@ public func streamGoogle(
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             applyProviderHeaders(
-                mergeProviderHeaders(model.headers, options.headers),
+                openCodeSessionHeaders(model: model, sessionId: options.sessionId,
+                    headers: mergeProviderHeaders(model.headers, options.headers)),
                 to: &request
             )
 
@@ -232,7 +234,7 @@ private func buildGoogleRequestBody(
             }
             config = enabledConfig
         } else {
-            config = googleDisabledThinkingConfig(model: model)
+            config = try googleDisabledThinkingConfig(model: model)
         }
         // thinkingConfig belongs to generationConfig; at the top level it is an unknown field.
         generationConfig["thinkingConfig"] = config

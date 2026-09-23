@@ -9,6 +9,7 @@ public enum AutoCompactionReason: String, Sendable {
 
 public enum AgentSessionEvent: Sendable {
     case agent(AgentEvent)
+    case entryAppended(SessionEntry)
     case agentSettled
     case autoCompactionStart(reason: AutoCompactionReason)
     case autoCompactionEnd(result: CompactionResult?, aborted: Bool, willRetry: Bool)
@@ -19,6 +20,8 @@ public enum AgentSessionEvent: Sendable {
         switch self {
         case .agent(let event):
             return event.type
+        case .entryAppended:
+            return "entry_appended"
         case .agentSettled:
             return "agent_settled"
         case .autoCompactionStart:
@@ -46,6 +49,7 @@ public struct AgentSessionConfig: Sendable {
     public var hookRunner: HookRunner?
     public var customTools: [LoadedCustomTool]?
     public var modelRegistry: ModelRegistry
+    public var cacheWarmer: CacheWarmer?
     public var skillsSettings: SkillsSettings?
     public var eventBus: EventBus?
     public var toolRegistry: [String: AgentTool]?
@@ -73,6 +77,7 @@ public struct AgentSessionConfig: Sendable {
         hookRunner: HookRunner? = nil,
         customTools: [LoadedCustomTool]? = nil,
         modelRegistry: ModelRegistry,
+        cacheWarmer: CacheWarmer? = nil,
         skillsSettings: SkillsSettings? = nil,
         eventBus: EventBus? = nil,
         toolRegistry: [String: AgentTool]? = nil,
@@ -92,6 +97,7 @@ public struct AgentSessionConfig: Sendable {
         self.hookRunner = hookRunner
         self.customTools = customTools
         self.modelRegistry = modelRegistry
+        self.cacheWarmer = cacheWarmer
         self.skillsSettings = skillsSettings
         self.eventBus = eventBus
         self.toolRegistry = toolRegistry
@@ -110,11 +116,14 @@ public struct PromptOptions: Sendable {
     public var expandSlashCommands: Bool?
     public var expandPromptTemplates: Bool?
     public var images: [ImageContent]?
+    public var source: HookInputSource
 
-    public init(expandSlashCommands: Bool? = nil, expandPromptTemplates: Bool? = nil, images: [ImageContent]? = nil) {
+    public init(expandSlashCommands: Bool? = nil, expandPromptTemplates: Bool? = nil, images: [ImageContent]? = nil,
+                source: HookInputSource = .interactive) {
         self.expandSlashCommands = expandSlashCommands
         self.expandPromptTemplates = expandPromptTemplates
         self.images = images
+        self.source = source
     }
 }
 
@@ -270,6 +279,8 @@ public enum AgentSessionError: LocalizedError, Sendable {
     case nothingToCompact
     case compactionCancelled
     case compactionInProgress
+    case invalidBoundaryDraft
+    case recoveryEntryMissing
 
     public var errorDescription: String? {
         switch self {
@@ -296,6 +307,10 @@ public enum AgentSessionError: LocalizedError, Sendable {
             return "Compaction cancelled"
         case .compactionInProgress:
             return "Compaction is already in progress"
+        case .invalidBoundaryDraft:
+            return "Invalid boundary draft"
+        case .recoveryEntryMissing:
+            return "Recovery attempt has no persisted source entry"
         }
     }
 }
@@ -305,6 +320,7 @@ public final class AgentSession: Sendable {
     public let sessionManager: SessionManager
     public let settingsManager: SettingsManager
     public let modelRegistry: ModelRegistry
+    public let cacheWarmer: CacheWarmer?
     public let eventBus: EventBus
     public let projectTrusted: Bool
     private let state: LockedState<State>
@@ -385,6 +401,15 @@ public final class AgentSession: Sendable {
         var compactionFromExtension = false
         var pendingNextTurnMessages: [HookMessage]
         var lastAssistantMessage: AssistantMessage?
+        var lastAssistantEntryId: String?
+        var lastToolResultEntryIds: [String: String] = [:]
+        var lastAssistantToolResults: [ToolResultMessage] = []
+        var lastActivityOutcome: AgentActivityOutcome = .completed
+        var agentRunAbortRequested = false
+        var isBeforeSettle = false
+        var abortDuringBeforeSettle = false
+        var isEmittingAgentSettled = false
+        var deferredSettledActions: [@Sendable () async -> Void] = []
         var compactionAbort: CancellationToken?
         var branchSummaryAbort: CancellationToken?
         var retryAbort: CancellationToken?
@@ -402,10 +427,13 @@ public final class AgentSession: Sendable {
         var isBranchSummarizing: Bool
         var turnIndex: Int
         var baseSystemPrompt: String
+        var forcedRequestPrompt: String?
+        var runSystemPromptAppend: String?
         var systemPromptOptions: BuildSystemPromptOptions
         var toolRegistry: [String: AgentTool]
         var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
         var toolPromptSnippets: [String: String]
+        var toolPromptGuidelines: [String: [String]]
         var reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)?
         var wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])?
     }
@@ -599,6 +627,49 @@ public final class AgentSession: Sendable {
         set { state.withLock { $0.baseSystemPrompt = newValue } }
     }
 
+    private var forcedRequestPrompt: String? {
+        get { state.withLock { $0.forcedRequestPrompt } }
+        set { state.withLock { $0.forcedRequestPrompt = newValue } }
+    }
+
+    private func preparePromptPatch(messages: [AgentMessage]? = nil) throws -> SystemMessage? {
+        var options = state.withLock { $0.systemPromptOptions }
+        if let append = state.withLock({ $0.runSystemPromptAppend }) {
+            options.appendSystemPrompt = [options.appendSystemPrompt, append].compactMap { $0 }.joined(separator: "\n\n")
+        }
+        let names = getActiveToolNames()
+        options.selectedTools = names.compactMap(ToolName.init(rawValue:))
+        options.selectedToolNames = names
+        var snippets = options.toolSnippets ?? [:]
+        let builtInSnippets = [
+            "read": "Read file contents",
+            "bash": "Execute bash commands (ls, grep, find, etc.)",
+            "edit": "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+            "write": "Create or overwrite files",
+        ]
+        for name in names {
+            if let contribution = toolPromptSnippets[name] ?? builtInSnippets[name] { snippets[name] = contribution }
+        }
+        options.toolSnippets = snippets
+        let builtInGuidelines: [String: [String]] = [
+            "read": ["Use read to examine files instead of cat or sed."],
+            "bash": ["You can inspect PI_* environment variables for current model and session details."],
+            "edit": [
+                "Use edit for precise changes (edits[].oldText must match exactly)",
+                "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
+                "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
+                "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+            ],
+            "write": ["Use write only for new files or complete rewrites."],
+        ]
+        var guidelines = builtInGuidelines.merging(options.toolGuidelines ?? [:]) { _, supplied in supplied }
+        guidelines.merge(state.withLock { $0.toolPromptGuidelines }) { _, extensionRules in extensionRules }
+        options.toolGuidelines = guidelines
+        let prior = getCurrentSystemMessage(messages ?? sessionManager.buildSessionProjection().messages)
+        guard let sections = diffSystemPromptSections(prior?.sections, try buildSystemPromptSections(options)) else { return nil }
+        return SystemMessage(content: .text(""), sections: sections)
+    }
+
     private var toolRegistry: [String: AgentTool] {
         get { state.withLock { $0.toolRegistry } }
         set { state.withLock { $0.toolRegistry = newValue } }
@@ -628,8 +699,6 @@ public final class AgentSession: Sendable {
     /// Snippets are keyed by name so they can be replaced or removed.
     public func registerToolPromptSnippet(name: String, text: String) {
         toolPromptSnippets[name] = text
-        // Rebuild the system prompt to include the new snippet
-        agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
     }
 
     private func expandPromptText(_ text: String, expandSlashCommands: Bool = true, expandPromptTemplates: Bool = true) -> String {
@@ -658,6 +727,7 @@ public final class AgentSession: Sendable {
         self.sessionManager = config.sessionManager
         self.settingsManager = config.settingsManager
         self.modelRegistry = config.modelRegistry
+        self.cacheWarmer = config.cacheWarmer
         self.eventBus = config.eventBus ?? createEventBus()
         self.projectTrusted = config.projectTrusted
         self.agent.sessionId = config.sessionManager.getSessionId()
@@ -674,6 +744,7 @@ public final class AgentSession: Sendable {
             followUpMessages: [],
             pendingNextTurnMessages: [],
             lastAssistantMessage: nil,
+            lastAssistantEntryId: nil,
             compactionAbort: nil,
             branchSummaryAbort: nil,
             retryAbort: nil,
@@ -689,28 +760,64 @@ public final class AgentSession: Sendable {
             isBranchSummarizing: false,
             turnIndex: 0,
             baseSystemPrompt: config.agent.state.systemPrompt,
+            forcedRequestPrompt: nil,
+            runSystemPromptAppend: nil,
             systemPromptOptions: config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()),
             toolRegistry: config.toolRegistry ?? [:],
             rebuildSystemPrompt: config.rebuildSystemPrompt,
             toolPromptSnippets: [:],
+            toolPromptGuidelines: ((config.customTools ?? []).map(\.tool) +
+                                   (config.hookRunner?.getExtensionTools() ?? []))
+                .reduce(into: [String: [String]]()) { rules, tool in
+                rules[tool.name] = tool.promptGuidelines
+            },
             reloadExtensionsHook: config.reloadExtensionsHook,
             wrapExtensionTools: config.wrapExtensionTools
         ))
 
         let previousPrepare = self.agent.prepareNextTurn
         let previousPrepareWithContext = self.agent.prepareNextTurnWithContext
+        let previousPrepareRequest = self.agent.prepareRequest
+        let previousFinishTurn = self.agent.finishTurn
+        self.agent.finishTurn = { [weak self] turn, signal in
+            let extensionContinue = await self?.dispatchTurnEndBoundary(turn) ?? false
+            let previousDecision = await previousFinishTurn?(turn, signal)
+            if previousDecision == .end { return .end }
+            return extensionContinue || previousDecision == .continue ? .continue : nil
+        }
+        self.agent.prepareRequest = { [weak self] request, signal in
+            guard let self else { return nil }
+            var canonical = request.context
+            canonical.messages = self.sessionManager.buildSessionProjection().messages
+            canonical.tools = self.agent.state.tools
+            let current = PrepareRequestContext(context: canonical, model: self.agent.state.model,
+                                                thinkingLevel: self.agent.state.thinkingLevel)
+            let previous = try await previousPrepareRequest?(current, signal)
+            return AgentRequestUpdate(context: previous?.context ?? canonical,
+                                      model: previous?.model ?? self.agent.state.model,
+                                      thinkingLevel: previous?.thinkingLevel ?? self.agent.state.thinkingLevel)
+        }
+        let previousTransformContext = self.agent.transformContext
+        self.agent.transformContext = { [weak self] messages, signal in
+            let transformed = try await previousTransformContext?(messages, signal) ?? messages
+            guard let forced = self?.forcedRequestPrompt else { return transformed }
+            let current = getCurrentSystemMessage(transformed)
+            let head = SystemMessage(content: .text(forced), toolsAdded: current?.toolsAdded,
+                                     timestamp: current?.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000))
+            return [.system(head)] + transformed.filter { $0.role != "system" }
+        }
         self.agent.prepareNextTurnWithContext = { [weak self] turn, signal in
             guard let self else { return nil }
             let events = self._agentEventQueue.withLock { $0 }
             await events?.value
             var next = turn
-            next.context.messages = self.agent.state.messages
+            next.context.messages = self.sessionManager.buildSessionProjection().messages
             if signal?.isCancelled != true,
                self.autoCompactionEnabled,
                self.agent.state.model.contextWindow > 0,
-               shouldCompact(self.estimatedContextTokens(next.context.messages), self.agent.state.model.contextWindow, self.settingsManager.getCompactionSettings()) {
+               shouldCompact(self.estimatedContextTokens(next.context.messages), self.agent.state.model.contextWindow, self.settingsManager.getCompactionSettings(model: self.agent.state.model)) {
                 await self.runAutoCompaction(reason: .threshold, willRetry: false)
-                next.context.messages = self.agent.state.messages
+                next.context.messages = self.sessionManager.buildSessionProjection().messages
             }
             let previous: AgentLoopTurnUpdate?
             if let previousPrepareWithContext {
@@ -719,9 +826,11 @@ public final class AgentSession: Sendable {
                 previous = try await previousPrepare?(signal)
             }
             var context = previous?.context ?? next.context
-            context.systemPrompt = self.agent.state.systemPrompt
             context.tools = self.agent.state.tools
-            return AgentLoopTurnUpdate(context: context, model: self.agent.state.model, thinkingLevel: self.agent.state.thinkingLevel)
+            let update = try self.preparePromptPatch(messages: context.messages)
+            return AgentLoopTurnUpdate(context: context,
+                                       messages: (previous?.messages ?? []) + (update.map { [.system($0)] } ?? []),
+                                       model: self.agent.state.model, thinkingLevel: self.agent.state.thinkingLevel)
         }
 
         let existingAfterToolCall = self.agent.afterToolCall
@@ -731,7 +840,8 @@ public final class AgentSession: Sendable {
             let sourceContent = hookResult?.content ?? context.result.content
             let normalized = normalizeToolResultImages(
                 sourceContent,
-                autoResizeImages: toolImageSettings.getAutoResizeImages()
+                autoResizeImages: toolImageSettings.getAutoResizeImages(),
+                resizeOptions: self.agent.state.model.inputLimits?.images?.resize
             )
             guard hookResult != nil || normalized.changed else { return nil }
             return AfterToolCallResult(
@@ -747,8 +857,12 @@ public final class AgentSession: Sendable {
         self._hookRunner?.initialize(
             getModel: { [weak agent] in agent?.state.model },
             getScopedModels: { [weak self] in self?.scopedModels ?? [] },
-            getSystemPrompt: { [weak agent] in agent?.state.systemPrompt },
-            getSystemPromptOptions: { config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()) },
+            getSystemPrompt: { [weak self] in
+                self.map { getCurrentSystemPrompt($0.sessionManager.buildSessionProjection().messages) }
+            },
+            getSystemPromptOptions: { [weak self] in
+                self?.getCurrentSystemPromptOptions() ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd())
+            },
             isProjectTrusted: { config.projectTrusted },
             sendMessageHandler: { [weak self] message, options in self?.enqueueHookMessage(message, options: options) },
             appendEntryHandler: { [weak self] customType, data in
@@ -849,9 +963,17 @@ public final class AgentSession: Sendable {
         self.unsubscribeAgent = agent.subscribe { [weak self] event, _ in
             self?.handleAgentEvent(event)
         }
+        refreshContext()
+        if let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
+            let names = (current.toolsAdded ?? []).map(\.name)
+            let registry = toolRegistry
+            agent.tools = names.compactMap { registry[$0] }
+            state.withLock { $0.systemPromptOptions.selectedToolNames = names }
+        }
     }
 
     public func dispose() {
+        if let cacheWarmer { Task { await cacheWarmer.cancel() } }
         unsubscribeAgent?()
         unsubscribeAgent = nil
         let runner = _hookRunner
@@ -950,6 +1072,118 @@ public final class AgentSession: Sendable {
         _agentEventQueue.withLock { $0 = task }
     }
 
+    private func applyBoundaryDrafts(_ drafts: [SessionBoundaryDraft], to manager: SessionManager) throws -> [SessionEntry] {
+        var appended: [SessionEntry] = []
+        for draft in drafts {
+            let id: String
+            switch draft {
+            case .custom(let customType, let data):
+                guard data == nil || data?.value is [String: Any] else {
+                    throw AgentSessionError.invalidBoundaryDraft
+                }
+                id = manager.appendCustomEntry(customType, data?.value as? [String: Any] ?? [:])
+            case .customMessage(let customType, let content, let display, let details):
+                id = manager.appendCustomMessage(customType, content, display, details: details)
+            case .contextEdit(let targetId, let replacement):
+                id = try manager.appendContextEdit(targetId, replacement)
+            case .compaction(let summary, let firstKeptEntryId, let details, let usage):
+                let tokensBefore = estimatedContextTokens(manager.buildSessionProjection().messages)
+                id = manager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details: details, fromHook: true, usage: usage)
+            }
+            if let entry = manager.getEntry(id) { appended.append(entry) }
+        }
+        return appended
+    }
+
+    private func boundaryPreview(_ drafts: [SessionBoundaryDraft], boundary: String) throws -> BoundaryContextPreview {
+        guard let header = sessionManager.getHeader() else { throw AgentSessionError.invalidBoundaryDraft }
+        let entries: [FileEntry] = [.session(header)] + sessionManager.getBranch().map { .entry($0) }
+        let manager = SessionManager.inMemory(sessionManager.getCwd(), entries: entries)
+        _ = try applyBoundaryDrafts(drafts, to: manager)
+        let projection = manager.buildSessionProjection()
+        let queued = agent.peekQueuedMessages()
+        let custom = state.withLock { $0.pendingCustomMessages.map(makeHookAgentMessage) }
+        let llm = convertToLlm(projection.messages)
+        let finalRole = llm.last?.role
+        let contextCanContinue = llm.contains { $0.role != "system" } && finalRole != "assistant"
+        let canContinue = contextCanContinue || !custom.isEmpty ||
+            (boundary == "turn_end" ? agent.hasQueuedMessages() : finalRole == "assistant" && agent.hasQueuedMessages())
+        return BoundaryContextPreview(contextEntries: projection.entries, contextMessages: projection.messages,
+                                      llmMessages: llm, pendingMessages: queued + custom, canContinue: canContinue)
+    }
+
+    private func commitBoundaryDrafts(_ drafts: [SessionBoundaryDraft]) throws {
+        let appended = try applyBoundaryDrafts(drafts, to: sessionManager)
+        refreshContext()
+        for entry in appended { emit(.entryAppended(entry)) }
+    }
+
+    private func reportBoundaryError(_ event: String, _ message: String) {
+        _hookRunner?.emitError(HookError(hookPath: "<boundary>", event: event, error: message))
+    }
+
+    private func dispatchTurnEndBoundary(_ turn: AgentTurnContext) async -> Bool {
+        let outcome: AgentActivityOutcome = turn.message.stopReason == .aborted ? .aborted :
+            turn.message.stopReason == .error ? .error : .completed
+        state.withLock { $0.lastActivityOutcome = outcome }
+        guard let runner = _hookRunner, runner.hasHandlers("turn_end") else { return false }
+        let ids = state.withLock { ($0.lastAssistantEntryId, $0.lastToolResultEntryIds) }
+        guard let messageEntryId = ids.0 else {
+            reportBoundaryError("turn_end", "Could not resolve the persisted assistant entry ID")
+            return false
+        }
+        let resultIds = turn.toolResults.compactMap { ids.1[$0.toolCallId] }
+        let event = TurnEndBoundaryBaseEvent(turnIndex: turnIndex, message: .assistant(turn.message), toolResults: turn.toolResults,
+                                 messageEntryId: messageEntryId, toolResultEntryIds: resultIds, outcome: outcome)
+        do {
+            let result = try await runner.emitBoundary(event) { [weak self] drafts in
+                guard let self else { throw AgentSessionError.invalidBoundaryDraft }
+                return try self.boundaryPreview(drafts, boundary: "turn_end")
+            }
+            try commitBoundaryDrafts(result.entries)
+            if result.shouldContinue && !result.context.canContinue {
+                reportBoundaryError("turn_end", "Continuation has no runnable model context")
+                return false
+            }
+            return result.shouldContinue
+        } catch {
+            reportBoundaryError("turn_end", error.localizedDescription)
+            return false
+        }
+    }
+
+    private func runBeforeSettleBoundary() async -> Bool {
+        guard !state.withLock({ $0.agentRunAbortRequested }) else { return false }
+        guard let runner = _hookRunner, runner.hasHandlers("agent_before_settle") else {
+            return agent.hasQueuedMessages()
+        }
+        state.withLock {
+            $0.isBeforeSettle = true
+            $0.abortDuringBeforeSettle = false
+        }
+        defer { state.withLock { $0.isBeforeSettle = false } }
+        do {
+            let event = AgentBeforeSettleBoundaryBaseEvent(outcome: state.withLock { $0.lastActivityOutcome })
+            let result = try await runner.emitBoundary(event) { [weak self] drafts in
+                guard let self else { throw AgentSessionError.invalidBoundaryDraft }
+                return try self.boundaryPreview(drafts, boundary: "agent_before_settle")
+            }
+            try commitBoundaryDrafts(result.entries)
+            flushPendingCustomMessages()
+            guard !state.withLock({ $0.abortDuringBeforeSettle || $0.agentRunAbortRequested }) else { return false }
+            let shouldContinue = result.shouldContinue || agent.hasQueuedMessages()
+            let finalPreview = try boundaryPreview([], boundary: "agent_before_settle")
+            if shouldContinue && !finalPreview.canContinue {
+                if result.shouldContinue { reportBoundaryError("agent_before_settle", "Continuation has no runnable model context") }
+                return false
+            }
+            return shouldContinue
+        } catch {
+            reportBoundaryError("agent_before_settle", error.localizedDescription)
+            return false
+        }
+    }
+
     private func emitAgentSettledIfNeeded() async {
         // `agent_end` may schedule an automatic retry, compaction, or queued
         // continuation. Keep the run active until that follow-up chain finishes.
@@ -965,16 +1199,46 @@ public final class AgentSession: Sendable {
             await idleWaiter.cancelSettlement(generation)
             return
         }
+        if await runBeforeSettleBoundary() {
+            await idleWaiter.cancelSettlement(generation)
+            try? await agent.continue()
+            Task { [weak self] in await self?.emitAgentSettledIfNeeded() }
+            return
+        }
+        state.withLock { $0.isEmittingAgentSettled = true }
+        await cacheWarmer?.onAgentSettled()
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(AgentSettledEvent())
         }
         emit(.agentSettled)
+        let deferred = state.withLock { state in
+            state.isEmittingAgentSettled = false
+            let actions = state.deferredSettledActions
+            state.deferredSettledActions.removeAll()
+            return actions
+        }
         await idleWaiter.resolveWaiters(generation)
+        for action in deferred { await action() }
+    }
+
+    /// Current warming economics and timer state for `/session` and footers.
+    public func cacheWarmingStatus() async -> CacheWarmingStatus? {
+        await cacheWarmer?.status()
+    }
+
+    public func setCacheWarmingMode(_ mode: CacheWarmingMode) async {
+        settingsManager.setCacheWarmingMode(mode)
+        await cacheWarmer?.onModeChanged()
+    }
+
+    public func emitCacheWarmed(_ entry: UsageEntry) {
+        emit(.entryAppended(.usage(entry)))
     }
 
     private func runUntilSettled<T: Sendable>(
         _ operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
+        state.withLock { $0.agentRunAbortRequested = false }
         await idleWaiter.beginRun()
         defer {
             Task { [weak self] in
@@ -996,6 +1260,11 @@ public final class AgentSession: Sendable {
     }
 
     private func handleAgentEvent(_ event: AgentEvent) {
+        if case .agentStart = event { turnIndex = 0 }
+        if case .turnEnd(_, let toolResults) = event {
+            state.withLock { $0.lastAssistantToolResults = toolResults }
+            turnIndex += 1
+        }
         if case .messageStart(let message) = event, message.role == "user" {
             let text = extractUserMessageText(message)
             if let idx = steeringMessages.firstIndex(of: text) {
@@ -1006,9 +1275,10 @@ public final class AgentSession: Sendable {
         }
 
         if case .messageEnd(let message) = event {
+            var persistedEntryId: String?
             switch message {
-            case .user, .assistant, .toolResult:
-                _ = sessionManager.appendMessage(message)
+            case .system, .user, .assistant, .toolResult:
+                persistedEntryId = sessionManager.appendMessage(message)
             case .custom(let custom):
                 if custom.role == "hookMessage" {
                     if let payload = custom.payload?.value as? [String: Any],
@@ -1023,11 +1293,15 @@ public final class AgentSession: Sendable {
                         _ = sessionManager.appendCustomMessage(customType, content, display)
                     }
                 } else {
-                    _ = sessionManager.appendMessage(message)
+                    persistedEntryId = sessionManager.appendMessage(message)
                 }
             }
 
             if case .assistant(let assistant) = message {
+                state.withLock {
+                    $0.lastAssistantEntryId = persistedEntryId
+                    $0.lastToolResultEntryIds = [:]
+                }
                 lastAssistantMessage = assistant
                 if assistant.stopReason != .error, assistant.stopReason != .length {
                     overflowRecoveryAttempted = false
@@ -1046,6 +1320,8 @@ public final class AgentSession: Sendable {
                 case .pending, .error, .aborted, .deferred:
                     break
                 }
+            } else if case .toolResult(let result) = message, let persistedEntryId {
+                state.withLock { $0.lastToolResultEntryIds[result.toolCallId] = persistedEntryId }
             }
         }
 
@@ -1065,9 +1341,9 @@ public final class AgentSession: Sendable {
                 let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
                 enqueueOnEventQueue { _ = await hookRunner.emit(TurnStartEvent(turnIndex: currentIndex, timestamp: timestamp)) }
             case .turnEnd(let message, let toolResults):
-                let currentIndex = self.turnIndex
-                self.turnIndex += 1
-                enqueueOnEventQueue { _ = await hookRunner.emit(TurnEndEvent(turnIndex: currentIndex, message: message, toolResults: toolResults)) }
+                // Actionable turn_end is dispatched by Agent.finishTurn, before this notification.
+                _ = message
+                _ = toolResults
             case .messageStart(let message):
                 enqueueOnEventQueue { _ = await hookRunner.emit(MessageStartEvent(message: message)) }
             case .messageUpdate(let message, let assistantMessageEvent):
@@ -1116,6 +1392,14 @@ public final class AgentSession: Sendable {
                     let didRetry = await self.handleRetryableError(lastAssistantMessage)
                     if didRetry { return }
                 }
+                if lastAssistantMessage.stopReason == .error, self.retryAttempt > 0 {
+                    let attempt = self.retryAttempt
+                    self.retryAttempt = 0
+                    self.retryAbort = nil
+                    self.retryTask = nil
+                    self.emit(.autoRetryEnd(success: false, attempt: attempt,
+                                            finalError: lastAssistantMessage.errorMessage))
+                }
                 await self.checkAutoCompaction(lastAssistantMessage)
             }
         }
@@ -1127,7 +1411,30 @@ public final class AgentSession: Sendable {
         return isRetryableAssistantError(message)
     }
 
+    /// Keep an abandoned attempt in the session log while removing it from later model requests.
+    private func omitRecoveryAttempt(_ message: AssistantMessage, toolResults: [ToolResultMessage] = []) throws {
+        let ids = try state.withLock { state -> [String] in
+            guard let assistantId = state.lastAssistantEntryId else { throw AgentSessionError.recoveryEntryMissing }
+            var ids = [assistantId]
+            for result in toolResults {
+                guard let id = state.lastToolResultEntryIds[result.toolCallId] else {
+                    throw AgentSessionError.recoveryEntryMissing
+                }
+                ids.append(id)
+            }
+            return ids
+        }
+        var appended: [SessionEntry] = []
+        for id in ids {
+            let editId = try sessionManager.appendContextEdit(id, nil)
+            if let entry = sessionManager.getEntry(editId) { appended.append(entry) }
+        }
+        refreshContext()
+        for entry in appended { emit(.entryAppended(entry)) }
+    }
+
     private func handleRetryableError(_ message: AssistantMessage) async -> Bool {
+        guard !state.withLock({ $0.agentRunAbortRequested }) else { return false }
         let settings = settingsManager.getRetrySettings()
         guard settings.enabled ?? true else { return false }
 
@@ -1141,8 +1448,12 @@ public final class AgentSession: Sendable {
             return false
         }
 
-        let delayBase = settings.baseDelayMs ?? 2000
-        let delayMs = delayBase * (1 << max(0, retryAttempt - 1))
+        let delayMs = Int(retryDelayMs(policy: RetryPolicy(
+            enabled: true,
+            maxRetries: settings.maxRetries ?? 3,
+            baseDelayMs: Double(settings.baseDelayMs ?? 2000),
+            maxAgentDelayMs: Double(settings.maxAgentDelayMs ?? 60_000)
+        ), attempt: retryAttempt))
 
         emit(.autoRetryStart(
             attempt: retryAttempt,
@@ -1151,11 +1462,11 @@ public final class AgentSession: Sendable {
             errorMessage: message.errorMessage ?? "Unknown error"
         ))
 
-        // Atomically drop the errored assistant so the retry's `continue()` can
-        // resume. `message` is that errored assistant (it passed `isRetryableError`,
-        // i.e. `stopReason == .error`), so this pops the same trailing message the
-        // previous get-then-set did — but as one locked transaction with no race.
-        agent.dropTrailingErroredAssistant()
+        do { try omitRecoveryAttempt(message) } catch {
+            emit(.autoRetryEnd(success: false, attempt: retryAttempt, finalError: error.localizedDescription))
+            retryAttempt = 0
+            return false
+        }
 
         let token = CancellationToken()
         retryAbort = token
@@ -1175,6 +1486,7 @@ public final class AgentSession: Sendable {
     /// error responses (4D-4) and sets `overflowRecoveryAttempted` so stale
     /// pre-compaction usage doesn't retrigger (4D-3).
     private func checkAutoCompaction(_ message: AssistantMessage) async {
+        guard !state.withLock({ $0.agentRunAbortRequested }) else { return }
         guard autoCompactionEnabled, !isCompactingInternal else { return }
         switch message.stopReason {
         case .pending, .aborted, .deferred:
@@ -1192,30 +1504,55 @@ public final class AgentSession: Sendable {
 
         let currentModel = agent.state.model
         let sameModel = message.provider == currentModel.provider && message.model == currentModel.id
-        let recoverableLength = sameModel && isRecoverableLength(
+        let branch = sessionManager.getBranch()
+        let assistantId = state.withLock { $0.lastAssistantEntryId }
+        let projection = sessionManager.buildSessionProjection()
+        let assistantProjected = projection.entries.contains { entry in
+            entry.sourceEntry.id == assistantId && entry.messages.contains { $0.role == "assistant" }
+        }
+        let assistantIndex = branch.firstIndex { $0.id == assistantId }
+        let afterAssistant = assistantIndex.map { Array(branch.dropFirst($0 + 1)) } ?? []
+        let hasPostAssistantEdit = afterAssistant.contains { $0.type == "context_edit" }
+        let latestAssistantEdit = afterAssistant.reversed().compactMap { entry -> ContextEditEntry? in
+            guard case .contextEdit(let edit) = entry, edit.targetId == assistantId else { return nil }
+            return edit
+        }.first
+        let retainedForExplicitRecovery = !afterAssistant.contains { $0.type == "compaction" } &&
+            latestAssistantEdit?.replacement != nil || (latestAssistantEdit == nil && assistantProjected)
+        let explicitOverflow = message.stopReason == .error && isContextOverflow(message)
+        let contextOverflow = sameModel &&
+            ((explicitOverflow && retainedForExplicitRecovery) ||
+             (assistantProjected && !hasPostAssistantEdit && isContextOverflow(message, contextWindow: contextWindow)))
+        let recoverableLength = sameModel && assistantProjected && isRecoverableLength(
             message,
             desiredMaxOutput: currentModel.maxTokens
         )
 
         // Explicit/silent overflow and a length stop below the intended output
         // limit both get one bounded compact-and-retry recovery attempt.
-        if sameModel && (isContextOverflow(message, contextWindow: contextWindow) || recoverableLength) {
+        if contextOverflow || recoverableLength {
             let willRetry = message.stopReason != .stop
             if willRetry {
                 guard !overflowRecoveryAttempted else {
-                    await emitCompactionFailure(reason: .overflow, error: isContextOverflow(message, contextWindow: contextWindow) ? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model." : "Truncated response recovery failed after one compact-and-retry attempt.", aborted: false, willRetry: false)
+                    await emitCompactionFailure(reason: .overflow, error: contextOverflow ? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model." : "Truncated response recovery failed after one compact-and-retry attempt.", aborted: false, willRetry: false)
                     return
                 }
                 overflowRecoveryAttempted = true
-                agent.dropTrailingRecoverableAssistant()
+                do {
+                    try omitRecoveryAttempt(message, toolResults: state.withLock { $0.lastAssistantToolResults })
+                } catch {
+                    await emitCompactionFailure(reason: .overflow, error: error.localizedDescription, aborted: false, willRetry: false)
+                    return
+                }
             }
             await runAutoCompaction(reason: .overflow, willRetry: willRetry)
             return
         }
 
         let usageTokens = calculateContextTokens(message.usage)
-        let thresholdTokens = message.stopReason != .error && usageTokens > 0 ? usageTokens : estimatedContextTokens(agent.state.messages)
-        if shouldCompact(thresholdTokens, contextWindow, settingsManager.getCompactionSettings()) {
+        let thresholdTokens = !hasPostAssistantEdit && message.stopReason != .error && usageTokens > 0
+            ? usageTokens : estimatedContextTokens(projection.messages)
+        if shouldCompact(thresholdTokens, contextWindow, settingsManager.getCompactionSettings(model: currentModel)) {
             guard !overflowRecoveryAttempted else { return }
             await runAutoCompaction(reason: .threshold, willRetry: false)
         }
@@ -1276,11 +1613,18 @@ public final class AgentSession: Sendable {
         willRetry: Bool,
         compactBlock: (() async throws -> CompactionResult?)? = nil
     ) async {
+        guard !state.withLock({ $0.agentRunAbortRequested }) else { return }
         guard let compactionToken = beginCompaction() else { return }
         await idleWaiter.beginRun()
         defer { Task { [weak self] in await self?.emitAgentSettledIfNeeded() } }
 
         emit(.autoCompactionStart(reason: reason))
+        if compactionToken.isCancelled {
+            _ = finishCompaction(compactionToken)
+            emit(.autoCompactionEnd(result: nil, aborted: true, willRetry: false))
+            await emitCompactionFailure(reason: SessionCompactionReason(rawValue: reason.rawValue) ?? .threshold, error: nil, aborted: true, willRetry: false)
+            return
+        }
 
         var result: CompactionResult?
         var aborted = false
@@ -1313,9 +1657,6 @@ public final class AgentSession: Sendable {
         guard result != nil, !aborted else { return }
 
         if willRetry {
-            // Rebuilding context from persisted entries can restore the failed or
-            // truncated assistant that was removed before compaction.
-            agent.dropTrailingRecoverableAssistant()
             try? await agent.continue()
             return
         }
@@ -1329,16 +1670,14 @@ public final class AgentSession: Sendable {
         do {
             try await sleepWithCancellation(delayMs: delayMs, token: token)
         } catch {
-            let shouldEmit = retryAttempt > 0
-            retryAttempt = 0
-            retryAbort = nil
-            retryTask = nil
-            if shouldEmit {
-                emit(.autoRetryEnd(success: false, attempt: attempt, finalError: "Retry cancelled"))
-            }
+            finishCancelledRetry(attempt: attempt)
             return
         }
 
+        guard !token.isCancelled, !state.withLock({ $0.agentRunAbortRequested }) else {
+            finishCancelledRetry(attempt: attempt)
+            return
+        }
         retryAbort = nil
         do {
             try await agent.continue()
@@ -1439,12 +1778,15 @@ public final class AgentSession: Sendable {
         return extensionCommands + prompts + skills
     }
 
-    /// Build the effective system prompt by appending any registered tool prompt snippets.
-    private func effectiveSystemPrompt(_ base: String) -> String {
-        let snippets = toolPromptSnippets
-        guard !snippets.isEmpty else { return base }
-        let combined = snippets.values.sorted().joined(separator: "\n\n")
-        return base + "\n\n" + combined
+    private func refreshPromptResources() {
+        let loader = resourceLoader
+        state.withLock { state in
+            state.systemPromptOptions.customPrompt = loader.getSystemPrompt()
+            let appends = loader.getAppendSystemPrompt()
+            state.systemPromptOptions.appendSystemPrompt = appends.isEmpty ? nil : appends.joined(separator: "\n\n")
+            state.systemPromptOptions.contextFiles = loader.getAgentsFiles()
+            state.systemPromptOptions.skills = loader.getSkills().skills
+        }
     }
 
     public func setActiveToolsByName(_ toolNames: [String]) {
@@ -1458,10 +1800,7 @@ public final class AgentSession: Sendable {
         }
         agent.tools = tools
 
-        if let rebuildSystemPrompt {
-            baseSystemPrompt = rebuildSystemPrompt(validNames)
-            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
-        }
+        state.withLock { $0.systemPromptOptions.selectedTools = validNames.compactMap(ToolName.init(rawValue:)) }
     }
 
     /// Apply a tool registered after session creation. This is used by MCP
@@ -1472,6 +1811,7 @@ public final class AgentSession: Sendable {
         var registry = toolRegistry
         registry[wrapped.name] = wrapped
         toolRegistry = registry
+        state.withLock { $0.toolPromptGuidelines[tool.name] = tool.promptGuidelines }
 
         var active = agent.tools
         if let index = active.firstIndex(where: { $0.name == wrapped.name }) {
@@ -1487,25 +1827,20 @@ public final class AgentSession: Sendable {
         var registry = toolRegistry
         registry.removeValue(forKey: name)
         toolRegistry = registry
+        state.withLock { $0.toolPromptGuidelines[name] = nil }
         agent.tools.removeAll { $0.name == name }
         refreshSystemPromptForActiveTools()
     }
 
     private func refreshSystemPromptForActiveTools() {
-        guard let rebuildSystemPrompt else { return }
         let activeNames = getActiveToolNames()
-        baseSystemPrompt = rebuildSystemPrompt(activeNames)
-        agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
+        state.withLock { $0.systemPromptOptions.selectedTools = activeNames.compactMap(ToolName.init(rawValue:)) }
     }
 
     public func reload() async {
         await resourceLoader.reload()
         promptTemplatesInternal = resourceLoader.getPrompts().prompts
-        if let rebuildSystemPrompt {
-            let activeToolNames = getActiveToolNames()
-            baseSystemPrompt = rebuildSystemPrompt(activeToolNames)
-            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
-        }
+        refreshPromptResources()
     }
 
     private func hasAuthForModel(_ model: Model) async -> Bool {
@@ -1566,6 +1901,10 @@ public final class AgentSession: Sendable {
             let removedToolNames = oldExtensionToolNames.subtracting(newExtensionToolNames)
 
             if !removedToolNames.isEmpty || !newExtensionTools.isEmpty {
+                state.withLock { state in
+                    for name in removedToolNames { state.toolPromptGuidelines[name] = nil }
+                    for tool in newExtensionTools { state.toolPromptGuidelines[tool.name] = tool.promptGuidelines }
+                }
                 let wrappedNew = wrap(newExtensionTools)
                 var registry = toolRegistry
                 for name in removedToolNames {
@@ -1622,11 +1961,7 @@ public final class AgentSession: Sendable {
         resourceLoader.extendResources(extensionResources)
         promptTemplatesInternal = resourceLoader.getPrompts().prompts
 
-        if let rebuildSystemPrompt {
-            let activeToolNames = getActiveToolNames()
-            baseSystemPrompt = rebuildSystemPrompt(activeToolNames)
-            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
-        }
+        refreshPromptResources()
     }
 
     private func preparePromptMessages(_ text: String, options: PromptOptions? = nil) async throws -> [AgentMessage] {
@@ -1652,6 +1987,8 @@ public final class AgentSession: Sendable {
             expandPromptTemplates: options?.expandPromptTemplates ?? true
         )
         var messages: [AgentMessage] = []
+        forcedRequestPrompt = state.withLock { $0.systemPromptOptions.forceSystemPrompt }
+        state.withLock { $0.runSystemPromptAppend = nil }
         if !pendingNextTurnMessages.isEmpty {
             for message in pendingNextTurnMessages {
                 messages.append(makeHookAgentMessage(message))
@@ -1675,13 +2012,28 @@ public final class AgentSession: Sendable {
                     }
                 }
                 systemPromptAppend = result.systemPromptAppend
+                forcedRequestPrompt = result.systemPrompt
             }
         }
         if let systemPromptAppend, !systemPromptAppend.isEmpty {
-            agent.systemPrompt = effectiveSystemPrompt("\(baseSystemPrompt)\n\n\(systemPromptAppend)")
-        } else {
-            agent.systemPrompt = effectiveSystemPrompt(baseSystemPrompt)
+            state.withLock { $0.runSystemPromptAppend = systemPromptAppend }
         }
+        // The hook may select a different model. Apply its image profile only now.
+        if let index = messages.firstIndex(where: { $0.role == "user" }) {
+            var omitted = 0
+            let images = settingsManager.getAutoResizeImages() ? options?.images?.compactMap { image -> ImageContent? in
+                let limits = ImageResizeOptions(modelProfile: agent.state.model.inputLimits?.images?.resize)
+                let resized = resizeImage(image, options: limits)
+                guard imageFitsResizeLimits(resized, options: limits) else {
+                    omitted += 1
+                    return nil
+                }
+                return ImageContent(data: resized.data, mimeType: resized.mimeType)
+            } : options?.images
+            let text = omitted == 0 ? expandedText : expandedText + "\n[\(omitted) image(s) omitted: could not be resized below the inline image size limit.]"
+            messages[index] = buildUserMessage(text: text, images: images)
+        }
+        if let update = try preparePromptPatch() { messages.insert(.system(update), at: 0) }
         return messages
     }
 
@@ -1690,6 +2042,14 @@ public final class AgentSession: Sendable {
     /// waiting for the whole assistant response while still surfacing immediate rejection.
     @discardableResult
     public func submitPrompt(_ text: String, options: PromptOptions? = nil) async throws -> Task<Void, Error> {
+        let deferred = state.withLock { state -> Bool in
+            guard state.isEmittingAgentSettled else { return false }
+            state.deferredSettledActions.append { [weak self] in
+                try? await self?.prompt(text, options: options)
+            }
+            return true
+        }
+        if deferred { return Task {} }
         if options?.expandPromptTemplates != false, text.hasPrefix("/"), let runner = _hookRunner {
             let parts = text.dropFirst().split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             if let name = parts.first, let command = runner.getCommand(String(name)) {
@@ -1713,7 +2073,12 @@ public final class AgentSession: Sendable {
             }
         }
 
-        let messages = try await preparePromptMessages(text, options: options)
+        guard let input = await processInput(text, images: options?.images,
+                                             source: options?.source ?? .interactive) else { return Task {} }
+        var processedOptions = options ?? PromptOptions()
+        processedOptions.images = input.images
+        let messages = try await preparePromptMessages(input.text, options: processedOptions)
+        state.withLock { $0.agentRunAbortRequested = false }
         await idleWaiter.beginRun()
         let task = Task { [weak self, agent] in
             defer {
@@ -1744,6 +2109,8 @@ public final class AgentSession: Sendable {
         if isStreaming {
             throw AgentSessionError.alreadyProcessingContinue
         }
+        forcedRequestPrompt = nil
+        state.withLock { $0.runSystemPromptAppend = nil }
         try await runUntilSettled { [agent] in
             try await agent.continue()
         }
@@ -1763,6 +2130,19 @@ public final class AgentSession: Sendable {
         return agent.dropTrailingErroredAssistant()
     }
 
+    private func processInput(_ text: String, images: [ImageContent]?, source: HookInputSource,
+                              behavior: HookInputStreamingBehavior? = nil) async -> (text: String, images: [ImageContent]?)? {
+        guard let runner = _hookRunner, runner.hasHandlers("input") else { return (text, images) }
+        let result = await runner.emitInput(InputEvent(text: text, images: images, source: source,
+                                                       streamingBehavior: isStreaming ? behavior : nil))
+        switch result {
+        case .continue: return (text, images)
+        case .transform(let transformed, let transformedImages): return (transformed, transformedImages ?? images)
+        case .handled: return nil
+        }
+    }
+
+    /// Compatibility entry point for callers that queue synchronously.
     public func steer(_ text: String) {
         let expandedText = expandPromptText(text)
         steeringMessages.append(expandedText)
@@ -1773,6 +2153,22 @@ public final class AgentSession: Sendable {
         let expandedText = expandPromptText(text)
         followUpMessages.append(expandedText)
         agent.followUp(buildUserMessage(text: expandedText, images: nil))
+    }
+
+    /// Queue RPC or interactive input after extension input handlers have processed it.
+    public func steer(_ text: String, images: [ImageContent]? = nil, source: HookInputSource) async {
+        guard let input = await processInput(text, images: images, source: source, behavior: .steer) else { return }
+        let expandedText = expandPromptText(input.text)
+        steeringMessages.append(expandedText)
+        agent.steer(buildUserMessage(text: expandedText, images: input.images))
+    }
+
+    /// Queue a follow-up after extension input handlers have processed it.
+    public func followUp(_ text: String, images: [ImageContent]? = nil, source: HookInputSource) async {
+        guard let input = await processInput(text, images: images, source: source, behavior: .followUp) else { return }
+        let expandedText = expandPromptText(input.text)
+        followUpMessages.append(expandedText)
+        agent.followUp(buildUserMessage(text: expandedText, images: input.images))
     }
 
     /// Queue immediately so a turn-end extension message participates in that turn's flush.
@@ -1787,6 +2183,14 @@ public final class AgentSession: Sendable {
     }
 
     private func runHookPrompt(_ prompt: AgentMessage) async throws {
+        let deferred = state.withLock { state -> Bool in
+            guard state.isEmittingAgentSettled else { return false }
+            state.deferredSettledActions.append { [weak self] in
+                try? await self?.runHookPrompt(prompt)
+            }
+            return true
+        }
+        if deferred { return }
         try await runUntilSettled { [agent] in try await agent.prompt(prompt) }
         let events = _agentEventQueue.withLock { $0 }
         await events?.value
@@ -1864,7 +2268,9 @@ public final class AgentSession: Sendable {
     }
 
     public func abort() async {
+        state.withLock { $0.agentRunAbortRequested = true }
         abortRetry()
+        finishCancelledRetry(attempt: retryAttempt)
         agent.abort()
         compactionAbort?.cancel()
         branchSummaryAbort?.cancel()
@@ -1977,6 +2383,14 @@ public final class AgentSession: Sendable {
     public func abortRetry() {
         retryAbort?.cancel()
         retryTask?.cancel()
+    }
+
+    private func finishCancelledRetry(attempt: Int) {
+        guard retryAttempt > 0 else { return }
+        retryAttempt = 0
+        retryAbort = nil
+        retryTask = nil
+        emit(.autoRetryEnd(success: false, attempt: attempt, finalError: "Retry cancelled"))
     }
 
     public func newSession(_ options: NewSessionOptions? = nil) async -> Bool {
@@ -2210,51 +2624,51 @@ public final class AgentSession: Sendable {
     }
 
     public func getSessionStats() -> SessionStats {
-        let state = agent.state
-        let userMessages = state.messages.filter { $0.role == "user" }.count
-        let assistantMessages = state.messages.filter { $0.role == "assistant" }.count
-        let toolResults = state.messages.filter { $0.role == "toolResult" }.count
-
+        var userMessages = 0
+        var assistantMessages = 0
+        var toolResults = 0
+        var totalMessages = 0
         var toolCalls = 0
         var totalInput = 0
         var totalOutput = 0
         var totalCacheRead = 0
         var totalCacheWrite = 0
         var totalCost: Double = 0
-
-        for message in state.messages {
-            if case .assistant(let assistant) = message {
-                toolCalls += assistant.content.filter {
-                    if case .toolCall = $0 { return true }
-                    return false
-                }.count
-                totalInput += assistant.usage.input
-                totalOutput += assistant.usage.output
-                totalCacheRead += assistant.usage.cacheRead
-                totalCacheWrite += assistant.usage.cacheWrite
-                totalCost += assistant.usage.cost.total
+        func add(_ usage: Usage) {
+            totalInput += usage.input
+            totalOutput += usage.output
+            totalCacheRead += usage.cacheRead
+            totalCacheWrite += usage.cacheWrite
+            totalCost += usage.cost.total
+        }
+        for entry in sessionManager.getEntries() {
+            switch entry {
+            case .usage(let usageEntry): add(usageEntry.usage)
+            case .branchSummary(let summary): if let usage = summary.usage { add(usage) }
+            case .compaction(let compaction): if let usage = compaction.usage { add(usage) }
+            case .message(let messageEntry):
+                totalMessages += 1
+                switch messageEntry.message {
+                case .user: userMessages += 1
+                case .toolResult(let result):
+                    toolResults += 1
+                    if let usage = result.usage { add(usage) }
+                case .assistant(let assistant):
+                    assistantMessages += 1
+                    toolCalls += assistant.content.filter { if case .toolCall = $0 { return true }; return false }.count
+                    add(assistant.usage)
+                default: break
+                }
+            default: break
             }
         }
-
-        let tokens = SessionStats.TokenStats(
-            input: totalInput,
-            output: totalOutput,
-            cacheRead: totalCacheRead,
-            cacheWrite: totalCacheWrite,
-            total: totalInput + totalOutput + totalCacheRead + totalCacheWrite
-        )
-        return SessionStats(
-            sessionFile: sessionFile,
-            sessionId: sessionId,
-            userMessages: userMessages,
-            assistantMessages: assistantMessages,
-            toolCalls: toolCalls,
-            toolResults: toolResults,
-            totalMessages: state.messages.count,
-            tokens: tokens,
-            cost: totalCost,
-            contextUsage: getContextUsage()
-        )
+        let tokens = SessionStats.TokenStats(input: totalInput, output: totalOutput,
+            cacheRead: totalCacheRead, cacheWrite: totalCacheWrite,
+            total: totalInput + totalOutput + totalCacheRead + totalCacheWrite)
+        return SessionStats(sessionFile: sessionFile, sessionId: sessionId,
+            userMessages: userMessages, assistantMessages: assistantMessages, toolCalls: toolCalls,
+            toolResults: toolResults, totalMessages: totalMessages, tokens: tokens, cost: totalCost,
+            contextUsage: getContextUsage())
     }
 
     /// v0.70.0: token-budget usage relative to the active model's context window.
@@ -2413,6 +2827,7 @@ public final class AgentSession: Sendable {
         replaceInstructions: Bool? = nil,
         label: String? = nil
     ) async -> (editorText: String?, cancelled: Bool, aborted: Bool?, summaryEntry: BranchSummaryEntry?) {
+        guard !isStreaming, !isCompacting else { return (nil, true, nil, nil) }
         let oldLeafId = sessionManager.getLeafId()
         if targetId == oldLeafId {
             return (nil, false, nil, nil)
@@ -2593,7 +3008,8 @@ public final class AgentSession: Sendable {
 
     private var summaryRetryPolicy: RetryPolicy {
         let settings = settingsManager.getRetrySettings()
-        return RetryPolicy(enabled: settings.enabled ?? true, maxRetries: settings.maxRetries ?? 3, baseDelayMs: Double(settings.baseDelayMs ?? 2000))
+        return RetryPolicy(enabled: settings.enabled ?? true, maxRetries: settings.maxRetries ?? 3,
+            baseDelayMs: Double(settings.baseDelayMs ?? 2000), maxAgentDelayMs: Double(settings.maxAgentDelayMs ?? 60_000))
     }
 
     private var summaryRetryCallbacks: RetryCallbacks {
@@ -2610,7 +3026,8 @@ public final class AgentSession: Sendable {
     ) async throws -> CompactionResult {
 
         let model = agent.state.model
-        let request = await resolveModelRequestWithHooks(model)
+        let request = await resolveModelRequestWithHooks(model, signal: compactionToken)
+        if compactionToken.isCancelled { throw AgentSessionError.compactionCancelled }
         let apiKey = request.auth.apiKey
         let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
         if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false && !hasHeaders {
@@ -2618,7 +3035,7 @@ public final class AgentSession: Sendable {
         }
 
         let pathEntries = sessionManager.getBranch()
-        let settings = settingsManager.getCompactionSettings()
+        let settings = settingsManager.getCompactionSettings(model: agent.state.model)
         guard let preparation = prepareCompaction(pathEntries, settings) else {
             throw AgentSessionError.nothingToCompact
         }
@@ -2694,8 +3111,8 @@ public final class AgentSession: Sendable {
         }
     }
 
-    private func resolveModelRequestWithHooks(_ model: Model) async -> ResolvedModelRequest {
-        let request = await modelRegistry.resolveModelRequest(model)
+    private func resolveModelRequestWithHooks(_ model: Model, signal: CancellationToken? = nil) async -> ResolvedModelRequest {
+        let request = await modelRegistry.resolveModelRequest(model, signal: signal)
         guard let hookRunner = _hookRunner,
               hookRunner.hasHandlers("before_provider_headers") else {
             return request
@@ -2743,10 +3160,24 @@ public final class AgentSession: Sendable {
         }
     }
 
+    public func refreshContext() {
+        refreshContext(sessionManager.buildSessionProjection())
+    }
+
+    private func refreshContext(_ projection: SessionProjection) {
+        agent.messages = projection.messages
+    }
+
     private func syncAgentContext() async {
-        let context = sessionManager.buildSessionContext()
+        let context = sessionManager.buildSessionProjection()
         let previousModel = agent.state.model
-        agent.messages = context.messages
+        refreshContext(context)
+        if let current = getCurrentSystemMessage(context.messages) {
+            let names = (current.toolsAdded ?? []).map(\.name)
+            let registry = toolRegistry
+            agent.tools = names.compactMap { registry[$0] }
+            state.withLock { $0.systemPromptOptions.selectedTools = names.compactMap(ToolName.init(rawValue:)) }
+        }
         if let modelInfo = context.model {
             if let model = modelRegistry.find(modelInfo.provider, modelInfo.modelId) {
                 agent.model = model

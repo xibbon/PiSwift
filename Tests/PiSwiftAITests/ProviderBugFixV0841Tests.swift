@@ -63,7 +63,7 @@ private func workOrderModel(
     let model = workOrderModel(api: .anthropicMessages, provider: "anthropic-test", id: "claude-test")
     let result = await streamAnthropic(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: AnthropicOptions(apiKey: "test-key", httpClient: client)
     ).result()
 
@@ -183,7 +183,7 @@ private func workOrderModel(
     let model = workOrderModel(api: .openAICompletions, provider: "compatible", id: "test")
     let result = await streamOpenAICompletions(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: OpenAICompletionsOptions(apiKey: "key", httpClient: client)
     ).result()
     let tool = result.content.compactMap { if case .toolCall(let tool) = $0 { return tool }; return nil }.first

@@ -62,6 +62,8 @@ public func serializeConversation(_ messages: [Message]) -> String {
 
     for message in messages {
         switch message {
+        case .system:
+            continue
         case .user(let user):
             switch user.content {
             case .text(let text):

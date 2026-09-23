@@ -138,6 +138,16 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
         output: [.image, .text],
         cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0, cacheWrite: 0)
     ),
+    "inclusionai/ming-image-0.1-design": ImagesModel(
+        id: "inclusionai/ming-image-0.1-design",
+        name: "inclusionAI: Ming Image 0.1 Design",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
     "krea/krea-2-large": ImagesModel(
         id: "krea/krea-2-large",
         name: "Krea: Krea 2 Large",
@@ -180,7 +190,7 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
     ),
     "microsoft/mai-image-2.5": ImagesModel(
         id: "microsoft/mai-image-2.5",
-        name: "Microsoft: MAI-Image-2.5",
+        name: "Microsoft AI: MAI-Image-2.5",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -190,13 +200,33 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
     ),
     "microsoft/mai-image-2.5-pro": ImagesModel(
         id: "microsoft/mai-image-2.5-pro",
-        name: "Microsoft: MAI-Image-2.5 Pro",
+        name: "Microsoft AI: MAI-Image-2.5 Pro",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
         cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "microsoft/mai-image-2.6": ImagesModel(
+        id: "microsoft/mai-image-2.6",
+        name: "Microsoft AI: MAI-Image-2.6",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "microsoft/mai-image-2.6-flash": ImagesModel(
+        id: "microsoft/mai-image-2.6-flash",
+        name: "Microsoft AI: MAI-Image-2.6 Flash",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 1.75, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
     "openai/gpt-5-image": ImagesModel(
         id: "openai/gpt-5-image",
@@ -251,6 +281,26 @@ private let providerModels_image_openrouter: [String: ImagesModel] = [
     "openai/gpt-image-2": ImagesModel(
         id: "openai/gpt-image-2",
         name: "OpenAI: GPT Image 2",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0)
+    ),
+    "openai/gpt-image-2.5-flare": ImagesModel(
+        id: "openai/gpt-image-2.5-flare",
+        name: "OpenAI: GPT Image 2.5 Flare",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0)
+    ),
+    "openai/gpt-image-2.5-sunburst": ImagesModel(
+        id: "openai/gpt-image-2.5-sunburst",
+        name: "OpenAI: GPT Image 2.5 Sunburst",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",

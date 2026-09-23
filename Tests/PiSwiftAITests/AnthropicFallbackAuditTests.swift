@@ -62,7 +62,7 @@ private func anthropicAuditResult(_ client: AnthropicAuditHTTP, model: Model? = 
     options.apiKey = options.apiKey ?? "fixture-key"
     options.httpClient = client
     return await streamAnthropic(model: model ?? anthropicAuditModel(),
-        context: context ?? Context(messages: [.user(UserMessage(content: .text("hello")))]), options: options).result()
+        context: normalizeContext(context ?? Context(messages: [.user(UserMessage(content: .text("hello")))])), options: options).result()
 }
 
 @Test(arguments: ["served-model", "foreign-model", "unknown-model", "requested-model"])
@@ -70,7 +70,9 @@ func anthropicServingModelControlsOutputAndMatchingFallbackCosts(_ serving: Stri
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents(serving: serving))
     let result = await anthropicAuditResult(client)
     #expect(result.stopReason == .stop)
-    #expect(result.model == serving)
+    // A4 item 10: a relay's serving ID is diagnostic; signed replay keeps the requested ID.
+    #expect(result.model == "requested-model")
+    #expect(result.responseModel == (serving == "requested-model" ? nil : serving))
     #expect(result.responseId == "msg-audit")
     #expect(result.content.count == 1)
     let multiplier: Double = serving == "served-model" ? 10 : 1
@@ -86,7 +88,9 @@ func anthropicServingModelControlsOutputAndMatchingFallbackCosts(_ serving: Stri
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents(errorAfterStart: true))
     let result = await anthropicAuditResult(client)
     #expect(result.stopReason == .error)
-    #expect(result.model == "served-model")
+    // A4 item 10: fallback pricing applies without replacing the requested model ID.
+    #expect(result.model == "requested-model")
+    #expect(result.responseModel == "served-model")
     #expect(result.usage.cost.input == 10)
     #expect(result.usage.cost.cacheRead == 90)
     #expect(result.usage.cost.cacheWrite == 160)

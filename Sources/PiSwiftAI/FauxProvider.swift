@@ -35,7 +35,7 @@ public struct FauxState: Sendable {
     public var callCount: Int = 0
 }
 
-public typealias FauxResponseFactory = @Sendable (Context, SimpleStreamOptions?, FauxState, Model) async -> AssistantMessage
+public typealias FauxResponseFactory = @Sendable (TranscriptContext, SimpleStreamOptions?, FauxState, Model) async -> AssistantMessage
 
 public enum FauxResponseStep: Sendable {
     case message(AssistantMessage)
@@ -225,7 +225,7 @@ private func toSimpleOptions(_ options: StreamOptions) -> SimpleStreamOptions {
 
 private func fauxStream(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     registration: FauxProviderRegistration,
     simpleOptions: SimpleStreamOptions?
 ) -> AssistantMessageEventStream {
@@ -259,6 +259,7 @@ private func cloneFauxMessage(_ message: AssistantMessage, api: Api, provider: S
         api: api,
         provider: provider,
         model: modelId,
+        responseModel: message.responseModel,
         responseId: message.responseId,
         usage: message.usage,
         stopReason: message.stopReason,
@@ -284,7 +285,7 @@ private func createFauxErrorMessage(_ description: String, api: Api, provider: S
 
 private func withFauxUsageEstimate(
     message: AssistantMessage,
-    context: Context,
+    context: TranscriptContext,
     options: SimpleStreamOptions?,
     registration: FauxProviderRegistration
 ) -> AssistantMessage {
@@ -333,30 +334,27 @@ private func commonPrefixLength(_ a: String, _ b: String) -> Int {
     return i
 }
 
-private func serializeFauxContext(_ context: Context) -> String {
-    var parts: [String] = []
-    if let systemPrompt = context.systemPrompt, !systemPrompt.isEmpty {
-        parts.append("system:\(systemPrompt)")
-    }
-    for message in context.messages {
-        parts.append("\(message.role):\(messageToFauxText(message))")
-    }
-    if let tools = context.tools, !tools.isEmpty {
-        if let data = try? JSONSerialization.data(withJSONObject: tools.map { tool in
-            [
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters.mapValues { $0.value },
-            ] as [String: Any]
-        }, options: []), let str = String(data: data, encoding: .utf8) {
-            parts.append("tools:\(str)")
+func serializeFauxContext(_ context: TranscriptContext) -> String {
+    context.messages.map { message in
+        if case .system(let system) = message {
+            var lines: [String] = []
+            let prompt = getSystemMessageText(system)
+            if !prompt.isEmpty { lines.append(prompt) }
+            for removed in system.toolsRemoved ?? [] {
+                lines.append("tool-:\(OrderedJSON.object([("name", .string(removed.name))]).serialized(escapeSlashes: false))")
+            }
+            if case .array(let declarations)? = systemMessageToOrderedJSON(system)["toolsAdded"] {
+                lines.append(contentsOf: declarations.map { "tool+:\($0.serialized(escapeSlashes: false))" })
+            }
+            return "system:\(lines.joined(separator: "\n"))"
         }
-    }
-    return parts.joined(separator: "\n\n")
+        return "\(message.role):\(messageToFauxText(message))"
+    }.joined(separator: "\n\n")
 }
 
 private func messageToFauxText(_ message: Message) -> String {
     switch message {
+    case .system(let system): return getSystemMessageText(system)
     case .user(let user):
         switch user.content {
         case .text(let text): return text
@@ -438,6 +436,7 @@ private func streamFauxWithDeltas(
         api: message.api,
         provider: message.provider,
         model: message.model,
+        responseModel: message.responseModel,
         responseId: message.responseId,
         usage: message.usage,
         stopReason: message.stopReason,

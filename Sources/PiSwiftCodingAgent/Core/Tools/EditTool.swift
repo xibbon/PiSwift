@@ -110,7 +110,7 @@ public func createEditTool(cwd: String) -> AgentTool {
     tool.executeWithContext = { id, params, signal, onUpdate, context in
         try await createEditTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
     }
-    tool.constrainedSampling = getExperimentalToolSampling()
+    tool.constrainedSampling = .jsonSchema(strict: .prefer)
     return tool
 }
 

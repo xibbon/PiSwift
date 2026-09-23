@@ -11,6 +11,9 @@ import PiSwiftCodingAgent
             "supportsAdditionalTools": true,
             "supportsMaxOutputTokens": false,
             "supportsMidConvoEffort": true,
+            "supportsMidConvoSystemMessages": true,
+            "supportsMidConvoToolAdditions": false,
+            "supportsMidConvoToolChanges": true,
             "thinkingTokenBudgetField": "thinking_budget",
             "supportsOpenAIGrammarTools": true,
             "supportsToolSearch": false,
@@ -19,11 +22,10 @@ import PiSwiftCodingAgent
             "forceAdaptiveThinking": true,
             "allowEmptySignature": false,
             "supportsStrictTools": true,
-            "supportsToolReferences": false,
-            "deferredToolsMode": "kimi",
             "sessionAffinityFormat": "openai-nosession",
             "chatTemplateKwargs": ["enable_thinking": true, "budget": 512],
             "chatTemplateArgs": ["effort": ["$var": "thinking.effort", "omitWhenOff": true]],
+            "allowedFallbackModels": [], // C57: models.json accepts Anthropic fallback metadata.
         ]
     }
 
@@ -40,7 +42,6 @@ import PiSwiftCodingAgent
     // The parser does not accept these existing fields. Keep that behavior.
     private static let excludedKeys: Set<String> = [
         "reasoningEffortMap", "zaiToolStream", "supportsExplicitPromptCacheMode",
-        "allowedFallbackModels",
     ]
 
     private static func declaredExtendedKeys() throws -> Set<String> {
@@ -110,6 +111,35 @@ import PiSwiftCodingAgent
         let parsed = try #require(try Self.parse([key: value]))
         let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(parsed)) as? [String: Any])
         #expect(NSDictionary(dictionary: encoded) == NSDictionary(dictionary: [key: value]))
+    }
+
+    @Test func midConversationCompatMergesForCustomAndBuiltInModels() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pi-mid-convo-compat-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = """
+        {"providers":{
+          "custom-mistral":{
+            "api":"mistral-conversations",
+            "baseUrl":"https://example.invalid/v1",
+            "compat":{"supportsMidConvoSystemMessages":true},
+            "models":[{"id":"custom","compat":{"supportsMidConvoSystemMessages":false}}]
+          },
+          "anthropic":{
+            "compat":{"supportsMidConvoSystemMessages":true,"supportsMidConvoToolChanges":true,"sessionAffinityFormat":"openrouter"},
+            "modelOverrides":{"claude-sonnet-4-6":{"compat":{"supportsMidConvoToolChanges":false}}}
+          }
+        }}
+        """
+        try Data(configuration.utf8).write(to: directory.appendingPathComponent("models.json"))
+        let registry = ModelRegistry(AuthStorage(":memory:"), directory.path)
+        let mistral = try #require(registry.find("custom-mistral", "custom")?.mistralConversationsCompat)
+        #expect(mistral.supportsMidConvoSystemMessages == false)
+        let anthropic = try #require(registry.find("anthropic", "claude-sonnet-4-6")?.compat)
+        #expect(anthropic.supportsMidConvoSystemMessages == true)
+        #expect(anthropic.supportsMidConvoToolChanges == false)
+        #expect(anthropic.sessionAffinityFormat == .openrouter)
     }
 
     @Test func emptyObjectReturnsNil() throws {

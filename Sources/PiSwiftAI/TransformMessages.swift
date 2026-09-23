@@ -9,7 +9,7 @@ public func transformMessages(
 
     let transformed = messages.map { msg -> Message in
         switch msg {
-        case .user:
+        case .system, .user:
             return msg
         case .toolResult(var toolResult):
             if let normalized = toolCallIdMap[toolResult.toolCallId], normalized != toolResult.toolCallId {
@@ -67,9 +67,10 @@ public func transformMessages(
     var result: [Message] = []
     var pendingToolCalls: [ToolCall] = []
     var existingToolResultIds = Set<String>()
+    var heldSystemMessages: [Message] = []
 
     func insertSyntheticToolResults() {
-        guard !pendingToolCalls.isEmpty else { return }
+        guard !pendingToolCalls.isEmpty || !heldSystemMessages.isEmpty else { return }
         for call in pendingToolCalls where !existingToolResultIds.contains(call.id) {
             let synthetic = ToolResultMessage(
                 toolCallId: call.id,
@@ -80,12 +81,17 @@ public func transformMessages(
             )
             result.append(.toolResult(synthetic))
         }
+        result.append(contentsOf: heldSystemMessages)
+        heldSystemMessages = []
         pendingToolCalls = []
         existingToolResultIds = Set<String>()
     }
 
     for msg in transformed {
         switch msg {
+        case .system:
+            if pendingToolCalls.isEmpty { result.append(msg) }
+            else { heldSystemMessages.append(msg) }
         case .assistant(let assistant):
             if !pendingToolCalls.isEmpty {
                 insertSyntheticToolResults()
@@ -125,7 +131,7 @@ public func transformMessages(
     // v0.69.0: synthesize trailing tool results when the transcript ends with unresolved
     // assistant tool calls (e.g., direct low-level history replay where the user terminated
     // mid-batch). Providers reject transcripts that end on unresolved tool_use blocks.
-    if !pendingToolCalls.isEmpty {
+    if !pendingToolCalls.isEmpty || !heldSystemMessages.isEmpty {
         insertSyntheticToolResults()
     }
 

@@ -80,6 +80,7 @@ public func usageToJSONObject(_ usage: Usage) -> [String: Any] {
         ],
     ]
     if let reasoning = usage.reasoning { result["reasoning"] = reasoning }
+    if let cacheWrite1h = usage.cacheWrite1h { result["cacheWrite1h"] = cacheWrite1h }
     return result
 }
 
@@ -89,7 +90,8 @@ public func usageFromJSONObject(_ dict: [String: Any]) -> Usage {
     let cacheRead = dict["cacheRead"] as? Int ?? 0
     let cacheWrite = dict["cacheWrite"] as? Int ?? 0
     let totalTokens = dict["totalTokens"] as? Int ?? (input + output + cacheRead + cacheWrite)
-    var usage = Usage(input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite, reasoning: dict["reasoning"] as? Int, totalTokens: totalTokens)
+    var usage = Usage(input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite,
+        cacheWrite1h: dict["cacheWrite1h"] as? Int, reasoning: dict["reasoning"] as? Int, totalTokens: totalTokens)
     if let cost = dict["cost"] as? [String: Any] {
         usage.cost.input = cost["input"] as? Double ?? 0
         usage.cost.output = cost["output"] as? Double ?? 0
@@ -108,6 +110,7 @@ public func assistantMessageToJSONObject(_ message: AssistantMessage) -> [String
         "timestamp": Int(message.timestamp),
     ]
     if let value = message.responseId { result["responseId"] = value }
+    if let value = message.responseModel { result["responseModel"] = value }
     if let value = message.providerThinkingLevel { result["providerThinkingLevel"] = value }
     if let value = message.endTurn { result["endTurn"] = value }
     if let value = message.errorMessage { result["errorMessage"] = value }
@@ -130,6 +133,7 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any]) -> AssistantMe
         content: (dict["content"] as? [[String: Any]] ?? []).compactMap(contentBlockFromJSONObject),
         api: Api(rawValue: dict["api"] as? String ?? "") ?? .openAIResponses,
         provider: dict["provider"] as? String ?? "", model: dict["model"] as? String ?? "",
+        responseModel: dict["responseModel"] as? String,
         responseId: dict["responseId"] as? String,
         usage: usageFromJSONObject(dict["usage"] as? [String: Any] ?? [:]),
         stopReason: StopReason(rawValue: dict["stopReason"] as? String ?? "stop") ?? .stop,

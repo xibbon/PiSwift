@@ -15,13 +15,11 @@ func resolveCacheRetention(_ cacheRetention: CacheRetention?) -> CacheRetention 
     return .short
 }
 
-/// v0.70.0: opt-out via `compat.supportsLongCacheRetention == false` for proxies that
-/// reject the `prompt_cache_retention` field. Long retention is on by default for direct
-/// `api.openai.com` requests when `cacheRetention == .long`.
+/// Long retention uses the legacy field unless a model supports explicit cache options.
 func getPromptCacheRetention(baseUrl: String, cacheRetention: CacheRetention, compat: OpenAICompat? = nil) -> String? {
     guard cacheRetention == .long else { return nil }
     if compat?.supportsLongCacheRetention == false { return nil }
-    guard baseUrl.contains("api.openai.com") else { return nil }
+    if compat?.supportsExplicitPromptCacheMode == true { return nil }
     return "24h"
 }
 
@@ -43,6 +41,7 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let promptCacheRetention: String?
     let sessionAffinityFormat: SessionAffinityFormat
     var supportsExplicitPromptCacheMode = false
+    var supportsLongCacheRetention = true
 
     func intercept(request: URLRequest) -> URLRequest {
         var updated = request
@@ -68,8 +67,14 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
             } else {
                 payload.removeValue(forKey: "prompt_cache_retention")
             }
-            if cacheRetention == .none, supportsExplicitPromptCacheMode {
-                payload["prompt_cache_options"] = ["mode": "explicit"]
+            if supportsExplicitPromptCacheMode {
+                if cacheRetention == .none {
+                    payload["prompt_cache_options"] = ["mode": "explicit"]
+                } else if cacheRetention == .long, supportsLongCacheRetention {
+                    payload["prompt_cache_options"] = ["ttl": "30m"]
+                } else {
+                    payload.removeValue(forKey: "prompt_cache_options")
+                }
             } else {
                 payload.removeValue(forKey: "prompt_cache_options")
             }
@@ -130,9 +135,12 @@ struct OpenAIResponsesInlineImagesMiddleware: OpenAIMiddleware {
 
 public func streamOpenAIResponses(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: OpenAIResponsesOptions
 ) -> AssistantMessageEventStream {
+    let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
+    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     if model.provider.lowercased() == "openai-codex" {
         let codexOptions = OpenAICodexResponsesOptions(
             temperature: options.temperature,
@@ -155,11 +163,16 @@ public func streamOpenAIResponses(
             websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
             toolChoice: options.toolChoice
         )
-        return streamOpenAICodexResponses(model: model, context: context, options: codexOptions)
+        return streamOpenAICodexResponses(model: model, context: transcript, options: codexOptions)
     }
 
     var options = options
     options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
+    options.headers = openCodeSessionHeaders(
+        model: model,
+        sessionId: options.sessionId,
+        headers: mergeProviderHeaders(model.headers, options.headers)
+    )
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -179,20 +192,21 @@ public func streamOpenAIResponses(
             let promptCacheRetention = getPromptCacheRetention(baseUrl: model.baseUrl, cacheRetention: cacheRetention, compat: model.compat)
             let isOpenRouter = model.provider == "openrouter" || model.baseUrl.contains("openrouter.ai")
             let middleware = OpenAIResponsesCacheMiddleware(
-                sessionId: options.sessionId,
+                sessionId: cacheRetention == .none ? nil : options.sessionId,
                 cacheRetention: cacheRetention,
                 promptCacheRetention: promptCacheRetention,
                 sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai),
-                supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false
+                supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
+                supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
                 effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
             )
-            let supportsStrictMode = model.compat?.supportsStrictMode ?? true
+            let supportsStrictMode = model.compat?.supportsStrictMode ?? false
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
             let constrainedSamplingMiddleware = try makeOpenAIResponsesConstrainedSamplingMiddleware(
-                tools: context.tools,
+                tools: getDeclaredTools(context.messages),
                 supportsStrictMode: supportsStrictMode,
                 supportsOpenAIGrammarTools: supportsGrammar
             )
@@ -255,7 +269,7 @@ public func streamOpenAIResponses(
                 try finishRawResponsesOutput(
                     output: output,
                     signal: options.signal,
-                    providerName: "OpenAI Responses"
+                    providerName: model.provider == "openai" ? "OpenAI Responses" : model.provider
                 )
                 stream.push(.done(reason: output.stopReason, message: output))
                 stream.end()
@@ -481,7 +495,7 @@ public func streamOpenAIResponses(
             }
 
             if output.stopReason == .pending {
-                throw OpenAIResponsesStreamError.apiError("OpenAI Responses stream ended without a stop reason")
+                throw OpenAIResponsesStreamError.apiError("\(model.provider == "openai" ? "OpenAI" : model.provider) Responses stream ended without a stop reason")
             }
             if output.stopReason == .aborted {
                 throw OpenAIResponsesStreamError.aborted
@@ -497,7 +511,7 @@ public func streamOpenAIResponses(
                 await debugOpenAIResponsesError(client: client, query: query)
             }
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
-            output.errorMessage = describeOpenAIError(error)
+            output.errorMessage = describeOpenAIError(error, provider: model.provider)
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }
@@ -535,7 +549,7 @@ func buildResponsesQuery(
 
     let tools = try responsesToolsPayload(
         context.tools,
-        supportsStrictMode: model.compat?.supportsStrictMode ?? true
+        supportsStrictMode: model.compat?.supportsStrictMode ?? false
     )
 
     let query = CreateModelResponseQuery(
@@ -721,15 +735,17 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
 
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
 
-    if let systemPrompt = context.systemPrompt {
-        let role: EasyInputMessage.RolePayload = model.reasoning ? .developer : .system
-        let message = EasyInputMessage(role: role, content: .textInput(sanitizeSurrogates(systemPrompt)))
-        messages.append(.inputMessage(message))
-    }
-
     var messageIndex = 0
-    for msg in transformed {
+    let toolPlan = resolveTranscriptTools(context.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    for (index, msg) in transformed.enumerated() {
         switch msg {
+        case .system(let system):
+            let role: EasyInputMessage.RolePayload = model.reasoning && model.compat?.supportsDeveloperRole != false ? .developer : .system
+            if index > 0 && toolPlan.anchorsAdditions && system.toolsAdded?.isEmpty == false {
+                messages.append(.inputMessage(EasyInputMessage(role: .developer, content: .textInput("\u{0}__PI_TRANSCRIPT_TOOLS__:\(index)"))))
+            }
+            let text = index == 0 ? getSystemMessageText(system) : renderSystemMessageUpdate(system)
+            if !text.isEmpty { messages.append(.inputMessage(EasyInputMessage(role: role, content: .textInput(sanitizeSurrogates(text))))) }
         case .user(let user):
             switch user.content {
             case .text(let text):
@@ -1085,7 +1101,7 @@ func mapResponsesToolChoice(_ choice: OpenAIToolChoice?) -> Components.Schemas.R
     }
 }
 
-func responsesDeferredToolsEnabled(_ model: Model) -> Bool {
+func responsesToolAdditionsEnabled(_ model: Model) -> Bool {
     model.compat?.supportsAdditionalTools == true || model.compat?.supportsToolSearch == true
 }
 
@@ -1093,12 +1109,19 @@ func responsesDeferredToolsEnabled(_ model: Model) -> Bool {
 /// Keep these wire fields in a JSON rewrite after the SDK encodes the request.
 struct ResponsesReplayMiddleware: OpenAIMiddleware {
     let namespaces: [String: String]
-    let additions: [String: Data]
-    let immediateToolNames: Set<String>
+    let additions: [Int: Data]
 
     func rewriteInput(_ input: [[String: Any]]) -> [[String: Any]] {
         var result: [[String: Any]] = []
         for var item in input {
+            if let content = item["content"] as? String,
+               content.hasPrefix("\u{0}__PI_TRANSCRIPT_TOOLS__:"),
+               let index = Int(content.dropFirst("\u{0}__PI_TRANSCRIPT_TOOLS__:".count)),
+               let data = additions[index],
+               let added = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                result.append(contentsOf: added)
+                continue
+            }
             let type = item["type"] as? String
             let callId = item["call_id"] as? String ?? ""
             if type == "function_call" || type == "custom_tool_call" {
@@ -1106,11 +1129,6 @@ struct ResponsesReplayMiddleware: OpenAIMiddleware {
                 else { item.removeValue(forKey: "namespace") }
             }
             result.append(item)
-            if (type == "function_call_output" || type == "custom_tool_call_output"),
-               let data = additions[callId],
-               let added = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                result.append(contentsOf: added)
-            }
         }
         return result
     }
@@ -1119,11 +1137,6 @@ struct ResponsesReplayMiddleware: OpenAIMiddleware {
         guard request.httpBody != nil else { return request }
         return rewritingOpenAIRequestBody(request) { payload in
             if let input = payload["input"] as? [[String: Any]] { payload["input"] = rewriteInput(input) }
-            if let tools = payload["tools"] as? [[String: Any]] {
-                let immediate = tools.filter { immediateToolNames.contains($0["name"] as? String ?? "") }
-                if immediate.isEmpty { payload.removeValue(forKey: "tools") }
-                else { payload["tools"] = immediate }
-            }
             return true
         }
     }
@@ -1132,34 +1145,17 @@ struct ResponsesReplayMiddleware: OpenAIMiddleware {
 func makeResponsesReplayMiddleware(
     model: Model,
     context: Context,
-    supportsDeferredTools: Bool = true
 ) throws -> ResponsesReplayMiddleware {
-    let enabled = supportsDeferredTools && responsesDeferredToolsEnabled(model)
-    let placement = splitDeferredTools(context, enabled: enabled)
-    let deferred = Dictionary(uniqueKeysWithValues: placement.deferred.map { ($0.name, $0) })
     var namespaces: [String: String] = [:]
-    var additions: [String: Data] = [:]
-    var loadedNames: Set<String> = []
-    for message in context.messages {
+    var additions: [Int: Data] = [:]
+    let plan = resolveTranscriptTools(context.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    for (index, message) in context.messages.enumerated() {
         switch message {
-        case .assistant(let assistant):
-            let sameModel = assistant.provider == model.provider && assistant.api == model.api && assistant.model == model.id
-            for case .toolCall(let call) in assistant.content {
-                guard let namespace = call.namespace, sameModel || deferred[call.name] != nil else { continue }
-                let callId = call.id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? call.id
-                namespaces[callId] = namespace
-                namespaces[normalizeIdPart(callId)] = namespace
-                namespaces[normalizeIdPart(call.id)] = namespace
-            }
-        case .toolResult(let result):
-            let tools = (result.addedToolNames ?? []).compactMap { name -> AITool? in
-                guard let tool = deferred[name], loadedNames.insert(name).inserted else { return nil }
-                return tool
-            }
-            guard !tools.isEmpty else { continue }
+        case .system(let system):
+            guard index > 0, plan.anchorsAdditions, let tools = system.toolsAdded, !tools.isEmpty else { continue }
             var converted = try convertCodexTools(
                 tools,
-                supportsStrictMode: model.compat?.supportsStrictMode ?? true,
+                supportsStrictMode: model.compat?.supportsStrictMode ?? false,
                 supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false,
                 defaultStrict: model.api == .openAICodexResponses ? nil : false
             )
@@ -1168,26 +1164,30 @@ func makeResponsesReplayMiddleware(
                 items = [["type": "additional_tools", "role": "developer", "tools": converted]]
             } else {
                 let names = tools.map(\.name)
-                let searchId = "pi_tool_load_\(openAIResponsesShortHash("\(result.toolCallId):\(names.joined(separator: ","))"))"
-                for index in converted.indices { converted[index]["defer_loading"] = true }
+                let searchId = "pi_tool_load_\(openAIResponsesShortHash("system:\(index):\(names.joined(separator: ","))"))"
+                for position in converted.indices { converted[position]["defer_loading"] = true }
                 items = [
                     ["type": "tool_search_call", "call_id": searchId, "execution": "client", "status": "completed",
                      "arguments": ["query": names.joined(separator: " "), "limit": names.count]],
                     ["type": "tool_search_output", "call_id": searchId, "execution": "client", "status": "completed", "tools": converted],
                 ]
             }
-            let callId = result.toolCallId.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? result.toolCallId
-            let data = try JSONSerialization.data(withJSONObject: items)
-            additions[callId] = data
-            additions[normalizeIdPart(callId)] = data
-            additions[normalizeIdPart(result.toolCallId)] = data
-        case .user:
+            additions[index] = try JSONSerialization.data(withJSONObject: items)
+        case .assistant(let assistant):
+            let sameModel = assistant.provider == model.provider && assistant.api == model.api && assistant.model == model.id
+            for case .toolCall(let call) in assistant.content {
+                guard let namespace = call.namespace, sameModel else { continue }
+                let callId = call.id.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? call.id
+                namespaces[callId] = namespace
+                namespaces[normalizeIdPart(callId)] = namespace
+                namespaces[normalizeIdPart(call.id)] = namespace
+            }
+        case .toolResult, .user:
             break
         }
     }
     return ResponsesReplayMiddleware(
         namespaces: namespaces,
         additions: additions,
-        immediateToolNames: Set(placement.immediate.map(\.name))
     )
 }

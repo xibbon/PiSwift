@@ -49,3 +49,25 @@ private func cacheStatsAssistant(timestamp: Int64, input: Int, cacheRead: Int) -
 
     #expect(computeCacheWaste(entries, modelRegistry: ModelRegistry(AuthStorage(":memory:"))).missCount == 0)
 }
+
+@Test func cacheStatsUsesOnlyCacheWarmUsageAsRefresh() throws {
+    let first = cacheStatsAssistant(timestamp: 0, input: 1_000, cacheRead: 9_000)
+    let miss = cacheStatsAssistant(timestamp: 600_000, input: 10_000, cacheRead: 0)
+    let refreshUsage = Usage(
+        input: 0, output: 1, cacheRead: 10_000, cacheWrite: 0, totalTokens: 10_001
+    )
+    func entries(kind: String) -> [SessionEntry] {
+        [
+            .message(SessionMessageEntry(id: "first", timestamp: "1970-01-01T00:00:00Z", message: .assistant(first))),
+            .usage(UsageEntry(
+                id: "refresh", parentId: "first", timestamp: "1970-01-01T00:08:20Z",
+                kind: kind, provider: "openai", model: "gpt-4o-mini", usage: refreshUsage
+            )),
+        ]
+    }
+    let registry = ModelRegistry(AuthStorage(":memory:"))
+    let warmed = try #require(detectCacheMiss(entries(kind: "cache_warm"), message: miss, modelRegistry: registry))
+    let other = try #require(detectCacheMiss(entries(kind: "custom_operation"), message: miss, modelRegistry: registry))
+    #expect(warmed.idleMs == 100_000)
+    #expect(other.idleMs == 600_000)
+}

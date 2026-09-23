@@ -13,6 +13,7 @@ private func stripControlCharacters(_ text: String) -> String {
 public enum SessionManagerError: LocalizedError, Sendable {
     case entryNotFound(String)
     case invalidSessionFile(String)
+    case invalidContextEdit(String)
 
     public var errorDescription: String? {
         switch self {
@@ -20,6 +21,8 @@ public enum SessionManagerError: LocalizedError, Sendable {
             return "Session file is not a valid \(APP_NAME) session: \(path)"
         case .entryNotFound(let id):
             return "Entry \(id) not found"
+        case .invalidContextEdit(let reason):
+            return reason
         }
     }
 }
@@ -133,6 +136,7 @@ public struct CompactionEntry: SessionEntryBase, Sendable {
     public var details: AnyCodable?
     public var fromHook: Bool?
     public var usage: Usage?
+    public var systemMessage: SystemMessage?
 
     public init(
         type: String = "compaction",
@@ -144,7 +148,8 @@ public struct CompactionEntry: SessionEntryBase, Sendable {
         tokensBefore: Int,
         details: AnyCodable? = nil,
         fromHook: Bool? = nil,
-        usage: Usage? = nil
+        usage: Usage? = nil,
+        systemMessage: SystemMessage? = nil
     ) {
         self.type = type
         self.id = id
@@ -156,6 +161,39 @@ public struct CompactionEntry: SessionEntryBase, Sendable {
         self.details = details
         self.fromHook = fromHook
         self.usage = usage
+        self.systemMessage = systemMessage
+    }
+}
+
+public struct UsageEntry: SessionEntryBase, Sendable {
+    public var type: String = "usage"
+    public var id: String
+    public var parentId: String?
+    public var timestamp: String
+    public var kind: String
+    public var provider: String
+    public var model: String
+    public var usage: Usage
+    public var note: String?
+
+    public init(id: String, parentId: String? = nil, timestamp: String, kind: String, provider: String, model: String, usage: Usage, note: String? = nil) {
+        self.id = id; self.parentId = parentId; self.timestamp = timestamp
+        self.kind = kind; self.provider = provider; self.model = model; self.usage = usage; self.note = note
+    }
+}
+
+public struct ContextEditEntry: SessionEntryBase, Sendable {
+    public var type: String = "context_edit"
+    public var id: String
+    public var parentId: String?
+    public var timestamp: String
+    public var targetId: String
+    /// Nil encodes as JSON null and omits the target from model context.
+    public var replacement: HookMessageContent?
+
+    public init(id: String, parentId: String? = nil, timestamp: String, targetId: String, replacement: HookMessageContent?) {
+        self.id = id; self.parentId = parentId; self.timestamp = timestamp
+        self.targetId = targetId; self.replacement = replacement
     }
 }
 
@@ -234,10 +272,12 @@ public enum SessionEntry: Sendable {
     case message(SessionMessageEntry)
     case thinkingLevel(ThinkingLevelChangeEntry)
     case modelChange(ModelChangeEntry)
+    case usage(UsageEntry)
     case compaction(CompactionEntry)
     case branchSummary(BranchSummaryEntry)
     case custom(CustomEntry)
     case customMessage(CustomMessageEntry)
+    case contextEdit(ContextEditEntry)
     case label(LabelEntry)
     case sessionInfo(SessionInfoEntry)
 
@@ -246,10 +286,12 @@ public enum SessionEntry: Sendable {
         case .message: return "message"
         case .thinkingLevel: return "thinking_level_change"
         case .modelChange: return "model_change"
+        case .usage: return "usage"
         case .compaction: return "compaction"
         case .branchSummary: return "branch_summary"
         case .custom: return "custom"
         case .customMessage: return "custom_message"
+        case .contextEdit: return "context_edit"
         case .label: return "label"
         case .sessionInfo: return "session_info"
         }
@@ -261,10 +303,12 @@ public enum SessionEntry: Sendable {
             case .message(let entry): return entry.id
             case .thinkingLevel(let entry): return entry.id
             case .modelChange(let entry): return entry.id
+            case .usage(let entry): return entry.id
             case .compaction(let entry): return entry.id
             case .branchSummary(let entry): return entry.id
             case .custom(let entry): return entry.id
             case .customMessage(let entry): return entry.id
+            case .contextEdit(let entry): return entry.id
             case .label(let entry): return entry.id
             case .sessionInfo(let entry): return entry.id
             }
@@ -280,6 +324,9 @@ public enum SessionEntry: Sendable {
             case .modelChange(var entry):
                 entry.id = newValue
                 self = .modelChange(entry)
+            case .usage(var entry):
+                entry.id = newValue
+                self = .usage(entry)
             case .compaction(var entry):
                 entry.id = newValue
                 self = .compaction(entry)
@@ -292,6 +339,9 @@ public enum SessionEntry: Sendable {
             case .customMessage(var entry):
                 entry.id = newValue
                 self = .customMessage(entry)
+            case .contextEdit(var entry):
+                entry.id = newValue
+                self = .contextEdit(entry)
             case .label(var entry):
                 entry.id = newValue
                 self = .label(entry)
@@ -308,10 +358,12 @@ public enum SessionEntry: Sendable {
             case .message(let entry): return entry.parentId
             case .thinkingLevel(let entry): return entry.parentId
             case .modelChange(let entry): return entry.parentId
+            case .usage(let entry): return entry.parentId
             case .compaction(let entry): return entry.parentId
             case .branchSummary(let entry): return entry.parentId
             case .custom(let entry): return entry.parentId
             case .customMessage(let entry): return entry.parentId
+            case .contextEdit(let entry): return entry.parentId
             case .label(let entry): return entry.parentId
             case .sessionInfo(let entry): return entry.parentId
             }
@@ -327,6 +379,9 @@ public enum SessionEntry: Sendable {
             case .modelChange(var entry):
                 entry.parentId = newValue
                 self = .modelChange(entry)
+            case .usage(var entry):
+                entry.parentId = newValue
+                self = .usage(entry)
             case .compaction(var entry):
                 entry.parentId = newValue
                 self = .compaction(entry)
@@ -339,6 +394,9 @@ public enum SessionEntry: Sendable {
             case .customMessage(var entry):
                 entry.parentId = newValue
                 self = .customMessage(entry)
+            case .contextEdit(var entry):
+                entry.parentId = newValue
+                self = .contextEdit(entry)
             case .label(var entry):
                 entry.parentId = newValue
                 self = .label(entry)
@@ -354,10 +412,12 @@ public enum SessionEntry: Sendable {
         case .message(let entry): return entry.timestamp
         case .thinkingLevel(let entry): return entry.timestamp
         case .modelChange(let entry): return entry.timestamp
+        case .usage(let entry): return entry.timestamp
         case .compaction(let entry): return entry.timestamp
         case .branchSummary(let entry): return entry.timestamp
         case .custom(let entry): return entry.timestamp
         case .customMessage(let entry): return entry.timestamp
+        case .contextEdit(let entry): return entry.timestamp
         case .label(let entry): return entry.timestamp
         case .sessionInfo(let entry): return entry.timestamp
         }
@@ -388,6 +448,18 @@ public struct SessionContext: Sendable {
     public var model: (provider: String, modelId: String)?
 }
 
+public struct ProjectedSessionEntry: Sendable {
+    public var sourceEntry: SessionEntry
+    public var messages: [AgentMessage]
+}
+
+public struct SessionProjection: Sendable {
+    public var entries: [ProjectedSessionEntry]
+    public var messages: [AgentMessage]
+    public var thinkingLevel: String
+    public var model: (provider: String, modelId: String)?
+}
+
 public struct SessionInfo: Sendable {
     public var path: String
     public var id: String
@@ -400,12 +472,13 @@ public struct SessionInfo: Sendable {
     public var allMessagesText: String
 }
 
-public func parseSessionEntries(_ content: String) -> [FileEntry] {
+public func parseSessionEntries(_ content: String, cancellationAware: Bool = false) -> [FileEntry] {
     let normalized = content.hasPrefix("\u{FEFF}") ? String(content.dropFirst()) : content
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
     var entries: [FileEntry] = []
 
     for line in lines {
+        if cancellationAware && Task.isCancelled { return [] }
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { continue }
         guard let data = trimmed.data(using: .utf8),
@@ -416,7 +489,7 @@ public func parseSessionEntries(_ content: String) -> [FileEntry] {
             if let header = decodeSessionHeader(json) {
                 entries.append(.session(header))
             }
-        } else if let entry = decodeSessionEntry(json) {
+        } else if let entry = decodeSessionEntry(json, ordered: isSystemMessageLine(json) ? try? OrderedJSON.parse(trimmed) : nil) {
             entries.append(.entry(entry))
         }
     }
@@ -470,105 +543,130 @@ public func migrateSessionEntries(_ entries: inout [FileEntry]) -> Bool {
     return true
 }
 
-public func buildSessionContext(_ entries: [SessionEntry], _ leafId: String? = nil, _ byId: [String: SessionEntry]? = nil) -> SessionContext {
-    let idMap = byId ?? Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
-
-    if leafId == nil && entries.isEmpty {
-        return SessionContext(messages: [], thinkingLevel: "off", model: nil)
+public func sessionEntryToContextMessages(_ entry: SessionEntry) -> [AgentMessage] {
+    switch entry {
+    case .message(let message):
+        return [message.message]
+    case .customMessage(let custom):
+        let hook = HookMessage(customType: custom.customType, content: custom.content, display: custom.display,
+                               details: custom.details, timestamp: parseTimestamp(custom.timestamp))
+        return [makeHookAgentMessage(hook)]
+    case .branchSummary(let summary):
+        guard !summary.summary.isEmpty else { return [] }
+        return [makeBranchSummaryAgentMessage(BranchSummaryMessage(summary: summary.summary,
+                              fromId: summary.fromId, timestamp: parseTimestamp(summary.timestamp)))]
+    case .compaction(let compaction):
+        let summary = makeCompactionSummaryAgentMessage(CompactionSummaryMessage(summary: compaction.summary,
+                              tokensBefore: compaction.tokensBefore, timestamp: parseTimestamp(compaction.timestamp)))
+        return (compaction.systemMessage.map { [.system($0)] } ?? []) + [summary]
+    default:
+        return []
     }
+}
 
-    if leafId == nil, let last = entries.last {
-        return buildSessionContext(entries, last.id, idMap)
-    }
-
-    guard let leafId else {
-        return SessionContext(messages: [], thinkingLevel: "off", model: nil)
-    }
-
-    if leafId == "null" {
-        return SessionContext(messages: [], thinkingLevel: "off", model: nil)
-    }
-
-    guard let leaf = idMap[leafId] else {
-        return SessionContext(messages: [], thinkingLevel: "off", model: nil)
-    }
-
+private func sessionPath(_ entries: [SessionEntry], _ leafId: String?, _ byId: [String: SessionEntry]) -> [SessionEntry] {
+    if leafId == "null" { return [] }
+    guard let leaf = leafId.flatMap({ byId[$0] }) ?? (leafId == nil ? entries.last : nil) else { return [] }
     var path: [SessionEntry] = []
     var current: SessionEntry? = leaf
-    while let entry = current {
-        path.insert(entry, at: 0)
-        if let parentId = entry.parentId {
-            current = idMap[parentId]
-        } else {
-            current = nil
+    var seen: Set<String> = []
+    while let entry = current, seen.insert(entry.id).inserted {
+        path.append(entry)
+        current = entry.parentId.flatMap { byId[$0] }
+    }
+    return path.reversed()
+}
+
+public func buildContextEntries(_ entries: [SessionEntry], _ leafId: String? = nil,
+                                _ byId: [String: SessionEntry]? = nil) -> [SessionEntry] {
+    let index = byId ?? Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+    let path = sessionPath(entries, leafId, index)
+    guard let compactionIndex = path.lastIndex(where: { if case .compaction = $0 { return true }; return false }),
+          case .compaction(let compaction) = path[compactionIndex] else { return path }
+    var result = [path[compactionIndex]]
+    if compactionIndex > 0, let keptIndex = path[..<compactionIndex].firstIndex(where: { $0.id == compaction.firstKeptEntryId }) {
+        for entry in path[keptIndex..<compactionIndex] {
+            if case .message(let message) = entry, case .system = message.message { continue }
+            result.append(entry)
         }
     }
+    result.append(contentsOf: path.dropFirst(compactionIndex + 1))
+    return result
+}
 
+public func projectContextEntry(_ entry: SessionEntry, _ edit: ContextEditEntry?) -> [AgentMessage] {
+    let messages = sessionEntryToContextMessages(entry)
+    guard let edit else { return messages }
+    guard let replacement = edit.replacement else { return [] }
+    return messages.map { message in
+        switch message {
+        case .user(var user):
+            switch replacement {
+            case .text(let text): user.content = .text(text)
+            case .blocks(let blocks): user.content = .blocks(blocks)
+            }
+            return .user(user)
+        case .assistant(var assistant):
+            switch replacement {
+            case .text(let text): assistant.content = [.text(TextContent(text: text))]
+            case .blocks(let blocks): assistant.content = blocks
+            }
+            return .assistant(assistant)
+        case .toolResult(var result):
+            switch replacement {
+            case .text(let text): result.content = [.text(TextContent(text: text))]
+            case .blocks(let blocks): result.content = blocks
+            }
+            return .toolResult(result)
+        case .custom(var custom):
+            if var payload = custom.payload?.jsonValue as? [String: Any] {
+                switch replacement {
+                case .text(let text): payload["content"] = text
+                case .blocks(let blocks): payload["content"] = blocks.map(contentBlockToDict)
+                }
+                custom.payload = AnyCodable(payload)
+            }
+            return .custom(custom)
+        case .system:
+            return message
+        }
+    }
+}
+
+public func buildSessionProjection(_ entries: [SessionEntry], _ leafId: String? = nil,
+                                   _ byId: [String: SessionEntry]? = nil) -> SessionProjection {
+    let index = byId ?? Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+    let path = sessionPath(entries, leafId, index)
     var thinkingLevel = "off"
-    var model: (provider: String, modelId: String)? = nil
-    var compaction: CompactionEntry?
-
+    var model: (provider: String, modelId: String)?
     for entry in path {
         switch entry {
-        case .thinkingLevel(let change):
-            thinkingLevel = change.thinkingLevel
-        case .modelChange(let change):
-            model = (provider: change.provider, modelId: change.modelId)
+        case .thinkingLevel(let change): thinkingLevel = change.thinkingLevel
+        case .modelChange(let change): model = (change.provider, change.modelId)
         case .message(let message):
-            if case .assistant(let assistant) = message.message {
-                model = (provider: assistant.provider, modelId: assistant.model)
-            }
-        case .compaction(let compactionEntry):
-            compaction = compactionEntry
-        default:
-            break
+            if case .assistant(let assistant) = message.message { model = (assistant.provider, assistant.model) }
+        default: break
         }
     }
-
-    var messages: [AgentMessage] = []
-
-    func appendMessage(from entry: SessionEntry) {
-        switch entry {
-        case .message(let message):
-            messages.append(message.message)
-        case .customMessage(let custom):
-            let hookMessage = HookMessage(customType: custom.customType, content: custom.content, display: custom.display, details: custom.details, timestamp: parseTimestamp(custom.timestamp))
-            messages.append(makeHookAgentMessage(hookMessage))
-        case .branchSummary(let summary):
-            let msg = BranchSummaryMessage(summary: summary.summary, fromId: summary.fromId, timestamp: parseTimestamp(summary.timestamp))
-            messages.append(makeBranchSummaryAgentMessage(msg))
-        default:
-            break
-        }
+    let contextEntries = buildContextEntries(entries, leafId, index)
+    var edits: [String: ContextEditEntry] = [:]
+    for entry in contextEntries {
+        if case .contextEdit(let edit) = entry { edits[edit.targetId] = edit }
     }
-
-    if let compaction {
-        let compactionMsg = CompactionSummaryMessage(summary: compaction.summary, tokensBefore: compaction.tokensBefore, timestamp: parseTimestamp(compaction.timestamp))
-        messages.append(makeCompactionSummaryAgentMessage(compactionMsg))
-
-        let compactionIdx = path.firstIndex(where: { if case .compaction(let entry) = $0 { return entry.id == compaction.id } else { return false } }) ?? -1
-        var foundFirstKept = false
-        if compactionIdx >= 0 {
-            for i in 0..<compactionIdx {
-                let entry = path[i]
-                if entry.id == compaction.firstKeptEntryId {
-                    foundFirstKept = true
-                }
-                if foundFirstKept {
-                    appendMessage(from: entry)
-                }
-            }
-            for i in (compactionIdx + 1)..<path.count {
-                appendMessage(from: path[i])
-            }
-        }
-    } else {
-        for entry in path {
-            appendMessage(from: entry)
-        }
+    let projected = contextEntries.enumerated().map { position, entry in
+        let messages: [AgentMessage]
+        if position > 0, case .compaction = entry { messages = [] }
+        else { messages = projectContextEntry(entry, edits[entry.id]) }
+        return ProjectedSessionEntry(sourceEntry: entry, messages: messages)
     }
+    return SessionProjection(entries: projected, messages: projected.flatMap(\.messages),
+                             thinkingLevel: thinkingLevel, model: model)
+}
 
-    return SessionContext(messages: messages, thinkingLevel: thinkingLevel, model: model)
+public func buildSessionContext(_ entries: [SessionEntry], _ leafId: String? = nil,
+                                _ byId: [String: SessionEntry]? = nil) -> SessionContext {
+    let projection = buildSessionProjection(entries, leafId, byId)
+    return SessionContext(messages: projection.messages, thinkingLevel: projection.thinkingLevel, model: projection.model)
 }
 
 public func loadEntriesFromFile(_ filePath: String) -> [FileEntry] {
@@ -591,49 +689,62 @@ public func loadEntriesFromFile(_ filePath: String) -> [FileEntry] {
     return entries
 }
 
-/// Efficiently checks if a file has a valid session header by reading only the first 512 bytes
-public func isValidSessionFile(_ filePath: String) -> Bool {
-    guard let handle = FileHandle(forReadingAtPath: filePath) else {
-        return false
-    }
+private func readSessionHeaderForDiscovery(_ filePath: String) -> SessionHeader? {
+    guard let handle = FileHandle(forReadingAtPath: filePath) else { return nil }
     defer { try? handle.close() }
-
-    guard let data = try? handle.read(upToCount: 512),
-          let content = String(data: data, encoding: .utf8) else {
-        return false
+    func candidate(_ line: Data) -> (parsed: Bool, header: SessionHeader?) {
+        guard var text = String(data: line, encoding: .utf8) else { return (false, nil) }
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return (false, nil) }
+        guard json["type"] as? String == "session" else { return (true, nil) }
+        return (true, decodeSessionHeader(json))
     }
-
-    let normalized = content.hasPrefix("\u{FEFF}") ? String(content.dropFirst()) : content
-    let firstLine = normalized.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
-    guard !firstLine.isEmpty,
-          let jsonData = firstLine.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-          let type = json["type"] as? String,
-          type == "session",
-          json["id"] is String else {
-        return false
-    }
-
-    return true
-}
-
-public func findMostRecentSession(_ dir: String) -> String? {
-    guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
-    let jsonlFiles = files.filter { $0.hasSuffix(".jsonl") }
-    var newest: (path: String, date: Date)? = nil
-
-    for file in jsonlFiles {
-        let path = URL(fileURLWithPath: dir).appendingPathComponent(file).path
-        guard isValidSessionFile(path) else { continue }
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-           let mtime = attrs[.modificationDate] as? Date {
-            if newest == nil || mtime > newest!.date {
-                newest = (path, mtime)
-            }
+    var line = Data()
+    var scanned = 0
+    while scanned < 1_048_576 {
+        guard let chunk = try? handle.read(upToCount: min(4096, 1_048_576 - scanned)), !chunk.isEmpty else {
+            return candidate(line).header
+        }
+        scanned += chunk.count
+        for byte in chunk {
+            if byte == 0x0a {
+                let result = candidate(line)
+                if result.parsed { return result.header }
+                line.removeAll(keepingCapacity: true)
+            } else { line.append(byte) }
         }
     }
+    // A header at the exact bound is valid only if the file ends there.
+    guard (try? handle.read(upToCount: 1))?.isEmpty == true else { return nil }
+    return candidate(line).header
+}
 
-    return newest?.path
+public func isValidSessionFile(_ filePath: String) -> Bool { readSessionHeaderForDiscovery(filePath) != nil }
+
+private func sessionFileModificationDate(_ path: String) -> Date {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+          let date = attributes[.modificationDate] as? Date else { return .distantPast }
+    return date
+}
+
+public func findMostRecentSession(_ dir: String, cwd: String? = nil) -> String? {
+    guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
+    let jsonlFiles = files.filter { $0.hasSuffix(".jsonl") }
+    let candidates: [(path: String, modified: Date)] = jsonlFiles.map { file in
+        let path = URL(fileURLWithPath: dir).appendingPathComponent(file).path
+        return (path: path, modified: sessionFileModificationDate(path))
+    }
+    let sortedCandidates = candidates.sorted { left, right in
+        left.modified == right.modified ? left.path > right.path : left.modified > right.modified
+    }
+    let resolvedCwd = cwd.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+    return sortedCandidates.first { candidate in
+        guard let header = readSessionHeaderForDiscovery(candidate.path) else { return false }
+        guard let resolvedCwd else { return true }
+        return !header.cwd.isEmpty && URL(fileURLWithPath: header.cwd).standardizedFileURL.path == resolvedCwd
+    }?.path
 }
 
 private func isMessageWithContent(_ message: AgentMessage) -> Bool {
@@ -671,8 +782,25 @@ private func extractUserContentText(_ content: UserContent) -> String {
     }
 }
 
+private func loadSessionEntriesForListing(_ filePath: String) -> [FileEntry] {
+    guard let handle = FileHandle(forReadingAtPath: filePath) else { return [] }
+    defer { try? handle.close() }
+    var data = Data()
+    while !Task.isCancelled {
+        let chunk: Data
+        do { chunk = try handle.read(upToCount: 64 * 1024) ?? Data() }
+        catch { return [] }
+        if chunk.isEmpty { break }
+        data.append(chunk)
+    }
+    guard !Task.isCancelled, let content = String(data: data, encoding: .utf8) else { return [] }
+    return parseSessionEntries(content, cancellationAware: true)
+}
+
 private func buildSessionInfo(_ filePath: String) -> SessionInfo? {
-    let entries = loadEntriesFromFile(filePath)
+    if Task.isCancelled { return nil }
+    let entries = loadSessionEntriesForListing(filePath)
+    if Task.isCancelled { return nil }
     guard let first = entries.first, case .session(let header) = first else {
         return nil
     }
@@ -687,6 +815,7 @@ private func buildSessionInfo(_ filePath: String) -> SessionInfo? {
     var name: String?
 
     for entry in entries {
+        if Task.isCancelled { return nil }
         guard case .entry(let sessionEntry) = entry else { continue }
         if case .sessionInfo(let info) = sessionEntry, let infoName = info.name?.trimmingCharacters(in: .whitespacesAndNewlines), !infoName.isEmpty {
             name = infoName
@@ -721,6 +850,9 @@ private func buildSessionInfo(_ filePath: String) -> SessionInfo? {
 }
 
 public typealias SessionListProgress = @Sendable (_ loaded: Int, _ total: Int) -> Void
+
+/// Sorted snapshots are published after the first file, at periodic intervals, and at completion.
+public typealias SessionListSnapshotProgress = @Sendable (_ loaded: Int, _ total: Int, _ sessions: [SessionInfo]) -> Void
 
 public final class SessionManager: Sendable {
     private struct State: Sendable {
@@ -850,10 +982,25 @@ public final class SessionManager: Sendable {
 
     public static func continueRecent(_ cwd: String, _ sessionDir: String? = nil) -> SessionManager {
         let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
-        if let mostRecent = findMostRecentSession(dir) {
+        let defaultDir = getDefaultSessionDir(cwd: cwd)
+        if let mostRecent = findMostRecentSession(dir, cwd: sessionDir != nil && dir != defaultDir ? cwd : nil) {
             return SessionManager(cwd, dir, mostRecent, true)
         }
         return SessionManager(cwd, dir, nil, true)
+    }
+
+    public static func findById(_ cwd: String, _ id: String, _ sessionDir: String? = nil) -> String? {
+        let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
+        let resolvedCwd = URL(fileURLWithPath: cwd).standardizedFileURL.path
+        let customDir = sessionDir != nil && dir != defaultSessionDir(cwd: cwd)
+        for file in files where file.hasSuffix(".jsonl") {
+            let path = URL(fileURLWithPath: dir).appendingPathComponent(file).path
+            guard let header = readSessionHeaderForDiscovery(path), header.id == id else { continue }
+            if customDir && (header.cwd.isEmpty || URL(fileURLWithPath: header.cwd).standardizedFileURL.path != resolvedCwd) { continue }
+            return path
+        }
+        return nil
     }
 
     public static func inMemory(
@@ -887,81 +1034,141 @@ public final class SessionManager: Sendable {
         }
     }
 
-    public static func list(
-        _ cwd: String,
-        _ sessionDir: String? = nil,
-        _ onProgress: SessionListProgress? = nil
-    ) async -> [SessionInfo] {
-        let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
-        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
-            return []
-        }
-        let jsonlFiles = files.filter { $0.hasSuffix(".jsonl") }.map { URL(fileURLWithPath: dir).appendingPathComponent($0).path }
-        let total = jsonlFiles.count
+    private static func sortedSessions(_ sessions: [SessionInfo]) -> [SessionInfo] {
+        sessions.sorted { $0.modified > $1.modified }
+    }
+
+    private static func loadSessionCandidates(
+        _ files: [String], interval: Int, prioritizeFirst: Bool,
+        onProgress: SessionListProgress?, onPartial: SessionListSnapshotProgress?
+    ) async throws -> [SessionInfo] {
+        try Task.checkCancellation()
+        let total = files.count
+        if total == 0 { return [] }
         var loaded = 0
-        var result: [SessionInfo] = []
-
-        for path in jsonlFiles {
-            if let info = buildSessionInfo(path) {
-                result.append(info)
+        var firstLoaded = !prioritizeFirst
+        var partial: [SessionInfo] = []
+        let results = try await withThrowingTaskGroup(of: (Int, SessionInfo?).self, returning: [SessionInfo].self) { group in
+            var next = 0
+            let count = min(10, total)
+            for _ in 0..<count {
+                let index = next
+                next += 1
+                group.addTask {
+                    try Task.checkCancellation()
+                    let info = buildSessionInfo(files[index])
+                    try Task.checkCancellation()
+                    return (index, info)
+                }
             }
-            loaded += 1
-            onProgress?(loaded, total)
+            while let (index, info) = try await group.next() {
+                try Task.checkCancellation()
+                loaded += 1
+                if index == 0 { firstLoaded = true }
+                if let info { partial.append(info) }
+                if next < total {
+                    let pending = next
+                    next += 1
+                    group.addTask {
+                        try Task.checkCancellation()
+                        let info = buildSessionInfo(files[pending])
+                        try Task.checkCancellation()
+                        return (pending, info)
+                    }
+                }
+                try Task.checkCancellation()
+                onProgress?(loaded, total)
+                let publish = firstLoaded && (index == 0 || loaded == 1 || loaded % interval == 0 || loaded == total)
+                if publish {
+                    try Task.checkCancellation()
+                    onPartial?(loaded, total, sortedSessions(partial))
+                }
+                try Task.checkCancellation()
+            }
+            return partial
         }
+        try Task.checkCancellation()
+        return sortedSessions(results)
+    }
 
-        result.sort { $0.modified > $1.modified }
-        return result
+    /// List current-project sessions and publish partial sorted snapshots.
+    /// Cancel the calling task to stop scheduling transcript reads. Cancellation throws.
+    public static func list(
+        _ cwd: String, _ sessionDir: String? = nil, _ onProgress: SessionListProgress? = nil,
+        onPartial: @escaping SessionListSnapshotProgress
+    ) async throws -> [SessionInfo] {
+        try Task.checkCancellation()
+        let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return [] }
+        let files = entries.filter { $0.hasSuffix(".jsonl") }.sorted(by: >)
+            .map { URL(fileURLWithPath: dir).appendingPathComponent($0).path }
+        let filterCwd = sessionDir != nil && dir != defaultSessionDir(cwd: cwd)
+        let resolvedCwd = URL(fileURLWithPath: cwd).standardizedFileURL.path
+        let include: @Sendable (SessionInfo) -> Bool = { info in
+            !filterCwd || URL(fileURLWithPath: info.cwd).standardizedFileURL.path == resolvedCwd
+        }
+        return try await loadSessionCandidates(files, interval: 10, prioritizeFirst: false,
+                                               onProgress: onProgress) { loaded, total, partial in
+            onPartial(loaded, total, partial.filter(include))
+        }.filter(include)
+    }
+
+    public static func list(
+        _ cwd: String, _ sessionDir: String? = nil, _ onProgress: SessionListProgress? = nil
+    ) async -> [SessionInfo] {
+        (try? await list(cwd, sessionDir, onProgress, onPartial: { _, _, _ in })) ?? []
+    }
+
+    public static func listAll(
+        _ onProgress: SessionListProgress? = nil,
+        onPartial: @escaping SessionListSnapshotProgress
+    ) async throws -> [SessionInfo] {
+        try Task.checkCancellation()
+        if let sessionDir = getSessionDirEnvironmentOverride() {
+            return try await list(FileManager.default.currentDirectoryPath, sessionDir, onProgress, onPartial: onPartial)
+        }
+        return try await listAll(inAgentDir: getAgentDir(), onProgress, onPartial: onPartial)
     }
 
     public static func listAll(_ onProgress: SessionListProgress? = nil) async -> [SessionInfo] {
-        if let sessionDir = getSessionDirEnvironmentOverride() {
-            return await list(FileManager.default.currentDirectoryPath, sessionDir, onProgress)
-        }
-
-        return await listAll(inAgentDir: getAgentDir(), onProgress)
+        (try? await listAll(onProgress, onPartial: { _, _, _ in })) ?? []
     }
 
-    /// Lists sessions below an explicit agent directory. This also supports
-    /// callers that keep project session folders behind symbolic links.
+    /// List all project folders. Files are scheduled by modification time, newest first.
     public static func listAll(
-        inAgentDir agentDir: String,
-        _ onProgress: SessionListProgress? = nil
-    ) async -> [SessionInfo] {
-        let sessionsDir = URL(fileURLWithPath: agentDir).appendingPathComponent("sessions").path
-
+        inAgentDir agentDir: String, _ onProgress: SessionListProgress? = nil,
+        onPartial: @escaping SessionListSnapshotProgress
+    ) async throws -> [SessionInfo] {
+        try Task.checkCancellation()
+        let sessionsDir = URL(fileURLWithPath: agentDir).appendingPathComponent("sessions")
         guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: URL(fileURLWithPath: sessionsDir),
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: []
-        ) else {
-            return []
-        }
-
+            at: sessionsDir, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: []
+        ) else { return [] }
         var files: [String] = []
         for entry in entries {
+            try Task.checkCancellation()
             let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values?.isDirectory == true || values?.isSymbolicLink == true else { continue }
-            if let dirFiles = try? FileManager.default.contentsOfDirectory(atPath: entry.path) {
-                for file in dirFiles where file.hasSuffix(".jsonl") {
-                    files.append(URL(fileURLWithPath: entry.path).appendingPathComponent(file).path)
-                }
+            if let names = try? FileManager.default.contentsOfDirectory(atPath: entry.path) {
+                files += names.filter { $0.hasSuffix(".jsonl") }.map { entry.appendingPathComponent($0).path }
             }
         }
-
-        let total = files.count
-        var loaded = 0
-        var result: [SessionInfo] = []
-
-        for path in files {
-            if let info = buildSessionInfo(path) {
-                result.append(info)
-            }
-            loaded += 1
-            onProgress?(loaded, total)
+        let candidates = files.map { path -> (path: String, modified: Date) in
+            let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date) ?? .distantPast
+            return (path, modified)
+        }.sorted { left, right in
+            if left.modified != right.modified { return left.modified > right.modified }
+            return URL(fileURLWithPath: left.path).lastPathComponent > URL(fileURLWithPath: right.path).lastPathComponent
         }
+        return try await loadSessionCandidates(candidates.map(\.path), interval: 100,
+                                               prioritizeFirst: true, onProgress: onProgress,
+                                               onPartial: onPartial)
+    }
 
-        result.sort { $0.modified > $1.modified }
-        return result
+    public static func listAll(
+        inAgentDir agentDir: String, _ onProgress: SessionListProgress? = nil
+    ) async -> [SessionInfo] {
+        (try? await listAll(inAgentDir: agentDir, onProgress, onPartial: { _, _, _ in })) ?? []
     }
 
     public func getCwd() -> String { cwd }
@@ -1050,10 +1257,20 @@ public final class SessionManager: Sendable {
     }
 
     public func buildSessionContext() -> SessionContext {
-        if leafId == nil {
-            return PiSwiftCodingAgent.buildSessionContext(entries, "null", byId)
+        let projection = buildSessionProjection()
+        return SessionContext(messages: projection.messages, thinkingLevel: projection.thinkingLevel, model: projection.model)
+    }
+
+    public func buildContextEntries() -> [SessionEntry] {
+        state.withLock { st in
+            PiSwiftCodingAgent.buildContextEntries(st.entries, st.leafId ?? "null", st.byId)
         }
-        return PiSwiftCodingAgent.buildSessionContext(entries, leafId, byId)
+    }
+
+    public func buildSessionProjection() -> SessionProjection {
+        state.withLock { st in
+            PiSwiftCodingAgent.buildSessionProjection(st.entries, st.leafId ?? "null", st.byId)
+        }
     }
 
     @discardableResult
@@ -1126,17 +1343,56 @@ public final class SessionManager: Sendable {
     }
 
     @discardableResult
-    public func appendCompaction(_ summary: String, _ firstKeptEntryId: String, _ tokensBefore: Int, details: AnyCodable? = nil, fromHook: Bool? = nil, usage: Usage? = nil) -> String {
-        commitEntry(.compaction(CompactionEntry(
-            id: "",
-            timestamp: isoNow(),
-            summary: summary,
-            firstKeptEntryId: firstKeptEntryId,
-            tokensBefore: tokensBefore,
-            details: details,
-            fromHook: fromHook,
-            usage: usage
-        )))
+    public func appendCompaction(_ summary: String, _ firstKeptEntryId: String?, _ tokensBefore: Int, details: AnyCodable? = nil, fromHook: Bool? = nil, usage: Usage? = nil) -> String {
+        state.withLock { st in
+            let timestamp = isoNow()
+            let projected = PiSwiftCodingAgent.buildSessionProjection(st.entries, st.leafId ?? "null", st.byId)
+            var systemMessage = getCurrentSystemMessage(projected.messages)
+            systemMessage?.timestamp = sessionTimestampMilliseconds(timestamp) ?? 0
+            return commitEntryLocked(&st, .compaction(CompactionEntry(
+                id: "", timestamp: timestamp, summary: summary, firstKeptEntryId: firstKeptEntryId ?? "",
+                tokensBefore: tokensBefore, details: details, fromHook: fromHook, usage: usage,
+                systemMessage: systemMessage
+            )), parent: .leaf)
+        }
+    }
+
+    @discardableResult
+    public func appendUsage(_ kind: String, _ provider: String, _ model: String, _ usage: Usage, note: String? = nil) -> String {
+        commitEntry(.usage(UsageEntry(id: "", timestamp: isoNow(), kind: kind, provider: provider, model: model, usage: usage, note: note)))
+    }
+
+    @discardableResult
+    public func appendContextEdit(_ targetId: String, _ replacement: HookMessageContent?) throws -> String {
+        try state.withLock { st in
+            guard let target = st.byId[targetId] else { throw SessionManagerError.entryNotFound(targetId) }
+            let branch = sessionPath(st.entries, st.leafId ?? "null", st.byId)
+            guard branch.contains(where: { $0.id == targetId }) else {
+                throw SessionManagerError.invalidContextEdit("Entry \(targetId) is not on the active branch")
+            }
+            let editable: Bool
+            switch target {
+            case .customMessage: editable = true
+            case .message(let message):
+                switch message.message {
+                case .user, .assistant, .toolResult: editable = true
+                default: editable = false
+                }
+            default: editable = false
+            }
+            guard editable else {
+                throw SessionManagerError.invalidContextEdit("Entry \(targetId) does not contribute editable model content")
+            }
+            let normalized: HookMessageContent?
+            if case .message(let message) = target, case .text(let text) = replacement {
+                switch message.message {
+                case .assistant, .toolResult: normalized = .blocks([.text(TextContent(text: text))])
+                default: normalized = replacement
+                }
+            } else { normalized = replacement }
+            return commitEntryLocked(&st, .contextEdit(ContextEditEntry(id: "", timestamp: isoNow(),
+                                                                         targetId: targetId, replacement: normalized)), parent: .leaf)
+        }
     }
 
     @discardableResult
@@ -1231,7 +1487,9 @@ public final class SessionManager: Sendable {
             pendingLabelIds.removeAll()
             entry.parentId = pathParentId
             if case .compaction(var compaction) = entry {
-                compaction.firstKeptEntryId = replacementByLabelId[compaction.firstKeptEntryId] ?? compaction.firstKeptEntryId
+                if compaction.firstKeptEntryId != compaction.id {
+                    compaction.firstKeptEntryId = replacementByLabelId[compaction.firstKeptEntryId] ?? compaction.firstKeptEntryId
+                }
                 entry = .compaction(compaction)
             }
             pathWithoutLabels.append(entry)
@@ -1284,7 +1542,9 @@ public final class SessionManager: Sendable {
             st.entries = newEntries
             rebuildIndexLocked(&st)
         }
-        return nil
+        // An in-memory branch has no file path. Return a success marker so callers
+        // can distinguish it from an unknown leaf ID.
+        return ""
     }
 
     /// How a committed entry's `parentId` is resolved inside the lock.
@@ -1314,6 +1574,10 @@ public final class SessionManager: Sendable {
 
         var committed = entry
         committed.id = generateId(existing: Set(st.byId.keys))
+        if case .compaction(var compaction) = committed, compaction.firstKeptEntryId.isEmpty {
+            compaction.firstKeptEntryId = committed.id
+            committed = .compaction(compaction)
+        }
         switch parent {
         case .leaf:
             committed.parentId = st.leafId
@@ -1524,7 +1788,30 @@ func encodeSessionHeader(_ header: SessionHeader) -> String {
     return String(data: data ?? Data(), encoding: .utf8) ?? ""
 }
 
+/// Only system messages carry ordered objects (`sections`), so only they need the order-preserving parse.
+private func isSystemMessageLine(_ json: [String: Any]) -> Bool {
+    if json["type"] as? String == "message" {
+        return (json["message"] as? [String: Any])?["role"] as? String == "system"
+    }
+    if json["type"] as? String == "compaction" {
+        return (json["systemMessage"] as? [String: Any])?["role"] as? String == "system"
+    }
+    return false
+}
+
 func encodeSessionEntry(_ entry: SessionEntry) -> String {
+    if case .message(let messageEntry) = entry, case .system = messageEntry.message {
+        let dict = codingAgentSessionEntryJSONObject(entry)
+        var pairs = dict.keys.filter { $0 != "message" }.sorted().map { ($0, OrderedJSON.fromFoundation(dict[$0]!)) }
+        pairs.append(("message", encodeAgentMessageJSON(messageEntry.message)))
+        return OrderedJSON.object(pairs).serialized()
+    }
+    if case .compaction(let compaction) = entry, let system = compaction.systemMessage {
+        let dict = codingAgentSessionEntryJSONObject(entry)
+        var pairs = dict.keys.filter { $0 != "systemMessage" }.sorted().map { ($0, OrderedJSON.fromFoundation(dict[$0]!)) }
+        pairs.append(("systemMessage", encodeAgentMessageJSON(.system(system))))
+        return OrderedJSON.object(pairs).serialized()
+    }
     let dict = codingAgentSessionEntryJSONObject(entry)
     let data = try? JSONSerialization.data(withJSONObject: dict, options: [])
     return String(data: data ?? Data(), encoding: .utf8) ?? ""
@@ -1550,7 +1837,7 @@ private func decodeSessionHeader(_ dict: [String: Any]) -> SessionHeader? {
     )
 }
 
-private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {
+private func decodeSessionEntry(_ dict: [String: Any], ordered: OrderedJSON? = nil) -> SessionEntry? {
     guard let type = dict["type"] as? String else { return nil }
     let id = dict["id"] as? String ?? ""
     let parentId = dict["parentId"] as? String
@@ -1559,7 +1846,7 @@ private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {
     switch type {
     case "message":
         guard let messageDict = dict["message"] as? [String: Any],
-              let message = decodeAgentMessage(messageDict) else { return nil }
+              let message = decodeAgentMessage(messageDict, ordered: ordered?["message"]) else { return nil }
         let entry = SessionMessageEntry(id: id, parentId: parentId, timestamp: timestamp, message: message)
         return .message(entry)
     case "thinking_level_change":
@@ -1569,13 +1856,35 @@ private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {
         let provider = dict["provider"] as? String ?? ""
         let modelId = dict["modelId"] as? String ?? ""
         return .modelChange(ModelChangeEntry(id: id, parentId: parentId, timestamp: timestamp, provider: provider, modelId: modelId))
+    case "usage":
+        guard let kind = dict["kind"] as? String, let provider = dict["provider"] as? String,
+              let model = dict["model"] as? String, let usage = dict["usage"] as? [String: Any] else { return nil }
+        return .usage(UsageEntry(id: id, parentId: parentId, timestamp: timestamp, kind: kind,
+                                 provider: provider, model: model, usage: usageFromJSONObject(usage), note: dict["note"] as? String))
     case "compaction":
         let summary = dict["summary"] as? String ?? ""
         let firstKeptEntryId = dict["firstKeptEntryId"] as? String ?? ""
         let tokensBefore = dict["tokensBefore"] as? Int ?? 0
         let details = dict["details"].map { AnyCodable($0) }
         let fromHook = dict["fromHook"] as? Bool
-        return .compaction(CompactionEntry(id: id, parentId: parentId, timestamp: timestamp, summary: summary, firstKeptEntryId: firstKeptEntryId, tokensBefore: tokensBefore, details: details, fromHook: fromHook, usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject)))
+        let systemMessage: SystemMessage?
+        if let systemDict = dict["systemMessage"] as? [String: Any],
+           case .system(let system) = decodeAgentMessage(systemDict, ordered: ordered?["systemMessage"]) {
+            systemMessage = system
+        } else { systemMessage = nil }
+        return .compaction(CompactionEntry(id: id, parentId: parentId, timestamp: timestamp, summary: summary, firstKeptEntryId: firstKeptEntryId, tokensBefore: tokensBefore, details: details, fromHook: fromHook, usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject), systemMessage: systemMessage))
+    case "context_edit":
+        guard let targetId = dict["targetId"] as? String else { return nil }
+        let replacement: HookMessageContent?
+        if let value = dict["replacement"] as? [String: Any] {
+            if let text = value["content"] as? String { replacement = .text(text) }
+            else if let blocks = value["content"] as? [[String: Any]] {
+                replacement = .blocks(blocks.compactMap(contentBlockFromDict))
+            } else { return nil }
+        } else if dict["replacement"] is NSNull { replacement = nil }
+        else { return nil }
+        return .contextEdit(ContextEditEntry(id: id, parentId: parentId, timestamp: timestamp,
+                                             targetId: targetId, replacement: replacement))
     case "branch_summary":
         let summary = dict["summary"] as? String ?? ""
         let fromId = dict["fromId"] as? String ?? ""
@@ -1616,9 +1925,41 @@ private func decodeSessionEntry(_ dict: [String: Any]) -> SessionEntry? {
     }
 }
 
-private func decodeAgentMessage(_ dict: [String: Any]) -> AgentMessage? {
+private func decodeAgentMessage(_ dict: [String: Any], ordered: OrderedJSON? = nil) -> AgentMessage? {
     guard let role = dict["role"] as? String else { return nil }
     switch role {
+    case "system":
+        let content: SystemContent
+        if let text = dict["content"] as? String { content = .text(text) }
+        else if let blocks = dict["content"] as? [[String: Any]] {
+            content = .blocks(blocks.compactMap { block in
+                guard block["type"] as? String == "text", let text = block["text"] as? String else { return nil }
+                return TextContent(text: text, textSignature: block["textSignature"] as? String)
+            })
+        } else { content = .text("") }
+        let sections: SystemPromptSections? = ordered?["sections"]?.objectEntries.map { pairs in
+            SystemPromptSections(pairs.map { (name: $0.0, value: $0.1.stringValue) })
+        }
+        let added: [AITool]? = (dict["toolsAdded"] as? [[String: Any]])?.compactMap { item in
+            guard let name = item["name"] as? String, let description = item["description"] as? String,
+                  let parameters = item["parameters"] as? [String: Any] else { return nil }
+            let sampling: ConstrainedSampling?
+            if let value = item["constrainedSampling"] as? Bool, !value { sampling = .disabled }
+            else if let config = item["constrainedSampling"] as? [String: Any], let type = config["type"] as? String {
+                if type == "json_schema", let strict = config["strict"] as? String,
+                   let level = ConstrainedSamplingStrictness(rawValue: strict) {
+                    sampling = .jsonSchema(strict: level)
+                } else if type == "grammar", let variants = config["variants"] as? [String: String] {
+                    sampling = .grammar(variants: Dictionary(uniqueKeysWithValues: variants.compactMap { key, value in
+                        GrammarFormat(rawValue: key).map { ($0, value) }
+                    }))
+                } else { sampling = nil }
+            } else { sampling = nil }
+            return AITool(name: name, description: description, parameters: parameters.mapValues(AnyCodable.init), constrainedSampling: sampling)
+        }
+        let removed = (dict["toolsRemoved"] as? [[String: Any]])?.compactMap { ($0["name"] as? String).map(ToolReference.init(name:)) }
+        return .system(SystemMessage(content: content, sections: sections, toolsAdded: added, toolsRemoved: removed,
+                                     timestamp: (dict["timestamp"] as? NSNumber)?.int64Value ?? 0))
     case "user":
         let timestamp = (dict["timestamp"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
         let contentValue = dict["content"]
@@ -1647,7 +1988,9 @@ private func decodeAgentMessage(_ dict: [String: Any]) -> AgentMessage? {
             guard let dict = block as? [String: Any] else { return nil }
             return contentBlockFromDict(dict)
         }
-        let toolResult = ToolResultMessage(toolCallId: toolCallId, toolName: toolName, content: contentBlocks, details: details, isError: isError, timestamp: timestamp)
+        let toolResult = ToolResultMessage(toolCallId: toolCallId, toolName: toolName, content: contentBlocks, details: details,
+                                           usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject),
+                                           isError: isError, timestamp: timestamp)
         return .toolResult(toolResult)
     case "bashExecution", "hookMessage", "branchSummary", "compactionSummary":
         let payload = dict
@@ -1678,6 +2021,12 @@ func codingAgentSessionEntryJSONObject(_ entry: SessionEntry) -> [String: Any] {
     case .modelChange(let entry):
         dict["provider"] = entry.provider
         dict["modelId"] = entry.modelId
+    case .usage(let entry):
+        dict["kind"] = entry.kind
+        dict["provider"] = entry.provider
+        dict["model"] = entry.model
+        dict["usage"] = usageToJSONObject(entry.usage)
+        if let note = entry.note { dict["note"] = note }
     case .compaction(let entry):
         dict["summary"] = entry.summary
         dict["firstKeptEntryId"] = entry.firstKeptEntryId
@@ -1689,6 +2038,7 @@ func codingAgentSessionEntryJSONObject(_ entry: SessionEntry) -> [String: Any] {
             dict["fromHook"] = fromHook
         }
         if let usage = entry.usage { dict["usage"] = usageToJSONObject(usage) }
+        if let systemMessage = entry.systemMessage { dict["systemMessage"] = encodeAgentMessageDict(.system(systemMessage)) }
     case .branchSummary(let entry):
         dict["fromId"] = entry.fromId
         dict["summary"] = entry.summary
@@ -1716,6 +2066,14 @@ func codingAgentSessionEntryJSONObject(_ entry: SessionEntry) -> [String: Any] {
         if let details = entry.details?.jsonValue {
             dict["details"] = details
         }
+    case .contextEdit(let entry):
+        dict["targetId"] = entry.targetId
+        if let replacement = entry.replacement {
+            switch replacement {
+            case .text(let text): dict["replacement"] = ["content": text]
+            case .blocks(let blocks): dict["replacement"] = ["content": blocks.map(contentBlockToDict)]
+            }
+        } else { dict["replacement"] = NSNull() }
     case .label(let entry):
         dict["targetId"] = entry.targetId
         dict["label"] = entry.label as Any

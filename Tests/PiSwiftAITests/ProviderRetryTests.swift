@@ -239,7 +239,7 @@ private func providerTestError(
     )
     let stream = streamOpenAICompletions(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: OpenAICompletionsOptions(
             apiKey: "test-key",
             httpClient: client,

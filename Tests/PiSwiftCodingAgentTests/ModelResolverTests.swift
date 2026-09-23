@@ -219,23 +219,23 @@ private func mockModels() -> [Model] {
 }
 
 @Test func defaultModelPerProviderVercelAiGateway() {
-    // Verify ai-gateway default is opus 4.5
+    // Verify the upstream v0.87.1 AI Gateway default.
     let aiGatewayDefault = defaultModelPerProvider.first { $0.0 == .vercelAiGateway }
-    #expect(aiGatewayDefault?.1 == "anthropic/claude-opus-4.5")
+    #expect(aiGatewayDefault?.1 == "zai/glm-5.1")
 }
 
 @Test func selectDefaultModelWithAiGateway() async {
     let aiGatewayModel = Model(
-        id: "anthropic/claude-opus-4.5",
-        name: "Claude Opus 4.5",
+        id: "zai/glm-5.1",
+        name: "GLM 5.1",
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
-        contextWindow: 200000,
-        maxTokens: 8192
+        input: [.text],
+        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
+        contextWindow: 202800,
+        maxTokens: 64000
     )
 
     let tempDir = FileManager.default.temporaryDirectory
@@ -251,7 +251,7 @@ private func mockModels() -> [Model] {
 
     let result = await selectDefaultModel(available: [aiGatewayModel], registry: registry)
     #expect(result?.provider == "vercel-ai-gateway")
-    #expect(result?.id == "anthropic/claude-opus-4.5")
+    #expect(result?.id == "zai/glm-5.1")
 }
 
 @Test func resolveCliModelSlashDelimitedRef() {

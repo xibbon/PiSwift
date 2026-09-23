@@ -885,7 +885,7 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
             args: ["path": AnyCodable("missing.txt")],
             result: AgentToolResult(content: [.text(TextContent(text: "original error"))]),
             isError: true,
-            context: AgentContext(systemPrompt: "", messages: [], tools: [])
+            context: AgentContext(messages: [], tools: [])
         ),
         nil
     )

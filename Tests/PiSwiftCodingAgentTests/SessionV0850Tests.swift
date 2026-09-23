@@ -183,7 +183,7 @@ private actor PortLatch {
     var settings = Settings()
     settings.compaction = CompactionSettingsOverrides(enabled: false, reserveTokens: 100, keepRecentTokens: 1)
     let session = portSession(settings: settings, api: api) { model, context, _ in
-        sessionPortStream(model, [.text(TextContent(text: "text"))], reason: context.systemPrompt == "test" ? .stop : .length)
+        sessionPortStream(model, [.text(TextContent(text: "text"))], reason: getCurrentSystemPrompt(context.messages) == "test" ? .stop : .length)
     }
     defer { session.dispose() }
     try await session.prompt("one")
@@ -347,11 +347,11 @@ private final class PortUIContext: HookUIContext {
     let fork = try await session.fork(first.id)
     try await task.value
     #expect(!fork.cancelled)
-    #expect(session.agent.state.messages.isEmpty)
-    #expect(session.sessionManager.getEntries().filter { if case .message = $0 { return true }; return false }.isEmpty)
+    #expect(session.agent.state.messages.map(\.role) == ["system"])
+    #expect(session.sessionManager.getEntries().compactMap { if case .message(let entry) = $0 { return entry.message.role }; return nil } == ["system"])
     try await session.prompt("next")
     await session.waitForIdle()
-    #expect(roles.withLock { $0 } == ["user"])
+    #expect(roles.withLock { $0.filter { $0 != "system" } } == ["user"])
 }
 
 @Test func manualCompactionStoresTheAbortedResponseBeforeItsSummary() async throws {

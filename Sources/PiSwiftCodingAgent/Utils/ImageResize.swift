@@ -18,6 +18,15 @@ public struct ImageResizeOptions: Sendable {
         self.maxBytes = maxBytes
         self.jpegQuality = jpegQuality
     }
+
+    public init(modelProfile: ModelImageResizeOptions?) {
+        self.init(
+            maxWidth: modelProfile?.maxWidth ?? 2000,
+            maxHeight: modelProfile?.maxHeight ?? 2000,
+            maxBytes: modelProfile?.maxBytes ?? Int(4.5 * 1024 * 1024),
+            jpegQuality: modelProfile?.jpegQuality ?? 80
+        )
+    }
 }
 
 public struct ResizedImage: Sendable {
@@ -63,6 +72,14 @@ public func formatDimensionNote(_ result: ResizedImage) -> String? {
     return "[Image: original \(result.originalWidth)x\(result.originalHeight), displayed at \(result.width)x\(result.height). Multiply coordinates by \(scaleString) to map to original image.]"
 }
 
+/// A failed resize can return the original bytes. Callers that add new images
+/// to context must check the encoded payload and dimensions before using them.
+public func imageFitsResizeLimits(_ result: ResizedImage, options: ImageResizeOptions) -> Bool {
+    result.width > 0 && result.height > 0 &&
+        result.width <= options.maxWidth && result.height <= options.maxHeight &&
+        result.data.utf8.count < options.maxBytes
+}
+
 public func resizeImage(_ img: ImageContent, options: ImageResizeOptions = ImageResizeOptions()) -> ResizedImage {
     let mimeType = img.mimeType
     let base64Data = img.data
@@ -85,7 +102,7 @@ public func resizeImage(_ img: ImageContent, options: ImageResizeOptions = Image
     if originalWidth > 0, originalHeight > 0,
        originalWidth <= options.maxWidth,
        originalHeight <= options.maxHeight,
-       rawData.count <= options.maxBytes {
+       base64Data.utf8.count < options.maxBytes {
         return ResizedImage(
             data: base64Data,
             mimeType: mimeType,
@@ -280,8 +297,8 @@ private func resizeImageWithAppKit(
         )
     }
 
-    let originalSize = rawData.count
-    if width <= options.maxWidth, height <= options.maxHeight, originalSize <= options.maxBytes {
+    let originalSize = originalBase64.utf8.count
+    if width <= options.maxWidth, height <= options.maxHeight, originalSize < options.maxBytes {
         return ResizedImage(
             data: originalBase64,
             mimeType: mimeType,
@@ -311,7 +328,7 @@ private func resizeImageWithAppKit(
     if let encoded = tryEncode(width: target.width, height: target.height, jpegQuality: options.jpegQuality) {
         bestData = encoded.0
         bestMimeType = encoded.1
-        if encoded.0.count <= options.maxBytes {
+        if encoded.0.base64EncodedString().utf8.count < options.maxBytes {
             return ResizedImage(
                 data: encoded.0.base64EncodedString(),
                 mimeType: encoded.1,
@@ -328,7 +345,7 @@ private func resizeImageWithAppKit(
         if let encoded = tryEncode(width: target.width, height: target.height, jpegQuality: quality) {
             bestData = encoded.0
             bestMimeType = encoded.1
-            if encoded.0.count <= options.maxBytes {
+            if encoded.0.base64EncodedString().utf8.count < options.maxBytes {
                 return ResizedImage(
                     data: encoded.0.base64EncodedString(),
                     mimeType: encoded.1,
@@ -352,7 +369,7 @@ private func resizeImageWithAppKit(
             if let encoded = tryEncode(width: finalWidth, height: finalHeight, jpegQuality: quality) {
                 bestData = encoded.0
                 bestMimeType = encoded.1
-                if encoded.0.count <= options.maxBytes {
+                if encoded.0.base64EncodedString().utf8.count < options.maxBytes {
                     return ResizedImage(
                         data: encoded.0.base64EncodedString(),
                         mimeType: encoded.1,

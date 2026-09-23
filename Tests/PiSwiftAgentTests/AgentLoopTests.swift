@@ -4,7 +4,7 @@ import PiSwiftAI
 import PiSwiftAgent
 
 @Test func agentLoopEmitsEvents() async {
-    let context = AgentContext(systemPrompt: "You are helpful.", messages: [], tools: [])
+    let context = testAgentContext(systemPrompt: "You are helpful.", messages: [], tools: [])
     let userPrompt = createUserMessage("Hello")
 
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
@@ -52,7 +52,7 @@ import PiSwiftAgent
 @Test func customMessagesWithConverter() async {
     let notification = AgentMessage.custom(AgentCustomMessage(role: "notification", payload: AnyCodable("note")))
 
-    let context = AgentContext(systemPrompt: "You are helpful.", messages: [notification], tools: [])
+    let context = testAgentContext(systemPrompt: "You are helpful.", messages: [notification], tools: [])
     let userPrompt = createUserMessage("Hello")
 
     let converted = LockedState<[Message]>([])
@@ -78,12 +78,11 @@ import PiSwiftAgent
     let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
     for await _ in stream {}
 
-    #expect(converted.withLock { $0.count } == 1)
-    #expect(converted.withLock { $0.first?.role } == "user")
+    #expect(converted.withLock { $0.map(\.role) } == ["system", "user"])
 }
 
 @Test func transformContextBeforeConvert() async {
-    let context = AgentContext(
+    let context = testAgentContext(
         systemPrompt: "You are helpful.",
         messages: [
             createUserMessage("old message 1"),
@@ -140,7 +139,7 @@ import PiSwiftAgent
         return AgentToolResult(content: [.text(TextContent(text: "echoed: \(value)"))], details: AnyCodable(["value": value]))
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("echo something")
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
@@ -191,7 +190,7 @@ import PiSwiftAgent
         executed.withLock { $0.append(params["value"]?.value as? String ?? "") }
         return AgentToolResult(content: [.text(TextContent(text: "executed"))])
     }
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
     let calls = LockedState(0)
     let streamFn: StreamFn = { _, _, _ in
@@ -244,7 +243,7 @@ import PiSwiftAgent
         return AgentToolResult(content: [.text(TextContent(text: "ok:\(value)"))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let steeringUserMessage = createUserMessage("interrupt")
 
@@ -334,7 +333,7 @@ import PiSwiftAgent
 }
 
 @Test func agentLoopContinueValidations() {
-    let context = AgentContext(systemPrompt: "You are helpful.", messages: [], tools: [])
+    let context = AgentContext(messages: [], tools: [])
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
     do {
@@ -345,7 +344,7 @@ import PiSwiftAgent
     }
 
     let assistant = createAssistantMessage(content: [.text(TextContent(text: "Hi"))])
-    let contextWithAssistant = AgentContext(systemPrompt: "You are helpful.", messages: [.assistant(assistant)], tools: [])
+    let contextWithAssistant = testAgentContext(systemPrompt: "You are helpful.", messages: [.assistant(assistant)], tools: [])
     do {
         _ = try agentLoopContinue(context: contextWithAssistant, config: config)
         #expect(Bool(false), "Expected error for assistant last message")
@@ -355,7 +354,7 @@ import PiSwiftAgent
 }
 
 @Test func runAgentLoopContinueValidationThrowsInsteadOfCrashing() async {
-    let emptyContext = AgentContext(systemPrompt: "You are helpful.", messages: [], tools: [])
+    let emptyContext = AgentContext(messages: [], tools: [])
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
     do {
@@ -366,7 +365,7 @@ import PiSwiftAgent
     }
 
     let assistant = createAssistantMessage(content: [.text(TextContent(text: "Hi"))])
-    let assistantContext = AgentContext(systemPrompt: "You are helpful.", messages: [.assistant(assistant)], tools: [])
+    let assistantContext = testAgentContext(systemPrompt: "You are helpful.", messages: [.assistant(assistant)], tools: [])
 
     do {
         _ = try await runAgentLoopContinue(context: assistantContext, config: config, emit: { _ in })
@@ -378,7 +377,7 @@ import PiSwiftAgent
 
 @Test func agentLoopContinueWithExistingContext() async throws {
     let userMessage = createUserMessage("Hello")
-    let context = AgentContext(systemPrompt: "You are helpful.", messages: [userMessage], tools: [])
+    let context = testAgentContext(systemPrompt: "You are helpful.", messages: [userMessage], tools: [])
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
     let streamFn: StreamFn = { _, _, _ in
@@ -455,7 +454,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     // Custom message that will be converted to user message by convertToLlm
     let customMessage = AgentMessage.custom(AgentCustomMessage(role: "hook", payload: AnyCodable("Hook content")))
 
-    let context = AgentContext(systemPrompt: "You are helpful.", messages: [customMessage], tools: [])
+    let context = testAgentContext(systemPrompt: "You are helpful.", messages: [customMessage], tools: [])
 
     let converted = LockedState<[Message]>([])
     let config = AgentLoopConfig(
@@ -493,12 +492,11 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(messages.first?.role == "assistant")
 
     // Verify the custom message was converted
-    #expect(converted.withLock { $0.count } == 1)
-    #expect(converted.withLock { $0.first?.role } == "user")
+    #expect(converted.withLock { $0.map(\.role) } == ["system", "user"])
 }
 
 @Test func followUpMessagesProcessed() async {
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [])
     let userPrompt = createUserMessage("start")
 
     let followUpDelivered = LockedState(false)
@@ -580,7 +578,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 }
 
 @Test func shouldStopAfterTurnSkipsQueuedFollowUps() async {
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [])
     let userPrompt = createUserMessage("start")
 
     let followUpPolled = LockedState(false)
@@ -591,8 +589,8 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
             followUpPolled.withLock { $0 = true }
             return [createUserMessage("follow-up")]
         },
-        shouldStopAfterTurn: { _ in
-            true
+        finishTurn: { _, _ in
+            .end
         }
     )
 
@@ -651,7 +649,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         return AgentToolResult(content: [.text(TextContent(text: "echoed:\(value)"))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("go")
     let config = AgentLoopConfig(
         model: createModel(),
@@ -725,7 +723,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         AgentToolResult(content: [.text(TextContent(text: "ok"))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(
         model: createModel(),
@@ -787,7 +785,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         return AgentToolResult(content: [.text(TextContent(text: "final"))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(
         model: createModel(),
@@ -847,7 +845,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         return AgentToolResult(content: [.text(TextContent(text: "ok:\(value)"))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(
         model: createModel(),
@@ -915,11 +913,10 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         let value = params["value"]?.value as? String ?? ""
         return AgentToolResult(
             content: [.text(TextContent(text: "original:\(value)"))],
-            addedToolNames: ["search"]
         )
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(
         model: createModel(),
@@ -977,12 +974,11 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         }
         return nil
     }.first
-    #expect(emittedToolResult?.addedToolNames == ["search"])
 }
 
 @Test func steeringMessagesAtLoopStart() async {
     // Test that steering messages are checked at the start of the loop
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [])
     let userPrompt = createUserMessage("start")
     let steeringMessage = createUserMessage("early steering")
 
@@ -1059,7 +1055,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         }
     )
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
@@ -1102,7 +1098,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         AgentToolResult(content: [.text(TextContent(text: "ok"))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(
         model: createModel(),
@@ -1153,7 +1149,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         AgentToolResult(content: [.text(TextContent(text: "ok"))], terminate: true)
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
@@ -1197,7 +1193,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
         AgentToolResult(content: [.text(TextContent(text: id))])
     }
 
-    let context = AgentContext(systemPrompt: "", messages: [], tools: [tool])
+    let context = testAgentContext(systemPrompt: "", messages: [], tools: [tool])
     let userPrompt = createUserMessage("start")
     let config = AgentLoopConfig(
         model: createModel(),

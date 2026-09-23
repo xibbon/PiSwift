@@ -266,6 +266,25 @@
       ],
       "provider": "openrouter"
     },
+    "inclusionai/ming-image-0.1-design": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "inclusionai/ming-image-0.1-design",
+      "input": [
+        "text"
+      ],
+      "name": "inclusionAI: Ming Image 0.1 Design",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
     "krea/krea-2-large": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -360,7 +379,7 @@
         "text",
         "image"
       ],
-      "name": "Microsoft: MAI-Image-2.5",
+      "name": "Microsoft AI: MAI-Image-2.5",
       "output": [
         "image"
       ],
@@ -380,7 +399,47 @@
         "text",
         "image"
       ],
-      "name": "Microsoft: MAI-Image-2.5 Pro",
+      "name": "Microsoft AI: MAI-Image-2.5 Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "microsoft/mai-image-2.6": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 5,
+        "output": 0
+      },
+      "id": "microsoft/mai-image-2.6",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Microsoft AI: MAI-Image-2.6",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "microsoft/mai-image-2.6-flash": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 1.75,
+        "output": 0
+      },
+      "id": "microsoft/mai-image-2.6-flash",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Microsoft AI: MAI-Image-2.6 Flash",
       "output": [
         "image"
       ],
@@ -504,6 +563,46 @@
         "image"
       ],
       "name": "OpenAI: GPT Image 2",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "openai/gpt-image-2.5-flare": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 2,
+        "cacheWrite": 0,
+        "input": 8,
+        "output": 8
+      },
+      "id": "openai/gpt-image-2.5-flare",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "OpenAI: GPT Image 2.5 Flare",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter"
+    },
+    "openai/gpt-image-2.5-sunburst": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 2,
+        "cacheWrite": 0,
+        "input": 8,
+        "output": 8
+      },
+      "id": "openai/gpt-image-2.5-sunburst",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "OpenAI: GPT Image 2.5 Sunburst",
       "output": [
         "image"
       ],

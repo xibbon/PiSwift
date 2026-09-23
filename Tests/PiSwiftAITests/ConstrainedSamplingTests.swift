@@ -235,7 +235,7 @@ private func applyResponsesMiddleware(
         )
         let eventStream = streamOpenAIResponses(
             model: model,
-            context: context,
+            context: normalizeContext(context),
             options: OpenAIResponsesOptions(
                 apiKey: "test-key",
                 onPayload: { snapshot in

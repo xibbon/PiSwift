@@ -45,6 +45,8 @@ function loadTextModels() {
     }
 
     const providerId = providerIdMatch[1];
+    // Radius uses the pi-messages gateway and gateway-only model fields. PiSwift has no Radius client.
+    if (providerId === "radius") continue;
     const dataPath = path.resolve(path.dirname(providerPath), dataPathMatch[1]);
     const groups = JSON.parse(fs.readFileSync(dataPath, "utf8"));
     models[providerId] = Object.assign({}, ...Object.values(groups));
@@ -57,6 +59,7 @@ function loadTextModels() {
   const expectedProviderIds = new Set(
     [...aggregateMatch[1].matchAll(/^\t"([^"]+)":\s*[A-Z]/gm)].map((match) => match[1])
   );
+  if (!expectedProviderIds.delete("radius")) throw new Error("Expected the explicitly excluded radius provider");
   const actualProviderIds = new Set(Object.keys(models));
   const missingProviderIds = [...expectedProviderIds].filter((providerId) => !actualProviderIds.has(providerId)).sort();
   const unexpectedProviderIds = [...actualProviderIds].filter((providerId) => !expectedProviderIds.has(providerId)).sort();
@@ -159,7 +162,9 @@ function enumValue(type, value) {
     return `.${cases[value]}`;
   }
   if (type === "maxTokensField") {
-    return value === "max_tokens" ? ".maxTokens" : ".maxCompletionTokens";
+    const cases = { max_tokens: "maxTokens", max_completion_tokens: "maxCompletionTokens" };
+    if (!cases[value]) throw new Error(`Unknown maxTokensField: ${value}`);
+    return `.${cases[value]}`;
   }
   if (type === "thinkingFormat") {
     const cases = {
@@ -179,11 +184,8 @@ function enumValue(type, value) {
     return `.${cases[value]}`;
   }
   if (type === "cacheControlFormat") {
+    if (value !== "anthropic") throw new Error(`Unknown cacheControlFormat: ${value}`);
     return ".anthropic";
-  }
-  if (type === "deferredToolsMode") {
-    if (value !== "kimi") throw new Error(`Unknown deferredToolsMode: ${value}`);
-    return ".kimi";
   }
   if (type === "sessionAffinityFormat") {
     const cases = { "openai": "openai", "openai-nosession": "openaiNosession", "openrouter": "openrouter" };
@@ -271,8 +273,15 @@ function chatTemplateValuesLiteral(values) {
   return entries.length === 0 ? "[:]" : `[${entries.join(", ")}]`;
 }
 
-function compatLiteral(compat) {
+function compatLiteral(compat, api) {
   if (!compat) return undefined;
+  if (api === "mistral-conversations") {
+    const keys = Object.keys(compat);
+    if (keys.some((key) => key !== "supportsMidConvoSystemMessages")) {
+      throw new Error(`Unmapped Mistral compat field: ${keys.filter((key) => key !== "supportsMidConvoSystemMessages").join(", ")}`);
+    }
+    return `MistralConversationsCompat(${compat.supportsMidConvoSystemMessages === undefined ? "" : `supportsMidConvoSystemMessages: ${swiftBool(compat.supportsMidConvoSystemMessages)}`})`;
+  }
   const fields = [
     ["supportsStore", compat.supportsStore, "bool"],
     ["supportsDeveloperRole", compat.supportsDeveloperRole, "bool"],
@@ -292,6 +301,9 @@ function compatLiteral(compat) {
     ["vercelGatewayRouting", vercelRoutingLiteral(compat.vercelGatewayRouting), "literal"],
     ["supportsThinkingTokenBudget", compat.supportsThinkingTokenBudget, "bool"],
     ["supportsOpenAIGrammarTools", compat.supportsOpenAIGrammarTools, "bool"],
+    ["supportsMidConvoSystemMessages", compat.supportsMidConvoSystemMessages, "bool"],
+    ["supportsMidConvoToolAdditions", compat.supportsMidConvoToolAdditions, "bool"],
+    ["supportsMidConvoToolChanges", compat.supportsMidConvoToolChanges, "bool"],
     ["supportsStrictMode", compat.supportsStrictMode, "bool"],
     ["reasoningEffortMap", compat.reasoningEffortMap, "reasoningEffortMap"],
     ["supportsLongCacheRetention", compat.supportsLongCacheRetention, "bool"],
@@ -305,11 +317,9 @@ function compatLiteral(compat) {
     ["forceAdaptiveThinking", compat.forceAdaptiveThinking, "bool"],
     ["zaiToolStream", compat.zaiToolStream, "bool"],
     ["allowEmptySignature", compat.allowEmptySignature, "bool"],
-    ["deferredToolsMode", compat.deferredToolsMode, "deferredToolsMode"],
     ["sessionAffinityFormat", compat.sessionAffinityFormat, "sessionAffinityFormat"],
     ["supportsToolSearch", compat.supportsToolSearch, "bool"],
     ["supportsExplicitPromptCacheMode", compat.supportsExplicitPromptCacheMode, "bool"],
-    ["supportsToolReferences", compat.supportsToolReferences, "bool"],
     ["thinkingTokenBudgetField", compat.thinkingTokenBudgetField, "thinkingTokenBudgetField"],
     ["vllmPriority", compat.vllmPriority, "literal"],
     ["supportsAdditionalTools", compat.supportsAdditionalTools, "bool"],
@@ -350,6 +360,11 @@ function providerVariableName(provider) {
 }
 
 function swiftModel(model) {
+  const allowed = new Set(["id", "name", "api", "provider", "baseUrl", "reasoning", "input", "inputLimits", "cost", "promptCache", "contextWindow", "maxTokens", "samplingParams", "headers", "compat", "thinkingLevelMap"]);
+  for (const key of Object.keys(model)) {
+    if (!allowed.has(key)) throw new Error(`Unmapped model field ${model.provider}/${model.id}: ${key}`);
+  }
+  if (model.samplingParams !== undefined) throw new Error(`Unmapped samplingParams for ${model.provider}/${model.id}`);
   const cost = costLiteral(model.cost);
   const args = [
     `id: ${swiftString(model.id)}`,
@@ -365,14 +380,42 @@ function swiftModel(model) {
   ];
   const headers = headersLiteral(model.headers);
   if (headers) args.push(`headers: ${headers}`);
-  const compat = compatLiteral(model.compat);
+  const compat = compatLiteral(model.compat, model.api);
   if (compat) args.push(`compat: ${compat}`);
   const thinkingMap = thinkingLevelMapLiteral(model.thinkingLevelMap);
   if (thinkingMap) args.push(`thinkingLevelMap: ${thinkingMap}`);
+  if (model.inputLimits) args.push(`inputLimits: ${inputLimitsLiteral(model.inputLimits)}`);
+  if (model.promptCache) args.push(`promptCache: ${promptCacheLiteral(model.promptCache)}`);
   return `Model(\n        ${args.join(",\n        ")}\n    )`;
 }
 
+function assertKeys(value, allowed, label) {
+  for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unmapped ${label} field: ${key}`);
+}
+
+function inputLimitsLiteral(value) {
+  assertKeys(value, ["maxRequestBytes", "images"], "inputLimits");
+  let images = "nil";
+  if (value.images) {
+    assertKeys(value.images, ["resize", "maxPerMessage", "maxPerRequest"], "inputLimits.images");
+    let resize = "nil";
+    if (value.images.resize) {
+      const item = value.images.resize;
+      assertKeys(item, ["maxWidth", "maxHeight", "maxBytes", "jpegQuality"], "inputLimits.images.resize");
+      resize = `ModelImageResizeOptions(maxWidth: ${item.maxWidth ?? "nil"}, maxHeight: ${item.maxHeight ?? "nil"}, maxBytes: ${item.maxBytes ?? "nil"}, jpegQuality: ${item.jpegQuality ?? "nil"})`;
+    }
+    images = `ModelImageInputLimits(resize: ${resize}, maxPerMessage: ${value.images.maxPerMessage ?? "nil"}, maxPerRequest: ${value.images.maxPerRequest ?? "nil"})`;
+  }
+  return `ModelInputLimits(maxRequestBytes: ${value.maxRequestBytes ?? "nil"}, images: ${images})`;
+}
+
+function promptCacheLiteral(value) {
+  assertKeys(value, ["short", "long"], "promptCache");
+  return `ModelPromptCache(short: ${value.short ?? "nil"}, long: ${value.long ?? "nil"})`;
+}
+
 function swiftImagesModel(model) {
+  assertKeys(model, ["id", "name", "api", "provider", "baseUrl", "input", "output", "cost", "headers"], "image model");
   const args = [
     `id: ${swiftString(model.id)}`,
     `name: ${swiftString(model.name)}`,

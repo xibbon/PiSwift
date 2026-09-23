@@ -6,6 +6,9 @@ public func encodeSessionEvent(_ event: AgentSessionEvent) -> [String: Any] {
     switch event {
     case .agent(let agentEvent):
         return encodeAgentEvent(agentEvent)
+    case .entryAppended(let entry):
+        let data = encodeSessionEntry(entry).data(using: .utf8) ?? Data()
+        return ["type": "entry_appended", "entry": (try? JSONSerialization.jsonObject(with: data)) ?? [:]]
     case .agentSettled:
         return ["type": "agent_settled"]
     case .autoCompactionStart(let reason):
@@ -44,6 +47,24 @@ public func encodeSessionEvent(_ event: AgentSessionEvent) -> [String: Any] {
             "finalError": finalError as Any,
         ]
     }
+}
+
+/// JSON transport form that preserves SystemMessage section order in session events.
+public func encodeSessionEventJSON(_ event: AgentSessionEvent) -> String {
+    let dict = encodeSessionEvent(event)
+    var overrides: [String: OrderedJSON] = [:]
+    if case .agent(let agentEvent) = event {
+        switch agentEvent {
+        case .agentEnd(let messages):
+            overrides["messages"] = .array(messages.map(encodeAgentMessageJSON))
+        case .turnEnd(let message, _), .messageStart(let message), .messageEnd(let message):
+            overrides["message"] = encodeAgentMessageJSON(message)
+        default: break
+        }
+    }
+    return OrderedJSON.object(dict.keys.sorted().map { key in
+        (key, overrides[key] ?? OrderedJSON.fromFoundation(dict[key]!))
+    }).serialized()
 }
 
 func encodeAgentEvent(_ event: AgentEvent) -> [String: Any] {

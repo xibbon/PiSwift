@@ -70,7 +70,7 @@ private func completions085Capture(
     let client = Completions085Client(frames: try completions085Frame([:], finish: "stop"))
     var options = options
     options.httpClient = client
-    _ = await streamOpenAICompletions(model: model, context: Context(messages: messages, tools: tools), options: options).result()
+    _ = await streamOpenAICompletions(model: model, context: normalizeContext(Context(messages: messages, tools: tools)), options: options).result()
     let request = try #require(await client.lastRequest())
     let requestBody = try #require(request.httpBody)
     return try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
@@ -98,7 +98,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     let detail: [String: Any] = ["type": "reasoning.encrypted", "id": "call_1", "data": "encrypted-signature"]
     let frames = try completions085Frame(["reasoning_details": [detail]]) + completions085ToolFrame() + completions085Frame([:], finish: "tool_calls")
     let client = Completions085Client(frames: frames)
-    let result = await streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     #expect(result.stopReason == .toolUse)
     #expect(try completions085Thinking(result).thinking == "")
@@ -132,7 +132,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
         + completions085Frame(["reasoning_details": Array(details.dropFirst())]) + completions085ToolFrame()
         + completions085Frame([:], finish: "tool_calls")
     let client = Completions085Client(frames: frames)
-    let result = await streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     #expect(try completions085Thinking(result).thinking == "I should call read.")
     #expect(try completions085Details(result) == details.map { $0.mapValues(AnyCodable.init) })
@@ -154,7 +154,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     for detail in details { frames += try completions085Frame(["reasoning_details": [detail]]) }
     frames += try completions085ToolFrame() + completions085Frame([:], finish: "tool_calls")
     let client = Completions085Client(frames: frames)
-    let stream = streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    let stream = streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client))
     var ends = 0
     for await event in stream {
@@ -179,7 +179,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
 @Test func completions085FinalizesReasoningMetadataOnError() async throws {
     let detail: [String: Any] = ["type": "reasoning.encrypted", "data": "opaque"]
     let client = Completions085Client(frames: try completions085Frame(["reasoning_details": [detail]]), failAfterBody: true)
-    let result = await streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     #expect(result.stopReason == .error)
     #expect(try completions085Details(result) == [detail.mapValues(AnyCodable.init)])
@@ -191,7 +191,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
         ["type": "reasoning.encrypted", "data": "bad", "format": NSNull()],
         ["type": "unknown", "text": "bad"]]
     let client = Completions085Client(frames: try completions085Frame(["reasoning_details": invalid, "content": "ok"], finish: "stop"))
-    let result = await streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     #expect(!result.content.contains { if case .thinking = $0 { return true }; return false })
     var message = result
@@ -304,7 +304,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
 @Test func completions085TopLevelCachedTokensAreCacheReads() async throws {
     let client = Completions085Client(frames: try completions085Frame([:], finish: "stop",
         usage: ["prompt_tokens": 100, "completion_tokens": 5, "cached_tokens": 40]))
-    let result = await streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     #expect(result.usage.input == 60)
     #expect(result.usage.cacheRead == 40)
@@ -325,14 +325,14 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     for override in ["custom-agent", ""] {
         let model = completions085Model(headers: ["User-Agent": "model-agent"])
         let client = Completions085Client(frames: try completions085Frame([:], finish: "stop"))
-        _ = await streamOpenAICompletions(model: model, context: Context(messages: []),
+        _ = await streamOpenAICompletions(model: model, context: normalizeContext(Context(messages: [])),
             options: OpenAICompletionsOptions(apiKey: "test", httpClient: client,
                 headers: ["user-agent": override.isEmpty ? nil : override])).result()
         let request = try #require(await client.lastRequest())
         #expect(request.value(forHTTPHeaderField: "User-Agent") == (override.isEmpty ? nil : override))
     }
     let client = Completions085Client(frames: try completions085Frame([:], finish: "stop"))
-    _ = await streamOpenAICompletions(model: completions085Model(), context: Context(messages: []),
+    _ = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     let request = try #require(await client.lastRequest())
     #expect(request.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
@@ -342,7 +342,8 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     let tool = AITool(name: "read", description: "Read a file", parameters: [
         "type": AnyCodable("object"), "properties": AnyCodable(["path": ["type": "string"]]),
     ], constrainedSampling: .jsonSchema(strict: .require))
-    let payload = try await completions085Capture(tools: [tool])
+    // A4 item 2: strict schemas require an explicit capability on compatible endpoints.
+    let payload = try await completions085Capture(model: completions085Model(compat: OpenAICompat(supportsStrictMode: true)), tools: [tool])
     let tools = try #require(payload["tools"] as? [[String: Any]])
     let function = try #require(tools.first?["function"] as? [String: Any])
     let schema = try #require(function["parameters"] as? [String: Any])

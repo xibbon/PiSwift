@@ -65,7 +65,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
     ])])
     let payloadSnapshot = LockedState<String?>(nil)
     let responseSnapshot = LockedState<ResponseSnapshot?>(nil)
-    let message = await streamMistral(model: mistral085Model(), context: context,
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(context),
         options: MistralOptions(maxTokens: 123, apiKey: "secret", httpClient: client,
             toolChoice: AnyCodable(["type": "function", "function": ["name": "lookup"]] as [String: Any]),
             promptMode: "reasoning", reasoningEffort: "high", sessionId: "session-1", headers: ["x-custom": "value"],
@@ -110,7 +110,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
         .text(TextContent(text: "found")), .image(ImageContent(data: "aGVsbG8=", mimeType: "image/png")),
     ], isError: false)
     let client = Mistral085Client(chunks: [try mistral085SSE([mistral085Event(finish: "stop")])])
-    _ = await streamMistral(model: model, context: Context(messages: [.assistant(assistant), .toolResult(toolResult)]),
+    _ = await streamMistral(model: model, context: normalizeContext(Context(messages: [.assistant(assistant), .toolResult(toolResult)])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     let payload = try await mistral085Payload(client)
     let messages = try #require(payload["messages"] as? [[String: Any]])
@@ -139,7 +139,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
                 "prompt_tokens_details": ["cached_tokens": 3]]),
     ]
     let client = Mistral085Client(chunks: [try mistral085SSE(events)])
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     #expect(message.stopReason == .toolUse)
     #expect(message.rawStopReason == "tool_calls")
@@ -164,7 +164,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
 @Test func mistral085ParsesBytewiseSSEAndUTF8() async throws {
     let frame = try mistral085SSE([mistral085Event(["content": "héllo 🌍"], finish: "stop")])
     let client = Mistral085Client(chunks: frame.map { Data([$0]) })
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     #expect(message.stopReason == .stop)
     if case .text(let text)? = message.content.first { #expect(text.text == "héllo 🌍") }
@@ -174,7 +174,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
 @Test func mistral085HonorsHeaderOverridesAndAffinitySuppression() async throws {
     let model = mistral085Model(headers: ["Authorization": "Bearer model-key", "X-Affinity": "model-affinity"])
     let client = Mistral085Client(chunks: [try mistral085SSE([mistral085Event(finish: "stop")])])
-    _ = await streamMistral(model: model, context: Context(messages: []), options: MistralOptions(apiKey: "request-key",
+    _ = await streamMistral(model: model, context: normalizeContext(Context(messages: [])), options: MistralOptions(apiKey: "request-key",
         httpClient: client, sessionId: "automatic-affinity", headers: [
             "authorization": nil, "x-affinity": nil, "User-Agent": "custom-agent",
         ])).result()
@@ -187,7 +187,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
 @Test func mistral085AbortsWhileWaitingForSSEChunk() async throws {
     let token = CancellationToken()
     let client = Mistral085Client(chunks: [], keepOpen: true)
-    let stream = streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let stream = streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(signal: token, apiKey: "test", httpClient: client))
     for await event in stream {
         if case .start = event { token.cancel() }
@@ -198,7 +198,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
 
 @Test func mistral085TimeoutAppliesWhileWaitingForSSEChunk() async throws {
     let client = Mistral085Client(chunks: [], keepOpen: true)
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client, timeoutMs: 5)).result()
     #expect(message.stopReason == .error)
     #expect(message.errorMessage?.lowercased().contains("timeout") == true)
@@ -207,7 +207,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
 @Test func mistral085PreservesHTTPStatusAndResponseBody() async throws {
     let client = Mistral085Client(chunks: [Data(#"{"message":"blocked by gateway"}"#.utf8)], status: 403)
     let capturedStatus = LockedState<Int?>(nil)
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client,
             onResponse: { snapshot in capturedStatus.withLock { $0 = snapshot.statusCode } })).result()
     #expect(message.stopReason == .error)
@@ -218,7 +218,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
 @Test func mistral085PreservesRawStopReasons() async throws {
     for reason in ["stop", "error", "unmapped_error"] {
         let client = Mistral085Client(chunks: [try mistral085SSE([mistral085Event(finish: reason)])])
-        let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+        let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
             options: MistralOptions(apiKey: "test", httpClient: client)).result()
         #expect(message.rawStopReason == reason)
         #expect(message.responseId == "response-1")
@@ -231,13 +231,13 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
     for delimiter in ["\r\n\r\n", "\r\n\r", "\r\n\n", "\r\r\n", "\n\r\n", "\r\r", "\n\r", "\n\n"] {
         let frame = try mistral085SSE([mistral085Event(["content": "ok"], finish: "stop")], delimiter: delimiter)
         let client = Mistral085Client(chunks: [frame])
-        let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+        let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
             options: MistralOptions(apiKey: "test", httpClient: client)).result()
         #expect(message.stopReason == .stop)
     }
     let data = Data("data: {\"id\":\"multi\",\ndata: \"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n".utf8)
     let client = Mistral085Client(chunks: [data])
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     #expect(message.stopReason == .stop)
     #expect(message.responseId == "multi")
@@ -247,19 +247,19 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
     let event = mistral085Event(["content": "ok"], finish: "stop")
     let raw = try JSONSerialization.data(withJSONObject: event)
     let client = Mistral085Client(chunks: [Data("data: ".utf8) + raw])
-    let result = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let result = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     #expect(result.stopReason == .stop)
     let afterDone = try mistral085SSE([event]) + Data("data: this is invalid json\n\n".utf8)
     let doneClient = Mistral085Client(chunks: [afterDone], keepOpen: true)
-    let doneResult = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let doneResult = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: doneClient, timeoutMs: 1000)).result()
     #expect(doneResult.stopReason == .stop)
 }
 
 @Test func mistral085CacheNoneDisablesAutomaticAffinityAndPromptKey() async throws {
     let client = Mistral085Client(chunks: [try mistral085SSE([mistral085Event(finish: "stop")])])
-    _ = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    _ = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client, sessionId: "session", cacheRetention: CacheRetention.none)).result()
     let payload = try await mistral085Payload(client)
     #expect(payload["prompt_cache_key"] == nil)
@@ -277,14 +277,14 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
         ["id": "def123456", "function": ["name": "second", "arguments": "{}"]],
     ]], finish: "tool_calls")]
     let client = Mistral085Client(chunks: [try mistral085SSE(events)])
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     #expect(message.content.count == 2)
 }
 
 @Test func mistral085RejectsInvalidStreamingEvents() async throws {
     let client = Mistral085Client(chunks: [Data("data: {\"usage\":{}}\n\n".utf8)])
-    let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+    let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
         options: MistralOptions(apiKey: "test", httpClient: client)).result()
     #expect(message.stopReason == .error)
     #expect(message.errorMessage == "Invalid Mistral streaming event")
@@ -303,7 +303,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
         var usage: [String: Any] = ["prompt_tokens": 10, "completion_tokens": 4]
         usage.merge(fields) { _, value in value }
         let client = Mistral085Client(chunks: [try mistral085SSE([mistral085Event(finish: "stop", usage: usage)])])
-        let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+        let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
             options: MistralOptions(apiKey: "test", httpClient: client)).result()
         #expect(message.usage.cacheRead == 3)
         #expect(message.usage.input == 7)
@@ -311,7 +311,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
     for value in [-5, 20] {
         let usage: [String: Any] = ["prompt_tokens": 10, "completion_tokens": 4, "num_cached_tokens": value]
         let client = Mistral085Client(chunks: [try mistral085SSE([mistral085Event(finish: "stop", usage: usage)])])
-        let message = await streamMistral(model: mistral085Model(), context: Context(messages: []),
+        let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
             options: MistralOptions(apiKey: "test", httpClient: client)).result()
         #expect(message.usage.cacheRead == min(10, max(0, value)))
     }

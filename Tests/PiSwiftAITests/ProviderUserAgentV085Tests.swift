@@ -33,7 +33,8 @@ private enum UserAgent085Adapter: String, CaseIterable, Sendable {
 
     var defaultUserAgent: String {
         switch self {
-        case .anthropicOAuth: "claude-cli/2.1.251"
+        // A4 item 16: upstream v0.87.1 reports the newer Claude Code version.
+        case .anthropicOAuth: "claude-cli/2.1.280"
         case .copilot: "GitHubCopilotChat/0.35.0"
         default: getPiUserAgent()
         }
@@ -73,30 +74,30 @@ private func userAgent085Request(
     switch adapter {
     case .anthropic, .anthropicOAuth, .copilot, .kimiCoding:
         let key = adapter == .anthropicOAuth ? "sk-ant-oat01-test-token" : "test-key"
-        stream = streamAnthropic(model: model, context: context,
+        stream = streamAnthropic(model: model, context: normalizeContext(context),
             options: AnthropicOptions(apiKey: key, httpClient: client, headers: optionHeaders, maxRetries: 0))
     case .completions:
-        stream = streamOpenAICompletions(model: model, context: context,
+        stream = streamOpenAICompletions(model: model, context: normalizeContext(context),
             options: OpenAICompletionsOptions(apiKey: "test-key", httpClient: client, headers: optionHeaders, maxRetries: 0))
     case .responses:
-        stream = streamOpenAIResponses(model: model, context: context,
+        stream = streamOpenAIResponses(model: model, context: normalizeContext(context),
             options: OpenAIResponsesOptions(apiKey: "test-key", httpClient: client, headers: optionHeaders, maxRetries: 0))
     case .azure:
         var options = AzureOpenAIResponsesOptions(apiKey: "test-key", httpClient: client, headers: optionHeaders, maxRetries: 0)
         options.azureBaseUrl = "https://ua-test.openai.azure.com"
         options.azureApiVersion = "v1"
         options.azureDeploymentName = "test-deployment"
-        stream = streamAzureOpenAIResponses(model: model, context: context, options: options)
+        stream = streamAzureOpenAIResponses(model: model, context: normalizeContext(context), options: options)
     case .google:
-        stream = streamGoogle(model: model, context: context,
+        stream = streamGoogle(model: model, context: normalizeContext(context),
             options: GoogleOptions(apiKey: "test-key", httpClient: client, headers: optionHeaders, maxRetries: 0))
     case .vertex:
-        stream = streamGoogleVertex(model: model, context: context,
+        stream = streamGoogleVertex(model: model, context: normalizeContext(context),
             options: GoogleVertexOptions(apiKey: "explicit-access-token", httpClient: client, headers: optionHeaders,
                 project: "test-project", location: "us-central1", maxRetries: 0))
     case .codex:
         let tokenPayload = Data(#"{"https://api.openai.com/auth":{"chatgpt_account_id":"acc_test"}}"#.utf8).base64EncodedString()
-        stream = streamOpenAICodexResponses(model: model, context: context,
+        stream = streamOpenAICodexResponses(model: model, context: normalizeContext(context),
             options: OpenAICodexResponsesOptions(apiKey: "e30.\(tokenPayload).sig", httpClient: client,
                 transport: .sse, headers: optionHeaders, maxRetries: 0))
     }

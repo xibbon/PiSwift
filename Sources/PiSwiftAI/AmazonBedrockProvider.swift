@@ -149,7 +149,13 @@ private struct BedrockUsage: Decodable {
     let outputTokens: Int?
     let cacheReadInputTokens: Int?
     let cacheWriteInputTokens: Int?
+    let cacheDetails: [BedrockCacheDetail]?
     let totalTokens: Int?
+}
+
+private struct BedrockCacheDetail: Decodable {
+    let ttl: String?
+    let inputTokens: Int?
 }
 
 private struct BedrockMessageStartWrapper: Decodable {
@@ -234,9 +240,10 @@ struct BedrockStreamState {
 
 public func streamBedrock(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: BedrockOptions
 ) -> AssistantMessageEventStream {
+    let context = collapsedProviderContext(context)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -553,6 +560,9 @@ private func handleMetadata(_ event: BedrockMetadataEvent, model: Model, output:
     output.usage.output = usage.outputTokens ?? 0
     output.usage.cacheRead = usage.cacheReadInputTokens ?? 0
     output.usage.cacheWrite = usage.cacheWriteInputTokens ?? 0
+    output.usage.cacheWrite1h = usage.cacheDetails?.reduce(0) { total, detail in
+        total + (detail.ttl == "1h" ? (detail.inputTokens ?? 0) : 0)
+    }
     output.usage.totalTokens = usage.totalTokens ?? (output.usage.input + output.usage.output)
     calculateCost(model: model, usage: &output.usage)
 }
@@ -829,6 +839,9 @@ private func convertMessages(context: Context, model: Model, cacheRetention: Cac
     while index < transformed.count {
         let message = transformed[index]
         switch message {
+        case .system:
+            index += 1
+            continue
         case .user(let user):
             let contentBlocks = convertUserContent(user.content)
             result.append(BedrockMessage(role: "user", content: contentBlocks))

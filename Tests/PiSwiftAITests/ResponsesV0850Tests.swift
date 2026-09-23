@@ -134,31 +134,11 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
     let model = responses085Model(api: .azureOpenAIResponses, provider: "azure-openai-responses")
     var options = SimpleStreamOptions(apiKey: "test-key", httpClient: client)
     options.toolChoice = ToolChoice.none
-    _ = await streamSimpleAzureOpenAIResponses(model: model, context: Context(messages: [], tools: [responses085Tool("read")]), options: options).result()
+    _ = await streamSimpleAzureOpenAIResponses(model: model, context: normalizeContext(Context(messages: [], tools: [responses085Tool("read")])), options: options).result()
     let data = try #require(capture.withLock { $0 })
     let payload = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     #expect(payload["tool_choice"] as? String == "none")
     #expect((payload["tools"] as? [Any])?.count == 1)
-}
-
-@Test(arguments: [false, true]) func responses085DeferredToolModes(additional: Bool) throws {
-    let compat = OpenAICompat(supportsToolSearch: true, supportsAdditionalTools: additional)
-    let model = responses085Model(compat: compat)
-    let context = Context(messages: [
-        .toolResult(ToolResultMessage(toolCallId: "load|fc_load", toolName: "discover", content: [.text(TextContent(text: "loaded"))], addedToolNames: ["lookup", "lookup"], isError: false)),
-        .assistant(responses085Assistant(model: model, content: [.toolCall(ToolCall(id: "call|fc_call", name: "lookup", arguments: [:], namespace: "dynamic_tools"))])),
-    ], tools: [responses085Tool("discover"), responses085Tool("lookup")])
-    let payload = try responses085Payload(model: model, context: context)
-    let tools = try #require(payload["tools"] as? [[String: Any]])
-    #expect(tools.map { $0["name"] as? String } == ["discover"])
-    let input = try #require(payload["input"] as? [[String: Any]])
-    #expect(input[1]["type"] as? String == (additional ? "additional_tools" : "tool_search_call"))
-    let loaded = try #require(input[additional ? 1 : 2]["tools"] as? [[String: Any]])
-    #expect(loaded.count == 1)
-    #expect(loaded[0]["name"] as? String == "lookup")
-    if additional { #expect(input[1]["role"] as? String == "developer") }
-    else { #expect(loaded[0]["defer_loading"] as? Bool == true) }
-    #expect(input.first { $0["type"] as? String == "function_call" }?["namespace"] as? String == "dynamic_tools")
 }
 
 // Port of openai-codex-stream.test.ts EOF, end_turn and User-Agent additions.
@@ -180,7 +160,7 @@ func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) as
     }
     let tokenPayload = Data("{\"https://api.openai.com/auth\":{\"chatgpt_account_id\":\"acc_test\"}}".utf8).base64EncodedString()
     let model = responses085Model(api: .openAICodexResponses, provider: "openai-codex")
-    let result = await streamOpenAICodexResponses(model: model, context: Context(messages: []),
+    let result = await streamOpenAICodexResponses(model: model, context: normalizeContext(Context(messages: [])),
         options: OpenAICodexResponsesOptions(apiKey: "e30.\(tokenPayload).sig", httpClient: client, transport: .sse)).result()
     #expect(result.stopReason == (incomplete ? .length : .stop))
     #expect(result.endTurn == false)
@@ -212,7 +192,7 @@ func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) as
     let sse = try events.map { "data: " + String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) + "\n\n" }.joined()
     let model = responses085Model()
     let client = Responses085HTTPClient { _ in ProviderHTTPResponse(statusCode: 200, body: Data(sse.utf8)) }
-    let result = await streamOpenAIResponses(model: model, context: Context(messages: []), options: OpenAIResponsesOptions(apiKey: "test", httpClient: client)).result()
+    let result = await streamOpenAIResponses(model: model, context: normalizeContext(Context(messages: [])), options: OpenAIResponsesOptions(apiKey: "test", httpClient: client)).result()
     #expect(result.stopReason == .toolUse)
     guard case .toolCall(let call) = result.content.first, case .thinking(let thinking) = result.content.last else { Issue.record("Expected final blocks"); return }
     #expect(call.arguments["value"] == AnyCodable("hello"), "Arguments: \(call.arguments)")
@@ -221,18 +201,8 @@ func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) as
 
 @Test func responses085RawFailurePreservesCodeAndStatus() async {
     let client = Responses085HTTPClient { _ in ProviderHTTPResponse(statusCode: 200, body: Data(#"data: {"type":"response.failed","response":{"status":"failed","error":{"code":"invalid_request","message":"details"}}}"#.utf8) + Data("\n\n".utf8)) }
-    let result = await streamOpenAIResponses(model: responses085Model(), context: Context(messages: []), options: OpenAIResponsesOptions(apiKey: "test", httpClient: client, maxRetries: 0)).result()
+    let result = await streamOpenAIResponses(model: responses085Model(), context: normalizeContext(Context(messages: [])), options: OpenAIResponsesOptions(apiKey: "test", httpClient: client, maxRetries: 0)).result()
     #expect(result.stopReason == .error)
     #expect(result.rawStopReason == "failed")
     #expect(result.errorMessage?.contains("invalid_request: details") == true)
-}
-
-@Test(arguments: [0, 1, 2]) func responses085CodexThreeDeferredModes(_ mode: Int) throws {
-    let model = responses085Model(api: .openAICodexResponses, provider: "openai-codex", compat: OpenAICompat(supportsToolSearch: mode == 1, supportsAdditionalTools: mode == 2))
-    let context = Context(messages: [.toolResult(ToolResultMessage(toolCallId: "load|fc", toolName: "discover", content: [.text(TextContent(text: "loaded"))], addedToolNames: ["lookup"], isError: false))], tools: [responses085Tool("discover"), responses085Tool("lookup")])
-    let items = try convertCodexMessages(model: model, context: context, grammarToolInputProperties: [:]).compactMap { $0 as? [String: Any] }
-    let types = items.compactMap { $0["type"] as? String }
-    #expect(types.contains("additional_tools") == (mode == 2))
-    #expect(types.contains("tool_search_call") == (mode == 1))
-    #expect(splitDeferredTools(context, enabled: responsesDeferredToolsEnabled(model)).immediate.count == (mode == 0 ? 2 : 1))
 }

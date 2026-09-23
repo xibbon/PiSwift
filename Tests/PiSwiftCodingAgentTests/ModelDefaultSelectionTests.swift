@@ -4,7 +4,7 @@ import PiSwiftCodingAgent
 
 @Test func defaultModelPerProviderVercelGateway() {
     let entry = defaultModelPerProvider.first { $0.0 == .vercelAiGateway }
-    #expect(entry?.1 == "anthropic/claude-opus-4.5")
+    #expect(entry?.1 == "zai/glm-5.1")
 }
 
 @Test func defaultModelsIncludeBasetenAndQwenTokenPlans() {
@@ -17,16 +17,16 @@ import PiSwiftCodingAgent
 
 @Test func selectDefaultModelPrefersVercelGateway() async {
     let model = Model(
-        id: "anthropic/claude-opus-4.5",
-        name: "Claude Opus 4.5",
+        id: "zai/glm-5.1",
+        name: "GLM 5.1",
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
-        contextWindow: 200000,
-        maxTokens: 8192
+        input: [.text],
+        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
+        contextWindow: 202800,
+        maxTokens: 64000
     )
 
     let authStorage = AuthStorage(":memory:")
@@ -35,21 +35,21 @@ import PiSwiftCodingAgent
 
     let selected = await selectDefaultModel(available: [model], registry: registry)
     #expect(selected?.provider == "vercel-ai-gateway")
-    #expect(selected?.id == "anthropic/claude-opus-4.5")
+    #expect(selected?.id == "zai/glm-5.1")
 }
 
 @Test func selectDefaultModelAcceptsHeaderOnlyConfiguredModels() async {
     let model = Model(
-        id: "anthropic/claude-opus-4.5",
-        name: "Claude Opus 4.5",
+        id: "zai/glm-5.1",
+        name: "GLM 5.1",
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5),
-        contextWindow: 200000,
-        maxTokens: 8192,
+        input: [.text],
+        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
+        contextWindow: 202800,
+        maxTokens: 64000,
         headers: ["Authorization": "Bearer local-token"]
     )
 

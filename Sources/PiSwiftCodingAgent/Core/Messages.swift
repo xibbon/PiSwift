@@ -142,6 +142,8 @@ public func convertToLlm(_ messages: [AgentMessage]) -> [Message] {
     var output: [Message] = []
     for message in messages {
         switch message {
+        case .system(let system):
+            output.append(.system(system))
         case .user(let user):
             output.append(.user(user))
         case .assistant(let assistant):

@@ -29,10 +29,19 @@ public struct ReadToolDetails: Sendable {
 public struct ReadToolOptions: Sendable {
     public var autoResizeImages: Bool?
     public var blockImages: Bool?
+    public var resizeOptions: ModelImageResizeOptions?
+    public var modelProvider: (@Sendable () -> Model?)?
 
-    public init(autoResizeImages: Bool? = nil, blockImages: Bool? = nil) {
+    public init(
+        autoResizeImages: Bool? = nil,
+        blockImages: Bool? = nil,
+        resizeOptions: ModelImageResizeOptions? = nil,
+        modelProvider: (@Sendable () -> Model?)? = nil
+    ) {
         self.autoResizeImages = autoResizeImages
         self.blockImages = blockImages
+        self.resizeOptions = resizeOptions
+        self.modelProvider = modelProvider
     }
 }
 
@@ -76,7 +85,12 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
             let base64 = data.base64EncodedString()
 
             if autoResizeImages {
-                let resized = resizeImage(ImageContent(data: base64, mimeType: mimeType))
+                let profile = options?.modelProvider?()?.inputLimits?.images?.resize ?? options?.resizeOptions
+                let limits = ImageResizeOptions(modelProfile: profile)
+                let resized = resizeImage(ImageContent(data: base64, mimeType: mimeType), options: limits)
+                guard imageFitsResizeLimits(resized, options: limits) else {
+                    return AgentToolResult(content: [.text(TextContent(text: "Read image file [\(mimeType)]\n[Image omitted: could not be resized below the inline image size limit.]"))])
+                }
                 let dimensionNote = formatDimensionNote(resized)
                 var textNote = "Read image file [\(resized.mimeType)]"
                 if let dimensionNote {
@@ -149,8 +163,11 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
         return AgentToolResult(content: [.text(TextContent(text: outputText))], details: details)
     }
     tool.executeWithContext = { id, params, signal, onUpdate, context in
-        try await createReadTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: options).execute(id, params, signal, onUpdate)
+        var executionOptions = options ?? ReadToolOptions()
+        executionOptions.resizeOptions = context.model?.inputLimits?.images?.resize ?? executionOptions.resizeOptions
+        if context.model != nil { executionOptions.modelProvider = nil }
+        return try await createReadTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: executionOptions).execute(id, params, signal, onUpdate)
     }
-    tool.constrainedSampling = getExperimentalToolSampling()
+    tool.constrainedSampling = .jsonSchema(strict: .prefer)
     return tool
 }

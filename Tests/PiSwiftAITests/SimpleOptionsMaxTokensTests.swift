@@ -21,7 +21,7 @@ struct SimpleOptionsMaxTokensTests {
         func maxTokens(model: Model, options: SimpleStreamOptions?) throws -> Int? {
             switch self {
             case .anthropic:
-                mapAnthropicSimpleOptions(model: model, context: Context(messages: []), options: options, apiKey: "test").maxTokens
+                mapAnthropicSimpleOptions(model: model, context: normalizeContext(Context(messages: [])), options: options, apiKey: "test").maxTokens
             case .openAICompletions:
                 mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: "test").maxTokens
             case .openAIResponses:
@@ -73,8 +73,8 @@ struct SimpleOptionsMaxTokensTests {
         )
         let model = maxTokensModel(api: api)
         let events = api == .googleGeminiCli
-            ? streamSimpleGoogleGeminiCli(model: model, context: Context(messages: []), options: options)
-            : streamSimpleAzureOpenAIResponses(model: model, context: Context(messages: []), options: options)
+            ? streamSimpleGoogleGeminiCli(model: model, context: normalizeContext(Context(messages: [])), options: options)
+            : streamSimpleAzureOpenAIResponses(model: model, context: normalizeContext(Context(messages: [])), options: options)
         let result = await events.result()
         #expect(result.stopReason == .aborted)
         let json = try #require(payload.withLock { $0 })

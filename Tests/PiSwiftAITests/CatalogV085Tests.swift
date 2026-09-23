@@ -14,7 +14,7 @@ import Testing
     #expect(getModel(provider: "anthropic", modelId: "claude-opus-4-8")?.compat?.supportsMidConvoEffort == nil)
     #expect(getModel(provider: "anthropic", modelId: "claude-opus-5")?.compat?.allowedFallbackModels == nil)
     let models = getProviders().flatMap { getModels(provider: $0) }
-    #expect(models.filter { $0.compat?.supportsMidConvoEffort == true }.count == 4)
+    #expect(models.filter { $0.compat?.supportsMidConvoEffort == true }.count == 5)
     let fallbacks = models.filter { $0.compat?.allowedFallbackModels?.isEmpty == false }
     #expect(fallbacks.count == 1)
     #expect(fallbacks.first?.id == "claude-fable-5")
@@ -42,7 +42,7 @@ import Testing
         let options = SimpleStreamOptions(toolChoice: choice)
         let context = Context(messages: [])
         if choice == .auto {
-            guard case .auto? = mapAnthropicSimpleOptions(model: model, context: context, options: options, apiKey: "test").toolChoice,
+            guard case .auto? = mapAnthropicSimpleOptions(model: model, context: normalizeContext(context), options: options, apiKey: "test").toolChoice,
                   case .auto? = mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: "test").toolChoice,
                   case .auto? = mapOpenAIResponsesSimpleOptions(model: model, options: options, apiKey: "test").toolChoice,
                   case .auto? = mapOpenAICodexResponsesSimpleOptions(model: model, options: options, apiKey: "test").toolChoice,
@@ -52,7 +52,7 @@ import Testing
                 return
             }
         } else {
-            guard case .none? = mapAnthropicSimpleOptions(model: model, context: context, options: options, apiKey: "test").toolChoice,
+            guard case .none? = mapAnthropicSimpleOptions(model: model, context: normalizeContext(context), options: options, apiKey: "test").toolChoice,
                   case .none? = mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: "test").toolChoice,
                   case .none? = mapOpenAIResponsesSimpleOptions(model: model, options: options, apiKey: "test").toolChoice,
                   case .none? = mapOpenAICodexResponsesSimpleOptions(model: model, options: options, apiKey: "test").toolChoice,

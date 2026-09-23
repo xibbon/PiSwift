@@ -92,15 +92,70 @@ public func calculateContextTokens(_ usage: Usage) -> Int {
 public func getLastAssistantUsage(_ entries: [SessionEntry]) -> Usage? {
     for entry in entries.reversed() {
         if case .message(let msgEntry) = entry, case .assistant(let assistant) = msgEntry.message {
-            switch assistant.stopReason {
-            case .stop, .length, .toolUse:
+            if assistant.stopReason != .aborted && assistant.stopReason != .error &&
+                calculateContextTokens(assistant.usage) > 0 {
                 return assistant.usage
-            case .pending, .error, .aborted, .deferred:
-                break
             }
         }
     }
     return nil
+}
+
+public struct ContextUsageEstimate: Sendable {
+    public var tokens: Int
+    public var usageTokens: Int
+    public var trailingTokens: Int
+    public var lastUsageIndex: Int?
+}
+
+public func estimateContextTokens(_ messages: [AgentMessage]) -> ContextUsageEstimate {
+    let usageIndex = messages.indices.reversed().first { index in
+        if case .assistant(let assistant) = messages[index] {
+            return assistant.stopReason != .aborted && assistant.stopReason != .error &&
+                calculateContextTokens(assistant.usage) > 0
+        }
+        return false
+    }
+    guard let usageIndex, case .assistant(let assistant) = messages[usageIndex] else {
+        let tokens = messages.reduce(0) { $0 + estimateTokens($1) }
+        return ContextUsageEstimate(tokens: tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: nil)
+    }
+    let usageTokens = calculateContextTokens(assistant.usage)
+    let trailingTokens = messages.dropFirst(usageIndex + 1).reduce(0) { $0 + estimateTokens($1) }
+    return ContextUsageEstimate(tokens: usageTokens + trailingTokens, usageTokens: usageTokens,
+                                trailingTokens: trailingTokens, lastUsageIndex: usageIndex)
+}
+
+/// Discard provider usage if a later edit or compaction changed the context it measured.
+public func estimateProjectedContextTokens(_ projection: SessionProjection,
+                                           _ branchEntries: [SessionEntry]) -> ContextUsageEstimate {
+    let estimate = estimateContextTokens(projection.messages)
+    if let lastUsageIndex = estimate.lastUsageIndex {
+        var messageIndex = 0
+        var usageEntryId: String?
+        for entry in projection.entries {
+            let nextIndex = messageIndex + entry.messages.count
+            if lastUsageIndex < nextIndex {
+                usageEntryId = entry.sourceEntry.id
+                break
+            }
+            messageIndex = nextIndex
+        }
+        let usageEntryIndex = usageEntryId.flatMap { id in branchEntries.firstIndex(where: { $0.id == id }) } ?? -1
+        let invalidatingIndex = branchEntries.lastIndex(where: { entry in
+            if case .contextEdit = entry { return true }
+            if case .compaction = entry { return true }
+            return false
+        }) ?? -1
+        if usageEntryIndex > invalidatingIndex { return estimate }
+    }
+    let currentSystem = getCurrentSystemMessage(projection.messages)
+    let tokens = (currentSystem.map { estimateTokens(.system($0)) } ?? 0) +
+        projection.messages.reduce(0) { sum, message in
+            if case .system = message { return sum }
+            return sum + estimateTokens(message)
+        }
+    return ContextUsageEstimate(tokens: tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: nil)
 }
 
 public func shouldCompact(_ contextTokens: Int, _ contextWindow: Int, _ settings: CompactionSettings) -> Bool {
@@ -111,6 +166,17 @@ public func shouldCompact(_ contextTokens: Int, _ contextWindow: Int, _ settings
 public func estimateTokens(_ message: AgentMessage) -> Int {
     var chars = 0
     switch message {
+    case .system(let system):
+        switch system.content {
+        case .text(let text): chars += text.utf16.count
+        case .blocks(let blocks): chars += blocks.reduce(0) { $0 + $1.text.utf16.count }
+        }
+        for section in system.sections?.entries ?? [] {
+            if let value = section.value { chars += value.utf16.count }
+        }
+        if case .array(let tools)? = systemMessageToOrderedJSON(system)["toolsAdded"] {
+            chars += OrderedJSON.array(tools).serialized(escapeSlashes: false).utf16.count
+        }
     case .user(let user):
         switch user.content {
         case .text(let text):
@@ -119,6 +185,8 @@ public func estimateTokens(_ message: AgentMessage) -> Int {
             for block in blocks {
                 if case .text(let text) = block {
                     chars += text.text.count
+                } else if case .image = block {
+                    chars += 4800
                 }
             }
         }
@@ -221,9 +289,9 @@ public func findCutPoint(_ entries: [SessionEntry], _ startIndex: Int, _ endInde
         guard let message = messageFromEntry(entry) else { continue }
         accumulatedTokens += estimateTokens(message)
         if accumulatedTokens >= keepRecentTokens {
-            if let nextCut = cutPoints.first(where: { $0 >= i }) {
-                cutIndex = nextCut
-            }
+            // A trailing tool result can exceed the budget alone. Keep its
+            // preceding valid cut point instead of retaining all old history.
+            cutIndex = cutPoints.first(where: { $0 >= i }) ?? cutPoints[cutPoints.count - 1]
             break
         }
     }
@@ -241,54 +309,124 @@ public func findCutPoint(_ entries: [SessionEntry], _ startIndex: Int, _ endInde
     return CutPointResult(firstKeptEntryIndex: cutIndex, turnStartIndex: turnStartIndex, isSplitTurn: !startsTurn && turnStartIndex != -1)
 }
 
+private func isProjectedCutPoint(_ message: AgentMessage) -> Bool {
+    switch message {
+    case .user, .assistant: return true
+    case .custom: return true
+    case .system, .toolResult: return false
+    }
+}
+
+private func isProjectedTurnStart(_ message: AgentMessage) -> Bool {
+    switch message {
+    case .user: return true
+    case .custom: return true
+    case .system, .assistant, .toolResult: return false
+    }
+}
+
+private func findProjectedCutPoint(_ entries: [ProjectedSessionEntry], _ startIndex: Int,
+                                   _ endIndex: Int, _ keepRecentTokens: Int) -> CutPointResult {
+    let cutPoints = (startIndex..<endIndex).filter { index in
+        if case .compaction = entries[index].sourceEntry { return false }
+        return entries[index].messages.contains(where: isProjectedCutPoint)
+    }
+    guard let first = cutPoints.first else {
+        return CutPointResult(firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false)
+    }
+    var cutIndex = first
+    var accumulatedTokens = 0
+    var exceededBudget = false
+    for index in stride(from: endIndex - 1, through: startIndex, by: -1) {
+        let tokens = entries[index].messages.reduce(0) { $0 + estimateTokens($1) }
+        if tokens == 0 { continue }
+        accumulatedTokens += tokens
+        if accumulatedTokens >= keepRecentTokens {
+            exceededBudget = true
+            cutIndex = cutPoints.first(where: { $0 >= index }) ?? cutPoints[cutPoints.count - 1]
+            break
+        }
+    }
+
+    let suffix = Array(entries[(cutIndex + 1)..<endIndex])
+    func isIntrinsicallyVisible(_ entry: ProjectedSessionEntry) -> Bool {
+        if case .contextEdit = entry.sourceEntry { return false }
+        return !sessionEntryToContextMessages(entry.sourceEntry).isEmpty
+    }
+    func isOmitted(_ entry: ProjectedSessionEntry) -> Bool {
+        isIntrinsicallyVisible(entry) && entry.messages.isEmpty
+    }
+    let omittedIds = Set(suffix.filter(isOmitted).map { $0.sourceEntry.id })
+    let hasExternalReplacement = suffix.contains { entry in
+        guard case .contextEdit(let edit) = entry.sourceEntry, edit.replacement != nil else { return false }
+        return !omittedIds.contains(edit.targetId)
+    }
+    let hasOmittedAssistant = suffix.contains { entry in
+        guard case .message(let message) = entry.sourceEntry, case .assistant = message.message else { return false }
+        return isOmitted(entry)
+    }
+    let isRecoveryOmissionSuffix = exceededBudget && !hasExternalReplacement && hasOmittedAssistant &&
+        suffix.allSatisfy { entry in
+            if case .compaction = entry.sourceEntry { return false }
+            return !isIntrinsicallyVisible(entry) || isOmitted(entry)
+        }
+    if isRecoveryOmissionSuffix { cutIndex += 1 }
+
+    while cutIndex > startIndex {
+        let previous = entries[cutIndex - 1]
+        if case .compaction = previous.sourceEntry { break }
+        if !previous.messages.isEmpty { break }
+        cutIndex -= 1
+    }
+    let startsTurn = entries[cutIndex].messages.contains(where: isProjectedTurnStart)
+    let turnStartIndex = startsTurn ? -1 : stride(from: cutIndex, through: startIndex, by: -1)
+        .first { index in
+            if case .compaction = entries[index].sourceEntry { return false }
+            return entries[index].messages.contains(where: isProjectedTurnStart)
+        } ?? -1
+    return CutPointResult(firstKeptEntryIndex: cutIndex, turnStartIndex: turnStartIndex,
+                          isSplitTurn: !startsTurn && turnStartIndex != -1)
+}
+
 public func prepareCompaction(_ pathEntries: [SessionEntry], _ settings: CompactionSettings) -> CompactionPreparation? {
     if let last = pathEntries.last, last.type == "compaction" {
         return nil
     }
 
-    var prevCompactionIndex = -1
-    for i in stride(from: pathEntries.count - 1, through: 0, by: -1) {
-        if pathEntries[i].type == "compaction" {
-            prevCompactionIndex = i
-            break
-        }
-    }
+    let projection = buildSessionProjection(pathEntries)
+    let projectedEntries = projection.entries
+    let sourceEntries = projectedEntries.map(\.sourceEntry)
+    let prevCompactionIndex = projectedEntries.firstIndex { entry in
+        if case .compaction = entry.sourceEntry { return !entry.messages.isEmpty }
+        return false
+    } ?? -1
     let boundaryStart = prevCompactionIndex + 1
-    let boundaryEnd = pathEntries.count
+    let boundaryEnd = projectedEntries.count
+    let tokensBefore = estimateProjectedContextTokens(projection, pathEntries).tokens
 
-    let lastUsage = getLastAssistantUsage(pathEntries)
-    let tokensBefore = lastUsage.map { calculateContextTokens($0) } ?? 0
-
-    let cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens)
-    let firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex]
-    let firstKeptEntryId = firstKeptEntry.id
+    let cutPoint = findProjectedCutPoint(projectedEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens)
+    guard projectedEntries.indices.contains(cutPoint.firstKeptEntryIndex) else { return nil }
+    let firstKeptEntryId = projectedEntries[cutPoint.firstKeptEntryIndex].sourceEntry.id
 
     let historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex
 
-    var messagesToSummarize: [AgentMessage] = []
-    if historyEnd >= boundaryStart {
-        for i in boundaryStart..<historyEnd {
-            if let msg = messageFromEntry(pathEntries[i]) {
-                messagesToSummarize.append(msg)
-            }
+    func conversationMessages(_ range: Range<Int>) -> [AgentMessage] {
+        projectedEntries[range].flatMap { entry -> [AgentMessage] in
+            if case .compaction = entry.sourceEntry { return [] }
+            return entry.messages.filter { if case .system = $0 { return false }; return true }
         }
     }
-
-    var turnPrefixMessages: [AgentMessage] = []
-    if cutPoint.isSplitTurn {
-        for i in cutPoint.turnStartIndex..<cutPoint.firstKeptEntryIndex {
-            if let msg = messageFromEntry(pathEntries[i]) {
-                turnPrefixMessages.append(msg)
-            }
-        }
-    }
+    let messagesToSummarize = conversationMessages(boundaryStart..<historyEnd)
+    let turnPrefixMessages = cutPoint.isSplitTurn
+        ? conversationMessages(cutPoint.turnStartIndex..<cutPoint.firstKeptEntryIndex) : []
+    if messagesToSummarize.isEmpty && turnPrefixMessages.isEmpty { return nil }
 
     var previousSummary: String?
-    if prevCompactionIndex >= 0, case .compaction(let compaction) = pathEntries[prevCompactionIndex] {
+    if prevCompactionIndex >= 0, case .compaction(let compaction) = projectedEntries[prevCompactionIndex].sourceEntry {
         previousSummary = compaction.summary
     }
 
-    var fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex)
+    var fileOps = extractFileOperations(messagesToSummarize, sourceEntries, prevCompactionIndex)
     if cutPoint.isSplitTurn {
         for msg in turnPrefixMessages {
             extractFileOpsFromMessage(msg, &fileOps)
@@ -322,7 +460,7 @@ public func compact(
 ) async throws -> CompactionResult {
     let history: SummaryWithUsage
     if preparation.isSplitTurn, !preparation.turnPrefixMessages.isEmpty, preparation.messagesToSummarize.isEmpty {
-        history = SummaryWithUsage(text: "No prior history.", usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0))
+        history = SummaryWithUsage(text: preparation.previousSummary ?? "No prior history.", usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0))
     } else {
         history = try await generateSummaryWithUsage(
             currentMessages: preparation.messagesToSummarize, model: model,
@@ -342,7 +480,7 @@ public func compact(
             streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
         )
         summary += "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix.text
-        usage = combineSummaryUsage(usage, prefix.usage)
+        usage = preparation.messagesToSummarize.isEmpty ? prefix.usage : combineSummaryUsage(usage, prefix.usage)
     }
     let lists = computeFileLists(preparation.fileOps)
     summary += formatFileOperations(readFiles: lists.readFiles, modifiedFiles: lists.modifiedFiles)
@@ -480,7 +618,7 @@ public func completeSummarization(
     return await retryAssistantCall(produce: {
         do {
             if let streamFn {
-                let stream = try await streamFn(model, context, requestOptions)
+                let stream = try await streamFn(model, normalizeContext(context), requestOptions)
                 return await stream.result()
             }
             return try await completeSimple(model: model, context: context, options: requestOptions)
@@ -565,20 +703,20 @@ private func createSummarizationOptions(
 }
 
 private let TURN_PREFIX_SUMMARIZATION_PROMPT = """
-This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
+The messages above are earlier context from an ongoing conversation. Later messages are stored separately and do not need to be reconstructed.
 
-Summarize the prefix to provide context for the retained suffix:
+Create a concise checkpoint of the user's request and the progress shown above. This checkpoint will be placed before the later messages so the conversation can continue with the necessary context.
 
 ## Original Request
-[What did the user ask for in this turn?]
+[What did the user ask for?]
 
-## Early Progress
-- [Key decisions and work done in the prefix]
+## Progress So Far
+- [Key decisions and work completed in these messages]
 
-## Context for Suffix
-- [Information needed to understand the retained recent work]
+## Context Needed to Continue
+- [Information from these messages needed to understand the later work]
 
-Be concise. Focus on what's needed to understand the kept suffix.
+Only summarize information explicitly present above. Do not infer or recreate later messages.
 """
 
 private func generateTurnPrefixSummary(
@@ -588,7 +726,7 @@ private func generateTurnPrefixSummary(
 ) async throws -> SummaryWithUsage {
     let maxTokens = min(Int(Double(reserveTokens) * 0.5), model.maxTokens > 0 ? model.maxTokens : Int.max)
     let conversationText = serializeConversation(convertToLlm(messages))
-    let promptText = "<conversation>\n\(conversationText)\n</conversation>\n\n\(TURN_PREFIX_SUMMARIZATION_PROMPT)"
+    let promptText = "# Conversation\n\(conversationText)\n\n# Instructions\n\(TURN_PREFIX_SUMMARIZATION_PROMPT)"
     let response = try await completeSummarization(
         model: model, context: buildSummarizationContext(promptText),
         options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
@@ -638,7 +776,7 @@ private func findValidCutPoints(_ entries: [SessionEntry], _ startIndex: Int, _ 
         switch entry {
         case .message(let msg):
             switch msg.message {
-            case .toolResult:
+            case .system, .toolResult:
                 break
             default:
                 cutPoints.append(i)

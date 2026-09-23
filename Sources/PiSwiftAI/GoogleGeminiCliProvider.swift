@@ -50,9 +50,10 @@ private func googleGeminiCliSession(for url: URL?) -> URLSession {
 
 public func streamGoogleGeminiCli(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: GoogleGeminiCliOptions
 ) -> AssistantMessageEventStream {
+    let context = collapsedProviderContext(context)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -418,7 +419,7 @@ public func streamGoogleGeminiCli(
 
 public func streamSimpleGoogleGeminiCli(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: SimpleStreamOptions?
 ) -> AssistantMessageEventStream {
     let baseMaxTokens = options?.maxTokens ?? model.maxTokens
@@ -545,7 +546,7 @@ private func buildGeminiCliRequest(
             }
             thinkingConfig = enabledConfig
         } else {
-            thinkingConfig = googleDisabledThinkingConfig(model: model)
+            thinkingConfig = try googleDisabledThinkingConfig(model: model)
         }
         generationConfig["thinkingConfig"] = thinkingConfig
     }

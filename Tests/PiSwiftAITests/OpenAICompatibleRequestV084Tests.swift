@@ -55,7 +55,7 @@ private func captureCompletionsPayload(
     resolvedOptions.maxRetries = 0
     let stream = streamOpenAICompletions(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: resolvedOptions
     )
     _ = await stream.result()
@@ -87,7 +87,7 @@ private func captureResponsesPayload(
     resolvedOptions.maxRetries = 0
     let stream = streamOpenAIResponses(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: resolvedOptions
     )
     _ = await stream.result()
@@ -119,7 +119,7 @@ private func captureAzureResponsesPayload(
     resolvedOptions.maxRetries = 0
     let stream = streamAzureOpenAIResponses(
         model: model,
-        context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
         options: resolvedOptions
     )
     _ = await stream.result()
@@ -217,7 +217,7 @@ private func captureAzureResponsesPayload(
         )
         let stream = streamGoogle(
             model: model,
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: GoogleOptions(
                 apiKey: "test-key",
                 onPayload: { snapshot in captured.withLock { $0 = snapshot.json } },

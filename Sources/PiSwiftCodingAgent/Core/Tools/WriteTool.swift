@@ -50,6 +50,6 @@ public func createWriteTool(cwd: String) -> AgentTool {
     tool.executeWithContext = { id, params, signal, onUpdate, context in
         try await createWriteTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
     }
-    tool.constrainedSampling = getExperimentalToolSampling()
+    tool.constrainedSampling = .jsonSchema(strict: .prefer)
     return tool
 }

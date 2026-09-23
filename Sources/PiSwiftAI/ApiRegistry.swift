@@ -1,10 +1,10 @@
 import Foundation
 
 /// Function type for streaming with full options.
-public typealias ApiStreamFunction = @Sendable (Model, Context, StreamOptions?) -> AssistantMessageEventStream
+public typealias ApiStreamFunction = @Sendable (Model, TranscriptContext, StreamOptions?) -> AssistantMessageEventStream
 
 /// Function type for streaming with simple options.
-public typealias ApiStreamSimpleFunction = @Sendable (Model, Context, SimpleStreamOptions?) -> AssistantMessageEventStream
+public typealias ApiStreamSimpleFunction = @Sendable (Model, TranscriptContext, SimpleStreamOptions?) -> AssistantMessageEventStream
 
 /// A registered API provider with stream functions.
 public struct ApiProvider: Sendable {
@@ -124,6 +124,8 @@ public func registerBuiltInProviders() {
                 signal: options?.signal,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
+                cacheRetention: options?.cacheRetention,
+                sessionId: options?.sessionId,
                 metadata: options?.metadata,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
@@ -269,6 +271,7 @@ public func registerBuiltInProviders() {
                 signal: options?.signal,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
+                sessionId: options?.sessionId,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
@@ -305,6 +308,7 @@ public func registerBuiltInProviders() {
                 signal: options?.signal,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
+                sessionId: options?.sessionId,
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,

@@ -33,18 +33,21 @@ import PiSwiftAgent
     }
 
     #expect(eventCount.withLock { $0 } == 0)
-    agent.systemPrompt = "Test prompt"
+    // v0.87.1: prompt changes are system messages
+    agent.appendMessage(.system(SystemMessage(content: .text(""), sections: SystemPromptSections([("preamble", "Test prompt")]))))
     #expect(eventCount.withLock { $0 } == 0)
     #expect(agent.state.systemPrompt == "Test prompt")
 
     unsubscribe()
-    agent.systemPrompt = "Another prompt"
+    agent.appendMessage(.system(SystemMessage(content: .text(""), sections: SystemPromptSections([("preamble", "Another prompt")]))))
     #expect(eventCount.withLock { $0 } == 0)
+    #expect(agent.state.systemPrompt == "Another prompt")
 }
 
 @Test func stateMutators() {
     let agent = Agent()
-    agent.systemPrompt = "Custom prompt"
+    // v0.87.1: prompt changes are system messages
+    agent.appendMessage(.system(SystemMessage(content: .text("Custom prompt"))))
     #expect(agent.state.systemPrompt == "Custom prompt")
 
     let newModel = getModel(provider: .openai, modelId: "gpt-5-mini")

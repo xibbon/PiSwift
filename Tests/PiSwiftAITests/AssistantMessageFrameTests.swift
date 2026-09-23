@@ -71,7 +71,7 @@ private struct FrameHTTPClient: ProviderHTTPClient {
 
     """
     let model = Model(id: "test", name: "test", api: .openAIResponses, provider: "openai", baseUrl: "https://example.test/v1", reasoning: false, input: [.text], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0), contextWindow: 1000, maxTokens: 100)
-    let stream = streamOpenAIResponses(model: model, context: Context(messages: []), options: OpenAIResponsesOptions(apiKey: "test", httpClient: FrameHTTPClient(data: Data(sse.utf8))))
+    let stream = streamOpenAIResponses(model: model, context: normalizeContext(Context(messages: [])), options: OpenAIResponsesOptions(apiKey: "test", httpClient: FrameHTTPClient(data: Data(sse.utf8))))
     var encoder = AssistantMessageFrameEncoder(); var frames: [AssistantMessageFrame] = []
     for await event in stream { if let frame = try encoder.encode(event) { frames.append(frame) } }
     let output = await stream.result()

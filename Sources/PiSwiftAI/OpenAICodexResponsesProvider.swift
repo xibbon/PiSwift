@@ -2,9 +2,12 @@ import Foundation
 
 public func streamOpenAICodexResponses(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: OpenAICodexResponsesOptions
 ) -> AssistantMessageEventStream {
+    let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
+    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let context = Context(systemPrompt: getInitialSystemMessage(transcript.messages).map(getSystemMessageText), messages: transcript.messages, tools: toolPlan.requestTools)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -42,7 +45,7 @@ public func streamOpenAICodexResponses(
 
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
             let grammarToolInputProperties = try createGrammarToolInputProperties(
-                tools: context.tools,
+                tools: getDeclaredTools(context.messages),
                 supportsOpenAIGrammarTools: supportsGrammar
             )
             var body: [String: Any] = [
@@ -69,9 +72,7 @@ public func streamOpenAICodexResponses(
             if let temperature = options.temperature {
                 body["temperature"] = temperature
             }
-            let placement = splitDeferredTools(context, enabled: responsesDeferredToolsEnabled(model))
-            if !placement.immediate.isEmpty {
-                let tools = placement.immediate
+            if let tools = context.tools, !tools.isEmpty {
                 body["tools"] = try convertCodexTools(
                     tools,
                     supportsStrictMode: model.compat?.supportsStrictMode ?? true,
@@ -82,7 +83,7 @@ public func streamOpenAICodexResponses(
 
             if let choice = options.toolChoice {
                 body["tool_choice"] = responsesToolChoicePayload(choice)
-            } else if !placement.immediate.isEmpty {
+            } else if context.tools?.isEmpty == false {
                 body["tool_choice"] = "auto"
             }
 
@@ -99,7 +100,7 @@ public func streamOpenAICodexResponses(
                 textVerbosity: options.textVerbosity ?? .low,
                 include: options.include
             )
-            transformCodexRequestBody(&body, options: requestOptions, prompt: nil)
+            transformCodexRequestBody(&body, options: requestOptions, prompt: nil, model: model)
             emitPayload(options.onPayload, jsonObject: body)
 
             var currentBlockIndex: Int? = nil
@@ -414,7 +415,7 @@ public func streamOpenAICodexResponses(
                             throw OpenAICodexStreamError.aborted
                         }
                         if output.stopReason == .pending {
-                            throw OpenAICodexStreamError.apiError("OpenAI Codex Responses stream ended without a stop reason")
+                            throw OpenAICodexStreamError.apiError("\(model.provider) Responses stream ended without a stop reason")
                         }
                         if output.stopReason == .aborted {
                             throw OpenAICodexStreamError.aborted
@@ -486,7 +487,7 @@ public func streamOpenAICodexResponses(
             }
 
             if output.stopReason == .pending {
-                throw OpenAICodexStreamError.apiError("OpenAI Codex Responses stream ended without a stop reason")
+                throw OpenAICodexStreamError.apiError("\(model.provider) Responses stream ended without a stop reason")
             }
             if output.stopReason == .aborted {
                 throw OpenAICodexStreamError.aborted
@@ -992,8 +993,16 @@ func convertCodexMessages(
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
     var msgIndex = 0
 
-    for message in transformed {
+    let toolPlan = resolveTranscriptTools(context.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    for (index, message) in transformed.enumerated() {
         switch message {
+        case .system(let system):
+            if index == 0 { continue }
+            if toolPlan.anchorsAdditions && system.toolsAdded?.isEmpty == false {
+                messages.append(["role": "developer", "content": "\u{0}__PI_TRANSCRIPT_TOOLS__:\(index)"])
+            }
+            let text = renderSystemMessageUpdate(system)
+            if !text.isEmpty { messages.append(["role": model.reasoning && model.compat?.supportsDeveloperRole != false ? "developer" : "system", "content": sanitizeSurrogates(text)]) }
         case .user(let user):
             switch user.content {
             case .text(let text):

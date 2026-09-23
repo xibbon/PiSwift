@@ -227,7 +227,7 @@ public func retryAssistantCall(
                     state.retryableFailureCount += 1
                     return state.retryableFailureCount
                 }
-                let delayMs = max(0, policy.baseDelayMs) * pow(2, Double(failureCount - 1))
+                let delayMs = retryDelayMs(policy: policy, attempt: failureCount)
                 throw RetryableAssistantResponseError(response: response, retryDelayMs: delayMs)
             }
         )

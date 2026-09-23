@@ -55,7 +55,7 @@ public struct ProxyStreamOptions: Sendable {
     }
 }
 
-public func streamProxy(model: Model, context: Context, options: ProxyStreamOptions, session: URLSession = .shared) -> AssistantMessageEventStream {
+public func streamProxy(model: Model, context: TranscriptContext, options: ProxyStreamOptions, session: URLSession = .shared) -> AssistantMessageEventStream {
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -140,7 +140,7 @@ public func streamProxy(model: Model, context: Context, options: ProxyStreamOpti
     return stream
 }
 
-func encodeProxyRequestPayload(model: Model, context: Context, options: ProxyStreamOptions) throws -> Data {
+func encodeProxyRequestPayload(model: Model, context: TranscriptContext, options: ProxyStreamOptions) throws -> Data {
     let body = ProxyRequestPayload(
         model: ProxyModelPayload(model),
         context: ProxyContextPayload(context),
@@ -368,14 +368,10 @@ private struct ProxyModelCost: Encodable {
 }
 
 private struct ProxyContextPayload: Encodable {
-    let systemPrompt: String?
     let messages: [ProxyMessagePayload]
-    let tools: [ProxyToolPayload]?
 
-    init(_ context: Context) {
-        self.systemPrompt = context.systemPrompt
+    init(_ context: TranscriptContext) {
         self.messages = context.messages.map(ProxyMessagePayload.init)
-        self.tools = context.tools?.map(ProxyToolPayload.init)
     }
 }
 
@@ -401,6 +397,8 @@ private struct ProxyMessagePayload: Encodable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch message {
+        case .system(let system):
+            try AnyCodable(systemMessageToJSONObject(system)).encode(to: encoder)
         case .user(let user):
             try container.encode("user", forKey: .role)
             try container.encode(user.timestamp, forKey: .timestamp)
@@ -596,6 +594,7 @@ private struct ProxyUsage: Decodable {
     let output: Int
     let cacheRead: Int
     let cacheWrite: Int
+    let cacheWrite1h: Int?
     let totalTokens: Int
     let cost: ProxyUsageCost
 
@@ -605,6 +604,7 @@ private struct ProxyUsage: Decodable {
             output: output,
             cacheRead: cacheRead,
             cacheWrite: cacheWrite,
+            cacheWrite1h: cacheWrite1h,
             totalTokens: totalTokens,
             cost: UsageCost(
                 input: cost.input,

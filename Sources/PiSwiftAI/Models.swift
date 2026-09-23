@@ -51,7 +51,9 @@ public func calculateCost(model: Model, usage: inout Usage) -> UsageCost {
     usage.cost.input = (rates.input / 1_000_000) * Double(usage.input)
     usage.cost.output = (rates.output / 1_000_000) * Double(usage.output)
     usage.cost.cacheRead = (rates.cacheRead / 1_000_000) * Double(usage.cacheRead)
-    usage.cost.cacheWrite = (rates.cacheWrite / 1_000_000) * Double(usage.cacheWrite)
+    let longWrite = usage.cacheWrite1h ?? 0
+    let shortWrite = usage.cacheWrite - longWrite
+    usage.cost.cacheWrite = (rates.cacheWrite * Double(shortWrite) + rates.input * 2 * Double(longWrite)) / 1_000_000
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
     return usage.cost
 }

@@ -10,7 +10,8 @@ struct OpenAICodexRequestOptions: Sendable {
 func transformCodexRequestBody(
     _ body: inout [String: Any],
     options: OpenAICodexRequestOptions,
-    prompt: OpenAICodexSystemPrompt?
+    prompt: OpenAICodexSystemPrompt?,
+    model: Model? = nil
 ) {
     body["store"] = false
     body["stream"] = true
@@ -39,10 +40,11 @@ func transformCodexRequestBody(
     }
 
     if let effort = options.reasoningEffort {
-        let model = (body["model"] as? String) ?? ""
+        let modelId = (body["model"] as? String) ?? ""
         let summary = options.reasoningSummary?.rawValue ?? "auto"
         let config: [String: Any] = [
-            "effort": clampCodexReasoningEffort(model: model, effort: effort),
+            "effort": model.flatMap { mappedThinkingLevel(model: $0, level: effort) }
+                ?? clampCodexReasoningEffort(model: modelId, effort: effort),
             "summary": summary,
         ]
         var reasoning = (body["reasoning"] as? [String: Any]) ?? [:]
@@ -50,6 +52,8 @@ func transformCodexRequestBody(
             reasoning[key] = value
         }
         body["reasoning"] = reasoning
+    } else if let model, model.reasoning, let offEffort = mappedOffThinkingLevel(model: model) {
+        body["reasoning"] = ["effort": offEffort]
     } else {
         body.removeValue(forKey: "reasoning")
     }

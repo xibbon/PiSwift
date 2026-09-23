@@ -22,6 +22,7 @@ private let nonRetryableProviderLimitErrorPatterns = [
 private let retryableProviderErrorPatterns = [
     // Generic provider load, HTTP status, and server-side transient failures.
     "overloaded",
+    "currently experiencing high demand",
     "rate.?limit",
     "too many requests",
     "429",
@@ -29,6 +30,7 @@ private let retryableProviderErrorPatterns = [
     "502",
     "503",
     "504",
+    "520",
     "524",
     "service.?unavailable",
     "server.?error",
@@ -119,12 +121,26 @@ public struct RetryPolicy: Sendable {
     public var maxRetries: Int
     /// Base delay in milliseconds. Each retry doubles this value.
     public var baseDelayMs: Double
+    /// Maximum delay for agent retries. Nil uses 60 seconds.
+    public var maxAgentDelayMs: Double?
 
-    public init(enabled: Bool, maxRetries: Int, baseDelayMs: Double) {
+    public init(enabled: Bool, maxRetries: Int, baseDelayMs: Double, maxAgentDelayMs: Double? = nil) {
         self.enabled = enabled
         self.maxRetries = maxRetries
         self.baseDelayMs = baseDelayMs
+        self.maxAgentDelayMs = maxAgentDelayMs
     }
+}
+
+public let DEFAULT_MAX_AGENT_RETRY_DELAY_MS: Double = 60_000
+private let MAX_SAFE_INTEGER: Double = 9_007_199_254_740_991
+
+/// Compute one agent retry delay without changing provider retry delays.
+public func retryDelayMs(policy: RetryPolicy, attempt: Int) -> Double {
+    let delay = policy.baseDelayMs * pow(2, Double(max(0, attempt - 1)))
+    let safeDelay = delay.isFinite && delay.rounded(.towardZero) == delay && abs(delay) <= MAX_SAFE_INTEGER
+        ? delay : MAX_SAFE_INTEGER
+    return min(safeDelay, policy.maxAgentDelayMs ?? DEFAULT_MAX_AGENT_RETRY_DELAY_MS)
 }
 
 /// Lifecycle callbacks for `retryAssistantCall`.

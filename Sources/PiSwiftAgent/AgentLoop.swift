@@ -82,16 +82,15 @@ public func runAgentLoop(
     signal: CancellationToken? = nil,
     streamFn: StreamFn? = nil
 ) async -> [AgentMessage] {
-    let newMessages = prompts
+    let newMessages = declareToolChanges(context: context, pendingMessages: prompts)
     let currentContext = AgentContext(
-        systemPrompt: context.systemPrompt,
-        messages: context.messages + prompts,
+        messages: context.messages + newMessages,
         tools: context.tools
     )
 
     await emit(.agentStart)
     await emit(.turnStart)
-    for prompt in prompts {
+    for prompt in newMessages {
         await emit(.messageStart(message: prompt))
         await emit(.messageEnd(message: prompt))
     }
@@ -168,6 +167,42 @@ private func createAgentStream() -> EventStream<AgentEvent, [AgentMessage]> {
 
 // MARK: - Main loop
 
+/// Reconcile pending declarations with the executable tool set before a request.
+private func declareToolChanges(context: AgentContext, pendingMessages: [AgentMessage]) -> [AgentMessage] {
+    let systemIndex = pendingMessages.indices.reversed().first { index in
+        if case .system = pendingMessages[index] { return true }
+        return false
+    }
+    var baseline = pendingMessages
+    if let systemIndex, case .system(var system) = baseline[systemIndex] {
+        system.toolsAdded = nil
+        system.toolsRemoved = nil
+        baseline[systemIndex] = .system(system)
+    }
+    let declared = getCurrentTools(context.messages + baseline)
+    let executable = (context.tools ?? []).map { toToolDeclaration($0.aiTool) }
+    let changes = getToolStateChanges(declared, executable)
+    let unchanged = changes.toolsAdded.isEmpty && changes.toolsRemoved.isEmpty
+    if let systemIndex, case .system(var pending) = pendingMessages[systemIndex] {
+        if unchanged && pending.toolsAdded?.isEmpty != false && pending.toolsRemoved?.isEmpty != false {
+            return pendingMessages
+        }
+        pending.toolsAdded = changes.toolsAdded.isEmpty ? nil : changes.toolsAdded
+        pending.toolsRemoved = changes.toolsRemoved.isEmpty ? nil : changes.toolsRemoved
+        baseline[systemIndex] = .system(pending)
+        return baseline
+    }
+    if unchanged { return pendingMessages }
+    let update = AgentMessage.system(SystemMessage(
+        content: .text(""),
+        toolsAdded: changes.toolsAdded.isEmpty ? nil : changes.toolsAdded,
+        toolsRemoved: changes.toolsRemoved.isEmpty ? nil : changes.toolsRemoved
+    ))
+    let index = pendingMessages.firstIndex { $0.role != "system" } ?? pendingMessages.count
+    baseline.insert(update, at: index)
+    return baseline
+}
+
 private func runLoop(
     currentContext: AgentContext,
     newMessages: [AgentMessage],
@@ -180,6 +215,7 @@ private func runLoop(
     var messages = newMessages
     var config = config
     var lastCompletedTurn: PrepareNextTurnContext?
+    var explicitContinuation = false
     var pendingMessages = (await config.getSteeringMessages?()) ?? []
 
     while true {
@@ -187,9 +223,11 @@ private func runLoop(
 
         while hasMoreToolCalls || !pendingMessages.isEmpty {
             do {
+                var preparedMessages: [AgentMessage] = []
                 if let lastCompletedTurn {
                     if let update = try await config.prepareNextTurn?(lastCompletedTurn) {
                         context = update.context ?? context
+                        preparedMessages = update.messages ?? []
                         config.model = update.model ?? config.model
                         if let level = update.thinkingLevel {
                             config.reasoning = ReasoningEffort(rawValue: level.rawValue)
@@ -201,15 +239,27 @@ private func runLoop(
                     await emit(.turnStart)
                 }
 
-            if !pendingMessages.isEmpty {
-                for message in pendingMessages {
+                for message in declareToolChanges(context: context, pendingMessages: preparedMessages + pendingMessages) {
                     await emit(.messageStart(message: message))
                     await emit(.messageEnd(message: message))
                     context.messages.append(message)
                     messages.append(message)
                 }
                 pendingMessages.removeAll()
-            }
+
+                if let update = try await config.prepareRequest?(
+                    PrepareRequestContext(
+                        context: context,
+                        model: config.model,
+                        thinkingLevel: config.reasoning.flatMap { ThinkingLevel(rawValue: $0.rawValue) } ?? .off
+                    ), signal
+                ) {
+                    context = update.context ?? context
+                    config.model = update.model ?? config.model
+                    if let level = update.thinkingLevel {
+                        config.reasoning = ReasoningEffort(rawValue: level.rawValue)
+                    }
+                }
 
                 let (assistantMessage, updatedContext) = try await streamAssistantResponse(
                     context: context,
@@ -224,6 +274,8 @@ private func runLoop(
 
                 switch assistantMessage.stopReason {
                 case .pending, .error, .aborted, .deferred:
+                    let completed = AgentTurnContext(message: assistantMessage, toolResults: [], context: context, newMessages: messages)
+                    _ = await config.finishTurn?(completed, signal)
                     await emit(.turnEnd(message: agentMessage, toolResults: []))
                     await emit(.agentEnd(messages: messages))
                     return messages
@@ -267,8 +319,6 @@ private func runLoop(
                     }
                 }
 
-                await emit(.turnEnd(message: agentMessage, toolResults: toolResults))
-
                 let completedTurn = PrepareNextTurnContext(
                     message: assistantMessage,
                     toolResults: toolResults,
@@ -276,29 +326,47 @@ private func runLoop(
                     newMessages: messages
                 )
                 lastCompletedTurn = completedTurn
-                if await config.shouldStopAfterTurn?(completedTurn) == true {
+                let decision = await config.finishTurn?(completedTurn, signal)
+                await emit(.turnEnd(message: agentMessage, toolResults: toolResults))
+                if decision == .end {
                     await emit(.agentEnd(messages: messages))
                     return messages
                 }
+                explicitContinuation = decision == .continue
+                pendingMessages = (await config.getSteeringMessages?()) ?? []
+                if hasMoreToolCalls || !pendingMessages.isEmpty {
+                    explicitContinuation = false
+                }
             } catch {
-                let errorMessage = AgentMessage.assistant(buildErrorAssistantMessage(
+                let assistant = buildErrorAssistantMessage(
                     model: config.model,
                     reason: signal?.isCancelled == true ? .aborted : .error,
                     message: error.localizedDescription
-                ))
+                )
+                let errorMessage = AgentMessage.assistant(assistant)
+                context.messages.append(errorMessage)
                 messages.append(errorMessage)
+                await emit(.messageStart(message: errorMessage))
+                await emit(.messageEnd(message: errorMessage))
+                _ = await config.finishTurn?(AgentTurnContext(
+                    message: assistant, toolResults: [], context: context, newMessages: messages
+                ), signal)
                 await emit(.turnEnd(message: errorMessage, toolResults: []))
                 await emit(.agentEnd(messages: messages))
                 return messages
             }
 
-            // Steering is now checked AFTER all tool calls complete (not mid-execution)
-            pendingMessages = (await config.getSteeringMessages?()) ?? []
         }
 
         let followUpMessages = (await config.getFollowUpMessages?()) ?? []
         if !followUpMessages.isEmpty {
+            explicitContinuation = false
             pendingMessages = followUpMessages
+            continue
+        }
+
+        if explicitContinuation {
+            explicitContinuation = false
             continue
         }
 
@@ -327,11 +395,7 @@ private func streamAssistantResponse(
 
     let llmMessages = try await config.convertToLlm(messages)
 
-    let llmContext = Context(
-        systemPrompt: context.systemPrompt,
-        messages: llmMessages,
-        tools: context.tools?.map { $0.aiTool }
-    )
+    let llmContext = normalizeContext(Context(messages: llmMessages))
 
     let streamFunction: StreamFn = streamFn ?? { model, context, options in
         try streamSimple(model: model, context: context, options: options)
@@ -822,7 +886,6 @@ private func finalizeExecutedToolCall(
                     content: afterResult.content ?? result.content,
                     details: afterResult.details ?? result.details,
                     usage: afterResult.usage ?? result.usage,
-                    addedToolNames: result.addedToolNames,
                     terminate: afterResult.terminate ?? result.terminate
                 )
                 isError = afterResult.isError ?? isError
@@ -893,7 +956,6 @@ private func emitToolResultMessage(
         content: result.content,
         details: result.details,
         usage: result.usage,
-        addedToolNames: result.addedToolNames,
         isError: isError
     )
 

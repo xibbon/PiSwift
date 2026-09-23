@@ -54,6 +54,8 @@ func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
 
     for msg in transformed {
         switch msg {
+        case .system:
+            continue
         case .user(let user):
             switch user.content {
             case .text(let text):
@@ -295,15 +297,19 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false, supports
     return [["functionDeclarations": declarations]]
 }
 
-func googleDisabledThinkingConfig(model: Model) -> [String: Any] {
+func usesGoogleThinkingLevel(model: Model) -> Bool {
     let id = model.id.lowercased()
-    if id.range(of: #"gemini-3(?:\.\d+)?-pro"#, options: .regularExpression) != nil {
-        return ["thinkingLevel": GoogleApiThinkingLevel.low.rawValue]
-    }
-    if id.range(of: #"gemini-3(?:\.\d+)?-flash"#, options: .regularExpression) != nil || id.range(of: #"gemma-?4"#, options: .regularExpression) != nil {
-        return ["thinkingLevel": GoogleApiThinkingLevel.minimal.rawValue]
-    }
-    return ["thinkingBudget": 0]
+    return id.range(of: #"gemini-3(?:\.\d+)?-(?:pro|flash)"#, options: .regularExpression) != nil ||
+        id == "gemini-flash-latest" || id == "gemini-flash-lite-latest" ||
+        id.range(of: #"gemma-?4"#, options: .regularExpression) != nil
+}
+
+func googleDisabledThinkingConfig(model: Model) throws -> [String: Any] {
+    guard usesGoogleThinkingLevel(model: model) else { return ["thinkingBudget": 0] }
+    let fallback = clampThinkingLevel(model: model, requested: ModelThinkingLevel.off)
+    guard fallback != .off else { return ["thinkingBudget": 0] }
+    let resolved = try resolveGoogleThinkingLevel(model: model, level: fallback)
+    return ["thinkingLevel": resolved.rawValue.uppercased()]
 }
 
 func mapGoogleToolChoice(_ choice: String) -> String {
@@ -562,7 +568,6 @@ enum GoogleStreamError: Error {
 }
 
 public func resolveGoogleThinkingLevel(model: Model, level: ModelThinkingLevel) throws -> ResolvedGoogleThinkingLevel {
-    if level == .off { return .high }
     let mapped = model.thinkingLevelMap?[level] ?? nil
     let resolved = mapped?.lowercased() ?? level.rawValue
     guard let result = ResolvedGoogleThinkingLevel(rawValue: resolved) else {

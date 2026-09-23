@@ -45,7 +45,8 @@ public struct AgentOptions: Sendable {
     public var toolExecution: ToolExecutionMode?
     public var beforeToolCall: BeforeToolCallFn?
     public var afterToolCall: AfterToolCallFn?
-    public var shouldStopAfterTurn: AgentShouldStopAfterTurnFn?
+    public var finishTurn: AgentFinishTurnFn?
+    public var prepareRequest: PrepareRequestFn?
     public var prepareNextTurn: AgentPrepareNextTurnFn?
     public var prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn?
 
@@ -73,7 +74,8 @@ public struct AgentOptions: Sendable {
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
         afterToolCall: AfterToolCallFn? = nil,
-        shouldStopAfterTurn: AgentShouldStopAfterTurnFn? = nil,
+        finishTurn: AgentFinishTurnFn? = nil,
+        prepareRequest: PrepareRequestFn? = nil,
         prepareNextTurn: AgentPrepareNextTurnFn? = nil,
         prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn? = nil
     ) {
@@ -100,7 +102,8 @@ public struct AgentOptions: Sendable {
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall
-        self.shouldStopAfterTurn = shouldStopAfterTurn
+        self.finishTurn = finishTurn
+        self.prepareRequest = prepareRequest
         self.prepareNextTurn = prepareNextTurn
         self.prepareNextTurnWithContext = prepareNextTurnWithContext
     }
@@ -137,7 +140,8 @@ public final class Agent: Sendable {
         var afterToolCall: AfterToolCallFn?
         var prepareNextTurn: AgentPrepareNextTurnFn?
         var prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn?
-        var shouldStopAfterTurn: AgentShouldStopAfterTurnFn?
+        var finishTurn: AgentFinishTurnFn?
+        var prepareRequest: PrepareRequestFn?
         var runningTask: Task<Void, Never>?
     }
 
@@ -167,7 +171,7 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.convertToLlm = newValue } }
     }
 
-    private var transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? {
+    public var transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? {
         get { stateBox.withLock { $0.transformContext } }
         set { stateBox.withLock { $0.transformContext = newValue } }
     }
@@ -292,9 +296,14 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.prepareNextTurnWithContext = newValue } }
     }
 
-    public var shouldStopAfterTurn: AgentShouldStopAfterTurnFn? {
-        get { stateBox.withLock { $0.shouldStopAfterTurn } }
-        set { stateBox.withLock { $0.shouldStopAfterTurn = newValue } }
+    public var finishTurn: AgentFinishTurnFn? {
+        get { stateBox.withLock { $0.finishTurn } }
+        set { stateBox.withLock { $0.finishTurn = newValue } }
+    }
+
+    public var prepareRequest: PrepareRequestFn? {
+        get { stateBox.withLock { $0.prepareRequest } }
+        set { stateBox.withLock { $0.prepareRequest = newValue } }
     }
 
     private var runningTask: Task<Void, Never>? {
@@ -340,14 +349,15 @@ public final class Agent: Sendable {
             afterToolCall: options.afterToolCall,
             prepareNextTurn: options.prepareNextTurn,
             prepareNextTurnWithContext: options.prepareNextTurnWithContext,
-            shouldStopAfterTurn: options.shouldStopAfterTurn,
+            finishTurn: options.finishTurn,
+            prepareRequest: options.prepareRequest,
             runningTask: nil
         ))
     }
 
     /// Read-only snapshot of the current agent state.
     ///
-    /// To mutate writable fields, use the dedicated property setters: `systemPrompt`, `model`,
+    /// To mutate writable fields, use the dedicated property setters: `model`,
     /// `thinkingLevel`, `tools`, `messages`, plus convenience helpers `appendMessage(_:)` and
     /// `clearMessages()`. Runtime-owned fields (`isStreaming`, `streamingMessage`,
     /// `pendingToolCalls`, `errorMessage`) are read-only and updated only by the loop.
@@ -364,10 +374,7 @@ public final class Agent: Sendable {
 
     // MARK: - Mutable writable-field properties (replaces removed mutator methods)
 
-    public var systemPrompt: String {
-        get { _state.systemPrompt }
-        set { mutateState { $0.systemPrompt = newValue } }
-    }
+    public var systemPrompt: String { _state.systemPrompt }
 
     public var model: Model {
         get { _state.model }
@@ -475,6 +482,16 @@ public final class Agent: Sendable {
         !steeringQueue.isEmpty || !followUpQueue.isEmpty
     }
 
+    /// Preview the next selected queued batch without consuming it.
+    public func peekQueuedMessages() -> [AgentMessage] {
+        stateBox.withLock { state in
+            if !state.steeringQueue.isEmpty {
+                return state.steeringMode == .all ? state.steeringQueue : [state.steeringQueue[0]]
+            }
+            return state.followUpMode == .all ? state.followUpQueue : Array(state.followUpQueue.prefix(1))
+        }
+    }
+
     private func dequeueSteeringMessages() -> [AgentMessage] {
         switch steeringMode {
         case .oneAtATime:
@@ -521,7 +538,8 @@ public final class Agent: Sendable {
             guard state.runningTask == nil, !state.agentState.isStreaming else {
                 throw AgentError.alreadyStreamingReset
             }
-            state.agentState.messages.removeAll()
+            let baseline = getCurrentSystemMessage(state.agentState.messages)
+            state.agentState.messages = baseline.map { [.system($0)] } ?? []
             state.agentState._setStreaming(false)
             state.agentState._setStreamingMessage(nil)
             state.agentState._setPendingToolCalls([])
@@ -553,7 +571,7 @@ public final class Agent: Sendable {
 
     public func `continue`() async throws {
         try ensureNotStreaming(.alreadyStreamingContinue)
-        guard !_state.messages.isEmpty else { throw AgentError.emptyContext }
+        guard _state.messages.contains(where: { $0.role != "system" }) else { throw AgentError.emptyContext }
         if let last = _state.messages.last, last.role == "assistant" {
             let queuedSteering = dequeueSteeringMessages()
             if !queuedSteering.isEmpty {
@@ -647,21 +665,9 @@ public final class Agent: Sendable {
 
         let reasoning = mapThinkingLevel(_state.thinkingLevel)
 
-        let context = AgentContext(
-            systemPrompt: _state.systemPrompt,
-            messages: _state.messages,
-            tools: _state.tools
-        )
+        let context = AgentContext(messages: _state.messages, tools: _state.tools)
 
         let skipInitialSteeringPoll = LockedState(options?.skipInitialSteeringPoll == true)
-        let loopShouldStopAfterTurn: ShouldStopAfterTurnFn?
-        if let predicate = shouldStopAfterTurn {
-            loopShouldStopAfterTurn = { context in
-                await predicate(context, token)
-            }
-        } else {
-            loopShouldStopAfterTurn = nil
-        }
         let config = AgentLoopConfig(
             model: model,
             reasoning: reasoning,
@@ -702,7 +708,8 @@ public final class Agent: Sendable {
                 guard let self else { return [] }
                 return self.dequeueFollowUpMessages()
             },
-            shouldStopAfterTurn: loopShouldStopAfterTurn,
+            finishTurn: finishTurn,
+            prepareRequest: prepareRequest,
             prepareNextTurn: { [weak self] context in
                 guard let self else { return nil }
                 if let prepare = self.prepareNextTurnWithContext {

@@ -19,22 +19,25 @@ private func portResponse(_ content: [ContentBlock], _ reason: StopReason = .sto
     let tool = AgentTool(label: "test", name: "test", description: "test", parameters: ["type": AnyCodable("object")]) { _, _, _, _ in
         AgentToolResult(content: [.text(TextContent(text: "result"))])
     }
-    let config = AgentLoopConfig(model: portModel, convertToLlm: { $0.compactMap(\.asMessage) }, shouldStopAfterTurn: { _ in
+    let config = AgentLoopConfig(model: portModel, convertToLlm: { $0.compactMap(\.asMessage) }, finishTurn: { _, _ in
         order.withLock { $0.append("stop") }
-        return false
+        return nil
     }, prepareNextTurn: { turn in
         prepared.withLock { $0 += 1 }
         order.withLock { $0.append("prepare") }
         var context = turn.context
-        context.systemPrompt = "updated"
+        if case .system(var system) = context.messages[0] {
+            system.content = .text("updated")
+            context.messages[0] = .system(system)
+        }
         return AgentLoopTurnUpdate(context: context)
     })
-    _ = await runAgentLoop(prompts: [.user(UserMessage(content: .text("go")))], context: AgentContext(systemPrompt: "first", messages: [], tools: [tool]), config: config, emit: { event in
+    _ = await runAgentLoop(prompts: [.user(UserMessage(content: .text("go")))], context: testAgentContext(systemPrompt: "first", messages: [], tools: [tool]), config: config, emit: { event in
         if case .turnStart = event { order.withLock { $0.append("start") } }
     }, streamFn: { _, context, _ in
         let count = calls.withLock { $0 += 1; return $0 }
         if count == 1 { return portResponse([.toolCall(ToolCall(id: "1", name: "test", arguments: [:]))], .toolUse) }
-        #expect(context.systemPrompt == "updated")
+        #expect(getCurrentSystemPrompt(context.messages) == "updated")
         return portResponse([.text(TextContent(text: "done"))])
     })
     #expect(calls.withLock { $0 } == 2)
@@ -53,8 +56,8 @@ private func portResponse(_ content: [ContentBlock], _ reason: StopReason = .sto
     let config = AgentLoopConfig(model: portModel, toolExecution: .parallel, beforeToolCall: { context, _ in
         if context.toolCall.id == "2" { signal.cancel() }
         return nil
-    }, convertToLlm: { $0.compactMap(\.asMessage) }, shouldStopAfterTurn: { _ in true })
-    _ = await runAgentLoop(prompts: [.user(UserMessage(content: .text("go")))], context: AgentContext(systemPrompt: "", messages: [], tools: [tool]), config: config, emit: { event in
+    }, convertToLlm: { $0.compactMap(\.asMessage) }, finishTurn: { _, _ in .end })
+    _ = await runAgentLoop(prompts: [.user(UserMessage(content: .text("go")))], context: testAgentContext(systemPrompt: "", messages: [], tools: [tool]), config: config, emit: { event in
         if case .toolExecutionEnd(let id, _, let result, let isError) = event {
             #expect(isError)
             #expect(result.content.contains { if case .text(let text) = $0 { return text.text == "Operation aborted" }; return false })
@@ -93,7 +96,7 @@ func proxyV085TerminalCases(_ scenario: String) async throws {
     config.protocolClasses = [ProxyPortURLProtocol.self]
     let session = URLSession(configuration: config)
     defer { session.invalidateAndCancel() }
-    let stream = streamProxy(model: portModel, context: Context(messages: []), options: ProxyStreamOptions(authToken: "token", proxyUrl: "https://\(host)"), session: session)
+    let stream = streamProxy(model: portModel, context: normalizeContext(Context(messages: [])), options: ProxyStreamOptions(authToken: "token", proxyUrl: "https://\(host)"), session: session)
     var events: [AssistantMessageEvent] = []
     for await event in stream { events.append(event) }
     let result = await stream.result()

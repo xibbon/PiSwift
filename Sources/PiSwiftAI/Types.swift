@@ -36,6 +36,7 @@ public enum KnownProvider: String, Sendable {
     case azureOpenAIResponses = "azure-openai-responses"
     case antLing = "ant-ling"
     case anthropic
+    case meta
     case amazonBedrock = "amazon-bedrock"
     case githubCopilot = "github-copilot"
     case nvidia
@@ -449,10 +450,6 @@ public enum SessionAffinityFormat: String, Sendable, Codable, Equatable {
     case openrouter
 }
 
-public enum DeferredToolsMode: String, Sendable, Codable, Equatable {
-    case kimi
-}
-
 /// v0.67.0: full OpenRouter provider-selection routing.
 ///
 /// See https://openrouter.ai/docs/guides/routing/provider-selection for upstream docs.
@@ -699,6 +696,15 @@ public struct OpenAICompat: Sendable, Codable {
     /// When false, grammar-constrained tools use normal function tools. Default: false.
     /// The generated model catalog enables this option for capable models.
     public var supportsOpenAIGrammarTools: Bool?
+    /// Whether later system or developer messages can remain in the conversation.
+    /// Defaults to false.
+    public var supportsMidConvoSystemMessages: Bool?
+    /// Whether system messages can add tools in place. Requires mid-conversation
+    /// system messages. Defaults to false.
+    public var supportsMidConvoToolAdditions: Bool?
+    /// Whether Anthropic accepts tool addition and removal blocks in place.
+    /// Requires mid-conversation system messages. Defaults to false.
+    public var supportsMidConvoToolChanges: Bool?
     public var supportsStrictMode: Bool?
     /// Maps thinking levels to provider-specific reasoning effort values.
     /// When set, the mapped value is sent instead of the standard level string.
@@ -729,13 +735,11 @@ public struct OpenAICompat: Sendable, Codable {
     public var forceAdaptiveThinking: Bool?
     public var zaiToolStream: Bool?
     public var allowEmptySignature: Bool?
-    public var deferredToolsMode: DeferredToolsMode?
     public var sessionAffinityFormat: SessionAffinityFormat?
     public var supportsToolSearch: Bool?
     /// Whether the model accepts `prompt_cache_options` for OpenAI GPT-5.6+ explicit prompt caching.
     /// Older OpenAI models reject this parameter. Default: false.
     public var supportsExplicitPromptCacheMode: Bool?
-    public var supportsToolReferences: Bool?
 
     public var thinkingTokenBudgetField: ThinkingTokenBudgetField?
     public var vllmPriority: Int?
@@ -763,6 +767,9 @@ public struct OpenAICompat: Sendable, Codable {
         vercelGatewayRouting: VercelGatewayRouting? = nil,
         supportsThinkingTokenBudget: Bool? = nil,
         supportsOpenAIGrammarTools: Bool? = nil,
+        supportsMidConvoSystemMessages: Bool? = nil,
+        supportsMidConvoToolAdditions: Bool? = nil,
+        supportsMidConvoToolChanges: Bool? = nil,
         supportsStrictMode: Bool? = nil,
         reasoningEffortMap: [ThinkingLevel: String]? = nil,
         supportsLongCacheRetention: Bool? = nil,
@@ -776,11 +783,9 @@ public struct OpenAICompat: Sendable, Codable {
         forceAdaptiveThinking: Bool? = nil,
         zaiToolStream: Bool? = nil,
         allowEmptySignature: Bool? = nil,
-        deferredToolsMode: DeferredToolsMode? = nil,
         sessionAffinityFormat: SessionAffinityFormat? = nil,
         supportsToolSearch: Bool? = nil,
         supportsExplicitPromptCacheMode: Bool? = nil,
-        supportsToolReferences: Bool? = nil,
         thinkingTokenBudgetField: ThinkingTokenBudgetField? = nil,
         vllmPriority: Int? = nil,
         supportsAdditionalTools: Bool? = nil,
@@ -813,6 +818,9 @@ public struct OpenAICompat: Sendable, Codable {
         self.vercelGatewayRouting = vercelGatewayRouting
         self.supportsThinkingTokenBudget = supportsThinkingTokenBudget
         self.supportsOpenAIGrammarTools = supportsOpenAIGrammarTools
+        self.supportsMidConvoSystemMessages = supportsMidConvoSystemMessages
+        self.supportsMidConvoToolAdditions = supportsMidConvoToolAdditions
+        self.supportsMidConvoToolChanges = supportsMidConvoToolChanges
         self.supportsStrictMode = supportsStrictMode
         self.reasoningEffortMap = reasoningEffortMap
         self.supportsLongCacheRetention = supportsLongCacheRetention
@@ -826,11 +834,19 @@ public struct OpenAICompat: Sendable, Codable {
         self.forceAdaptiveThinking = forceAdaptiveThinking
         self.zaiToolStream = zaiToolStream
         self.allowEmptySignature = allowEmptySignature
-        self.deferredToolsMode = deferredToolsMode
         self.sessionAffinityFormat = sessionAffinityFormat
         self.supportsToolSearch = supportsToolSearch
         self.supportsExplicitPromptCacheMode = supportsExplicitPromptCacheMode
-        self.supportsToolReferences = supportsToolReferences
+    }
+}
+
+/// Compatibility settings for the Mistral conversations API.
+public struct MistralConversationsCompat: Sendable, Codable, Equatable {
+    /// Whether later system messages can remain in the conversation. Defaults to false.
+    public var supportsMidConvoSystemMessages: Bool?
+
+    public init(supportsMidConvoSystemMessages: Bool? = nil) {
+        self.supportsMidConvoSystemMessages = supportsMidConvoSystemMessages
     }
 }
 
@@ -886,6 +902,54 @@ public enum ModelInput: String, Sendable, Codable {
     case image
 }
 
+public struct ModelImageResizeOptions: Sendable, Codable, Equatable {
+    public var maxWidth: Int?
+    public var maxHeight: Int?
+    /// Maximum base64-encoded payload size in bytes.
+    public var maxBytes: Int?
+    public var jpegQuality: Int?
+
+    public init(maxWidth: Int? = nil, maxHeight: Int? = nil, maxBytes: Int? = nil, jpegQuality: Int? = nil) {
+        self.maxWidth = maxWidth
+        self.maxHeight = maxHeight
+        self.maxBytes = maxBytes
+        self.jpegQuality = jpegQuality
+    }
+}
+
+public struct ModelImageInputLimits: Sendable, Codable, Equatable {
+    public var resize: ModelImageResizeOptions?
+    public var maxPerMessage: Int?
+    public var maxPerRequest: Int?
+
+    public init(resize: ModelImageResizeOptions? = nil, maxPerMessage: Int? = nil, maxPerRequest: Int? = nil) {
+        self.resize = resize
+        self.maxPerMessage = maxPerMessage
+        self.maxPerRequest = maxPerRequest
+    }
+}
+
+public struct ModelInputLimits: Sendable, Codable, Equatable {
+    public var maxRequestBytes: Int?
+    public var images: ModelImageInputLimits?
+
+    public init(maxRequestBytes: Int? = nil, images: ModelImageInputLimits? = nil) {
+        self.maxRequestBytes = maxRequestBytes
+        self.images = images
+    }
+}
+
+/// Prompt cache lifetimes in seconds. A missing tier has an unknown lifetime.
+public struct ModelPromptCache: Sendable, Codable, Equatable {
+    public var short: Int?
+    public var long: Int?
+
+    public init(short: Int? = nil, long: Int? = nil) {
+        self.short = short
+        self.long = long
+    }
+}
+
 public struct Model: Sendable, Codable {
     public let id: String
     public let name: String
@@ -894,7 +958,9 @@ public struct Model: Sendable, Codable {
     public let baseUrl: String
     public let reasoning: Bool
     public let input: [ModelInput]
+    public let inputLimits: ModelInputLimits?
     public let cost: ModelCost
+    public let promptCache: ModelPromptCache?
     public let contextWindow: Int
     public let maxTokens: Int
     /// Arbitrary sampling parameters merged into the request body as-is, after the named request
@@ -906,6 +972,14 @@ public struct Model: Sendable, Codable {
     public let headers: ProviderHeaders?
     public let compat: OpenAICompat?
     public let thinkingLevelMap: ThinkingLevelMap?
+
+    /// The Mistral view of the shared compatibility storage.
+    public var mistralConversationsCompat: MistralConversationsCompat? {
+        guard api == .mistralConversations, let compat else { return nil }
+        return MistralConversationsCompat(
+            supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages
+        )
+    }
 
     public init(
         id: String,
@@ -921,7 +995,9 @@ public struct Model: Sendable, Codable {
         samplingParams: [String: AnyCodable]? = nil,
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
-        thinkingLevelMap: ThinkingLevelMap? = nil
+        thinkingLevelMap: ThinkingLevelMap? = nil,
+        inputLimits: ModelInputLimits? = nil,
+        promptCache: ModelPromptCache? = nil
     ) {
         self.id = id
         self.name = name
@@ -930,13 +1006,42 @@ public struct Model: Sendable, Codable {
         self.baseUrl = baseUrl
         self.reasoning = reasoning
         self.input = input
+        self.inputLimits = inputLimits
         self.cost = cost
+        self.promptCache = promptCache
         self.contextWindow = contextWindow
         self.maxTokens = maxTokens
         self.samplingParams = samplingParams
         self.headers = headers
         self.compat = compat
         self.thinkingLevelMap = thinkingLevelMap
+    }
+
+    public init(
+        id: String,
+        name: String,
+        api: Api,
+        provider: Provider,
+        baseUrl: String,
+        reasoning: Bool,
+        input: [ModelInput],
+        cost: ModelCost,
+        contextWindow: Int,
+        maxTokens: Int,
+        samplingParams: [String: AnyCodable]? = nil,
+        headers: ProviderHeaders? = nil,
+        compat: MistralConversationsCompat,
+        thinkingLevelMap: ThinkingLevelMap? = nil,
+        inputLimits: ModelInputLimits? = nil,
+        promptCache: ModelPromptCache? = nil
+    ) {
+        self.init(
+            id: id, name: name, api: api, provider: provider, baseUrl: baseUrl,
+            reasoning: reasoning, input: input, cost: cost, contextWindow: contextWindow,
+            maxTokens: maxTokens, samplingParams: samplingParams, headers: headers,
+            compat: OpenAICompat(supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages),
+            thinkingLevelMap: thinkingLevelMap, inputLimits: inputLimits, promptCache: promptCache
+        )
     }
 }
 
@@ -1032,6 +1137,8 @@ public struct Usage: Sendable {
     public var output: Int
     public var cacheRead: Int
     public var cacheWrite: Int
+    /// Portion of cacheWrite stored for one hour, priced at twice the base input rate.
+    public var cacheWrite1h: Int?
     /// Reasoning/thinking tokens reported by the provider; a subset of `output`.
     public var reasoning: Int?
     public var totalTokens: Int
@@ -1042,6 +1149,7 @@ public struct Usage: Sendable {
         output: Int,
         cacheRead: Int,
         cacheWrite: Int,
+        cacheWrite1h: Int? = nil,
         reasoning: Int? = nil,
         totalTokens: Int,
         cost: UsageCost = UsageCost()
@@ -1050,6 +1158,7 @@ public struct Usage: Sendable {
         self.output = output
         self.cacheRead = cacheRead
         self.cacheWrite = cacheWrite
+        self.cacheWrite1h = cacheWrite1h
         self.reasoning = reasoning
         self.totalTokens = totalTokens
         self.cost = cost
@@ -1202,6 +1311,8 @@ public struct AssistantMessage: Sendable {
     public var api: Api
     public var provider: Provider
     public var model: String
+    /// Actual serving model if a relay returns a different ID.
+    public var responseModel: String?
     /// Provider-specific response/message identifier when the upstream API exposes one.
     public var responseId: String?
     public var usage: Usage
@@ -1221,6 +1332,7 @@ public struct AssistantMessage: Sendable {
         api: Api,
         provider: Provider,
         model: String,
+        responseModel: String? = nil,
         responseId: String? = nil,
         usage: Usage,
         stopReason: StopReason,
@@ -1239,6 +1351,7 @@ public struct AssistantMessage: Sendable {
         self.api = api
         self.provider = provider
         self.model = model
+        self.responseModel = responseModel
         self.responseId = responseId
         self.usage = usage
         self.stopReason = stopReason
@@ -1292,7 +1405,6 @@ public struct ToolResultMessage: Sendable {
     public var details: AnyCodable?
     /// Usage from the tool execution itself, if available. Not part of main LLM context accounting.
     public var usage: Usage?
-    public var addedToolNames: [String]?
     public var isError: Bool
     public var timestamp: Int64
 
@@ -1302,7 +1414,6 @@ public struct ToolResultMessage: Sendable {
         content: [ContentBlock],
         details: AnyCodable? = nil,
         usage: Usage? = nil,
-        addedToolNames: [String]? = nil,
         isError: Bool,
         timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
     ) {
@@ -1311,19 +1422,71 @@ public struct ToolResultMessage: Sendable {
         self.content = content
         self.details = details
         self.usage = usage
-        self.addedToolNames = addedToolNames
         self.isError = isError
         self.timestamp = timestamp
     }
 }
 
+public enum SystemContent: Sendable {
+    case text(String)
+    case blocks([TextContent])
+}
+
+public struct ToolReference: Sendable, Equatable {
+    public var name: String
+    public init(name: String) { self.name = name }
+}
+
+public struct SystemPromptSections: Sendable, Equatable {
+    public struct Entry: Sendable, Equatable {
+        public var name: String
+        public var value: String?
+        public init(name: String, value: String?) { self.name = name; self.value = value }
+    }
+    private var ordered: [Entry] = []
+    public var entries: [Entry] { ordered }
+    public init(_ entries: [(name: String, value: String?)]) {
+        for entry in entries { self[entry.name] = entry.value }
+    }
+    public subscript(_ name: String) -> String? {
+        get { ordered.first(where: { $0.name == name })?.value }
+        set {
+            if let index = ordered.firstIndex(where: { $0.name == name }) {
+                ordered[index].value = newValue
+            } else {
+                ordered.append(Entry(name: name, value: newValue))
+            }
+        }
+    }
+    public mutating func remove(_ name: String) { ordered.removeAll { $0.name == name } }
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.ordered == rhs.ordered }
+}
+
+public struct SystemMessage: Sendable {
+    public let role: String = "system"
+    public var content: SystemContent
+    public var sections: SystemPromptSections?
+    public var toolsAdded: [AITool]?
+    public var toolsRemoved: [ToolReference]?
+    public var timestamp: Int64
+    public init(content: SystemContent, sections: SystemPromptSections? = nil,
+                toolsAdded: [AITool]? = nil, toolsRemoved: [ToolReference]? = nil,
+                timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+        self.content = content; self.sections = sections; self.toolsAdded = toolsAdded
+        self.toolsRemoved = toolsRemoved; self.timestamp = timestamp
+    }
+}
+
 public enum Message: Sendable {
+    case system(SystemMessage)
     case user(UserMessage)
     case assistant(AssistantMessage)
     case toolResult(ToolResultMessage)
 
     public var role: String {
         switch self {
+        case .system:
+            return "system"
         case .user:
             return "user"
         case .assistant:
@@ -1731,6 +1894,7 @@ public struct GoogleOptions: Sendable {
     public var signal: CancellationToken?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
+    public var sessionId: String?
     public var headers: ProviderHeaders?
     public var toolChoice: String?
     public var thinking: ThinkingConfig?
@@ -1746,6 +1910,7 @@ public struct GoogleOptions: Sendable {
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
+        sessionId: String? = nil,
         headers: ProviderHeaders? = nil,
         toolChoice: String? = nil,
         thinking: ThinkingConfig? = nil,
@@ -1760,6 +1925,7 @@ public struct GoogleOptions: Sendable {
         self.signal = signal
         self.apiKey = apiKey
         self.httpClient = httpClient
+        self.sessionId = sessionId
         self.headers = headers
         self.toolChoice = toolChoice
         self.thinking = thinking
@@ -1826,6 +1992,7 @@ public struct GoogleVertexOptions: Sendable {
     public var signal: CancellationToken?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
+    public var sessionId: String?
     public var headers: ProviderHeaders?
     public var toolChoice: String?
     public var thinking: GoogleOptions.ThinkingConfig?
@@ -1843,6 +2010,7 @@ public struct GoogleVertexOptions: Sendable {
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
+        sessionId: String? = nil,
         headers: ProviderHeaders? = nil,
         toolChoice: String? = nil,
         thinking: GoogleOptions.ThinkingConfig? = nil,
@@ -1859,6 +2027,7 @@ public struct GoogleVertexOptions: Sendable {
         self.signal = signal
         self.apiKey = apiKey
         self.httpClient = httpClient
+        self.sessionId = sessionId
         self.headers = headers
         self.toolChoice = toolChoice
         self.thinking = thinking
@@ -1885,6 +2054,8 @@ public struct AnthropicOptions: Sendable {
     public var signal: CancellationToken?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
+    public var cacheRetention: CacheRetention?
+    public var sessionId: String?
     public var thinkingEnabled: Bool?
     public var thinkingBudgetTokens: Int?
     /// Adaptive thinking effort level. When set on models that support adaptive
@@ -1914,6 +2085,8 @@ public struct AnthropicOptions: Sendable {
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
+        cacheRetention: CacheRetention? = nil,
+        sessionId: String? = nil,
         thinkingEnabled: Bool? = nil,
         thinkingBudgetTokens: Int? = nil,
         effort: ThinkingLevel? = nil,
@@ -1933,6 +2106,8 @@ public struct AnthropicOptions: Sendable {
         self.signal = signal
         self.apiKey = apiKey
         self.httpClient = httpClient
+        self.cacheRetention = cacheRetention
+        self.sessionId = sessionId
         self.thinkingEnabled = thinkingEnabled
         self.thinkingBudgetTokens = thinkingBudgetTokens
         self.effort = effort

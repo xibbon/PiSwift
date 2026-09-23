@@ -622,7 +622,7 @@ public final class HookRunner: Sendable {
 
     public func hasHandlers(_ type: String) -> Bool {
         for hook in hooks {
-            if let handlers = hook.handlers[type], !handlers.isEmpty {
+            if let handlers = hook.currentHandlers()[type], !handlers.isEmpty {
                 return true
             }
         }
@@ -751,17 +751,21 @@ public final class HookRunner: Sendable {
     }
 
     /// Use this path for all event delivery and handler calls.
+    private func snapshotHandlers(_ type: String, extensionsOnly: Bool = false) -> [(LoadedHook, [HookHandler])] {
+        hooks.filter { !extensionsOnly || $0.isExtension }.map { ($0, $0.currentHandlers()[type] ?? []) }
+    }
+
     private func dispatchEvent(
         _ event: any HookEvent,
         extensionsOnly: Bool = false,
         eventForHandler: (() -> any HookEvent)? = nil,
         consume: (Any, LoadedHook) -> Bool = { _, _ in false }
     ) async {
+        let handlersSnapshot = snapshotHandlers(event.type, extensionsOnly: extensionsOnly)
         let observers = eventObservers.withLock { Array($0.values) }
         for observer in observers { observer(event) }
         let context = createContext()
-        for hook in hooks where !extensionsOnly || hook.isExtension {
-            guard let handlers = hook.handlers[event.type] else { continue }
+        for (hook, handlers) in handlersSnapshot {
             for handler in handlers {
                 do {
                     if let result = try await handler(eventForHandler?() ?? event, context), consume(result, hook) {
@@ -775,6 +779,10 @@ public final class HookRunner: Sendable {
     }
 
     public func emit(_ event: HookEvent) async -> Any? {
+        guard !(event is any HookBoundaryEvent) else {
+            emitError(HookError(hookPath: "<runner>", event: event.type, error: "Use emitBoundary for boundary events"))
+            return nil
+        }
         var lastResult: Any?
         await dispatchEvent(event, consume: { result, _ in
             lastResult = result
@@ -786,6 +794,51 @@ public final class HookRunner: Sendable {
         })
         return lastResult
     }
+
+    /// Run extension input handlers in registration order. A handled result stops dispatch.
+    public func emitInput(_ event: InputEvent) async -> InputEventResult {
+        var text = event.text
+        var images = event.images
+        var handled = false
+        await dispatchEvent(event, extensionsOnly: true, eventForHandler: {
+            InputEvent(text: text, images: images, source: event.source,
+                       streamingBehavior: event.streamingBehavior)
+        }) { result, _ in
+            guard let result = result as? InputEventResult else { return false }
+            switch result {
+            case .continue:
+                return false
+            case .transform(let nextText, let nextImages):
+                text = nextText
+                images = nextImages ?? images
+                return false
+            case .handled:
+                handled = true
+                return true
+            }
+        }
+        if handled { return .handled }
+        return .transform(text: text, images: images)
+    }
+
+    /// Apply each extension's decision in registration order. The last override wins.
+    public func emitCacheWarmingDecision(_ event: CacheWarmingDecisionEvent) async -> CacheWarmingAction {
+        var action = event.action
+        await dispatchEvent(event, consume: { result, _ in
+            if let result = result as? CacheWarmingDecisionEventResult,
+               let override = result.action {
+                action = override
+            }
+            return false
+        })
+        return action
+    }
+
+    @available(*, unavailable, message: "Use emitBoundary(_:buildContext:) for turn_end")
+    public func emit(_ event: TurnEndEvent) async -> Any? { nil }
+
+    @available(*, unavailable, message: "Use emitBoundary(_:buildContext:) for agent_before_settle")
+    public func emit(_ event: AgentBeforeSettleEvent) async -> Any? { nil }
 
     /// Apply each returned header set in handler order.
     /// A nil value deletes a provider or API default header.
@@ -827,44 +880,131 @@ public final class HookRunner: Sendable {
         return lastResult
     }
 
-    public func emitUserBash(_ event: UserBashEvent) async -> UserBashEventResult? {
-        var firstResult: UserBashEventResult?
-        await dispatchEvent(event, consume: { result, _ in
-            guard let result = result as? UserBashEventResult else { return false }
-            firstResult = result
-            return true
-        })
-        return firstResult
+    public func emitUserBash(_ event: UserBashEvent) async throws -> UserBashEventResult? {
+        let handlersSnapshot = snapshotHandlers(event.type)
+        let observers = eventObservers.withLock { Array($0.values) }
+        for observer in observers { observer(event) }
+        let context = createContext()
+        for (hook, handlers) in handlersSnapshot {
+            for handler in handlers {
+                do {
+                    guard let value = try await handler(event, context) else { continue }
+                    guard let result = value as? UserBashEventResult,
+                          (result.operations == nil) != (result.result == nil) else {
+                        throw HookDispatchError.invalidUserBashResult
+                    }
+                    return result
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: event.type, error: error.localizedDescription, stack: captureStack()))
+                    throw error
+                }
+            }
+        }
+        return nil
     }
 
     public func emitContext(_ messages: [AgentMessage], signal: CancellationToken? = nil) async -> [AgentMessage] {
         _ = signal
-        var currentMessages = messages
-        await dispatchEvent(ContextEvent(messages: deepCopyMessages(messages)), eventForHandler: {
-            ContextEvent(messages: deepCopyMessages(currentMessages))
-        }) { result, _ in
-            if let result = result as? ContextEventResult, let replacement = result.messages {
-                currentMessages = replacement
+        var currentMessages = deepCopyMessages(messages)
+        let context = createContext()
+        let contextHandlers = snapshotHandlers("context")
+        let fullContextHandlers = snapshotHandlers("context_with_system")
+        let observers = eventObservers.withLock { Array($0.values) }
+        let initialEvent = ContextEvent(messages: currentMessages.filter { $0.role != "system" })
+        for observer in observers { observer(initialEvent) }
+        for (hook, handlers) in contextHandlers {
+            for handler in handlers {
+                let visible = currentMessages.filter { $0.role != "system" }
+                do {
+                    guard let result = try await handler(ContextEvent(messages: deepCopyMessages(visible)), context) as? ContextEventResult,
+                          let replacement = result.messages else { continue }
+                    if !sameMessageIdentities(replacement, visible) {
+                        let prompt = getCurrentSystemMessage(currentMessages)
+                        currentMessages = prompt.map { [.system($0)] + replacement } ?? replacement
+                    }
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: "context", error: error.localizedDescription, stack: captureStack()))
+                }
             }
-            return false
+        }
+        if fullContextHandlers.contains(where: { !$0.1.isEmpty }) {
+            let fullEvent = ContextWithSystemEvent(messages: currentMessages)
+            for observer in observers { observer(fullEvent) }
+        }
+        for (hook, handlers) in fullContextHandlers {
+            for handler in handlers {
+                let hadLeadingSystem = currentMessages.first?.role == "system"
+                do {
+                    let result = try await handler(ContextWithSystemEvent(messages: deepCopyMessages(currentMessages)), context)
+                    if let replacement = (result as? ContextEventResult)?.messages { currentMessages = replacement }
+                    if hadLeadingSystem && currentMessages.first?.role != "system" {
+                        emitError(HookError(hookPath: hook.path, event: "context_with_system", error: "Handler removed the leading system message; the request has no prompt or initial tool declarations."))
+                    }
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: "context_with_system", error: error.localizedDescription, stack: captureStack()))
+                }
+            }
         }
         return currentMessages
+    }
+
+    /// Preview each accumulated draft list before the next handler runs.
+    public func emitBoundary(
+        _ baseEvent: any HookBoundaryBaseEvent,
+        buildContext: @Sendable ([SessionBoundaryDraft]) async throws -> BoundaryContextPreview
+    ) async throws -> BoundaryDispatchResult {
+        var entries: [SessionBoundaryDraft] = []
+        var shouldContinue = false
+        var preview = try await buildContext(entries)
+        var valid = true
+        let context = createContext()
+        let handlersSnapshot = snapshotHandlers(baseEvent.type)
+        let initialEvent = baseEvent.makeEvent(entries: entries, shouldContinue: shouldContinue, context: preview)
+        let observers = eventObservers.withLock { Array($0.values) }
+        for observer in observers { observer(initialEvent) }
+        for (hook, handlers) in handlersSnapshot {
+            for handler in handlers {
+                let event = baseEvent.makeEvent(entries: entries, shouldContinue: shouldContinue, context: preview)
+                do {
+                    if let value = try await handler(event, context) {
+                        guard let result = value as? BoundaryResult else { throw HookDispatchError.invalidBoundaryResult }
+                        if let replacement = result.entries { entries = replacement }
+                        if let continuation = result.shouldContinue { shouldContinue = continuation }
+                    }
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: baseEvent.type, error: error.localizedDescription, stack: captureStack()))
+                }
+                do {
+                    preview = try await buildContext(entries)
+                    valid = true
+                } catch {
+                    valid = false
+                    emitError(HookError(hookPath: hook.path, event: baseEvent.type, error: "Invalid boundary entries: \(error.localizedDescription)", stack: captureStack()))
+                }
+            }
+        }
+        return valid
+            ? BoundaryDispatchResult(entries: entries, shouldContinue: shouldContinue, context: preview, valid: true)
+            : BoundaryDispatchResult(entries: [], shouldContinue: false, context: preview, valid: false)
     }
 
     public func emitBeforeAgentStart(_ prompt: String, _ images: [ImageContent]?) async -> BeforeAgentStartCombinedResult? {
         var messages: [HookMessageInput] = []
         var systemPromptAppends: [String] = []
+        var forcedSystemPrompt: String?
         await dispatchEvent(BeforeAgentStartEvent(prompt: prompt, images: images), consume: { result, _ in
             if let result = result as? BeforeAgentStartEventResult {
                 if let message = result.message { messages.append(message) }
                 if let append = result.systemPromptAppend, !append.isEmpty { systemPromptAppends.append(append) }
+                if let prompt = result.systemPrompt { forcedSystemPrompt = prompt }
             }
             return false
         })
-        if messages.isEmpty && systemPromptAppends.isEmpty { return nil }
+        if messages.isEmpty && systemPromptAppends.isEmpty && forcedSystemPrompt == nil { return nil }
         return BeforeAgentStartCombinedResult(
             messages: messages.isEmpty ? nil : messages,
-            systemPromptAppend: systemPromptAppends.isEmpty ? nil : systemPromptAppends.joined(separator: "\n\n")
+            systemPromptAppend: systemPromptAppends.isEmpty ? nil : systemPromptAppends.joined(separator: "\n\n"),
+            systemPrompt: forcedSystemPrompt
         )
     }
 
@@ -872,6 +1012,25 @@ public final class HookRunner: Sendable {
 
 private func logHookWarning(_ message: String) {
     fputs("Warning: \(message)\n", stderr)
+}
+
+public enum HookDispatchError: LocalizedError, Sendable {
+    case invalidUserBashResult
+    case invalidBoundaryResult
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidUserBashResult:
+            return "Invalid user_bash handler result: return nil for local execution or exactly one operations or result value"
+        case .invalidBoundaryResult:
+            return "Invalid boundary handler result"
+        }
+    }
+}
+
+private func sameMessageIdentities(_ left: [AgentMessage], _ right: [AgentMessage]) -> Bool {
+    guard left.count == right.count else { return false }
+    return zip(left, right).allSatisfy { String(reflecting: $0) == String(reflecting: $1) }
 }
 
 private func captureStack() -> String {
@@ -884,6 +1043,8 @@ private func deepCopyMessages(_ messages: [AgentMessage]) -> [AgentMessage] {
 
 private func deepCopyAgentMessage(_ message: AgentMessage) -> AgentMessage {
     switch message {
+    case .system(let system):
+        return .system(system)
     case .user(let user):
         return .user(deepCopyUserMessage(user))
     case .assistant(let assistant):

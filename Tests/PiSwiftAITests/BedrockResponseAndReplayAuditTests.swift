@@ -31,7 +31,7 @@ private func bedrockHeaderAuditModel() -> Model {
         defer { URLProtocol.unregisterClass(BedrockHeaderAuditProtocol.self) }
         let responses = LockedState<[ResponseSnapshot]>([])
         let result = await streamBedrock(model: bedrockHeaderAuditModel(),
-            context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
+            context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: BedrockOptions(region: "us-east-1", cacheRetention: .none, bearerToken: "fixture-token",
                 onResponse: { snapshot in responses.withLock { $0.append(snapshot) } }, timeoutMs: 5000, maxRetries: 0)).result()
         #expect(result.stopReason == .error)

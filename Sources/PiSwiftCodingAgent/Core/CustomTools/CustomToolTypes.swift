@@ -86,33 +86,41 @@ public struct CustomTool: Sendable {
     public var name: String
     public var label: String
     public var description: String
-    public var parameters: [String: AnyCodable]
+    /// Rule bullets in the default system prompt while this tool is active.
+    public var promptGuidelines: [String]?
+    public var parameters: [String: AnyCodable]?
     public var execute: CustomToolExecute
     public var onSession: CustomToolSessionHandler?
     public var renderCall: CustomToolRenderCall?
     public var renderResult: CustomToolRenderResult?
     public var renderShell: ToolRenderShell
+    /// Explicitly disable provider-side constrained sampling when replacing a built-in tool.
+    public var constrainedSampling: ConstrainedSampling?
 
     public init(
         name: String,
         label: String,
         description: String,
-        parameters: [String: AnyCodable],
+        parameters: [String: AnyCodable]? = nil,
         execute: @escaping CustomToolExecute,
+        promptGuidelines: [String]? = nil,
         onSession: CustomToolSessionHandler? = nil,
         renderCall: CustomToolRenderCall? = nil,
         renderResult: CustomToolRenderResult? = nil,
-        renderShell: ToolRenderShell = .default
+        renderShell: ToolRenderShell = .default,
+        constrainedSampling: ConstrainedSampling? = nil
     ) {
         self.name = name
         self.label = label
         self.description = description
+        self.promptGuidelines = promptGuidelines
         self.parameters = parameters
         self.execute = execute
         self.onSession = onSession
         self.renderCall = renderCall
         self.renderResult = renderResult
         self.renderShell = renderShell
+        self.constrainedSampling = constrainedSampling
     }
 }
 

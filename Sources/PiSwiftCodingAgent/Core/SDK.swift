@@ -241,31 +241,46 @@ private func writeStderr(_ message: String) {
 }
 
 package let defaultModelPerProvider: [(KnownProvider, String)] = [
-    (.amazonBedrock, "us.anthropic.claude-opus-4-20250514-v1:0"),
-    (.anthropic, "claude-opus-4-5"),
-    (.openai, "gpt-5.4"),
-    (.azureOpenAIResponses, "gpt-5.2"),
-    (.openaiCodex, "gpt-5.4"),
-    (.google, "gemini-2.5-pro"),
-    (.googleVertex, "gemini-3-pro-preview"),
-    (.githubCopilot, "gpt-4o"),
-    (.openrouter, "openai/gpt-5.1-codex"),
-    (.vercelAiGateway, "anthropic/claude-opus-4.5"),
-    (.xai, "grok-4.6"),
+    (.amazonBedrock, "us.anthropic.claude-opus-4-6-v1"),
+    (.antLing, "Ring-2.6-1T"),
+    (.anthropic, "claude-opus-4-8"),
+    (.openai, "gpt-5.5"),
+    (.azureOpenAIResponses, "gpt-5.4"),
+    (.openaiCodex, "gpt-5.5"),
+    (.nvidia, "nvidia/nemotron-3-super-120b-a12b"),
+    (.deepseek, "deepseek-v4-pro"),
+    (.google, "gemini-3.1-pro-preview"),
+    (.googleVertex, "gemini-3.1-pro-preview"),
+    (.githubCopilot, "gpt-5.4"),
+    (.openrouter, "moonshotai/kimi-k2.6"),
+    (.vercelAiGateway, "zai/glm-5.1"),
+    (.xai, "grok-4.7"),
     (.groq, "openai/gpt-oss-120b"),
     (.cerebras, "gpt-oss-120b"),
-    (.baseten, "zai-org/GLM-5.2"),
     (.zai, "glm-5.3"),
     (.zaiCodingCn, "glm-5.3"),
     (.mistral, "devstral-medium-latest"),
     (.minimax, "MiniMax-M2.7"),
     (.minimaxCn, "MiniMax-M2.7"),
-    (.huggingface, "moonshotai/Kimi-K2.5"),
-    (.opencode, "claude-opus-4-5"),
-    (.kimiCoding, "kimi-k2-thinking"),
+    (.moonshotai, "kimi-k2.6"),
+    (.moonshotaiCn, "kimi-k2.6"),
+    (.huggingface, "moonshotai/Kimi-K2.6"),
+    (.fireworks, "accounts/fireworks/models/kimi-k2p6"),
+    (.together, "moonshotai/Kimi-K2.6"),
+    (.baseten, "zai-org/GLM-5.2"),
+    (.opencode, "kimi-k2.6"),
+    (.opencodeGo, "kimi-k2.6"),
+    (.kimiCoding, "kimi-for-coding"),
+    (.meta, "muse-spark-1.3"),
+    (.cloudflareWorkersAi, "@cf/moonshotai/kimi-k2.6"),
+    (.cloudflareAiGateway, "workers-ai/@cf/moonshotai/kimi-k2.6"),
     (.qwenTokenPlan, "qwen3.7-max"),
     (.qwenTokenPlanCn, "qwen3.7-max"),
     (.qwenTokenPlanIndividual, "qwen3.8-max"),
+    (.xiaomi, "mimo-v2.5-pro"),
+    (.xiaomiTokenPlanCn, "mimo-v2.5-pro"),
+    (.xiaomiTokenPlanAms, "mimo-v2.5-pro"),
+    (.xiaomiTokenPlanSgp, "mimo-v2.5-pro"),
 ]
 
 public func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
@@ -708,7 +723,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let toolsOptions = ToolsOptions(
         read: ReadToolOptions(
             autoResizeImages: settingsManager.getAutoResizeImages(),
-            blockImages: blockImages
+            blockImages: blockImages,
+            modelProvider: { agentBox.withLock { $0?.state.model } }
         ),
         bash: BashToolOptions(sessionEnvironment: { [agentBox, sessionManager] in
             let current = agentBox.withLock { $0?.state }
@@ -824,8 +840,11 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         let appendSystemPrompt = loaderAppend.isEmpty ? nil : loaderAppend.joined(separator: "\n\n")
         let activeSkills = options.skills ?? resolvedResourceLoader.getSkills().skills
         let activeContextFiles = options.contextFiles ?? resolvedResourceLoader.getAgentsFiles()
+        let overridePrompt: String?
+        if case .text(let text) = options.systemPrompt { overridePrompt = text }
+        else { overridePrompt = loaderSystemPrompt }
         return BuildSystemPromptOptions(
-            customPrompt: loaderSystemPrompt,
+            customPrompt: overridePrompt,
             selectedTools: validToolNames,
             appendSystemPrompt: appendSystemPrompt,
             cwd: cwd,
@@ -837,13 +856,14 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     let rebuildSystemPrompt: @Sendable ([String]) -> String = { toolNames in
         let promptOptions = makeSystemPromptOptions(toolNames)
-        let defaultPrompt = buildSystemPrompt(promptOptions)
+        // SDK options have no custom sections, so section validation cannot fail.
+        let defaultPrompt = try! buildSystemPrompt(promptOptions)
         if let systemPromptInput = options.systemPrompt {
             switch systemPromptInput {
             case .text(let text):
                 var customOptions = promptOptions
                 customOptions.customPrompt = text
-                return buildSystemPrompt(customOptions)
+                return try! buildSystemPrompt(customOptions)
             case .builder(let builder):
                 return builder(defaultPrompt)
             }
@@ -951,6 +971,42 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     time("createAgent")
     agentBox.withLock { $0 = createdAgent }
 
+    let cacheWarmer = CacheWarmer(
+        stream: { model, context, options in
+            await modelRegistry.streamSimple(model: model, context: context, options: options).result()
+        },
+        sessionManager: sessionManager,
+        getMode: { settingsManager.getCacheWarmingMode() },
+        decide: { event in
+            guard hookRunner.hasHandlers(event.type) else { return event.action }
+            return await hookRunner.emitCacheWarmingDecision(event)
+        },
+        onWarmed: { entry in
+            sessionBox.withLock { $0 }?.emitCacheWarmed(entry)
+        }
+    )
+    let originalStreamFn = createdAgent.streamFn
+    createdAgent.streamFn = { model, context, options in
+        if options.sessionId == sessionManager.getSessionId() {
+            let originalMessages = agentBox.withLock { $0?.state.messages ?? [] }
+                .map { encodeAgentMessageJSON($0).serialized() }
+            let isCurrent: @Sendable () -> Bool = {
+                guard let current = agentBox.withLock({ $0?.state }),
+                      current.model.provider == model.provider,
+                      current.model.id == model.id,
+                      current.messages.count >= originalMessages.count else { return false }
+                return zip(originalMessages, current.messages).allSatisfy { expected, message in
+                    expected == encodeAgentMessageJSON(message).serialized()
+                }
+            }
+            await cacheWarmer.start(
+                CacheWarmRequest(model: model, context: Context(messages: context.messages), options: options),
+                isCurrent: isCurrent
+            )
+        }
+        return try await originalStreamFn(model, context, options)
+    }
+
     if hasExistingSession {
         createdAgent.messages = existingSession.messages
     } else {
@@ -971,6 +1027,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         hookRunner: hookRunner,
         customTools: customToolsResult.tools,
         modelRegistry: modelRegistry,
+        cacheWarmer: cacheWarmer,
         skillsSettings: settingsManager.getSkillsSettings(),
         eventBus: eventBus,
         toolRegistry: toolRegistry,

@@ -4,9 +4,10 @@ private let vertexToolCallCounter = LockedState(0)
 
 public func streamGoogleVertex(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: GoogleVertexOptions
 ) -> AssistantMessageEventStream {
+    let context = collapsedProviderContext(context)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -40,7 +41,8 @@ public func streamGoogleVertex(
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             applyProviderHeaders(
-                mergeProviderHeaders(model.headers, options.headers),
+                openCodeSessionHeaders(model: model, sessionId: options.sessionId,
+                    headers: mergeProviderHeaders(model.headers, options.headers)),
                 to: &request
             )
 
@@ -233,7 +235,7 @@ private func buildVertexRequestBody(
             }
             config = enabledConfig
         } else {
-            config = googleDisabledThinkingConfig(model: model)
+            config = try googleDisabledThinkingConfig(model: model)
         }
         // thinkingConfig belongs to generationConfig; at the top level it is an unknown field.
         generationConfig["thinkingConfig"] = config

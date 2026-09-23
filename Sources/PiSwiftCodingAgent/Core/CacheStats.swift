@@ -102,6 +102,17 @@ private func scanCacheMisses(
         switch entry {
         case .compaction, .branchSummary:
             previous = nil
+        case .usage(let usageEntry) where usageEntry.kind == "cache_warm":
+            let usage = usageEntry.usage
+            let promptTokens = usage.input + usage.cacheRead + usage.cacheWrite
+            if promptTokens > 0 {
+                previous = PreviousCacheRequest(
+                    promptTokens: promptTokens,
+                    modelKey: "\(usageEntry.provider)/\(usageEntry.model)",
+                    timestamp: sessionTimestampMilliseconds(usageEntry.timestamp) ?? 0,
+                    reportedCache: true
+                )
+            }
         case .message(let messageEntry):
             guard case .assistant(let message) = messageEntry.message else { continue }
             if let miss = cacheMiss(previous: previous, message: message, modelRegistry: modelRegistry) {

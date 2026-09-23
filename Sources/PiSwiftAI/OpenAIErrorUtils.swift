@@ -20,15 +20,16 @@ private func requestId(from response: HTTPURLResponse) -> String? {
         response.value(forHTTPHeaderField: "openai-request-id")
 }
 
-func describeOpenAIError(_ error: Error) -> String {
+func describeOpenAIError(_ error: Error, provider: String? = nil) -> String {
+    let providerName = provider.map { $0 == "openai" ? "OpenAI" : $0 } ?? "OpenAI"
     if let apiError = error as? APIErrorResponse {
-        return apiError.errorDescription ?? "OpenAI API error."
+        return apiError.errorDescription ?? "\(providerName) API error."
     }
 
     if let openAIError = error as? OpenAIError {
         switch openAIError {
         case .emptyData:
-            return "OpenAI API returned an empty response."
+            return "\(providerName) API returned an empty response."
         case .statusError(let response, let statusCode):
             let requestId = requestId(from: response)
             if let requestId {
@@ -36,7 +37,7 @@ func describeOpenAIError(_ error: Error) -> String {
             } else {
                 logOpenAIDebug("openai statusError status=\(statusCode) url=\(response.url?.absoluteString ?? "")")
             }
-            var message = "OpenAI API error (HTTP \(statusCode)). Check your API key, model, and request parameters."
+            var message = "\(providerName) API error (HTTP \(statusCode)). Check your API key, model, and request parameters."
             if let requestId {
                 message += "\nRequest ID: \(requestId)"
             }
@@ -44,5 +45,7 @@ func describeOpenAIError(_ error: Error) -> String {
         }
     }
 
-    return retryAwareErrorDescription(error)
+    let message = retryAwareErrorDescription(error)
+    guard provider != nil else { return message }
+    return "\(providerName) API error: \(message)"
 }

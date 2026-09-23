@@ -256,7 +256,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
             try await createBashTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: options)
                 .execute(id, params, signal, onUpdate)
         },
-        constrainedSampling: getExperimentalToolSampling()
+        constrainedSampling: .jsonSchema(strict: .prefer)
     )
 }
 

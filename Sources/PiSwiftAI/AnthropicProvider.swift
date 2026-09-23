@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import SwiftAnthropic
 
-private let claudeCodeVersion = "2.1.251"
+private let claudeCodeVersion = "2.1.280"
 
 private let claudeCodeTools: [String] = [
     "Read",
@@ -93,50 +93,28 @@ private struct ResolvedAnthropicCompat {
     let sendSessionAffinityHeaders: Bool
     let supportsCacheControlOnTools: Bool
     let supportsTemperature: Bool
-    let supportsToolReferences: Bool
     let supportsStrictTools: Bool
-}
-
-func defaultSupportsToolReferences(model: Model) -> Bool {
-    guard model.provider == "anthropic", !model.id.contains("haiku") else { return false }
-
-    let pattern = #"^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)"#
-    guard let expression = try? NSRegularExpression(pattern: pattern),
-          let match = expression.firstMatch(
-              in: model.id,
-              range: NSRange(model.id.startIndex..<model.id.endIndex, in: model.id)
-          ),
-          let majorRange = Range(match.range(at: 1), in: model.id),
-          let major = Int(model.id[majorRange]) else {
-        return false
-    }
-
-    let minor: Int
-    if match.range(at: 2).location != NSNotFound,
-       let minorRange = Range(match.range(at: 2), in: model.id),
-       model.id[minorRange].count < 8 {
-        minor = Int(model.id[minorRange]) ?? 0
-    } else {
-        minor = 0
-    }
-
-    return major > 4 || (major == 4 && minor >= 5)
+    let supportsMidConvoSystemMessages: Bool
+    let supportsMidConvoToolChanges: Bool
+    let sessionAffinityFormat: SessionAffinityFormat?
 }
 
 private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
     let provider = model.provider.lowercased()
     let baseUrl = model.baseUrl.lowercased()
     let isFireworks = provider == "fireworks"
-    let isCloudflareAiGatewayAnthropic = provider == "cloudflare-ai-gateway" && baseUrl.contains("anthropic")
+    let isOpenRouter = provider == "openrouter" || baseUrl.contains("openrouter.ai")
     let compat = model.compat
     return ResolvedAnthropicCompat(
         supportsEagerToolInputStreaming: compat?.supportsEagerToolInputStreaming ?? !isFireworks,
         supportsLongCacheRetention: compat?.supportsLongCacheRetention ?? !isFireworks,
-        sendSessionAffinityHeaders: compat?.sendSessionAffinityHeaders ?? (isFireworks || isCloudflareAiGatewayAnthropic),
+        sendSessionAffinityHeaders: compat?.sendSessionAffinityHeaders ?? isOpenRouter,
         supportsCacheControlOnTools: compat?.supportsCacheControlOnTools ?? !isFireworks,
         supportsTemperature: compat?.supportsTemperature ?? true,
-        supportsToolReferences: compat?.supportsToolReferences ?? defaultSupportsToolReferences(model: model),
-        supportsStrictTools: compat?.supportsStrictTools ?? false
+        supportsStrictTools: compat?.supportsStrictTools ?? false,
+        supportsMidConvoSystemMessages: compat?.supportsMidConvoSystemMessages ?? false,
+        supportsMidConvoToolChanges: compat?.supportsMidConvoToolChanges ?? false,
+        sessionAffinityFormat: compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : nil)
     )
 }
 
@@ -159,10 +137,13 @@ func makeAnthropicUsage(
 
 public func streamAnthropic(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: AnthropicOptions
 ) -> AssistantMessageEventStream {
     let model = resolveCloudflareModel(model)
+    let compat = resolveAnthropicCompat(model: model)
+    let context = resolveTranscript(context, supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages)
+    let currentTools = getCurrentTools(context.messages)
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -186,54 +167,53 @@ public func streamAnthropic(
                 throw StreamError.missingApiKey(model.provider)
             }
             let isOAuthToken = isAnthropicOAuthToken(apiKey)
-            let compat = resolveAnthropicCompat(model: model)
-            let toolPlacement = isOAuthToken
-                ? splitDeferredTools(
-                    context,
-                    enabled: compat.supportsToolReferences,
-                    normalizeName: toClaudeCodeName
-                )
-                : splitDeferredTools(context, enabled: compat.supportsToolReferences)
-            var immediateTools = toolPlacement.immediate
-            var deferredTools = toolPlacement.deferred
-            if immediateTools.isEmpty && !deferredTools.isEmpty {
-                immediateTools = deferredTools
-                deferredTools = []
-            }
-            let deferredToolNames = Set(deferredTools.map {
-                isOAuthToken ? toClaudeCodeName($0.name) : $0.name
-            })
-            let orderedTools = immediateTools + deferredTools
+            let initialTools = getInitialSystemMessage(context.messages)?.toolsAdded ?? []
+            let nativeToolChanges = compat.supportsMidConvoSystemMessages
+                && compat.supportsMidConvoToolChanges
+                && !initialTools.isEmpty
+                && !hasToolRedefinitions(context.messages)
+            let initialNames = Set(initialTools.map(\.name))
+            let laterTools = getDeclaredTools(context.messages).filter { !initialNames.contains($0.name) }
+            let orderedTools = nativeToolChanges ? initialTools + laterTools : currentTools
+            let deferredToolNames = nativeToolChanges
+                ? Set(laterTools.map { isOAuthToken ? toClaudeCodeName($0.name) : $0.name })
+                : Set<String>()
+            let initialToolNames = nativeToolChanges
+                ? Set(initialTools.map { isOAuthToken ? toClaudeCodeName($0.name) : $0.name })
+                : Set<String>()
             let strictToolSchemas = try resolveAnthropicStrictToolSchemas(
                 tools: orderedTools,
                 isOAuthToken: isOAuthToken,
                 supportsStrictTools: compat.supportsStrictTools
             )
-            var toolResultAddedNames: [String: [String]] = [:]
-            for message in context.messages {
-                if case .toolResult(let toolResult) = message,
-                   let addedToolNames = toolResult.addedToolNames,
-                   !addedToolNames.isEmpty {
-                    toolResultAddedNames[sanitizeToolCallId(toolResult.toolCallId)] = addedToolNames
-                }
-            }
-
-            let betaHeaders = anthropicBetaFeatures(model: model, context: context, options: options)
+            let betaHeaders = anthropicBetaFeatures(
+                model: model,
+                context: Context(messages: context.messages, tools: orderedTools),
+                options: options,
+                nativeToolChanges: nativeToolChanges
+            )
             if let betaHeaders {
                 logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
             } else {
                 logAnthropicDebug("anthropic betaHeaders=none")
             }
-            var mergedHeaders = model.headers
+            var affinityHeaders: ProviderHeaders?
+            if options.cacheRetention != CacheRetention.none, let sessionId = options.sessionId,
+               !sessionId.isEmpty, compat.sendSessionAffinityHeaders {
+                let name = compat.sessionAffinityFormat == .openrouter ? "x-session-id" : "x-session-affinity"
+                affinityHeaders = [name: sessionId]
+            }
+            var mergedHeaders = mergeProviderHeaders(affinityHeaders, model.headers)
             // Copilot: add dynamic headers for vision and initiator
             if model.provider == "github-copilot" {
                 let copilotHeaders = buildCopilotDynamicHeaders(messages: context.messages)
                 mergedHeaders = mergeProviderHeaders(mergedHeaders, copilotHeaders)
             }
             mergedHeaders = mergeProviderHeaders(mergedHeaders, options.headers)
+            mergedHeaders = openCodeSessionHeaders(model: model, sessionId: options.sessionId, headers: mergedHeaders)
             // Apply the resolved beta list after user overrides, including explicit deletion.
             mergedHeaders = mergeProviderHeaders(mergedHeaders, ["anthropic-beta": betaHeaders?.joined(separator: ",")])
-            let parameters = buildAnthropicParameters(
+            let (parameters, systemInsertions) = buildAnthropicParameters(
                 model: model,
                 context: context,
                 options: options,
@@ -244,17 +224,22 @@ public func streamAnthropic(
             let encodedBody = try anthropicJSONBody(parameters)
             let constrainedBody = injectAnthropicRequestBody(
                 body: encodedBody,
-                ttl: anthropicCacheTtl(baseUrl: model.baseUrl, supportsLongCacheRetention: compat.supportsLongCacheRetention),
+                ttl: anthropicCacheTtl(baseUrl: model.baseUrl, supportsLongCacheRetention: compat.supportsLongCacheRetention,
+                    cacheRetention: options.cacheRetention),
                 metadataUserId: extractAnthropicMetadataUserId(options.metadata),
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
                 deferredToolNames: deferredToolNames,
-                toolResultAddedNames: toolResultAddedNames,
+                initialToolNames: initialToolNames,
+                nativeToolChanges: nativeToolChanges,
+                systemInsertions: systemInsertions,
                 isOAuthToken: isOAuthToken,
                 strictToolSchemas: strictToolSchemas
             ) ?? encodedBody
-            let rawRequestBody = try prepareAnthropicRawPayload(constrainedBody, model: model, context: context, options: options)
+            let rawRequestBody = try prepareAnthropicRawPayload(
+                constrainedBody, model: model, context: Context(messages: context.messages), options: options
+            )
             emitPayload(options.onPayload, data: rawRequestBody)
             let httpClient = buildAnthropicHttpClient(
                 providerHTTPClient: options.httpClient,
@@ -263,11 +248,10 @@ public func streamAnthropic(
                 baseUrl: model.baseUrl,
                 metadataUserId: extractAnthropicMetadataUserId(options.metadata),
                 supportsLongCacheRetention: compat.supportsLongCacheRetention,
+                cacheRetention: options.cacheRetention,
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
-                deferredToolNames: deferredToolNames,
-                toolResultAddedNames: toolResultAddedNames,
                 strictToolSchemas: strictToolSchemas,
                 rawRequestBody: rawRequestBody
             )
@@ -281,7 +265,7 @@ public func streamAnthropic(
 
             debugService = service
             debugParameters = parameters
-            let toolCount = context.tools?.count ?? 0
+            let toolCount = currentTools.count
             logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
             let usesBearerTransport = usesAnthropicBearerTransport(apiKey)
                 || providerHeaderValue(mergedHeaders, name: "Authorization")?
@@ -317,7 +301,7 @@ public func streamAnthropic(
                 case .messageStart:
                     if let transformations = decodedEvent.inputTransformations { inputTransformations = transformations }
                     if let servingModel = decodedEvent.servingModel {
-                        output.model = servingModel
+                        output.responseModel = servingModel == model.id ? nil : servingModel
                         usageModel = anthropicUsageModel(model, servingModel: servingModel)
                     }
                     if let messageId = event.message?.id {
@@ -335,6 +319,7 @@ public func streamAnthropic(
                             cacheWrite: cacheWrite,
                             reasoning: usage.thinkingTokens
                         )
+                        output.usage.cacheWrite1h = decodedEvent.cacheWrite1h
                         calculateCost(model: usageModel, usage: &output.usage)
                     }
                 case .contentBlockStart:
@@ -370,7 +355,7 @@ public func streamAnthropic(
                         stream.push(.thinkingStart(contentIndex: output.content.count - 1, partial: output))
                         stream.push(.thinkingEnd(contentIndex: output.content.count - 1, content: thinkingBlock.thinking, partial: output))
                     case "tool_use":
-                        let toolName = isOAuthToken ? fromClaudeCodeName(block.name ?? "", tools: context.tools) : (block.name ?? "")
+                        let toolName = isOAuthToken ? fromClaudeCodeName(block.name ?? "", tools: currentTools) : (block.name ?? "")
                         let tool = ToolCall(id: block.id ?? "", name: toolName, arguments: [:])
                         output.content.append(.toolCall(tool))
                         indexMap[index] = output.content.count - 1
@@ -449,6 +434,7 @@ public func streamAnthropic(
                         let outputTokens = usage.outputTokens
                         let cacheRead = usage.cacheReadInputTokens ?? output.usage.cacheRead
                         let cacheWrite = usage.cacheCreationInputTokens ?? output.usage.cacheWrite
+                        let cacheWrite1h = decodedEvent.cacheWrite1h ?? output.usage.cacheWrite1h
                         output.usage = makeAnthropicUsage(
                             input: input,
                             output: outputTokens,
@@ -456,6 +442,7 @@ public func streamAnthropic(
                             cacheWrite: cacheWrite,
                             reasoning: usage.thinkingTokens ?? output.usage.reasoning
                         )
+                        output.usage.cacheWrite1h = cacheWrite1h
                         calculateCost(model: usageModel, usage: &output.usage)
                     }
                 case .messageStop:
@@ -511,18 +498,23 @@ public func streamAnthropic(
 
 private func buildAnthropicParameters(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: AnthropicOptions,
     isOAuthToken: Bool,
     compat: ResolvedAnthropicCompat,
     orderedTools: [AITool]
-) -> MessageParameter {
-    let messages = convertAnthropicMessages(model: model, messages: context.messages, isOAuthToken: isOAuthToken)
+) -> (MessageParameter, [AnthropicSystemInsertion]) {
+    let (messages, insertions) = convertAnthropicMessages(
+        model: model,
+        messages: withoutInitialSystemMessage(context.messages),
+        isOAuthToken: isOAuthToken
+    )
     let maxTokens = options.maxTokens ?? model.maxTokens
 
     var system: MessageParameter.System? = nil
-    if let prompt = context.systemPrompt {
-        system = .text(sanitizeSurrogates(prompt))
+    if let head = getInitialSystemMessage(context.messages) {
+        let prompt = getSystemMessageText(head)
+        if !prompt.isEmpty { system = .text(sanitizeSurrogates(prompt)) }
     }
 
     let tools = orderedTools.isEmpty ? nil : convertAnthropicTools(orderedTools, isOAuthToken: isOAuthToken)
@@ -541,7 +533,7 @@ private func buildAnthropicParameters(
 
     let anthroModel = mapAnthropicModel(model.id)
 
-    return MessageParameter(
+    let parameters = MessageParameter(
         model: anthroModel,
         messages: messages,
         maxTokens: maxTokens,
@@ -552,6 +544,7 @@ private func buildAnthropicParameters(
         toolChoice: toolChoice,
         thinking: thinking
     )
+    return (parameters, insertions)
 }
 
 private let anthropicMessageSseEvents: Set<String> = [
@@ -663,6 +656,7 @@ struct AnthropicDecodedMessageEvent {
     /// (vendored in SwiftAnthropic) has no `stop_details` field, so it is read out of the raw JSON.
     let refusalExplanation: String?
     let servingModel: String?
+    let cacheWrite1h: Int?
     let inputTransformations: [[String: AnyCodable]]?
 }
 
@@ -692,6 +686,8 @@ private func decodeAnthropicJSONEvent(_ json: String) throws -> AnthropicDecoded
     let delta = root?["delta"] as? [String: Any]
     let stopDetails = delta?["stop_details"] as? [String: Any]
     let message = root?["message"] as? [String: Any]
+    let usage = (message?["usage"] ?? root?["usage"]) as? [String: Any]
+    let cacheCreation = usage?["cache_creation"] as? [String: Any]
     let transformationSource = response.type == "message_start" ? message : root
     let transformations = (transformationSource?["input_transformations"] as? [[String: Any]])?.map { item in
         var result: [String: AnyCodable] = [:]
@@ -705,6 +701,7 @@ private func decodeAnthropicJSONEvent(_ json: String) throws -> AnthropicDecoded
         initialThinkingSignature: contentBlock?["signature"] as? String,
         refusalExplanation: stopDetails?["explanation"] as? String,
         servingModel: message?["model"] as? String,
+        cacheWrite1h: cacheCreation?["ephemeral_1h_input_tokens"] as? Int,
         inputTransformations: transformations
     )
 }
@@ -1022,25 +1019,44 @@ func buildAnthropicBetaHeaders(
     return headers.isEmpty ? nil : headers
 }
 
-private func convertAnthropicMessages(model: Model, messages: [Message], isOAuthToken: Bool) -> [MessageParameter.Message] {
+struct AnthropicSystemInsertion: Sendable {
+    let index: Int
+    let message: SystemMessage
+}
+
+private func convertAnthropicMessages(
+    model: Model,
+    messages: [Message],
+    isOAuthToken: Bool
+) -> ([MessageParameter.Message], [AnthropicSystemInsertion]) {
     let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, _, _ in
         let sanitized = id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
         return String(sanitized.prefix(64))
     }
     let transformed = transformMessages(messages, model: model, normalizeToolCallId: normalizeToolCallId)
     var params: [MessageParameter.Message] = []
+    var insertions: [AnthropicSystemInsertion] = []
+    var pendingSystemMessages: [SystemMessage] = []
+    func flushSystemMessages() {
+        insertions.append(contentsOf: pendingSystemMessages.map { AnthropicSystemInsertion(index: params.count, message: $0) })
+        pendingSystemMessages.removeAll()
+    }
 
     var index = 0
     while index < transformed.count {
         let msg = transformed[index]
         switch msg {
+        case .system(let system):
+            pendingSystemMessages.append(system)
         case .user(let user):
             let content = convertUserContent(model: model, content: user.content)
             if let content {
                 params.append(MessageParameter.Message(role: .user, content: content))
             }
         case .assistant(let assistant):
-            let contentObjects = convertAssistantContent(assistant, isOAuthToken: isOAuthToken)
+            flushSystemMessages()
+            let contentObjects = convertAssistantContent(assistant, isOAuthToken: isOAuthToken,
+                allowEmptySignature: model.compat?.allowEmptySignature == true)
             if !contentObjects.isEmpty {
                 params.append(MessageParameter.Message(role: .assistant, content: .list(contentObjects)))
             }
@@ -1084,8 +1100,8 @@ private func convertAnthropicMessages(model: Model, messages: [Message], isOAuth
         }
         index += 1
     }
-
-    return params
+    flushSystemMessages()
+    return (params, insertions)
 }
 
 private func convertUserContent(model: Model, content: UserContent) -> MessageParameter.Message.Content? {
@@ -1116,7 +1132,8 @@ private func convertUserContent(model: Model, content: UserContent) -> MessagePa
     }
 }
 
-private func convertAssistantContent(_ assistant: AssistantMessage, isOAuthToken: Bool) -> [MessageParameter.Message.Content.ContentObject] {
+private func convertAssistantContent(_ assistant: AssistantMessage, isOAuthToken: Bool,
+                                     allowEmptySignature: Bool) -> [MessageParameter.Message.Content.ContentObject] {
     var objects: [MessageParameter.Message.Content.ContentObject] = []
     for block in assistant.content {
         switch block {
@@ -1133,9 +1150,13 @@ private func convertAssistantContent(_ assistant: AssistantMessage, isOAuthToken
                 continue
             }
             let trimmed = thinkingBlock.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { continue }
-            if let signature = thinkingBlock.thinkingSignature, !signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                objects.append(.thinking(sanitizeSurrogates(thinkingBlock.thinking), signature))
+            let signature = thinkingBlock.thinkingSignature
+            let hasSignature = signature?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            if trimmed.isEmpty && !hasSignature { continue }
+            if hasSignature {
+                objects.append(.thinking(sanitizeSurrogates(thinkingBlock.thinking), signature ?? ""))
+            } else if allowEmptySignature {
+                objects.append(.thinking(sanitizeSurrogates(thinkingBlock.thinking), ""))
             } else {
                 objects.append(.text(sanitizeSurrogates(thinkingBlock.thinking)))
             }
@@ -1195,9 +1216,15 @@ private func convertAnthropicToolChoice(_ choice: AnthropicToolChoice, isOAuthTo
     }
 }
 
-func anthropicCacheTtl(baseUrl: String, supportsLongCacheRetention: Bool = true) -> String? {
-    let flag = getenv("PI_CACHE_RETENTION").map { String(cString: $0) }?.lowercased()
-    guard flag == "long" else { return nil }
+func anthropicCacheTtl(baseUrl: String, supportsLongCacheRetention: Bool = true,
+                       cacheRetention: CacheRetention? = nil) -> String? {
+    let isLong: Bool
+    if let cacheRetention {
+        isLong = cacheRetention == .long
+    } else {
+        isLong = getenv("PI_CACHE_RETENTION").map { String(cString: $0) }?.lowercased() == "long"
+    }
+    guard isLong else { return nil }
     guard supportsLongCacheRetention else { return nil }
     guard baseUrl.contains("api.anthropic.com") else { return nil }
     return "1h"
@@ -1210,11 +1237,10 @@ private func buildAnthropicHttpClient(
     baseUrl: String,
     metadataUserId: String?,
     supportsLongCacheRetention: Bool,
+    cacheRetention: CacheRetention?,
     supportsEagerToolInputStreaming: Bool,
     supportsCacheControlOnTools: Bool,
     thinkingDisabled: Bool,
-    deferredToolNames: Set<String> = [],
-    toolResultAddedNames: [String: [String]] = [:],
     strictToolSchemas: [String: [String: AnyCodable]] = [:],
     rawRequestBody: Data? = nil
 ) -> HTTPClient {
@@ -1230,7 +1256,8 @@ private func buildAnthropicHttpClient(
             merged.updateValue("cli", forKey: "x-app")
         }
     }
-    let cacheTtl = anthropicCacheTtl(baseUrl: baseUrl, supportsLongCacheRetention: supportsLongCacheRetention)
+    let cacheTtl = anthropicCacheTtl(baseUrl: baseUrl, supportsLongCacheRetention: supportsLongCacheRetention,
+        cacheRetention: cacheRetention)
     let base: any HTTPClient = if let providerHTTPClient {
         ProviderAnthropicHTTPClient(base: providerHTTPClient)
     } else {
@@ -1244,8 +1271,6 @@ private func buildAnthropicHttpClient(
         supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
         supportsCacheControlOnTools: supportsCacheControlOnTools,
         thinkingDisabled: thinkingDisabled,
-        deferredToolNames: deferredToolNames,
-        toolResultAddedNames: toolResultAddedNames,
         strictToolSchemas: strictToolSchemas,
         isOAuthToken: isOAuthToken,
         rawRequestBody: rawRequestBody
@@ -1332,6 +1357,8 @@ private func collectAnthropicHTTPBody(_ stream: HTTPByteStream) async throws -> 
 private func hasCopilotVisionInput(_ messages: [Message]) -> Bool {
     messages.contains { msg in
         switch msg {
+        case .system:
+            return false
         case .user(let user):
             if case .blocks(let blocks) = user.content {
                 return blocks.contains { if case .image = $0 { return true } else { return false } }
@@ -1372,8 +1399,6 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let supportsEagerToolInputStreaming: Bool
     let supportsCacheControlOnTools: Bool
     let thinkingDisabled: Bool
-    let deferredToolNames: Set<String>
-    let toolResultAddedNames: [String: [String]]
     let strictToolSchemas: [String: [String: AnyCodable]]
     let isOAuthToken: Bool
     let rawRequestBody: Data?
@@ -1426,8 +1451,6 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
             supportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
             supportsCacheControlOnTools: supportsCacheControlOnTools,
             thinkingDisabled: thinkingDisabled,
-            deferredToolNames: deferredToolNames,
-            toolResultAddedNames: toolResultAddedNames,
             isOAuthToken: isOAuthToken,
             strictToolSchemas: strictToolSchemas
         )
@@ -1449,7 +1472,9 @@ func injectAnthropicRequestBody(
     supportsCacheControlOnTools: Bool = true,
     thinkingDisabled: Bool = false,
     deferredToolNames: Set<String> = [],
-    toolResultAddedNames: [String: [String]] = [:],
+    initialToolNames: Set<String> = [],
+    nativeToolChanges: Bool = false,
+    systemInsertions: [AnthropicSystemInsertion] = [],
     isOAuthToken: Bool = false,
     strictToolSchemas: [String: [String: AnyCodable]] = [:]
 ) -> Data? {
@@ -1481,52 +1506,25 @@ func injectAnthropicRequestBody(
         }
     }
 
-    if !deferredToolNames.isEmpty,
-       var messages = payload["messages"] as? [[String: Any]] {
-        var loadedToolNames = Set<String>()
-
-        for messageIndex in messages.indices {
-            guard (messages[messageIndex]["role"] as? String) == "user",
-                  var blocks = messages[messageIndex]["content"] as? [[String: Any]] else {
-                continue
-            }
-
-            var siblings: [[String: Any]] = []
-            for blockIndex in blocks.indices {
-                guard (blocks[blockIndex]["type"] as? String) == "tool_result",
-                      let toolUseId = blocks[blockIndex]["tool_use_id"] as? String else {
-                    continue
+    if !systemInsertions.isEmpty, var messages = payload["messages"] as? [[String: Any]] {
+        var offset = 0
+        for insertion in systemInsertions {
+            var blocks: [[String: Any]] = []
+            let text = renderSystemMessageUpdate(insertion.message)
+            if !text.isEmpty { blocks.append(["type": "text", "text": sanitizeSurrogates(text)]) }
+            if nativeToolChanges {
+                for tool in insertion.message.toolsRemoved ?? [] {
+                    let name = isOAuthToken ? toClaudeCodeName(tool.name) : tool.name
+                    blocks.append(["type": "tool_removal", "tool": ["type": "tool_reference", "name": name]])
                 }
-
-                var references: [[String: Any]] = []
-                for name in toolResultAddedNames[toolUseId] ?? [] {
-                    let normalizedName = isOAuthToken ? toClaudeCodeName(name) : name
-                    guard deferredToolNames.contains(normalizedName),
-                          !loadedToolNames.contains(normalizedName) else {
-                        continue
-                    }
-                    loadedToolNames.insert(normalizedName)
-                    references.append([
-                        "type": "tool_reference",
-                        "tool_name": isOAuthToken ? toClaudeCodeName(name) : name,
-                    ])
-                }
-
-                guard !references.isEmpty else { continue }
-                let originalContent = blocks[blockIndex]["content"]
-                blocks[blockIndex]["content"] = references
-
-                if let text = originalContent as? String, !text.isEmpty {
-                    siblings.append(["type": "text", "text": text])
-                } else if let originalBlocks = originalContent as? [[String: Any]] {
-                    siblings.append(contentsOf: originalBlocks)
+                for tool in insertion.message.toolsAdded ?? [] {
+                    let name = isOAuthToken ? toClaudeCodeName(tool.name) : tool.name
+                    blocks.append(["type": "tool_addition", "tool": ["type": "tool_reference", "name": name]])
                 }
             }
-
-            if !siblings.isEmpty {
-                blocks.append(contentsOf: siblings)
-            }
-            messages[messageIndex]["content"] = blocks
+            guard !blocks.isEmpty else { continue }
+            messages.insert(["role": "system", "content": blocks], at: min(insertion.index + offset, messages.count))
+            offset += 1
         }
         payload["messages"] = messages
     }
@@ -1534,7 +1532,7 @@ func injectAnthropicRequestBody(
     if var messages = payload["messages"] as? [[String: Any]],
        let lastIndex = messages.indices.last {
         var last = messages[lastIndex]
-        if (last["role"] as? String) == "user" {
+        if (last["role"] as? String) == "user" || (last["role"] as? String) == "system" {
             if let content = last["content"] as? String {
                 last["content"] = [cacheTextObject(text: content, ttl: ttl)]
             } else if var list = last["content"] as? [[String: Any]] {
@@ -1570,7 +1568,22 @@ func injectAnthropicRequestBody(
             }
         }
 
-        if supportsCacheControlOnTools, let lastToolIndex = tools.indices.last {
+        if nativeToolChanges {
+            let initialLastIndex = tools.indices.last { index in
+                guard let name = tools[index]["name"] as? String else { return false }
+                return initialToolNames.contains(name)
+            }
+            if supportsCacheControlOnTools, let initialLastIndex {
+                tools[initialLastIndex] = ensureCacheControl(in: tools[initialLastIndex], ttl: ttl)
+            }
+            let placeholder: [String: Any] = [
+                "name": "__pi_deferred_placeholder__",
+                "description": "Reserved placeholder. Never available. Never call this.",
+                "input_schema": ["type": "object", "properties": [:] as [String: Any], "required": [] as [String]],
+                "defer_loading": true,
+            ]
+            tools.insert(placeholder, at: (initialLastIndex ?? -1) + 1)
+        } else if supportsCacheControlOnTools, let lastToolIndex = tools.indices.last {
             let lastTool = tools[lastToolIndex]
             if lastTool["cache_control"] == nil {
                 tools[lastToolIndex] = ensureCacheControl(in: lastTool, ttl: ttl)
@@ -1634,6 +1647,7 @@ private func ensureCacheControl(in block: [String: Any], ttl: String?) -> [Strin
 private func shouldAddCacheControl(_ block: [String: Any]) -> Bool {
     guard let type = block["type"] as? String else { return false }
     return type == "text" || type == "image" || type == "tool_result"
+        || type == "tool_addition" || type == "tool_removal"
 }
 
 func mapAnthropicStopReason(_ reason: String, refusalExplanation: String? = nil) -> StopReasonResult {
@@ -1755,7 +1769,9 @@ private enum AnthropicTolerantStreamError: Error, LocalizedError {
     }
 }
 
-func anthropicBetaFeatures(model: Model, context: Context, options: AnthropicOptions) -> [String]? {
+func anthropicBetaFeatures(
+    model: Model, context: Context, options: AnthropicOptions, nativeToolChanges: Bool = false
+) -> [String]? {
     var configured: String?? = nil
     for headers in [model.headers, options.headers] {
         for (name, value) in headers ?? [:] where name.lowercased() == "anthropic-beta" {
@@ -1786,6 +1802,9 @@ func anthropicBetaFeatures(model: Model, context: Context, options: AnthropicOpt
     if model.compat?.supportsMidConvoEffort == true {
         features += ["mid-conversation-output-config-2026-07-01", "thinking-binding-controls-2026-08-01"]
     }
+    if nativeToolChanges {
+        features.append("mid-conversation-tool-changes-2026-07-01")
+    }
     return features.isEmpty ? nil : features
 }
 
@@ -1804,7 +1823,8 @@ func prepareAnthropicRawPayload(_ data: Data, model: Model, context: Context, op
         })
         let levels: [String?] = transformed.compactMap { message -> [String?]? in
             guard case .assistant(let assistant) = message,
-                  !convertAssistantContent(assistant, isOAuthToken: isAnthropicOAuthToken(options.apiKey ?? "")).isEmpty else { return nil }
+                  !convertAssistantContent(assistant, isOAuthToken: isAnthropicOAuthToken(options.apiKey ?? ""),
+                      allowEmptySignature: model.compat?.allowEmptySignature == true).isEmpty else { return nil }
             let level = assistant.providerThinkingLevel
             let valid = assistant.api == .anthropicMessages && assistant.provider == model.provider
                 && ["low", "medium", "high", "xhigh", "max"].contains(level ?? "")

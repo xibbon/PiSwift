@@ -549,15 +549,15 @@ public final class DefaultResourceLoader: ResourceLoader {
             return ([], [])
         }
 
-        let templates = loadPromptTemplates(LoadPromptTemplatesOptions(
+        let result = loadPromptTemplatesWithDiagnostics(LoadPromptTemplatesOptions(
             cwd: cwd,
             agentDir: agentDir,
             promptPaths: paths,
             includeDefaults: includeDefaults
         ))
 
-        let deduped = dedupePrompts(templates)
-        return deduped
+        let deduped = dedupePrompts(result.templates)
+        return (deduped.prompts, result.diagnostics + deduped.diagnostics)
     }
 
     private func updatePromptsFromPaths(_ paths: [String]) {

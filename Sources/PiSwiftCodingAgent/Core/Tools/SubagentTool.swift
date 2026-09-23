@@ -384,7 +384,8 @@ private func runSingleAgent(
     }
     let appendPrompt = appendSections.joined(separator: "\n\n")
 
-    let systemPrompt = buildSystemPrompt(BuildSystemPromptOptions(
+    // Subagent options have no custom sections, so section validation cannot fail.
+    let systemPrompt = try! buildSystemPrompt(BuildSystemPromptOptions(
         selectedTools: toolResolution.selected,
         appendSystemPrompt: appendPrompt.isEmpty ? nil : appendPrompt,
         cwd: effectiveCwd,

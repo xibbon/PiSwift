@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftAI
 
 public struct ContextFile: Sendable {
     public var path: String
@@ -173,7 +174,13 @@ public func loadProjectContextFiles(_ options: LoadContextFilesOptions = LoadCon
 
 public struct BuildSystemPromptOptions: Sendable {
     public var customPrompt: String?
+    public var forceSystemPrompt: String?
     public var selectedTools: [ToolName]?
+    public var selectedToolNames: [String]?
+    public var toolSnippets: [String: String]?
+    public var toolGuidelines: [String: [String]]?
+    public var promptGuidelines: [String]?
+    public var sections: SystemPromptSections?
     public var appendSystemPrompt: String?
     public var skillsSettings: SkillsSettings?
     public var cwd: String?
@@ -184,15 +191,27 @@ public struct BuildSystemPromptOptions: Sendable {
     public init(
         customPrompt: String? = nil,
         selectedTools: [ToolName]? = nil,
+        selectedToolNames: [String]? = nil,
         appendSystemPrompt: String? = nil,
         skillsSettings: SkillsSettings? = nil,
         cwd: String? = nil,
         agentDir: String? = nil,
         contextFiles: [ContextFile]? = nil,
-        skills: [Skill]? = nil
+        skills: [Skill]? = nil,
+        forceSystemPrompt: String? = nil,
+        toolSnippets: [String: String]? = nil,
+        toolGuidelines: [String: [String]]? = nil,
+        promptGuidelines: [String]? = nil,
+        sections: SystemPromptSections? = nil
     ) {
         self.customPrompt = customPrompt
+        self.forceSystemPrompt = forceSystemPrompt
         self.selectedTools = selectedTools
+        self.selectedToolNames = selectedToolNames
+        self.toolSnippets = toolSnippets
+        self.toolGuidelines = toolGuidelines
+        self.promptGuidelines = promptGuidelines
+        self.sections = sections
         self.appendSystemPrompt = appendSystemPrompt
         self.skillsSettings = skillsSettings
         self.cwd = cwd
@@ -202,150 +221,104 @@ public struct BuildSystemPromptOptions: Sendable {
     }
 }
 
-public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemPromptOptions()) -> String {
-    let resolvedCwd = options.cwd ?? FileManager.default.currentDirectoryPath
-    let resolvedCustomPrompt = resolvePromptInput(options.customPrompt, "system prompt")
-    let resolvedAppendPrompt = resolvePromptInput(options.appendSystemPrompt, "append system prompt")
+public func isValidSystemPromptSectionName(_ name: String) -> Bool {
+    guard name != "preamble", let first = name.first, first >= "a", first <= "z" else { return false }
+    return name.allSatisfy { ($0 >= "a" && $0 <= "z") || ($0 >= "0" && $0 <= "9") || $0 == "_" || $0 == "-" }
+}
 
-    let appendSection = resolvedAppendPrompt.map { "\n\n\($0)" } ?? ""
+public enum SystemPromptError: Error, LocalizedError, Sendable, Equatable {
+    case invalidSectionName(String)
 
-    let contextFiles = options.contextFiles ?? loadProjectContextFiles(LoadContextFilesOptions(cwd: resolvedCwd, agentDir: options.agentDir))
+    public var errorDescription: String? {
+        switch self {
+        case .invalidSectionName(let name): "Invalid system prompt section name: \(name)"
+        }
+    }
+}
 
-    let skills: [Skill]
-    if let provided = options.skills {
-        skills = provided
-    } else if options.skillsSettings?.enabled == false {
-        skills = []
+private func systemPromptRules(_ names: [String], _ options: BuildSystemPromptOptions) -> String {
+    var rules: [String] = []
+    func add(_ rule: String) {
+        let value = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.isEmpty && !rules.contains(value) { rules.append(value) }
+    }
+    let hasBash = names.contains("bash")
+    let hasPowerShell = names.contains("powershell")
+    if (hasBash || hasPowerShell) && !names.contains("grep") && !names.contains("find") && !names.contains("ls") {
+        add(hasBash && hasPowerShell ? "Use bash or PowerShell for file operations like listing, searching, and finding files" :
+            hasPowerShell ? "Use PowerShell for file operations like listing, searching, and finding files" :
+            "Use bash for file operations like ls, rg, find")
+    }
+    for name in names { for rule in options.toolGuidelines?[name] ?? [] { add(rule) } }
+    for rule in options.promptGuidelines ?? [] { add(rule) }
+    add("Be concise in your responses")
+    add("Show file paths clearly when working with files")
+    return rules.map { "- \($0)" }.joined(separator: "\n")
+}
+
+/// Ordered sections replayed by the transcript codec. The preamble has no XML wrapper.
+public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = BuildSystemPromptOptions()) throws -> SystemPromptSections {
+    for entry in options.sections?.entries ?? [] {
+        guard isValidSystemPromptSectionName(entry.name) else { throw SystemPromptError.invalidSectionName(entry.name) }
+    }
+    let cwd = options.cwd ?? FileManager.default.currentDirectoryPath
+    let tools = options.selectedToolNames ?? (options.selectedTools ?? [.read, .bash, .edit, .write]).map(\.rawValue)
+    let snippets = options.toolSnippets ?? [:]
+    let custom = resolvePromptInput(options.customPrompt, "system prompt")
+    var entries: [(name: String, value: String?)] = []
+    func add(_ name: String, _ value: String) { entries.append((name: name, value: name == "preamble" ? value : "<\(name)>\n\(value)\n</\(name)>")) }
+    if let custom, !custom.isEmpty {
+        add("preamble", custom)
     } else {
-        let settings = options.skillsSettings
-        skills = loadSkills(LoadSkillsOptions(
-            cwd: resolvedCwd,
-            agentDir: options.agentDir,
-            enableCodexUser: settings?.enableCodexUser,
-            enableClaudeUser: settings?.enableClaudeUser,
-            enableClaudeProject: settings?.enableClaudeProject,
-            enablePiUser: settings?.enablePiUser,
-            enablePiProject: settings?.enablePiProject,
-            customDirectories: settings?.customDirectories,
-            ignoredSkills: settings?.ignoredSkills,
-            includeSkills: settings?.includeSkills
-        )).skills
+        add("preamble", "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.")
+        let visible = tools.filter { !(snippets[$0] ?? "").isEmpty }
+        let list = visible.isEmpty ? "(none)" : visible.map { "- \($0): \(snippets[$0]!)" }.joined(separator: "\n")
+        add("tools", "\(list)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.")
+        add("rules", systemPromptRules(tools, options))
+        add("docs", """
+        Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+        - Main documentation: \(getReadmePath())
+        - Additional docs: \(getDocsPath())
+        - Examples: \(getExamplesPath()) (extensions, custom tools, SDK)
+        - When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
+        - When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)
+        - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
+        - Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)
+        """)
     }
-
-    let tools = options.selectedTools ?? [.read, .bash, .edit, .write]
-    let skillFileReadTool: SkillFileReadTool? = tools.contains(.read) ? .read : (tools.contains(.bash) ? .bash : nil)
-
-    if let resolvedCustomPrompt {
-        var prompt = resolvedCustomPrompt
-        if !appendSection.isEmpty {
-            prompt += appendSection
-        }
-
-        if !contextFiles.isEmpty {
-            prompt += "\n\n# Project Context\n\n"
-            prompt += "The following project context files have been loaded:\n\n"
-            for file in contextFiles {
-                prompt += "## \(file.path)\n\n\(file.content)\n\n"
-            }
-        }
-
-        if let skillFileReadTool, !skills.isEmpty {
-            prompt += formatSkillsForPrompt(skills, fileReadTool: skillFileReadTool)
-        }
-
-        prompt += "\nCurrent working directory: \(resolvedCwd)\n"
-        return prompt
-    }
-
-    let readmePath = getReadmePath()
-    let docsPath = getDocsPath()
-    let examplesPath = getExamplesPath()
-
-    let toolsList = tools.isEmpty ? "(none)" : tools.map { "- \($0.rawValue): \(toolDescriptions[$0] ?? "")" }.joined(separator: "\n")
-
-    var guidelinesList: [String] = []
-
-    let hasBash = tools.contains(.bash)
-    let hasEdit = tools.contains(.edit)
-    let hasWrite = tools.contains(.write)
-    let hasGrep = tools.contains(.grep)
-    let hasFind = tools.contains(.find)
-    let hasLs = tools.contains(.ls)
-    let hasRead = tools.contains(.read)
-
-    if !hasBash && !hasEdit && !hasWrite {
-        guidelinesList.append("You are in READ-ONLY mode - you cannot modify files or execute arbitrary commands")
-    }
-
-    if hasBash && !hasEdit && !hasWrite {
-        guidelinesList.append("Use bash ONLY for read-only operations (git log, gh issue view, curl, etc.) - do NOT modify any files")
-    }
-
-    if hasBash && !hasGrep && !hasFind && !hasLs {
-        guidelinesList.append("Use bash for file operations like ls, rg, find")
-    } else if hasBash && (hasGrep || hasFind || hasLs) {
-        guidelinesList.append("Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)")
-    }
-
-    if hasBash {
-        guidelinesList.append("You can inspect PI_* environment variables for current model and session details.")
-    }
-
-    if hasRead && hasEdit {
-        guidelinesList.append("Use read to examine files before editing. You must use this tool instead of cat or sed.")
-    }
-
-    if hasEdit {
-        guidelinesList.append("Use edit for precise changes (old text must match exactly)")
-    }
-
-    if hasWrite {
-        guidelinesList.append("Use write only for new files or complete rewrites")
-    }
-
-    if hasEdit || hasWrite {
-        guidelinesList.append("When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did")
-    }
-
-    guidelinesList.append("Be concise in your responses")
-    guidelinesList.append("Show file paths clearly when working with files")
-
-    let guidelines = guidelinesList.map { "- \($0)" }.joined(separator: "\n")
-
-    var prompt = """
-    You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
-
-    Available tools:
-    \(toolsList)
-
-    Guidelines:
-    \(guidelines)
-
-    Documentation:
-    - Main documentation: \(readmePath)
-    - Additional docs: \(docsPath)
-    - Examples: \(examplesPath) (hooks, custom tools, SDK)
-    - When asked to create: custom models/providers (README.md), hooks (docs/hooks.md, examples/hooks/), custom tools (docs/custom-tools.md, docs/tui.md, examples/custom-tools/), themes (docs/theme.md), skills (docs/skills.md)
-    - Always read the doc, examples, AND follow .md cross-references before implementing
-    """
-
-    if !appendSection.isEmpty {
-        prompt += appendSection
-    }
-
+    if let append = resolvePromptInput(options.appendSystemPrompt, "append system prompt"), !append.isEmpty { add("addendum", append) }
+    let contextFiles = options.contextFiles ?? loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: options.agentDir))
     if !contextFiles.isEmpty {
-        prompt += "\n\n# Project Context\n\n"
-        prompt += "The following project context files have been loaded:\n\n"
-        for file in contextFiles {
-            prompt += "## \(file.path)\n\n\(file.content)\n\n"
-        }
+        let files = contextFiles.map { "<project_instructions path=\"\($0.path)\">\n\($0.content)\n</project_instructions>" }
+        add("project_context", (["Project-specific instructions and guidelines:"] + files).joined(separator: "\n\n"))
     }
-
-    if let skillFileReadTool, !skills.isEmpty {
-        prompt += formatSkillsForPrompt(skills, fileReadTool: skillFileReadTool)
+    let skills: [Skill]
+    if let supplied = options.skills { skills = supplied }
+    else if options.skillsSettings?.enabled == false { skills = [] }
+    else { skills = loadSkills(LoadSkillsOptions(cwd: cwd, agentDir: options.agentDir)).skills }
+    if let reader: SkillFileReadTool = tools.contains("read") ? .read : (tools.contains("bash") ? .bash : nil), !skills.isEmpty {
+        let value = formatSkillsForPrompt(skills, fileReadTool: reader).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.isEmpty { add("skills", value) }
     }
+    add("cwd", cwd.replacingOccurrences(of: "\\", with: "/"))
+    for entry in options.sections?.entries ?? [] {
+        if let value = entry.value, !value.isEmpty { add(entry.name, value) }
+    }
+    return SystemPromptSections(entries)
+}
 
-    prompt += "\nCurrent working directory: \(resolvedCwd)"
+public func buildSystemPromptState(_ options: BuildSystemPromptOptions = BuildSystemPromptOptions()) throws -> SystemMessage {
+    if let forced = options.forceSystemPrompt { return SystemMessage(content: .text(forced), timestamp: 0) }
+    return SystemMessage(content: .text(""), sections: try buildSystemPromptSections(options), timestamp: 0)
+}
 
-    return prompt
+public func buildSystemPrompt(_ options: BuildSystemPromptOptions = BuildSystemPromptOptions()) throws -> String {
+    getSystemMessageText(try buildSystemPromptState(options))
+}
+
+public func diffSystemPromptSections(_ previous: SystemPromptSections?, _ current: SystemPromptSections) -> SystemPromptSections? {
+    var changes: [(name: String, value: String?)] = []
+    for entry in current.entries where previous?[entry.name] != entry.value { changes.append((entry.name, entry.value)) }
+    for entry in previous?.entries ?? [] where current.entries.allSatisfy({ $0.name != entry.name }) { changes.append((entry.name, nil)) }
+    return changes.isEmpty ? nil : SystemPromptSections(changes)
 }

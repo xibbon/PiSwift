@@ -25,10 +25,12 @@ public struct FileProcessingResult: Sendable {
 public struct ProcessFileOptions: Sendable {
     public var autoResizeImages: Bool?
     public var blockImages: Bool?
+    public var resizeOptions: ModelImageResizeOptions?
 
-    public init(autoResizeImages: Bool? = nil, blockImages: Bool? = nil) {
+    public init(autoResizeImages: Bool? = nil, blockImages: Bool? = nil, resizeOptions: ModelImageResizeOptions? = nil) {
         self.autoResizeImages = autoResizeImages
         self.blockImages = blockImages
+        self.resizeOptions = resizeOptions
     }
 }
 
@@ -66,7 +68,12 @@ public func processFileArguments(_ fileArgs: [String], options: ProcessFileOptio
             var dimensionNote: String? = nil
 
             if autoResizeImages {
-                let resized = resizeImage(ImageContent(data: base64, mimeType: mimeType))
+                let limits = ImageResizeOptions(modelProfile: options?.resizeOptions)
+                let resized = resizeImage(ImageContent(data: base64, mimeType: mimeType), options: limits)
+                guard imageFitsResizeLimits(resized, options: limits) else {
+                    textContent += "<file name=\"\(absolutePath)\">[Image omitted: could not be resized below the inline image size limit.]</file>\n"
+                    continue
+                }
                 dimensionNote = formatDimensionNote(resized)
                 attachment = ImageContent(data: resized.data, mimeType: resized.mimeType)
             } else {

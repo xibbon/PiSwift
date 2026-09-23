@@ -10,7 +10,8 @@ private func googlePortModel(id: String = "gemini-3.7-flash", map: ThinkingLevel
 }
 
 @Test func googleThinkingDefaultLogicalLevels() throws {
-    let expected: [(ModelThinkingLevel, ResolvedGoogleThinkingLevel)] = [(.off, .high), (.minimal, .minimal), (.low, .low), (.medium, .medium), (.high, .high)]
+    // A4 item 7: upstream no longer maps Off to High in the resolver.
+    let expected: [(ModelThinkingLevel, ResolvedGoogleThinkingLevel)] = [(.minimal, .minimal), (.low, .low), (.medium, .medium), (.high, .high)]
     for (level, value) in expected {
         #expect(try resolveGoogleThinkingLevel(model: googlePortModel(), level: level) == value)
     }
@@ -29,6 +30,7 @@ func googleThinkingAcceptsEveryProviderCase(_ mapped: String) throws {
     for (model, level, expected) in [
         (googlePortModel(map: [.xhigh: "extreme"]), ModelThinkingLevel.xhigh, "xhigh -> extreme"),
         (googlePortModel(), ModelThinkingLevel.max, "max -> undefined"),
+        (googlePortModel(), ModelThinkingLevel.off, "off -> undefined"),
     ] {
         do {
             _ = try resolveGoogleThinkingLevel(model: model, level: level)
@@ -94,10 +96,10 @@ private actor GooglePortHTTP: ProviderHTTPClient {
 private func googlePortResult(client: GooglePortHTTP, vertex: Bool, headers: ProviderHeaders? = nil) async -> AssistantMessage {
     let context = Context(messages: [.user(UserMessage(content: .text("hello")))])
     if vertex {
-        return await streamGoogleVertex(model: googlePortModel(vertex: true), context: context,
+        return await streamGoogleVertex(model: googlePortModel(vertex: true), context: normalizeContext(context),
             options: GoogleVertexOptions(apiKey: "test", httpClient: client, headers: headers, project: "test-project", location: "us-central1")).result()
     }
-    return await streamGoogle(model: googlePortModel(), context: context,
+    return await streamGoogle(model: googlePortModel(), context: normalizeContext(context),
         options: GoogleOptions(apiKey: "test", httpClient: client, headers: headers)).result()
 }
 
@@ -124,7 +126,7 @@ func googleToolCallsPreserveRawStopAndLength(_ vertex: Bool, _ reason: String) a
     let client = try GooglePortHTTP()
     let model = googlePortModel(map: [.max: "high"])
     let options = try mapGoogleSimpleOptionsValidated(model: model, options: SimpleStreamOptions(httpClient: client, reasoning: .max), apiKey: "test")
-    let result = await streamGoogle(model: model, context: Context(messages: [.user(UserMessage(content: .text("hello")))]), options: options).result()
+    let result = await streamGoogle(model: model, context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])), options: options).result()
     #expect(result.stopReason == .stop)
     let request = try #require(await client.request)
     let data = try #require(request.httpBody)

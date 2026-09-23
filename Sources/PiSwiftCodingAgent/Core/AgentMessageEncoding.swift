@@ -4,6 +4,8 @@ import PiSwiftAgent
 
 public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
     switch message {
+    case .system(let system):
+        return systemMessageToJSONObject(system)
     case .user(let user):
         var dict: [String: Any] = [
             "role": "user",
@@ -19,7 +21,7 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
     case .assistant(let assistant):
         return assistantMessageToJSONObject(assistant)
     case .toolResult(let result):
-        return [
+        var dict: [String: Any] = [
             "role": "toolResult",
             "toolCallId": result.toolCallId,
             "toolName": result.toolName,
@@ -28,6 +30,8 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
             "isError": result.isError,
             "timestamp": result.timestamp,
         ]
+        if let usage = result.usage { dict["usage"] = usageToJSONObject(usage) }
+        return dict
     case .custom(let custom):
         var dict: [String: Any] = ["role": custom.role, "timestamp": custom.timestamp]
         if let payload = custom.payload?.jsonValue as? [String: Any] {
@@ -41,4 +45,10 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
 
 private func encodeUsage(_ usage: Usage) -> [String: Any] {
     usageToJSONObject(usage)
+}
+
+/// Encode a message while retaining ordered system sections.
+public func encodeAgentMessageJSON(_ message: AgentMessage) -> OrderedJSON {
+    if case .system(let system) = message { return systemMessageToOrderedJSON(system) }
+    return OrderedJSON.fromFoundation(encodeAgentMessageDict(message))
 }

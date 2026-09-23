@@ -86,7 +86,8 @@ func catalog085Qwen38SendsXhighEffort(_ provider: String, _ id: String) async th
 
 @Test(arguments: ["deepseek", "opencode-go"])
 func catalog085DeepSeekV4FlashHasLowHighMaxAndOff(_ provider: String) throws {
-    let model = try #require(getModel(provider: provider, modelId: "deepseek-v4-flash"))
+    let id = provider == "deepseek" ? "deepseek-flash" : "deepseek-v4-flash"
+    let model = try #require(getModel(provider: provider, modelId: id))
     #expect(getSupportedThinkingLevels(model) == [.off, .low, .high, .max])
 }
 
@@ -122,8 +123,7 @@ func catalog085XiaomiReplacesDeprecatedModels(_ name: String) throws {
 @Test func catalog085ZaiCodingPlanUsesMatchingAPICosts() throws {
     for (provider, id, cost) in [
         ("zai", "glm-5.2", ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0)),
-        ("zai-coding-cn", "glm-5.1", ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0)),
-        ("zai-coding-cn", "glm-5v-turbo", ModelCost(input: 1.2, output: 4, cacheRead: 0.24, cacheWrite: 0)),
+        ("zai-coding-cn", "glm-5.3-flash", ModelCost(input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0)),
         ("zai", "glm-5.3", ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0)),
         ("zai-coding-cn", "glm-5.3", ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0)),
     ] {
@@ -134,7 +134,8 @@ func catalog085XiaomiReplacesDeprecatedModels(_ name: String) throws {
 
 @Test func catalog085ZaiCodingPlanWithoutAPICostStaysZero() throws {
     for provider in ["zai", "zai-coding-cn"] {
-        let model = try #require(getModel(provider: provider, modelId: "glm-5.2-highspeed"))
+        let id = provider == "zai" ? "glm-5.2-highspeed" : "glm-5.3-highspeed"
+        let model = try #require(getModel(provider: provider, modelId: id))
         #expect(model.cost == ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0))
     }
 }

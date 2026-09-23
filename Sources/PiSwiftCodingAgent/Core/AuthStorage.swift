@@ -670,6 +670,8 @@ public final class AuthStorage: Sendable {
             credentials = try await loginKimiCoding(callbacks)
         case .xai:
             credentials = try await loginXai(callbacks)
+        case .meta:
+            credentials = try await loginMeta(callbacks)
         }
         set(provider.rawValue, credential: .oauth(OAuthCredential(credentials)))
     }
@@ -997,6 +999,8 @@ public final class AuthStorage: Sendable {
             return "QWEN_TOKEN_PLAN_CN_API_KEY"
         case "xai":
             return "XAI_API_KEY"
+        case "meta":
+            return "META_API_KEY"
         case "zai":
             return "ZAI_API_KEY"
         default:

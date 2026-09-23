@@ -162,10 +162,12 @@ private func effortEvents(fallbackAfterContent: Bool = false) -> [[String: Any]]
 
 @Test func anthropicManagedTransportAndFinalTransformations() async throws {
     let client = try EffortHTTPClient(events: effortEvents())
-    let result = await streamAnthropic(model: managedEffortModel(), context: Context(messages: [.user(UserMessage(content: .text("one")))]),
+    let result = await streamAnthropic(model: managedEffortModel(), context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("one")))])),
         options: AnthropicOptions(apiKey: "test-key", httpClient: client, effort: .low)).result()
     #expect(result.stopReason == .stop)
-    #expect(result.model == "serving-model")
+    // A4 item 10: keep the requested model and record the relay's serving model separately.
+    #expect(result.model == "custom-model")
+    #expect(result.responseModel == "serving-model")
     #expect(result.providerThinkingLevel == "low")
     let diagnostic = try #require(result.diagnostics?.first)
     #expect(diagnostic.type == "anthropic_input_transformations")
@@ -181,7 +183,7 @@ private func effortEvents(fallbackAfterContent: Bool = false) -> [[String: Any]]
 
 @Test func anthropicRejectsFallbackAfterOutput() async throws {
     let client = try EffortHTTPClient(events: effortEvents(fallbackAfterContent: true))
-    let result = await streamAnthropic(model: managedEffortModel(), context: Context(messages: []),
+    let result = await streamAnthropic(model: managedEffortModel(), context: normalizeContext(Context(messages: [])),
         options: AnthropicOptions(apiKey: "test-key", httpClient: client)).result()
     #expect(result.stopReason == .error)
     #expect(result.errorMessage?.contains("unsupported mid-output model fallback") == true)

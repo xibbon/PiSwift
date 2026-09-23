@@ -122,9 +122,12 @@ private struct AzureOpenAIResponsesMiddleware: OpenAIMiddleware {
 
 public func streamAzureOpenAIResponses(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: AzureOpenAIResponsesOptions
 ) -> AssistantMessageEventStream {
+    let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
+    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     var options = options
     options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
     let stream = AssistantMessageEventStream()
@@ -164,7 +167,7 @@ public func streamAzureOpenAIResponses(
                 effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
             )
             let constrainedSamplingMiddleware = try makeOpenAIResponsesConstrainedSamplingMiddleware(
-                tools: context.tools,
+                tools: getDeclaredTools(context.messages),
                 supportsStrictMode: model.compat?.supportsStrictMode ?? true,
                 supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
             )
@@ -177,7 +180,7 @@ public func streamAzureOpenAIResponses(
                 azureMiddleware,
                 reasoningEffortMiddleware,
                 constrainedSamplingMiddleware,
-                try makeResponsesReplayMiddleware(model: model, context: context, supportsDeferredTools: false),
+                try makeResponsesReplayMiddleware(model: model, context: context),
             ]
             if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
                 // Keep this last so custom keys override all named request fields.
@@ -468,7 +471,7 @@ public func streamAzureOpenAIResponses(
             _ = client
             _ = query
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
-            output.errorMessage = describeOpenAIError(error)
+            output.errorMessage = describeOpenAIError(error, provider: "Azure OpenAI")
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }
@@ -479,7 +482,7 @@ public func streamAzureOpenAIResponses(
 
 public func streamSimpleAzureOpenAIResponses(
     model: Model,
-    context: Context,
+    context: TranscriptContext,
     options: SimpleStreamOptions?
 ) -> AssistantMessageEventStream {
     let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider)

@@ -71,7 +71,7 @@ private func timestampSession(_ boundary: String, calls: LockedState<Int>) throw
         #expect(session.getContextUsage()?.tokens == nil)
         #expect(session.getContextUsage()?.percent == nil)
         let message = try #require(session.agent.state.messages.compactMap { if case .assistant(let assistant) = $0 { return assistant }; return nil }.last)
-        let context = AgentContext(systemPrompt: "test", messages: session.agent.state.messages, tools: [])
+        let context = AgentContext(messages: session.agent.state.messages, tools: [])
         _ = try await session.agent.prepareNextTurnWithContext?(PrepareNextTurnContext(message: message, toolResults: [], context: context, newMessages: []), nil)
         #expect(calls.withLock { $0 } == 0)
     }

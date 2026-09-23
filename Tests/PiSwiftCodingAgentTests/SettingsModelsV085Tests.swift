@@ -106,7 +106,8 @@ private func settings085Directory() throws -> URL {
     #expect(compat.supportsMaxOutputTokens == false)
     #expect(compat.supportsMidConvoEffort == true)
     #expect(compat.thinkingTokenBudgetField == .thinkingBudget)
-    #expect(compat.allowedFallbackModels == nil)
+    // C57: models.json now accepts explicit Anthropic fallback metadata.
+    #expect(compat.allowedFallbackModels == [])
     registry.registerProvider(HookProviderConfig(provider: "dynamic", api: .anthropicMessages, baseUrl: "https://example.invalid", compat: OpenAICompat(supportsMidConvoEffort: true, allowedFallbackModels: []), models: [HookProviderModel(id: "m", compat: OpenAICompat(supportsStrictTools: false))]), sourceId: "test")
     let dynamic = try #require(registry.find("dynamic", "m")?.compat)
     #expect(dynamic.supportsMidConvoEffort == true)

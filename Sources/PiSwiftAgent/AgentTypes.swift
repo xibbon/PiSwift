@@ -6,7 +6,7 @@ import PiSwiftAI
 /// Contract: must not throw or return a rejected promise for request/model/runtime failures.
 /// Must return an `AssistantMessageEventStream`. Failures must be encoded in the returned stream
 /// via protocol events and a final `AssistantMessage` with `stopReason` `.error` or `.aborted`.
-public typealias StreamFn = @Sendable (Model, Context, SimpleStreamOptions) async throws -> AssistantMessageEventStream
+public typealias StreamFn = @Sendable (Model, TranscriptContext, SimpleStreamOptions) async throws -> AssistantMessageEventStream
 
 /// Callback for emitting agent events. Supports both sync and async handlers.
 public typealias AgentEventSink = @Sendable (AgentEvent) async -> Void
@@ -112,8 +112,8 @@ public typealias BeforeToolCallFn = @Sendable (BeforeToolCallContext, Cancellati
 public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async throws -> AfterToolCallResult?
 public typealias OnPayloadFn = PayloadHandler
 
-/// Context passed to `shouldStopAfterTurn` after a complete assistant turn.
-public struct ShouldStopAfterTurnContext: Sendable {
+/// Context passed to `finishTurn` after a complete assistant turn.
+public struct AgentTurnContext: Sendable {
     public var message: AssistantMessage
     public var toolResults: [ToolResultMessage]
     public var context: AgentContext
@@ -133,9 +133,29 @@ public struct ShouldStopAfterTurnContext: Sendable {
 }
 
 /// Completed turn supplied only when another assistant turn will start.
-public typealias PrepareNextTurnContext = ShouldStopAfterTurnContext
+public typealias PrepareNextTurnContext = AgentTurnContext
 
-public struct AgentLoopTurnUpdate: Sendable {
+public enum AgentTurnDecision: Sendable {
+    case `continue`
+    case end
+}
+
+public typealias FinishTurnFn = @Sendable (AgentTurnContext, CancellationToken?) async -> AgentTurnDecision?
+public typealias AgentFinishTurnFn = FinishTurnFn
+
+public struct PrepareRequestContext: Sendable {
+    public var context: AgentContext
+    public var model: Model
+    public var thinkingLevel: ThinkingLevel
+
+    public init(context: AgentContext, model: Model, thinkingLevel: ThinkingLevel) {
+        self.context = context
+        self.model = model
+        self.thinkingLevel = thinkingLevel
+    }
+}
+
+public struct AgentRequestUpdate: Sendable {
     public var context: AgentContext?
     public var model: Model?
     public var thinkingLevel: ThinkingLevel?
@@ -147,12 +167,26 @@ public struct AgentLoopTurnUpdate: Sendable {
     }
 }
 
+public typealias PrepareRequestFn = @Sendable (PrepareRequestContext, CancellationToken?) async throws -> AgentRequestUpdate?
+
+public struct AgentLoopTurnUpdate: Sendable {
+    public var context: AgentContext?
+    public var messages: [AgentMessage]?
+    public var model: Model?
+    public var thinkingLevel: ThinkingLevel?
+
+    public init(context: AgentContext? = nil, messages: [AgentMessage]? = nil, model: Model? = nil, thinkingLevel: ThinkingLevel? = nil) {
+        self.context = context
+        self.messages = messages
+        self.model = model
+        self.thinkingLevel = thinkingLevel
+    }
+}
+
 public typealias PrepareNextTurnFn = @Sendable (PrepareNextTurnContext) async throws -> AgentLoopTurnUpdate?
 public typealias AgentPrepareNextTurnFn = @Sendable (CancellationToken?) async throws -> AgentLoopTurnUpdate?
 public typealias AgentPrepareNextTurnWithContextFn = @Sendable (PrepareNextTurnContext, CancellationToken?) async throws -> AgentLoopTurnUpdate?
 
-public typealias ShouldStopAfterTurnFn = @Sendable (ShouldStopAfterTurnContext) async -> Bool
-public typealias AgentShouldStopAfterTurnFn = @Sendable (ShouldStopAfterTurnContext, CancellationToken?) async -> Bool
 
 public enum ThinkingLevel: String, Sendable {
     case off
@@ -177,6 +211,7 @@ public struct AgentCustomMessage: Sendable {
 }
 
 public enum AgentMessage: Sendable {
+    case system(SystemMessage)
     case user(UserMessage)
     case assistant(AssistantMessage)
     case toolResult(ToolResultMessage)
@@ -184,6 +219,8 @@ public enum AgentMessage: Sendable {
 
     public var role: String {
         switch self {
+        case .system:
+            return "system"
         case .user:
             return "user"
         case .assistant:
@@ -197,6 +234,8 @@ public enum AgentMessage: Sendable {
 
     public var timestamp: Int64 {
         switch self {
+        case .system(let message):
+            return message.timestamp
         case .user(let message):
             return message.timestamp
         case .assistant(let message):
@@ -210,6 +249,8 @@ public enum AgentMessage: Sendable {
 
     public var asMessage: Message? {
         switch self {
+        case .system(let message):
+            return .system(message)
         case .user(let message):
             return .user(message)
         case .assistant(let message):
@@ -223,6 +264,8 @@ public enum AgentMessage: Sendable {
 
     public init(_ message: Message) {
         switch message {
+        case .system(let msg):
+            self = .system(msg)
         case .user(let msg):
             self = .user(msg)
         case .assistant(let msg):
@@ -238,20 +281,17 @@ public struct AgentToolResult: Sendable {
     public var details: AnyCodable?
     /// Usage from the tool execution itself. This is not LLM context usage.
     public var usage: Usage?
-    public var addedToolNames: [String]?
     public var terminate: Bool?
 
     public init(
         content: [ContentBlock],
         details: AnyCodable? = nil,
         usage: Usage? = nil,
-        addedToolNames: [String]? = nil,
         terminate: Bool? = nil
     ) {
         self.content = content
         self.details = details
         self.usage = usage
-        self.addedToolNames = addedToolNames
         self.terminate = terminate
     }
 }
@@ -274,7 +314,11 @@ public typealias AgentToolPrepareArguments = @Sendable (_ args: [String: AnyCoda
 
 public struct AgentToolExecutionContext: Sendable {
     public var cwd: String?
-    public init(cwd: String? = nil) { self.cwd = cwd }
+    public var model: Model?
+    public init(cwd: String? = nil, model: Model? = nil) {
+        self.cwd = cwd
+        self.model = model
+    }
 }
 
 public typealias AgentToolExecuteWithContext = @Sendable (
@@ -317,12 +361,10 @@ public struct AgentTool: Sendable {
 }
 
 public struct AgentContext: Sendable {
-    public var systemPrompt: String
     public var messages: [AgentMessage]
     public var tools: [AgentTool]?
 
-    public init(systemPrompt: String, messages: [AgentMessage], tools: [AgentTool]? = nil) {
-        self.systemPrompt = systemPrompt
+    public init(messages: [AgentMessage], tools: [AgentTool]? = nil) {
         self.messages = messages
         self.tools = tools
     }
@@ -427,11 +469,10 @@ public struct AgentLoopConfig: Sendable {
     /// Contract: must not throw or reject. Return `[]` when no follow-up messages are available.
     public var getFollowUpMessages: (@Sendable () async -> [AgentMessage])?
 
-    /// Returns whether the loop should stop after the current complete turn.
-    ///
-    /// Called after `turnEnd` and before steering or follow-up queues are polled.
-    /// Return `false` to continue normal queued-message processing.
-    public var shouldStopAfterTurn: ShouldStopAfterTurnFn?
+    /// Called after assistant and tool results are finalized, before `turnEnd`.
+    public var finishTurn: FinishTurnFn?
+    /// Called immediately before every conversational provider request.
+    public var prepareRequest: PrepareRequestFn?
     public var prepareNextTurn: PrepareNextTurnFn?
 
     public init(
@@ -461,7 +502,8 @@ public struct AgentLoopConfig: Sendable {
         getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)? = nil,
         getSteeringMessages: (@Sendable () async -> [AgentMessage])? = nil,
         getFollowUpMessages: (@Sendable () async -> [AgentMessage])? = nil,
-        shouldStopAfterTurn: ShouldStopAfterTurnFn? = nil,
+        finishTurn: FinishTurnFn? = nil,
+        prepareRequest: PrepareRequestFn? = nil,
         prepareNextTurn: PrepareNextTurnFn? = nil
     ) {
         self.model = model
@@ -490,7 +532,8 @@ public struct AgentLoopConfig: Sendable {
         self.getModelAuth = getModelAuth
         self.getSteeringMessages = getSteeringMessages
         self.getFollowUpMessages = getFollowUpMessages
-        self.shouldStopAfterTurn = shouldStopAfterTurn
+        self.finishTurn = finishTurn
+        self.prepareRequest = prepareRequest
         self.prepareNextTurn = prepareNextTurn
     }
 }
@@ -530,7 +573,7 @@ public enum AgentFollowUpMode: String, Sendable {
 /// Construct an initial state via the public initializer, which accepts only the writable fields
 /// (no runtime-owned values are accepted at construction time).
 public struct AgentState: Sendable {
-    public var systemPrompt: String
+    public var systemPrompt: String { getCurrentSystemPrompt(messages) }
     public var model: Model
     public var thinkingLevel: ThinkingLevel
     public var tools: [AgentTool]
@@ -550,20 +593,24 @@ public struct AgentState: Sendable {
         tools: [AgentTool] = [],
         messages: [AgentMessage] = []
     ) {
-        self.systemPrompt = systemPrompt
+        var initialMessages = messages
+        let hasLeadingSystem: Bool
+        if case .system? = initialMessages.first { hasLeadingSystem = true }
+        else { hasLeadingSystem = false }
+        if !hasLeadingSystem, let system = createInitialSystemMessage(systemPrompt, tools.map { toToolDeclaration($0.aiTool) }) {
+            initialMessages.insert(.system(system), at: 0)
+        }
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.tools = tools
-        self.messages = messages
+        self.messages = initialMessages
         self.isStreaming = false
         self.streamingMessage = nil
         self.pendingToolCalls = []
         self.errorMessage = nil
     }
 
-    // MARK: - Internal mutators (loop-owned)
-
-    /// Internal initializer for full state construction (used by the agent loop and tests within the module).
+    /// Full initializer for tests (`@testable import`) that need runtime-owned fields preset.
     internal init(
         systemPrompt: String,
         model: Model,
@@ -575,16 +622,14 @@ public struct AgentState: Sendable {
         pendingToolCalls: Set<String>,
         errorMessage: String?
     ) {
-        self.systemPrompt = systemPrompt
-        self.model = model
-        self.thinkingLevel = thinkingLevel
-        self.tools = tools
-        self.messages = messages
+        self.init(systemPrompt: systemPrompt, model: model, thinkingLevel: thinkingLevel, tools: tools, messages: messages)
         self.isStreaming = isStreaming
         self.streamingMessage = streamingMessage
         self.pendingToolCalls = pendingToolCalls
         self.errorMessage = errorMessage
     }
+
+    // MARK: - Internal mutators (loop-owned)
 
     internal mutating func _setStreaming(_ value: Bool) { self.isStreaming = value }
     internal mutating func _setStreamingMessage(_ value: AgentMessage?) { self.streamingMessage = value }
@@ -592,4 +637,11 @@ public struct AgentState: Sendable {
     internal mutating func _insertPendingToolCall(_ id: String) { self.pendingToolCalls.insert(id) }
     internal mutating func _removePendingToolCall(_ id: String) { self.pendingToolCalls.remove(id) }
     internal mutating func _setErrorMessage(_ value: String?) { self.errorMessage = value }
+}
+
+extension AgentMessage: TranscriptMessageLike {
+    public var transcriptSystemMessage: SystemMessage? {
+        if case .system(let message) = self { return message }
+        return nil
+    }
 }

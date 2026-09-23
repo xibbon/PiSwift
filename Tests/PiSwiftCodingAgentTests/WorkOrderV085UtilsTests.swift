@@ -99,22 +99,19 @@ struct WorkOrderV085UtilsTests {
         }
         let tools = [createReadTool(cwd: "/"), createWriteTool(cwd: "/"), createEditTool(cwd: "/"), createBashTool(cwd: "/")]
         for tool in tools {
-            if areExperimentalFeaturesEnabled() {
-                guard case .jsonSchema(strict: .prefer) = tool.aiTool.constrainedSampling else {
-                    Issue.record("Built-in tool sampling must reach the AI tool")
-                    continue
-                }
-            } else {
-                #expect(tool.aiTool.constrainedSampling == nil)
+            // C68: the four built-in tools prefer strict sampling with or without PI_EXPERIMENTAL.
+            guard case .jsonSchema(strict: .prefer) = tool.aiTool.constrainedSampling else {
+                Issue.record("Built-in tool sampling must reach the AI tool")
+                continue
             }
         }
     }
 
-    @Test func skillPromptsChooseReadThenBash() {
+    @Test func skillPromptsChooseReadThenBash() throws {
         let skill = Skill(name: "demo", description: "Demo", filePath: "/skills/demo/SKILL.md", baseDir: "/skills/demo", source: "test")
         for custom in [nil, "Custom prompt"] as [String?] {
             for tools: [ToolName] in [[.read, .bash], [.bash], [.write], []] {
-                let prompt = buildSystemPrompt(BuildSystemPromptOptions(customPrompt: custom, selectedTools: tools, cwd: "/work", contextFiles: [], skills: [skill]))
+                let prompt = try buildSystemPrompt(BuildSystemPromptOptions(customPrompt: custom, selectedTools: tools, cwd: "/work", contextFiles: [], skills: [skill]))
                 if tools.contains(.read) {
                     #expect(prompt.contains("Use the read tool to load a skill's file"))
                 } else if tools.contains(.bash) {
@@ -122,7 +119,7 @@ struct WorkOrderV085UtilsTests {
                 } else {
                     #expect(!prompt.contains("<available_skills>"))
                 }
-                if custom != nil { #expect(prompt.hasSuffix("Current working directory: /work\n")) }
+                if custom != nil { #expect(prompt.hasSuffix("<cwd>\n/work\n</cwd>")) }
             }
         }
     }
