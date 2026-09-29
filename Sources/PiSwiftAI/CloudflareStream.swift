@@ -17,21 +17,7 @@ public func resolveCloudflareModel(_ model: Model, env: [String: String]) -> Mod
             with: env["CLOUDFLARE_GATEWAY_ID"] ?? "{CLOUDFLARE_GATEWAY_ID}"
         )
     guard resolved != model.baseUrl else { return model }
-    return Model(
-        id: model.id,
-        name: model.name,
-        api: model.api,
-        provider: model.provider,
-        baseUrl: resolved,
-        reasoning: model.reasoning,
-        input: model.input,
-        cost: model.cost,
-        contextWindow: model.contextWindow,
-        maxTokens: model.maxTokens,
-        headers: model.headers,
-        compat: model.compat,
-        thinkingLevelMap: model.thinkingLevelMap
-    )
+    return model.with(baseUrl: resolved)
 }
 
 /// Process-env-backed convenience used by provider stream entry points.

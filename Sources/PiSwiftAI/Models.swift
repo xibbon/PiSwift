@@ -39,7 +39,7 @@ public func getModels(provider: KnownProvider, credentials: OAuthCredentials?) -
 }
 
 @discardableResult
-public func calculateCost(model: Model, usage: inout Usage) -> UsageCost {
+public func calculateCost(model: any CatalogModel, usage: inout Usage) -> UsageCost {
     let inputTokens = usage.input + usage.cacheRead + usage.cacheWrite
     var rates: any ModelCostRates = model.cost
     var matchedThreshold = -1

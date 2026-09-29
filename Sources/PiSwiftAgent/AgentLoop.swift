@@ -498,22 +498,7 @@ private func applyBaseUrlOverride(_ model: Model, _ baseUrl: String?) -> Model {
     guard let baseUrl, !baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, baseUrl != model.baseUrl else {
         return model
     }
-    return Model(
-        id: model.id,
-        name: model.name,
-        api: model.api,
-        provider: model.provider,
-        baseUrl: baseUrl,
-        reasoning: model.reasoning,
-        input: model.input,
-        cost: model.cost,
-        contextWindow: model.contextWindow,
-        maxTokens: model.maxTokens,
-        samplingParams: model.samplingParams,
-        headers: model.headers,
-        compat: model.compat,
-        thinkingLevelMap: model.thinkingLevelMap
-    )
+    return model.with(baseUrl: baseUrl)
 }
 
 // MARK: - Tool execution dispatcher

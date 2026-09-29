@@ -112,6 +112,7 @@ public func assistantMessageToJSONObject(_ message: AssistantMessage) -> [String
     if let value = message.responseId { result["responseId"] = value }
     if let value = message.responseModel { result["responseModel"] = value }
     if let value = message.providerThinkingLevel { result["providerThinkingLevel"] = value }
+    if let value = message.thinkingLevel { result["thinkingLevel"] = value.rawValue }
     if let value = message.endTurn { result["endTurn"] = value }
     if let value = message.errorMessage { result["errorMessage"] = value }
     if let value = message.rawStopReason { result["rawStopReason"] = value }
@@ -146,6 +147,7 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any]) -> AssistantMe
                 details: ($0["details"] as? [String: Any] ?? [:]).mapValues(AnyCodable.init))
         },
         providerThinkingLevel: dict["providerThinkingLevel"] as? String,
+        thinkingLevel: (dict["thinkingLevel"] as? String).flatMap(ModelThinkingLevel.init(rawValue:)),
         endTurn: dict["endTurn"] as? Bool
     )
     if let value = dict["deferred"] as? [String: Any], let provider = value["provider"] as? String,
@@ -155,4 +157,35 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any]) -> AssistantMe
             data: value["data"].map(AnyCodable.init))
     }
     return message
+}
+
+public func nestedToolCallsToJSONObject(_ nested: NestedToolCalls) -> [String: Any] {
+    ["complete": nested.complete, "calls": nested.calls.map { call in
+        var value: [String: Any] = ["id": call.id, "name": call.name, "status": call.status.rawValue]
+        if let arguments = call.arguments { value["arguments"] = arguments.mapValues(\.value) }
+        if let bytes = call.argumentsBytes { value["argumentsBytes"] = bytes }
+        if let duration = call.durationMs { value["durationMs"] = duration }
+        if let error = call.error { value["error"] = error }
+        return value
+    }]
+}
+
+public func nestedToolCallsFromJSONObject(_ object: [String: Any]) -> NestedToolCalls? {
+    guard let complete = object["complete"] as? Bool,
+          let rawCalls = object["calls"] as? [[String: Any]] else { return nil }
+    var calls: [NestedToolCallRecord] = []
+    for raw in rawCalls {
+        guard let id = raw["id"] as? String,
+              let name = raw["name"] as? String,
+              let statusText = raw["status"] as? String,
+              let status = NestedToolCallStatus(rawValue: statusText) else { return nil }
+        calls.append(NestedToolCallRecord(
+            id: id, name: name,
+            arguments: (raw["arguments"] as? [String: Any])?.mapValues(AnyCodable.init),
+            argumentsBytes: raw["argumentsBytes"] as? Int,
+            status: status, durationMs: (raw["durationMs"] as? NSNumber)?.doubleValue,
+            error: raw["error"] as? String
+        ))
+    }
+    return NestedToolCalls(calls: calls, complete: complete)
 }

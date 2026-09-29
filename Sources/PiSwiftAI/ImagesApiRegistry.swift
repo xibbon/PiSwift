@@ -1,45 +1,45 @@
 import Foundation
 
-public typealias ImagesApiFunction = @Sendable (ImagesModel, ImagesContext, ImagesOptions?) async -> AssistantImages
+public typealias ImageApiFunction = @Sendable (ImageModel, ImagesContext, ImagesOptions?) async -> AssistantImages
 
-public struct ImagesApiProvider: Sendable {
-    public let api: ImagesApi
-    public let generateImages: ImagesApiFunction
+public struct ImageApiProvider: Sendable {
+    public let api: ImageApi
+    public let generateImages: ImageApiFunction
 
-    public init(api: ImagesApi, generateImages: @escaping ImagesApiFunction) {
+    public init(api: ImageApi, generateImages: @escaping ImageApiFunction) {
         self.api = api
         self.generateImages = generateImages
     }
 }
 
-private struct RegisteredImagesApiProvider: Sendable {
-    let provider: ImagesApiProvider
+private struct RegisteredImageApiProvider: Sendable {
+    let provider: ImageApiProvider
     let sourceId: String?
 }
 
 /// SAFETY: all mutable provider storage is accessed only while holding `lock`;
 /// registered providers and source identifiers are value-typed `Sendable`.
-public final class ImagesApiProviderRegistry: @unchecked Sendable {
-    public static let shared = ImagesApiProviderRegistry()
+public final class ImageApiProviderRegistry: @unchecked Sendable {
+    public static let shared = ImageApiProviderRegistry()
 
     private let lock = NSLock()
-    private var providers: [ImagesApi: RegisteredImagesApiProvider] = [:]
+    private var providers: [ImageApi: RegisteredImageApiProvider] = [:]
 
     private init() {}
 
-    public func register(_ provider: ImagesApiProvider, sourceId: String? = nil) {
+    public func register(_ provider: ImageApiProvider, sourceId: String? = nil) {
         lock.lock()
         defer { lock.unlock() }
-        providers[provider.api] = RegisteredImagesApiProvider(provider: provider, sourceId: sourceId)
+        providers[provider.api] = RegisteredImageApiProvider(provider: provider, sourceId: sourceId)
     }
 
-    public func get(_ api: ImagesApi) -> ImagesApiProvider? {
+    public func get(_ api: ImageApi) -> ImageApiProvider? {
         lock.lock()
         defer { lock.unlock() }
         return providers[api]?.provider
     }
 
-    public func all() -> [ImagesApiProvider] {
+    public func all() -> [ImageApiProvider] {
         lock.lock()
         defer { lock.unlock() }
         return providers.values.map { $0.provider }
@@ -57,35 +57,35 @@ public final class ImagesApiProviderRegistry: @unchecked Sendable {
         providers.removeAll()
     }
 
-    public func has(_ api: ImagesApi) -> Bool {
+    public func has(_ api: ImageApi) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         return providers[api] != nil
     }
 }
 
-public func registerImagesApiProvider(_ provider: ImagesApiProvider, sourceId: String? = nil) {
-    ImagesApiProviderRegistry.shared.register(provider, sourceId: sourceId)
+public func registerImageApiProvider(_ provider: ImageApiProvider, sourceId: String? = nil) {
+    ImageApiProviderRegistry.shared.register(provider, sourceId: sourceId)
 }
 
-public func getImagesApiProvider(_ api: ImagesApi) -> ImagesApiProvider? {
-    ImagesApiProviderRegistry.shared.get(api)
+public func getImageApiProvider(_ api: ImageApi) -> ImageApiProvider? {
+    ImageApiProviderRegistry.shared.get(api)
 }
 
-public func getImagesApiProviders() -> [ImagesApiProvider] {
-    ImagesApiProviderRegistry.shared.all()
+public func getImageApiProviders() -> [ImageApiProvider] {
+    ImageApiProviderRegistry.shared.all()
 }
 
-public func unregisterImagesApiProviders(sourceId: String) {
-    ImagesApiProviderRegistry.shared.unregister(sourceId: sourceId)
+public func unregisterImageApiProviders(sourceId: String) {
+    ImageApiProviderRegistry.shared.unregister(sourceId: sourceId)
 }
 
-public func clearImagesApiProviders() {
-    ImagesApiProviderRegistry.shared.clear()
+public func clearImageApiProviders() {
+    ImageApiProviderRegistry.shared.clear()
 }
 
-public func registerBuiltInImagesApiProviders() {
-    registerImagesApiProvider(ImagesApiProvider(
+public func registerBuiltInImageApiProviders() {
+    registerImageApiProvider(ImageApiProvider(
         api: .openrouterImages,
         generateImages: { model, context, options in
             let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
@@ -96,18 +96,18 @@ public func registerBuiltInImagesApiProviders() {
     ), sourceId: "built-in")
 }
 
-private let builtInImagesProvidersRegistered: Bool = {
-    registerBuiltInImagesApiProviders()
+private let builtInImageProvidersRegistered: Bool = {
+    registerBuiltInImageApiProviders()
     return true
 }()
 
-func ensureBuiltInImagesProviders() {
-    _ = builtInImagesProvidersRegistered
+func ensureBuiltInImageProviders() {
+    _ = builtInImageProvidersRegistered
 }
 
-public func generateImages(model: ImagesModel, context: ImagesContext, options: ImagesOptions? = nil) async -> AssistantImages {
-    ensureBuiltInImagesProviders()
-    guard let provider = getImagesApiProvider(model.api) else {
+public func generateImages(model: ImageModel, context: ImagesContext, options: ImagesOptions? = nil) async -> AssistantImages {
+    ensureBuiltInImageProviders()
+    guard let provider = getImageApiProvider(model.api) else {
         return AssistantImages(
             api: model.api,
             provider: model.provider,

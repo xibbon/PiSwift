@@ -34,7 +34,7 @@ private enum OpenRouterImagesError: Error, LocalizedError {
 }
 
 public func generateImagesOpenRouter(
-    model: ImagesModel,
+    model: ImageModel,
     context: ImagesContext,
     options: ImagesOptions? = nil
 ) async -> AssistantImages {
@@ -79,7 +79,7 @@ public func generateImagesOpenRouter(
     }
 }
 
-private func buildOpenRouterImagesPayload(model: ImagesModel, context: ImagesContext) throws -> [String: Any] {
+private func buildOpenRouterImagesPayload(model: ImageModel, context: ImagesContext) throws -> [String: Any] {
     let content = context.input.compactMap { item -> [String: Any]? in
         switch item {
         case .text(let text):
@@ -113,7 +113,7 @@ private func buildOpenRouterImagesPayload(model: ImagesModel, context: ImagesCon
 }
 
 private func buildOpenRouterImagesRequest(
-    model: ImagesModel,
+    model: ImageModel,
     apiKey: String,
     options: ImagesOptions,
     body: Data
@@ -175,7 +175,7 @@ private struct OpenRouterImagesDefaultHTTPClient: ProviderHTTPClient {
     }
 }
 
-private func parseOpenRouterImagesResponse(_ data: Data, model: ImagesModel, output: inout AssistantImages) throws {
+private func parseOpenRouterImagesResponse(_ data: Data, model: ImageModel, output: inout AssistantImages) throws {
     guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         throw OpenRouterImagesError.invalidResponse
     }
@@ -214,7 +214,7 @@ private func parseOpenRouterImagesResponse(_ data: Data, model: ImagesModel, out
     }
 }
 
-private func parseOpenRouterImagesUsage(_ rawUsage: [String: Any], model: ImagesModel) -> Usage {
+private func parseOpenRouterImagesUsage(_ rawUsage: [String: Any], model: ImageModel) -> Usage {
     let promptTokens = intValue(rawUsage["prompt_tokens"])
     let outputTokens = intValue(rawUsage["completion_tokens"])
     let details = rawUsage["prompt_tokens_details"] as? [String: Any]

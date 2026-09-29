@@ -1070,27 +1070,16 @@ private func deepCopyUserMessage(_ message: UserMessage) -> UserMessage {
 }
 
 private func deepCopyAssistantMessage(_ message: AssistantMessage) -> AssistantMessage {
-    AssistantMessage(
-        content: message.content.map(deepCopyContentBlock),
-        api: message.api,
-        provider: message.provider,
-        model: message.model,
-        usage: message.usage,
-        stopReason: message.stopReason,
-        errorMessage: message.errorMessage,
-        timestamp: message.timestamp
-    )
+    var copy = message
+    copy.content = message.content.map(deepCopyContentBlock)
+    return copy
 }
 
 private func deepCopyToolResultMessage(_ message: ToolResultMessage) -> ToolResultMessage {
-    ToolResultMessage(
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        content: message.content.map(deepCopyContentBlock),
-        details: message.details.map(deepCopyAnyCodable),
-        isError: message.isError,
-        timestamp: message.timestamp
-    )
+    var copy = message
+    copy.content = message.content.map(deepCopyContentBlock)
+    copy.details = message.details.map(deepCopyAnyCodable)
+    return copy
 }
 
 private func deepCopyContentBlock(_ block: ContentBlock) -> ContentBlock {

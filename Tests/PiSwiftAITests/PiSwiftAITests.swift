@@ -562,7 +562,7 @@ private func normalizeCatalogMetadata<T: Encodable>(_ value: T?) -> Any? {
     return try? JSONSerialization.jsonObject(with: data)
 }
 
-private func normalizeImagesModel(_ model: ImagesModel) -> [String: Any] {
+private func normalizeImageModel(_ model: ImageModel) -> [String: Any] {
     optionalFields([
         ("api", model.api.rawValue),
         ("baseUrl", model.baseUrl),
@@ -6494,7 +6494,7 @@ struct ApiRegistryTests {
                 #expect(Bool(false), "Missing image model \(provider)/\(modelId)")
                 continue
             }
-            let actual = try canonicalJSONString(normalizeImagesModel(swiftModel))
+            let actual = try canonicalJSONString(normalizeImageModel(swiftModel))
             let expected = try canonicalJSONString(upstreamModel)
             #expect(actual == expected, "Image metadata drift for \(provider)/\(modelId)")
             compared += 1

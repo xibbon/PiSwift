@@ -26,8 +26,13 @@ public enum Api: String, Sendable, Codable {
     case mistralConversations = "mistral-conversations"
 }
 
-public enum ImagesApi: String, Sendable {
+public enum ImageApi: String, Sendable, Codable {
     case openrouterImages = "openrouter-images"
+}
+
+public enum ClassifierApi: String, Sendable, Codable {
+    case typesafeSystemOne = "typesafe-system-one"
+    case cloudflareWorkersAISystemOne = "cloudflare-workers-ai-system-one"
 }
 
 public enum KnownProvider: String, Sendable {
@@ -45,6 +50,7 @@ public enum KnownProvider: String, Sendable {
     case cerebras
     case baseten
     case openrouter
+    case typesafe
     case qwenTokenPlan = "qwen-token-plan"
     case qwenTokenPlanCn = "qwen-token-plan-cn"
     case qwenTokenPlanIndividual = "qwen-token-plan-individual"
@@ -76,12 +82,6 @@ public enum KnownProvider: String, Sendable {
 }
 
 public typealias Provider = String
-
-public enum KnownImagesProvider: String, Sendable {
-    case openrouter
-}
-
-public typealias ImagesProvider = String
 
 public enum ThinkingLevel: String, Sendable, Codable, CodingKeyRepresentable {
     case minimal
@@ -950,7 +950,28 @@ public struct ModelPromptCache: Sendable, Codable, Equatable {
     }
 }
 
-public struct Model: Sendable, Codable {
+public protocol CatalogModel: Sendable {
+    var id: String { get }
+    var name: String { get }
+    var provider: Provider { get }
+    var baseUrl: String { get }
+    var input: [ModelInput] { get }
+    var inputLimits: ModelInputLimits? { get }
+    var cost: ModelCost { get }
+    var headers: ProviderHeaders? { get }
+}
+
+public enum ModelType: String, Sendable, Codable, CaseIterable {
+    case chat
+    case image
+    case classifier
+}
+
+public enum AnyModelCodingError: Error, Equatable {
+    case unknownType(String)
+}
+
+public struct Model: CatalogModel, Sendable, Codable {
     public let id: String
     public let name: String
     public let api: Api
@@ -1017,6 +1038,16 @@ public struct Model: Sendable, Codable {
         self.thinkingLevelMap = thinkingLevelMap
     }
 
+    public func with(baseUrl: String) -> Model {
+        Model(
+            id: id, name: name, api: api, provider: provider, baseUrl: baseUrl,
+            reasoning: reasoning, input: input, cost: cost, contextWindow: contextWindow,
+            maxTokens: maxTokens, samplingParams: samplingParams, headers: headers,
+            compat: compat, thinkingLevelMap: thinkingLevelMap,
+            inputLimits: inputLimits, promptCache: promptCache
+        )
+    }
+
     public init(
         id: String,
         name: String,
@@ -1045,13 +1076,15 @@ public struct Model: Sendable, Codable {
     }
 }
 
-public struct ImagesModel: Sendable {
+public struct ImageModel: CatalogModel, Sendable, Codable {
+    public let type: ModelType
     public let id: String
     public let name: String
-    public let api: ImagesApi
-    public let provider: ImagesProvider
+    public let api: ImageApi
+    public let provider: Provider
     public let baseUrl: String
     public let input: [ModelInput]
+    public let inputLimits: ModelInputLimits?
     public let output: [ModelInput]
     public let cost: ModelCost
     public let headers: ProviderHeaders?
@@ -1059,23 +1092,106 @@ public struct ImagesModel: Sendable {
     public init(
         id: String,
         name: String,
-        api: ImagesApi,
-        provider: ImagesProvider,
+        api: ImageApi,
+        provider: Provider,
         baseUrl: String,
         input: [ModelInput],
         output: [ModelInput],
         cost: ModelCost,
-        headers: ProviderHeaders? = nil
+        headers: ProviderHeaders? = nil,
+        inputLimits: ModelInputLimits? = nil
     ) {
+        self.type = .image
         self.id = id
         self.name = name
         self.api = api
         self.provider = provider
         self.baseUrl = baseUrl
         self.input = input
+        self.inputLimits = inputLimits
         self.output = output
         self.cost = cost
         self.headers = headers
+    }
+}
+
+public struct ClassifierModel: CatalogModel, Sendable, Codable {
+    public let type: ModelType
+    public let id: String
+    public let name: String
+    public let api: ClassifierApi
+    public let provider: Provider
+    public let baseUrl: String
+    public let input: [ModelInput]
+    public let inputLimits: ModelInputLimits?
+    public let cost: ModelCost
+    public let contextWindow: Int
+    public let headers: ProviderHeaders?
+
+    public init(id: String, name: String, api: ClassifierApi, provider: Provider,
+                baseUrl: String, input: [ModelInput], cost: ModelCost,
+                contextWindow: Int, headers: ProviderHeaders? = nil,
+                inputLimits: ModelInputLimits? = nil) {
+        self.type = .classifier
+        self.id = id
+        self.name = name
+        self.api = api
+        self.provider = provider
+        self.baseUrl = baseUrl
+        self.input = input
+        self.inputLimits = inputLimits
+        self.cost = cost
+        self.contextWindow = contextWindow
+        self.headers = headers
+    }
+}
+
+public enum AnyModel: Sendable, Codable {
+    case chat(Model)
+    case image(ImageModel)
+    case classifier(ClassifierModel)
+
+    private enum CodingKeys: String, CodingKey { case type }
+
+    public var type: ModelType {
+        switch self { case .chat: .chat; case .image: .image; case .classifier: .classifier }
+    }
+    public var catalog: any CatalogModel {
+        switch self {
+        case .chat(let model): model
+        case .image(let model): model
+        case .classifier(let model): model
+        }
+    }
+    public var id: String { catalog.id }
+    public var name: String { catalog.name }
+    public var provider: Provider { catalog.provider }
+    public var samplingParams: [String: AnyCodable]? {
+        if case .chat(let model) = self { return model.samplingParams }
+        return nil
+    }
+    public var thinkingLevelMap: ThinkingLevelMap? {
+        if case .chat(let model) = self { return model.thinkingLevelMap }
+        return nil
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        let rawType = try fields.decodeIfPresent(String.self, forKey: .type) ?? ModelType.chat.rawValue
+        guard let type = ModelType(rawValue: rawType) else { throw AnyModelCodingError.unknownType(rawType) }
+        switch type {
+        case .chat: self = .chat(try Model(from: decoder))
+        case .image: self = .image(try ImageModel(from: decoder))
+        case .classifier: self = .classifier(try ClassifierModel(from: decoder))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .chat(let model): try model.encode(to: encoder)
+        case .image(let model): try model.encode(to: encoder)
+        case .classifier(let model): try model.encode(to: encoder)
+        }
     }
 }
 
@@ -1325,6 +1441,7 @@ public struct AssistantMessage: Sendable {
     public var timestamp: Int64
 
     public var providerThinkingLevel: String?
+    public var thinkingLevel: ModelThinkingLevel?
     public var endTurn: Bool?
 
     public init(
@@ -1342,9 +1459,11 @@ public struct AssistantMessage: Sendable {
         rawStopReason: String? = nil,
         diagnostics: [AssistantMessageDiagnostic]? = nil,
         providerThinkingLevel: String? = nil,
+        thinkingLevel: ModelThinkingLevel? = nil,
         endTurn: Bool? = nil
     ) {
         self.providerThinkingLevel = providerThinkingLevel
+        self.thinkingLevel = thinkingLevel
         self.endTurn = endTurn
 
         self.content = content
@@ -1364,8 +1483,8 @@ public struct AssistantMessage: Sendable {
 }
 
 public struct AssistantImages: Sendable {
-    public var api: ImagesApi
-    public var provider: ImagesProvider
+    public var api: ImageApi
+    public var provider: Provider
     public var model: String
     public var responseId: String?
     public var output: [ContentBlock]
@@ -1375,8 +1494,8 @@ public struct AssistantImages: Sendable {
     public var timestamp: Int64
 
     public init(
-        api: ImagesApi,
-        provider: ImagesProvider,
+        api: ImageApi,
+        provider: Provider,
         model: String,
         responseId: String? = nil,
         output: [ContentBlock] = [],
@@ -1397,6 +1516,44 @@ public struct AssistantImages: Sendable {
     }
 }
 
+public enum NestedToolCallStatus: String, Sendable, Codable {
+    case ok
+    case error
+    case unfinished
+}
+
+public struct NestedToolCallRecord: Sendable, Codable {
+    public var id: String
+    public var name: String
+    public var arguments: [String: AnyCodable]?
+    public var argumentsBytes: Int?
+    public var status: NestedToolCallStatus
+    public var durationMs: Double?
+    public var error: String?
+
+    public init(id: String, name: String, arguments: [String: AnyCodable]? = nil,
+                argumentsBytes: Int? = nil, status: NestedToolCallStatus,
+                durationMs: Double? = nil, error: String? = nil) {
+        self.id = id
+        self.name = name
+        self.arguments = arguments
+        self.argumentsBytes = argumentsBytes
+        self.status = status
+        self.durationMs = durationMs
+        self.error = error
+    }
+}
+
+public struct NestedToolCalls: Sendable, Codable {
+    public var calls: [NestedToolCallRecord]
+    public var complete: Bool
+
+    public init(calls: [NestedToolCallRecord], complete: Bool) {
+        self.calls = calls
+        self.complete = complete
+    }
+}
+
 public struct ToolResultMessage: Sendable {
     public let role: String = "toolResult"
     public var toolCallId: String
@@ -1405,6 +1562,8 @@ public struct ToolResultMessage: Sendable {
     public var details: AnyCodable?
     /// Usage from the tool execution itself, if available. Not part of main LLM context accounting.
     public var usage: Usage?
+    /// Session metadata. Provider requests do not include nested calls.
+    public var nestedCalls: NestedToolCalls?
     public var isError: Bool
     public var timestamp: Int64
 
@@ -1414,6 +1573,7 @@ public struct ToolResultMessage: Sendable {
         content: [ContentBlock],
         details: AnyCodable? = nil,
         usage: Usage? = nil,
+        nestedCalls: NestedToolCalls? = nil,
         isError: Bool,
         timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
     ) {
@@ -1422,6 +1582,7 @@ public struct ToolResultMessage: Sendable {
         self.content = content
         self.details = details
         self.usage = usage
+        self.nestedCalls = nestedCalls
         self.isError = isError
         self.timestamp = timestamp
     }

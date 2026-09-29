@@ -31,6 +31,7 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
             "timestamp": result.timestamp,
         ]
         if let usage = result.usage { dict["usage"] = usageToJSONObject(usage) }
+        if let nested = result.nestedCalls { dict["nestedCalls"] = nestedToolCallsToJSONObject(nested) }
         return dict
     case .custom(let custom):
         var dict: [String: Any] = ["role": custom.role, "timestamp": custom.timestamp]
