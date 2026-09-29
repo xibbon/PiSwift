@@ -19,7 +19,9 @@ public func getModel(provider: String, modelId: String) -> Model? {
 }
 
 public func getProviders() -> [KnownProvider] {
-    ModelsData.keys.compactMap { KnownProvider(rawValue: $0) }
+    ModelsData.compactMap { provider, models in
+        models.isEmpty ? nil : KnownProvider(rawValue: provider)
+    }
 }
 
 public func getModels(provider: KnownProvider) -> [Model] {

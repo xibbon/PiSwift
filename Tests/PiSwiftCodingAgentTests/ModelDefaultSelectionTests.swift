@@ -15,6 +15,13 @@ import PiSwiftCodingAgent
     #expect(defaults[.qwenTokenPlanIndividual] == "qwen3.8-max")
 }
 
+@Test func everyDefaultModelExistsInBuiltinChatCatalog() {
+    for (provider, modelId) in defaultModelPerProvider {
+        #expect(getModel(provider: provider.rawValue, modelId: modelId) != nil,
+                "Missing default model \(provider.rawValue)/\(modelId)")
+    }
+}
+
 @Test func selectDefaultModelPrefersVercelGateway() async {
     let model = Model(
         id: "zai/glm-5.1",

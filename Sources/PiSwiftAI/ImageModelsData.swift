@@ -16,7 +16,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "black-forest-labs/flux.2-klein-4b": ImageModel(
         id: "black-forest-labs/flux.2-klein-4b",
@@ -26,7 +27,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "black-forest-labs/flux.2-max": ImageModel(
         id: "black-forest-labs/flux.2-max",
@@ -36,7 +38,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "black-forest-labs/flux.2-pro": ImageModel(
         id: "black-forest-labs/flux.2-pro",
@@ -46,7 +49,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "bytedance-seed/seedream-4.5": ImageModel(
         id: "bytedance-seed/seedream-4.5",
@@ -56,7 +60,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "bytedance-seed/seedream-5-0-lite": ImageModel(
         id: "bytedance-seed/seedream-5-0-lite",
@@ -66,7 +71,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "bytedance-seed/seedream-5-0-pro": ImageModel(
         id: "bytedance-seed/seedream-5-0-pro",
@@ -76,7 +82,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemini-2.5-flash-image": ImageModel(
         id: "google/gemini-2.5-flash-image",
@@ -86,7 +93,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.0833333333333333)
+        cost: ModelCost(input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.083333),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemini-3-pro-image": ImageModel(
         id: "google/gemini-3-pro-image",
@@ -96,7 +104,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 2, output: 12, cacheRead: 0.19999999999999998, cacheWrite: 0.375)
+        cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0.375),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemini-3-pro-image-preview": ImageModel(
         id: "google/gemini-3-pro-image-preview",
@@ -106,7 +115,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 2, output: 12, cacheRead: 0.19999999999999998, cacheWrite: 0.375)
+        cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0.375),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemini-3.1-flash-image": ImageModel(
         id: "google/gemini-3.1-flash-image",
@@ -116,7 +126,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemini-3.1-flash-image-preview": ImageModel(
         id: "google/gemini-3.1-flash-image-preview",
@@ -126,7 +137,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemini-3.1-flash-lite-image": ImageModel(
         id: "google/gemini-3.1-flash-lite-image",
@@ -136,7 +148,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "inclusionai/ming-image-0.1-design": ImageModel(
         id: "inclusionai/ming-image-0.1-design",
@@ -148,6 +161,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
+    "inclusionai/ming-image-0.1-design-layer": ImageModel(
+        id: "inclusionai/ming-image-0.1-design-layer",
+        name: "inclusionAI: Ming Image 0.1 Design Layer",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "krea/krea-2-large": ImageModel(
         id: "krea/krea-2-large",
         name: "Krea: Krea 2 Large",
@@ -156,7 +180,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "krea/krea-2-medium": ImageModel(
         id: "krea/krea-2-medium",
@@ -166,7 +191,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "krea/krea-2-medium-turbo": ImageModel(
         id: "krea/krea-2-medium-turbo",
@@ -176,7 +202,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "meta/muse-image": ImageModel(
         id: "meta/muse-image",
@@ -186,7 +213,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "microsoft/mai-image-2.5": ImageModel(
         id: "microsoft/mai-image-2.5",
@@ -196,7 +224,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "microsoft/mai-image-2.5-pro": ImageModel(
         id: "microsoft/mai-image-2.5-pro",
@@ -206,7 +235,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "microsoft/mai-image-2.6": ImageModel(
         id: "microsoft/mai-image-2.6",
@@ -216,7 +246,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "microsoft/mai-image-2.6-flash": ImageModel(
         id: "microsoft/mai-image-2.6-flash",
@@ -226,7 +257,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 1.75, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 1.75, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-5-image": ImageModel(
         id: "openai/gpt-5-image",
@@ -236,7 +268,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 10, output: 10, cacheRead: 1.25, cacheWrite: 0)
+        cost: ModelCost(input: 10, output: 10, cacheRead: 1.25, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-5-image-mini": ImageModel(
         id: "openai/gpt-5-image-mini",
@@ -246,7 +279,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 2.5, output: 2, cacheRead: 0.25, cacheWrite: 0)
+        cost: ModelCost(input: 2.5, output: 2, cacheRead: 0.25, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-5.4-image-2": ImageModel(
         id: "openai/gpt-5.4-image-2",
@@ -256,7 +290,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
         output: [.image, .text],
-        cost: ModelCost(input: 8, output: 15, cacheRead: 2, cacheWrite: 0)
+        cost: ModelCost(input: 8, output: 15, cacheRead: 2, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-image-1": ImageModel(
         id: "openai/gpt-image-1",
@@ -266,7 +301,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 10, output: 10, cacheRead: 1.25, cacheWrite: 0)
+        cost: ModelCost(input: 10, output: 10, cacheRead: 1.25, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-image-1-mini": ImageModel(
         id: "openai/gpt-image-1-mini",
@@ -276,7 +312,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 2.5, output: 2.5, cacheRead: 0.25, cacheWrite: 0)
+        cost: ModelCost(input: 2.5, output: 2.5, cacheRead: 0.25, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-image-2": ImageModel(
         id: "openai/gpt-image-2",
@@ -286,7 +323,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0)
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-image-2.5-flare": ImageModel(
         id: "openai/gpt-image-2.5-flare",
@@ -296,7 +334,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0)
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-image-2.5-sunburst": ImageModel(
         id: "openai/gpt-image-2.5-sunburst",
@@ -306,7 +345,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0)
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openrouter/auto": ImageModel(
         id: "openrouter/auto",
@@ -316,7 +356,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openrouter/auto-beta": ImageModel(
         id: "openrouter/auto-beta",
@@ -326,7 +367,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "qwen/qwen-image-3": ImageModel(
         id: "qwen/qwen-image-3",
@@ -336,7 +378,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "qwen/qwen-image-3-pro": ImageModel(
         id: "qwen/qwen-image-3-pro",
@@ -346,7 +389,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v3": ImageModel(
         id: "recraft/recraft-v3",
@@ -356,7 +400,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4": ImageModel(
         id: "recraft/recraft-v4",
@@ -366,7 +411,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-pro": ImageModel(
         id: "recraft/recraft-v4-pro",
@@ -376,7 +422,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-pro-vector": ImageModel(
         id: "recraft/recraft-v4-pro-vector",
@@ -386,7 +433,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-styles": ImageModel(
         id: "recraft/recraft-v4-styles",
@@ -396,7 +444,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-styles-pro": ImageModel(
         id: "recraft/recraft-v4-styles-pro",
@@ -406,7 +455,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-styles-pro-vector": ImageModel(
         id: "recraft/recraft-v4-styles-pro-vector",
@@ -416,7 +466,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-styles-vector": ImageModel(
         id: "recraft/recraft-v4-styles-vector",
@@ -426,7 +477,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4-vector": ImageModel(
         id: "recraft/recraft-v4-vector",
@@ -436,7 +488,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4.1": ImageModel(
         id: "recraft/recraft-v4.1",
@@ -445,6 +498,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "recraft/recraft-v4.1-flash": ImageModel(
+        id: "recraft/recraft-v4.1-flash",
+        name: "Recraft: Recraft V4.1 Flash",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
@@ -456,7 +520,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4.1-pro-vector": ImageModel(
         id: "recraft/recraft-v4.1-pro-vector",
@@ -466,7 +531,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4.1-utility": ImageModel(
         id: "recraft/recraft-v4.1-utility",
@@ -476,7 +542,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4.1-utility-pro": ImageModel(
         id: "recraft/recraft-v4.1-utility-pro",
@@ -486,7 +553,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "recraft/recraft-v4.1-vector": ImageModel(
         id: "recraft/recraft-v4.1-vector",
@@ -496,7 +564,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "sourceful/riverflow-v2-fast": ImageModel(
         id: "sourceful/riverflow-v2-fast",
@@ -506,7 +575,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "sourceful/riverflow-v2-pro": ImageModel(
         id: "sourceful/riverflow-v2-pro",
@@ -516,7 +586,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "sourceful/riverflow-v2.5-fast": ImageModel(
         id: "sourceful/riverflow-v2.5-fast",
@@ -526,7 +597,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "sourceful/riverflow-v2.5-pro": ImageModel(
         id: "sourceful/riverflow-v2.5-pro",
@@ -536,7 +608,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "x-ai/grok-imagine-image-2.0": ImageModel(
         id: "x-ai/grok-imagine-image-2.0",
@@ -546,7 +619,8 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "x-ai/grok-imagine-image-quality": ImageModel(
         id: "x-ai/grok-imagine-image-quality",
@@ -556,6 +630,7 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]

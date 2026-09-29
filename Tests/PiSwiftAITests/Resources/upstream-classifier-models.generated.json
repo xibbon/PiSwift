@@ -1,0 +1,246 @@
+{
+  "cloudflare-workers-ai": {
+    "typesafe/jev": {
+      "api": "cloudflare-workers-ai-system-one",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "typesafe/jev",
+      "input": [
+        "text"
+      ],
+      "name": "Jev",
+      "provider": "cloudflare-workers-ai",
+      "type": "classifier"
+    }
+  },
+  "opencode": {
+    "jev-1.13": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://opencode.ai/zen/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "jev-1.13",
+      "input": [
+        "text"
+      ],
+      "name": "Jev 1.13",
+      "provider": "opencode",
+      "type": "classifier"
+    },
+    "jev-1.13-free": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://opencode.ai/zen/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "jev-1.13-free",
+      "input": [
+        "text"
+      ],
+      "name": "Jev 1.13 Free",
+      "provider": "opencode",
+      "type": "classifier"
+    }
+  },
+  "openrouter": {
+    "~typesafe/jev-latest": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "~typesafe/jev-latest",
+      "input": [
+        "text"
+      ],
+      "name": "TypeSafe: Jev Latest",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "jaredpalmer/kev-4b": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 8192,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "jaredpalmer/kev-4b",
+      "input": [
+        "text"
+      ],
+      "name": "Jared Palmer: Kev 4B",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "respan/span-01": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 4096,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.02,
+        "output": 0
+      },
+      "id": "respan/span-01",
+      "input": [
+        "text"
+      ],
+      "name": "Respan: Span-01",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "respan/span-01-lite": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 4096,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "respan/span-01-lite",
+      "input": [
+        "text"
+      ],
+      "name": "Respan: Span-01 Lite",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "respan/span-01-lite:free": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 4096,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "respan/span-01-lite:free",
+      "input": [
+        "text"
+      ],
+      "name": "Respan: Span-01 Lite (free)",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "typesafe/jev-1.13": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "typesafe/jev-1.13",
+      "input": [
+        "text"
+      ],
+      "name": "TypeSafe: Jev 1.13",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "upstage/solar-decide": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 524288,
+      "cost": {
+        "cacheRead": 0.05,
+        "cacheWrite": 0,
+        "input": 0.05,
+        "output": 0
+      },
+      "id": "upstage/solar-decide",
+      "input": [
+        "text"
+      ],
+      "name": "Upstage: Solar Decide",
+      "provider": "openrouter",
+      "type": "classifier"
+    }
+  },
+  "typesafe": {
+    "jev-latest": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://api.typesafe.ai/v1/",
+      "contextWindow": 64000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "jev-latest",
+      "input": [
+        "text"
+      ],
+      "name": "Jev",
+      "provider": "typesafe",
+      "type": "classifier"
+    }
+  },
+  "vercel-ai-gateway": {
+    "liquid/d1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "liquid/d1",
+      "input": [
+        "text"
+      ],
+      "name": "Liquid d1",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "typesafe-ai/jev": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "typesafe-ai/jev",
+      "input": [
+        "text"
+      ],
+      "name": "Jev",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    }
+  }
+}

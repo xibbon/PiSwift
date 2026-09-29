@@ -14,11 +14,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Black Forest Labs: FLUX.2 Flex",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "black-forest-labs/flux.2-klein-4b": {
       "api": "openrouter-images",
@@ -34,11 +45,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Black Forest Labs: FLUX.2 Klein 4B",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "black-forest-labs/flux.2-max": {
       "api": "openrouter-images",
@@ -54,11 +76,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Black Forest Labs: FLUX.2 Max",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "black-forest-labs/flux.2-pro": {
       "api": "openrouter-images",
@@ -74,11 +107,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Black Forest Labs: FLUX.2 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "bytedance-seed/seedream-4.5": {
       "api": "openrouter-images",
@@ -94,11 +138,22 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "ByteDance Seed: Seedream 4.5",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "bytedance-seed/seedream-5-0-lite": {
       "api": "openrouter-images",
@@ -114,11 +169,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "ByteDance Seed: Seedream 5.0 Lite",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "bytedance-seed/seedream-5-0-pro": {
       "api": "openrouter-images",
@@ -134,18 +200,29 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "ByteDance Seed: Seedream 5.0 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "google/gemini-2.5-flash-image": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
       "cost": {
         "cacheRead": 0.03,
-        "cacheWrite": 0.0833333333333333,
+        "cacheWrite": 0.083333,
         "input": 0.3,
         "output": 2.5
       },
@@ -154,18 +231,29 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Google: Nano Banana (Gemini 2.5 Flash Image)",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "google/gemini-3-pro-image": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
       "cost": {
-        "cacheRead": 0.19999999999999998,
+        "cacheRead": 0.2,
         "cacheWrite": 0.375,
         "input": 2,
         "output": 12
@@ -175,18 +263,29 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "google/gemini-3-pro-image-preview": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
       "cost": {
-        "cacheRead": 0.19999999999999998,
+        "cacheRead": 0.2,
         "cacheWrite": 0.375,
         "input": 2,
         "output": 12
@@ -196,12 +295,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Google: Nano Banana Pro (Gemini 3 Pro Image Preview)",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "google/gemini-3.1-flash-image": {
       "api": "openrouter-images",
@@ -217,12 +327,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "google/gemini-3.1-flash-image-preview": {
       "api": "openrouter-images",
@@ -238,12 +359,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "google/gemini-3.1-flash-lite-image": {
       "api": "openrouter-images",
@@ -259,12 +391,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "inclusionai/ming-image-0.1-design": {
       "api": "openrouter-images",
@@ -283,7 +426,39 @@
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "inclusionai/ming-image-0.1-design-layer": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "inclusionai/ming-image-0.1-design-layer",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "inclusionAI: Ming Image 0.1 Design Layer",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
     },
     "krea/krea-2-large": {
       "api": "openrouter-images",
@@ -299,11 +474,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Krea: Krea 2 Large",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "krea/krea-2-medium": {
       "api": "openrouter-images",
@@ -319,11 +505,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Krea: Krea 2 Medium",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "krea/krea-2-medium-turbo": {
       "api": "openrouter-images",
@@ -339,11 +536,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Krea: Krea 2 Medium Turbo",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "meta/muse-image": {
       "api": "openrouter-images",
@@ -359,11 +567,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Meta: Muse Image",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "microsoft/mai-image-2.5": {
       "api": "openrouter-images",
@@ -379,11 +598,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Microsoft AI: MAI-Image-2.5",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "microsoft/mai-image-2.5-pro": {
       "api": "openrouter-images",
@@ -399,11 +629,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Microsoft AI: MAI-Image-2.5 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "microsoft/mai-image-2.6": {
       "api": "openrouter-images",
@@ -419,11 +660,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Microsoft AI: MAI-Image-2.6",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "microsoft/mai-image-2.6-flash": {
       "api": "openrouter-images",
@@ -439,11 +691,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Microsoft AI: MAI-Image-2.6 Flash",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-5-image": {
       "api": "openrouter-images",
@@ -459,12 +722,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT-5 Image",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-5-image-mini": {
       "api": "openrouter-images",
@@ -480,12 +754,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT-5 Image Mini",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-5.4-image-2": {
       "api": "openrouter-images",
@@ -501,12 +786,23 @@
         "image",
         "text"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT-5.4 Image 2",
       "output": [
         "image",
         "text"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-image-1": {
       "api": "openrouter-images",
@@ -522,11 +818,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT Image 1",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-image-1-mini": {
       "api": "openrouter-images",
@@ -542,11 +849,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT Image 1 Mini",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-image-2": {
       "api": "openrouter-images",
@@ -562,11 +880,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT Image 2",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-image-2.5-flare": {
       "api": "openrouter-images",
@@ -582,11 +911,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT Image 2.5 Flare",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openai/gpt-image-2.5-sunburst": {
       "api": "openrouter-images",
@@ -602,11 +942,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "OpenAI: GPT Image 2.5 Sunburst",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openrouter/auto": {
       "api": "openrouter-images",
@@ -622,12 +973,23 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Auto Router",
       "output": [
         "text",
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "openrouter/auto-beta": {
       "api": "openrouter-images",
@@ -643,12 +1005,23 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Auto Router (Beta)",
       "output": [
         "text",
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "qwen/qwen-image-3": {
       "api": "openrouter-images",
@@ -664,11 +1037,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Qwen: Qwen Image 3",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "qwen/qwen-image-3-pro": {
       "api": "openrouter-images",
@@ -684,11 +1068,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Qwen: Qwen Image 3 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v3": {
       "api": "openrouter-images",
@@ -704,11 +1099,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V3",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4": {
       "api": "openrouter-images",
@@ -724,11 +1130,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-pro": {
       "api": "openrouter-images",
@@ -744,11 +1161,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-pro-vector": {
       "api": "openrouter-images",
@@ -764,11 +1192,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Pro Vector",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-styles": {
       "api": "openrouter-images",
@@ -784,11 +1223,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Styles",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-styles-pro": {
       "api": "openrouter-images",
@@ -804,11 +1254,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Styles Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-styles-pro-vector": {
       "api": "openrouter-images",
@@ -824,11 +1285,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Styles Pro Vector",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-styles-vector": {
       "api": "openrouter-images",
@@ -844,11 +1316,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Styles Vector",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4-vector": {
       "api": "openrouter-images",
@@ -864,11 +1347,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4 Vector",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4.1": {
       "api": "openrouter-images",
@@ -884,11 +1378,42 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4.1",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "recraft/recraft-v4.1-flash": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4.1-flash",
+      "input": [
+        "text"
+      ],
+      "name": "Recraft: Recraft V4.1 Flash",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4.1-pro": {
       "api": "openrouter-images",
@@ -904,11 +1429,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4.1 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4.1-pro-vector": {
       "api": "openrouter-images",
@@ -924,11 +1460,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4.1 Pro Vector",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4.1-utility": {
       "api": "openrouter-images",
@@ -944,11 +1491,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4.1 Utility",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4.1-utility-pro": {
       "api": "openrouter-images",
@@ -964,11 +1522,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4.1 Utility Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "recraft/recraft-v4.1-vector": {
       "api": "openrouter-images",
@@ -984,11 +1553,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Recraft: Recraft V4.1 Vector",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "sourceful/riverflow-v2-fast": {
       "api": "openrouter-images",
@@ -1004,11 +1584,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Sourceful: Riverflow V2 Fast",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "sourceful/riverflow-v2-pro": {
       "api": "openrouter-images",
@@ -1024,11 +1615,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Sourceful: Riverflow V2 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "sourceful/riverflow-v2.5-fast": {
       "api": "openrouter-images",
@@ -1044,11 +1646,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Sourceful: Riverflow V2.5 Fast",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "sourceful/riverflow-v2.5-pro": {
       "api": "openrouter-images",
@@ -1064,11 +1677,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "Sourceful: Riverflow V2.5 Pro",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "x-ai/grok-imagine-image-2.0": {
       "api": "openrouter-images",
@@ -1084,11 +1708,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "xAI: Grok Imagine Image 2.0",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     },
     "x-ai/grok-imagine-image-quality": {
       "api": "openrouter-images",
@@ -1104,11 +1739,22 @@
         "text",
         "image"
       ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
       "name": "SpaceXAI: Grok Imagine Image Quality",
       "output": [
         "image"
       ],
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "type": "image"
     }
   }
 }

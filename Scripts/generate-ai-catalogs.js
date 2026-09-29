@@ -2,85 +2,75 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const upstreamRoot = path.resolve(repoRoot, "../pi-mono/packages/ai/src");
-const sourceRef = process.env.PI_AI_CATALOG_SOURCE_REF;
-
 function readUpstreamSource(file) {
-  if (sourceRef) {
-    return execFileSync("git", ["show", `${sourceRef}:packages/ai/src/${file}`], {
-      cwd: path.resolve(repoRoot, "../pi-mono"), encoding: "utf8",
-    });
-  }
   return fs.readFileSync(path.join(upstreamRoot, file), "utf8");
 }
 
-function stripTypeScriptSyntax(source) {
-  return source
-    .replace(/^import[^\n]*(?:\n|$)/gm, "")
-    .replace(/\s+as const\s+satisfies[\s\S]*?;\s*$/, ";")
-    .replace(/\s+as const\b/g, "")
-    .replace(/\s+satisfies\s+[A-Za-z_$][A-Za-z0-9_$]*(?:\s*<(?:(?:[^<>]+)|<[^<>]*>)*>)?/g, "");
-}
-
-function loadGeneratedObject(file, exportName) {
-  let source = readUpstreamSource(file);
-  source = stripTypeScriptSyntax(source);
-  source = source.replace(new RegExp(`export const ${exportName} =`), "module.exports =");
-  const module = { exports: undefined };
-  new Function("module", source)(module);
-  return module.exports;
-}
-
-function loadTextModels() {
+function loadCatalogs() {
   const generatedSource = readUpstreamSource("models.generated.ts");
   const imports = new Map();
-  const importPattern = /^import\s*{\s*([A-Z][A-Z0-9_]*)\s*}\s*from\s*"(\.\/providers\/[^\"]+\.models\.ts)";?$/gm;
+  const importPattern = /^import\s*{\s*([A-Z][A-Z0-9_]*_CLASSIFIER_MODELS),\s*([A-Z][A-Z0-9_]*_IMAGE_MODELS),\s*([A-Z][A-Z0-9_]*_MODELS)\s*}\s*from\s*"(\.\/providers\/[^\"]+\.models\.ts)";?$/gm;
   for (const match of generatedSource.matchAll(importPattern)) {
-    imports.set(match[1], match[2]);
+    imports.set(match[4], { classifier: match[1], image: match[2], chat: match[3] });
   }
+  if (imports.size === 0) throw new Error("No v6 provider imports found in models.generated.ts");
 
-  const models = {};
-  for (const providerFile of imports.values()) {
+  const catalogs = { chat: {}, image: {}, classifier: {} };
+  const importedProviderIds = new Set();
+  for (const [providerFile, symbols] of imports) {
     const providerPath = path.join(upstreamRoot, providerFile);
     const source = readUpstreamSource(`providers/${path.basename(providerPath)}`);
     const dataPathMatch = source.match(/import values from "(\.\/data\/[^\"]+\.json)"/);
     if (!dataPathMatch) {
       throw new Error(`Could not find model data path in ${providerFile}`);
     }
-    const providerIdMatch = source.match(/flattenModelCatalog\(\s*"([^"]+)"/);
-    if (!providerIdMatch) {
-      throw new Error(`Could not find provider id in ${providerFile}`);
+    let providerId;
+    for (const [type, name] of Object.entries({ chat: "Chat", image: "Image", classifier: "Classifier" })) {
+      const symbol = symbols[type];
+      const match = source.match(new RegExp(`export const ${symbol}:[^;]*?flatten${name}ModelCatalog\\(\\s*"([^"]+)"\\s*,\\s*values\\s*\\)`));
+      if (!match) throw new Error(`Could not find ${type} wrapper ${symbol} in ${providerFile}`);
+      if (providerId !== undefined && providerId !== match[1]) throw new Error(`Wrapper provider mismatch in ${providerFile}`);
+      providerId = match[1];
     }
-
-    const providerId = providerIdMatch[1];
+    if (importedProviderIds.has(providerId)) throw new Error(`Duplicate provider ${providerId}`);
+    importedProviderIds.add(providerId);
     // Radius uses the pi-messages gateway and gateway-only model fields. PiSwift has no Radius client.
     if (providerId === "radius") continue;
     const dataPath = path.resolve(path.dirname(providerPath), dataPathMatch[1]);
     const groups = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-    models[providerId] = Object.assign({}, ...Object.values(groups));
+    // Upstream flattenModelCatalog takes Object.values(groups), then each group's
+    // values, filters by type, and uses entry.id as the catalog key.
+    catalogs.chat[providerId] = {};
+    for (const group of Object.values(groups)) {
+      for (const [key, entry] of Object.entries(group)) {
+        if (!["chat", "image", "classifier"].includes(entry.type)) throw new Error(`Unknown model type ${entry.type} for ${providerId}/${key}`);
+        if (key !== `${entry.type}:${entry.id}`) throw new Error(`Model key mismatch for ${providerId}/${key}`);
+        if (entry.provider !== providerId) throw new Error(`Model provider mismatch for ${providerId}/${key}`);
+        if (entry.type !== "image" && Object.hasOwn(entry, "output")) throw new Error(`Unexpected output on ${providerId}/${key}`);
+        if (entry.type === "image" && !entry.output?.includes("image")) throw new Error(`Image output missing for ${providerId}/${key}`);
+        (catalogs[entry.type][providerId] ??= {})[entry.id] = entry;
+      }
+    }
   }
 
-  const aggregateMatch = generatedSource.match(/export const MODELS:[\s\S]*?}\s*=\s*{([\s\S]*?)^};/m);
-  if (!aggregateMatch) {
-    throw new Error("Could not find MODELS aggregate assignment in models.generated.ts");
+  for (const [type, aggregate] of Object.entries({ chat: "MODELS", image: "IMAGE_MODELS", classifier: "CLASSIFIER_MODELS" })) {
+    const match = generatedSource.match(new RegExp(`export const ${aggregate}:[\\s\\S]*?}\\s*=\\s*{([\\s\\S]*?)^};`, "m"));
+    if (!match) throw new Error(`Could not find ${aggregate} aggregate assignment`);
+    const entries = [...match[1].matchAll(/^\t"([^"]+)":\s*([A-Z][A-Z0-9_]*),?$/gm)];
+    const expected = new Map(entries.map((entry) => [entry[1], entry[2]]));
+    if (!expected.has("radius")) throw new Error(`Expected radius in ${aggregate}`);
+    if (expected.size !== importedProviderIds.size || [...importedProviderIds].some((id) => !expected.has(id))) {
+      throw new Error(`Provider ids differ from ${aggregate} aggregate`);
+    }
+    for (const [file, symbols] of imports) {
+      const id = path.basename(file, ".models.ts");
+      if (expected.get(id) !== symbols[type]) throw new Error(`Symbol mismatch for ${id} in ${aggregate}`);
+    }
   }
-  const expectedProviderIds = new Set(
-    [...aggregateMatch[1].matchAll(/^\t"([^"]+)":\s*[A-Z]/gm)].map((match) => match[1])
-  );
-  if (!expectedProviderIds.delete("radius")) throw new Error("Expected the explicitly excluded radius provider");
-  const actualProviderIds = new Set(Object.keys(models));
-  const missingProviderIds = [...expectedProviderIds].filter((providerId) => !actualProviderIds.has(providerId)).sort();
-  const unexpectedProviderIds = [...actualProviderIds].filter((providerId) => !expectedProviderIds.has(providerId)).sort();
-  if (missingProviderIds.length > 0 || unexpectedProviderIds.length > 0) {
-    throw new Error(
-      `Provider ids differ from MODELS aggregate: missing [${missingProviderIds.join(", ")}], unexpected [${unexpectedProviderIds.join(", ")}]`
-    );
-  }
-
-  return models;
+  return catalogs;
 }
 
 function loadBuiltinModelDataGeneratedAt() {
@@ -143,6 +133,15 @@ function imagesApiCase(api) {
     "openrouter-images": "openrouterImages",
   };
   if (!cases[api]) throw new Error(`Unknown images api: ${api}`);
+  return `.${cases[api]}`;
+}
+
+function classifierApiCase(api) {
+  const cases = {
+    "typesafe-system-one": "typesafeSystemOne",
+    "cloudflare-workers-ai-system-one": "cloudflareWorkersAISystemOne",
+  };
+  if (!cases[api]) throw new Error(`Unknown classifier api: ${api}`);
   return `.${cases[api]}`;
 }
 
@@ -371,10 +370,11 @@ function providerVariableName(provider) {
 }
 
 function swiftModel(model) {
-  const allowed = new Set(["id", "name", "api", "provider", "baseUrl", "reasoning", "input", "inputLimits", "cost", "promptCache", "contextWindow", "maxTokens", "samplingParams", "headers", "compat", "thinkingLevelMap"]);
+  const allowed = new Set(["type", "id", "name", "api", "provider", "baseUrl", "reasoning", "input", "inputLimits", "cost", "promptCache", "contextWindow", "maxTokens", "samplingParams", "headers", "compat", "thinkingLevelMap"]);
   for (const key of Object.keys(model)) {
     if (!allowed.has(key)) throw new Error(`Unmapped model field ${model.provider}/${model.id}: ${key}`);
   }
+  if (model.type !== "chat") throw new Error(`Expected chat model ${model.provider}/${model.id}`);
   if (model.samplingParams !== undefined) throw new Error(`Unmapped samplingParams for ${model.provider}/${model.id}`);
   const cost = costLiteral(model.cost);
   const args = [
@@ -426,7 +426,8 @@ function promptCacheLiteral(value) {
 }
 
 function swiftImageModel(model) {
-  assertKeys(model, ["id", "name", "api", "provider", "baseUrl", "input", "inputLimits", "output", "cost", "headers"], "image model");
+  assertKeys(model, ["type", "id", "name", "api", "provider", "baseUrl", "input", "inputLimits", "output", "cost", "headers"], "image model");
+  if (model.type !== "image") throw new Error(`Expected image model ${model.provider}/${model.id}`);
   const args = [
     `id: ${swiftString(model.id)}`,
     `name: ${swiftString(model.name)}`,
@@ -441,6 +442,24 @@ function swiftImageModel(model) {
   if (headers) args.push(`headers: ${headers}`);
   if (model.inputLimits) args.push(`inputLimits: ${inputLimitsLiteral(model.inputLimits)}`);
   return `ImageModel(\n        ${args.join(",\n        ")}\n    )`;
+}
+
+function swiftClassifierModel(model) {
+  assertKeys(model, ["type", "id", "name", "api", "provider", "baseUrl", "input", "cost", "contextWindow", "headers"], "classifier model");
+  if (model.type !== "classifier") throw new Error(`Expected classifier model ${model.provider}/${model.id}`);
+  const args = [
+    `id: ${swiftString(model.id)}`,
+    `name: ${swiftString(model.name)}`,
+    `api: ${classifierApiCase(model.api)}`,
+    `provider: ${swiftString(model.provider)}`,
+    `baseUrl: ${swiftString(model.baseUrl)}`,
+    `input: ${modelInputArray(model.input)}`,
+    `cost: ${costLiteral(model.cost)}`,
+    `contextWindow: ${model.contextWindow}`,
+  ];
+  const headers = headersLiteral(model.headers);
+  if (headers) args.push(`headers: ${headers}`);
+  return `ClassifierModel(\n        ${args.join(",\n        ")}\n    )`;
 }
 
 function writeModelsData(models, generatedAt) {
@@ -463,6 +482,10 @@ function writeModelsData(models, generatedAt) {
   for (const provider of providers) {
     const ids = Object.keys(models[provider]).sort();
     const variableName = providerVariableName(provider);
+    if (ids.length === 0) {
+      lines.push(`private let ${variableName}: [String: Model] = [:]`, "");
+      continue;
+    }
     const chunks = Array.from({ length: Math.ceil(ids.length / modelsPerDictionaryChunk) }, (_, index) =>
       ids.slice(index * modelsPerDictionaryChunk, (index + 1) * modelsPerDictionaryChunk)
     );
@@ -511,15 +534,41 @@ function writeImageModelsData(models) {
   fs.writeFileSync(path.join(repoRoot, "Sources/PiSwiftAI/ImageModelsData.swift"), `${lines.join("\n")}\n`);
 }
 
-const models = loadTextModels();
+function writeClassifierModelsData(models) {
+  const providers = Object.keys(models).sort();
+  const lines = [
+    "import Foundation", "",
+    "// This file is auto-generated by Scripts/generate-ai-catalogs.js.",
+    "// Do not edit manually.", "",
+    "internal let ClassifierModelsData: [String: [String: ClassifierModel]] = [",
+    ...providers.map((provider) => `    ${swiftString(provider)}: ${providerVariableName(`classifier_${provider}`)},`),
+    "]", "",
+  ];
+  for (const provider of providers) {
+    lines.push(`private let ${providerVariableName(`classifier_${provider}`)}: [String: ClassifierModel] = [`);
+    for (const id of Object.keys(models[provider]).sort()) {
+      lines.push(`    ${swiftString(id)}: ${swiftClassifierModel(models[provider][id])},`);
+    }
+    lines.push("]", "");
+  }
+  while (lines.at(-1) === "") lines.pop();
+  fs.writeFileSync(path.join(repoRoot, "Sources/PiSwiftAI/ClassifierModelsData.swift"), `${lines.join("\n")}\n`);
+}
+
+const catalogs = loadCatalogs();
+const models = catalogs.chat;
 const builtinModelDataGeneratedAt = loadBuiltinModelDataGeneratedAt();
-const imageModels = loadGeneratedObject("image-models.generated.ts", "IMAGE_MODELS");
+const imageModels = catalogs.image;
+const classifierModels = catalogs.classifier;
 writeModelsData(models, builtinModelDataGeneratedAt);
 writeImageModelsData(imageModels);
+writeClassifierModelsData(classifierModels);
 writeJsonFixture("upstream-models.generated.json", models);
 writeJsonFixture("upstream-image-models.generated.json", imageModels);
-console.log(`Generated ${Object.values(models).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} text models.`);
-console.log(`Generated ${Object.values(imageModels).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} image models.`);
+writeJsonFixture("upstream-classifier-models.generated.json", classifierModels);
+for (const [type, entries] of Object.entries(catalogs)) {
+  console.log(`Generated ${Object.values(entries).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} ${type === "chat" ? "text" : type} models across ${Object.keys(entries).length} providers.`);
+}
 
 function costLiteral(cost) {
   return cost.tiers?.length

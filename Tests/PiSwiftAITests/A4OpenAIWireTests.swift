@@ -144,13 +144,13 @@ private func a4JSON(_ data: Data?) throws -> [String: Any] {
 @Test func a4GatewayAndFireworksCatalogMetadata() throws {
     let vercel = try #require(getModel(provider: "vercel-ai-gateway", modelId: "moonshotai/kimi-k3"))
     #expect(vercel.compat?.allowEmptySignature == true)
-    let deepSeek = try #require(getModel(provider: "fireworks", modelId: "accounts/fireworks/models/deepseek-v4-flash-0731"))
+    let deepSeek = try #require(getModel(provider: "fireworks", modelId: "accounts/fireworks/models/deepseek-v4p1-flash"))
     #expect(deepSeek.compat?.forceAdaptiveThinking == true)
     #expect(getSupportedThinkingLevels(deepSeek) == [.off, .low, .high, .max])
     let qwen = try #require(getModel(provider: "fireworks", modelId: "accounts/fireworks/models/qwen3p8-max"))
     #expect(getSupportedThinkingLevels(qwen) == [.off, .low, .medium, .xhigh])
-    let glm = try #require(getModel(provider: "fireworks", modelId: "accounts/fireworks/models/glm-5p2"))
-    #expect(getSupportedThinkingLevels(glm) == [.off, .high, .max])
+    let glm = try #require(getModel(provider: "fireworks", modelId: "accounts/fireworks/models/glm-5p3"))
+    #expect(getSupportedThinkingLevels(glm) == [.low, .high, .max])
     let kimi = try #require(getModel(provider: "fireworks", modelId: "accounts/fireworks/models/kimi-k3"))
     #expect(getSupportedThinkingLevels(kimi) == [.low, .high, .max])
 }

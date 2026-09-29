@@ -552,6 +552,7 @@ private func normalizeModel(_ model: PiSwiftAI.Model) -> [String: Any] {
         ("promptCache", normalizeCatalogMetadata(model.promptCache)),
         ("reasoning", model.reasoning),
         ("thinkingLevelMap", normalizeThinkingLevelMap(model.thinkingLevelMap)),
+        ("type", "chat"),
     ])
     result.removeValue(forKey: "nil")
     return result
@@ -570,9 +571,26 @@ private func normalizeImageModel(_ model: ImageModel) -> [String: Any] {
         ("headers", model.headers),
         ("id", model.id),
         ("input", model.input.map(\.rawValue)),
+        ("inputLimits", normalizeCatalogMetadata(model.inputLimits)),
         ("name", model.name),
         ("output", model.output.map(\.rawValue)),
         ("provider", model.provider),
+        ("type", model.type.rawValue),
+    ])
+}
+
+private func normalizeClassifierModel(_ model: ClassifierModel) -> [String: Any] {
+    optionalFields([
+        ("api", model.api.rawValue),
+        ("baseUrl", model.baseUrl),
+        ("contextWindow", model.contextWindow),
+        ("cost", normalizeCost(model.cost)),
+        ("headers", model.headers),
+        ("id", model.id),
+        ("input", model.input.map(\.rawValue)),
+        ("name", model.name),
+        ("provider", model.provider),
+        ("type", model.type.rawValue),
     ])
 }
 
@@ -6447,8 +6465,10 @@ struct ApiRegistryTests {
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
     #expect(getProviders().count == 40)
-    #expect(allModels.count == 1467)
-    #expect(compared == 1467)
+    #expect(!getProviders().contains(.typesafe))
+    #expect(getBuiltinProviders().contains(.typesafe))
+    #expect(allModels.count == 1498)
+    #expect(compared == 1498)
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6504,8 +6524,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 55)
-    #expect(compared == 55)
+    #expect(models.count == 57)
+    #expect(compared == 57)
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)
@@ -6513,6 +6533,34 @@ struct ApiRegistryTests {
     #expect(model.input == [.image, .text])
     #expect(model.output == [.image, .text])
     #expect(model.cost.output == 12)
+}
+
+@Test func generatedClassifierCatalogMatchesUpstreamMetadata() throws {
+    let upstream = try loadJSONResource("upstream-classifier-models.generated")
+    #expect(Set(ClassifierModelsData.keys) == Set(upstream.keys))
+
+    var compared = 0
+    for provider in ClassifierModelsData.keys.sorted() {
+        guard let swiftModels = ClassifierModelsData[provider],
+              let upstreamModels = upstream[provider] as? [String: Any] else {
+            #expect(Bool(false), "Missing classifier provider \(provider)")
+            continue
+        }
+        #expect(Set(swiftModels.keys) == Set(upstreamModels.keys), "Classifier ID drift for provider \(provider)")
+        for modelId in swiftModels.keys.sorted() {
+            guard let swiftModel = swiftModels[modelId],
+                  let upstreamModel = upstreamModels[modelId] as? [String: Any] else {
+                #expect(Bool(false), "Missing classifier \(provider)/\(modelId)")
+                continue
+            }
+            #expect(try canonicalJSONString(normalizeClassifierModel(swiftModel)) == canonicalJSONString(upstreamModel),
+                    "Classifier metadata drift for \(provider)/\(modelId)")
+            compared += 1
+        }
+    }
+    #expect(compared == 13)
+    #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
+    #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }
 
 @Test func openRouterImagesGenerateBuildsPayloadAndParsesResponse() async throws {
