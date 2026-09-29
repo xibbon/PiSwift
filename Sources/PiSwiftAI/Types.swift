@@ -1130,7 +1130,7 @@ public struct ClassifierModel: CatalogModel, Sendable, Codable {
     public let name: String
     public let api: ClassifierApi
     public let provider: Provider
-    public let baseUrl: String
+    public var baseUrl: String
     public let input: [ModelInput]
     public let inputLimits: ModelInputLimits?
     public let cost: ModelCost

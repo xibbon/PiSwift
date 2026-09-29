@@ -132,6 +132,7 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "meta": "META_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "typesafe": "TYPESAFE_API_KEY",
+        "cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
         "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
         "zai": "ZAI_API_KEY",
         "mistral": "MISTRAL_API_KEY",

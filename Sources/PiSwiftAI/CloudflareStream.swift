@@ -3,7 +3,21 @@ import Foundation
 /// Substitute Cloudflare account/gateway endpoint placeholders in a model's baseUrl from `env`.
 /// Unset keys keep their placeholder (matches upstream fallback). Returns the same model when
 /// nothing changes.
-public func resolveCloudflareModel(_ model: Model, env: [String: String]) -> Model {
+public protocol CloudflareResolvableModel: CatalogModel {
+    func with(baseUrl: String) -> Self
+}
+
+extension Model: CloudflareResolvableModel {}
+
+extension ClassifierModel: CloudflareResolvableModel {
+    public func with(baseUrl: String) -> ClassifierModel {
+        var copy = self
+        copy.baseUrl = baseUrl
+        return copy
+    }
+}
+
+public func resolveCloudflareModel<T: CloudflareResolvableModel>(_ model: T, env: [String: String]) -> T {
     guard model.provider == "cloudflare-workers-ai" || model.provider == "cloudflare-ai-gateway" else {
         return model
     }
@@ -21,6 +35,6 @@ public func resolveCloudflareModel(_ model: Model, env: [String: String]) -> Mod
 }
 
 /// Process-env-backed convenience used by provider stream entry points.
-public func resolveCloudflareModel(_ model: Model) -> Model {
+public func resolveCloudflareModel<T: CloudflareResolvableModel>(_ model: T) -> T {
     resolveCloudflareModel(model, env: ProcessInfo.processInfo.environment)
 }
