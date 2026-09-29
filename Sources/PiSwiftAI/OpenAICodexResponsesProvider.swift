@@ -109,6 +109,7 @@ public func streamOpenAICodexResponses(
             var currentGrammarInputProperty: String?
             var grammarInputBuffer = GrammarToolInputJsonBuffer()
             var hasStartedStream = false
+            var pendingToolCallIndices: Set<Int> = []
 
             func startBlock(kind: String, block: ContentBlock) {
                 output.content.append(block)
@@ -120,6 +121,7 @@ public func streamOpenAICodexResponses(
                 case .thinking:
                     stream.push(.thinkingStart(contentIndex: currentBlockIndex!, partial: output))
                 case .toolCall:
+                    pendingToolCallIndices.insert(currentBlockIndex!)
                     stream.push(.toolCallStart(contentIndex: currentBlockIndex!, partial: output))
                 default:
                     break
@@ -288,39 +290,43 @@ public func streamOpenAICodexResponses(
                         let callId = item["call_id"] as? String ?? ""
                         let itemId = item["id"] as? String ?? ""
                         let combinedId = "\(callId)|\(itemId)"
+                        guard let index = currentBlockIndex,
+                              case .toolCall(let existing) = output.content[index],
+                              existing.id == combinedId else { return }
                         let preferredArgs = currentToolCallPartial.trimmingCharacters(in: .whitespacesAndNewlines)
                         var arguments = preferredArgs.isEmpty ? [:] : parseStreamingJSON(preferredArgs)
                         if arguments.isEmpty {
                             arguments = parseCodexArguments(item["arguments"])
                         }
                         var resolvedName = item["name"] as? String ?? ""
-                        if let index = currentBlockIndex, case .toolCall(let existing) = output.content[index] {
-                            if resolvedName.isEmpty {
-                                resolvedName = existing.name
-                            }
-                            if arguments.isEmpty, !existing.arguments.isEmpty {
-                                arguments = existing.arguments
-                            }
+                        if resolvedName.isEmpty {
+                            resolvedName = existing.name
+                        }
+                        if arguments.isEmpty, !existing.arguments.isEmpty {
+                            arguments = existing.arguments
                         }
                         var namespace = item["namespace"] as? String
-                        if namespace == nil, let index = currentBlockIndex,
-                           case .toolCall(let existing) = output.content[index] { namespace = existing.namespace }
+                        if namespace == nil { namespace = existing.namespace }
                         let toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: arguments, namespace: namespace)
-                        if let index = currentBlockIndex {
-                            output.content[index] = .toolCall(toolCall)
-                            stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
-                        }
+                        output.content[index] = .toolCall(toolCall)
+                        stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
+                        pendingToolCallIndices.remove(index)
                         currentBlockKind = nil
                         currentBlockIndex = nil
                         currentToolCallPartial = ""
                     } else if type == "custom_tool_call" {
+                        let combinedId = "\(item["call_id"] as? String ?? "")|\(item["id"] as? String ?? "")"
+                        guard let index = currentBlockIndex,
+                              case .toolCall(let existing) = output.content[index],
+                              existing.id == combinedId else { return }
                         let input = item["input"] as? String ?? currentToolCallPartial
                         try updateGrammarToolCallInput(input, close: true)
-                        if let index = currentBlockIndex, case .toolCall(var call) = output.content[index] {
+                        if case .toolCall(var call) = output.content[index] {
                             call.namespace = item["namespace"] as? String ?? call.namespace
                             output.content[index] = .toolCall(call)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
                         }
+                        pendingToolCallIndices.remove(index)
                         currentBlockKind = nil
                         currentBlockIndex = nil
                         currentToolCallPartial = ""
@@ -345,7 +351,14 @@ public func streamOpenAICodexResponses(
                                 totalTokens: totalTokens
                             )
                             calculateCost(model: model, usage: &output.usage)
-                            applyServiceTierPricing(&output.usage, serviceTier: options.serviceTier, model: model)
+                            let reportedTier = (responseInfo["service_tier"] as? String).flatMap(OpenAIServiceTier.init(rawValue:))
+                            let resolvedTier: OpenAIServiceTier?
+                            if reportedTier == .defaultTier && (options.serviceTier == .flex || options.serviceTier == .priority) {
+                                resolvedTier = options.serviceTier
+                            } else {
+                                resolvedTier = reportedTier ?? options.serviceTier
+                            }
+                            applyServiceTierPricing(&output.usage, serviceTier: resolvedTier, model: model, includeFast: false)
                         }
                         if let status = responseInfo["status"] as? String {
                             let incompleteDetails = responseInfo["incomplete_details"] as? [String: Any]
@@ -407,6 +420,11 @@ public func streamOpenAICodexResponses(
                                 startStreamIfNeeded()
                             },
                             onEvent: { event in
+                                do {
+                                    try await emitProviderStreamEvent(object: event, model: model, handler: options.onProviderStreamEvent)
+                                } catch {
+                                    throw CodexProviderStreamEventCallbackError(cause: error)
+                                }
                                 try processRawEvent(event)
                             }
                         )
@@ -423,11 +441,15 @@ public func streamOpenAICodexResponses(
                         if output.stopReason == .error {
                             throw OpenAICodexStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
                         }
+                        if let message = unfinishedResponsesToolCallMessage(output: output, contentIndices: pendingToolCallIndices) {
+                            throw OpenAICodexStreamError.apiError(message)
+                        }
 
                         stream.push(.done(reason: output.stopReason, message: output))
                         stream.end()
                         return
                     } catch {
+                        if error is CodexProviderStreamEventCallbackError { throw error }
                         if shouldRetryMissingCodexContinuation(
                             error,
                             retried: &retriedMissingContinuation
@@ -436,6 +458,7 @@ public func streamOpenAICodexResponses(
                             output.stopReason = .pending
                             output.rawStopReason = nil
                             output.errorMessage = nil
+                            pendingToolCallIndices.removeAll()
                             continue
                         }
                         if transport == .websocket || websocketStarted {
@@ -479,6 +502,11 @@ public func streamOpenAICodexResponses(
 
             startStreamIfNeeded()
             for try await rawEvent in parseCodexSseStream(body: response.body) {
+                do {
+                    try await emitProviderStreamEvent(object: rawEvent, model: model, handler: options.onProviderStreamEvent)
+                } catch {
+                    throw CodexProviderStreamEventCallbackError(cause: error)
+                }
                 try processRawEvent(rawEvent)
             }
 
@@ -494,6 +522,9 @@ public func streamOpenAICodexResponses(
             }
             if output.stopReason == .error {
                 throw OpenAICodexStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
+            }
+            if let message = unfinishedResponsesToolCallMessage(output: output, contentIndices: pendingToolCallIndices) {
+                throw OpenAICodexStreamError.apiError(message)
             }
 
             stream.push(.done(reason: output.stopReason, message: output))
@@ -511,6 +542,12 @@ public func streamOpenAICodexResponses(
 
 func codexCacheSessionId(_ sessionId: String?, cacheRetention: CacheRetention?) -> String? {
     cacheRetention == CacheRetention.none ? nil : sessionId
+}
+
+private struct CodexProviderStreamEventCallbackError: Error, LocalizedError {
+    let cause: Error
+
+    var errorDescription: String? { cause.localizedDescription }
 }
 
 enum OpenAICodexStreamError: Error, LocalizedError {
@@ -841,7 +878,7 @@ private func processCodexWebSocketStream(
     signal: CancellationToken?,
     websocketConnectTimeoutMs: Int?,
     onStart: () -> Void,
-    onEvent: ([String: Any]) throws -> Void
+    onEvent: ([String: Any]) async throws -> Void
 ) async throws {
     var wsHeaders = headers
     wsHeaders["OpenAI-Beta"] = codexWebSocketBetaHeader
@@ -881,7 +918,7 @@ private func processCodexWebSocketStream(
             if type == "response.completed" || type == "response.done" || type == "response.incomplete" {
                 sawCompletion = true
             }
-            try onEvent(event)
+            try await onEvent(event)
             if sawCompletion {
                 break
             }

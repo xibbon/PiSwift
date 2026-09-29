@@ -76,6 +76,7 @@ public func streamGoogle(
 
             for try await payload in streamSsePayloads(body: response.body, signal: options.signal) {
                 guard let data = payload.data(using: .utf8) else { continue }
+                try await emitProviderStreamEvent(json: data, model: model, handler: options.onProviderStreamEvent)
                 guard let chunk = try? JSONDecoder().decode(GoogleStreamChunk.self, from: data) else { continue }
 
                 if output.responseId == nil, let rid = chunk.responseId, !rid.isEmpty {

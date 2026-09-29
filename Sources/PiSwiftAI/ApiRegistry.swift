@@ -130,6 +130,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs
@@ -159,6 +160,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs
@@ -189,6 +191,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs,
@@ -219,6 +222,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs,
@@ -248,6 +252,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs
@@ -275,6 +280,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs
@@ -312,6 +318,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs
@@ -349,6 +356,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
                 maxRetryDelayMs: options?.maxRetryDelayMs
@@ -373,6 +381,7 @@ public func registerBuiltInProviders() {
                 headers: options?.headers,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
+                onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries
             )

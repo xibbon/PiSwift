@@ -224,6 +224,7 @@ public func streamAzureOpenAIResponses(
             if model.api == .azureOpenAIResponses
                 || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
+                || options.onProviderStreamEvent != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
@@ -240,6 +241,7 @@ public func streamAzureOpenAIResponses(
                     maxRetries: options.maxRetries,
                     maxRetryDelayMs: options.maxRetryDelayMs,
                     onResponse: options.onResponse,
+                    onProviderStreamEvent: options.onProviderStreamEvent,
                     serviceTier: nil,
                     grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties,
                     stream: stream,
@@ -261,6 +263,7 @@ public func streamAzureOpenAIResponses(
             var currentBlockIndex: Int? = nil
             var currentBlockKind: String? = nil
             var currentToolCallArgs = ""
+            var pendingToolCallIndices: Set<Int> = []
 
             func startBlock(kind: String, block: ContentBlock) {
                 output.content.append(block)
@@ -272,6 +275,7 @@ public func streamAzureOpenAIResponses(
                 case .thinking:
                     stream.push(.thinkingStart(contentIndex: currentBlockIndex!, partial: output))
                 case .toolCall:
+                    pendingToolCallIndices.insert(currentBlockIndex!)
                     stream.push(.toolCallStart(contentIndex: currentBlockIndex!, partial: output))
                 default:
                     break
@@ -347,25 +351,25 @@ public func streamAzureOpenAIResponses(
                         case .functionToolCall(let toolCall):
                             let idPart = toolCall.id ?? ""
                             let combinedId = "\(toolCall.callId)|\(idPart)"
+                            guard let index = currentBlockIndex,
+                                  case .toolCall(let existing) = output.content[index],
+                                  existing.id == combinedId else { break }
                             let preferredArgs = currentToolCallArgs.trimmingCharacters(in: .whitespacesAndNewlines)
                             var arguments = preferredArgs.isEmpty ? [:] : parseStreamingJSON(preferredArgs)
                             if arguments.isEmpty {
                                 arguments = parseJSONStringArguments(toolCall.arguments)
                             }
                             var resolvedName = toolCall.name
-                            if let index = currentBlockIndex, case .toolCall(let existing) = output.content[index] {
-                                if resolvedName.isEmpty {
-                                    resolvedName = existing.name
-                                }
-                                if arguments.isEmpty, !existing.arguments.isEmpty {
-                                    arguments = existing.arguments
-                                }
+                            if resolvedName.isEmpty {
+                                resolvedName = existing.name
+                            }
+                            if arguments.isEmpty, !existing.arguments.isEmpty {
+                                arguments = existing.arguments
                             }
                             let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments)
-                            if let index = currentBlockIndex {
-                                output.content[index] = .toolCall(call)
-                                stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
-                            }
+                            output.content[index] = .toolCall(call)
+                            stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
+                            pendingToolCallIndices.remove(index)
                             currentBlockIndex = nil
                             currentBlockKind = nil
                             currentToolCallArgs = ""
@@ -464,6 +468,9 @@ public func streamAzureOpenAIResponses(
             if output.stopReason == .error {
                 throw AzureOpenAIResponsesStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
             }
+            if let message = unfinishedResponsesToolCallMessage(output: output, contentIndices: pendingToolCallIndices) {
+                throw AzureOpenAIResponsesStreamError.apiError(message)
+            }
 
             stream.push(.done(reason: output.stopReason, message: output))
             stream.end()
@@ -503,6 +510,7 @@ public func streamSimpleAzureOpenAIResponses(
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         toolChoice: options?.toolChoice.map { $0 == .none ? .none : .auto }

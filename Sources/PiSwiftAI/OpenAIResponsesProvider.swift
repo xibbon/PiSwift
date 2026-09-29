@@ -157,6 +157,7 @@ public func streamOpenAIResponses(
             onPayload: options.onPayload,
             serviceTier: options.serviceTier,
             onResponse: options.onResponse,
+            onProviderStreamEvent: options.onProviderStreamEvent,
             timeoutMs: options.timeoutMs,
             maxRetries: options.maxRetries,
             maxRetryDelayMs: options.maxRetryDelayMs,
@@ -237,12 +238,20 @@ public func streamOpenAIResponses(
             var capturedRequest = URLRequest(url: openAIResponsesURL(baseUrl: model.baseUrl, provider: model.provider))
             capturedRequest.httpBody = encodedQuery
             capturedRequest = middlewares.reduce(capturedRequest) { $1.intercept(request: $0) }
+            if options.serviceTier == .fast {
+                // The SDK query enum predates Fast mode. Preserve the requested wire value.
+                capturedRequest = rewritingOpenAIRequestBody(capturedRequest) { payload in
+                    payload["service_tier"] = OpenAIServiceTier.fast.rawValue
+                    return true
+                }
+            }
             emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
             if model.api == .openAIResponses
                 || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
+                || options.onProviderStreamEvent != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
@@ -261,6 +270,7 @@ public func streamOpenAIResponses(
                     maxRetries: options.maxRetries,
                     maxRetryDelayMs: options.maxRetryDelayMs,
                     onResponse: options.onResponse,
+                    onProviderStreamEvent: options.onProviderStreamEvent,
                     serviceTier: options.serviceTier,
                     grammarToolInputProperties: constrainedSamplingMiddleware.grammarToolInputProperties,
                     stream: stream,
@@ -503,6 +513,10 @@ public func streamOpenAIResponses(
             if output.stopReason == .error {
                 throw OpenAIResponsesStreamError.apiError(output.errorMessage ?? "Provider returned an error stop reason")
             }
+            let unfinishedIndices = Set(toolCallArgsByOutputIndex.keys.compactMap { blockIndexByOutputIndex[$0] })
+            if let message = unfinishedResponsesToolCallMessage(output: output, contentIndices: unfinishedIndices) {
+                throw OpenAIResponsesStreamError.apiError(message)
+            }
 
             stream.push(.done(reason: output.stopReason, message: output))
             stream.end()
@@ -656,7 +670,7 @@ private func mapResponsesServiceTier(_ tier: OpenAIServiceTier?) -> ServiceTier?
         return .defaultTier
     case .flex:
         return .flexTier
-    case .priority, .onDemand:
+    case .priority, .fast, .onDemand:
         return .onDemand
     case .none:
         return nil
@@ -665,12 +679,14 @@ private func mapResponsesServiceTier(_ tier: OpenAIServiceTier?) -> ServiceTier?
 
 /// v0.70.0: GPT-5.5 Codex applies a 2.5x priority service-tier multiplier (vs 2x for older
 /// Codex models). Pass the model so we can pick the right rate.
-private func serviceTierMultiplier(_ tier: OpenAIServiceTier?, model: Model? = nil) -> Double {
+private func serviceTierMultiplier(_ tier: OpenAIServiceTier?, model: Model? = nil, includeFast: Bool = true) -> Double {
     switch tier {
     case .flex:
         return 0.5
-    case .priority, .onDemand:
-        if let modelId = model?.id, modelId.contains("gpt-5.5") {
+    case .fast where !includeFast:
+        return 1
+    case .priority, .fast, .onDemand:
+        if model?.id == "gpt-5.5" {
             return 2.5
         }
         return 2
@@ -679,8 +695,10 @@ private func serviceTierMultiplier(_ tier: OpenAIServiceTier?, model: Model? = n
     }
 }
 
-func applyServiceTierPricing(_ usage: inout Usage, serviceTier: OpenAIServiceTier?, model: Model? = nil) {
-    let multiplier = serviceTierMultiplier(serviceTier, model: model)
+func applyServiceTierPricing(
+    _ usage: inout Usage, serviceTier: OpenAIServiceTier?, model: Model? = nil, includeFast: Bool = true
+) {
+    let multiplier = serviceTierMultiplier(serviceTier, model: model, includeFast: includeFast)
     guard multiplier != 1 else { return }
     usage.cost.input *= multiplier
     usage.cost.output *= multiplier

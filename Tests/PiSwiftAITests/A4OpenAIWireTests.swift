@@ -111,8 +111,10 @@ private func a4JSON(_ data: Data?) throws -> [String: Any] {
 }
 
 @Test func a4MistralMediumAndGLMUseReasoningEffort() {
+    // Upstream #9678: the thinking-level map, not the model ID, selects reasoning_effort.
     for id in ["mistral-medium-future", "zai-glm-5-2"] {
-        let model = a4Model(id: id, api: .mistralConversations, provider: "mistral")
+        let model = a4Model(id: id, api: .mistralConversations, provider: "mistral",
+            thinkingLevelMap: [.off: "none", .high: "high"])
         let options = mapMistralSimpleOptions(model: model,
             options: SimpleStreamOptions(reasoning: .high), apiKey: "test")
         #expect(options.reasoningEffort == "high")

@@ -425,6 +425,7 @@ private func streamAssistantResponse(
             maxRetryDelayMs: config.maxRetryDelayMs,
             metadata: config.metadata,
             onResponse: config.onResponse,
+            onProviderStreamEvent: config.onProviderStreamEvent,
             timeoutMs: config.timeoutMs,
             websocketConnectTimeoutMs: config.websocketConnectTimeoutMs,
             maxRetries: config.maxRetries
@@ -465,7 +466,8 @@ private func streamAssistantResponse(
             }
 
         case .done, .error:
-            let finalMessage = await response.result()
+            var finalMessage = await response.result()
+            finalMessage.thinkingLevel = config.reasoning.map(ModelThinkingLevel.init) ?? .off
             let agentMessage = AgentMessage.assistant(finalMessage)
             if addedPartial {
                 updatedContext.messages[updatedContext.messages.count - 1] = agentMessage
@@ -478,7 +480,8 @@ private func streamAssistantResponse(
         }
     }
 
-    let finalMessage = await response.result()
+    var finalMessage = await response.result()
+    finalMessage.thinkingLevel = config.reasoning.map(ModelThinkingLevel.init) ?? .off
     let agentMessage = AgentMessage.assistant(finalMessage)
     if addedPartial {
         updatedContext.messages[updatedContext.messages.count - 1] = agentMessage

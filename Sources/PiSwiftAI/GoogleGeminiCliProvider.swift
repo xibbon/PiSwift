@@ -223,6 +223,7 @@ public func streamGoogleGeminiCli(
 
                 for try await payload in streamSsePayloads(bytes: bytes, signal: options.signal) {
                     guard let data = payload.data(using: .utf8) else { continue }
+                    try await emitProviderStreamEvent(json: data, model: model, handler: options.onProviderStreamEvent)
                     guard let chunk = try? JSONDecoder().decode(GeminiCliStreamChunk.self, from: data),
                           let response = chunk.response else { continue }
 
@@ -436,6 +437,7 @@ public func streamSimpleGoogleGeminiCli(
         projectId: nil,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries
     )
@@ -454,6 +456,7 @@ public func streamSimpleGoogleGeminiCli(
             projectId: base.projectId,
             onPayload: base.onPayload,
             onResponse: base.onResponse,
+            onProviderStreamEvent: base.onProviderStreamEvent,
             timeoutMs: base.timeoutMs,
             maxRetries: base.maxRetries
         )
@@ -479,6 +482,7 @@ public func streamSimpleGoogleGeminiCli(
             projectId: base.projectId,
             onPayload: base.onPayload,
             onResponse: base.onResponse,
+            onProviderStreamEvent: base.onProviderStreamEvent,
             timeoutMs: base.timeoutMs,
             maxRetries: base.maxRetries
         )
@@ -512,6 +516,7 @@ public func streamSimpleGoogleGeminiCli(
         projectId: base.projectId,
         onPayload: base.onPayload,
         onResponse: base.onResponse,
+        onProviderStreamEvent: base.onProviderStreamEvent,
         timeoutMs: base.timeoutMs,
         maxRetries: base.maxRetries
     )

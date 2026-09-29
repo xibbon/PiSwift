@@ -318,6 +318,7 @@ func mapAnthropicSimpleOptions(model: Model, context: TranscriptContext, options
             headers: options?.headers,
             onPayload: options?.onPayload,
             onResponse: options?.onResponse,
+            onProviderStreamEvent: options?.onProviderStreamEvent,
             timeoutMs: options?.timeoutMs,
             maxRetries: options?.maxRetries,
             maxRetryDelayMs: options?.maxRetryDelayMs
@@ -354,6 +355,7 @@ func mapAnthropicSimpleOptions(model: Model, context: TranscriptContext, options
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs
@@ -417,6 +419,7 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs
@@ -440,6 +443,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs,
@@ -464,6 +468,7 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs,
@@ -487,6 +492,7 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs,
@@ -508,6 +514,7 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs
@@ -529,6 +536,7 @@ func mapGoogleSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs
@@ -549,6 +557,7 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs
@@ -570,6 +579,7 @@ func mapGoogleVertexSimpleOptionsValidated(model: Model, options: SimpleStreamOp
         thinking: thinking,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs
@@ -655,6 +665,7 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
             headers: options?.headers,
             onPayload: options?.onPayload,
             onResponse: options?.onResponse,
+            onProviderStreamEvent: options?.onProviderStreamEvent,
             timeoutMs: options?.timeoutMs,
             maxRetries: options?.maxRetries
         )
@@ -671,6 +682,7 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries
     )

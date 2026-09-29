@@ -399,6 +399,7 @@ public struct AgentLoopConfig: Sendable {
     /// begins consuming. Forwarded as `SimpleStreamOptions.onResponse`. Use for header /
     /// status inspection (telemetry, after_provider_response extension hook, etc.).
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
 
     /// v0.68.0: prompt cache retention preference. Forwarded to providers that support it
     /// (OpenAI Chat Completions / OpenAI Responses with `prompt_cache_retention: "24h"` for
@@ -487,6 +488,7 @@ public struct AgentLoopConfig: Sendable {
         maxRetryDelayMs: Int? = nil,
         onPayload: OnPayloadFn? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         cacheRetention: CacheRetention? = nil,
         headers: ProviderHeaders? = nil,
         metadata: [String: AnyCodable]? = nil,
@@ -517,6 +519,7 @@ public struct AgentLoopConfig: Sendable {
         self.maxRetryDelayMs = maxRetryDelayMs
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.cacheRetention = cacheRetention
         self.headers = headers
         self.metadata = metadata

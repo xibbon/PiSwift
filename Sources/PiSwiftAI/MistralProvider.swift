@@ -1,8 +1,8 @@
 import Foundation
 
 /// Stream from Mistral. Uses Mistral's OpenAI-compatible chat completions endpoint with
-/// Mistral-specific extensions: prompt-mode reasoning for Magistral, `reasoning_effort` for
-/// `mistral-small-2603` / `mistral-small-latest`, thinking-content blocks (text-array form),
+/// Mistral-specific extensions: prompt-mode reasoning for models without a thinking-level map,
+/// `reasoning_effort` for mapped models, thinking-content blocks (text-array form),
 /// 9-character tool-call IDs, and `x-affinity` session headers for KV-cache reuse.
 public func streamMistral(
     model: Model,
@@ -82,6 +82,7 @@ public func streamMistral(
 
             for try await rawEvent in parseMistralSseStream(body: response.body) {
                 let event = rawEvent.mapValues(\.value)
+                try await emitProviderStreamEvent(object: event, model: model, handler: options.onProviderStreamEvent)
                 if options.signal?.isCancelled == true {
                     throw MistralStreamError.aborted
                 }
@@ -731,14 +732,14 @@ private func fetchMistralStream(
 
 /// Maps `SimpleStreamOptions` onto `MistralOptions`, applying Mistral's reasoning conventions.
 public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey: String) -> MistralOptions {
-    let useReasoningEffort = mistralUsesReasoningEffort(model: model)
-    let usePromptMode = model.reasoning && !useReasoningEffort
+    let effortMap = model.reasoning ? model.thinkingLevelMap : nil
     let reasoning = clampThinkingLevel(model: model, requested: options?.reasoning)
 
-    let promptMode: String? = (usePromptMode && model.reasoning && reasoning != nil) ? "reasoning" : nil
+    let promptMode: String? = (model.reasoning && effortMap == nil && reasoning != nil) ? "reasoning" : nil
     let reasoningEffort: String? = {
-        guard useReasoningEffort, model.reasoning, let reasoning else { return nil }
-        return mappedThinkingLevel(model: model, level: reasoning) ?? "high"
+        guard let effortMap else { return nil }
+        guard let reasoning else { return effortMap[.off] ?? nil }
+        return effortMap[ModelThinkingLevel(reasoning)] ?? "high"
     }()
 
     return MistralOptions(
@@ -754,16 +755,10 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
         maxRetryDelayMs: options?.maxRetryDelayMs,
         cacheRetention: options?.cacheRetention
     )
-}
-
-private func mistralUsesReasoningEffort(model: Model) -> Bool {
-    return model.id == "mistral-small-2603" ||
-        model.id == "mistral-small-latest" ||
-        model.id.hasPrefix("mistral-medium-") ||
-        model.id == "zai-glm-5-2"
 }

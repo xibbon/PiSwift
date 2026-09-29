@@ -30,6 +30,7 @@ public struct AgentOptions: Sendable {
     /// v0.67.6: invoked after each provider HTTP response is received and before the stream
     /// begins consuming. Use for header / status inspection at the Agent level.
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     /// v0.68.0: prompt cache retention preference forwarded into provider stream options.
     public var cacheRetention: CacheRetention?
     /// HTTP headers forwarded into provider stream options.
@@ -65,6 +66,7 @@ public struct AgentOptions: Sendable {
         getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)? = nil,
         onPayload: OnPayloadFn? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         cacheRetention: CacheRetention? = nil,
         headers: ProviderHeaders? = nil,
         metadata: [String: AnyCodable]? = nil,
@@ -93,6 +95,7 @@ public struct AgentOptions: Sendable {
         self.getModelAuth = getModelAuth
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.cacheRetention = cacheRetention
         self.headers = headers
         self.metadata = metadata
@@ -129,6 +132,7 @@ public final class Agent: Sendable {
         var getModelAuth: (@Sendable (Model) async -> AgentModelAuth?)?
         var onPayload: OnPayloadFn?
         var onResponse: ResponseHandler?
+        var onProviderStreamEvent: ProviderStreamEventHandler?
         var cacheRetention: CacheRetention?
         var headers: ProviderHeaders?
         var metadata: [String: AnyCodable]?
@@ -246,6 +250,11 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.onResponse = newValue } }
     }
 
+    public var onProviderStreamEvent: ProviderStreamEventHandler? {
+        get { stateBox.withLock { $0.onProviderStreamEvent } }
+        set { stateBox.withLock { $0.onProviderStreamEvent = newValue } }
+    }
+
     public var cacheRetention: CacheRetention? {
         get { stateBox.withLock { $0.cacheRetention } }
         set { stateBox.withLock { $0.cacheRetention = newValue } }
@@ -338,6 +347,7 @@ public final class Agent: Sendable {
             getModelAuth: options.getModelAuth,
             onPayload: options.onPayload,
             onResponse: options.onResponse,
+            onProviderStreamEvent: options.onProviderStreamEvent,
             cacheRetention: options.cacheRetention,
             headers: options.headers,
             metadata: options.metadata,
@@ -677,6 +687,7 @@ public final class Agent: Sendable {
             maxRetryDelayMs: maxRetryDelayMs,
             onPayload: onPayload,
             onResponse: onResponse,
+            onProviderStreamEvent: onProviderStreamEvent,
             cacheRetention: cacheRetention,
             headers: headers,
             metadata: metadata,

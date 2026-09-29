@@ -187,6 +187,11 @@ private struct AwsEventStreamMessage {
     let payload: Data
 }
 
+private struct BedrockProviderStreamEventCallbackError: Error, LocalizedError {
+    let cause: Error
+    var errorDescription: String? { cause.localizedDescription }
+}
+
 private struct AwsEventStreamParser {
     private var buffer = Data()
 
@@ -294,6 +299,13 @@ public func streamBedrock(
                             throw BedrockStreamError.aborted
                         }
                         for message in parser.append(byte) {
+                            do {
+                                try await emitProviderStreamEvent(
+                                    json: message.payload, model: model, handler: options.onProviderStreamEvent
+                                )
+                            } catch {
+                                throw BedrockProviderStreamEventCallbackError(cause: error)
+                            }
                             try handleBedrockEvent(
                                 message,
                                 decoder: decoder,
@@ -310,6 +322,7 @@ public func streamBedrock(
                     if options.signal?.isCancelled == true {
                         throw BedrockStreamError.aborted
                     }
+                    if error is BedrockProviderStreamEventCallbackError { throw error }
                     if attempt < retryLimit, isRetryableTransportError(error) {
                         attempt += 1
                         output.content = []

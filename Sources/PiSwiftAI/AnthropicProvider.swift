@@ -282,7 +282,9 @@ public func streamAnthropic(
                     betaHeaders: betaHeaders,
                     httpClient: httpClient,
                     parameters: parameters,
-                    onResponse: options.onResponse
+                    onResponse: options.onResponse,
+                    model: model,
+                    onProviderStreamEvent: options.onProviderStreamEvent
                 )
             }
 
@@ -790,7 +792,9 @@ private func streamAnthropicMessagesTolerant(
     betaHeaders: [String]?,
     httpClient: HTTPClient,
     parameters: MessageParameter,
-    onResponse: ResponseHandler?
+    onResponse: ResponseHandler?,
+    model: Model,
+    onProviderStreamEvent: ProviderStreamEventHandler?
 ) async throws -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> {
     var localParameters = parameters
     localParameters.stream = true
@@ -824,7 +828,7 @@ private func streamAnthropicMessagesTolerant(
             message: message
         )
     }
-    return decodeAnthropicSSEStream(byteStream)
+    return decodeAnthropicSSEStream(byteStream, model: model, onProviderStreamEvent: onProviderStreamEvent)
 }
 
 private func anthropicJSONBody(_ parameters: MessageParameter) throws -> Data {
@@ -863,7 +867,9 @@ private func anthropicResponseSnapshot(_ response: HTTPResponse) -> ResponseSnap
     return ResponseSnapshot(statusCode: statusCode, headers: headers)
 }
 
-private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> {
+private func decodeAnthropicSSEStream(
+    _ stream: HTTPByteStream, model: Model, onProviderStreamEvent: ProviderStreamEventHandler?
+) -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> {
     let lines = anthropicLines(from: stream)
     return AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> { continuation in
         let task = Task {
@@ -871,7 +877,10 @@ private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowing
             var sawMessageStart = false
             var sawMessageStop = false
 
-            func handle(_ sse: AnthropicServerSentEvent) throws {
+            func handle(_ sse: AnthropicServerSentEvent) async throws {
+                if let data = repairedAnthropicJSON(sse.data).data(using: .utf8) {
+                    try await emitProviderStreamEvent(json: data, model: model, handler: onProviderStreamEvent)
+                }
                 guard let event = try decodeAnthropicMessageEvent(sse) else { return }
                 if event.response.type == "message_start" {
                     sawMessageStart = true
@@ -884,11 +893,11 @@ private func decodeAnthropicSSEStream(_ stream: HTTPByteStream) -> AsyncThrowing
             do {
                 for try await line in lines {
                     if let sse = decoder.decode(line: line) {
-                        try handle(sse)
+                        try await handle(sse)
                     }
                 }
                 if let sse = decoder.flush() {
-                    try handle(sse)
+                    try await handle(sse)
                 }
                 if sawMessageStart && !sawMessageStop {
                     throw AnthropicTolerantStreamError.messageStopMissing

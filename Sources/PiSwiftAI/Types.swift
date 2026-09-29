@@ -174,6 +174,9 @@ public enum Transport: String, Sendable {
     case auto
 }
 
+/// Receives a parsed provider JSON event before Pi normalizes it.
+public typealias ProviderStreamEventHandler = @Sendable (AnyCodable, Model) async throws -> Void
+
 public struct StreamOptions: Sendable {
     public var temperature: Double?
     /// Arbitrary sampling parameters merged into the request body as-is, after the named request
@@ -197,6 +200,7 @@ public struct StreamOptions: Sendable {
     /// v0.67.6: invoked after each provider response is received and before stream
     /// consumption begins. Use for status/header inspection (telemetry, extension hooks).
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     /// v0.70.1: provider SDK request timeout (milliseconds). Forwarded to OpenAI/Azure/Anthropic
     /// SDK request options so long-running local inference isn't capped at SDK defaults.
     public var timeoutMs: Int?
@@ -220,6 +224,7 @@ public struct StreamOptions: Sendable {
         maxRetryDelayMs: Int? = nil,
         metadata: [String: AnyCodable]? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil
@@ -238,6 +243,7 @@ public struct StreamOptions: Sendable {
         self.maxRetryDelayMs = maxRetryDelayMs
         self.metadata = metadata
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
@@ -263,6 +269,7 @@ public struct SimpleStreamOptions: Sendable {
     public var metadata: [String: AnyCodable]?
     /// v0.67.6: invoked after each provider response is received and before stream consumption.
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     /// v0.70.1: provider SDK request timeout (ms).
     public var timeoutMs: Int?
     /// v0.79.4: WebSocket connection/open handshake timeout for providers with WebSocket transports.
@@ -289,6 +296,7 @@ public struct SimpleStreamOptions: Sendable {
         maxRetryDelayMs: Int? = nil,
         metadata: [String: AnyCodable]? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil,
@@ -312,6 +320,7 @@ public struct SimpleStreamOptions: Sendable {
         self.maxRetryDelayMs = maxRetryDelayMs
         self.metadata = metadata
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
@@ -1745,6 +1754,7 @@ public struct OpenAICompletionsOptions: Sendable {
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -1764,6 +1774,7 @@ public struct OpenAICompletionsOptions: Sendable {
         headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
@@ -1782,6 +1793,7 @@ public struct OpenAICompletionsOptions: Sendable {
         self.headers = headers
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -1799,6 +1811,7 @@ public enum OpenAIServiceTier: String, Sendable {
     case defaultTier = "default"
     case flex
     case priority
+    case fast
     case onDemand = "on_demand"
 }
 
@@ -1832,6 +1845,7 @@ public struct OpenAIResponsesOptions: Sendable {
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -1855,6 +1869,7 @@ public struct OpenAIResponsesOptions: Sendable {
         headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -1878,6 +1893,7 @@ public struct OpenAIResponsesOptions: Sendable {
         self.headers = headers
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -1902,6 +1918,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var azureDeploymentName: String?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -1925,6 +1942,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         azureDeploymentName: String? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -1948,6 +1966,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         self.azureDeploymentName = azureDeploymentName
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -1970,6 +1989,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -1998,6 +2018,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         onPayload: PayloadHandler? = nil,
         serviceTier: OpenAIServiceTier? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -2022,6 +2043,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         self.onPayload = onPayload
         self.serviceTier = serviceTier
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -2061,6 +2083,7 @@ public struct GoogleOptions: Sendable {
     public var thinking: ThinkingConfig?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -2077,6 +2100,7 @@ public struct GoogleOptions: Sendable {
         thinking: ThinkingConfig? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
@@ -2092,6 +2116,7 @@ public struct GoogleOptions: Sendable {
         self.thinking = thinking
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -2111,6 +2136,7 @@ public struct GoogleGeminiCliOptions: Sendable {
     public var projectId: String?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
 
@@ -2127,6 +2153,7 @@ public struct GoogleGeminiCliOptions: Sendable {
         projectId: String? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
@@ -2142,6 +2169,7 @@ public struct GoogleGeminiCliOptions: Sendable {
         self.projectId = projectId
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
     }
@@ -2161,6 +2189,7 @@ public struct GoogleVertexOptions: Sendable {
     public var location: String?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -2179,6 +2208,7 @@ public struct GoogleVertexOptions: Sendable {
         location: String? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
@@ -2196,6 +2226,7 @@ public struct GoogleVertexOptions: Sendable {
         self.location = location
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -2234,6 +2265,7 @@ public struct AnthropicOptions: Sendable {
     public var thinkingDisplay: ThinkingDisplay?
     /// v0.67.6: invoked after the provider response is received and before stream consumption.
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     /// v0.70.1: SDK request timeout (ms).
     public var timeoutMs: Int?
     /// v0.70.1: SDK max retries.
@@ -2258,6 +2290,7 @@ public struct AnthropicOptions: Sendable {
         onPayload: PayloadHandler? = nil,
         thinkingDisplay: ThinkingDisplay? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
@@ -2279,6 +2312,7 @@ public struct AnthropicOptions: Sendable {
         self.onPayload = onPayload
         self.thinkingDisplay = thinkingDisplay
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -2315,6 +2349,7 @@ public struct BedrockOptions: Sendable {
     public var thinkingDisplay: ThinkingDisplay?
     /// v0.67.6: invoked after the provider response is received and before stream consumption.
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     /// v0.70.1: SDK request timeout (ms).
     public var timeoutMs: Int?
     /// v0.70.1: SDK max retries.
@@ -2337,6 +2372,7 @@ public struct BedrockOptions: Sendable {
         bearerToken: String? = nil,
         thinkingDisplay: ThinkingDisplay? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
@@ -2356,6 +2392,7 @@ public struct BedrockOptions: Sendable {
         self.bearerToken = bearerToken
         self.thinkingDisplay = thinkingDisplay
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
     }
@@ -2378,6 +2415,7 @@ public struct MistralOptions: Sendable {
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var onResponse: ResponseHandler?
+    public var onProviderStreamEvent: ProviderStreamEventHandler?
     public var timeoutMs: Int?
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
@@ -2395,6 +2433,7 @@ public struct MistralOptions: Sendable {
         headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         onResponse: ResponseHandler? = nil,
+        onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -2413,6 +2452,7 @@ public struct MistralOptions: Sendable {
         self.headers = headers
         self.onPayload = onPayload
         self.onResponse = onResponse
+        self.onProviderStreamEvent = onProviderStreamEvent
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs

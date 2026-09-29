@@ -23,6 +23,7 @@ func processRawOpenAIResponsesStream(
     maxRetries: Int?,
     maxRetryDelayMs: Int?,
     onResponse: ResponseHandler?,
+    onProviderStreamEvent: ProviderStreamEventHandler? = nil,
     serviceTier: OpenAIServiceTier?,
     grammarToolInputProperties: [String: String],
     stream: AssistantMessageEventStream,
@@ -44,6 +45,7 @@ func processRawOpenAIResponsesStream(
 
     stream.push(.start(partial: output))
     var slots: [Int: RawResponsesSlot] = [:]
+    var collidedToolCallIndices: Set<Int> = []
 
     func outputIndex(_ event: [String: Any]) -> Int { event["output_index"] as? Int ?? 0 }
 
@@ -137,15 +139,25 @@ func processRawOpenAIResponsesStream(
     for try await frame in iterateSseEvents(body: response.body, signal: signal) {
         if signal?.isCancelled == true { throw CancellationError() }
         guard frame.data != "[DONE]", let data = frame.data.data(using: .utf8),
-              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = event["type"] as? String else { continue }
+              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+        try await emitProviderStreamEvent(object: event, model: model, handler: onProviderStreamEvent)
+        guard let type = event["type"] as? String else { continue }
         let index = outputIndex(event)
 
         switch type {
         case "response.created":
             output.responseId = (event["response"] as? [String: Any])?["id"] as? String
         case "response.output_item.added":
-            if let item = event["item"] as? [String: Any] { startSlot(index: index, item: item) }
+            if let item = event["item"] as? [String: Any] {
+                // Without output_index, parallel calls share the fallback slot. Even if
+                // later done events arrive, their arguments cannot be assigned safely.
+                if event["output_index"] == nil,
+                   let prior = slots[index],
+                   case .toolCall = output.content[prior.contentIndex] {
+                    collidedToolCallIndices.insert(prior.contentIndex)
+                }
+                startSlot(index: index, item: item)
+            }
         case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
             guard let slot = slots[index], slot.kind == .thinking,
                   let delta = event["delta"] as? String,
@@ -245,7 +257,8 @@ func processRawOpenAIResponsesStream(
         case "response.completed", "response.incomplete":
             if let response = event["response"] as? [String: Any] {
                 output.responseId = response["id"] as? String ?? output.responseId
-                applyRawResponsesUsage(response["usage"], model: model, serviceTier: serviceTier, output: &output)
+                let actualTier = (response["service_tier"] as? String).flatMap(OpenAIServiceTier.init(rawValue:))
+                applyRawResponsesUsage(response["usage"], model: model, serviceTier: actualTier ?? serviceTier, output: &output)
                 let status = response["status"] as? String ?? (type == "response.completed" ? "completed" : "incomplete")
                 let reason = (response["incomplete_details"] as? [String: Any])?["reason"] as? String
                 output.rawStopReason = reason.map { "\(status).\($0)" } ?? status
@@ -255,6 +268,12 @@ func processRawOpenAIResponsesStream(
                 if output.stopReason == .stop,
                    output.content.contains(where: { if case .toolCall = $0 { true } else { false } }) {
                     output.stopReason = .toolUse
+                }
+                let unfinished = collidedToolCallIndices.union(slots.values.compactMap { slot in
+                    if case .toolCall = output.content[slot.contentIndex] { slot.contentIndex } else { nil }
+                })
+                if let message = unfinishedResponsesToolCallMessage(output: output, contentIndices: unfinished) {
+                    throw ValidationError.constrainedSampling(message)
                 }
                 return
             }

@@ -35,6 +35,22 @@ public protocol ProviderHTTPClient: Sendable {
     func send(_ request: URLRequest) async throws -> ProviderHTTPResponse
 }
 
+/// Deliver the original parsed JSON before a provider's typed decoder removes unknown fields.
+func emitProviderStreamEvent(
+    object: [String: Any], model: Model, handler: ProviderStreamEventHandler?
+) async throws {
+    guard let handler else { return }
+    try await handler(AnyCodable(object), model)
+}
+
+func emitProviderStreamEvent(
+    json: Data, model: Model, handler: ProviderStreamEventHandler?
+) async throws {
+    guard handler != nil,
+          let object = try JSONSerialization.jsonObject(with: json) as? [String: Any] else { return }
+    try await emitProviderStreamEvent(object: object, model: model, handler: handler)
+}
+
 /// Default request executor. It preserves the existing environment-proxy behavior.
 public struct DefaultProviderHTTPClient: ProviderHTTPClient {
     public init() {}

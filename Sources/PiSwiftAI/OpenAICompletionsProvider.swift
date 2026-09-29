@@ -866,7 +866,7 @@ private func streamZaiCompletions(
     body = applyOpenAISamplingParams(data: body, samplingParams: options.samplingParams)
     request.httpBody = body
     emitPayload(options.onPayload, data: body)
-    return try await streamChatCompletions(request: request, options: options)
+    return try await streamChatCompletions(request: request, model: model, options: options)
 }
 
 private func buildZaiRequestBody(query: ChatQuery, model: Model, options: OpenAICompletionsOptions) throws -> Data {
@@ -1434,7 +1434,7 @@ private func streamManualOpenAICompletions(
         to: &request
     )
     emitPayload(options.onPayload, data: requestBodyData(request))
-    return try await streamChatCompletions(request: request, options: options)
+    return try await streamChatCompletions(request: request, model: model, options: options)
 }
 
 private struct OpenAICompletionsThinkingMiddleware: OpenAIMiddleware {
@@ -1767,6 +1767,7 @@ private func chatCompletionsUrl(baseUrl: String) -> URL {
 
 private func streamChatCompletions(
     request: URLRequest,
+    model: Model,
     options: OpenAICompletionsOptions
 ) async throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
     let client = options.httpClient ?? DefaultProviderHTTPClient()
@@ -1798,14 +1799,20 @@ private func streamChatCompletions(
                     while let range = findStreamDelimiter(in: buffer, crlf: delimiterCrlf, lf: delimiterLf) {
                         let chunk = buffer.subdata(in: 0..<range.lowerBound)
                         buffer.removeSubrange(0..<range.upperBound)
+                        if let data = openAISseJSONData(from: chunk) {
+                            try await emitProviderStreamEvent(json: data, model: model, handler: options.onProviderStreamEvent)
+                        }
                         if let event = parseOpenAISseEvent(from: chunk) {
                             continuation.yield(event)
                         }
                     }
                 }
 
-                if !buffer.isEmpty, let event = parseOpenAISseEvent(from: buffer) {
-                    continuation.yield(event)
+                if !buffer.isEmpty {
+                    if let data = openAISseJSONData(from: buffer) {
+                        try await emitProviderStreamEvent(json: data, model: model, handler: options.onProviderStreamEvent)
+                    }
+                    if let event = parseOpenAISseEvent(from: buffer) { continuation.yield(event) }
                 }
                 continuation.finish()
             } catch {
@@ -1832,21 +1839,7 @@ private func findStreamDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range
 }
 
 private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChunk? {
-    guard !chunk.isEmpty, let raw = String(data: chunk, encoding: .utf8) else { return nil }
-    let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
-    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
-    var dataLines: [String] = []
-    for line in lines {
-        if line.hasPrefix("data:") {
-            let data = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-            dataLines.append(data)
-        }
-    }
-
-    guard !dataLines.isEmpty else { return nil }
-    let payload = dataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !payload.isEmpty, payload != "[DONE]" else { return nil }
-    guard let json = payload.data(using: .utf8) else { return nil }
+    guard let json = openAISseJSONData(from: chunk) else { return nil }
     if var object = try? JSONSerialization.jsonObject(with: json) as? [String: Any] {
         preferFunctionToolCallsOverEmptyCustomPayloads(in: &object)
         let rawUsage = decodeOpenAICompletionsRawUsage(from: object["usage"]) ?? decodeFirstChoiceUsage(from: object["choices"])
@@ -1872,6 +1865,24 @@ private func parseOpenAISseEvent(from chunk: Data) -> OpenAICompletionsStreamChu
         rawFinishReason: result.choices.first?.finishReason?.rawValue,
         customToolCalls: []
     )
+}
+
+private func openAISseJSONData(from chunk: Data) -> Data? {
+    guard !chunk.isEmpty, let raw = String(data: chunk, encoding: .utf8) else { return nil }
+    let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
+    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
+    var dataLines: [String] = []
+    for line in lines {
+        if line.hasPrefix("data:") {
+            let data = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            dataLines.append(data)
+        }
+    }
+
+    guard !dataLines.isEmpty else { return nil }
+    let payload = dataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !payload.isEmpty, payload != "[DONE]" else { return nil }
+    return payload.data(using: .utf8)
 }
 
 private func preferFunctionToolCallsOverEmptyCustomPayloads(in object: inout [String: Any]) {
