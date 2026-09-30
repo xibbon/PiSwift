@@ -17,6 +17,7 @@ private let nonRetryableProviderLimitErrorPatterns = [
     "out of budget",
     "quota exceeded",
     "billing",
+    "subscription_sharing_usage_limit_exceeded",
 ]
 
 private let retryableProviderErrorPatterns = [
@@ -83,6 +84,8 @@ private let retryableProviderErrorPatterns = [
 
     // gRPC-based providers (for example NVIDIA NIM).
     "ResourceExhausted",
+    "subscription_sharing_usage_unavailable",
+    "subscription_sharing_user_unavailable",
 ]
 
 private let retryableTransportErrorPatterns = [

@@ -16,6 +16,8 @@ public struct OAuthCredentials: Sendable, Codable {
     public var email: String?
     public var accountId: String?
     public var availableModelIds: [String]?
+    public var clientId: String?
+    public var scopes: [String]?
 
     public init(
         refresh: String,
@@ -25,7 +27,9 @@ public struct OAuthCredentials: Sendable, Codable {
         projectId: String? = nil,
         email: String? = nil,
         accountId: String? = nil,
-        availableModelIds: [String]? = nil
+        availableModelIds: [String]? = nil,
+        clientId: String? = nil,
+        scopes: [String]? = nil
     ) {
         self.refresh = refresh
         self.access = access
@@ -35,6 +39,8 @@ public struct OAuthCredentials: Sendable, Codable {
         self.email = email
         self.accountId = accountId
         self.availableModelIds = availableModelIds
+        self.clientId = clientId
+        self.scopes = scopes
     }
 }
 
@@ -47,6 +53,7 @@ public enum OAuthProvider: String, Sendable, CaseIterable {
     case googleGeminiCli = "google-gemini-cli"
     case googleAntigravity = "google-antigravity"
     case openAICodex = "openai-codex"
+    case openAI = "openai"
     case openRouter = "openrouter"
     case kimiCoding = "kimi-coding"
     case xai = "xai"
@@ -79,11 +86,13 @@ public struct OAuthProviderInfo: Sendable {
     public var id: OAuthProvider
     public var name: String
     public var available: Bool
+    public var loginLabel: String?
 
-    public init(id: OAuthProvider, name: String, available: Bool) {
+    public init(id: OAuthProvider, name: String, available: Bool, loginLabel: String? = nil) {
         self.id = id
         self.name = name
         self.available = available
+        self.loginLabel = loginLabel
     }
 }
 
@@ -93,19 +102,22 @@ public struct OAuthLoginCallbacks: Sendable {
     public var onProgress: (@MainActor @Sendable (String) -> Void)?
     public var onManualCodeInput: (@MainActor @Sendable () async throws -> String?)?
     public var signal: CancellationToken?
+    public var getDeviceId: (@Sendable () -> String)?
 
     public init(
         onAuth: @escaping @MainActor @Sendable (OAuthAuthInfo) -> Void,
         onPrompt: @escaping @MainActor @Sendable (OAuthPrompt) async throws -> String,
         onProgress: (@MainActor @Sendable (String) -> Void)? = nil,
         onManualCodeInput: (@MainActor @Sendable () async throws -> String?)? = nil,
-        signal: CancellationToken? = nil
+        signal: CancellationToken? = nil,
+        getDeviceId: (@Sendable () -> String)? = nil
     ) {
         self.onAuth = onAuth
         self.onPrompt = onPrompt
         self.onProgress = onProgress
         self.onManualCodeInput = onManualCodeInput
         self.signal = signal
+        self.getDeviceId = getDeviceId
     }
 }
 
@@ -155,7 +167,8 @@ public func getOAuthProviders() -> [OAuthProviderInfo] {
     #endif
     return [
         OAuthProviderInfo(id: .anthropic, name: "Anthropic (Claude Pro/Max)", available: true),
-        OAuthProviderInfo(id: .openAICodex, name: "ChatGPT Plus/Pro (Codex Subscription)", available: networkAvailable),
+        OAuthProviderInfo(id: .openAICodex, name: "OpenAI (ChatGPT Plus/Pro)", available: networkAvailable),
+        OAuthProviderInfo(id: .openAI, name: "OpenAI (ChatGPT subscription)", available: networkAvailable, loginLabel: "Sign in with ChatGPT"),
         OAuthProviderInfo(id: .githubCopilot, name: "GitHub Copilot", available: true),
         OAuthProviderInfo(id: .openRouter, name: "OpenRouter OAuth", available: true),
         OAuthProviderInfo(id: .kimiCoding, name: "Kimi Code (subscription)", available: true),
@@ -187,6 +200,8 @@ public func refreshOAuthToken(
         return try await refreshAntigravityToken(credentials.refresh, projectId: projectId, signal: signal)
     case .openAICodex:
         return try await refreshOpenAICodexToken(credentials.refresh, signal: signal)
+    case .openAI:
+        return try await refreshOpenAIChatGPTToken(credentials, signal: signal)
     case .openRouter:
         return credentials
     case .kimiCoding:
@@ -242,29 +257,54 @@ public func oauthApiKey(provider: OAuthProvider, credentials: OAuthCredentials) 
     try oauthApiKey(provider: provider, accessToken: credentials.access, projectId: credentials.projectId)
 }
 
-public func loginAnthropic(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
+public func loginAnthropic(_ callbacks: OAuthLoginCallbacks, callbackPort: UInt16 = 53692) async throws -> OAuthCredentials {
     let pkce = try generatePKCE()
-    let authUrl = anthropicAuthorizeUrl(verifier: pkce.verifier, challenge: pkce.challenge)
-    await callbacks.onAuth(OAuthAuthInfo(url: authUrl))
-
-    if callbacks.signal?.isCancelled == true {
-        throw OAuthError.cancelled
+    let fallbackRedirectUri = "http://localhost:\(callbackPort)/callback"
+    #if canImport(Network)
+    let host = oauthCallbackHost()
+    let server = try? await OAuthCallbackServer<String>.start(
+        providerName: "Anthropic", host: host, port: callbackPort, path: "/callback",
+        redirectHost: "localhost", state: pkce.verifier, signal: callbacks.signal
+    ) { components in
+        components.queryItems?.first { $0.name == "code" }?.value ?? ""
     }
-
-    let authCode = try await callbacks.onPrompt(OAuthPrompt(message: "Paste the authorization code:"))
-    if callbacks.signal?.isCancelled == true {
-        throw OAuthError.cancelled
+    let redirectUri = await server?.redirectUri() ?? fallbackRedirectUri
+    defer { if let server { Task { await server.close() } } }
+    #else
+    let redirectUri = fallbackRedirectUri
+    #endif
+    let authUrl = anthropicAuthorizeUrl(verifier: pkce.verifier, challenge: pkce.challenge, redirectUri: redirectUri)
+    await callbacks.onAuth(OAuthAuthInfo(
+        url: authUrl,
+        instructions: "Complete login in your browser. If the browser is on another machine, paste the final redirect URL here."
+    ))
+    #if canImport(Network)
+    let result = try await waitForCallbackOrManualInput(
+        callbacks: callbacks, callback: server,
+        prompt: OAuthPrompt(message: "Complete login in your browser, or paste the authorization code / redirect URL here:", placeholder: redirectUri)
+    )
+    #else
+    let result: OAuthCallbackOrManual<String> = .manual(try await callbacks.onPrompt(OAuthPrompt(message: "Complete login in your browser, or paste the authorization code / redirect URL here:", placeholder: redirectUri)))
+    #endif
+    let code: String
+    let state: String
+    switch result {
+    case .callback(let value):
+        code = value
+        state = pkce.verifier
+    case .manual(let input):
+        let parsed = parseAuthorizationInput(input)
+        if let parsedState = parsed.state, parsedState != pkce.verifier { throw OAuthError.stateMismatch }
+        code = parsed.code ?? ""
+        state = parsed.state ?? pkce.verifier
     }
-    let parts = authCode.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
-    let code = parts.first.map(String.init) ?? ""
-    let state = parts.count > 1 ? String(parts[1]) : nil
-
-    let token = try await exchangeAnthropicCode(code: code, state: state, verifier: pkce.verifier)
-    return token
+    guard !code.isEmpty else { throw OAuthError.missingAuthorizationCode }
+    if let onProgress = callbacks.onProgress { await onProgress("Exchanging authorization code for tokens...") }
+    return try await exchangeAnthropicCode(code: code, state: state, verifier: pkce.verifier, redirectUri: redirectUri, signal: callbacks.signal)
 }
 
 public func refreshAnthropicToken(_ refreshToken: String, signal: CancellationToken? = nil) async throws -> OAuthCredentials {
-    let url = URL(string: "https://console.anthropic.com/v1/oauth/token")!
+    let url = URL(string: "https://platform.claude.com/v1/oauth/token")!
     let body: [String: Any] = [
         "grant_type": "refresh_token",
         "client_id": anthropicClientId(),
@@ -279,74 +319,50 @@ public func refreshAnthropicToken(_ refreshToken: String, signal: CancellationTo
     )
 }
 
-public func loginOpenAICodex(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
-    let flow = try createOpenAICodexAuthorizationFlow()
-    let server = await OpenAICodexCallbackServer.start(state: flow.state)
-
+public func loginOpenAICodex(_ callbacks: OAuthLoginCallbacks, callbackPort: UInt16 = 1455) async throws -> OAuthCredentials {
+    let fallbackRedirectUri = "http://localhost:\(callbackPort)/auth/callback"
+    let flow = try createOpenAICodexAuthorizationFlow(redirectUri: fallbackRedirectUri)
+    #if canImport(Network)
+    let server = try? await OAuthCallbackServer<String>.start(
+        providerName: "OpenAI", host: oauthCallbackHost(), port: callbackPort,
+        path: "/auth/callback", redirectHost: "localhost", state: flow.state,
+        signal: callbacks.signal
+    ) { components in
+        components.queryItems?.first { $0.name == "code" }?.value ?? ""
+    }
+    let redirectUri = await server?.redirectUri() ?? fallbackRedirectUri
+    defer { if let server { Task { await server.close() } } }
+    #else
+    let redirectUri = fallbackRedirectUri
+    #endif
+    var authorize = URLComponents(string: flow.url)!
+    authorize.queryItems = authorize.queryItems?.map {
+        $0.name == "redirect_uri" ? URLQueryItem(name: "redirect_uri", value: redirectUri) : $0
+    }
     await callbacks.onAuth(OAuthAuthInfo(
-        url: flow.url,
+        url: authorize.url?.absoluteString ?? flow.url,
         instructions: "A browser window should open. Complete login to finish."
     ))
-
-    defer {
-        if let server {
-            Task { await server.close() }
-        }
-    }
-
-    if callbacks.signal?.isCancelled == true {
-        throw OAuthError.cancelled
-    }
-
-    var code: String?
-    if let server {
-        code = await server.waitForCode(timeoutSeconds: 60, signal: callbacks.signal)
-        if callbacks.signal?.isCancelled == true {
-            throw OAuthError.cancelled
-        }
-    }
-
-    if code == nil, let manualInput = callbacks.onManualCodeInput {
-        let value = try await manualInput()
-        if callbacks.signal?.isCancelled == true {
-            throw OAuthError.cancelled
-        }
-        if let value {
-            let parsed = parseAuthorizationInput(value)
-            if let parsedState = parsed.state, parsedState != flow.state {
-                throw OAuthError.stateMismatch
-            }
-            code = parsed.code
-        }
-    }
-
-    if code == nil {
-        let input = try await callbacks.onPrompt(OAuthPrompt(message: "Paste the authorization code (or full redirect URL):"))
-        if callbacks.signal?.isCancelled == true {
-            throw OAuthError.cancelled
-        }
-        let parsed = parseAuthorizationInput(input)
-        if let parsedState = parsed.state, parsedState != flow.state {
-            throw OAuthError.stateMismatch
-        }
-        code = parsed.code
-    }
-
-    guard let code, !code.isEmpty else {
-        throw OAuthError.missingAuthorizationCode
-    }
-
-    let token = try await exchangeOpenAICode(code: code, verifier: flow.verifier)
-    guard let accountId = openAICodexAccountId(from: token.access) else {
-        throw OAuthError.invalidToken
-    }
-
-    return OAuthCredentials(
-        refresh: token.refresh,
-        access: token.access,
-        expires: token.expires,
-        accountId: accountId
+    #if canImport(Network)
+    let result = try await waitForCallbackOrManualInput(
+        callbacks: callbacks, callback: server,
+        prompt: OAuthPrompt(message: "Complete login in your browser, or paste the authorization code / redirect URL here:", placeholder: redirectUri)
     )
+    #else
+    let result: OAuthCallbackOrManual<String> = .manual(try await callbacks.onPrompt(OAuthPrompt(message: "Complete login in your browser, or paste the authorization code / redirect URL here:", placeholder: redirectUri)))
+    #endif
+    let code: String
+    switch result {
+    case .callback(let value): code = value
+    case .manual(let input):
+        let parsed = parseAuthorizationInput(input)
+        if let state = parsed.state, state != flow.state { throw OAuthError.stateMismatch }
+        code = parsed.code ?? ""
+    }
+    guard !code.isEmpty else { throw OAuthError.missingAuthorizationCode }
+    let token = try await exchangeOpenAICode(code: code, verifier: flow.verifier, redirectUri: redirectUri)
+    guard let accountId = openAICodexAccountId(from: token.access) else { throw OAuthError.invalidToken }
+    return OAuthCredentials(refresh: token.refresh, access: token.access, expires: token.expires, accountId: accountId)
 }
 
 public func refreshOpenAICodexToken(_ refreshToken: String, signal: CancellationToken? = nil) async throws -> OAuthCredentials {
@@ -496,14 +512,14 @@ private func anthropicClientId() -> String {
     return encoded
 }
 
-private func anthropicAuthorizeUrl(verifier: String, challenge: String) -> String {
+private func anthropicAuthorizeUrl(verifier: String, challenge: String, redirectUri: String) -> String {
     var components = URLComponents(string: "https://claude.ai/oauth/authorize")!
     components.queryItems = [
         URLQueryItem(name: "code", value: "true"),
         URLQueryItem(name: "client_id", value: anthropicClientId()),
         URLQueryItem(name: "response_type", value: "code"),
-        URLQueryItem(name: "redirect_uri", value: "https://console.anthropic.com/oauth/code/callback"),
-        URLQueryItem(name: "scope", value: "org:create_api_key user:profile user:inference"),
+        URLQueryItem(name: "redirect_uri", value: redirectUri),
+        URLQueryItem(name: "scope", value: "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"),
         URLQueryItem(name: "code_challenge", value: challenge),
         URLQueryItem(name: "code_challenge_method", value: "S256"),
         URLQueryItem(name: "state", value: verifier),
@@ -517,19 +533,17 @@ private struct AnthropicTokenResponse: Decodable {
     let expires_in: Double
 }
 
-private func exchangeAnthropicCode(code: String, state: String?, verifier: String) async throws -> OAuthCredentials {
-    let url = URL(string: "https://console.anthropic.com/v1/oauth/token")!
-    var body: [String: Any] = [
+private func exchangeAnthropicCode(code: String, state: String, verifier: String, redirectUri: String, signal: CancellationToken?) async throws -> OAuthCredentials {
+    let url = URL(string: "https://platform.claude.com/v1/oauth/token")!
+    let body: [String: Any] = [
         "grant_type": "authorization_code",
         "client_id": anthropicClientId(),
         "code": code,
-        "redirect_uri": "https://console.anthropic.com/oauth/code/callback",
+        "redirect_uri": redirectUri,
         "code_verifier": verifier,
+        "state": state,
     ]
-    if let state {
-        body["state"] = state
-    }
-    let response = try await postJson(url: url, body: body)
+    let response = try await postJson(url: url, body: body, signal: signal)
     let token: AnthropicTokenResponse = try decodeJson(response.data)
     return OAuthCredentials(
         refresh: token.refresh_token,
@@ -599,7 +613,7 @@ private struct OpenAICodexToken {
     let expires: Double
 }
 
-private func createOpenAICodexAuthorizationFlow() throws -> (verifier: String, state: String, url: String) {
+private func createOpenAICodexAuthorizationFlow(redirectUri: String = "http://localhost:1455/auth/callback") throws -> (verifier: String, state: String, url: String) {
     let pkce = try generatePKCE()
     let state = randomHex(count: 16)
 
@@ -607,20 +621,20 @@ private func createOpenAICodexAuthorizationFlow() throws -> (verifier: String, s
     components.queryItems = [
         URLQueryItem(name: "response_type", value: "code"),
         URLQueryItem(name: "client_id", value: "app_EMoamEEZ73f0CkXaXp7hrann"),
-        URLQueryItem(name: "redirect_uri", value: "http://localhost:1455/auth/callback"),
+        URLQueryItem(name: "redirect_uri", value: redirectUri),
         URLQueryItem(name: "scope", value: "openid profile email offline_access"),
         URLQueryItem(name: "code_challenge", value: pkce.challenge),
         URLQueryItem(name: "code_challenge_method", value: "S256"),
         URLQueryItem(name: "state", value: state),
         URLQueryItem(name: "id_token_add_organizations", value: "true"),
         URLQueryItem(name: "codex_cli_simplified_flow", value: "true"),
-        URLQueryItem(name: "originator", value: "codex_cli_rs"),
+        URLQueryItem(name: "originator", value: "pi"),
     ]
     let url = components.url?.absoluteString ?? "https://auth.openai.com/oauth/authorize"
     return (pkce.verifier, state, url)
 }
 
-private func exchangeOpenAICode(code: String, verifier: String) async throws -> OpenAICodexToken {
+private func exchangeOpenAICode(code: String, verifier: String, redirectUri: String = "http://localhost:1455/auth/callback") async throws -> OpenAICodexToken {
     let url = URL(string: "https://auth.openai.com/oauth/token")!
     let response = try await postForm(
         url: url,
@@ -629,7 +643,7 @@ private func exchangeOpenAICode(code: String, verifier: String) async throws -> 
             "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
             "code": code,
             "code_verifier": verifier,
-            "redirect_uri": "http://localhost:1455/auth/callback",
+            "redirect_uri": redirectUri,
         ]
     )
     let token: OpenAITokenResponse = try decodeJson(response.data)
@@ -710,6 +724,12 @@ private func decodeJwt(_ token: String) -> [String: Any]? {
 }
 
 #if canImport(Network)
+func oauthCallbackHost() -> String {
+    let configured = ProcessInfo.processInfo.environment["PI_OAUTH_CALLBACK_HOST"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return configured.flatMap { $0.isEmpty ? nil : $0 } ?? "127.0.0.1"
+}
+
 private func oauthCallbackParameters(port: NWEndpoint.Port) -> NWParameters {
     let parameters = NWParameters.tcp
     let host = ProcessInfo.processInfo.environment["PI_OAUTH_CALLBACK_HOST"]?
@@ -720,191 +740,7 @@ private func oauthCallbackParameters(port: NWEndpoint.Port) -> NWParameters {
     return parameters
 }
 
-private actor OpenAICodexCallbackServer {
-    private let listener: NWListener
-    private let state: String
-    private let queue = DispatchQueue(label: "pi.oauth.openai-codex")
-    private var code: String?
-    private var cancelled = false
-
-    private init(listener: NWListener, state: String) {
-        self.listener = listener
-        self.state = state
-    }
-
-    static func start(state: String) async -> OpenAICodexCallbackServer? {
-        guard let port = NWEndpoint.Port(rawValue: 1455) else { return nil }
-        let listener: NWListener
-        do {
-            listener = try NWListener(using: oauthCallbackParameters(port: port), on: port)
-        } catch {
-            return nil
-        }
-
-        let server = OpenAICodexCallbackServer(listener: listener, state: state)
-        let ready = await server.startListener()
-        return ready ? server : nil
-    }
-
-    func waitForCode(timeoutSeconds: Int, signal: CancellationToken? = nil) async -> String? {
-        let deadline = Date().addingTimeInterval(Double(timeoutSeconds))
-        while Date() < deadline {
-            if let code { return code }
-            if cancelled { return nil }
-            if signal?.isCancelled == true {
-                cancelled = true
-                return nil
-            }
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        return code
-    }
-
-    func cancelWait() {
-        cancelled = true
-    }
-
-    func close() {
-        listener.cancel()
-    }
-
-    private func startListener() async -> Bool {
-        await withCheckedContinuation { continuation in
-            listener.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    continuation.resume(returning: true)
-                case .failed:
-                    continuation.resume(returning: false)
-                default:
-                    break
-                }
-            }
-            listener.newConnectionHandler = { [weak self] connection in
-                Task { await self?.handle(connection) }
-            }
-            listener.start(queue: queue)
-        }
-    }
-
-    private final class ConnectionState: Sendable {
-        let buffer = LockedState(Data())
-    }
-
-    private func handle(_ connection: NWConnection) {
-        connection.start(queue: queue)
-        let state = ConnectionState()
-        scheduleReceive(connection, state: state)
-    }
-
-    private func scheduleReceive(_ connection: NWConnection, state: ConnectionState) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, _ in
-            var requestLine: String?
-            state.buffer.withLock { buffer in
-                if let data {
-                    buffer.append(data)
-                }
-                if let range = buffer.range(of: Data("\r\n".utf8)) {
-                    requestLine = String(data: buffer[..<range.lowerBound], encoding: .utf8) ?? ""
-                }
-            }
-            if let requestLine {
-                Task { await self?.handleRequestLine(requestLine, connection: connection) }
-                return
-            }
-            if isComplete {
-                connection.cancel()
-                return
-            }
-            Task { await self?.scheduleReceive(connection, state: state) }
-        }
-    }
-
-    private func handleRequestLine(_ line: String, connection: NWConnection) {
-        let parts = line.split(separator: " ")
-        guard parts.count >= 2 else {
-            sendResponse(connection, status: 400, body: "Bad request")
-            return
-        }
-
-        let pathPart = String(parts[1])
-        guard let url = URL(string: "http://localhost\(pathPart)"),
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            sendResponse(connection, status: 400, body: "Bad request")
-            return
-        }
-
-        guard components.path == "/auth/callback" else {
-            sendResponse(connection, status: 404, body: "Not found")
-            return
-        }
-
-        let receivedState = components.queryItems?.first { $0.name == "state" }?.value
-        if receivedState != state {
-            sendResponse(connection, status: 400, body: "State mismatch")
-            return
-        }
-
-        guard let codeParam = components.queryItems?.first(where: { $0.name == "code" })?.value, !codeParam.isEmpty else {
-            sendResponse(connection, status: 400, body: "Missing authorization code")
-            return
-        }
-
-        code = codeParam
-        sendResponse(connection, status: 200, body: openAICodexSuccessHtml())
-    }
-
-    private func sendResponse(_ connection: NWConnection, status: Int, body: String) {
-        let bodyData = body.data(using: .utf8) ?? Data()
-        let statusText = status == 200 ? "OK" : "Error"
-        let headerLines = [
-            "HTTP/1.1 \(status) \(statusText)",
-            "Content-Type: text/html; charset=utf-8",
-            "Content-Length: \(bodyData.count)",
-            "Connection: close",
-            "Cache-Control: no-store",
-            "Pragma: no-cache",
-            "",
-            ""
-        ]
-        let header = headerLines.joined(separator: "\r\n")
-        let responseData = header.data(using: .utf8, allowLossyConversion: false) ?? Data()
-        connection.send(content: responseData + bodyData, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
-    }
-}
-#else
-private final class OpenAICodexCallbackServer {
-    static func start(state: String) async -> OpenAICodexCallbackServer? {
-        nil
-    }
-
-    func waitForCode(timeoutSeconds: Int, signal: CancellationToken? = nil) async -> String? {
-        nil
-    }
-
-    func cancelWait() {}
-
-    func close() {}
-}
 #endif
-
-private func openAICodexSuccessHtml() -> String {
-    """
-    <!doctype html>
-    <html lang="en">
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Authentication successful</title>
-    </head>
-    <body>
-      <p>Authentication successful. Return to your terminal to continue.</p>
-    </body>
-    </html>
-    """
-}
 
 // MARK: - OpenRouter OAuth
 
@@ -955,321 +791,53 @@ private func exchangeOpenRouterAuthorizationCode(
     )
 }
 
-private enum OpenRouterManualResult: Sendable {
-    case input(String)
-    case failed(String)
-}
-
-#if canImport(Network)
-private enum OpenRouterCallbackResult: Sendable {
-    case credential(OAuthCredentials)
-    case failed(String)
-}
-
-private actor OpenRouterCallbackServer {
-    private let listener: NWListener
-    private let callbackHost: String
-    private let callbackPath: String
-    private let verifier: String
-    private let signal: CancellationToken?
-    private let queue = DispatchQueue(label: "pi.oauth.openrouter")
-    private var result: OpenRouterCallbackResult?
-    private var claimed = false
-    private var callbackUrlValue: String?
-
-    private init(
-        listener: NWListener,
-        callbackHost: String,
-        callbackPath: String,
-        verifier: String,
-        signal: CancellationToken?
-    ) {
-        self.listener = listener
-        self.callbackHost = callbackHost
-        self.callbackPath = callbackPath
-        self.verifier = verifier
-        self.signal = signal
-    }
-
-    static func start(
-        callbackPath: String,
-        verifier: String,
-        signal: CancellationToken?
-    ) async -> OpenRouterCallbackServer? {
-        let configuredHost = ProcessInfo.processInfo.environment["PI_OAUTH_CALLBACK_HOST"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let host = configuredHost.flatMap { $0.isEmpty ? nil : $0 } ?? "127.0.0.1"
-        let port = NWEndpoint.Port.any
-        let listener: NWListener
-        do {
-            listener = try NWListener(using: oauthCallbackParameters(port: port), on: port)
-        } catch {
-            return nil
-        }
-        let server = OpenRouterCallbackServer(
-            listener: listener,
-            callbackHost: host,
-            callbackPath: callbackPath,
-            verifier: verifier,
-            signal: signal
-        )
-        return await server.startListener() ? server : nil
-    }
-
-    func callbackUrl() -> String? {
-        callbackUrlValue
-    }
-
-    func takeResult() -> OpenRouterCallbackResult? {
-        defer { result = nil }
-        return result
-    }
-
-    func handOffToManualInput() -> Bool {
-        guard !claimed else { return false }
-        claimed = true
-        listener.cancel()
-        return true
-    }
-
-    func close() {
-        listener.cancel()
-    }
-
-    private func startListener() async -> Bool {
-        await withCheckedContinuation { continuation in
-            let resumed = LockedState(false)
-            listener.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    guard let self else { return }
-                    Task {
-                        await self.setCallbackUrl()
-                        let shouldResume = resumed.withLock { value in
-                            guard !value else { return false }
-                            value = true
-                            return true
-                        }
-                        if shouldResume { continuation.resume(returning: true) }
-                    }
-                case .failed:
-                    let shouldResume = resumed.withLock { value in
-                        guard !value else { return false }
-                        value = true
-                        return true
-                    }
-                    if shouldResume { continuation.resume(returning: false) }
-                default:
-                    break
-                }
-            }
-            listener.newConnectionHandler = { [weak self] connection in
-                Task { await self?.handle(connection) }
-            }
-            listener.start(queue: queue)
-        }
-    }
-
-    private func setCallbackUrl() {
-        guard let port = listener.port else { return }
-        callbackUrlValue = "http://\(callbackHost):\(port.rawValue)\(callbackPath)"
-    }
-
-    private final class ConnectionState: Sendable {
-        let buffer = LockedState(Data())
-    }
-
-    private func handle(_ connection: NWConnection) {
-        connection.start(queue: queue)
-        scheduleReceive(connection, state: ConnectionState())
-    }
-
-    private func scheduleReceive(_ connection: NWConnection, state: ConnectionState) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, _ in
-            var requestLine: String?
-            state.buffer.withLock { buffer in
-                if let data { buffer.append(data) }
-                if let range = buffer.range(of: Data("\r\n".utf8)) {
-                    requestLine = String(data: buffer[..<range.lowerBound], encoding: .utf8)
-                }
-            }
-            if let requestLine {
-                Task { await self?.handleRequestLine(requestLine, connection: connection) }
-            } else if isComplete {
-                connection.cancel()
-            } else {
-                Task { await self?.scheduleReceive(connection, state: state) }
-            }
-        }
-    }
-
-    private func handleRequestLine(_ line: String, connection: NWConnection) async {
-        let parts = line.split(separator: " ")
-        guard parts.count >= 2,
-              let url = URL(string: "http://\(callbackHost)\(parts[1])"),
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            sendResponse(connection, status: 400, body: "Bad request")
-            return
-        }
-        guard components.path == callbackPath else {
-            sendResponse(connection, status: 404, body: "OAuth callback route not found.")
-            return
-        }
-        guard !claimed else {
-            sendResponse(connection, status: 409, body: "This OAuth callback has already been used.")
-            return
-        }
-        if let error = components.queryItems?.first(where: { $0.name == "error" })?.value {
-            let description = components.queryItems?.first(where: { $0.name == "error_description" })?.value ?? error
-            claimed = true
-            result = .failed("OpenRouter authorization failed: \(description)")
-            sendResponse(connection, status: 400, body: "OpenRouter authorization was denied.")
-            return
-        }
-        guard let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
-              !code.isEmpty else {
-            sendResponse(connection, status: 400, body: "OpenRouter returned no authorization code.")
-            return
-        }
-        claimed = true
-        do {
-            let credential = try await exchangeOpenRouterAuthorizationCode(
-                code: code,
-                verifier: verifier,
-                signal: signal
-            )
-            result = .credential(credential)
-            sendResponse(connection, status: 200, body: "Signed in to OpenRouter. You may now close this page.")
-        } catch {
-            result = .failed(error.localizedDescription)
-            sendResponse(connection, status: 502, body: "OpenRouter key exchange failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func sendResponse(_ connection: NWConnection, status: Int, body: String) {
-        let bodyData = Data(body.utf8)
-        let statusText = status == 200 ? "OK" : "Error"
-        let header = [
-            "HTTP/1.1 \(status) \(statusText)",
-            "Content-Type: text/plain; charset=utf-8",
-            "Content-Length: \(bodyData.count)",
-            "Cache-Control: no-store",
-            "Connection: close",
-            "",
-            "",
-        ].joined(separator: "\r\n")
-        connection.send(content: Data(header.utf8) + bodyData, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
-    }
-}
-#else
-private final class OpenRouterCallbackServer {
-    static func start(
-        callbackPath: String,
-        verifier: String,
-        signal: CancellationToken?
-    ) async -> OpenRouterCallbackServer? { nil }
-    func callbackUrl() -> String? { nil }
-    func close() {}
-}
-#endif
-
 /// Login with OpenRouter PKCE and exchange the code for a permanent API key.
 public func loginOpenRouter(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
     try throwIfOAuthCancelled(callbacks.signal)
     let pkce = try generatePKCE()
     let callbackPath = "/oauth/callback/\(UUID().uuidString.lowercased())"
-    let server = await OpenRouterCallbackServer.start(
-        callbackPath: callbackPath,
-        verifier: pkce.verifier,
-        signal: callbacks.signal
-    )
-    let callbackUrl = await server?.callbackUrl()
-        ?? "http://127.0.0.1:1\(callbackPath)"
-
+    #if canImport(Network)
+    let server = try await OAuthCallbackServer<OAuthCredentials>.start(
+        providerName: "OpenRouter", host: oauthCallbackHost(), port: 0,
+        path: callbackPath, signal: callbacks.signal, timeoutMs: openRouterLoginTimeoutMs
+    ) { components in
+        guard let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
+            throw OAuthError.missingAuthorizationCode
+        }
+        return try await exchangeOpenRouterAuthorizationCode(code: code, verifier: pkce.verifier, signal: callbacks.signal)
+    }
+    let callbackUrl = await server.redirectUri()
+    defer { Task { await server.close() } }
     var components = URLComponents(string: openRouterAuthorizeUrl)!
     components.queryItems = [
         URLQueryItem(name: "callback_url", value: callbackUrl),
         URLQueryItem(name: "code_challenge", value: pkce.challenge),
         URLQueryItem(name: "code_challenge_method", value: "S256"),
     ]
-    let authorizeUrl = components.url?.absoluteString ?? openRouterAuthorizeUrl
     if let onProgress = callbacks.onProgress {
         await onProgress("Listening for OpenRouter OAuth callback on \(callbackUrl)")
     }
     await callbacks.onAuth(OAuthAuthInfo(
-        url: authorizeUrl,
+        url: components.url?.absoluteString ?? openRouterAuthorizeUrl,
         instructions: "Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here."
     ))
-
-    let manualResult = LockedState<OpenRouterManualResult?>(nil)
-    let manualTask = Task {
-        do {
-            let input = try await callbacks.onPrompt(OAuthPrompt(
-                message: "Complete sign-in in your browser, or paste the authorization code / redirect URL here:",
-                placeholder: callbackUrl
-            ))
-            manualResult.withLock { $0 = .input(input) }
-        } catch {
-            manualResult.withLock { $0 = .failed(error.localizedDescription) }
+    let result = try await waitForCallbackOrManualInput(
+        callbacks: callbacks, callback: server,
+        prompt: OAuthPrompt(message: "Complete sign-in in your browser, or paste the authorization code / redirect URL here:", placeholder: callbackUrl)
+    )
+    switch result {
+    case .callback(let credential): return credential
+    case .manual(let input):
+        let parsed = parseAuthorizationInput(input)
+        guard let code = parsed.code, !code.isEmpty else { throw OAuthError.missingAuthorizationCode }
+        if let onProgress = callbacks.onProgress {
+            await onProgress("Exchanging authorization code for an API key...")
         }
+        return try await exchangeOpenRouterAuthorizationCode(code: code, verifier: pkce.verifier, signal: callbacks.signal)
     }
-    defer {
-        manualTask.cancel()
-        if let server { Task { await server.close() } }
-    }
-
-    let deadline = nowMs() + Double(openRouterLoginTimeoutMs)
-    while nowMs() < deadline {
-        try throwIfOAuthCancelled(callbacks.signal)
-
-        #if canImport(Network)
-        if let callback = await server?.takeResult() {
-            switch callback {
-            case .credential(let credential):
-                manualTask.cancel()
-                return credential
-            case .failed(let message):
-                throw OAuthError.tokenExchangeFailed(message)
-            }
-        }
-        #endif
-
-        let hasManualResult = manualResult.withLock { $0 != nil }
-        #if canImport(Network)
-        var canUseManualResult = true
-        if hasManualResult, let server {
-            canUseManualResult = await server.handOffToManualInput()
-        }
-        #else
-        let canUseManualResult = true
-        #endif
-        if canUseManualResult, let manual = manualResult.withLock({ result -> OpenRouterManualResult? in
-            defer { result = nil }
-            return result
-        }) {
-            switch manual {
-            case .failed(let message):
-                throw OAuthError.tokenExchangeFailed(message)
-            case .input(let input):
-                let parsed = parseAuthorizationInput(input)
-                guard let code = parsed.code, !code.isEmpty else {
-                    throw OAuthError.missingAuthorizationCode
-                }
-                if let onProgress = callbacks.onProgress {
-                    await onProgress("Exchanging authorization code for an API key...")
-                }
-                return try await exchangeOpenRouterAuthorizationCode(
-                    code: code,
-                    verifier: pkce.verifier,
-                    signal: callbacks.signal
-                )
-            }
-        }
-        try await sleepMs(25, signal: callbacks.signal)
-    }
-    throw OAuthError.tokenExchangeFailed("OpenRouter OAuth login timed out")
+    #else
+    throw OAuthError.unsupportedPlatform("Network callback server unavailable")
+    #endif
 }
 
 // MARK: - GitHub Copilot OAuth (Device Code Flow)

@@ -21,6 +21,8 @@ public struct OAuthCredential: Sendable {
     public var email: String?
     public var accountId: String?
     public var availableModelIds: [String]?
+    public var clientId: String?
+    public var scopes: [String]?
 
     public init(
         access: String,
@@ -30,7 +32,9 @@ public struct OAuthCredential: Sendable {
         projectId: String? = nil,
         email: String? = nil,
         accountId: String? = nil,
-        availableModelIds: [String]? = nil
+        availableModelIds: [String]? = nil,
+        clientId: String? = nil,
+        scopes: [String]? = nil
     ) {
         self.access = access
         self.refresh = refresh
@@ -40,6 +44,8 @@ public struct OAuthCredential: Sendable {
         self.email = email
         self.accountId = accountId
         self.availableModelIds = availableModelIds
+        self.clientId = clientId
+        self.scopes = scopes
     }
 }
 
@@ -656,6 +662,8 @@ public final class AuthStorage: Sendable {
             credentials = try await loginAnthropic(callbacks)
         case .openAICodex:
             credentials = try await loginOpenAICodex(callbacks)
+        case .openAI:
+            credentials = try await loginOpenAIChatGPT(callbacks)
         case .githubCopilot:
             credentials = try await loginGitHubCopilot(callbacks)
         case .googleGeminiCli:
@@ -821,6 +829,8 @@ public final class AuthStorage: Sendable {
                 let email = dict["email"] as? String
                 let accountId = dict["accountId"] as? String
                 let availableModelIds = dict["availableModelIds"] as? [String]
+                let clientId = dict["clientId"] as? String
+                let scopes = dict["scopes"] as? [String]
                 loaded[provider] = .oauth(OAuthCredential(
                     access: access,
                     refresh: refresh,
@@ -829,7 +839,9 @@ public final class AuthStorage: Sendable {
                     projectId: projectId,
                     email: email,
                     accountId: accountId,
-                    availableModelIds: availableModelIds
+                    availableModelIds: availableModelIds,
+                    clientId: clientId,
+                    scopes: scopes
                 ))
             }
         }
@@ -851,6 +863,8 @@ public final class AuthStorage: Sendable {
                 if let email = oauth.email { entry["email"] = email }
                 if let accountId = oauth.accountId { entry["accountId"] = accountId }
                 if let availableModelIds = oauth.availableModelIds { entry["availableModelIds"] = availableModelIds }
+                if let clientId = oauth.clientId { entry["clientId"] = clientId }
+                if let scopes = oauth.scopes { entry["scopes"] = scopes }
                 json[provider] = entry
             }
         }
@@ -914,7 +928,9 @@ public final class AuthStorage: Sendable {
                         projectId: oauth.projectId,
                         email: oauth.email,
                         accountId: oauth.accountId,
-                        availableModelIds: oauth.availableModelIds
+                        availableModelIds: oauth.availableModelIds,
+                        clientId: oauth.clientId,
+                        scopes: oauth.scopes
                     ))
                 ), onCommit: self.cacheCommit(currentData))
             }
@@ -969,7 +985,9 @@ public final class AuthStorage: Sendable {
                 projectId: oauth.projectId,
                 email: oauth.email,
                 accountId: oauth.accountId,
-                availableModelIds: oauth.availableModelIds
+                availableModelIds: oauth.availableModelIds,
+                clientId: oauth.clientId,
+                scopes: oauth.scopes
             )
         }
         return creds
@@ -1019,7 +1037,9 @@ private extension OAuthCredential {
             projectId: credentials.projectId,
             email: credentials.email,
             accountId: credentials.accountId,
-            availableModelIds: credentials.availableModelIds
+            availableModelIds: credentials.availableModelIds,
+            clientId: credentials.clientId,
+            scopes: credentials.scopes
         )
     }
 
@@ -1034,7 +1054,9 @@ private extension OAuthCredential {
             projectId: projectId,
             email: email,
             accountId: accountId,
-            availableModelIds: availableModelIds
+            availableModelIds: availableModelIds,
+            clientId: clientId,
+            scopes: scopes
         )
     }
 }

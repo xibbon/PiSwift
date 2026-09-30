@@ -4351,11 +4351,13 @@ struct OAuthTests {
 
     @Test func oauthProviderListReturnsAllProviders() {
         let providers = getOAuthProviders()
-        #expect(providers.count == 7)
+        // Upstream v0.99.0 added Sign in with ChatGPT as an openai OAuth entry.
+        #expect(providers.count == 8)
 
         let ids = providers.map { $0.id }
         #expect(ids.contains(.anthropic))
         #expect(ids.contains(.openAICodex))
+        #expect(ids.contains(.openAI))
         #expect(ids.contains(.githubCopilot))
         #expect(ids.contains(.openRouter))
         #expect(ids.contains(.kimiCoding))
@@ -4371,6 +4373,8 @@ struct OAuthTests {
             #expect(!provider.name.isEmpty)
         }
         #expect(providers.first { $0.id == .openRouter }?.name == "OpenRouter OAuth")
+        #expect(providers.first { $0.id == .openAI }?.name == "OpenAI (ChatGPT subscription)")
+        #expect(providers.first { $0.id == .openAI }?.loginLabel == "Sign in with ChatGPT")
         #expect(providers.first { $0.id == .kimiCoding }?.name == "Kimi Code (subscription)")
     }
 
@@ -5626,7 +5630,8 @@ struct ApiRegistryTests {
     let query = try buildResponsesQuery(
         model: model,
         context: Context(messages: [.user(UserMessage(content: .text("hello")))]),
-        options: OpenAIResponsesOptions(maxTokens: 1, apiKey: "test")
+        // Upstream v0.99.0 Sign in with ChatGPT detection treats non-sk- keys as OAuth tokens.
+        options: OpenAIResponsesOptions(maxTokens: 1, apiKey: "sk-test")
     )
     #expect(query.maxOutputTokens == 16)
 }

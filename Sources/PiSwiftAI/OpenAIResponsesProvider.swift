@@ -3,6 +3,17 @@ import Foundation
 import OpenAI
 
 private let openAIToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode"]
+private let chatGPTUsageURL = "https://chatgpt.com/settings/usage"
+
+func isChatGPTSignIn(model: Model, apiKey: String?) -> Bool {
+    model.provider == "openai" && model.baseUrl == "https://api.openai.com/v1" &&
+        apiKey.map { !$0.hasPrefix("sk-") } == true
+}
+
+func chatGPTUsageLimitMessage(_ message: String) -> String {
+    message.contains("subscription_sharing_usage_limit_exceeded")
+        ? "\(message)\nCheck your ChatGPT usage: \(chatGPTUsageURL)" : message
+}
 
 func resolveCacheRetention(_ cacheRetention: CacheRetention?) -> CacheRetention {
     if let cacheRetention {
@@ -42,6 +53,7 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let sessionAffinityFormat: SessionAffinityFormat
     var supportsExplicitPromptCacheMode = false
     var supportsLongCacheRetention = true
+    var omitUnsupportedFields = false
 
     func intercept(request: URLRequest) -> URLRequest {
         var updated = request
@@ -61,6 +73,11 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
                 payload["prompt_cache_key"] = clampOpenAIPromptCacheKey(sessionId)
             } else {
                 payload.removeValue(forKey: "prompt_cache_key")
+            }
+            if omitUnsupportedFields {
+                payload.removeValue(forKey: "prompt_cache_retention")
+                payload.removeValue(forKey: "prompt_cache_options")
+                return true
             }
             if let promptCacheRetention {
                 payload["prompt_cache_retention"] = promptCacheRetention
@@ -198,7 +215,8 @@ public func streamOpenAIResponses(
                 promptCacheRetention: promptCacheRetention,
                 sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai),
                 supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
-                supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true
+                supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
+                omitUnsupportedFields: isChatGPTSignIn(model: model, apiKey: options.apiKey)
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
@@ -249,6 +267,7 @@ public func streamOpenAIResponses(
             client = builtClient
             query = builtQuery
             if model.api == .openAIResponses
+                || isChatGPTSignIn(model: model, apiKey: options.apiKey)
                 || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
                 || options.onProviderStreamEvent != nil
@@ -525,7 +544,7 @@ public func streamOpenAIResponses(
                 await debugOpenAIResponsesError(client: client, query: query)
             }
             output.stopReason = options.signal?.isCancelled == true ? .aborted : .error
-            output.errorMessage = describeOpenAIError(error, provider: model.provider)
+            output.errorMessage = chatGPTUsageLimitMessage(describeOpenAIError(error, provider: model.provider))
             stream.push(.error(reason: output.stopReason, error: output))
             stream.end()
         }
@@ -572,12 +591,12 @@ func buildResponsesQuery(
         include: include,
         instructions: nil,
         // OpenAI Responses rejects max_output_tokens below 16.
-        maxOutputTokens: model.compat?.supportsMaxOutputTokens == false ? nil : options.maxTokens.map { max($0, 16) },
+        maxOutputTokens: model.compat?.supportsMaxOutputTokens == false || isChatGPTSignIn(model: model, apiKey: options.apiKey) ? nil : options.maxTokens.map { max($0, 16) },
         reasoning: reasoning,
         serviceTier: mapResponsesServiceTier(options.serviceTier),
         store: false,
         stream: true,
-        temperature: options.temperature,
+        temperature: isChatGPTSignIn(model: model, apiKey: options.apiKey) ? nil : options.temperature,
         toolChoice: mapResponsesToolChoice(options.toolChoice),
         tools: tools
     )
