@@ -253,6 +253,20 @@ public struct ThinkingBudgetsSettings: Sendable {
     }
 }
 
+public enum CodemodeMode: String, Sendable, Codable {
+    case on, only
+}
+
+public struct CodemodeSettings: Sendable {
+    public var mode: CodemodeMode?
+    public var inlineBudget: Double?
+
+    public init(mode: CodemodeMode? = nil, inlineBudget: Double? = nil) {
+        self.mode = mode
+        self.inlineBudget = inlineBudget
+    }
+}
+
 public struct Settings: Sendable {
     public var lastChangelogVersion: String?
     public var defaultProvider: String?
@@ -302,6 +316,7 @@ public struct Settings: Sendable {
     public var mouseWheelStep: Int?
     public var fullscreenWheelScrollLines: WheelScrollLines?
     public var markdown: MarkdownSettings?
+    public var codemode: CodemodeSettings?
     public var thinkingBudgets: ThinkingBudgetsSettings?
     public var treeFilterMode: String?
     public var promptSnippetsEnabled: Bool?
@@ -660,6 +675,27 @@ public final class SettingsManager: Sendable {
     }
 
     public func getDefaultTools() -> [String]? { settings.defaultTools.map(resolveDefaultTools) }
+
+    public func getCodemodeMode() -> CodemodeMode { settings.codemode?.mode ?? .on }
+    public func getCodemodeInlineBudget() -> Double {
+        guard let budget = settings.codemode?.inlineBudget, budget.isFinite, budget >= 0 else {
+            return defaultCodemodeInlineBudget
+        }
+        return budget
+    }
+    public func setCodemodeMode(_ mode: CodemodeMode) {
+        if globalSettings.codemode == nil { globalSettings.codemode = CodemodeSettings() }
+        globalSettings.codemode?.mode = mode
+        markModified("codemode", "mode")
+        save()
+    }
+    public func setCodemodeInlineBudget(_ budget: Double) {
+        guard budget.isFinite, budget >= 0 else { return }
+        if globalSettings.codemode == nil { globalSettings.codemode = CodemodeSettings() }
+        globalSettings.codemode?.inlineBudget = budget
+        markModified("codemode", "inlineBudget")
+        save()
+    }
 
     /// A value copy of the merged settings.
     public func getSettings() -> Settings { settings }
@@ -1603,6 +1639,17 @@ public final class SettingsManager: Sendable {
         }
         settings.treeFilterMode = json["treeFilterMode"] as? String
         settings.promptSnippetsEnabled = json["promptSnippetsEnabled"] as? Bool
+        if let codemode = json["codemode"] as? [String: Any] {
+            let number = codemode["inlineBudget"] as? NSNumber
+            let budget = number.flatMap { value -> Double? in
+                guard CFGetTypeID(value) != CFBooleanGetTypeID(), value.doubleValue.isFinite,
+                      value.doubleValue >= 0 else { return nil }
+                return value.doubleValue
+            }
+            settings.codemode = CodemodeSettings(
+                mode: (codemode["mode"] as? String).flatMap(CodemodeMode.init(rawValue:)),
+                inlineBudget: budget)
+        }
         settings.projectTrust = json["projectTrust"] as? [String: Bool]
 
         if let compaction = json["compaction"] as? [String: Any] {
@@ -2019,6 +2066,13 @@ public final class SettingsManager: Sendable {
             ]
         }
 
+        if let codemode = settings.codemode {
+            var value: [String: Any] = [:]
+            if let mode = codemode.mode { value["mode"] = mode.rawValue }
+            if let budget = codemode.inlineBudget, budget.isFinite, budget >= 0 { value["inlineBudget"] = budget }
+            json["codemode"] = value
+        }
+
         if let images = settings.images {
             json["images"] = [
                 "autoResize": images.autoResize as Any,
@@ -2187,6 +2241,12 @@ public final class SettingsManager: Sendable {
                 mermaidRenderWhileStreaming: value.mermaidRenderWhileStreaming ?? baseValue.mermaidRenderWhileStreaming,
                 latexEnabled: value.latexEnabled ?? baseValue.latexEnabled
             )
+        }
+        if let value = override.codemode {
+            let baseValue = result.codemode ?? CodemodeSettings()
+            let budget = value.inlineBudget.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            result.codemode = CodemodeSettings(mode: value.mode ?? baseValue.mode,
+                                               inlineBudget: budget ?? baseValue.inlineBudget)
         }
         if let value = override.thinkingBudgets {
             let baseValue = result.thinkingBudgets ?? ThinkingBudgetsSettings()
