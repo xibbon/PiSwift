@@ -150,6 +150,7 @@ private struct C1CatalogClient: ProviderHTTPClient {
 }
 
 @Test func c1BuiltinWarningsReachStartupDiagnosticsAndNoExtensions() async throws {
+    // Keep the C1 fixture and the real tool-search built-in in the same CLI-style list.
     let model = try #require(getModel(provider: .anthropic, modelId: "claude-sonnet-4-5"))
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
     let loads = LockedState(0)
@@ -162,7 +163,7 @@ private struct C1CatalogClient: ProviderHTTPClient {
     }
     let base = CreateAgentSessionOptions(authStorage: auth, modelRegistry: ModelRegistry(auth), model: model,
         projectTrusted: false, noTools: .all, resourceLoader: TestResourceLoader(),
-        inlineExtensions: [builtin, replacement], sessionManager: SessionManager.inMemory(),
+        inlineExtensions: builtInExtensions + [builtin, replacement], sessionManager: SessionManager.inMemory(),
         settingsManager: SettingsManager.inMemory())
     let result = await createAgentSession(base)
     defer { result.session.dispose() }
@@ -171,14 +172,14 @@ private struct C1CatalogClient: ProviderHTTPClient {
 
     let disabled = await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
         modelRegistry: ModelRegistry(auth), model: model, projectTrusted: false, noTools: .all,
-        resourceLoader: TestResourceLoader(), inlineExtensions: [builtin], noExtensions: true,
+        resourceLoader: TestResourceLoader(), inlineExtensions: builtInExtensions + [builtin], noExtensions: true,
         sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory()))
     defer { disabled.session.dispose() }
     #expect(loads.withLock { $0 } == 1)
     let explicit = await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
         modelRegistry: ModelRegistry(auth), model: model, projectTrusted: false, noTools: .all,
         resourceLoader: TestResourceLoader(), additionalExtensionPaths: ["builtin:mcp"],
-        inlineExtensions: [builtin], noExtensions: true,
+        inlineExtensions: builtInExtensions + [builtin], noExtensions: true,
         sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory()))
     defer { explicit.session.dispose() }
     #expect(loads.withLock { $0 } == 2)

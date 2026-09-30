@@ -674,7 +674,9 @@ public final class AgentSession: Sendable {
             "write": "Create or overwrite files",
         ]
         for name in names {
-            if let contribution = toolPromptSnippets[name] ?? builtInSnippets[name] { snippets[name] = contribution }
+            if let contribution = toolPromptSnippets[name] ?? toolDefinitions[name]?.promptSnippet ?? builtInSnippets[name] {
+                snippets[name] = contribution
+            }
         }
         options.toolSnippets = snippets
         let builtInGuidelines: [String: [String]] = [

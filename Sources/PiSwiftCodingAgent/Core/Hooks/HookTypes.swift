@@ -1770,6 +1770,8 @@ public struct LoadedHook: Sendable {
     /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
     public var isExtension: Bool
     public var replaceable: Bool
+    /// Built-ins are omitted from the user extension list.
+    public var hidden: Bool
 
     public init(
         path: String,
@@ -1807,7 +1809,8 @@ public struct LoadedHook: Sendable {
         setFlagValue: @escaping HookSetFlagValue = { _, _ in },
         dispose: @escaping @Sendable () -> Void = {},
         isExtension: Bool = false,
-        replaceable: Bool = false
+        replaceable: Bool = false,
+        hidden: Bool = false
     ) {
         self.path = path
         self.resolvedPath = resolvedPath
@@ -1845,6 +1848,7 @@ public struct LoadedHook: Sendable {
         self.dispose = dispose
         self.isExtension = isExtension
         self.replaceable = replaceable
+        self.hidden = hidden
     }
 }
 

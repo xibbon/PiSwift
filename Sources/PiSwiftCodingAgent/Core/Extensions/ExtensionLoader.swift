@@ -69,7 +69,8 @@ public struct ExtensionLoader {
             setFlagValue: api.setFlagValue,
             dispose: api.disposeEventBusListeners,
             isExtension: true,
-            replaceable: inlineExtension.replaceable
+            replaceable: inlineExtension.replaceable,
+            hidden: inlineExtension.builtin
         ))
     }
 

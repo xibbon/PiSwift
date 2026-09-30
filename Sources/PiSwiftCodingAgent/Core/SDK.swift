@@ -862,7 +862,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     let allowedNames = options.toolNames.map(Set.init)
     if let allowedNames {
-        toolRegistry = toolRegistry.filter { allowedNames.contains($0.key) }
+        // An explicit initial loadout must still leave extension/custom tools
+        // registered so discovery can activate a deferred match later.
+        let externalNames = Set((wrappedCustomTools + wrappedExtensionTools).map(\.name))
+        toolRegistry = toolRegistry.filter { allowedNames.contains($0.key) || externalNames.contains($0.key) }
     } else if options.noTools == .all {
         toolRegistry.removeAll()
     }

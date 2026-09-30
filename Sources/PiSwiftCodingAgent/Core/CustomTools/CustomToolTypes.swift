@@ -203,6 +203,7 @@ public struct CustomTool: Sendable {
     public var description: String
     /// Rule bullets in the default system prompt while this tool is active.
     public var promptGuidelines: [String]?
+    public var promptSnippet: String?
     public var parameters: [String: AnyCodable]?
     public var execute: CustomToolExecute
     public var onSession: CustomToolSessionHandler?
@@ -226,6 +227,7 @@ public struct CustomTool: Sendable {
         parameters: [String: AnyCodable]? = nil,
         execute: @escaping CustomToolExecute,
         promptGuidelines: [String]? = nil,
+        promptSnippet: String? = nil,
         onSession: CustomToolSessionHandler? = nil,
         renderCall: CustomToolRenderCall? = nil,
         renderResult: CustomToolRenderResult? = nil,
@@ -243,6 +245,7 @@ public struct CustomTool: Sendable {
         self.label = label
         self.description = description
         self.promptGuidelines = promptGuidelines
+        self.promptSnippet = promptSnippet
         self.parameters = parameters
         self.execute = execute
         self.onSession = onSession
