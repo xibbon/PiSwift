@@ -21,7 +21,7 @@ public struct ExtensionLoader {
         cwd: String,
         eventBus: EventBus
     ) -> LoadExtensionResult {
-        let path = "<inline:\(inlineExtension.name)>"
+        let path = inlineExtension.builtin ? "\(BUILTIN_PATH_PREFIX)\(inlineExtension.name)" : "<inline:\(inlineExtension.name)>"
         let api = HookAPI(events: eventBus, hookPath: path)
         api.setExecCwd(cwd)
         api.beginLoading()
@@ -56,6 +56,7 @@ public struct ExtensionLoader {
             setSetLabelHandler: api.setSetLabelHandler,
             setGetActiveToolsHandler: api.setGetActiveToolsHandler,
             setGetAllToolsHandler: api.setGetAllToolsHandler,
+            setGetSettingsHandler: api.setGetSettingsHandler,
             setSetActiveToolsHandler: api.setSetActiveToolsHandler,
             setGetCommandsHandler: api.setGetCommandsHandler,
             setSetModelHandler: api.setSetModelHandler,
@@ -67,7 +68,8 @@ public struct ExtensionLoader {
             setUnregisterToolHandler: api.setUnregisterToolHandler,
             setFlagValue: api.setFlagValue,
             dispose: api.disposeEventBusListeners,
-            isExtension: true
+            isExtension: true,
+            replaceable: inlineExtension.replaceable
         ))
     }
 
@@ -198,6 +200,39 @@ public struct ExtensionLoader {
     }
 }
 
+/// Drop a replaceable extension if another extension owns one of its registrations.
+public func omitReplacedExtensions(_ hooks: [LoadedHook]) -> LoadExtensionsResult {
+    func names(_ hook: LoadedHook) -> [String] {
+        hook.tools.keys.map { "tool:\($0)" }
+            + hook.commands.keys.map { "command:\($0)" }
+            + hook.flags.keys.map { "flag:\($0)" }
+    }
+    var taken: [String: String] = [:]
+    for hook in hooks where !hook.replaceable {
+        for name in names(hook) { taken[name] = hook.path }
+    }
+    var kept: [LoadedHook] = []
+    var warnings: [ResourceDiagnostic] = []
+    for hook in hooks {
+        guard hook.replaceable,
+              let collision = names(hook).first(where: { taken[$0] != nil }),
+              let replacingPath = taken[collision] else {
+            kept.append(hook)
+            continue
+        }
+        if hook.path.hasPrefix(BUILTIN_PATH_PREFIX) {
+            let parts = collision.split(separator: ":", maxSplits: 1).map(String.init)
+            let kind = parts[0]
+            let registered = parts.count > 1 ? parts[1] : ""
+            let prefix = kind == "command" ? "/" : (kind == "flag" ? "--" : "")
+            let builtin = String(hook.path.dropFirst(BUILTIN_PATH_PREFIX.count))
+            warnings.append(ResourceDiagnostic(type: "warning", message:
+                "Extension \(replacingPath) registers \(kind) `\(prefix)\(registered)`, so built-in extension `\(builtin)` was not loaded. To use `\(builtin)`, run `pi config` and make sure it is enabled under Built-in extensions, then disable or remove the existing extension. We recommend only having one or the other loaded at a time.", path: hook.path))
+        }
+    }
+    return LoadExtensionsResult(hooks: kept, warnings: warnings)
+}
+
 // MARK: - Top-level loaders
 
 /// Load extensions from multiple paths.
@@ -230,7 +265,8 @@ public func discoverAndLoadExtensions(
     _ cwd: String,
     _ agentDir: String = getAgentDir(),
     _ eventBus: EventBus,
-    includeProjectExtensions: Bool = true
+    includeProjectExtensions: Bool = true,
+    discoverDefaults: Bool = true
 ) async -> LoadExtensionsResult {
     // Resolve SDK paths -- if not available, skip extension loading. We log a warning
     // when extensions exist on disk but can't be compiled, so the failure is visible
@@ -240,8 +276,8 @@ public func discoverAndLoadExtensions(
         let globalDir = URL(fileURLWithPath: agentDir).appendingPathComponent("extensions").path
         let localDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
         let totalCount = configuredPaths.count
-            + ExtensionLoader.discover(in: globalDir).count
-            + (includeProjectExtensions ? ExtensionLoader.discover(in: localDir).count : 0)
+            + (discoverDefaults ? ExtensionLoader.discover(in: globalDir).count : 0)
+            + (discoverDefaults && includeProjectExtensions ? ExtensionLoader.discover(in: localDir).count : 0)
         if totalCount > 0 {
             FileHandle.standardError.write(Data((
                 "warning: found \(totalCount) extension(s) but PiExtensionSDK is not "
@@ -273,11 +309,11 @@ public func discoverAndLoadExtensions(
 
     // Discover global extensions
     let globalDir = URL(fileURLWithPath: agentDir).appendingPathComponent("extensions").path
-    for path in ExtensionLoader.discover(in: globalDir) {
-        addPath(path)
+    if discoverDefaults {
+        for path in ExtensionLoader.discover(in: globalDir) { addPath(path) }
     }
 
-    if includeProjectExtensions {
+    if discoverDefaults && includeProjectExtensions {
         let localDir = URL(fileURLWithPath: cwd).appendingPathComponent(".pi").appendingPathComponent("extensions").path
         for path in ExtensionLoader.discover(in: localDir) {
             addPath(path)

@@ -24,6 +24,7 @@ public final class HookRunner: Sendable {
     public let cwd: String
     private let sessionManager: SessionManager
     private let modelRegistry: ModelRegistry
+    private let settingsManager: SettingsManager?
     private let state: LockedState<State>
     private let eventObservers = LockedState<[UUID: @Sendable (any HookEvent) -> Void]>([:])
 
@@ -218,10 +219,12 @@ public final class HookRunner: Sendable {
         set { state.withLock { $0.errorListeners = newValue } }
     }
 
-    public init(_ hooks: [LoadedHook], _ cwd: String, _ sessionManager: SessionManager, _ modelRegistry: ModelRegistry) {
+    public init(_ hooks: [LoadedHook], _ cwd: String, _ sessionManager: SessionManager, _ modelRegistry: ModelRegistry,
+                settingsManager: SettingsManager? = nil) {
         self.cwd = cwd
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
+        self.settingsManager = settingsManager
         self.state = LockedState(State(
             hooks: hooks,
             getModel: { nil },
@@ -258,6 +261,7 @@ public final class HookRunner: Sendable {
     }
 
     private func wireProviderHandlers(for hook: LoadedHook) {
+        hook.setGetSettingsHandler { [settingsManager] in settingsManager?.getSettings() ?? Settings() }
         let sourceId = hook.resolvedPath
         hook.setRegisterProviderHandler { [modelRegistry] config in
             modelRegistry.registerProvider(config, sourceId: sourceId)
@@ -482,13 +486,14 @@ public final class HookRunner: Sendable {
 
     private func extensionResourceMetadata(for hook: LoadedHook) -> PathMetadata {
         let source = extensionSourceLabel(for: hook.resolvedPath)
-        let baseDir: String? = hook.resolvedPath.hasPrefix("<")
+        let baseDir: String? = isSyntheticPath(hook.resolvedPath)
             ? nil
             : URL(fileURLWithPath: hook.resolvedPath).deletingLastPathComponent().path
         return PathMetadata(source: source, scope: "temporary", origin: "top-level", baseDir: baseDir)
     }
 
     private func extensionSourceLabel(for path: String) -> String {
+        if path.hasPrefix(BUILTIN_PATH_PREFIX) { return "builtin" }
         if path.hasPrefix("<") {
             return "extension:\(path.replacingOccurrences(of: "<", with: "").replacingOccurrences(of: ">", with: ""))"
         }
@@ -602,6 +607,16 @@ public final class HookRunner: Sendable {
             if let command = hook.currentCommands()[name] {
                 return command
             }
+        }
+        return nil
+    }
+
+    public func getToolSourceInfo(_ name: String) -> SourceInfo? {
+        for hook in hooks.reversed() where hook.currentTools()[name] != nil {
+            let path = hook.path
+            return SourceInfo(path: path,
+                source: getSyntheticPathSource(path) ?? extensionSourceLabel(for: path),
+                scope: "temporary", origin: "top-level")
         }
         return nil
     }

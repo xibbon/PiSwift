@@ -46,6 +46,7 @@ public struct SystemPromptSource: Sendable {
 }
 
 public protocol ResourceLoader: Sendable {
+    func areExtensionsDisabled() -> Bool
     func getExtensions() -> ExtensionsResult
     func getSkills() -> (skills: [Skill], diagnostics: [ResourceDiagnostic])
     func getPrompts() -> (prompts: [PromptTemplate], diagnostics: [ResourceDiagnostic])
@@ -61,6 +62,7 @@ public protocol ResourceLoader: Sendable {
 }
 
 public extension ResourceLoader {
+    func areExtensionsDisabled() -> Bool { false }
     func getSystemPromptSource() -> SystemPromptSource? { nil }
     func getAppendSystemPromptSources() -> [SystemPromptSource] { [] }
 }
@@ -74,6 +76,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
     public var additionalPromptTemplatePaths: [String]?
     public var additionalThemePaths: [String]?
     public var noExtensions: Bool?
+    public var builtinExtensions: [String]?
     public var noSkills: Bool?
     public var noPromptTemplates: Bool?
     public var noThemes: Bool?
@@ -93,6 +96,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         additionalPromptTemplatePaths: [String]? = nil,
         additionalThemePaths: [String]? = nil,
         noExtensions: Bool? = nil,
+        builtinExtensions: [String]? = nil,
         noSkills: Bool? = nil,
         noPromptTemplates: Bool? = nil,
         noThemes: Bool? = nil,
@@ -110,6 +114,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         self.additionalPromptTemplatePaths = additionalPromptTemplatePaths
         self.additionalThemePaths = additionalThemePaths
         self.noExtensions = noExtensions
+        self.builtinExtensions = builtinExtensions
         self.noSkills = noSkills
         self.noPromptTemplates = noPromptTemplates
         self.noThemes = noThemes
@@ -232,7 +237,8 @@ public final class DefaultResourceLoader: ResourceLoader {
             agentDir: self.agentDir,
             settingsManager: self.settingsManager,
             projectTrusted: self.projectTrusted,
-            offline: self.offline
+            offline: self.offline,
+            builtinExtensions: options.builtinExtensions ?? []
         )
         self.additionalExtensionPaths = options.additionalExtensionPaths ?? []
         self.additionalSkillPaths = options.additionalSkillPaths ?? []
@@ -250,6 +256,8 @@ public final class DefaultResourceLoader: ResourceLoader {
     public func getExtensions() -> ExtensionsResult {
         extensionsResult
     }
+
+    public func areExtensionsDisabled() -> Bool { noExtensions }
 
     public func getSkills() -> (skills: [Skill], diagnostics: [ResourceDiagnostic]) {
         (skills, skillDiagnostics)
@@ -493,6 +501,7 @@ public final class DefaultResourceLoader: ResourceLoader {
 
     private func resolveResourcePath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isSyntheticPath(trimmed) { return trimmed }
         if trimmed == "~" {
             return getHomeDir()
         }
@@ -743,7 +752,7 @@ public final class DefaultResourceLoader: ResourceLoader {
     }
 
     private func addDefaultMetadataForPath(_ filePath: String) {
-        guard !filePath.isEmpty, !filePath.hasPrefix("<") else { return }
+        guard !filePath.isEmpty, !isSyntheticPath(filePath) else { return }
         let normalized = URL(fileURLWithPath: filePath).standardized.path
         if pathMetadata[normalized] != nil || pathMetadata[filePath] != nil { return }
 

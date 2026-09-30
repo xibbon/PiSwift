@@ -79,6 +79,7 @@ public struct ExtensionDylibLoader {
             setSetLabelHandler: api.setSetLabelHandler,
             setGetActiveToolsHandler: api.setGetActiveToolsHandler,
             setGetAllToolsHandler: api.setGetAllToolsHandler,
+            setGetSettingsHandler: api.setGetSettingsHandler,
             setSetActiveToolsHandler: api.setSetActiveToolsHandler,
             setGetCommandsHandler: api.setGetCommandsHandler,
             setSetModelHandler: api.setSetModelHandler,

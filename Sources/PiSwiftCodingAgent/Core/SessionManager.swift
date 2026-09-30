@@ -1175,6 +1175,7 @@ public final class SessionManager: Sendable {
     public func getSessionDir() -> String { sessionDir }
     public func getSessionId() -> String { sessionId }
     public func getSessionFile() -> String? { sessionFile }
+    public func getEntryCount() -> Int { state.withLock { $0.byId.count } }
     public func getLeafId() -> String? { leafId }
 
     public func getLeafEntry() -> SessionEntry? {
@@ -1600,16 +1601,18 @@ public final class SessionManager: Sendable {
 
     /// Persist a freshly-committed entry. Caller must already hold the state lock.
     private func writeEntryLocked(_ st: inout State, _ entry: SessionEntry, _ sessionFile: String) {
-        // Defer writing the session file until we have at least one assistant message.
-        // This prevents creating empty/useless session files for abandoned prompts.
-        let isAssistant: Bool
-        if case .message(let msg) = entry, case .assistant = msg.message {
-            isAssistant = true
+        // C46: the first user or assistant message starts the file. Setup entries stay buffered.
+        let hasConversation: Bool
+        if case .message(let msg) = entry {
+            switch msg.message {
+            case .user, .assistant: hasConversation = true
+            default: hasConversation = false
+            }
         } else {
-            isAssistant = false
+            hasConversation = false
         }
-        if isAssistant && !FileManager.default.fileExists(atPath: sessionFile) {
-            // First assistant message: flush the header and all buffered entries
+        if hasConversation && !FileManager.default.fileExists(atPath: sessionFile) {
+            // First conversation message: flush the header and all buffered entries.
             if let header = st.header {
                 appendLine(sessionFile, encodeSessionHeader(header))
             }

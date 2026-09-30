@@ -73,6 +73,16 @@ public struct ResolvedModelRequest: Sendable {
     }
 }
 
+public struct ResolvedImageModelRequest: Sendable {
+    public let model: ImageModel
+    public let auth: ModelAuth
+}
+
+public struct ResolvedClassifierModelRequest: Sendable {
+    public let model: ClassifierModel
+    public let auth: ModelAuth
+}
+
 private enum ModelRegistryStreamError: LocalizedError {
     case cancelled
     case authentication(String)
@@ -575,11 +585,13 @@ public final class ModelRegistry: Sendable {
 
     private struct State: Sendable {
         var models: [Model] = []
+        var allModels: [AnyModel] = []
         var baseModels: [Model] = []
         var userModels: [Model] = []
         var configuredProviderOverrides: [String: ProviderOverride] = [:]
         var configuredModelOverrides: [String: [String: ModelOverride]] = [:]
         var dynamicModelsBySource: [String: [String: [Model]]] = [:]
+        var remoteModelsByProvider: [String: [AnyModel]] = [:]
         var dynamicProviderApiKeysBySource: [String: [String: String]] = [:]
         var dynamicProviderStreamsBySource: [String: [String: ApiStreamSimpleFunction]] = [:]
         var dynamicSourceOrder: [String] = [remoteCatalogSourceId]
@@ -787,6 +799,97 @@ public final class ModelRegistry: Sendable {
         state.withLock { $0.models }
     }
 
+    public func getAllModels(provider: String? = nil) -> [AnyModel] {
+        state.withLock { state in
+            state.allModels.filter { provider == nil || $0.provider == provider }
+        }
+    }
+
+    public func getModelsOfType(_ type: ModelType, provider: String? = nil) -> [AnyModel] {
+        getAllModels(provider: provider).filter { $0.type == type }
+    }
+
+    public func getModelOfType(_ type: ModelType, provider: String, modelId: String) -> AnyModel? {
+        getModelsOfType(type, provider: provider).first { $0.id == modelId }
+    }
+
+    public func getAvailableOfType(_ type: ModelType, provider: String? = nil) async -> [AnyModel] {
+        var result: [AnyModel] = []
+        for model in getModelsOfType(type, provider: provider) where await isAvailable(model) {
+            result.append(model)
+        }
+        return result
+    }
+
+    public func getAllAvailable(provider: String? = nil) async -> [AnyModel] {
+        var result: [AnyModel] = []
+        for model in getAllModels(provider: provider) where await isAvailable(model) {
+            result.append(model)
+        }
+        return result
+    }
+
+    private func isAvailable(_ model: AnyModel) async -> Bool {
+        if case .chat(let chat) = model { return await isAvailable(chat) }
+        return authStorage.hasAuth(model.provider) || !(model.catalog.headers?.isEmpty ?? true)
+    }
+
+    public func generateImages(_ model: ImageModel, context: ImagesContext, options: ImagesOptions? = nil) async -> AssistantImages {
+        let resolved = await resolveModelRequest(model, signal: options?.signal)
+        let auth = resolved.auth
+        guard auth.ok || options?.apiKey != nil || options?.headers?.isEmpty == false else {
+            return AssistantImages(api: model.api, provider: model.provider, model: model.id,
+                                   stopReason: options?.signal?.isCancelled == true ? .aborted : .error,
+                                   errorMessage: auth.error)
+        }
+        var request = options ?? ImagesOptions()
+        request.apiKey = request.apiKey ?? auth.apiKey
+        request.headers = mergeProviderHeaders(auth.headers, request.headers)
+        return await PiSwiftAI.generateImages(model: resolved.model, context: context, options: request)
+    }
+
+    public func classify(_ model: ClassifierModel, context: ClassifierContext, options: ClassifierOptions? = nil) async -> ClassifierResult {
+        let resolved = await resolveModelRequest(model, signal: options?.signal)
+        let auth = resolved.auth
+        guard auth.ok || options?.apiKey != nil || options?.headers?.isEmpty == false else {
+            return ClassifierResult(api: model.api, provider: model.provider, model: model.id,
+                                    stopReason: options?.signal?.isCancelled == true ? .aborted : .error,
+                                    errorMessage: auth.error)
+        }
+        var request = options ?? ClassifierOptions()
+        request.apiKey = request.apiKey ?? auth.apiKey
+        request.headers = mergeProviderHeaders(auth.headers, request.headers)
+        return await PiSwiftAI.classify(model: resolved.model, context: context, options: request)
+    }
+
+    public func resolveModelRequest(_ model: ImageModel, signal: CancellationToken? = nil) async -> ResolvedImageModelRequest {
+        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, signal: signal)
+        return ResolvedImageModelRequest(model: model, auth: auth)
+    }
+
+    public func resolveModelRequest(_ model: ClassifierModel, signal: CancellationToken? = nil) async -> ResolvedClassifierModelRequest {
+        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, signal: signal)
+        return ResolvedClassifierModelRequest(model: model, auth: auth)
+    }
+
+    private func getApiKeyAndHeaders(provider: String, headers: ProviderHeaders?, signal: CancellationToken?) async -> ModelAuth {
+        let apiKey = await authStorage.getApiKey(provider, signal: signal)
+        if signal?.isCancelled == true {
+            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "Authentication cancelled")
+        }
+        var resolved = resolveHeaders(headers)
+        if provider == OAuthProvider.kimiCoding.rawValue,
+           case .oauth(let credential) = authStorage.get(provider) {
+            var values = resolved ?? [:]
+            values.updateValue("Bearer \(credential.access)", forKey: "Authorization")
+            resolved = values
+        }
+        if apiKey == nil && (resolved?.isEmpty ?? true) {
+            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "No API key or headers configured for provider \"\(provider)\"")
+        }
+        return ModelAuth(ok: true, apiKey: apiKey, headers: resolved, error: nil)
+    }
+
     /// v0.63.0: provider-only API-key lookup. Use this only when you explicitly want
     /// provider-level lookup without model headers or `authHeader` handling.
     /// For model-aware auth (which includes per-model `headers` and `compat.authHeader`
@@ -898,6 +1001,7 @@ public final class ModelRegistry: Sendable {
                     maxRetryDelayMs: fullOptions?.maxRetryDelayMs,
                     metadata: fullOptions?.metadata,
                     onResponse: fullOptions?.onResponse,
+                    onProviderStreamEvent: fullOptions?.onProviderStreamEvent,
                     timeoutMs: fullOptions?.timeoutMs,
                     websocketConnectTimeoutMs: fullOptions?.websocketConnectTimeoutMs,
                     maxRetries: fullOptions?.maxRetries
@@ -1050,14 +1154,48 @@ public final class ModelRegistry: Sendable {
             }
         }
         state.models = combined
+        var all = PiSwiftAI.getAllModels().map { applyConfiguredNonChatModel($0, state: state) }
+        // Chat overlays use the same order as the chat-only snapshot.
+        all.removeAll { $0.type == .chat }
+        all += combined.map(AnyModel.chat)
+        for provider in state.remoteModelsByProvider.keys.sorted() {
+            for raw in state.remoteModelsByProvider[provider] ?? [] where raw.type != .chat {
+                let model = applyConfiguredNonChatModel(raw, state: state)
+                if let index = all.firstIndex(where: { $0.type == model.type && $0.provider == model.provider && $0.id == model.id }) {
+                    all[index] = model
+                } else {
+                    all.append(model)
+                }
+            }
+        }
+        state.allModels = all
     }
 
-    private func setRemoteCatalogModels(_ models: [Model], providerId: String) {
+    private func applyConfiguredNonChatModel(_ model: AnyModel, state: State) -> AnyModel {
+        guard let providerOverride = state.configuredProviderOverrides[model.provider] else { return model }
+        let headers = mergeProviderHeaders(model.catalog.headers, resolveHeaders(providerOverride.headers))
+        switch model {
+        case .chat: return model
+        case .image(let value):
+            return .image(ImageModel(id: value.id, name: value.name, api: value.api,
+                provider: value.provider, baseUrl: providerOverride.baseUrl ?? value.baseUrl,
+                input: value.input, output: value.output, cost: value.cost,
+                headers: headers, inputLimits: value.inputLimits))
+        case .classifier(let value):
+            return .classifier(ClassifierModel(id: value.id, name: value.name, api: value.api,
+                provider: value.provider, baseUrl: providerOverride.baseUrl ?? value.baseUrl,
+                input: value.input, cost: value.cost, contextWindow: value.contextWindow,
+                headers: headers, inputLimits: value.inputLimits))
+        }
+    }
+
+    private func setRemoteCatalogModels(_ models: [AnyModel], providerId: String) {
         state.withLock { state in
+            state.remoteModelsByProvider[providerId] = models
             state.dynamicSourceOrder.removeAll { $0 == remoteCatalogSourceId }
             state.dynamicSourceOrder.insert(remoteCatalogSourceId, at: 0)
             var sourceModels = state.dynamicModelsBySource[remoteCatalogSourceId] ?? [:]
-            sourceModels[providerId] = models
+            sourceModels[providerId] = models.compactMap { if case .chat(let chat) = $0 { return chat } else { return nil } }
             state.dynamicModelsBySource[remoteCatalogSourceId] = sourceModels
             rebuildModelsLocked(&state)
         }

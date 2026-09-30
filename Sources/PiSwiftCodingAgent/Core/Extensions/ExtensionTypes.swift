@@ -14,10 +14,15 @@ public enum ExtensionFormat: Sendable {
 /// while retaining the same registration surface as file-based extensions.
 public struct InlineExtension: Sendable {
     public let name: String
+    public let builtin: Bool
+    public let replaceable: Bool
     public let factory: @Sendable (HookAPI) throws -> Void
 
-    public init(name: String, factory: @escaping @Sendable (HookAPI) throws -> Void) {
+    public init(name: String, builtin: Bool = false, replaceable: Bool = false,
+                factory: @escaping @Sendable (HookAPI) throws -> Void) {
         self.name = name
+        self.builtin = builtin
+        self.replaceable = replaceable
         self.factory = factory
     }
 }
@@ -232,10 +237,12 @@ public struct LoadExtensionsResult: Sendable {
 
     /// Errors encountered during loading
     public let errors: [ExtensionLoadError]
+    public let warnings: [ResourceDiagnostic]
 
-    public init(hooks: [LoadedHook] = [], errors: [ExtensionLoadError] = []) {
+    public init(hooks: [LoadedHook] = [], errors: [ExtensionLoadError] = [], warnings: [ResourceDiagnostic] = []) {
         self.hooks = hooks
         self.errors = errors
+        self.warnings = warnings
     }
 }
 

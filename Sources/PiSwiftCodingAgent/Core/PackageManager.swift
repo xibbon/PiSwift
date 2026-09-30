@@ -71,6 +71,21 @@ public struct SourceInfo: Sendable, Hashable {
     }
 }
 
+public let BUILTIN_PATH_PREFIX = "builtin:"
+
+public func isSyntheticPath(_ path: String) -> Bool {
+    path.hasPrefix(BUILTIN_PATH_PREFIX) || path.hasPrefix("<")
+}
+
+public func getSyntheticPathSource(_ path: String) -> String? {
+    if path.hasPrefix(BUILTIN_PATH_PREFIX) { return "builtin" }
+    if path.hasPrefix("<"), path.hasSuffix(">") {
+        let name = path.dropFirst().dropLast().split(separator: ":", maxSplits: 1).first
+        return name.map(String.init) ?? "temporary"
+    }
+    return nil
+}
+
 public struct ResolvedResource: Sendable, Hashable {
     public var path: String
     public var enabled: Bool
@@ -201,6 +216,7 @@ public final class DefaultPackageManager: PackageManager {
     private let settingsManager: SettingsManager
     private let projectTrusted: Bool
     private let offline: Bool
+    private let builtinExtensions: [String]
     private struct State: Sendable {
         var globalNpmRoot: String?
         var progressCallback: ProgressCallback?
@@ -218,12 +234,14 @@ public final class DefaultPackageManager: PackageManager {
         set { state.withLock { $0.progressCallback = newValue } }
     }
 
-    public init(cwd: String, agentDir: String, settingsManager: SettingsManager, projectTrusted: Bool = true, offline: Bool = false) {
+    public init(cwd: String, agentDir: String, settingsManager: SettingsManager, projectTrusted: Bool = true, offline: Bool = false,
+                builtinExtensions: [String] = []) {
         self.cwd = cwd
         self.agentDir = agentDir
         self.settingsManager = settingsManager
         self.projectTrusted = projectTrusted
         self.offline = offline
+        self.builtinExtensions = builtinExtensions
     }
 
     public func setProgressCallback(_ callback: ProgressCallback?) {
@@ -299,7 +317,14 @@ public final class DefaultPackageManager: PackageManager {
             projectBaseDir: projectBaseDir
         )
 
-        return accumulator.toResolvedPaths()
+        var resolved = accumulator.toResolvedPaths()
+        let disabled = Set((globalSettings.extensions ?? []) + (projectSettings.extensions ?? []))
+        for name in builtinExtensions {
+            let path = BUILTIN_PATH_PREFIX + name
+            resolved.extensions.append(ResolvedResource(path: path, enabled: !disabled.contains("-" + path),
+                metadata: PathMetadata(source: "builtin", scope: "user", origin: "top-level")))
+        }
+        return resolved
     }
 
     public func resolveExtensionSources(
@@ -308,9 +333,14 @@ public final class DefaultPackageManager: PackageManager {
     ) async throws -> ResolvedPaths {
         let accumulator = ResourceAccumulator()
         let scope = options.temporary ? "temporary" : (options.local ? "project" : "user")
-        let packageSources = sources.map { (PackageSource.simple($0), scope) }
+        let packageSources = sources.filter { !$0.hasPrefix(BUILTIN_PATH_PREFIX) }.map { (PackageSource.simple($0), scope) }
         try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: nil, offline: offline || options.offline)
-        return accumulator.toResolvedPaths()
+        var resolved = accumulator.toResolvedPaths()
+        for path in sources where path.hasPrefix(BUILTIN_PATH_PREFIX) {
+            resolved.extensions.append(ResolvedResource(path: path, enabled: true,
+                metadata: PathMetadata(source: "builtin", scope: scope, origin: "top-level")))
+        }
+        return resolved
     }
 
     public func install(_ source: String, options: PackageResolveOptions = PackageResolveOptions()) async throws {
@@ -572,6 +602,36 @@ public final class DefaultPackageManager: PackageManager {
         return (head, Array(cmd.dropFirst()))
     }
 
+    func gitDependencyInstallArgs() throws -> [String] {
+        let command = settingsManager.getNpmCommand() ?? ["npm"]
+        func name(_ value: String) -> String {
+            let basename = URL(fileURLWithPath: value).lastPathComponent.lowercased()
+            if basename.hasSuffix(".cmd") { return String(basename.dropLast(4)) }
+            if basename.hasSuffix(".exe") { return String(basename.dropLast(4)) }
+            return basename
+        }
+        let direct = name(command.first ?? "npm")
+        let supported = Set(["npm", "pnpm", "bun"])
+        let manager: String
+        if let separator = command.lastIndex(of: "--"), command.indices.contains(separator + 1) {
+            manager = name(command[separator + 1])
+        } else if supported.contains(direct) {
+            manager = direct
+        } else {
+            let matches = Array(Set(command.dropFirst().map(name).filter(supported.contains))).sorted()
+            if matches.count > 1 {
+                throw PackageManagerError.unsupported("Ambiguous npmCommand package managers: \(matches.joined(separator: ", "))")
+            }
+            manager = matches.first ?? direct
+        }
+        switch manager {
+        case "bun": return ["install", "--omit=dev", "--omit=peer"]
+        case "pnpm": return ["install", "--prod", "--config.auto-install-peers=false", "--config.strict-peer-dependencies=false", "--config.strict-dep-builds=false"]
+        case "npm": return ["install", "--omit=dev", "--legacy-peer-deps"]
+        default: return ["install"]
+        }
+    }
+
     private func installNpm(_ source: NpmSource, scope: String, temporary: Bool) async throws {
         #if canImport(UIKit)
         throw PackageManagerError.unsupported("npm install not available")
@@ -627,7 +687,7 @@ public final class DefaultPackageManager: PackageManager {
         let packageJsonPath = URL(fileURLWithPath: targetDir).appendingPathComponent("package.json").path
         if FileManager.default.fileExists(atPath: packageJsonPath) {
             let (npmExe, npmPrefix) = resolvedNpmCommand()
-            _ = try await runCommand(npmExe, npmPrefix + ["install"], cwd: targetDir)
+            _ = try await runCommand(npmExe, npmPrefix + gitDependencyInstallArgs(), cwd: targetDir)
         }
         #endif
     }
@@ -652,7 +712,7 @@ public final class DefaultPackageManager: PackageManager {
         let packageJsonPath = URL(fileURLWithPath: targetDir).appendingPathComponent("package.json").path
         if FileManager.default.fileExists(atPath: packageJsonPath) {
             let (npmExe, npmPrefix) = resolvedNpmCommand()
-            _ = try await runCommand(npmExe, npmPrefix + ["install"], cwd: targetDir)
+            _ = try await runCommand(npmExe, npmPrefix + gitDependencyInstallArgs(), cwd: targetDir)
         }
         #endif
     }
@@ -756,7 +816,7 @@ public final class DefaultPackageManager: PackageManager {
 
     private func getGitInstallPath(_ source: GitSource, scope: String) -> String {
         if scope == "temporary" {
-            return getTemporaryDir(prefix: "git-\(source.host)", suffix: source.path)
+            return temporaryGitDirectory(host: source.host, path: source.path, ref: source.ref)
         }
         if scope == "project" {
             return URL(fileURLWithPath: cwd)
@@ -771,6 +831,10 @@ public final class DefaultPackageManager: PackageManager {
             .appendingPathComponent(source.path).path
     }
 
+    func temporaryGitDirectory(host: String, path: String, ref: String?) -> String {
+        getTemporaryDir(prefix: "git-\(host)", suffix: path, ref: ref)
+    }
+
     private func getGitInstallRoot(scope: String) -> String? {
         if scope == "temporary" { return nil }
         if scope == "project" {
@@ -779,8 +843,8 @@ public final class DefaultPackageManager: PackageManager {
         return URL(fileURLWithPath: agentDir).appendingPathComponent("git").path
     }
 
-    private func getTemporaryDir(prefix: String, suffix: String?) -> String {
-        let base = "\(prefix)-\(suffix ?? "")"
+    private func getTemporaryDir(prefix: String, suffix: String?, ref: String? = nil) -> String {
+        let base = "\(prefix)-\(suffix ?? "")\(ref.map { "@\($0)" } ?? "")"
         let hash = sha256(base).prefix(8)
         let tmp = NSTemporaryDirectory()
         if let suffix, !suffix.isEmpty {

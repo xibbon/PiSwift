@@ -215,7 +215,9 @@ import PiSwiftAI
     let markdown = try #require(json["markdown"] as? [String: Any])
     #expect(json["tuiMode"] as? String == "fullscreen")
     #expect(json["fullscreenScrollbar"] as? String == "hidden")
-    #expect(json["mouseWheelStep"] as? Int == 4)
+    // C19: the compatibility setter now writes only fullscreenWheelScrollLines.
+    #expect(json["fullscreenWheelScrollLines"] as? Int == 4)
+    #expect(json["mouseWheelStep"] == nil)
     #expect(json["outputPad"] as? Int == 0)
     #expect(markdown["mermaidEnabled"] as? Bool == false)
     #expect(markdown["mermaidRenderWhileStreaming"] as? Bool == false)

@@ -281,10 +281,12 @@ public typealias HookGetActiveToolsHandler = @Sendable () -> [String]
 public struct ToolInfo: Sendable {
     public var name: String
     public var description: String
+    public var sourceInfo: SourceInfo?
 
-    public init(name: String, description: String) {
+    public init(name: String, description: String, sourceInfo: SourceInfo? = nil) {
         self.name = name
         self.description = description
+        self.sourceInfo = sourceInfo
     }
 }
 
@@ -1509,6 +1511,22 @@ public struct AfterProviderResponseEvent: HookEvent, Sendable {
     }
 }
 
+/// A parsed provider event before it is converted to a Pi message event.
+public struct ProviderStreamEvent: HookEvent, Sendable {
+    public let type: String = "provider_stream_event"
+    public var provider: String
+    public var api: Api
+    public var model: String
+    public var data: AnyCodable
+
+    public init(provider: String, api: Api, model: String, data: AnyCodable) {
+        self.provider = provider
+        self.api = api
+        self.model = model
+        self.data = data
+    }
+}
+
 public struct ToolCallEvent: HookEvent, Sendable {
     public let type: String = "tool_call"
     public var toolName: String
@@ -1698,6 +1716,7 @@ public struct LoadedHook: Sendable {
     public var setSetLabelHandler: HookSetLabelSetter
     public var setGetActiveToolsHandler: HookGetActiveToolsSetter
     public var setGetAllToolsHandler: HookGetAllToolsSetter
+    public var setGetSettingsHandler: @Sendable (@escaping @Sendable () -> Settings) -> Void
     public var setSetActiveToolsHandler: HookSetActiveToolsSetter
     public var setGetCommandsHandler: HookGetCommandsSetter
     public var setSetModelHandler: HookSetModelSetter
@@ -1713,6 +1732,7 @@ public struct LoadedHook: Sendable {
     /// True when this hook was loaded from a `.swift`/SPM extension (vs a settings-defined hook).
     /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
     public var isExtension: Bool
+    public var replaceable: Bool
 
     public init(
         path: String,
@@ -1737,6 +1757,7 @@ public struct LoadedHook: Sendable {
         setSetLabelHandler: @escaping HookSetLabelSetter = { _ in },
         setGetActiveToolsHandler: @escaping HookGetActiveToolsSetter = { _ in },
         setGetAllToolsHandler: @escaping HookGetAllToolsSetter = { _ in },
+        setGetSettingsHandler: @escaping @Sendable (@escaping @Sendable () -> Settings) -> Void = { _ in },
         setSetActiveToolsHandler: @escaping HookSetActiveToolsSetter = { _ in },
         setGetCommandsHandler: @escaping HookGetCommandsSetter = { _ in },
         setSetModelHandler: @escaping HookSetModelSetter = { _ in },
@@ -1748,7 +1769,8 @@ public struct LoadedHook: Sendable {
         setUnregisterToolHandler: @escaping HookUnregisterToolSetter = { _ in },
         setFlagValue: @escaping HookSetFlagValue = { _, _ in },
         dispose: @escaping @Sendable () -> Void = {},
-        isExtension: Bool = false
+        isExtension: Bool = false,
+        replaceable: Bool = false
     ) {
         self.path = path
         self.resolvedPath = resolvedPath
@@ -1772,6 +1794,7 @@ public struct LoadedHook: Sendable {
         self.setSetLabelHandler = setSetLabelHandler
         self.setGetActiveToolsHandler = setGetActiveToolsHandler
         self.setGetAllToolsHandler = setGetAllToolsHandler
+        self.setGetSettingsHandler = setGetSettingsHandler
         self.setSetActiveToolsHandler = setSetActiveToolsHandler
         self.setGetCommandsHandler = setGetCommandsHandler
         self.setSetModelHandler = setSetModelHandler
@@ -1784,6 +1807,7 @@ public struct LoadedHook: Sendable {
         self.setFlagValue = setFlagValue
         self.dispose = dispose
         self.isExtension = isExtension
+        self.replaceable = replaceable
     }
 }
 
@@ -1866,6 +1890,7 @@ public final class HookAPI: Sendable {
         var setLabelHandler: HookSetLabelHandler
         var getActiveToolsHandler: HookGetActiveToolsHandler
         var getAllToolsHandler: HookGetAllToolsHandler
+        var getSettingsHandler: @Sendable () -> Settings
         var setActiveToolsHandler: HookSetActiveToolsHandler
         var getCommandsHandler: HookGetCommandsHandler
         var setModelHandler: HookSetModelHandler
@@ -2048,6 +2073,7 @@ public final class HookAPI: Sendable {
             setLabelHandler: { _, _ in },
             getActiveToolsHandler: { [] },
             getAllToolsHandler: { [] },
+            getSettingsHandler: { Settings() },
             setActiveToolsHandler: { _ in },
             getCommandsHandler: { [] },
             setModelHandler: { _ in false },
@@ -2104,6 +2130,14 @@ public final class HookAPI: Sendable {
 
     public func setGetAllToolsHandler(_ handler: @escaping HookGetAllToolsHandler) {
         getAllToolsHandler = handler
+    }
+
+    public func setGetSettingsHandler(_ handler: @escaping @Sendable () -> Settings) {
+        state.withLock { $0.getSettingsHandler = handler }
+    }
+
+    public func getSettings() -> Settings {
+        state.withLock { $0.getSettingsHandler }()
     }
 
     public func setSetActiveToolsHandler(_ handler: @escaping HookSetActiveToolsHandler) {

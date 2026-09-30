@@ -60,6 +60,7 @@ public struct CreateAgentSessionOptions: Sendable {
     public var additionalExtensionPaths: [String]?
     /// Named in-process extensions that use the same API as dylib extensions.
     public var inlineExtensions: [InlineExtension]?
+    public var noExtensions: Bool?
     public var eventBus: EventBus?
     public var skills: [Skill]?
     public var contextFiles: [ContextFile]?
@@ -90,6 +91,7 @@ public struct CreateAgentSessionOptions: Sendable {
         additionalHookPaths: [String]? = nil,
         additionalExtensionPaths: [String]? = nil,
         inlineExtensions: [InlineExtension]? = nil,
+        noExtensions: Bool? = nil,
         eventBus: EventBus? = nil,
         skills: [Skill]? = nil,
         contextFiles: [ContextFile]? = nil,
@@ -119,6 +121,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.additionalHookPaths = additionalHookPaths
         self.additionalExtensionPaths = additionalExtensionPaths
         self.inlineExtensions = inlineExtensions
+        self.noExtensions = noExtensions
         self.eventBus = eventBus
         self.skills = skills
         self.contextFiles = contextFiles
@@ -448,6 +451,7 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             setSetLabelHandler: api.setSetLabelHandler,
             setGetActiveToolsHandler: api.setGetActiveToolsHandler,
             setGetAllToolsHandler: api.setGetAllToolsHandler,
+            setGetSettingsHandler: api.setGetSettingsHandler,
             setSetActiveToolsHandler: api.setSetActiveToolsHandler,
             setGetCommandsHandler: api.setGetCommandsHandler,
             setSetModelHandler: api.setSetModelHandler,
@@ -522,6 +526,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             cwd: cwd,
             agentDir: agentDir,
             settingsManager: settingsManager,
+            noExtensions: options.noExtensions,
+            builtinExtensions: (options.inlineExtensions ?? []).filter(\.builtin).map(\.name),
             projectTrusted: projectTrusted,
             offline: options.offline ?? false
         ))
@@ -550,12 +556,27 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     // Load extensions (plain .swift files) before model selection so provider
     // registrations are visible to restored/default model resolution.
-    let extensionPaths = settingsManager.getExtensionPaths() + (options.additionalExtensionPaths ?? [])
+    let noExtensions = (options.noExtensions ?? false) || resolvedResourceLoader.areExtensionsDisabled()
+    let configuredExtensionPaths = settingsManager.getExtensionPaths()
+    let explicitExtensionPaths = options.additionalExtensionPaths ?? []
+    let extensionPaths = (noExtensions ? explicitExtensionPaths : configuredExtensionPaths + explicitExtensionPaths)
+        .filter { !$0.hasPrefix(BUILTIN_PATH_PREFIX) && !$0.hasPrefix("-" + BUILTIN_PATH_PREFIX) }
     let inlineExtensions = options.inlineExtensions ?? []
+    let disabledBuiltinPaths = Set((settingsManager.getGlobalSettings().extensions ?? [])
+        + (projectTrusted ? settingsManager.getProjectSettings().extensions ?? [] : []))
+    let explicitBuiltinPaths = Set(explicitExtensionPaths.filter { $0.hasPrefix(BUILTIN_PATH_PREFIX) })
+    let knownBuiltinPaths = Set(inlineExtensions.filter(\.builtin).map { BUILTIN_PATH_PREFIX + $0.name })
+    let selectedInlineExtensions = inlineExtensions.filter { item in
+        if !item.builtin { return !noExtensions }
+        let path = BUILTIN_PATH_PREFIX + item.name
+        return explicitBuiltinPaths.contains(path) || (!noExtensions && !disabledBuiltinPaths.contains("-" + path))
+    }
     let loadInlineExtensions: @Sendable () -> LoadExtensionsResult = {
         var hooks: [LoadedHook] = []
-        var errors: [ExtensionLoadError] = []
-        for inlineExtension in inlineExtensions {
+        var errors: [ExtensionLoadError] = explicitBuiltinPaths.subtracting(knownBuiltinPaths).sorted().map {
+            .invalidExtension(path: $0, reason: "Unknown built-in extension: \($0)")
+        }
+        for inlineExtension in selectedInlineExtensions {
             let result = ExtensionLoader.load(inlineExtension, cwd: cwd, eventBus: eventBus)
             if let hook = result.hook {
                 hooks.append(hook)
@@ -571,18 +592,20 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         cwd,
         agentDir,
         eventBus,
-        includeProjectExtensions: projectTrusted
+        includeProjectExtensions: projectTrusted,
+        discoverDefaults: !noExtensions
     )
     time("discoverAndLoadExtensions")
     for error in extensionResult.errors {
         writeStderr("Failed to load extension: \(error.localizedDescription)\n")
     }
-    allLoadedHooks += extensionResult.hooks
     let inlineExtensionResult = loadInlineExtensions()
-    allLoadedHooks += inlineExtensionResult.hooks
     for error in inlineExtensionResult.errors {
         writeStderr("Failed to load inline extension: \(error.localizedDescription)\n")
     }
+    let replacementResult = omitReplacedExtensions(extensionResult.hooks + inlineExtensionResult.hooks)
+    allLoadedHooks += replacementResult.hooks
+    for warning in replacementResult.warnings { writeStderr("Warning: \(warning.message)\n") }
 
     // Closure used by AgentSession.reloadExtensions() so /reload can swap extensions live.
     // Captures the same paths/cwd/agentDir/eventBus the initial load used. SDK extension
@@ -594,20 +617,21 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             cwd,
             agentDir,
             eventBus,
-            includeProjectExtensions: projectTrusted
+            includeProjectExtensions: projectTrusted,
+            discoverDefaults: !noExtensions
         )
         let inlineExtensions = loadInlineExtensions()
-        return LoadExtensionsResult(
-            hooks: fileExtensions.hooks + inlineExtensions.hooks,
-            errors: fileExtensions.errors + inlineExtensions.errors
-        )
+        let replaced = omitReplacedExtensions(fileExtensions.hooks + inlineExtensions.hooks)
+        return LoadExtensionsResult(hooks: replaced.hooks,
+            errors: fileExtensions.errors + inlineExtensions.errors,
+            warnings: fileExtensions.warnings + inlineExtensions.warnings + replaced.warnings)
     }
 
     // Always create a HookRunner — even with zero hooks at startup, /reload can add
     // extensions later, and the agent's beforeToolCall/onPayload/onResponse closures need
     // a runner instance to forward events to. The closures gate at call-time on
     // `hasHandlers(...)`, so empty runners cost nothing.
-    let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry)
+    let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry, settingsManager: settingsManager)
 
     if hookRunner.hasHandlers("resources_discover") {
         let extensionResources = await hookRunner.emitResourcesDiscover(cwd: cwd, reason: .startup)
@@ -923,6 +947,13 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         }
     }
 
+    let onProviderStreamEvent: ProviderStreamEventHandler? = { [hookRunner] data, model in
+        guard hookRunner.hasHandlers("provider_stream_event") else { return }
+        _ = await hookRunner.emit(ProviderStreamEvent(
+            provider: model.provider, api: model.api, model: model.id, data: data
+        ))
+    }
+
     let providerRetrySettings = settingsManager.getProviderRetrySettings()
     let createdAgent = Agent(AgentOptions(
         initialState: AgentState(
@@ -962,6 +993,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         },
         onPayload: onPayloadHook,
         onResponse: onResponseHook,
+        onProviderStreamEvent: onProviderStreamEvent,
         timeoutMs: providerRetrySettings.timeoutMs ?? settingsManager.getHttpIdleTimeoutMs(),
         websocketConnectTimeoutMs: settingsManager.getWebSocketConnectTimeoutMs(),
         maxRetries: providerRetrySettings.maxRetries,
@@ -1051,5 +1083,6 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     customToolsResult.setSendMessageHandler(sendMessageHandler)
     sendMessageHandlerBox.withLock { $0 = sendMessageHandler }
 
-    return CreateAgentSessionResult(session: createdSession, customToolsResult: customToolsResult, modelFallbackMessage: modelFallbackMessage, diagnostics: deduplicateDiagnostics(collectSettingsDiagnostics(settingsManager)))
+    return CreateAgentSessionResult(session: createdSession, customToolsResult: customToolsResult, modelFallbackMessage: modelFallbackMessage,
+        diagnostics: deduplicateDiagnostics(collectSettingsDiagnostics(settingsManager) + extensionResult.warnings + inlineExtensionResult.warnings + replacementResult.warnings))
 }

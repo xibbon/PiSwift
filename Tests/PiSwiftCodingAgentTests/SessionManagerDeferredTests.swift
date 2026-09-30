@@ -68,13 +68,12 @@ import Testing
 
     let sm = SessionManager.create(tempDir.path, tempDir.path)
 
-    // Append a user message — should NOT create a file yet
+    // C46: the first user message now creates the session file.
     sm.appendMessage(userMsg("hello"))
 
     let sessionFile = sm.getSessionFile()
     #expect(sessionFile != nil)
-    // The file should NOT exist on disk yet (deferred)
-    #expect(!FileManager.default.fileExists(atPath: sessionFile!))
+    #expect(FileManager.default.fileExists(atPath: sessionFile!))
 }
 
 @Test func deferredPersistenceWritesOnAssistantMessage() throws {

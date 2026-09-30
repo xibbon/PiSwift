@@ -354,7 +354,8 @@ private final class GitUpdateTestFixture {
     let gitHost = "github.com"
     let gitPath = "test/extension-pinned"
     let gitSource = "git:\(gitHost)/\(gitPath)"
-    let hash = SHA256.hash(data: Data("git-\(gitHost)-\(gitPath)".utf8))
+    // C43: a pinned ref is part of the temporary checkout identity.
+    let hash = SHA256.hash(data: Data("git-\(gitHost)-\(gitPath)@main".utf8))
         .map { String(format: "%02x", $0) }
         .joined()
     let cachedDir = URL(fileURLWithPath: NSTemporaryDirectory())

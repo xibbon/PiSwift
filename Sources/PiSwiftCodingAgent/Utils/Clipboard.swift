@@ -171,6 +171,23 @@ public func getClipboardImagePngData() -> Data? {
     return nil
 }
 
+/// Read file URLs copied in Finder. Returns nil when the pasteboard has no files.
+public func readClipboardFilePaths() -> [String]? {
+#if canImport(AppKit)
+    return readClipboardFilePaths(from: .general)
+#else
+    return nil
+#endif
+}
+
+#if canImport(AppKit)
+func readClipboardFilePaths(from pasteboard: NSPasteboard) -> [String]? {
+    let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    let paths = urls.filter(\.isFileURL).map(\.path)
+    return paths.isEmpty ? nil : paths
+}
+#endif
+
 public func readClipboardImagePngData() -> ClipboardImageReadResult {
 #if canImport(AppKit)
     guard let image = NSPasteboard.general.readObjects(forClasses: [NSImage.self], options: nil)?.first as? NSImage else {

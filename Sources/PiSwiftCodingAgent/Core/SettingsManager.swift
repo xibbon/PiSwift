@@ -3,6 +3,43 @@ import PiSwiftAI
 import PiSwiftAgent
 
 public let DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000
+public let DEFAULT_TOOL_NAMES = ["read", "bash", "edit", "write"]
+
+public enum WheelScrollLines: Sendable, Equatable, Codable {
+    case auto
+    case lines(Int)
+
+    public init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let count = try? value.decode(Int.self) {
+            self = .lines(max(1, min(100, count)))
+        } else if try value.decode(String.self) == "auto" {
+            self = .auto
+        } else {
+            throw DecodingError.dataCorruptedError(in: value, debugDescription: "Expected auto or a line count")
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .auto: try value.encode("auto")
+        case .lines(let count): try value.encode(max(1, min(100, count)))
+        }
+    }
+}
+
+private func resolveDefaultTools(_ entries: [String]) -> [String] {
+    let plain = entries.filter { !$0.hasPrefix("+") && !$0.hasPrefix("-") }
+    var tools = plain.isEmpty && !entries.isEmpty ? DEFAULT_TOOL_NAMES : plain
+    for entry in entries where entry.hasPrefix("+") || entry.hasPrefix("-") {
+        let name = String(entry.dropFirst())
+        guard !name.isEmpty else { continue }
+        if entry.hasPrefix("+"), !tools.contains(name) { tools.append(name) }
+        if entry.hasPrefix("-") { tools.removeAll { $0 == name } }
+    }
+    return tools
+}
 
 public struct CompactionModelOverride: Sendable, Equatable {
     public var reserveTokens: Int?
@@ -263,6 +300,7 @@ public struct Settings: Sendable {
     public var tuiMode: String?
     public var fullscreenScrollbar: String?
     public var mouseWheelStep: Int?
+    public var fullscreenWheelScrollLines: WheelScrollLines?
     public var markdown: MarkdownSettings?
     public var thinkingBudgets: ThinkingBudgetsSettings?
     public var treeFilterMode: String?
@@ -278,6 +316,7 @@ public struct Settings: Sendable {
     /// Opt-in analytics data sharing. Defaults to false; enabling generates a tracking ID.
     public var enableAnalytics: Bool?
     public var trackingId: String?
+    public var deviceId: String?
     /// v0.63.0 / v0.68.1: portable session directory. `~` expansion handled at resolution time.
     public var sessionDir: String?
     /// v0.62.0: command used for npm package lookup/install operations. Argv-style (e.g.,
@@ -620,7 +659,10 @@ public final class SettingsManager: Sendable {
         save()
     }
 
-    public func getDefaultTools() -> [String]? { settings.defaultTools }
+    public func getDefaultTools() -> [String]? { settings.defaultTools.map(resolveDefaultTools) }
+
+    /// A value copy of the merged settings.
+    public func getSettings() -> Settings { settings }
     public func getFullscreenExitOutput() -> FullscreenExitOutput { settings.fullscreenExitOutput ?? .transcript }
     public func setFullscreenExitOutput(_ output: FullscreenExitOutput) {
         globalSettings.fullscreenExitOutput = output
@@ -1076,12 +1118,28 @@ public final class SettingsManager: Sendable {
     }
 
     public func getMouseWheelStep() -> Int {
-        max(1, settings.mouseWheelStep ?? 1)
+        switch getFullscreenWheelScrollLines() {
+        case .auto: return 1
+        case .lines(let count): return count
+        }
     }
 
     public func setMouseWheelStep(_ step: Int) {
-        globalSettings.mouseWheelStep = max(1, step)
-        markModified("mouseWheelStep")
+        setFullscreenWheelScrollLines(.lines(step))
+    }
+
+    public func getFullscreenWheelScrollLines() -> WheelScrollLines {
+        if let lines = settings.fullscreenWheelScrollLines { return lines }
+        if let old = settings.mouseWheelStep { return .lines(max(1, min(100, old))) }
+        return .auto
+    }
+
+    public func setFullscreenWheelScrollLines(_ lines: WheelScrollLines) {
+        switch lines {
+        case .auto: globalSettings.fullscreenWheelScrollLines = .auto
+        case .lines(let count): globalSettings.fullscreenWheelScrollLines = .lines(max(1, min(100, count)))
+        }
+        markModified("fullscreenWheelScrollLines")
         save()
     }
 
@@ -1210,6 +1268,18 @@ public final class SettingsManager: Sendable {
 
     public func getTrackingId() -> String? {
         settings.trackingId
+    }
+
+    public func getOrCreateDeviceId() -> String {
+        let (id, created) = state.withLock { state -> (String, Bool) in
+            if let id = state.globalSettings.deviceId, !id.isEmpty { return (id, false) }
+            let id = UUID().uuidString.lowercased()
+            state.globalSettings.deviceId = id
+            state.modifiedFields.insert("deviceId")
+            return (id, true)
+        }
+        if created { save() }
+        return id
     }
 
     public func setEnableAnalytics(_ enabled: Bool) {
@@ -1526,6 +1596,11 @@ public final class SettingsManager: Sendable {
         if let step = json["mouseWheelStep"] as? Int {
             settings.mouseWheelStep = max(1, step)
         }
+        if let count = json["fullscreenWheelScrollLines"] as? Int {
+            settings.fullscreenWheelScrollLines = .lines(max(1, min(100, count)))
+        } else if json["fullscreenWheelScrollLines"] as? String == "auto" {
+            settings.fullscreenWheelScrollLines = .auto
+        }
         settings.treeFilterMode = json["treeFilterMode"] as? String
         settings.promptSnippetsEnabled = json["promptSnippetsEnabled"] as? Bool
         settings.projectTrust = json["projectTrust"] as? [String: Bool]
@@ -1615,6 +1690,7 @@ public final class SettingsManager: Sendable {
         }
 
         settings.trackingId = json["trackingId"] as? String
+        settings.deviceId = json["deviceId"] as? String
 
         if let dir = json["sessionDir"] as? String, !dir.isEmpty {
             settings.sessionDir = dir
@@ -1811,7 +1887,12 @@ public final class SettingsManager: Sendable {
         json["showHardwareCursor"] = settings.showHardwareCursor
         json["tuiMode"] = settings.tuiMode
         json["fullscreenScrollbar"] = settings.fullscreenScrollbar
-        json["mouseWheelStep"] = settings.mouseWheelStep
+        if let lines = settings.fullscreenWheelScrollLines {
+            switch lines {
+            case .auto: json["fullscreenWheelScrollLines"] = "auto"
+            case .lines(let count): json["fullscreenWheelScrollLines"] = count
+            }
+        }
         json["treeFilterMode"] = settings.treeFilterMode
         json["promptSnippetsEnabled"] = settings.promptSnippetsEnabled
         json["projectTrust"] = settings.projectTrust
@@ -1911,6 +1992,7 @@ public final class SettingsManager: Sendable {
         if let trackingId = settings.trackingId {
             json["trackingId"] = trackingId
         }
+        if let deviceId = settings.deviceId { json["deviceId"] = deviceId }
 
         if let dir = settings.sessionDir {
             json["sessionDir"] = dir
@@ -1981,7 +2063,14 @@ public final class SettingsManager: Sendable {
         if let levels = override.modelThinkingLevels {
             result.modelThinkingLevels = (result.modelThinkingLevels ?? [:]).merging(levels) { _, new in new }
         }
-        if override.defaultTools != nil { result.defaultTools = override.defaultTools }
+        if let tools = override.defaultTools {
+            if let baseTools = result.defaultTools,
+               tools.allSatisfy({ $0.hasPrefix("+") || $0.hasPrefix("-") }) {
+                result.defaultTools = baseTools + tools
+            } else {
+                result.defaultTools = tools
+            }
+        }
         if override.fullscreenExitOutput != nil { result.fullscreenExitOutput = override.fullscreenExitOutput }
         if override.fullscreenCopyOnSelect != nil { result.fullscreenCopyOnSelect = override.fullscreenCopyOnSelect }
         if override.transport != nil { result.transport = override.transport }
@@ -2089,6 +2178,7 @@ public final class SettingsManager: Sendable {
         if override.tuiMode != nil { result.tuiMode = override.tuiMode }
         if override.fullscreenScrollbar != nil { result.fullscreenScrollbar = override.fullscreenScrollbar }
         if override.mouseWheelStep != nil { result.mouseWheelStep = override.mouseWheelStep }
+        if override.fullscreenWheelScrollLines != nil { result.fullscreenWheelScrollLines = override.fullscreenWheelScrollLines }
         if let value = override.markdown {
             let baseValue = result.markdown ?? MarkdownSettings()
             result.markdown = MarkdownSettings(
@@ -2121,6 +2211,7 @@ public final class SettingsManager: Sendable {
         if override.enableInstallTelemetry != nil { result.enableInstallTelemetry = override.enableInstallTelemetry }
         if override.enableAnalytics != nil { result.enableAnalytics = override.enableAnalytics }
         if override.trackingId != nil { result.trackingId = override.trackingId }
+        if override.deviceId != nil { result.deviceId = override.deviceId }
         if override.sessionDir != nil { result.sessionDir = override.sessionDir }
         if override.npmCommand != nil { result.npmCommand = override.npmCommand }
         if override.httpIdleTimeoutMs != nil { result.httpIdleTimeoutMs = override.httpIdleTimeoutMs }

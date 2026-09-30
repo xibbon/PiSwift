@@ -18,6 +18,25 @@ public struct UsageTotals: Sendable {
     }
 }
 
+public func combineUsage(_ first: Usage, _ second: Usage) -> Usage {
+    Usage(
+        input: first.input + second.input,
+        output: first.output + second.output,
+        cacheRead: first.cacheRead + second.cacheRead,
+        cacheWrite: first.cacheWrite + second.cacheWrite,
+        cacheWrite1h: first.cacheWrite1h == nil && second.cacheWrite1h == nil ? nil : (first.cacheWrite1h ?? 0) + (second.cacheWrite1h ?? 0),
+        reasoning: first.reasoning == nil && second.reasoning == nil ? nil : (first.reasoning ?? 0) + (second.reasoning ?? 0),
+        totalTokens: first.totalTokens + second.totalTokens,
+        cost: UsageCost(
+            input: first.cost.input + second.cost.input,
+            output: first.cost.output + second.cost.output,
+            cacheRead: first.cost.cacheRead + second.cost.cacheRead,
+            cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
+            total: first.cost.total + second.cost.total
+        )
+    )
+}
+
 public struct UsageCostBreakdownEntry: Sendable {
     public var key: String
     public var cost: Double

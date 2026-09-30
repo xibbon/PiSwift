@@ -113,6 +113,8 @@ public func collectBugReportMetadata(_ input: BugReportMetadataInput, environmen
     var project = input.projectSettings
     global.removeValue(forKey: "trackingId")
     project.removeValue(forKey: "trackingId")
+    global.removeValue(forKey: "deviceId")
+    project.removeValue(forKey: "deviceId")
     var session: [String: Any] = ["id": input.sessionId, "included": input.includeSession,
                                   "summaryIncluded": input.includeSummary, "messageCount": input.messageCount]
     if input.includeSession { session["cwd"] = input.cwd }

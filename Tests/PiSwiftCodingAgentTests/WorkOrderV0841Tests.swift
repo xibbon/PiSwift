@@ -546,13 +546,18 @@ private func makeV0841CompactionSession(
     let compactTask = Task { try await context.session.compact() }
     await gate.waitUntilStarted()
 
-    let promptTask = try await context.session.submitPrompt("queued during compaction")
+    // K20: prompts now reject during compaction after extension command dispatch.
+    do {
+        _ = try await context.session.submitPrompt("queued during compaction")
+        Issue.record("Expected compaction rejection")
+    } catch {
+        #expect(error.localizedDescription.lowercased().contains("compaction"))
+    }
     #expect(context.streamCalls.withLock { $0 } == 0)
     await gate.release()
     _ = try await compactTask.value
-    try await promptTask.value
 
-    #expect(context.streamCalls.withLock { $0 } == 1)
+    #expect(context.streamCalls.withLock { $0 } == 0)
 }
 
 private func v0841TempDirectory(_ label: String) throws -> URL {

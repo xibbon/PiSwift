@@ -117,15 +117,24 @@ public struct PromptOptions: Sendable {
     public var expandPromptTemplates: Bool?
     public var images: [ImageContent]?
     public var source: HookInputSource
+    public var streamingBehavior: HookInputStreamingBehavior?
+    public var preflightResult: (@Sendable (PromptDisposition) -> Void)?
 
     public init(expandSlashCommands: Bool? = nil, expandPromptTemplates: Bool? = nil, images: [ImageContent]? = nil,
-                source: HookInputSource = .interactive) {
+                source: HookInputSource = .interactive,
+                streamingBehavior: HookInputStreamingBehavior? = nil,
+                preflightResult: (@Sendable (PromptDisposition) -> Void)? = nil) {
         self.expandSlashCommands = expandSlashCommands
         self.expandPromptTemplates = expandPromptTemplates
         self.images = images
         self.source = source
+        self.streamingBehavior = streamingBehavior
+        self.preflightResult = preflightResult
     }
 }
+
+public enum QueuedInputDisposition: String, Sendable { case handled, queued }
+public enum PromptDisposition: String, Sendable { case handled, queued, started }
 
 public struct ParsedSkillBlock: Sendable {
     public var name: String
@@ -1747,7 +1756,12 @@ public final class AgentSession: Sendable {
     }
 
     public func getAllTools() -> [ToolInfo] {
-        toolRegistry.values.map { ToolInfo(name: $0.name, description: $0.description) }
+        toolRegistry.values.map { tool in
+            let source = _hookRunner?.getToolSourceInfo(tool.name) ??
+                (ToolName(rawValue: tool.name) == nil ? nil : SourceInfo(
+                    path: BUILTIN_PATH_PREFIX + tool.name, source: "builtin", scope: "user", origin: "top-level"))
+            return ToolInfo(name: tool.name, description: tool.description, sourceInfo: source)
+        }
     }
 
     private func getHookCommands() -> [HookSlashCommandInfo] {
@@ -2054,30 +2068,38 @@ public final class AgentSession: Sendable {
             let parts = text.dropFirst().split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             if let name = parts.first, let command = runner.getCommand(String(name)) {
                 try await command.handler(parts.count > 1 ? String(parts[1]) : "", runner.createCommandContext())
+                options?.preflightResult?(.handled)
                 return Task {}
             }
         }
-        let completion = QueuedPromptCompletion()
-        let queued = state.withLock { state -> Bool in
-            guard state.isCompactingInternal else { return false }
-            state.queuedCompactionPrompts.append(QueuedCompactionPrompt(
-                text: text,
-                options: options,
-                completion: completion
-            ))
-            return true
-        }
-        if queued {
-            return Task {
-                try await completion.wait()
-            }
-        }
+        // K20: extension commands run first; all other prompts reject during compaction.
+        if isCompactingInternal { throw AgentSessionError.compactionInProgress }
 
         guard let input = await processInput(text, images: options?.images,
-                                             source: options?.source ?? .interactive) else { return Task {} }
+                                             source: options?.source ?? .interactive,
+                                             behavior: options?.streamingBehavior) else {
+            options?.preflightResult?(.handled)
+            return Task {}
+        }
+        if isStreaming {
+            guard let behavior = options?.streamingBehavior else { throw AgentSessionError.alreadyProcessingQueue }
+            let expandedText = expandPromptText(input.text)
+            let message = buildUserMessage(text: expandedText, images: input.images)
+            switch behavior {
+            case .steer:
+                steeringMessages.append(expandedText)
+                agent.steer(message)
+            case .followUp:
+                followUpMessages.append(expandedText)
+                agent.followUp(message)
+            }
+            options?.preflightResult?(.queued)
+            return Task {}
+        }
         var processedOptions = options ?? PromptOptions()
         processedOptions.images = input.images
         let messages = try await preparePromptMessages(input.text, options: processedOptions)
+        options?.preflightResult?(.started)
         state.withLock { $0.agentRunAbortRequested = false }
         await idleWaiter.beginRun()
         let task = Task { [weak self, agent] in
@@ -2156,19 +2178,23 @@ public final class AgentSession: Sendable {
     }
 
     /// Queue RPC or interactive input after extension input handlers have processed it.
-    public func steer(_ text: String, images: [ImageContent]? = nil, source: HookInputSource) async {
-        guard let input = await processInput(text, images: images, source: source, behavior: .steer) else { return }
+    @discardableResult
+    public func steer(_ text: String, images: [ImageContent]? = nil, source: HookInputSource) async -> QueuedInputDisposition {
+        guard let input = await processInput(text, images: images, source: source, behavior: .steer) else { return .handled }
         let expandedText = expandPromptText(input.text)
         steeringMessages.append(expandedText)
         agent.steer(buildUserMessage(text: expandedText, images: input.images))
+        return .queued
     }
 
     /// Queue a follow-up after extension input handlers have processed it.
-    public func followUp(_ text: String, images: [ImageContent]? = nil, source: HookInputSource) async {
-        guard let input = await processInput(text, images: images, source: source, behavior: .followUp) else { return }
+    @discardableResult
+    public func followUp(_ text: String, images: [ImageContent]? = nil, source: HookInputSource) async -> QueuedInputDisposition {
+        guard let input = await processInput(text, images: images, source: source, behavior: .followUp) else { return .handled }
         let expandedText = expandPromptText(input.text)
         followUpMessages.append(expandedText)
         agent.followUp(buildUserMessage(text: expandedText, images: input.images))
+        return .queued
     }
 
     /// Queue immediately so a turn-end extension message participates in that turn's flush.

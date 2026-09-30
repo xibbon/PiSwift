@@ -45,7 +45,7 @@ public func findExtensionStackMatches(_ stack: String?, extensions: [CrashExtens
         let path = ext.dylibPath.replacingOccurrences(of: "\\", with: "/")
         let matched = frames.contains { frame in
             let normalized = frame.replacingOccurrences(of: "\\", with: "/")
-            return (!path.isEmpty && normalized.contains(path)) || ext.symbolPrefixes.contains { !$0.isEmpty && normalized.contains($0) }
+            return (!path.isEmpty && !isSyntheticPath(path) && normalized.contains(path)) || ext.symbolPrefixes.contains { !$0.isEmpty && normalized.contains($0) }
         }
         return matched && seen.insert(ext.label).inserted ? ext.label : nil
     }

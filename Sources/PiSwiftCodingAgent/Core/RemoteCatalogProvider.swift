@@ -161,7 +161,7 @@ public struct RemoteCatalogProvider: Sendable {
     private let localGeneratedAt: Double?
     private let httpClient: any ProviderHTTPClient
     private let now: @Sendable () -> Double
-    private let updateOverlay: @Sendable ([Model]) -> Void
+    private let updateOverlay: @Sendable ([AnyModel]) -> Void
 
     public init(
         providerId: String,
@@ -169,7 +169,7 @@ public struct RemoteCatalogProvider: Sendable {
         localGeneratedAt: Double? = getBuiltinModelDataGeneratedAt(),
         httpClient: any ProviderHTTPClient = DefaultProviderHTTPClient(),
         now: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 * 1_000 },
-        updateOverlay: @escaping @Sendable ([Model]) -> Void
+        updateOverlay: @escaping @Sendable ([AnyModel]) -> Void
     ) {
         self.providerId = providerId
         self.catalogBaseURL = catalogBaseURL
@@ -198,7 +198,9 @@ public struct RemoteCatalogProvider: Sendable {
             withAllowedCharacters: CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
         ) ?? providerId
         let trimmedBase = catalogBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(trimmedBase)/api/models/providers/\(encodedProvider)") else {
+        var components = URLComponents(string: "\(trimmedBase)/api/models/providers/\(encodedProvider)")
+        components?.queryItems = [URLQueryItem(name: "types", value: "chat,image,classifier")]
+        guard let url = components?.url else {
             throw RemoteCatalogError.invalidBaseURL(catalogBaseURL)
         }
 
@@ -276,13 +278,25 @@ public struct RemoteCatalogProvider: Sendable {
         return merged
     }
 
-    private func remoteModels(_ entry: ModelsStoreEntry?) -> [Model] {
+    public func mergeModels(baseline: [AnyModel], dynamic: [AnyModel]) -> [AnyModel] {
+        var merged = baseline
+        for model in dynamic {
+            if let index = merged.firstIndex(where: { $0.type == model.type && $0.provider == model.provider && $0.id == model.id }) {
+                merged[index] = model
+            } else {
+                merged.append(model)
+            }
+        }
+        return merged
+    }
+
+    private func remoteModels(_ entry: ModelsStoreEntry?) -> [AnyModel] {
         guard let entry else { return [] }
         if let localGeneratedAt,
            entry.lastModified == nil || (entry.lastModified ?? 0) <= localGeneratedAt {
             return []
         }
-        return entry.models.compactMap { if case .chat(let model) = $0 { model } else { nil } }
+        return entry.models
     }
 
     private func parseCatalog(_ data: Data) throws -> (models: [AnyModel], skipped: Int, entries: Int) {
