@@ -3,6 +3,26 @@ import PiSwiftAI
 
 private let remoteCatalogSourceId = "pi.dev"
 
+public enum VirtualModelRegistrationError: Error, LocalizedError, Sendable {
+    case emptyIdentifier
+    case physicalConflict(String, String)
+    case notRegistered(String, String)
+    case invalidTarget(String, String, String, String)
+    case unauthenticatedTarget(String, String, String, String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyIdentifier: "Virtual model provider and id must not be empty."
+        case .physicalConflict(let provider, let id): "Virtual model \(provider)/\(id) conflicts with a physical model."
+        case .notRegistered(let provider, let id): "Virtual model \(provider)/\(id) is not registered."
+        case .invalidTarget(let provider, let id, let targetProvider, let targetId):
+            "Virtual model \(provider)/\(id) routed to \(targetProvider)/\(targetId), which is not a physical model."
+        case .unauthenticatedTarget(let provider, let id, let targetProvider, let targetId):
+            "Virtual model \(provider)/\(id) routed to \(targetProvider)/\(targetId), which has no credentials."
+        }
+    }
+}
+
 private func storedCredentialString(_ credential: AuthCredential?) -> String? {
     switch credential {
     case .apiKey(let value):
@@ -585,15 +605,20 @@ public final class ModelRegistry: Sendable {
 
     private struct State: Sendable {
         var models: [Model] = []
+        var physicalModels: [Model] = []
         var allModels: [AnyModel] = []
         var baseModels: [Model] = []
         var userModels: [Model] = []
         var configuredProviderOverrides: [String: ProviderOverride] = [:]
         var configuredModelOverrides: [String: [String: ModelOverride]] = [:]
         var dynamicModelsBySource: [String: [String: [Model]]] = [:]
+        var dynamicNonChatModelsBySource: [String: [String: [AnyModel]]] = [:]
         var remoteModelsByProvider: [String: [AnyModel]] = [:]
         var dynamicProviderApiKeysBySource: [String: [String: String]] = [:]
         var dynamicProviderStreamsBySource: [String: [String: ApiStreamSimpleFunction]] = [:]
+        var dynamicProviderImagesBySource: [String: [String: [ImageApi: ImageApiFunction]]] = [:]
+        var dynamicProviderClassifiersBySource: [String: [String: [ClassifierApi: ClassifierFunction]]] = [:]
+        var virtualModelsBySource: [String: [String: [String: VirtualModelDefinition]]] = [:]
         var dynamicSourceOrder: [String] = [remoteCatalogSourceId]
         var errorMessage: String?
         var githubCopilotSupportedModelIds: Set<String>?
@@ -691,7 +716,9 @@ public final class ModelRegistry: Sendable {
 
     public func registerProvider(_ config: HookProviderConfig, sourceId: String) {
         let configuredOverrides = state.withLock { $0.configuredModelOverrides[config.provider] ?? [:] }
-        let models = config.models.map { model in
+        let allModels: [AnyModel] = config.models.map { definition in
+            switch definition {
+            case .chat(let model):
             let registered = Model(
                 id: model.id,
                 name: model.name ?? model.id,
@@ -706,10 +733,27 @@ public final class ModelRegistry: Sendable {
                 samplingParams: model.samplingParams,
                 headers: mergeHeaders(config.headers, model.headers),
                 compat: mergeCompat(config.compat, model.compat),
-                thinkingLevelMap: model.thinkingLevelMap
+                thinkingLevelMap: model.thinkingLevelMap,
+                inputLimits: model.inputLimits,
+                promptCache: model.promptCache
             )
             let overridden = configuredOverrides[model.id].map { applyModelOverride(model: registered, override: $0) } ?? registered
-            return normalizeProviderModel(overridden)
+            return .chat(normalizeProviderModel(overridden))
+            case .image(let model):
+                return .image(ImageModel(
+                    id: model.id, name: model.name ?? model.id, api: model.api,
+                    provider: config.provider, baseUrl: model.baseUrl ?? config.baseUrl,
+                    input: model.input, output: model.output, cost: model.cost,
+                    headers: mergeHeaders(config.headers, model.headers), inputLimits: model.inputLimits
+                ))
+            case .classifier(let model):
+                return .classifier(ClassifierModel(
+                    id: model.id, name: model.name ?? model.id, api: model.api,
+                    provider: config.provider, baseUrl: model.baseUrl ?? config.baseUrl,
+                    input: model.input, cost: model.cost, contextWindow: model.contextWindow,
+                    headers: mergeHeaders(config.headers, model.headers), inputLimits: model.inputLimits
+                ))
+            }
         }
 
         state.withLock { state in
@@ -717,8 +761,11 @@ public final class ModelRegistry: Sendable {
                 state.dynamicSourceOrder.append(sourceId)
             }
             var sourceModels = state.dynamicModelsBySource[sourceId] ?? [:]
-            sourceModels[config.provider] = models
+            sourceModels[config.provider] = allModels.compactMap { if case .chat(let model) = $0 { return model }; return nil }
             state.dynamicModelsBySource[sourceId] = sourceModels
+            var sourceNonChatModels = state.dynamicNonChatModelsBySource[sourceId] ?? [:]
+            sourceNonChatModels[config.provider] = allModels.filter { $0.type != .chat }
+            state.dynamicNonChatModelsBySource[sourceId] = sourceNonChatModels
 
             var sourceKeys = state.dynamicProviderApiKeysBySource[sourceId] ?? [:]
             if let apiKey = config.apiKey {
@@ -730,6 +777,12 @@ public final class ModelRegistry: Sendable {
             var sourceStreams = state.dynamicProviderStreamsBySource[sourceId] ?? [:]
             sourceStreams[config.provider] = config.streamSimple
             state.dynamicProviderStreamsBySource[sourceId] = sourceStreams.isEmpty ? nil : sourceStreams
+            var sourceImages = state.dynamicProviderImagesBySource[sourceId] ?? [:]
+            sourceImages[config.provider] = config.images.isEmpty ? nil : config.images
+            state.dynamicProviderImagesBySource[sourceId] = sourceImages.isEmpty ? nil : sourceImages
+            var sourceClassifiers = state.dynamicProviderClassifiersBySource[sourceId] ?? [:]
+            sourceClassifiers[config.provider] = config.classifiers.isEmpty ? nil : config.classifiers
+            state.dynamicProviderClassifiersBySource[sourceId] = sourceClassifiers.isEmpty ? nil : sourceClassifiers
             rebuildModelsLocked(&state)
         }
     }
@@ -737,18 +790,25 @@ public final class ModelRegistry: Sendable {
     public func unregisterProvider(_ provider: String, sourceId: String) {
         state.withLock { state in
             state.dynamicModelsBySource[sourceId]?[provider] = nil
+            state.dynamicNonChatModelsBySource[sourceId]?[provider] = nil
             if state.dynamicModelsBySource[sourceId]?.isEmpty == true {
                 state.dynamicModelsBySource[sourceId] = nil
             }
             state.dynamicProviderApiKeysBySource[sourceId]?[provider] = nil
             state.dynamicProviderStreamsBySource[sourceId]?[provider] = nil
+            state.dynamicProviderImagesBySource[sourceId]?[provider] = nil
+            state.dynamicProviderClassifiersBySource[sourceId]?[provider] = nil
             if state.dynamicProviderApiKeysBySource[sourceId]?.isEmpty == true {
                 state.dynamicProviderApiKeysBySource[sourceId] = nil
             }
             if state.dynamicProviderStreamsBySource[sourceId]?.isEmpty == true {
                 state.dynamicProviderStreamsBySource[sourceId] = nil
             }
-            if state.dynamicModelsBySource[sourceId] == nil && state.dynamicProviderApiKeysBySource[sourceId] == nil && state.dynamicProviderStreamsBySource[sourceId] == nil {
+            if state.dynamicNonChatModelsBySource[sourceId]?.isEmpty == true { state.dynamicNonChatModelsBySource[sourceId] = nil }
+            if state.dynamicProviderImagesBySource[sourceId]?.isEmpty == true { state.dynamicProviderImagesBySource[sourceId] = nil }
+            if state.dynamicProviderClassifiersBySource[sourceId]?.isEmpty == true { state.dynamicProviderClassifiersBySource[sourceId] = nil }
+            if state.dynamicModelsBySource[sourceId] == nil && state.dynamicProviderApiKeysBySource[sourceId] == nil &&
+                state.dynamicProviderStreamsBySource[sourceId] == nil && state.virtualModelsBySource[sourceId] == nil {
                 state.dynamicSourceOrder.removeAll { $0 == sourceId }
             }
             rebuildModelsLocked(&state)
@@ -758,8 +818,12 @@ public final class ModelRegistry: Sendable {
     public func unregisterProviders(sourceId: String) {
         state.withLock { state in
             state.dynamicModelsBySource[sourceId] = nil
+            state.dynamicNonChatModelsBySource[sourceId] = nil
             state.dynamicProviderApiKeysBySource[sourceId] = nil
             state.dynamicProviderStreamsBySource[sourceId] = nil
+            state.dynamicProviderImagesBySource[sourceId] = nil
+            state.dynamicProviderClassifiersBySource[sourceId] = nil
+            state.virtualModelsBySource[sourceId] = nil
             state.dynamicSourceOrder.removeAll { $0 == sourceId }
             rebuildModelsLocked(&state)
         }
@@ -769,6 +833,81 @@ public final class ModelRegistry: Sendable {
         state.withLock { state in
             state.models.first { $0.provider.lowercased() == provider.lowercased() && $0.id.lowercased() == modelId.lowercased() }
         }
+    }
+
+    /// A catalog chat model that is not virtual, including models hidden by a virtual entry.
+    public func getPhysicalModel(_ provider: String, _ modelId: String) -> Model? {
+        state.withLock { state in
+            if state.models.contains(where: { $0.provider == provider && $0.id == modelId && isVirtualModel($0) }) {
+                return nil
+            }
+            return state.physicalModels.first { $0.provider == provider && $0.id == modelId }
+        }
+    }
+
+    public func registerVirtualModel(_ definition: VirtualModelDefinition, sourceId: String) throws {
+        guard !definition.provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !definition.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw VirtualModelRegistrationError.emptyIdentifier
+        }
+        try state.withLock { state in
+            if state.physicalModels.contains(where: { $0.provider == definition.provider && $0.id == definition.id }) {
+                throw VirtualModelRegistrationError.physicalConflict(definition.provider, definition.id)
+            }
+            if !state.dynamicSourceOrder.contains(sourceId) { state.dynamicSourceOrder.append(sourceId) }
+            state.virtualModelsBySource[sourceId, default: [:]][definition.provider, default: [:]][definition.id] = definition
+            rebuildModelsLocked(&state)
+        }
+    }
+
+    public func unregisterVirtualModel(provider: String, id: String, sourceId: String) {
+        state.withLock { state in
+            state.virtualModelsBySource[sourceId]?[provider]?[id] = nil
+            if state.virtualModelsBySource[sourceId]?[provider]?.isEmpty == true {
+                state.virtualModelsBySource[sourceId]?[provider] = nil
+            }
+            if state.virtualModelsBySource[sourceId]?.isEmpty == true { state.virtualModelsBySource[sourceId] = nil }
+            if state.virtualModelsBySource[sourceId] == nil && state.dynamicModelsBySource[sourceId] == nil {
+                state.dynamicSourceOrder.removeAll { $0 == sourceId }
+            }
+            rebuildModelsLocked(&state)
+        }
+    }
+
+    public func resolveVirtualModel(_ model: Model, messages: [Message], reason: ModelRouteReason,
+                                    thinkingLevel: ModelThinkingLevel, signal: CancellationToken? = nil,
+                                    failed: AssistantMessage? = nil, state routeState: AnyCodable? = nil) async throws -> ModelRoute {
+        let definition = state.withLock { state -> VirtualModelDefinition? in
+            for source in state.dynamicSourceOrder.reversed() {
+                if let value = state.virtualModelsBySource[source]?[model.provider]?[model.id] { return value }
+            }
+            return nil
+        }
+        guard let definition else { throw VirtualModelRegistrationError.notRegistered(model.provider, model.id) }
+        let latest = messages.reversed().compactMap { message -> AssistantMessage? in
+            guard case .assistant(let response) = message,
+                  response.stopReason != .error && response.stopReason != .aborted else { return nil }
+            return response
+        }.first
+        let previous = latest.flatMap { response -> ModelRouteResponse? in
+            guard let physical = getPhysicalModel(response.provider, response.model) else { return nil }
+            return ModelRouteResponse(model: physical, thinkingLevel: response.thinkingLevel)
+        }
+        let failedRoute = failed.flatMap { response -> ModelRouteFailure? in
+            guard let physical = getPhysicalModel(response.provider, response.model) else { return nil }
+            return ModelRouteFailure(model: physical, thinkingLevel: response.thinkingLevel, message: response)
+        }
+        let request = ModelRouteRequest(model: model, thinkingLevel: thinkingLevel, reason: reason,
+                                        previous: previous, failed: failedRoute, state: routeState,
+                                        messages: messages, signal: signal)
+        let route = try await definition.route(request)
+        guard let physical = getPhysicalModel(route.model.provider, route.model.id) else {
+            throw VirtualModelRegistrationError.invalidTarget(model.provider, model.id, route.model.provider, route.model.id)
+        }
+        guard hasConfiguredAuth(physical) else {
+            throw VirtualModelRegistrationError.unauthenticatedTarget(model.provider, model.id, physical.provider, physical.id)
+        }
+        return ModelRoute(model: physical, thinkingLevel: clampThinkingLevel(model: physical, requested: route.thinkingLevel), state: route.state)
     }
 
     public func getAvailable() async -> [Model] {
@@ -784,6 +923,7 @@ public final class ModelRegistry: Sendable {
 
     public func isAvailable(_ model: Model) async -> Bool {
         guard hasConfiguredAuth(model) else { return false }
+        if isVirtualModel(model) { return true }
         guard model.provider == OAuthProvider.githubCopilot.rawValue else { return true }
         guard let supportedIds = await githubCopilotSupportedModelIds() else { return true }
         return supportedIds.contains(model.id)
@@ -792,7 +932,14 @@ public final class ModelRegistry: Sendable {
     /// Whether a model has usable provider authentication or request headers configured.
     /// Header-only local and extension providers are valid even when they do not use an API key.
     public func hasConfiguredAuth(_ model: Model) -> Bool {
-        authStorage.hasAuth(model.provider) || !(model.headers?.isEmpty ?? true)
+        if isVirtualModel(model) {
+            let physical = state.withLock { state in
+                state.physicalModels.filter { $0.provider == model.provider }
+            }
+            return physical.isEmpty || authStorage.hasAuth(model.provider) ||
+                physical.contains { !($0.headers?.isEmpty ?? true) }
+        }
+        return authStorage.hasAuth(model.provider) || !(model.headers?.isEmpty ?? true)
     }
 
     public func getAll() -> [Model] {
@@ -845,6 +992,9 @@ public final class ModelRegistry: Sendable {
         var request = options ?? ImagesOptions()
         request.apiKey = request.apiKey ?? auth.apiKey
         request.headers = mergeProviderHeaders(auth.headers, request.headers)
+        if let implementation = extensionImages(for: resolved.model) {
+            return await implementation(resolved.model, context, request)
+        }
         return await PiSwiftAI.generateImages(model: resolved.model, context: context, options: request)
     }
 
@@ -859,7 +1009,32 @@ public final class ModelRegistry: Sendable {
         var request = options ?? ClassifierOptions()
         request.apiKey = request.apiKey ?? auth.apiKey
         request.headers = mergeProviderHeaders(auth.headers, request.headers)
+        if let implementation = extensionClassifier(for: resolved.model) {
+            return await implementation(resolved.model, context, request)
+        }
         return await PiSwiftAI.classify(model: resolved.model, context: context, options: request)
+    }
+
+    private func extensionImages(for model: ImageModel) -> ImageApiFunction? {
+        state.withLock { state in
+            for source in state.dynamicSourceOrder.reversed() {
+                if let implementation = state.dynamicProviderImagesBySource[source]?[model.provider]?[model.api] {
+                    return implementation
+                }
+            }
+            return nil
+        }
+    }
+
+    private func extensionClassifier(for model: ClassifierModel) -> ClassifierFunction? {
+        state.withLock { state in
+            for source in state.dynamicSourceOrder.reversed() {
+                if let implementation = state.dynamicProviderClassifiersBySource[source]?[model.provider]?[model.api] {
+                    return implementation
+                }
+            }
+            return nil
+        }
     }
 
     public func resolveModelRequest(_ model: ImageModel, signal: CancellationToken? = nil) async -> ResolvedImageModelRequest {
@@ -940,8 +1115,13 @@ public final class ModelRegistry: Sendable {
     /// returned stream starts, including credentials supplied by an extension provider.
     public func stream(model: Model, context: Context, options: StreamOptions? = nil) -> AssistantMessageEventStream {
         let output = AssistantMessageEventStream()
-        Task {
-            await forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output)
+        if isVirtualModel(model) {
+            output.setOnStart { [weak output] in
+                guard let output else { return }
+                Task { await self.forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output) }
+            }
+        } else {
+            Task { await forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output) }
         }
         return output
     }
@@ -949,8 +1129,13 @@ public final class ModelRegistry: Sendable {
     /// Stream with provider-neutral options and request-time authentication.
     public func streamSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) -> AssistantMessageEventStream {
         let output = AssistantMessageEventStream()
-        Task {
-            await forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output)
+        if isVirtualModel(model) {
+            output.setOnStart { [weak output] in
+                guard let output else { return }
+                Task { await self.forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output) }
+            }
+        } else {
+            Task { await forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output) }
         }
         return output
     }
@@ -975,6 +1160,33 @@ public final class ModelRegistry: Sendable {
         output: AssistantMessageEventStream
     ) async {
         do {
+            if isVirtualModel(model) {
+                guard var options = simpleOptions else {
+                    throw ModelRegistryStreamError.authentication("Virtual model \(model.provider)/\(model.id) must be routed before streaming")
+                }
+                let route = try await resolveVirtualModel(
+                    model, messages: normalizeContext(context).messages, reason: .direct,
+                    thinkingLevel: options.reasoning.flatMap { ModelThinkingLevel(rawValue: $0.rawValue) } ?? .off,
+                    signal: options.signal
+                )
+                if let budget = options.maxTokens, route.model.maxTokens > 0 {
+                    options.maxTokens = min(budget, route.model.maxTokens)
+                }
+                let physicalReasoning: PiSwiftAI.ThinkingLevel?
+                if route.thinkingLevel == .off {
+                    physicalReasoning = nil
+                } else {
+                    physicalReasoning = PiSwiftAI.ThinkingLevel(rawValue: route.thinkingLevel.rawValue)
+                }
+                options.reasoning = physicalReasoning
+                if route.model.provider != model.provider {
+                    options.apiKey = nil
+                    options.headers = nil
+                }
+                await forwardStream(model: route.model, context: context, fullOptions: nil,
+                                    simpleOptions: options, output: output)
+                return
+            }
             let signal = fullOptions?.signal ?? simpleOptions?.signal
             let resolved = await resolveModelRequest(model, signal: signal)
             let suppliedKey = fullOptions?.apiKey ?? simpleOptions?.apiKey
@@ -1150,14 +1362,28 @@ public final class ModelRegistry: Sendable {
         for sourceId in state.dynamicSourceOrder where sourceId != remoteCatalogSourceId {
             guard let providers = state.dynamicModelsBySource[sourceId] else { continue }
             for provider in providers.keys.sorted() {
-                combined = mergeCustomModels(builtInModels: combined, customModels: providers[provider] ?? [])
+                // An extension's model list replaces the whole provider catalog.
+                combined.removeAll { $0.provider == provider }
+                combined += providers[provider] ?? []
             }
         }
-        state.models = combined
+        state.physicalModels = combined
+        var listed = combined
+        for sourceId in state.dynamicSourceOrder {
+            guard let providers = state.virtualModelsBySource[sourceId] else { continue }
+            for provider in providers.keys.sorted() {
+                for id in (providers[provider] ?? [:]).keys.sorted() {
+                    guard let definition = providers[provider]?[id] else { continue }
+                    listed.removeAll { $0.provider == provider && $0.id == id }
+                    listed.append(definition.model)
+                }
+            }
+        }
+        state.models = listed
         var all = PiSwiftAI.getAllModels().map { applyConfiguredNonChatModel($0, state: state) }
         // Chat overlays use the same order as the chat-only snapshot.
         all.removeAll { $0.type == .chat }
-        all += combined.map(AnyModel.chat)
+        all += listed.map(AnyModel.chat)
         for provider in state.remoteModelsByProvider.keys.sorted() {
             for raw in state.remoteModelsByProvider[provider] ?? [] where raw.type != .chat {
                 let model = applyConfiguredNonChatModel(raw, state: state)
@@ -1166,6 +1392,13 @@ public final class ModelRegistry: Sendable {
                 } else {
                     all.append(model)
                 }
+            }
+        }
+        for sourceId in state.dynamicSourceOrder where sourceId != remoteCatalogSourceId {
+            guard let providers = state.dynamicNonChatModelsBySource[sourceId] else { continue }
+            for provider in providers.keys.sorted() {
+                all.removeAll { $0.provider == provider && $0.type != .chat }
+                all += providers[provider] ?? []
             }
         }
         state.allModels = all

@@ -225,6 +225,8 @@ private func validateHTTPClientSupport(
     case .anthropicMessages, .openAICompletions, .openAIResponses,
          .openAICodexResponses, .azureOpenAIResponses, .mistralConversations:
         return
+    case .piVirtual:
+        throw StreamError.unsupportedHTTPClient("Virtual model")
     }
 }
 

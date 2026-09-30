@@ -101,6 +101,7 @@ public final class AssistantMessageEventStream: AsyncSequence, Sendable {
     public typealias AsyncIterator = AsyncStream<Element>.Iterator
 
     private let inner: EventStream<Element, AssistantMessage>
+    private let onStart = LockedState<(@Sendable () -> Void)?>(nil)
 
     public init() {
         self.inner = EventStream<Element, AssistantMessage>(
@@ -137,6 +138,20 @@ public final class AssistantMessageEventStream: AsyncSequence, Sendable {
         inner.push(event)
     }
 
+    /// Start a deferred producer when the stream is observed for the first time.
+    public func setOnStart(_ action: @escaping @Sendable () -> Void) {
+        onStart.withLock { $0 = action }
+    }
+
+    private func startIfNeeded() {
+        let action = onStart.withLock { action -> (@Sendable () -> Void)? in
+            let pending = action
+            action = nil
+            return pending
+        }
+        action?()
+    }
+
     public func end(_ result: AssistantMessage? = nil) {
         if let result = result {
             inner.end(result)
@@ -146,10 +161,12 @@ public final class AssistantMessageEventStream: AsyncSequence, Sendable {
     }
 
     public func result() async -> AssistantMessage {
-        await inner.result()
+        startIfNeeded()
+        return await inner.result()
     }
 
     public func makeAsyncIterator() -> AsyncStream<Element>.Iterator {
-        inner.makeAsyncIterator()
+        startIfNeeded()
+        return inner.makeAsyncIterator()
     }
 }

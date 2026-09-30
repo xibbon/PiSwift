@@ -14,6 +14,7 @@ private struct ModelStringCodingKey: CodingKey {
 }
 
 public enum Api: String, Sendable, Codable {
+    case piVirtual = "pi-virtual"
     case openAICompletions = "openai-completions"
     case openAIResponses = "openai-responses"
     case openAICodexResponses = "openai-codex-responses"

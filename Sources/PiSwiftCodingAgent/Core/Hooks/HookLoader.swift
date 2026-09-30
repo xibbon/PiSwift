@@ -105,6 +105,7 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             tools: api.tools,
             currentTools: { api.tools },
             providerRegistrations: api.providerRegistrations,
+            virtualModelRegistrations: api.virtualModelRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
             setSendUserMessageHandler: api.setSendUserMessageHandler,
             setAppendEntryHandler: api.setAppendEntryHandler,
@@ -120,6 +121,8 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             setSetThinkingLevelHandler: api.setSetThinkingLevelHandler,
             setRegisterProviderHandler: api.setRegisterProviderHandler,
             setUnregisterProviderHandler: api.setUnregisterProviderHandler,
+            setRegisterVirtualModelHandler: api.setRegisterVirtualModelHandler,
+            setUnregisterVirtualModelHandler: api.setUnregisterVirtualModelHandler,
             setFlagValue: api.setFlagValue,
             dispose: api.disposeEventBusListeners
         )

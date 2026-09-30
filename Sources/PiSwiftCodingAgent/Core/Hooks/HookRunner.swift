@@ -269,8 +269,29 @@ public final class HookRunner: Sendable {
         hook.setUnregisterProviderHandler { [modelRegistry] provider in
             modelRegistry.unregisterProvider(provider, sourceId: sourceId)
         }
+        let registerVirtual: HookRegisterVirtualModelHandler = { [weak self, modelRegistry] definition in
+            try modelRegistry.registerVirtualModel(
+                definition.withContext { [weak self] in
+                    guard let self else { throw HookAPIError.inactive(sourceId) }
+                    return self.createContext()
+                }, sourceId: sourceId)
+        }
+        hook.setRegisterVirtualModelHandler(registerVirtual)
+        hook.setUnregisterVirtualModelHandler { [modelRegistry] provider, id in
+            modelRegistry.unregisterVirtualModel(provider: provider, id: id, sourceId: sourceId)
+        }
         for config in hook.providerRegistrations.values {
             modelRegistry.registerProvider(config, sourceId: sourceId)
+        }
+        for models in hook.virtualModelRegistrations.values {
+            for definition in models.values {
+                do {
+                    try registerVirtual(definition)
+                } catch {
+                    emitError(HookError(hookPath: hook.path, event: "register_virtual_model",
+                                        error: error.localizedDescription))
+                }
+            }
         }
     }
 

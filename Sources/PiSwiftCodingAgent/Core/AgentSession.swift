@@ -423,6 +423,7 @@ public final class AgentSession: Sendable {
         var compactionFromExtension = false
         var pendingNextTurnMessages: [HookMessage]
         var lastAssistantMessage: AssistantMessage?
+        var failedResponse: AssistantMessage?
         var lastAssistantEntryId: String?
         var lastToolResultEntryIds: [String: String] = [:]
         var lastAssistantToolResults: [ToolResultMessage] = []
@@ -582,6 +583,37 @@ public final class AgentSession: Sendable {
     private var lastAssistantMessage: AssistantMessage? {
         get { state.withLock { $0.lastAssistantMessage } }
         set { state.withLock { $0.lastAssistantMessage = newValue } }
+    }
+
+    private var failedResponse: AssistantMessage? {
+        get { state.withLock { $0.failedResponse } }
+        set { state.withLock { $0.failedResponse = newValue } }
+    }
+
+    /// The last successful physical response under a virtual selection.
+    public var routedModel: ModelRouteResponse? {
+        guard isVirtualModel(agent.state.model),
+              let latest = findLatestResponse(agent.state.messages),
+              let physical = modelRegistry.getPhysicalModel(latest.provider, latest.model) else { return nil }
+        return ModelRouteResponse(model: physical, thinkingLevel: latest.thinkingLevel)
+    }
+
+    private var limitsModel: Model { routedModel?.model ?? agent.state.model }
+
+    private func modelForMessage(_ message: AssistantMessage) -> Model? {
+        let selected = agent.state.model
+        if isVirtualModel(selected) { return modelRegistry.getPhysicalModel(message.provider, message.model) }
+        return selected.provider == message.provider && selected.id == message.model ? selected : nil
+    }
+
+    private func recordSelection() {
+        let selected = agent.state.model
+        let recorded = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find)
+        guard let recorded,
+              recorded.provider != selected.provider || recorded.modelId != selected.id else { return }
+        let wasVirtual = modelRegistry.find(recorded.provider, recorded.modelId).map(isVirtualModel) ?? false
+        guard isVirtualModel(selected) || wasVirtual else { return }
+        sessionManager.appendModelChange(selected.provider, selected.id)
     }
 
     private var compactionAbort: CancellationToken? {
@@ -860,15 +892,49 @@ public final class AgentSession: Sendable {
         }
         self.agent.prepareRequest = { [weak self] request, signal in
             guard let self else { return nil }
-            var canonical = request.context
-            canonical.messages = self.sessionManager.buildSessionProjection().messages
-            canonical.tools = self.agent.state.tools
-            let current = PrepareRequestContext(context: canonical, model: self.agent.state.model,
-                                                thinkingLevel: self.agent.state.thinkingLevel)
-            let previous = try await previousPrepareRequest?(current, signal)
-            return AgentRequestUpdate(context: previous?.context ?? canonical,
-                                      model: previous?.model ?? self.agent.state.model,
-                                      thinkingLevel: previous?.thinkingLevel ?? self.agent.state.thinkingLevel)
+            let failed = self.failedResponse
+            self.failedResponse = nil
+            func prepare() async throws -> (AgentRequestUpdate?, AgentContext, SessionProjection) {
+                var canonical = request.context
+                let projection = self.sessionManager.buildSessionProjection()
+                canonical.messages = projection.messages
+                canonical.tools = self.agent.state.tools
+                let current = PrepareRequestContext(context: canonical, model: self.agent.state.model,
+                                                    thinkingLevel: self.agent.state.thinkingLevel)
+                let previous = try await previousPrepareRequest?(current, signal)
+                return (previous, previous?.context ?? canonical, projection)
+            }
+            var (previous, context, projection) = try await prepare()
+            let selected = previous?.model ?? self.agent.state.model
+            let thinking = previous?.thinkingLevel ?? self.agent.state.thinkingLevel
+            guard isVirtualModel(selected) else {
+                return AgentRequestUpdate(context: context, model: selected, thinkingLevel: thinking)
+            }
+            let lastAssistantIndex = context.messages.lastIndex { $0.role == "assistant" }
+            let afterAssistant = context.messages.dropFirst((lastAssistantIndex ?? -1) + 1)
+            let reason: ModelRouteReason = failed != nil ? .retry :
+                (afterAssistant.contains { $0.role == "user" } ? .user : .continuation)
+            let branch = self.sessionManager.getBranch()
+            let oldState = getVirtualModelState(branch, provider: selected.provider, modelId: selected.id)
+            let route = try await self.modelRegistry.resolveVirtualModel(
+                selected, messages: convertToLlm(context.messages), reason: reason,
+                thinkingLevel: ModelThinkingLevel(rawValue: thinking.rawValue) ?? .off,
+                signal: signal, failed: failed, state: oldState)
+            if let nextState = route.state, nextState != oldState {
+                let id = self.sessionManager.appendCustomEntry(VIRTUAL_MODEL_STATE_ENTRY, [
+                    "provider": selected.provider, "modelId": selected.id, "state": nextState.value
+                ])
+                if let entry = self.sessionManager.getEntry(id) { self.emit(.entryAppended(entry)) }
+            }
+            if self.autoCompactionEnabled, route.model.contextWindow > 0,
+               shouldCompact(estimateProjectedContextTokens(projection, self.sessionManager.getBranch()).tokens,
+                             route.model.contextWindow,
+                             self.settingsManager.getCompactionSettings(model: selected)) {
+                await self.runAutoCompaction(reason: .threshold, willRetry: false)
+                (previous, context, projection) = try await prepare()
+            }
+            return AgentRequestUpdate(context: context, model: route.model,
+                                      thinkingLevel: ThinkingLevel(rawValue: route.thinkingLevel.rawValue) ?? .off)
         }
         let previousTransformContext = self.agent.transformContext
         self.agent.transformContext = { [weak self] messages, signal in
@@ -893,11 +959,15 @@ public final class AgentSession: Sendable {
             let events = self._agentEventQueue.withLock { $0 }
             await events?.value
             var next = turn
-            next.context.messages = self.sessionManager.buildSessionProjection().messages
+            let projection = self.sessionManager.buildSessionProjection()
+            next.context.messages = projection.messages
             if signal?.isCancelled != true,
                self.autoCompactionEnabled,
+               !isVirtualModel(self.agent.state.model),
                self.agent.state.model.contextWindow > 0,
-               shouldCompact(self.estimatedContextTokens(next.context.messages), self.agent.state.model.contextWindow, self.settingsManager.getCompactionSettings(model: self.agent.state.model)) {
+               shouldCompact(estimateProjectedContextTokens(projection, self.sessionManager.getBranch()).tokens,
+                             self.agent.state.model.contextWindow,
+                             self.settingsManager.getCompactionSettings(model: self.agent.state.model)) {
                 await self.runAutoCompaction(reason: .threshold, willRetry: false)
                 next.context.messages = self.sessionManager.buildSessionProjection().messages
             }
@@ -923,7 +993,7 @@ public final class AgentSession: Sendable {
             let normalized = normalizeToolResultImages(
                 sourceContent,
                 autoResizeImages: toolImageSettings.getAutoResizeImages(),
-                resizeOptions: self.agent.state.model.inputLimits?.images?.resize
+                resizeOptions: self.limitsModel.inputLimits?.images?.resize
             )
             guard hookResult != nil || normalized.changed else { return nil }
             return AfterToolCallResult(
@@ -1493,7 +1563,7 @@ public final class AgentSession: Sendable {
     }
 
     private func isRetryableError(_ message: AssistantMessage) -> Bool {
-        let contextWindow = agent.state.model.contextWindow
+        let contextWindow = modelForMessage(message)?.contextWindow ?? agent.state.model.contextWindow
         if isContextOverflow(message, contextWindow: contextWindow) { return false }
         return isRetryableAssistantError(message)
     }
@@ -1555,6 +1625,8 @@ public final class AgentSession: Sendable {
             return false
         }
 
+        failedResponse = message
+
         let token = CancellationToken()
         retryAbort = token
         let attempt = retryAttempt
@@ -1582,15 +1654,16 @@ public final class AgentSession: Sendable {
             break
         }
 
-        let contextWindow = agent.state.model.contextWindow
+        let messageModel = modelForMessage(message)
+        let currentModel = messageModel ?? agent.state.model
+        let contextWindow = currentModel.contextWindow
         guard contextWindow > 0 else { return }
 
         // A delayed post-run check must not compact a response that an intervening
         // manual or automatic compaction already replaced.
         if assistantIsBeforeLatestCompaction(message) { return }
 
-        let currentModel = agent.state.model
-        let sameModel = message.provider == currentModel.provider && message.model == currentModel.id
+        let sameModel = messageModel != nil
         let branch = sessionManager.getBranch()
         let assistantId = state.withLock { $0.lastAssistantEntryId }
         let projection = sessionManager.buildSessionProjection()
@@ -1627,6 +1700,7 @@ public final class AgentSession: Sendable {
                 overflowRecoveryAttempted = true
                 do {
                     try omitRecoveryAttempt(message, toolResults: state.withLock { $0.lastAssistantToolResults })
+                    failedResponse = message
                 } catch {
                     await emitCompactionFailure(reason: .overflow, error: error.localizedDescription, aborted: false, willRetry: false)
                     return
@@ -1639,7 +1713,7 @@ public final class AgentSession: Sendable {
         let usageTokens = calculateContextTokens(message.usage)
         let thresholdTokens = !hasPostAssistantEdit && message.stopReason != .error && usageTokens > 0
             ? usageTokens : estimatedContextTokens(projection.messages)
-        if shouldCompact(thresholdTokens, contextWindow, settingsManager.getCompactionSettings(model: currentModel)) {
+        if shouldCompact(thresholdTokens, contextWindow, settingsManager.getCompactionSettings(model: agent.state.model)) {
             guard !overflowRecoveryAttempted else { return }
             await runAutoCompaction(reason: .threshold, willRetry: false)
         }
@@ -1905,7 +1979,7 @@ public final class AgentSession: Sendable {
                             let content = hookResult?.content ?? context.result.content
                             let normalized = normalizeToolResultImages(content,
                                 autoResizeImages: self.settingsManager.getAutoResizeImages(),
-                                resizeOptions: self.agent.state.model.inputLimits?.images?.resize)
+                                resizeOptions: self.limitsModel.inputLimits?.images?.resize)
                             guard hookResult != nil || normalized.changed else { return nil }
                             return AfterToolCallResult(content: normalized.content,
                                 details: hookResult?.details, isError: hookResult?.isError,
@@ -2094,6 +2168,7 @@ public final class AgentSession: Sendable {
     }
 
     private func hasAuthForModel(_ model: Model) async -> Bool {
+        if isVirtualModel(model) { return await modelRegistry.isAvailable(model) }
         let auth = await modelRegistry.getApiKeyAndHeaders(model)
         if auth.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             return true
@@ -2265,7 +2340,7 @@ public final class AgentSession: Sendable {
         if let index = messages.firstIndex(where: { $0.role == "user" }) {
             var omitted = 0
             let images = settingsManager.getAutoResizeImages() ? options?.images?.compactMap { image -> ImageContent? in
-                let limits = ImageResizeOptions(modelProfile: agent.state.model.inputLimits?.images?.resize)
+                let limits = ImageResizeOptions(modelProfile: limitsModel.inputLimits?.images?.resize)
                 let resized = resizeImage(image, options: limits)
                 guard imageFitsResizeLimits(resized, options: limits) else {
                     omitted += 1
@@ -2328,6 +2403,8 @@ public final class AgentSession: Sendable {
         var processedOptions = options ?? PromptOptions()
         processedOptions.images = input.images
         let messages = try await preparePromptMessages(input.text, options: processedOptions)
+        failedResponse = nil
+        recordSelection()
         options?.preflightResult?(.started)
         state.withLock { $0.agentRunAbortRequested = false }
         await idleWaiter.beginRun()
@@ -2361,6 +2438,7 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.alreadyProcessingContinue
         }
         forcedRequestPrompt = nil
+        failedResponse = nil
         state.withLock { $0.runSystemPromptAppend = nil }
         try await runUntilSettled { [agent] in
             try await agent.continue()
@@ -2446,6 +2524,8 @@ public final class AgentSession: Sendable {
             return true
         }
         if deferred { return }
+        failedResponse = nil
+        recordSelection()
         try await runUntilSettled { [agent] in try await agent.prompt(prompt) }
         let events = _agentEventQueue.withLock { $0 }
         await events?.value
@@ -2934,7 +3014,7 @@ public final class AgentSession: Sendable {
     /// (we can only trust usage from an assistant that responded after the latest compaction —
     /// otherwise the count reflects a pre-compaction snapshot that's no longer valid).
     public func getContextUsage() -> ContextUsage? {
-        let model = agent.state.model
+        let model = limitsModel
         let contextWindow = model.contextWindow
         guard contextWindow > 0 else { return nil }
 
@@ -3135,7 +3215,14 @@ public final class AgentSession: Sendable {
             guard let model = agent.state.model as Model? else {
                 return (nil, true, nil, nil)
             }
-            let request = await resolveModelRequestWithHooks(model)
+            let summary: (request: ResolvedModelRequest, thinkingLevel: PiSwiftAI.ThinkingLevel?)
+            do {
+                summary = try await getSummarizationRequestAuth(model, signal: branchSummaryAbort)
+            } catch {
+                reportBoundaryError("model_route", error.localizedDescription)
+                return (nil, true, nil, nil)
+            }
+            let request = summary.request
             let apiKey = request.auth.apiKey
             let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
             if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || hasHeaders {
@@ -3143,6 +3230,7 @@ public final class AgentSession: Sendable {
                     model: request.model,
                     apiKey: apiKey ?? "",
                     headers: request.auth.headers,
+                    thinkingLevel: summary.thinkingLevel,
                     signal: branchSummaryAbort,
                     customInstructions: customInstructions,
                     replaceInstructions: replaceInstructions,
@@ -3281,13 +3369,7 @@ public final class AgentSession: Sendable {
     ) async throws -> CompactionResult {
 
         let model = agent.state.model
-        let request = await resolveModelRequestWithHooks(model, signal: compactionToken)
         if compactionToken.isCancelled { throw AgentSessionError.compactionCancelled }
-        let apiKey = request.auth.apiKey
-        let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
-        if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false && !hasHeaders {
-            throw AgentSessionError.missingApiKey(provider: model.provider)
-        }
 
         let pathEntries = sessionManager.getBranch()
         let settings = settingsManager.getCompactionSettings(model: agent.state.model)
@@ -3314,6 +3396,14 @@ public final class AgentSession: Sendable {
         if let hookCompaction {
             result = hookCompaction
         } else {
+            let summary = try await getSummarizationRequestAuth(model, signal: compactionToken)
+            let request = summary.request
+            if compactionToken.isCancelled { throw AgentSessionError.compactionCancelled }
+            let apiKey = request.auth.apiKey
+            let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
+            if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false && !hasHeaders {
+                throw AgentSessionError.missingApiKey(provider: request.model.provider)
+            }
             result = try await PiSwiftCodingAgent.compact(
                 preparation,
                 request.model,
@@ -3321,7 +3411,7 @@ public final class AgentSession: Sendable {
                 headers: request.auth.headers,
                 customInstructions: customInstructions,
                 signal: compactionToken,
-                thinkingLevel: PiSwiftAI.ThinkingLevel(rawValue: agent.state.thinkingLevel.rawValue),
+                thinkingLevel: summary.thinkingLevel,
                 streamFn: agent.streamFn,
                 retry: summaryRetryPolicy,
                 callbacks: summaryRetryCallbacks
@@ -3364,6 +3454,24 @@ public final class AgentSession: Sendable {
             state.compactionAbort = token
             return token
         }
+    }
+
+    private func getSummarizationRequestAuth(
+        _ selectedModel: Model, signal: CancellationToken? = nil
+    ) async throws -> (request: ResolvedModelRequest, thinkingLevel: PiSwiftAI.ThinkingLevel?) {
+        let thinking = agent.state.thinkingLevel
+        let route: ModelRoute?
+        if isVirtualModel(selectedModel) {
+            route = try await modelRegistry.resolveVirtualModel(
+                selectedModel, messages: convertToLlm(agent.state.messages), reason: .direct,
+                thinkingLevel: ModelThinkingLevel(rawValue: thinking.rawValue) ?? .off,
+                signal: signal)
+        } else {
+            route = nil
+        }
+        let request = await resolveModelRequestWithHooks(route?.model ?? selectedModel, signal: signal)
+        let level = route?.thinkingLevel.rawValue ?? thinking.rawValue
+        return (request, PiSwiftAI.ThinkingLevel(rawValue: level))
     }
 
     private func resolveModelRequestWithHooks(_ model: Model, signal: CancellationToken? = nil) async -> ResolvedModelRequest {
@@ -3432,7 +3540,7 @@ public final class AgentSession: Sendable {
             setActiveToolsByName(names)
             state.withLock { $0.systemPromptOptions.selectedTools = names.compactMap(ToolName.init(rawValue:)) }
         }
-        if let modelInfo = context.model {
+        if let modelInfo = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find) {
             if let model = modelRegistry.find(modelInfo.provider, modelInfo.modelId) {
                 agent.model = model
                 await emitModelSelect(nextModel: model, previousModel: previousModel, source: .restore)

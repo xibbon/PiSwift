@@ -358,6 +358,49 @@ public typealias HookRegisterProviderHandler = @Sendable (_ config: HookProvider
 public typealias HookUnregisterProviderHandler = @Sendable (_ provider: String) -> Void
 public typealias HookRegisterProviderSetter = @Sendable (@escaping HookRegisterProviderHandler) -> Void
 public typealias HookUnregisterProviderSetter = @Sendable (@escaping HookUnregisterProviderHandler) -> Void
+public typealias HookRegisterVirtualModelHandler = @Sendable (HookVirtualModelDefinition) throws -> Void
+public typealias HookUnregisterVirtualModelHandler = @Sendable (String, String) -> Void
+public typealias HookRegisterVirtualModelSetter = @Sendable (@escaping HookRegisterVirtualModelHandler) -> Void
+public typealias HookUnregisterVirtualModelSetter = @Sendable (@escaping HookUnregisterVirtualModelHandler) -> Void
+
+/// A virtual model registered by an extension. The route receives a fresh runtime
+/// context for each request, as extension event handlers do.
+public struct HookVirtualModelDefinition: Sendable {
+    public var provider: String
+    public var id: String
+    public var name: String
+    public var thinkingLevels: [ModelThinkingLevel]
+    public var contextWindow: Int
+    public var maxTokens: Int
+    public var input: [ModelInput]
+    public var route: @Sendable (ModelRouteRequest, HookContext) async throws -> ModelRoute
+
+    public init(provider: String, id: String, name: String,
+                thinkingLevels: [ModelThinkingLevel] = [.off], contextWindow: Int = 0,
+                maxTokens: Int = 0, input: [ModelInput] = [.text, .image],
+                route: @escaping @Sendable (ModelRouteRequest, HookContext) async throws -> ModelRoute) {
+        self.provider = provider
+        self.id = id
+        self.name = name
+        self.thinkingLevels = thinkingLevels
+        self.contextWindow = contextWindow
+        self.maxTokens = maxTokens
+        self.input = input
+        self.route = route
+    }
+
+    public func withContext(_ context: @escaping @Sendable () throws -> HookContext) -> VirtualModelDefinition {
+        VirtualModelDefinition(provider: provider, id: id, name: name,
+                               thinkingLevels: thinkingLevels, contextWindow: contextWindow,
+                               maxTokens: maxTokens, input: input,
+                               route: { request in
+                                   var routeContext = try context()
+                                   routeContext.thinkingLevel = request.thinkingLevel
+                                   routeContext.signal = request.signal
+                                   return try await route(request, routeContext)
+                               })
+    }
+}
 
 public struct HookProviderModel: Sendable {
     public var id: String
@@ -373,6 +416,8 @@ public struct HookProviderModel: Sendable {
     public var headers: ProviderHeaders?
     public var compat: OpenAICompat?
     public var thinkingLevelMap: ThinkingLevelMap?
+    public var inputLimits: ModelInputLimits?
+    public var promptCache: ModelPromptCache?
 
     public init(
         id: String,
@@ -387,7 +432,9 @@ public struct HookProviderModel: Sendable {
         samplingParams: [String: AnyCodable]? = nil,
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
-        thinkingLevelMap: ThinkingLevelMap? = nil
+        thinkingLevelMap: ThinkingLevelMap? = nil,
+        inputLimits: ModelInputLimits? = nil,
+        promptCache: ModelPromptCache? = nil
     ) {
         self.id = id
         self.name = name
@@ -402,6 +449,71 @@ public struct HookProviderModel: Sendable {
         self.headers = headers
         self.compat = compat
         self.thinkingLevelMap = thinkingLevelMap
+        self.inputLimits = inputLimits
+        self.promptCache = promptCache
+    }
+}
+
+/// Extension model definitions are separated by operation. A provider can use the
+/// same model ID for different operations.
+public enum HookProviderModelConfig: Sendable {
+    case chat(HookProviderModel)
+    case image(HookProviderImageModel)
+    case classifier(HookProviderClassifierModel)
+}
+
+public struct HookProviderImageModel: Sendable {
+    public var id: String
+    public var name: String?
+    public var api: ImageApi
+    public var baseUrl: String?
+    public var input: [ModelInput]
+    public var output: [ModelInput]
+    public var inputLimits: ModelInputLimits?
+    public var cost: ModelCost
+    public var headers: ProviderHeaders?
+
+    public init(id: String, name: String? = nil, api: ImageApi, baseUrl: String? = nil,
+                input: [ModelInput] = [.text], output: [ModelInput] = [.image],
+                inputLimits: ModelInputLimits? = nil,
+                cost: ModelCost = ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                headers: ProviderHeaders? = nil) {
+        self.id = id
+        self.name = name
+        self.api = api
+        self.baseUrl = baseUrl
+        self.input = input
+        self.output = output
+        self.inputLimits = inputLimits
+        self.cost = cost
+        self.headers = headers
+    }
+}
+
+public struct HookProviderClassifierModel: Sendable {
+    public var id: String
+    public var name: String?
+    public var api: ClassifierApi
+    public var baseUrl: String?
+    public var input: [ModelInput]
+    public var inputLimits: ModelInputLimits?
+    public var cost: ModelCost
+    public var contextWindow: Int
+    public var headers: ProviderHeaders?
+
+    public init(id: String, name: String? = nil, api: ClassifierApi, baseUrl: String? = nil,
+                input: [ModelInput] = [.text], inputLimits: ModelInputLimits? = nil,
+                cost: ModelCost = ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                contextWindow: Int, headers: ProviderHeaders? = nil) {
+        self.id = id
+        self.name = name
+        self.api = api
+        self.baseUrl = baseUrl
+        self.input = input
+        self.inputLimits = inputLimits
+        self.cost = cost
+        self.contextWindow = contextWindow
+        self.headers = headers
     }
 }
 
@@ -414,7 +526,9 @@ public struct HookProviderConfig: Sendable {
     public var compat: OpenAICompat?
     /// Custom provider stream. The registry resolves credentials before invoking it.
     public var streamSimple: ApiStreamSimpleFunction?
-    public var models: [HookProviderModel]
+    public var images: [ImageApi: ImageApiFunction]
+    public var classifiers: [ClassifierApi: ClassifierFunction]
+    public var models: [HookProviderModelConfig]
 
     public init(
         provider: String,
@@ -424,7 +538,9 @@ public struct HookProviderConfig: Sendable {
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         streamSimple: ApiStreamSimpleFunction? = nil,
-        models: [HookProviderModel]
+        images: [ImageApi: ImageApiFunction] = [:],
+        classifiers: [ClassifierApi: ClassifierFunction] = [:],
+        models: [HookProviderModelConfig]
     ) {
         self.provider = provider
         self.api = api
@@ -433,7 +549,21 @@ public struct HookProviderConfig: Sendable {
         self.headers = headers
         self.compat = compat
         self.streamSimple = streamSimple
+        self.images = images
+        self.classifiers = classifiers
         self.models = models
+    }
+
+    /// Source-compatible chat-only registration used by older extensions.
+    public init(provider: String, api: Api, baseUrl: String, apiKey: String? = nil,
+                headers: ProviderHeaders? = nil, compat: OpenAICompat? = nil,
+                streamSimple: ApiStreamSimpleFunction? = nil,
+                images: [ImageApi: ImageApiFunction] = [:],
+                classifiers: [ClassifierApi: ClassifierFunction] = [:],
+                models: [HookProviderModel]) {
+        self.init(provider: provider, api: api, baseUrl: baseUrl, apiKey: apiKey,
+                  headers: headers, compat: compat, streamSimple: streamSimple,
+                  images: images, classifiers: classifiers, models: models.map(HookProviderModelConfig.chat))
     }
 }
 
@@ -667,6 +797,9 @@ public struct HookContext: Sendable {
     public var cwd: String
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
+    /// The selected level and cancellation token for a virtual route.
+    public var thinkingLevel: ModelThinkingLevel?
+    public var signal: CancellationToken?
     private var getModelHandler: @Sendable () -> Model?
     private var getScopedModelsHandler: @Sendable () -> [ScopedModel]
     private var getSystemPromptHandler: @Sendable () -> String?
@@ -694,7 +827,9 @@ public struct HookContext: Sendable {
         abort: @escaping @Sendable () -> Void,
         hasPendingMessages: @escaping @Sendable () -> Bool,
         getContextUsage: @escaping HookGetContextUsageHandler = { nil },
-        compact: @escaping HookCompactHandler = { _ in }
+        compact: @escaping HookCompactHandler = { _ in },
+        thinkingLevel: ModelThinkingLevel? = nil,
+        signal: CancellationToken? = nil
     ) {
         self.ui = ui
         self.mode = mode
@@ -702,6 +837,8 @@ public struct HookContext: Sendable {
         self.cwd = cwd
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
+        self.thinkingLevel = thinkingLevel
+        self.signal = signal
         self.getModelHandler = model
         self.getScopedModelsHandler = scopedModels
         self.getSystemPromptHandler = systemPrompt
@@ -1745,6 +1882,7 @@ public struct LoadedHook: Sendable {
     /// session start visible to reload bookkeeping.
     public var currentTools: @Sendable () -> [String: CustomTool]
     public var providerRegistrations: [String: HookProviderConfig]
+    public var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]]
     public var setSendMessageHandler: HookSendMessageSetter
     public var setSendUserMessageHandler: HookSendUserMessageSetter
     public var setAppendEntryHandler: HookAppendEntrySetter
@@ -1761,6 +1899,8 @@ public struct LoadedHook: Sendable {
     public var setSetThinkingLevelHandler: HookSetThinkingLevelSetter
     public var setRegisterProviderHandler: HookRegisterProviderSetter
     public var setUnregisterProviderHandler: HookUnregisterProviderSetter
+    public var setRegisterVirtualModelHandler: HookRegisterVirtualModelSetter
+    public var setUnregisterVirtualModelHandler: HookUnregisterVirtualModelSetter
     public var setRegisterToolHandler: HookRegisterToolSetter
     public var setUnregisterToolHandler: HookUnregisterToolSetter
     public var setFlagValue: HookSetFlagValue
@@ -1788,6 +1928,7 @@ public struct LoadedHook: Sendable {
         tools: [String: CustomTool] = [:],
         currentTools: (@Sendable () -> [String: CustomTool])? = nil,
         providerRegistrations: [String: HookProviderConfig] = [:],
+        virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]] = [:],
         setSendMessageHandler: @escaping HookSendMessageSetter = { _ in },
         setSendUserMessageHandler: @escaping HookSendUserMessageSetter = { _ in },
         setAppendEntryHandler: @escaping HookAppendEntrySetter = { _ in },
@@ -1804,6 +1945,8 @@ public struct LoadedHook: Sendable {
         setSetThinkingLevelHandler: @escaping HookSetThinkingLevelSetter = { _ in },
         setRegisterProviderHandler: @escaping HookRegisterProviderSetter = { _ in },
         setUnregisterProviderHandler: @escaping HookUnregisterProviderSetter = { _ in },
+        setRegisterVirtualModelHandler: @escaping HookRegisterVirtualModelSetter = { _ in },
+        setUnregisterVirtualModelHandler: @escaping HookUnregisterVirtualModelSetter = { _ in },
         setRegisterToolHandler: @escaping HookRegisterToolSetter = { _ in },
         setUnregisterToolHandler: @escaping HookUnregisterToolSetter = { _ in },
         setFlagValue: @escaping HookSetFlagValue = { _, _ in },
@@ -1826,6 +1969,7 @@ public struct LoadedHook: Sendable {
         self.tools = tools
         self.currentTools = currentTools ?? { tools }
         self.providerRegistrations = providerRegistrations
+        self.virtualModelRegistrations = virtualModelRegistrations
         self.setSendMessageHandler = setSendMessageHandler
         self.setSendUserMessageHandler = setSendUserMessageHandler
         self.setAppendEntryHandler = setAppendEntryHandler
@@ -1842,6 +1986,8 @@ public struct LoadedHook: Sendable {
         self.setSetThinkingLevelHandler = setSetThinkingLevelHandler
         self.setRegisterProviderHandler = setRegisterProviderHandler
         self.setUnregisterProviderHandler = setUnregisterProviderHandler
+        self.setRegisterVirtualModelHandler = setRegisterVirtualModelHandler
+        self.setUnregisterVirtualModelHandler = setUnregisterVirtualModelHandler
         self.setRegisterToolHandler = setRegisterToolHandler
         self.setUnregisterToolHandler = setUnregisterToolHandler
         self.setFlagValue = setFlagValue
@@ -1897,6 +2043,7 @@ public final class HookAPI: Sendable {
             state.flags.removeAll()
             state.flagValues.removeAll()
             state.providerRegistrations.removeAll()
+            state.virtualModelRegistrations.removeAll()
             state.handlers.removeAll()
             state.tools.removeAll()
             state.commands.removeAll()
@@ -1919,8 +2066,11 @@ public final class HookAPI: Sendable {
         /// Keyed by tool name; collisions overwrite (last write wins).
         var tools: [String: CustomTool]
         var providerRegistrations: [String: HookProviderConfig]
+        var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]]
         var registerProviderHandler: HookRegisterProviderHandler
         var unregisterProviderHandler: HookUnregisterProviderHandler
+        var registerVirtualModelHandler: HookRegisterVirtualModelHandler
+        var unregisterVirtualModelHandler: HookUnregisterVirtualModelHandler
         var registerToolHandler: HookRegisterToolHandler
         var unregisterToolHandler: HookUnregisterToolHandler
         var sendMessageHandler: HookSendMessageHandler
@@ -1987,6 +2137,11 @@ public final class HookAPI: Sendable {
         set { state.withLock { $0.providerRegistrations = newValue } }
     }
 
+    public private(set) var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]] {
+        get { state.withLock { $0.virtualModelRegistrations } }
+        set { state.withLock { $0.virtualModelRegistrations = newValue } }
+    }
+
     private var registerProviderHandler: HookRegisterProviderHandler {
         get { state.withLock { $0.registerProviderHandler } }
         set { state.withLock { $0.registerProviderHandler = newValue } }
@@ -1995,6 +2150,16 @@ public final class HookAPI: Sendable {
     private var unregisterProviderHandler: HookUnregisterProviderHandler {
         get { state.withLock { $0.unregisterProviderHandler } }
         set { state.withLock { $0.unregisterProviderHandler = newValue } }
+    }
+
+    private var registerVirtualModelHandler: HookRegisterVirtualModelHandler {
+        get { state.withLock { $0.registerVirtualModelHandler } }
+        set { state.withLock { $0.registerVirtualModelHandler = newValue } }
+    }
+
+    private var unregisterVirtualModelHandler: HookUnregisterVirtualModelHandler {
+        get { state.withLock { $0.unregisterVirtualModelHandler } }
+        set { state.withLock { $0.unregisterVirtualModelHandler = newValue } }
     }
 
     private var registerToolHandler: HookRegisterToolHandler {
@@ -2102,8 +2267,11 @@ public final class HookAPI: Sendable {
             shortcuts: [:],
             tools: [:],
             providerRegistrations: [:],
+            virtualModelRegistrations: [:],
             registerProviderHandler: { _ in },
             unregisterProviderHandler: { _ in },
+            registerVirtualModelHandler: { _ in },
+            unregisterVirtualModelHandler: { _, _ in },
             registerToolHandler: { _ in },
             unregisterToolHandler: { _ in },
             sendMessageHandler: { _, _ in },
@@ -2207,6 +2375,14 @@ public final class HookAPI: Sendable {
 
     public func setUnregisterProviderHandler(_ handler: @escaping HookUnregisterProviderHandler) {
         unregisterProviderHandler = handler
+    }
+
+    public func setRegisterVirtualModelHandler(_ handler: @escaping HookRegisterVirtualModelHandler) {
+        registerVirtualModelHandler = handler
+    }
+
+    public func setUnregisterVirtualModelHandler(_ handler: @escaping HookUnregisterVirtualModelHandler) {
+        unregisterVirtualModelHandler = handler
     }
 
     public func setRegisterToolHandler(_ handler: @escaping HookRegisterToolHandler) {
@@ -2413,6 +2589,43 @@ public final class HookAPI: Sendable {
         guard loadFailure.withLock({ $0 == nil }) else { return }
         providerRegistrations.removeValue(forKey: provider)
         unregisterProviderHandler(provider)
+    }
+
+    public func registerVirtualModel(_ definition: HookVirtualModelDefinition) throws {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
+        let previous = state.withLock { state -> HookVirtualModelDefinition? in
+            let old = state.virtualModelRegistrations[definition.provider]?[definition.id]
+            state.virtualModelRegistrations[definition.provider, default: [:]][definition.id] = definition
+            return old
+        }
+        do {
+            try registerVirtualModelHandler(definition)
+        } catch {
+            state.withLock { state in
+                state.virtualModelRegistrations[definition.provider, default: [:]][definition.id] = previous
+            }
+            throw error
+        }
+    }
+
+    public func registerVirtualModel(_ definition: VirtualModelDefinition) throws {
+        try registerVirtualModel(HookVirtualModelDefinition(
+            provider: definition.provider, id: definition.id, name: definition.name,
+            thinkingLevels: definition.thinkingLevels, contextWindow: definition.contextWindow,
+            maxTokens: definition.maxTokens, input: definition.input,
+            route: { request, _ in try await definition.route(request) }
+        ))
+    }
+
+    public func unregisterVirtualModel(provider: String, id: String) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
+        state.withLock { state in
+            state.virtualModelRegistrations[provider]?[id] = nil
+            if state.virtualModelRegistrations[provider]?.isEmpty == true {
+                state.virtualModelRegistrations[provider] = nil
+            }
+        }
+        unregisterVirtualModelHandler(provider, id)
     }
 
 #if !canImport(UIKit)

@@ -443,6 +443,7 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             tools: api.tools,
             currentTools: { api.tools },
             providerRegistrations: api.providerRegistrations,
+            virtualModelRegistrations: api.virtualModelRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
             setSendUserMessageHandler: api.setSendUserMessageHandler,
             setAppendEntryHandler: api.setAppendEntryHandler,
@@ -459,6 +460,8 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             setSetThinkingLevelHandler: api.setSetThinkingLevelHandler,
             setRegisterProviderHandler: api.setRegisterProviderHandler,
             setUnregisterProviderHandler: api.setUnregisterProviderHandler,
+            setRegisterVirtualModelHandler: api.setRegisterVirtualModelHandler,
+            setUnregisterVirtualModelHandler: api.setUnregisterVirtualModelHandler,
             setRegisterToolHandler: api.setRegisterToolHandler,
             setUnregisterToolHandler: api.setUnregisterToolHandler,
             setFlagValue: api.setFlagValue,
@@ -501,6 +504,9 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
         }
         for provider in loaded.providerRegistrations.values {
             api.registerProvider(provider)
+        }
+        for models in loaded.virtualModelRegistrations.values {
+            for model in models.values { try? api.registerVirtualModel(model) }
         }
     }
 }
@@ -644,11 +650,12 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let existingSession = sessionManager.buildSessionContext()
     time("loadSession")
     let hasExistingSession = !existingSession.messages.isEmpty
+    let sessionModel = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find)
 
     var model = options.model
     var modelFallbackMessage: String?
 
-    if model == nil, hasExistingSession, let existingModel = existingSession.model {
+    if model == nil, hasExistingSession, let existingModel = sessionModel {
         if let restored = modelRegistry.find(existingModel.provider, existingModel.modelId),
            modelRegistry.hasConfiguredAuth(restored),
            await modelRegistry.isAvailable(restored) {

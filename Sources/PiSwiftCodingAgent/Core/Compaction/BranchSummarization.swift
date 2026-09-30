@@ -56,6 +56,7 @@ public struct GenerateBranchSummaryOptions: Sendable {
     public var model: Model
     public var apiKey: String
     public var headers: ProviderHeaders?
+    public var thinkingLevel: PiSwiftAI.ThinkingLevel?
     public var signal: CancellationToken?
     public var customInstructions: String?
     /// If true, `customInstructions` replaces the default prompt instead of being appended.
@@ -66,10 +67,11 @@ public struct GenerateBranchSummaryOptions: Sendable {
     public var retry: RetryPolicy?
     public var callbacks: RetryCallbacks?
 
-    public init(model: Model, apiKey: String, headers: ProviderHeaders? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?, streamFn: StreamFn? = nil, retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil) {
+    public init(model: Model, apiKey: String, headers: ProviderHeaders? = nil, thinkingLevel: PiSwiftAI.ThinkingLevel? = nil, signal: CancellationToken?, customInstructions: String?, replaceInstructions: Bool? = nil, reserveTokens: Int?, streamFn: StreamFn? = nil, retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil) {
         self.model = model
         self.apiKey = apiKey
         self.headers = headers
+        self.thinkingLevel = thinkingLevel
         self.signal = signal
         self.customInstructions = customInstructions
         self.replaceInstructions = replaceInstructions
@@ -199,7 +201,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
         let response = try await completeSummarization(
             model: options.model,
             context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: [message]),
-            options: SimpleStreamOptions(maxTokens: min(4096, options.model.maxTokens > 0 ? options.model.maxTokens : Int.max), signal: options.signal, apiKey: options.apiKey, headers: options.headers),
+            options: SimpleStreamOptions(maxTokens: min(4096, options.model.maxTokens > 0 ? options.model.maxTokens : Int.max), signal: options.signal, apiKey: options.apiKey, reasoning: options.thinkingLevel, headers: options.headers),
             streamFn: options.streamFn, retry: options.retry, callbacks: options.callbacks
         )
         if response.stopReason == .aborted { return BranchSummaryResult(aborted: true) }
