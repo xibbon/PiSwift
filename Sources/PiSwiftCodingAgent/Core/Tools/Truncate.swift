@@ -209,3 +209,40 @@ private func truncateStringToBytesFromEnd(_ str: String, maxBytes: Int) -> Strin
     let slice = data[start..<data.count]
     return String(decoding: slice, as: UTF8.self)
 }
+
+public struct MiddleTruncationResult: Sendable {
+    public var content: String
+    public var truncated: Bool
+    public var removedChars: Int
+    public var totalBytes: Int
+    public var totalLines: Int
+}
+
+/// Keep the start and end within the byte limit. Cut only at UTF-8 boundaries.
+public func truncateMiddle(_ content: String, maxBytes: Int) -> MiddleTruncationResult {
+    let bytes = Array(content.utf8)
+    let totalLines = content.isEmpty ? 0 : content.split(separator: "\n", omittingEmptySubsequences: false).count
+        - (content.hasSuffix("\n") ? 1 : 0)
+    if bytes.count <= maxBytes {
+        return MiddleTruncationResult(content: content, truncated: false, removedChars: 0,
+                                      totalBytes: bytes.count, totalLines: totalLines)
+    }
+
+    let headSize = max(0, maxBytes / 2)
+    let tailSize = max(0, maxBytes - headSize)
+    var headEnd = min(headSize, bytes.count)
+    while headEnd > 0 && (bytes[headEnd] & 0xC0) == 0x80 { headEnd -= 1 }
+    var tailStart = max(0, bytes.count - tailSize)
+    while tailStart < bytes.count && (bytes[tailStart] & 0xC0) == 0x80 { tailStart += 1 }
+
+    let head = String(decoding: bytes[..<headEnd], as: UTF8.self)
+    let tail = String(decoding: bytes[tailStart...], as: UTF8.self)
+    let removedChars = String(decoding: bytes[headEnd..<tailStart], as: UTF8.self).unicodeScalars.count
+    return MiddleTruncationResult(
+        content: "\(head)…\(removedChars) chars truncated…\(tail)",
+        truncated: true,
+        removedChars: removedChars,
+        totalBytes: bytes.count,
+        totalLines: totalLines
+    )
+}

@@ -29,15 +29,19 @@ public func makeHookRunnerAfterToolCallHook(_ hookRunner: HookRunner) -> AfterTo
             input: context.args,
             content: context.result.content,
             details: context.result.details,
-            isError: context.isError
+            isError: context.isError,
+            structuredContent: context.result.structuredContent,
+            usage: context.result.usage
         )
-        guard let result = await hookRunner.emit(event) as? ToolResultEventResult else {
+        guard let result = await hookRunner.emitToolResult(event) else {
             return nil
         }
         return AfterToolCallResult(
             content: result.content,
             details: result.details,
-            isError: result.isError
+            isError: result.isError,
+            usage: result.usage,
+            structuredContent: result.structuredContent.map(StructuredContentOverride.set) ?? .absent
         )
     }
 }

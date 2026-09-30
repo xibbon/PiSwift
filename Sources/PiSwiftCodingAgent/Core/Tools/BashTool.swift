@@ -7,7 +7,7 @@ enum BashToolError: LocalizedError, Sendable {
     case missingCommand
     case commandTimedOut(seconds: Int, output: String)
     case commandAborted(output: String)
-    case commandFailed(exitCode: Int, output: String)
+    case noExitCode(output: String)
 
     var errorDescription: String? {
         switch self {
@@ -21,9 +21,9 @@ enum BashToolError: LocalizedError, Sendable {
         case let .commandAborted(output):
             let suffix = output.isEmpty ? "" : "\n\n"
             return "\(output)\(suffix)Command aborted"
-        case let .commandFailed(exitCode, output):
+        case let .noExitCode(output):
             let suffix = output.isEmpty ? "" : "\n\n"
-            return "\(output)\(suffix)Command exited with code \(exitCode)"
+            return "\(output)\(suffix)Command terminated without an exit code"
         }
     }
 }
@@ -39,6 +39,47 @@ private func getTempFilePath() -> String {
     return URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("pi-bash-\(uuid).log")
         .path
+}
+
+private let structuredOutputMaxBytes = 1024 * 1024
+
+/// Read the complete output when it fits. Otherwise, keep the first and last 512 KiB.
+/// The temp file is the source when output is large, as in the upstream accumulator.
+private func structuredBashOutput(_ output: String, tempFilePath: String?) throws -> (content: String, truncated: Bool) {
+    let bytes = Data(output.utf8)
+    guard bytes.count > structuredOutputMaxBytes else {
+        return (output, false)
+    }
+    let path = tempFilePath ?? getTempFilePath()
+    if tempFilePath == nil {
+        try bytes.write(to: URL(fileURLWithPath: path))
+    }
+    let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+    defer { try? file.close() }
+    let size = try file.seekToEnd()
+    let headSize = structuredOutputMaxBytes / 2
+    let tailSize = structuredOutputMaxBytes - headSize
+    try file.seek(toOffset: 0)
+    let head = try file.read(upToCount: headSize) ?? Data()
+    try file.seek(toOffset: size - UInt64(tailSize))
+    let tail = try file.read(upToCount: tailSize) ?? Data()
+
+    // Remove an incomplete final character from the head and continuation bytes from the tail.
+    var headEnd = head.count
+    let headBytes = Array(head)
+    let tailBytes = Array(tail)
+    let fullBytes = Array(bytes)
+    while headEnd > 0 && headEnd < fullBytes.count && (fullBytes[headEnd] & 0xC0) == 0x80 {
+        headEnd -= 1
+    }
+    var tailStart = 0
+    while tailStart < tailBytes.count && (tailBytes[tailStart] & 0xC0) == 0x80 {
+        tailStart += 1
+    }
+    let headText = String(decoding: headBytes[..<headEnd], as: UTF8.self)
+    let tailText = String(decoding: tailBytes[tailStart...], as: UTF8.self)
+    let omitted = Int(size) - headSize - tailSize
+    return ("\(headText)\n\n[... \(omitted) bytes omitted ...]\n\n\(tailText)", true)
 }
 
 public protocol BashOperations: Sendable {
@@ -105,6 +146,20 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
             "command": ["type": "string", "description": "Shell command to execute"],
             "timeout": ["type": "number", "description": "Timeout in seconds (optional)"],
         ]),
+    ]
+    let outputSchema: [String: AnyCodable] = [
+        "type": AnyCodable("object"),
+        "properties": AnyCodable([
+            "output": [
+                "type": "string",
+                "description": "Combined stdout and stderr, up to 1 MiB. Longer output keeps its first and last 512 KiB around an omission marker.",
+            ],
+            "truncated": ["type": "boolean", "description": "Whether output omits part of the command output"],
+            "full_output_path": ["type": "string", "description": "Temp file with the full output, when truncated"],
+            "exit_code": ["type": "number"],
+            "wall_time_seconds": ["type": "number"],
+        ]),
+        "required": AnyCodable(["output", "truncated", "exit_code", "wall_time_seconds"]),
     ]
     @Sendable func execute(
         _ toolCallId: String,
@@ -185,6 +240,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
             }
         }
 
+        let startedAt = ContinuousClock.now
         let result: BashResult = try await operations.execute(
             resolvedCommand,
             options: BashExecutorOptions(
@@ -197,12 +253,18 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
         )
 
         // Get final state and close temp file handle
-        let (fullOutput, tempFilePath): (String, String?) = state.withLock { s in
+        let (fullOutput, initialTempFilePath): (String, String?) = state.withLock { s in
             try? s.tempFileHandle?.close()
             return (s.output, s.tempFilePath)
         }
 
         let truncation = truncateTail(fullOutput)
+        var tempFilePath = initialTempFilePath
+        if truncation.truncated && tempFilePath == nil {
+            let path = getTempFilePath()
+            try Data(fullOutput.utf8).write(to: URL(fileURLWithPath: path))
+            tempFilePath = path
+        }
         var outputText = truncation.content.isEmpty ? "(no output)" : truncation.content
 
         // Build details with truncation info
@@ -240,11 +302,31 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
             }
             throw BashToolError.commandAborted(output: outputText)
         }
-        if let exitCode = result.exitCode, exitCode != 0 {
-            throw BashToolError.commandFailed(exitCode: exitCode, output: outputText)
+        guard let exitCode = result.exitCode else {
+            throw BashToolError.noExitCode(output: outputText)
         }
-
-        return AgentToolResult(content: [.text(TextContent(text: outputText))], details: details)
+        let structuredOutput = try structuredBashOutput(fullOutput, tempFilePath: tempFilePath)
+        let wallTime = ContinuousClock.now - startedAt
+        let wallTimeSeconds = Double(wallTime.components.seconds) + Double(wallTime.components.attoseconds) / 1e18
+        let structuredContent: [String: Any] = [
+            "output": structuredOutput.content,
+            "truncated": structuredOutput.truncated,
+            "exit_code": exitCode,
+            "wall_time_seconds": (wallTimeSeconds * 10).rounded() / 10,
+        ]
+        var structured = structuredContent
+        if structuredOutput.truncated, let tempFilePath {
+            structured["full_output_path"] = tempFilePath
+        }
+        if exitCode != 0 {
+            outputText += "\n\nCommand exited with code \(exitCode)"
+        }
+        return AgentToolResult(
+            content: [.text(TextContent(text: outputText))],
+            details: details,
+            structuredContent: AnyCodable(structured),
+            isError: exitCode != 0 ? true : nil
+        )
     }
     return PiSwiftAgent.AgentTool(
         label: "bash",
@@ -256,7 +338,8 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
             try await createBashTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: options)
                 .execute(id, params, signal, onUpdate)
         },
-        constrainedSampling: .jsonSchema(strict: .prefer)
+        constrainedSampling: .jsonSchema(strict: .prefer),
+        outputSchema: outputSchema
     )
 }
 

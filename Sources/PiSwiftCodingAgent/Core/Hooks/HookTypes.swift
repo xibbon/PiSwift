@@ -281,11 +281,24 @@ public typealias HookGetActiveToolsHandler = @Sendable () -> [String]
 public struct ToolInfo: Sendable {
     public var name: String
     public var description: String
+    public var parameters: [String: AnyCodable]?
+    public var promptGuidelines: [String]?
+    public var exposure: ToolExposure
+    public var namespace: ToolNamespace?
+    public var annotations: ToolAnnotations?
     public var sourceInfo: SourceInfo?
 
-    public init(name: String, description: String, sourceInfo: SourceInfo? = nil) {
+    public init(name: String, description: String, sourceInfo: SourceInfo? = nil,
+                parameters: [String: AnyCodable]? = nil, promptGuidelines: [String]? = nil,
+                exposure: ToolExposure = .direct, namespace: ToolNamespace? = nil,
+                annotations: ToolAnnotations? = nil) {
         self.name = name
         self.description = description
+        self.parameters = parameters
+        self.promptGuidelines = promptGuidelines
+        self.exposure = exposure
+        self.namespace = namespace
+        self.annotations = annotations
         self.sourceInfo = sourceInfo
     }
 }
@@ -1273,11 +1286,13 @@ public struct ToolExecutionStartEvent: HookEvent, Sendable {
     public var toolCallId: String
     public var toolName: String
     public var args: [String: AnyCodable]
+    public var parentToolCallId: String?
 
-    public init(toolCallId: String, toolName: String, args: [String: AnyCodable]) {
+    public init(toolCallId: String, toolName: String, args: [String: AnyCodable], parentToolCallId: String? = nil) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.args = args
+        self.parentToolCallId = parentToolCallId
     }
 }
 
@@ -1287,12 +1302,15 @@ public struct ToolExecutionUpdateEvent: HookEvent, Sendable {
     public var toolName: String
     public var args: [String: AnyCodable]
     public var partialResult: AgentToolResult
+    public var parentToolCallId: String?
 
-    public init(toolCallId: String, toolName: String, args: [String: AnyCodable], partialResult: AgentToolResult) {
+    public init(toolCallId: String, toolName: String, args: [String: AnyCodable], partialResult: AgentToolResult,
+                parentToolCallId: String? = nil) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.args = args
         self.partialResult = partialResult
+        self.parentToolCallId = parentToolCallId
     }
 }
 
@@ -1302,12 +1320,15 @@ public struct ToolExecutionEndEvent: HookEvent, Sendable {
     public var toolName: String
     public var result: AgentToolResult
     public var isError: Bool
+    public var parentToolCallId: String?
 
-    public init(toolCallId: String, toolName: String, result: AgentToolResult, isError: Bool) {
+    public init(toolCallId: String, toolName: String, result: AgentToolResult, isError: Bool,
+                parentToolCallId: String? = nil) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.result = result
         self.isError = isError
+        self.parentToolCallId = parentToolCallId
     }
 }
 
@@ -1532,11 +1553,13 @@ public struct ToolCallEvent: HookEvent, Sendable {
     public var toolName: String
     public var toolCallId: String
     public var input: [String: AnyCodable]
+    public var parentToolCallId: String?
 
-    public init(toolName: String, toolCallId: String, input: [String: AnyCodable]) {
+    public init(toolName: String, toolCallId: String, input: [String: AnyCodable], parentToolCallId: String? = nil) {
         self.toolName = toolName
         self.toolCallId = toolCallId
         self.input = input
+        self.parentToolCallId = parentToolCallId
     }
 }
 
@@ -1559,7 +1582,10 @@ public struct ToolResultEvent: HookEvent, Sendable {
     public var input: [String: AnyCodable]
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    public var structuredContent: AnyCodable?
     public var isError: Bool
+    public var usage: Usage?
+    public var parentToolCallId: String?
 
     public init(
         toolName: String,
@@ -1567,14 +1593,20 @@ public struct ToolResultEvent: HookEvent, Sendable {
         input: [String: AnyCodable],
         content: [ContentBlock],
         details: AnyCodable?,
-        isError: Bool
+        isError: Bool,
+        structuredContent: AnyCodable? = nil,
+        usage: Usage? = nil,
+        parentToolCallId: String? = nil
     ) {
         self.toolName = toolName
         self.toolCallId = toolCallId
         self.input = input
         self.content = content
         self.details = details
+        self.structuredContent = structuredContent
         self.isError = isError
+        self.usage = usage
+        self.parentToolCallId = parentToolCallId
     }
 }
 
@@ -1582,11 +1614,16 @@ public struct ToolResultEventResult: Sendable {
     public var content: [ContentBlock]?
     public var details: AnyCodable?
     public var isError: Bool?
+    public var structuredContent: AnyCodable?
+    public var usage: Usage?
 
-    public init(content: [ContentBlock]? = nil, details: AnyCodable? = nil, isError: Bool? = nil) {
+    public init(content: [ContentBlock]? = nil, details: AnyCodable? = nil, isError: Bool? = nil,
+                structuredContent: AnyCodable? = nil, usage: Usage? = nil) {
         self.content = content
         self.details = details
         self.isError = isError
+        self.structuredContent = structuredContent
+        self.usage = usage
     }
 }
 

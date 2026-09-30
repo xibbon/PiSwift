@@ -6,6 +6,22 @@ public func encodeSessionEvent(_ event: AgentSessionEvent) -> [String: Any] {
     switch event {
     case .agent(let agentEvent):
         return encodeAgentEvent(agentEvent)
+    case .nestedToolExecution(let nested):
+        switch nested {
+        case .start(let toolCallId, let toolName, let args, let parentToolCallId):
+            return ["type": "tool_execution_start", "toolCallId": toolCallId,
+                    "toolName": toolName, "args": args.mapValues { $0.value },
+                    "parentToolCallId": parentToolCallId]
+        case .update(let toolCallId, let toolName, let args, let partialResult, let parentToolCallId):
+            return ["type": "tool_execution_update", "toolCallId": toolCallId,
+                    "toolName": toolName, "args": args.mapValues { $0.value },
+                    "partialResult": toolResultResultToDict(partialResult),
+                    "parentToolCallId": parentToolCallId]
+        case .end(let toolCallId, let toolName, let result, let isError, let parentToolCallId):
+            return ["type": "tool_execution_end", "toolCallId": toolCallId,
+                    "toolName": toolName, "result": toolResultResultToDict(result),
+                    "isError": isError, "parentToolCallId": parentToolCallId]
+        }
     case .entryAppended(let entry):
         let data = encodeSessionEntry(entry).data(using: .utf8) ?? Data()
         return ["type": "entry_appended", "entry": (try? JSONSerialization.jsonObject(with: data)) ?? [:]]
@@ -125,7 +141,7 @@ func encodeAgentEvent(_ event: AgentEvent) -> [String: Any] {
 }
 
 private func toolResultToDict(_ message: ToolResultMessage) -> [String: Any] {
-    [
+    var object: [String: Any] = [
         "toolCallId": message.toolCallId,
         "toolName": message.toolName,
         "content": message.content.map { contentBlockToDict($0) },
@@ -133,13 +149,19 @@ private func toolResultToDict(_ message: ToolResultMessage) -> [String: Any] {
         "isError": message.isError,
         "timestamp": message.timestamp,
     ]
+    if let usage = message.usage { object["usage"] = usageToJSONObject(usage) }
+    if let nested = message.nestedCalls { object["nestedCalls"] = nestedToolCallsToJSONObject(nested) }
+    return object
 }
 
 private func toolResultResultToDict(_ result: AgentToolResult) -> [String: Any] {
-    [
+    var object: [String: Any] = [
         "content": result.content.map { contentBlockToDict($0) },
         "details": result.details?.jsonValue as Any,
     ]
+    if let structured = result.structuredContent { object["structuredContent"] = structured.value }
+    if let isError = result.isError { object["isError"] = isError }
+    return object
 }
 
 private func toolCall(at contentIndex: Int, in partial: AssistantMessage) -> ToolCall? {

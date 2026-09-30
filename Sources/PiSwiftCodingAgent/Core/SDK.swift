@@ -801,7 +801,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         }
     }
 
-    let getCustomToolContext: @Sendable () -> CustomToolContext = { [sessionManager, modelRegistry, eventBus] in
+    let getCustomToolContext: @Sendable (String, CancellationToken?) -> CustomToolContext = { [sessionManager, modelRegistry, eventBus] toolCallId, signal in
         let agent = agentBox.withLock { $0 }
         let session = sessionBox.withLock { $0 }
         let sendMessageHandler = sendMessageHandlerBox.withLock { $0 }
@@ -815,10 +815,25 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             events: eventBus,
             sendMessage: { message, options in
                 sendMessageHandler(message, options)
+            },
+            tools: session?.getCallableTools() ?? [],
+            toolCallId: toolCallId,
+            signal: signal,
+            nestedToolExecute: { name, args, options in
+                guard let session else {
+                    let call = AgentToolCall(id: "\(toolCallId)/0", name: name, arguments: [:])
+                    let result = AgentToolResult(
+                        content: [.text(TextContent(text: "Nested tool calls are not available in this context"))],
+                        details: AnyCodable([String: AnyCodable]()), isError: true
+                    )
+                    return AgentToolCallOutcome(toolCall: call, result: result, isError: true)
+                }
+                return await session.executeNestedTool(callerId: toolCallId, name: name, args: args,
+                                                       options: options)
             }
         )
     }
-    let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, getCustomToolContext)
+    let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, contextFactory: getCustomToolContext)
         .filter { !excludedToolNames.contains($0.name) }
 
     // Tools registered by extensions via `pi.registerTool(_:)`. Wrapped through the same
@@ -827,7 +842,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let extensionToolDefinitions = extensionTools.map { tool in
         LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
     }
-    let wrappedExtensionTools = wrapCustomTools(extensionToolDefinitions, getCustomToolContext)
+    let wrappedExtensionTools = wrapCustomTools(extensionToolDefinitions, contextFactory: getCustomToolContext)
         .filter { !excludedToolNames.contains($0.name) }
 
     let allBuiltInToolsMap = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
@@ -851,9 +866,20 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     } else if options.noTools == .all {
         toolRegistry.removeAll()
     }
+    let toolDefinitions = Dictionary(
+        (customToolsResult.tools + extensionToolDefinitions).map { ($0.tool.name, $0.tool) },
+        uniquingKeysWith: { _, newer in newer }
+    ).filter { toolRegistry[$0.key] != nil }
+    var seenRegistryNames: Set<String> = []
+    let toolRegistryOrder = (ToolName.allCases.map(\.rawValue) +
+        (wrappedCustomTools + wrappedExtensionTools).map(\.name))
+        .filter { toolRegistry[$0] != nil && seenRegistryNames.insert($0).inserted }
     let allTools = (builtInTools + wrappedCustomTools + wrappedExtensionTools).filter { tool in
-        if let allowedNames { return allowedNames.contains(tool.name) }
-        return options.noTools != .all
+        if let allowedNames { return allowedNames.contains(tool.name) && toolDefinitions[tool.name]?.exposure != .hidden }
+        guard options.noTools != .all else { return false }
+        guard let definition = toolDefinitions[tool.name] else { return true }
+        let exposure = definition.exposure ?? .direct
+        return (exposure == .direct || exposure == .modelOnly) && definition.defaultActive != false
     }
     time("combineTools")
 
@@ -1063,13 +1089,15 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         skillsSettings: settingsManager.getSkillsSettings(),
         eventBus: eventBus,
         toolRegistry: toolRegistry,
+        toolRegistryOrder: toolRegistryOrder,
+        toolDefinitions: toolDefinitions,
         rebuildSystemPrompt: rebuildSystemPrompt,
         reloadExtensionsHook: reloadExtensionsHook,
         wrapExtensionTools: { tools in
             let definitions = tools.map { tool in
                 LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
             }
-            let wrapped = wrapCustomTools(definitions, getCustomToolContext)
+            let wrapped = wrapCustomTools(definitions, contextFactory: getCustomToolContext)
                 .filter { !excludedToolNames.contains($0.name) }
             return wrapped
         }

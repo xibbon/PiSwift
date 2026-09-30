@@ -46,6 +46,7 @@ public struct AgentOptions: Sendable {
     public var toolExecution: ToolExecutionMode?
     public var beforeToolCall: BeforeToolCallFn?
     public var afterToolCall: AfterToolCallFn?
+    public var prepareToolResultMessage: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?
     public var finishTurn: AgentFinishTurnFn?
     public var prepareRequest: PrepareRequestFn?
     public var prepareNextTurn: AgentPrepareNextTurnFn?
@@ -76,6 +77,7 @@ public struct AgentOptions: Sendable {
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
         afterToolCall: AfterToolCallFn? = nil,
+        prepareToolResultMessage: (@Sendable (ToolResultMessage) async -> ToolResultMessage)? = nil,
         finishTurn: AgentFinishTurnFn? = nil,
         prepareRequest: PrepareRequestFn? = nil,
         prepareNextTurn: AgentPrepareNextTurnFn? = nil,
@@ -105,6 +107,7 @@ public struct AgentOptions: Sendable {
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall
+        self.prepareToolResultMessage = prepareToolResultMessage
         self.finishTurn = finishTurn
         self.prepareRequest = prepareRequest
         self.prepareNextTurn = prepareNextTurn
@@ -142,6 +145,7 @@ public final class Agent: Sendable {
         var toolExecution: ToolExecutionMode
         var beforeToolCall: BeforeToolCallFn?
         var afterToolCall: AfterToolCallFn?
+        var prepareToolResultMessage: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?
         var prepareNextTurn: AgentPrepareNextTurnFn?
         var prepareNextTurnWithContext: AgentPrepareNextTurnWithContextFn?
         var finishTurn: AgentFinishTurnFn?
@@ -295,6 +299,11 @@ public final class Agent: Sendable {
         set { stateBox.withLock { $0.afterToolCall = newValue } }
     }
 
+    public var prepareToolResultMessage: (@Sendable (ToolResultMessage) async -> ToolResultMessage)? {
+        get { stateBox.withLock { $0.prepareToolResultMessage } }
+        set { stateBox.withLock { $0.prepareToolResultMessage = newValue } }
+    }
+
     public var prepareNextTurn: AgentPrepareNextTurnFn? {
         get { stateBox.withLock { $0.prepareNextTurn } }
         set { stateBox.withLock { $0.prepareNextTurn = newValue } }
@@ -357,6 +366,7 @@ public final class Agent: Sendable {
             toolExecution: options.toolExecution ?? .parallel,
             beforeToolCall: options.beforeToolCall,
             afterToolCall: options.afterToolCall,
+            prepareToolResultMessage: options.prepareToolResultMessage,
             prepareNextTurn: options.prepareNextTurn,
             prepareNextTurnWithContext: options.prepareNextTurnWithContext,
             finishTurn: options.finishTurn,
@@ -697,6 +707,7 @@ public final class Agent: Sendable {
             toolExecution: toolExecution,
             beforeToolCall: beforeToolCall,
             afterToolCall: afterToolCall,
+            prepareToolResultMessage: prepareToolResultMessage,
             convertToLlm: convertToLlm,
             transformContext: transformContext,
             getApiKey: getApiKey,

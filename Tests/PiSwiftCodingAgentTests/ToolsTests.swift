@@ -437,14 +437,13 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     #expect(textOutput(result).contains("test output"))
 }
 
-@Test func bashToolErrors() async {
+@Test func bashToolErrors() async throws {
     let cwd = FileManager.default.currentDirectoryPath
-    do {
-        _ = try await runTool(createBashTool(cwd: cwd), "test-call-9", ["command": AnyCodable("exit 1")])
-        #expect(Bool(false), "Expected bash failure")
-    } catch {
-        #expect(error.localizedDescription.contains("code 1") || error.localizedDescription.contains("Command"))
-    }
+    // C40: a nonzero bash exit now returns an error result with structured content.
+    let result = try await runTool(createBashTool(cwd: cwd), "test-call-9", ["command": AnyCodable("exit 1")])
+    #expect(result.isError == true)
+    #expect(textOutput(result).contains("Command exited with code 1"))
+    #expect((result.structuredContent?.value as? [String: Any])?["exit_code"] as? Int == 1)
 }
 
 @Test func bashToolTimeout() async {

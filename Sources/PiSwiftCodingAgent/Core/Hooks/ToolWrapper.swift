@@ -27,7 +27,8 @@ public func wrapToolWithHooks(_ tool: AgentTool, _ hookRunner: HookRunner) -> Ag
                     return AgentToolResult(
                         content: [.text(TextContent(text: reason))],
                         details: nil,
-                        terminate: callResult.terminate
+                        terminate: callResult.terminate,
+                        isError: true
                     )
                 }
             }
@@ -47,13 +48,19 @@ public func wrapToolWithHooks(_ tool: AgentTool, _ hookRunner: HookRunner) -> Ag
                         input: params,
                         content: result.content,
                         details: result.details,
-                        isError: false
+                        isError: result.isError == true,
+                        structuredContent: result.structuredContent,
+                        usage: result.usage
                     )
-                    if let hookResult = await hookRunner.emit(event) as? ToolResultEventResult {
+                    if let hookResult = await hookRunner.emitToolResult(event) {
                         return AgentToolResult(
                             content: hookResult.content ?? result.content,
                             details: hookResult.details ?? result.details,
-                            terminate: result.terminate
+                            usage: hookResult.usage ?? result.usage,
+                            terminate: result.terminate,
+                            structuredContent: hookResult.structuredContent ??
+                                (hookResult.content == nil ? result.structuredContent : nil),
+                            isError: hookResult.isError ?? result.isError
                         )
                     }
                 }
@@ -69,13 +76,15 @@ public func wrapToolWithHooks(_ tool: AgentTool, _ hookRunner: HookRunner) -> Ag
                         details: nil,
                         isError: true
                     )
-                    _ = await hookRunner.emit(event)
+                    _ = await hookRunner.emitToolResult(event)
                 }
                 throw error
             }
         },
         prepareArguments: tool.prepareArguments,
-        constrainedSampling: tool.constrainedSampling
+        constrainedSampling: tool.constrainedSampling,
+        outputSchema: tool.outputSchema,
+        executionMode: tool.executionMode
     )
 }
 

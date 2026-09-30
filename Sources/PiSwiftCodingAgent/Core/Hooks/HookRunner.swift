@@ -895,6 +895,43 @@ public final class HookRunner: Sendable {
         return lastResult
     }
 
+    /// Apply tool-result changes in handler order. Replacing model content without
+    /// structured content drops the old machine-readable value.
+    public func emitToolResult(_ event: ToolResultEvent) async -> ToolResultEventResult? {
+        var current = event
+        var modified = false
+        await dispatchEvent(event, eventForHandler: { current }) { value, _ in
+            guard let result = value as? ToolResultEventResult else { return false }
+            if let content = result.content {
+                current.content = content
+                if result.structuredContent == nil { current.structuredContent = nil }
+                modified = true
+            }
+            if let details = result.details {
+                current.details = details
+                modified = true
+            }
+            if let structured = result.structuredContent {
+                current.structuredContent = structured
+                modified = true
+            }
+            if let isError = result.isError {
+                current.isError = isError
+                modified = true
+            }
+            if let usage = result.usage {
+                current.usage = usage
+                modified = true
+            }
+            return false
+        }
+        guard modified else { return nil }
+        return ToolResultEventResult(content: current.content, details: current.details,
+                                     isError: current.isError,
+                                     structuredContent: current.structuredContent,
+                                     usage: current.usage)
+    }
+
     public func emitUserBash(_ event: UserBashEvent) async throws -> UserBashEventResult? {
         let handlersSnapshot = snapshotHandlers(event.type)
         let observers = eventObservers.withLock { Array($0.values) }

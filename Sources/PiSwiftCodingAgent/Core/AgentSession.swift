@@ -9,6 +9,7 @@ public enum AutoCompactionReason: String, Sendable {
 
 public enum AgentSessionEvent: Sendable {
     case agent(AgentEvent)
+    case nestedToolExecution(NestedToolExecutionEvent)
     case entryAppended(SessionEntry)
     case agentSettled
     case autoCompactionStart(reason: AutoCompactionReason)
@@ -20,6 +21,12 @@ public enum AgentSessionEvent: Sendable {
         switch self {
         case .agent(let event):
             return event.type
+        case .nestedToolExecution(let event):
+            switch event {
+            case .start: return "tool_execution_start"
+            case .update: return "tool_execution_update"
+            case .end: return "tool_execution_end"
+            }
         case .entryAppended:
             return "entry_appended"
         case .agentSettled:
@@ -53,6 +60,8 @@ public struct AgentSessionConfig: Sendable {
     public var skillsSettings: SkillsSettings?
     public var eventBus: EventBus?
     public var toolRegistry: [String: AgentTool]?
+    public var toolRegistryOrder: [String]?
+    public var toolDefinitions: [String: CustomTool]?
     public var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
     /// Re-discover and re-load extension dylibs. Wired by `createAgentSession()` so it
     /// uses the same paths/cwd/agentDir as the initial load. Invoked by
@@ -81,6 +90,8 @@ public struct AgentSessionConfig: Sendable {
         skillsSettings: SkillsSettings? = nil,
         eventBus: EventBus? = nil,
         toolRegistry: [String: AgentTool]? = nil,
+        toolRegistryOrder: [String]? = nil,
+        toolDefinitions: [String: CustomTool]? = nil,
         rebuildSystemPrompt: (@Sendable ([String]) -> String)? = nil,
         reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)? = nil,
         wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])? = nil
@@ -101,6 +112,8 @@ public struct AgentSessionConfig: Sendable {
         self.skillsSettings = skillsSettings
         self.eventBus = eventBus
         self.toolRegistry = toolRegistry
+        self.toolRegistryOrder = toolRegistryOrder
+        self.toolDefinitions = toolDefinitions
         self.rebuildSystemPrompt = rebuildSystemPrompt
         self.reloadExtensionsHook = reloadExtensionsHook
         self.wrapExtensionTools = wrapExtensionTools
@@ -440,6 +453,10 @@ public final class AgentSession: Sendable {
         var runSystemPromptAppend: String?
         var systemPromptOptions: BuildSystemPromptOptions
         var toolRegistry: [String: AgentTool]
+        var toolRegistryOrder: [String]
+        var toolDefinitions: [String: CustomTool]
+        var hiddenDeclarations: Set<String> = []
+        var nestedToolCalls: NestedToolCallRunner?
         var rebuildSystemPrompt: (@Sendable ([String]) -> String)?
         var toolPromptSnippets: [String: String]
         var toolPromptGuidelines: [String: [String]]
@@ -684,6 +701,31 @@ public final class AgentSession: Sendable {
         set { state.withLock { $0.toolRegistry = newValue } }
     }
 
+    private var toolRegistryOrder: [String] {
+        get { state.withLock { $0.toolRegistryOrder } }
+        set { state.withLock { $0.toolRegistryOrder = newValue } }
+    }
+
+    private func registeredTools() -> [AgentTool] {
+        let registry = toolRegistry
+        return toolRegistryOrder.compactMap { registry[$0] }
+    }
+
+    private var toolDefinitions: [String: CustomTool] {
+        get { state.withLock { $0.toolDefinitions } }
+        set { state.withLock { $0.toolDefinitions = newValue } }
+    }
+
+    private var hiddenDeclarations: Set<String> {
+        get { state.withLock { $0.hiddenDeclarations } }
+        set { state.withLock { $0.hiddenDeclarations = newValue } }
+    }
+
+    private var nestedToolCalls: NestedToolCallRunner? {
+        get { state.withLock { $0.nestedToolCalls } }
+        set { state.withLock { $0.nestedToolCalls = newValue } }
+    }
+
     private var rebuildSystemPrompt: (@Sendable ([String]) -> String)? {
         get { state.withLock { $0.rebuildSystemPrompt } }
         set { state.withLock { $0.rebuildSystemPrompt = newValue } }
@@ -732,6 +774,11 @@ public final class AgentSession: Sendable {
     }
 
     public init(config: AgentSessionConfig) {
+        let initialTools = config.agent.state.tools
+        let initialRegistry = config.toolRegistry ?? Dictionary(
+            initialTools.map { ($0.name, $0) }, uniquingKeysWith: { _, newer in newer })
+        let initialRegistryOrder = config.toolRegistryOrder ??
+            (config.toolRegistry == nil ? initialTools.map(\.name) : initialRegistry.keys.sorted())
         self.agent = config.agent
         self.sessionManager = config.sessionManager
         self.settingsManager = config.settingsManager
@@ -772,7 +819,9 @@ public final class AgentSession: Sendable {
             forcedRequestPrompt: nil,
             runSystemPromptAppend: nil,
             systemPromptOptions: config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()),
-            toolRegistry: config.toolRegistry ?? [:],
+            toolRegistry: initialRegistry,
+            toolRegistryOrder: initialRegistryOrder,
+            toolDefinitions: config.toolDefinitions ?? [:],
             rebuildSystemPrompt: config.rebuildSystemPrompt,
             toolPromptSnippets: [:],
             toolPromptGuidelines: ((config.customTools ?? []).map(\.tool) +
@@ -783,6 +832,19 @@ public final class AgentSession: Sendable {
             reloadExtensionsHook: config.reloadExtensionsHook,
             wrapExtensionTools: config.wrapExtensionTools
         ))
+
+        self.agent.prepareToolResultMessage = { [weak self] original in
+            guard let runner = self?.nestedToolCalls,
+                  let summary = await runner.takeRecord(toolCallId: original.toolCallId) else {
+                return original
+            }
+            var message = original
+            message.nestedCalls = summary.calls
+            if let usage = summary.usage {
+                message.usage = message.usage.map { combineUsage($0, usage) } ?? usage
+            }
+            return message
+        }
 
         let previousPrepare = self.agent.prepareNextTurn
         let previousPrepareWithContext = self.agent.prepareNextTurnWithContext
@@ -809,11 +871,20 @@ public final class AgentSession: Sendable {
         let previousTransformContext = self.agent.transformContext
         self.agent.transformContext = { [weak self] messages, signal in
             let transformed = try await previousTransformContext?(messages, signal) ?? messages
-            guard let forced = self?.forcedRequestPrompt else { return transformed }
-            let current = getCurrentSystemMessage(transformed)
+            let hidden = self?.hiddenDeclarations ?? []
+            let projected = hidden.isEmpty ? transformed : transformed.map { message -> AgentMessage in
+                guard case .system(var system) = message else { return message }
+                system.toolsAdded = system.toolsAdded?.filter { !hidden.contains($0.name) }
+                system.toolsRemoved = system.toolsRemoved?.filter { !hidden.contains($0.name) }
+                if system.toolsAdded?.isEmpty == true { system.toolsAdded = nil }
+                if system.toolsRemoved?.isEmpty == true { system.toolsRemoved = nil }
+                return .system(system)
+            }
+            guard let forced = self?.forcedRequestPrompt else { return projected }
+            let current = getCurrentSystemMessage(projected)
             let head = SystemMessage(content: .text(forced), toolsAdded: current?.toolsAdded,
                                      timestamp: current?.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000))
-            return [.system(head)] + transformed.filter { $0.role != "system" }
+            return [.system(head)] + projected.filter { $0.role != "system" }
         }
         self.agent.prepareNextTurnWithContext = { [weak self] turn, signal in
             guard let self else { return nil }
@@ -858,7 +929,8 @@ public final class AgentSession: Sendable {
                 details: hookResult?.details,
                 isError: hookResult?.isError,
                 usage: hookResult?.usage,
-                terminate: hookResult?.terminate
+                terminate: hookResult?.terminate,
+                structuredContent: hookResult?.structuredContent ?? context.result.structuredContent.map(StructuredContentOverride.set) ?? .absent
             )
         }
 
@@ -971,13 +1043,17 @@ public final class AgentSession: Sendable {
 
         self.unsubscribeAgent = agent.subscribe { [weak self] event, _ in
             self?.handleAgentEvent(event)
+            if case .agentEnd = event, let runner = self?.nestedToolCalls {
+                await runner.clear()
+            }
         }
         refreshContext()
         if let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
             let names = (current.toolsAdded ?? []).map(\.name)
-            let registry = toolRegistry
-            agent.tools = names.compactMap { registry[$0] }
+            setActiveToolsByName(names)
             state.withLock { $0.systemPromptOptions.selectedToolNames = names }
+        } else {
+            setActiveToolsByName(agent.tools.map(\.name))
         }
     }
 
@@ -1752,15 +1828,137 @@ public final class AgentSession: Sendable {
     }
 
     public func getAllToolNames() -> [String] {
-        Array(toolRegistry.keys)
+        toolRegistryOrder
+    }
+
+    private func exposure(of name: String) -> ToolExposure {
+        toolDefinitions[name]?.exposure ?? .direct
+    }
+
+    private func isDeclarable(_ name: String) -> Bool {
+        let value = exposure(of: name)
+        return value == .direct || value == .modelOnly
+    }
+
+    private func isActivatedOnRegistration(_ name: String) -> Bool {
+        isDeclarable(name) && toolDefinitions[name]?.defaultActive != false
+    }
+
+    /// The tools reachable through a tool's context. Model-only and hidden tools never run here.
+    public func getCallableTools() -> [AgentTool] {
+        let active = Set(getActiveToolNames())
+        return registeredTools().filter { tool in
+            let value = exposure(of: tool.name)
+            return value == .codemode || value == .deferred || (value == .direct && active.contains(tool.name))
+        }
+    }
+
+    /// Execute a tool from another tool's per-call context.
+    public func executeNestedTool(callerId: String, name: String, args: [String: AnyCodable],
+                                  options: ExecuteToolOptions = ExecuteToolOptions()) async -> AgentToolCallOutcome {
+        let runner: NestedToolCallRunner = state.withLock { state in
+            if let existing = state.nestedToolCalls { return existing }
+            let host = NestedToolCallHost(
+                getTools: { [weak self] in self?.getCallableTools() ?? [] },
+                isSequential: { [weak self] in self?.agent.toolExecution == .sequential },
+                runToolCall: { [weak self] toolCall, parentId, signal, onUpdate in
+                    guard let self, let assistant = self.lastAssistantMessage else {
+                        return AgentToolCallOutcome(toolCall: toolCall,
+                            result: AgentToolResult(content: [.text(TextContent(text: "No assistant message issued this call"))]),
+                            isError: true)
+                    }
+                    let tools = self.getCallableTools()
+                    let context = AgentContext(messages: self.agent.state.messages, tools: self.agent.state.tools)
+                    return await runToolCall(toolCall, options: RunToolCallOptions(
+                        tools: tools, assistantMessage: assistant, context: context,
+                        signal: signal, onUpdate: onUpdate,
+                        beforeToolCall: { [weak self] context, _ in
+                            guard let self, let runner = self._hookRunner,
+                                  runner.hasHandlers("tool_call") else { return nil }
+                            let event = ToolCallEvent(toolName: context.toolCall.name,
+                                toolCallId: context.toolCall.id, input: context.args,
+                                parentToolCallId: parentId)
+                            guard let result = await runner.emitToolCall(event), result.block else { return nil }
+                            return BeforeToolCallResult(block: true, reason: result.reason,
+                                                        terminate: result.terminate)
+                        },
+                        afterToolCall: { [weak self] context, _ in
+                            guard let self else { return nil }
+                            let hookResult: AfterToolCallResult?
+                            if let runner = self._hookRunner, runner.hasHandlers("tool_result") {
+                                let event = ToolResultEvent(toolName: context.toolCall.name,
+                                    toolCallId: context.toolCall.id, input: context.args,
+                                    content: context.result.content, details: context.result.details,
+                                    isError: context.isError,
+                                    structuredContent: context.result.structuredContent,
+                                    usage: context.result.usage,
+                                    parentToolCallId: parentId)
+                                if let result = await runner.emitToolResult(event) {
+                                    hookResult = AfterToolCallResult(content: result.content,
+                                        details: result.details, isError: result.isError,
+                                        usage: result.usage,
+                                        structuredContent: result.structuredContent.map(StructuredContentOverride.set) ?? .absent)
+                                } else { hookResult = nil }
+                            } else { hookResult = nil }
+                            let content = hookResult?.content ?? context.result.content
+                            let normalized = normalizeToolResultImages(content,
+                                autoResizeImages: self.settingsManager.getAutoResizeImages(),
+                                resizeOptions: self.agent.state.model.inputLimits?.images?.resize)
+                            guard hookResult != nil || normalized.changed else { return nil }
+                            return AfterToolCallResult(content: normalized.content,
+                                details: hookResult?.details, isError: hookResult?.isError,
+                                usage: hookResult?.usage, terminate: hookResult?.terminate,
+                                structuredContent: hookResult?.structuredContent ??
+                                    context.result.structuredContent.map(StructuredContentOverride.set) ?? .absent)
+                        }
+                    ))
+                },
+                emit: { [weak self] event in
+                    await self?.emitNestedToolEvent(event)
+                }
+            )
+            let runner = NestedToolCallRunner(host: host)
+            state.nestedToolCalls = runner
+            return runner
+        }
+        return await runner.execute(callerId: callerId, name: name, args: args, options: options)
+    }
+
+    private func emitNestedToolEvent(_ event: NestedToolExecutionEvent) async {
+        if let runner = _hookRunner {
+            switch event {
+            case .start(let id, let name, let args, let parent):
+                _ = await runner.emit(ToolExecutionStartEvent(toolCallId: id, toolName: name,
+                                                               args: args, parentToolCallId: parent))
+            case .update(let id, let name, let args, let partial, let parent):
+                _ = await runner.emit(ToolExecutionUpdateEvent(toolCallId: id, toolName: name,
+                                                                args: args, partialResult: partial,
+                                                                parentToolCallId: parent))
+            case .end(let id, let name, let result, let isError, let parent):
+                _ = await runner.emit(ToolExecutionEndEvent(toolCallId: id, toolName: name,
+                                                             result: result, isError: isError,
+                                                             parentToolCallId: parent))
+            }
+        }
+        emit(.nestedToolExecution(event))
     }
 
     public func getAllTools() -> [ToolInfo] {
-        toolRegistry.values.map { tool in
+        registeredTools().map { tool in
+            let definition = toolDefinitions[tool.name]
+            let customPath = customToolsInternal.first { $0.tool.name == tool.name }?.path
             let source = _hookRunner?.getToolSourceInfo(tool.name) ??
-                (ToolName(rawValue: tool.name) == nil ? nil : SourceInfo(
-                    path: BUILTIN_PATH_PREFIX + tool.name, source: "builtin", scope: "user", origin: "top-level"))
-            return ToolInfo(name: tool.name, description: tool.description, sourceInfo: source)
+                (customPath.map { path in SourceInfo(path: path,
+                    source: getSyntheticPathSource(path) ?? "custom", scope: "user", origin: "top-level") } ??
+                 (ToolName(rawValue: tool.name) == nil
+                    ? SourceInfo(path: "<sdk:\(tool.name)>", source: "sdk", scope: "temporary", origin: "top-level")
+                    : SourceInfo(path: BUILTIN_PATH_PREFIX + tool.name, source: "builtin",
+                                 scope: "user", origin: "top-level")))
+            return ToolInfo(name: tool.name, description: definition?.description ?? tool.description,
+                            sourceInfo: source, parameters: definition?.parameters ?? tool.parameters,
+                            promptGuidelines: definition?.promptGuidelines,
+                            exposure: definition?.exposure ?? .direct,
+                            namespace: definition?.namespace, annotations: definition?.annotations)
         }
     }
 
@@ -1805,16 +2003,46 @@ public final class AgentSession: Sendable {
 
     public func setActiveToolsByName(_ toolNames: [String]) {
         var tools: [AgentTool] = []
-        var validNames: [String] = []
+        var seen: Set<String> = []
         for name in toolNames {
-            if let tool = toolRegistry[name] {
+            if seen.insert(name).inserted, exposure(of: name) != .hidden,
+               let tool = toolRegistry[name] {
                 tools.append(tool)
-                validNames.append(name)
             }
         }
-        agent.tools = tools
-
-        state.withLock { $0.systemPromptOptions.selectedTools = validNames.compactMap(ToolName.init(rawValue:)) }
+        let active = Set(tools.map(\.name))
+        let callable = registeredTools().filter { tool in
+            let value = exposure(of: tool.name)
+            return value == .codemode || value == .deferred || (value == .direct && active.contains(tool.name))
+        }
+        let definitions = toolDefinitions
+        let loadout = ToolLoadout(
+            declared: tools, callable: callable, registered: registeredTools(),
+            getExposure: { definitions[$0]?.exposure ?? .direct },
+            getNamespace: { definitions[$0]?.namespace }
+        )
+        var descriptions: [String: String] = [:]
+        var hidden: Set<String> = []
+        for tool in tools {
+            guard let prepare = definitions[tool.name]?.prepareLoadout else { continue }
+            do {
+                let changes = try prepare(loadout)
+                descriptions.merge(changes?.descriptions ?? [:]) { _, new in new }
+                hidden.formUnion(changes?.hiddenDeclarations ?? [])
+            } catch {
+                let path = _hookRunner?.getToolSourceInfo(tool.name)?.path ??
+                    customToolsInternal.first { $0.tool.name == tool.name }?.path ?? "<sdk:\(tool.name)>"
+                _hookRunner?.emitError(HookError(hookPath: path, event: "prepare_loadout",
+                                                 error: error.localizedDescription))
+            }
+        }
+        agent.tools = tools.map { tool in
+            var declared = tool
+            if let description = descriptions[tool.name] { declared.description = description }
+            return declared
+        }
+        hiddenDeclarations = hidden
+        state.withLock { $0.systemPromptOptions.selectedTools = tools.map(\.name).compactMap(ToolName.init(rawValue:)) }
     }
 
     /// Apply a tool registered after session creation. This is used by MCP
@@ -1825,15 +2053,17 @@ public final class AgentSession: Sendable {
         var registry = toolRegistry
         registry[wrapped.name] = wrapped
         toolRegistry = registry
+        if !toolRegistryOrder.contains(wrapped.name) { toolRegistryOrder.append(wrapped.name) }
+        var definitions = toolDefinitions
+        definitions[tool.name] = tool
+        toolDefinitions = definitions
         state.withLock { $0.toolPromptGuidelines[tool.name] = tool.promptGuidelines }
 
-        var active = agent.tools
-        if let index = active.firstIndex(where: { $0.name == wrapped.name }) {
-            active[index] = wrapped
-        } else {
-            active.append(wrapped)
+        var activeNames = getActiveToolNames()
+        if !activeNames.contains(wrapped.name) && isActivatedOnRegistration(wrapped.name) {
+            activeNames.append(wrapped.name)
         }
-        agent.tools = active
+        setActiveToolsByName(activeNames)
         refreshSystemPromptForActiveTools()
     }
 
@@ -1841,8 +2071,12 @@ public final class AgentSession: Sendable {
         var registry = toolRegistry
         registry.removeValue(forKey: name)
         toolRegistry = registry
+        toolRegistryOrder.removeAll { $0 == name }
+        var definitions = toolDefinitions
+        definitions.removeValue(forKey: name)
+        toolDefinitions = definitions
         state.withLock { $0.toolPromptGuidelines[name] = nil }
-        agent.tools.removeAll { $0.name == name }
+        setActiveToolsByName(getActiveToolNames().filter { $0 != name })
         refreshSystemPromptForActiveTools()
     }
 
@@ -1921,34 +2155,27 @@ public final class AgentSession: Sendable {
                 }
                 let wrappedNew = wrap(newExtensionTools)
                 var registry = toolRegistry
+                var order = toolRegistryOrder
+                var definitions = toolDefinitions
                 for name in removedToolNames {
                     registry.removeValue(forKey: name)
+                    definitions.removeValue(forKey: name)
                 }
+                order.removeAll { removedToolNames.contains($0) }
                 for tool in wrappedNew {
                     registry[tool.name] = tool
+                    if !order.contains(tool.name) { order.append(tool.name) }
                 }
                 toolRegistry = registry
+                toolRegistryOrder = order
+                for tool in newExtensionTools { definitions[tool.name] = tool }
+                toolDefinitions = definitions
 
-                // Apply to agent.tools too: drop removed tools, replace surviving extension
-                // tools with their re-wrapped versions, leave built-ins/custom-tools alone.
-                let wrappedByName = Dictionary(uniqueKeysWithValues: wrappedNew.map { ($0.name, $0) })
-                var newActive: [AgentTool] = []
-                for tool in agent.tools {
-                    if removedToolNames.contains(tool.name) {
-                        continue
-                    }
-                    if let replacement = wrappedByName[tool.name] {
-                        newActive.append(replacement)
-                    } else {
-                        newActive.append(tool)
-                    }
+                var activeNames = getActiveToolNames().filter { !removedToolNames.contains($0) }
+                for tool in wrappedNew where !activeNames.contains(tool.name) && isActivatedOnRegistration(tool.name) {
+                    activeNames.append(tool.name)
                 }
-                // Add brand-new extension tools that weren't already active.
-                let activeNames = Set(newActive.map { $0.name })
-                for tool in wrappedNew where !activeNames.contains(tool.name) {
-                    newActive.append(tool)
-                }
-                agent.tools = newActive
+                setActiveToolsByName(activeNames)
             }
         }
 
@@ -3200,8 +3427,7 @@ public final class AgentSession: Sendable {
         refreshContext(context)
         if let current = getCurrentSystemMessage(context.messages) {
             let names = (current.toolsAdded ?? []).map(\.name)
-            let registry = toolRegistry
-            agent.tools = names.compactMap { registry[$0] }
+            setActiveToolsByName(names)
             state.withLock { $0.systemPromptOptions.selectedTools = names.compactMap(ToolName.init(rawValue:)) }
         }
         if let modelInfo = context.model {

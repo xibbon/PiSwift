@@ -295,7 +295,7 @@ private func runLoop(
                     // from that message may be incomplete even when a salvage parser accepted
                     // them, so report errors instead of executing unsafe calls.
                     let outcome = assistantMessage.stopReason == .length
-                        ? await failToolCallsFromTruncatedMessage(toolCalls, emit: emit)
+                        ? await failToolCallsFromTruncatedMessage(toolCalls, config: config, emit: emit)
                         : await executeToolCalls(
                             context: context,
                             assistantMessage: assistantMessage,
@@ -517,6 +517,7 @@ struct ToolBatchOutcome: Sendable {
 
 private func failToolCallsFromTruncatedMessage(
     _ toolCalls: [ToolCall],
+    config: AgentLoopConfig,
     emit: @escaping AgentEventSink
 ) async -> ToolBatchOutcome {
     var results: [ToolResultMessage] = []
@@ -525,7 +526,8 @@ private func failToolCallsFromTruncatedMessage(
         let result = createErrorToolResult(
             "Tool call \"\(toolCall.name)\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments."
         )
-        results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: true, emit: emit))
+        results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: true,
+                                                 prepare: config.prepareToolResultMessage, emit: emit))
     }
     return ToolBatchOutcome(results: results, terminate: false)
 }
@@ -589,7 +591,8 @@ private func executeToolCallsSequential(
 
         switch preparation {
         case .immediate(let result, let isError):
-            results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: isError, emit: emit))
+            results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: isError,
+                                                     prepare: config.prepareToolResultMessage, emit: emit))
             if result.terminate != true { allTerminate = false }
         case .prepared(let prepared):
             let executed = await executePreparedToolCall(prepared: prepared, signal: signal) { partialResult in
@@ -612,6 +615,7 @@ private func executeToolCallsSequential(
                 toolCall: finalized.toolCall,
                 result: finalized.result,
                 isError: finalized.isError,
+                prepare: config.prepareToolResultMessage,
                 emit: emit
             )
             results.append(message)
@@ -714,6 +718,7 @@ private func executeToolCallsParallel(
             toolCall: finalized.toolCall,
             result: finalized.result,
             isError: finalized.isError,
+            prepare: config.prepareToolResultMessage,
             emit: emit
         )
         results.append(message)
@@ -958,10 +963,12 @@ private func emitToolCallOutcome(
     toolCall: ToolCall,
     result: AgentToolResult,
     isError: Bool,
+    prepare: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?,
     emit: @escaping AgentEventSink
 ) async -> ToolResultMessage {
     await emitToolExecutionEndOnly(toolCall: toolCall, result: result, isError: isError, emit: emit)
-    return await emitToolResultMessage(toolCall: toolCall, result: result, isError: isError, emit: emit)
+    return await emitToolResultMessage(toolCall: toolCall, result: result, isError: isError,
+                                       prepare: prepare, emit: emit)
 }
 
 @discardableResult
@@ -989,9 +996,10 @@ private func emitToolResultMessage(
     toolCall: ToolCall,
     result: AgentToolResult,
     isError: Bool,
+    prepare: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?,
     emit: @escaping AgentEventSink
 ) async -> ToolResultMessage {
-    let toolResultMessage = ToolResultMessage(
+    var toolResultMessage = ToolResultMessage(
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         content: result.content,
@@ -999,6 +1007,7 @@ private func emitToolResultMessage(
         usage: result.usage,
         isError: isError
     )
+    if let prepare { toolResultMessage = await prepare(toolResultMessage) }
 
     await emit(.messageStart(message: .toolResult(toolResultMessage)))
     await emit(.messageEnd(message: .toolResult(toolResultMessage)))

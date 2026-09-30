@@ -11,6 +11,81 @@ public enum ToolRenderShell: String, Sendable, Codable {
     case `self`
 }
 
+public enum ToolExposure: String, Sendable, Codable {
+    case direct
+    case modelOnly = "model-only"
+    case codemode
+    case deferred
+    case hidden
+}
+
+public struct ToolNamespace: Sendable, Codable {
+    public var name: String
+    public var description: String?
+
+    public init(name: String, description: String? = nil) {
+        self.name = name
+        self.description = description
+    }
+}
+
+public struct ToolAnnotations: Sendable, Codable {
+    public var readOnlyHint: Bool?
+    public var destructiveHint: Bool?
+    public var idempotentHint: Bool?
+    public var openWorldHint: Bool?
+
+    public init(readOnlyHint: Bool? = nil, destructiveHint: Bool? = nil,
+                idempotentHint: Bool? = nil, openWorldHint: Bool? = nil) {
+        self.readOnlyHint = readOnlyHint
+        self.destructiveHint = destructiveHint
+        self.idempotentHint = idempotentHint
+        self.openWorldHint = openWorldHint
+    }
+}
+
+public struct ToolLoadout: Sendable {
+    public var declared: [AgentTool]
+    public var callable: [AgentTool]
+    public var registered: [AgentTool]
+    public var getExposure: @Sendable (String) -> ToolExposure
+    public var getNamespace: @Sendable (String) -> ToolNamespace?
+
+    public init(declared: [AgentTool], callable: [AgentTool], registered: [AgentTool],
+                getExposure: @escaping @Sendable (String) -> ToolExposure,
+                getNamespace: @escaping @Sendable (String) -> ToolNamespace?) {
+        self.declared = declared
+        self.callable = callable
+        self.registered = registered
+        self.getExposure = getExposure
+        self.getNamespace = getNamespace
+    }
+}
+
+public struct ToolLoadoutChanges: Sendable {
+    public var descriptions: [String: String]?
+    public var hiddenDeclarations: [String]?
+
+    public init(descriptions: [String: String]? = nil, hiddenDeclarations: [String]? = nil) {
+        self.descriptions = descriptions
+        self.hiddenDeclarations = hiddenDeclarations
+    }
+}
+
+public struct ExecuteToolOptions: Sendable {
+    public var signal: CancellationToken?
+    public var onUpdate: AgentToolUpdateCallback?
+
+    public init(signal: CancellationToken? = nil, onUpdate: AgentToolUpdateCallback? = nil) {
+        self.signal = signal
+        self.onUpdate = onUpdate
+    }
+}
+
+public typealias NestedToolExecute = @Sendable (
+    _ name: String, _ args: [String: AnyCodable], _ options: ExecuteToolOptions
+) async -> AgentToolCallOutcome
+
 public struct CustomToolContext: Sendable {
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
@@ -20,6 +95,10 @@ public struct CustomToolContext: Sendable {
     public var abort: @Sendable () -> Void
     public var events: EventBus
     public var sendMessage: HookSendMessageHandler
+    public var tools: [AgentTool]
+    public var toolCallId: String?
+    public var signal: CancellationToken?
+    private var nestedToolExecute: NestedToolExecute?
 
     public init(
         sessionManager: SessionManager,
@@ -29,7 +108,11 @@ public struct CustomToolContext: Sendable {
         hasPendingMessages: @escaping @Sendable () -> Bool,
         abort: @escaping @Sendable () -> Void,
         events: EventBus,
-        sendMessage: @escaping HookSendMessageHandler
+        sendMessage: @escaping HookSendMessageHandler,
+        tools: [AgentTool] = [],
+        toolCallId: String? = nil,
+        signal: CancellationToken? = nil,
+        nestedToolExecute: NestedToolExecute? = nil
     ) {
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
@@ -39,6 +122,38 @@ public struct CustomToolContext: Sendable {
         self.abort = abort
         self.events = events
         self.sendMessage = sendMessage
+        self.tools = tools
+        self.toolCallId = toolCallId
+        self.signal = signal
+        self.nestedToolExecute = nestedToolExecute
+    }
+
+    public func executeTool(
+        name: String, args: [String: AnyCodable], options: ExecuteToolOptions = ExecuteToolOptions()
+    ) async -> AgentToolCallOutcome {
+        if let nestedToolExecute {
+            var effectiveOptions = options
+            effectiveOptions.signal = options.signal ?? signal
+            return await nestedToolExecute(name, args, effectiveOptions)
+        }
+        let toolCall = AgentToolCall(id: "\(toolCallId ?? "undefined")/0", name: name, arguments: [:])
+        let result = AgentToolResult(
+            content: [.text(TextContent(text: "Nested tool calls are not available in this context"))],
+            details: AnyCodable([String: AnyCodable]()), isError: true
+        )
+        return AgentToolCallOutcome(toolCall: toolCall, result: result, isError: true)
+    }
+
+    public mutating func setNestedToolHost(
+        tools: [AgentTool], execute: @escaping NestedToolExecute
+    ) {
+        self.tools = tools
+        self.nestedToolExecute = execute
+    }
+
+    public mutating func setToolCall(_ id: String, signal: CancellationToken?) {
+        toolCallId = id
+        self.signal = signal
     }
 }
 
@@ -96,6 +211,13 @@ public struct CustomTool: Sendable {
     public var renderShell: ToolRenderShell
     /// Explicitly disable provider-side constrained sampling when replacing a built-in tool.
     public var constrainedSampling: ConstrainedSampling?
+    public var outputSchema: [String: AnyCodable]?
+    public var exposure: ToolExposure?
+    public var namespace: ToolNamespace?
+    public var annotations: ToolAnnotations?
+    public var defaultActive: Bool?
+    public var prepareLoadout: (@Sendable (ToolLoadout) throws -> ToolLoadoutChanges?)?
+    public var executionMode: ToolExecutionMode?
 
     public init(
         name: String,
@@ -108,7 +230,14 @@ public struct CustomTool: Sendable {
         renderCall: CustomToolRenderCall? = nil,
         renderResult: CustomToolRenderResult? = nil,
         renderShell: ToolRenderShell = .default,
-        constrainedSampling: ConstrainedSampling? = nil
+        constrainedSampling: ConstrainedSampling? = nil,
+        outputSchema: [String: AnyCodable]? = nil,
+        exposure: ToolExposure? = nil,
+        namespace: ToolNamespace? = nil,
+        annotations: ToolAnnotations? = nil,
+        defaultActive: Bool? = nil,
+        prepareLoadout: (@Sendable (ToolLoadout) throws -> ToolLoadoutChanges?)? = nil,
+        executionMode: ToolExecutionMode? = nil
     ) {
         self.name = name
         self.label = label
@@ -121,6 +250,13 @@ public struct CustomTool: Sendable {
         self.renderResult = renderResult
         self.renderShell = renderShell
         self.constrainedSampling = constrainedSampling
+        self.outputSchema = outputSchema
+        self.exposure = exposure
+        self.namespace = namespace
+        self.annotations = annotations
+        self.defaultActive = defaultActive
+        self.prepareLoadout = prepareLoadout
+        self.executionMode = executionMode
     }
 }
 

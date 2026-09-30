@@ -450,6 +450,7 @@ public struct AgentTool: Sendable {
     public var constrainedSampling: ConstrainedSampling?
     /// JSON Schema for successful structured content. Stored for programmatic callers.
     public var outputSchema: [String: AnyCodable]?
+    public var executionMode: ToolExecutionMode?
 
     /// Keep the pre-G1 initializer available to existing extension binaries.
     public init(
@@ -484,7 +485,8 @@ public struct AgentTool: Sendable {
         prepareArguments: AgentToolPrepareArguments? = nil,
         executeWithContext: AgentToolExecuteWithContext? = nil,
         constrainedSampling: ConstrainedSampling? = nil,
-        outputSchema: [String: AnyCodable]?
+        outputSchema: [String: AnyCodable]?,
+        executionMode: ToolExecutionMode? = nil
     ) {
         self.label = label
         self.name = name
@@ -495,6 +497,7 @@ public struct AgentTool: Sendable {
         self.executeWithContext = executeWithContext
         self.constrainedSampling = constrainedSampling
         self.outputSchema = outputSchema
+        self.executionMode = executionMode
     }
 
     public var aiTool: AITool {
@@ -578,6 +581,9 @@ public struct AgentLoopConfig: Sendable {
     /// Return an `AfterToolCallResult` to override parts of the executed tool result.
     public var afterToolCall: AfterToolCallFn?
 
+    /// Add session metadata before a tool result is emitted or stored.
+    public var prepareToolResultMessage: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?
+
     /// Converts `[AgentMessage]` to LLM-compatible `[Message]` before each LLM call.
     ///
     /// Contract: must not throw or reject. Return a safe fallback value instead.
@@ -640,6 +646,7 @@ public struct AgentLoopConfig: Sendable {
         toolExecution: ToolExecutionMode? = nil,
         beforeToolCall: BeforeToolCallFn? = nil,
         afterToolCall: AfterToolCallFn? = nil,
+        prepareToolResultMessage: (@Sendable (ToolResultMessage) async -> ToolResultMessage)? = nil,
         convertToLlm: @escaping @Sendable ([AgentMessage]) async throws -> [Message],
         transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? = nil,
         getApiKey: (@Sendable (String) async -> String?)? = nil,
@@ -671,6 +678,7 @@ public struct AgentLoopConfig: Sendable {
         self.toolExecution = toolExecution
         self.beforeToolCall = beforeToolCall
         self.afterToolCall = afterToolCall
+        self.prepareToolResultMessage = prepareToolResultMessage
         self.convertToLlm = convertToLlm
         self.transformContext = transformContext
         self.getApiKey = getApiKey

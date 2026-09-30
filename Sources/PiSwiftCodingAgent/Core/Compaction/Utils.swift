@@ -19,22 +19,33 @@ public func createFileOps() -> FileOperations {
 }
 
 public func extractFileOpsFromMessage(_ message: AgentMessage, _ fileOps: inout FileOperations) {
-    guard case .assistant(let assistant) = message else { return }
-    for block in assistant.content {
-        if case .toolCall(let toolCall) = block {
-            if let path = toolCall.arguments["path"]?.value as? String {
-                switch toolCall.name {
-                case "read":
-                    fileOps.read.insert(path)
-                case "write":
-                    fileOps.written.insert(path)
-                case "edit":
-                    fileOps.edited.insert(path)
-                default:
-                    break
-                }
+    switch message {
+    case .toolResult(let result):
+        for call in result.nestedCalls?.calls ?? [] {
+            addFileOp(call.name, arguments: call.arguments, to: &fileOps)
+        }
+    case .assistant(let assistant):
+        for block in assistant.content {
+            if case .toolCall(let call) = block {
+                addFileOp(call.name, arguments: call.arguments, to: &fileOps)
             }
         }
+    default:
+        break
+    }
+}
+
+private func addFileOp(_ name: String, arguments: [String: AnyCodable]?, to fileOps: inout FileOperations) {
+    guard let path = arguments?["path"]?.value as? String, !path.isEmpty else { return }
+    switch name {
+    case "read":
+        fileOps.read.insert(path)
+    case "write":
+        fileOps.written.insert(path)
+    case "edit":
+        fileOps.edited.insert(path)
+    default:
+        break
     }
 }
 
