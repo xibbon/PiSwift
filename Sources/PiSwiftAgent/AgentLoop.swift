@@ -574,6 +574,7 @@ private func executeToolCallsSequential(
 ) async -> ToolBatchOutcome {
     var results: [ToolResultMessage] = []
     var allTerminate = !toolCalls.isEmpty
+    let hooks = ToolCallHooks(beforeToolCall: config.beforeToolCall, afterToolCall: config.afterToolCall)
 
     for toolCall in toolCalls {
         await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
@@ -582,7 +583,7 @@ private func executeToolCallsSequential(
             context: context,
             assistantMessage: assistantMessage,
             toolCall: toolCall,
-            config: config,
+            config: hooks,
             signal: signal
         )
 
@@ -591,13 +592,20 @@ private func executeToolCallsSequential(
             results.append(await emitToolCallOutcome(toolCall: toolCall, result: result, isError: isError, emit: emit))
             if result.terminate != true { allTerminate = false }
         case .prepared(let prepared):
-            let executed = await executePreparedToolCall(prepared: prepared, signal: signal, emit: emit)
+            let executed = await executePreparedToolCall(prepared: prepared, signal: signal) { partialResult in
+                await emit(.toolExecutionUpdate(
+                    toolCallId: prepared.toolCall.id,
+                    toolName: prepared.toolCall.name,
+                    args: prepared.toolCall.arguments,
+                    partialResult: partialResult
+                ))
+            }
             let finalized = await finalizeExecutedToolCall(
                 context: context,
                 assistantMessage: assistantMessage,
                 prepared: prepared,
                 executed: executed,
-                config: config,
+                config: hooks,
                 signal: signal
             )
             let message = await emitToolCallOutcome(
@@ -626,6 +634,7 @@ private func executeToolCallsParallel(
 ) async -> ToolBatchOutcome {
     var finalizedByIndex: [Int: FinalizedToolCall] = [:]
     var runnableCalls: [(index: Int, prepared: PreparedToolCallInfo)] = []
+    let hooks = ToolCallHooks(beforeToolCall: config.beforeToolCall, afterToolCall: config.afterToolCall)
 
     // Phase 1: prepare all tool calls sequentially
     for (index, toolCall) in toolCalls.enumerated() {
@@ -635,7 +644,7 @@ private func executeToolCallsParallel(
             context: context,
             assistantMessage: assistantMessage,
             toolCall: toolCall,
-            config: config,
+            config: hooks,
             signal: signal
         )
 
@@ -663,17 +672,23 @@ private func executeToolCallsParallel(
                     return (runnable.index, FinalizedToolCall(
                         toolCall: runnable.prepared.toolCall,
                         result: createErrorToolResult("Operation aborted"),
-                        isError: true,
-                        terminate: false
+                        isError: true
                     ))
                 }
-                let executed = await executePreparedToolCall(prepared: runnable.prepared, signal: signal, emit: emit)
+                let executed = await executePreparedToolCall(prepared: runnable.prepared, signal: signal) { partialResult in
+                    await emit(.toolExecutionUpdate(
+                        toolCallId: runnable.prepared.toolCall.id,
+                        toolName: runnable.prepared.toolCall.name,
+                        args: runnable.prepared.toolCall.arguments,
+                        partialResult: partialResult
+                    ))
+                }
                 let finalized = await finalizeExecutedToolCall(
                     context: context,
                     assistantMessage: assistantMessage,
                     prepared: runnable.prepared,
                     executed: executed,
-                    config: config,
+                    config: hooks,
                     signal: signal
                 )
                 return (runnable.index, finalized)
@@ -726,14 +741,48 @@ private struct ExecutedToolCallOutcome: Sendable {
     var isError: Bool
 }
 
+/// Runs a single call through the same validation, hooks, and execution as the agent loop.
+/// Tool failures are returned as error outcomes. No agent events or messages are emitted.
+public func runToolCall(_ toolCall: AgentToolCall, options: RunToolCallOptions) async -> AgentToolCallOutcome {
+    let preparation = await prepareToolCall(
+        context: options.context,
+        assistantMessage: options.assistantMessage,
+        toolCall: toolCall,
+        config: options.hooks,
+        signal: options.signal,
+        tools: options.tools,
+        preserveOriginalToolCall: true
+    )
+    switch preparation {
+    case .immediate(let result, let isError):
+        return AgentToolCallOutcome(toolCall: toolCall, result: result, isError: isError)
+    case .prepared(let prepared):
+        let executed = await executePreparedToolCall(
+            prepared: prepared,
+            signal: options.signal,
+            onUpdate: options.onUpdate ?? { _ in }
+        )
+        return await finalizeExecutedToolCall(
+            context: options.context,
+            assistantMessage: options.assistantMessage,
+            prepared: prepared,
+            executed: executed,
+            config: options.hooks,
+            signal: options.signal
+        )
+    }
+}
+
 private func prepareToolCall(
     context: AgentContext,
     assistantMessage: AssistantMessage,
     toolCall: ToolCall,
-    config: AgentLoopConfig,
-    signal: CancellationToken?
+    config: ToolCallHooks,
+    signal: CancellationToken?,
+    tools: [AgentTool]? = nil,
+    preserveOriginalToolCall: Bool = false
 ) async -> ToolCallPreparation {
-    let tool = context.tools?.first { $0.name == toolCall.name }
+    let tool = (tools ?? context.tools ?? []).first { $0.name == toolCall.name }
     guard let tool else {
         return .immediate(
             result: createErrorToolResult("Tool \(toolCall.name) not found"),
@@ -752,12 +801,13 @@ private func prepareToolCall(
         }
 
         let validatedArgs = try validateToolArguments(tool: tool.aiTool, toolCall: rewrittenToolCall)
+        let reportedToolCall = preserveOriginalToolCall ? toolCall : rewrittenToolCall
 
         if let beforeToolCall = config.beforeToolCall {
             let beforeResult = await beforeToolCall(
                 BeforeToolCallContext(
                     assistantMessage: assistantMessage,
-                    toolCall: rewrittenToolCall,
+                    toolCall: reportedToolCall,
                     args: validatedArgs,
                     context: context
                 ),
@@ -787,7 +837,7 @@ private func prepareToolCall(
             )
         }
 
-        return .prepared(PreparedToolCallInfo(toolCall: rewrittenToolCall, tool: tool, args: validatedArgs))
+        return .prepared(PreparedToolCallInfo(toolCall: reportedToolCall, tool: tool, args: validatedArgs))
     } catch {
         return .immediate(
             result: createErrorToolResult(error.localizedDescription),
@@ -799,7 +849,7 @@ private func prepareToolCall(
 private func executePreparedToolCall(
     prepared: PreparedToolCallInfo,
     signal: CancellationToken?,
-    emit: @escaping AgentEventSink
+    onUpdate: @escaping ToolUpdateSink
 ) async -> ExecutedToolCallOutcome {
     // Collect update event tasks so we can await them all before returning,
     // matching upstream behavior that guarantees all update emissions complete.
@@ -810,12 +860,7 @@ private func executePreparedToolCall(
         let result = try await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal) { partialResult in
             guard !finalized.withLock({ $0 }) else { return }
             let task = Task {
-                await emit(.toolExecutionUpdate(
-                    toolCallId: prepared.toolCall.id,
-                    toolName: prepared.toolCall.name,
-                    args: prepared.toolCall.arguments,
-                    partialResult: partialResult
-                ))
+                await onUpdate(partialResult)
             }
             pendingUpdates.withLock { $0.append(task) }
         }
@@ -824,7 +869,7 @@ private func executePreparedToolCall(
         for task in pendingUpdates.withLock({ $0 }) {
             await task.value
         }
-        return ExecutedToolCallOutcome(result: result, isError: false)
+        return ExecutedToolCallOutcome(result: result, isError: result.isError == true)
     } catch {
         finalized.withLock { $0 = true }
         // Await pending updates even on error path
@@ -838,11 +883,10 @@ private func executePreparedToolCall(
     }
 }
 
-private struct FinalizedToolCall: Sendable {
-    var toolCall: ToolCall
-    var result: AgentToolResult
-    var isError: Bool
-    var terminate: Bool
+private typealias FinalizedToolCall = AgentToolCallOutcome
+
+private extension AgentToolCallOutcome {
+    var terminate: Bool { result.terminate == true }
 }
 
 private func finalizeExecutedToolCall(
@@ -850,7 +894,7 @@ private func finalizeExecutedToolCall(
     assistantMessage: AssistantMessage,
     prepared: PreparedToolCallInfo,
     executed: ExecutedToolCallOutcome,
-    config: AgentLoopConfig,
+    config: ToolCallHooks,
     signal: CancellationToken?
 ) async -> FinalizedToolCall {
     var result = executed.result
@@ -870,11 +914,22 @@ private func finalizeExecutedToolCall(
                 signal
             )
             if let afterResult {
+                let structuredContent: AnyCodable?
+                switch afterResult.structuredContent {
+                case .absent:
+                    structuredContent = afterResult.content == nil ? result.structuredContent : nil
+                case .set(let value):
+                    structuredContent = value
+                case .cleared:
+                    structuredContent = nil
+                }
                 result = AgentToolResult(
                     content: afterResult.content ?? result.content,
                     details: afterResult.details ?? result.details,
                     usage: afterResult.usage ?? result.usage,
-                    terminate: afterResult.terminate ?? result.terminate
+                    terminate: afterResult.terminate ?? result.terminate,
+                    structuredContent: structuredContent,
+                    isError: result.isError
                 )
                 isError = afterResult.isError ?? isError
             }
@@ -884,11 +939,10 @@ private func finalizeExecutedToolCall(
         }
     }
 
-    return FinalizedToolCall(
+    return AgentToolCallOutcome(
         toolCall: prepared.toolCall,
         result: result,
-        isError: isError,
-        terminate: result.terminate == true
+        isError: isError
     )
 }
 
@@ -927,8 +981,7 @@ private func emitToolExecutionEndOnly(
     return FinalizedToolCall(
         toolCall: toolCall,
         result: result,
-        isError: isError,
-        terminate: result.terminate == true
+        isError: isError
     )
 }
 

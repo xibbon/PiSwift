@@ -48,17 +48,27 @@ public struct BeforeToolCallResult: Sendable {
 /// - `details`: if provided, replaces the tool result details value in full
 /// - `isError`: if provided, replaces the tool result error flag
 /// - `usage`: if provided, replaces the tool execution usage
+/// - `structuredContent`: a set value replaces it, and `.cleared` removes it.
+///   Replacing `content` without setting structured content also removes it.
 /// - `terminate`: if every finalized tool result in the current batch sets `terminate == true`,
 ///   the loop skips the automatic follow-up LLM turn after this batch (v0.69.0).
 ///
 /// Omitted fields keep the original executed tool result values.
+public enum StructuredContentOverride: Sendable {
+    case absent
+    case set(AnyCodable)
+    case cleared
+}
+
 public struct AfterToolCallResult: Sendable {
     public var content: [ContentBlock]?
     public var details: AnyCodable?
     public var isError: Bool?
     public var usage: Usage?
     public var terminate: Bool?
+    public var structuredContent: StructuredContentOverride
 
+    /// Keep the pre-G1 initializer available to existing extension binaries.
     public init(
         content: [ContentBlock]? = nil,
         details: AnyCodable? = nil,
@@ -66,11 +76,30 @@ public struct AfterToolCallResult: Sendable {
         usage: Usage? = nil,
         terminate: Bool? = nil
     ) {
+        self.init(
+            content: content,
+            details: details,
+            isError: isError,
+            usage: usage,
+            terminate: terminate,
+            structuredContent: .absent
+        )
+    }
+
+    public init(
+        content: [ContentBlock]? = nil,
+        details: AnyCodable? = nil,
+        isError: Bool? = nil,
+        usage: Usage? = nil,
+        terminate: Bool? = nil,
+        structuredContent: StructuredContentOverride
+    ) {
         self.content = content
         self.details = details
         self.isError = isError
         self.usage = usage
         self.terminate = terminate
+        self.structuredContent = structuredContent
     }
 }
 
@@ -111,6 +140,53 @@ public struct AfterToolCallContext: Sendable {
 public typealias BeforeToolCallFn = @Sendable (BeforeToolCallContext, CancellationToken?) async -> BeforeToolCallResult?
 public typealias AfterToolCallFn = @Sendable (AfterToolCallContext, CancellationToken?) async throws -> AfterToolCallResult?
 public typealias OnPayloadFn = PayloadHandler
+
+/// Hooks shared by the agent loop and a standalone tool call.
+public struct ToolCallHooks: Sendable {
+    public var beforeToolCall: BeforeToolCallFn?
+    public var afterToolCall: AfterToolCallFn?
+
+    public init(beforeToolCall: BeforeToolCallFn? = nil, afterToolCall: AfterToolCallFn? = nil) {
+        self.beforeToolCall = beforeToolCall
+        self.afterToolCall = afterToolCall
+    }
+}
+
+/// Receives a partial result during one tool execution.
+public typealias ToolUpdateSink = @Sendable (AgentToolResult) async -> Void
+
+/// Inputs for one standalone tool call. The supplied tools take precedence over `context.tools`.
+public struct RunToolCallOptions: Sendable {
+    public var tools: [AgentTool]
+    public var assistantMessage: AssistantMessage
+    public var context: AgentContext
+    public var signal: CancellationToken?
+    public var onUpdate: ToolUpdateSink?
+    public var beforeToolCall: BeforeToolCallFn?
+    public var afterToolCall: AfterToolCallFn?
+
+    public init(
+        tools: [AgentTool],
+        assistantMessage: AssistantMessage,
+        context: AgentContext,
+        signal: CancellationToken? = nil,
+        onUpdate: ToolUpdateSink? = nil,
+        beforeToolCall: BeforeToolCallFn? = nil,
+        afterToolCall: AfterToolCallFn? = nil
+    ) {
+        self.tools = tools
+        self.assistantMessage = assistantMessage
+        self.context = context
+        self.signal = signal
+        self.onUpdate = onUpdate
+        self.beforeToolCall = beforeToolCall
+        self.afterToolCall = afterToolCall
+    }
+
+    public var hooks: ToolCallHooks {
+        ToolCallHooks(beforeToolCall: beforeToolCall, afterToolCall: afterToolCall)
+    }
+}
 
 /// Context passed to `finishTurn` after a complete assistant turn.
 public struct AgentTurnContext: Sendable {
@@ -279,20 +355,58 @@ public enum AgentMessage: Sendable {
 public struct AgentToolResult: Sendable {
     public var content: [ContentBlock]
     public var details: AnyCodable?
+    /// Machine-readable result for callers. It is never sent to the model.
+    public var structuredContent: AnyCodable?
+    /// Report a tool failure while retaining details and structured content.
+    public var isError: Bool?
     /// Usage from the tool execution itself. This is not LLM context usage.
     public var usage: Usage?
     public var terminate: Bool?
 
+    /// Keep the pre-G1 initializer available to existing extension binaries.
     public init(
         content: [ContentBlock],
         details: AnyCodable? = nil,
         usage: Usage? = nil,
         terminate: Bool? = nil
     ) {
+        self.init(
+            content: content,
+            details: details,
+            usage: usage,
+            terminate: terminate,
+            structuredContent: nil,
+            isError: nil
+        )
+    }
+
+    public init(
+        content: [ContentBlock],
+        details: AnyCodable? = nil,
+        usage: Usage? = nil,
+        terminate: Bool? = nil,
+        structuredContent: AnyCodable? = nil,
+        isError: Bool? = nil
+    ) {
         self.content = content
         self.details = details
         self.usage = usage
         self.terminate = terminate
+        self.structuredContent = structuredContent
+        self.isError = isError
+    }
+}
+
+/// Final result after both tool hooks have run.
+public struct AgentToolCallOutcome: Sendable {
+    public var toolCall: AgentToolCall
+    public var result: AgentToolResult
+    public var isError: Bool
+
+    public init(toolCall: AgentToolCall, result: AgentToolResult, isError: Bool) {
+        self.toolCall = toolCall
+        self.result = result
+        self.isError = isError
     }
 }
 
@@ -334,7 +448,10 @@ public struct AgentTool: Sendable {
     public var prepareArguments: AgentToolPrepareArguments?
     public var executeWithContext: AgentToolExecuteWithContext?
     public var constrainedSampling: ConstrainedSampling?
+    /// JSON Schema for successful structured content. Stored for programmatic callers.
+    public var outputSchema: [String: AnyCodable]?
 
+    /// Keep the pre-G1 initializer available to existing extension binaries.
     public init(
         label: String,
         name: String,
@@ -345,6 +462,30 @@ public struct AgentTool: Sendable {
         executeWithContext: AgentToolExecuteWithContext? = nil,
         constrainedSampling: ConstrainedSampling? = nil
     ) {
+        self.init(
+            label: label,
+            name: name,
+            description: description,
+            parameters: parameters,
+            execute: execute,
+            prepareArguments: prepareArguments,
+            executeWithContext: executeWithContext,
+            constrainedSampling: constrainedSampling,
+            outputSchema: nil
+        )
+    }
+
+    public init(
+        label: String,
+        name: String,
+        description: String,
+        parameters: [String: AnyCodable],
+        execute: @escaping AgentToolExecute,
+        prepareArguments: AgentToolPrepareArguments? = nil,
+        executeWithContext: AgentToolExecuteWithContext? = nil,
+        constrainedSampling: ConstrainedSampling? = nil,
+        outputSchema: [String: AnyCodable]?
+    ) {
         self.label = label
         self.name = name
         self.description = description
@@ -353,6 +494,7 @@ public struct AgentTool: Sendable {
         self.prepareArguments = prepareArguments
         self.executeWithContext = executeWithContext
         self.constrainedSampling = constrainedSampling
+        self.outputSchema = outputSchema
     }
 
     public var aiTool: AITool {
