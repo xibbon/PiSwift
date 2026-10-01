@@ -1,32 +1,50 @@
 import Foundation
 
 public func parseStreamingJSON(_ partialJson: String?) -> [String: AnyCodable] {
-    guard let partialJson, !partialJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    // Complete objects only: a tool call cut off mid-stream must come back empty
+    // rather than run with partial arguments.
+    guard var json = partialJson,
+          let end = json.withUTF8(topLevelObjectEnd),
+          let parsed = try? JSONSerialization.jsonObject(with: Data(json.utf8.prefix(end))),
+          let object = parsed as? [String: Any] else {
         return [:]
     }
-
-    if let object = parseJSONObject(partialJson) {
-        return object.mapValues { AnyCodable($0) }
-    }
-
-    var trimmed = partialJson
-    while !trimmed.isEmpty {
-        trimmed.removeLast()
-        if let object = parseJSONObject(trimmed) {
-            return object.mapValues { AnyCodable($0) }
-        }
-    }
-
-    return [:]
+    return object.mapValues { AnyCodable($0) }
 }
 
-private func parseJSONObject(_ string: String) -> [String: Any]? {
-    guard let data = string.data(using: .utf8) else {
-        return nil
+/// Byte offset just past the brace that closes the top-level object, or nil while
+/// it is still open. It takes one pass because callers re-parse the accumulated
+/// text on every streamed chunk. The start isn't checked: a leading BOM or
+/// whitespace holds no quotes or brackets, and text that doesn't start with an
+/// object can't parse as one anyway.
+private func topLevelObjectEnd(_ bytes: UnsafeBufferPointer<UInt8>) -> Int? {
+    var depth = 0
+    var inString = false
+    var index = 0
+    while index < bytes.count {
+        let byte = bytes[index]
+        index += 1
+        if inString {
+            if byte == UInt8(ascii: "\\") {
+                index += 1 // skip the escaped byte
+            } else if byte == UInt8(ascii: "\"") {
+                inString = false
+            }
+            continue
+        }
+        switch byte {
+        case UInt8(ascii: "\""):
+            inString = true
+        case UInt8(ascii: "{"), UInt8(ascii: "["):
+            depth += 1
+        case UInt8(ascii: "}"), UInt8(ascii: "]"):
+            depth -= 1
+            if depth == 0 {
+                return index
+            }
+        default:
+            break
+        }
     }
-    guard let json = try? JSONSerialization.jsonObject(with: data, options: []),
-          let object = json as? [String: Any] else {
-        return nil
-    }
-    return object
+    return nil
 }
