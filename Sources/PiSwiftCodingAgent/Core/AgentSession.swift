@@ -345,6 +345,14 @@ public final class AgentSession: Sendable {
     public let cacheWarmer: CacheWarmer?
     public let eventBus: EventBus
     public let projectTrusted: Bool
+    private let defaultToolHtmlRenderer = LockedState<(any ToolHtmlRenderer)?>(nil)
+
+    /// Default renderer for all session exports. A renderer passed to exportToHtml takes precedence.
+    public var toolHtmlRenderer: (any ToolHtmlRenderer)? {
+        get { defaultToolHtmlRenderer.withLock { $0 } }
+        set { defaultToolHtmlRenderer.withLock { $0 = newValue } }
+    }
+
     private let state: LockedState<State>
 
     /// Serial queue for agent event processing.
@@ -3028,12 +3036,12 @@ public final class AgentSession: Sendable {
         return ContextUsage(tokens: used, contextWindow: contextWindow, percent: percent)
     }
 
-    public func exportToHtml(_ outputPath: String? = nil, themeName: String? = nil) throws -> String {
+    public func exportToHtml(_ outputPath: String? = nil, themeName: String? = nil, toolRenderer: (any ToolHtmlRenderer)? = nil) async throws -> String {
         let themeName = [themeName, settingsManager.getTheme()].compactMap { $0 }.first { getThemeByName($0) != nil }
-        return try exportSessionToHtml(
+        return try await exportSessionToHtml(
             sessionManager,
             agent.state,
-            ExportOptions(outputPath: outputPath, themeName: themeName)
+            ExportOptions(outputPath: outputPath, themeName: themeName, toolRenderer: toolRenderer ?? toolHtmlRenderer)
         )
     }
 

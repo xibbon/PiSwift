@@ -25,18 +25,21 @@ public enum ExportHtmlError: LocalizedError, Sendable {
 public struct ExportOptions: Sendable {
     public var outputPath: String?
     public var themeName: String?
+    public var toolRenderer: (any ToolHtmlRenderer)?
 
-    public init(outputPath: String? = nil, themeName: String? = nil) {
+    public init(outputPath: String? = nil, themeName: String? = nil, toolRenderer: (any ToolHtmlRenderer)? = nil) {
         self.outputPath = outputPath
         self.themeName = themeName
+        self.toolRenderer = toolRenderer
     }
 }
 
 public func exportSessionToHtml(
     _ sessionManager: SessionManager,
     _ state: AgentState? = nil,
-    _ options: ExportOptions? = nil
-) throws -> String {
+    _ options: ExportOptions? = nil,
+    toolRenderer: (any ToolHtmlRenderer)? = nil
+) async throws -> String {
     guard let sessionFile = sessionManager.getSessionFile() else {
         throw ExportHtmlError.inMemorySession
     }
@@ -45,12 +48,21 @@ public func exportSessionToHtml(
     }
 
     let opts = options ?? ExportOptions()
+    let entries = sessionManager.getEntries()
+    let renderer = toolRenderer ?? opts.toolRenderer
+    let renderedTools: [String: RenderedToolHtml]?
+    if let renderer {
+        renderedTools = try await preRenderCustomTools(entries: entries, toolRenderer: renderer)
+    } else {
+        renderedTools = nil
+    }
     let sessionData = buildSessionData(
         header: sessionManager.getHeader(),
-        entries: sessionManager.getEntries(),
+        entries: entries,
         leafId: sessionManager.getLeafId(),
         systemPrompt: state?.systemPrompt,
-        tools: state?.tools
+        tools: state?.tools,
+        renderedTools: renderedTools
     )
 
     let html = try generateHtml(sessionData, themeName: opts.themeName)
@@ -100,7 +112,8 @@ private func buildSessionData(
     entries: [SessionEntry],
     leafId: String?,
     systemPrompt: String?,
-    tools: [AgentTool]?
+    tools: [AgentTool]?,
+    renderedTools: [String: RenderedToolHtml]? = nil
 ) -> OrderedJSON {
     let headerValue: Any = header.map { sessionHeaderToDict($0) } ?? NSNull()
     let entryValues = entries.map { sessionEntryToDict($0) }
@@ -116,6 +129,16 @@ private func buildSessionData(
         data["tools"] = tools.map { ["name": $0.name, "description": $0.description] }
     } else {
         data["tools"] = NSNull()
+    }
+
+    if let renderedTools, !renderedTools.isEmpty {
+        data["renderedTools"] = renderedTools.mapValues { tool -> [String: String] in
+            var fields: [String: String] = [:]
+            fields["callHtml"] = tool.callHtml
+            fields["resultHtmlCollapsed"] = tool.resultHtmlCollapsed
+            fields["resultHtmlExpanded"] = tool.resultHtmlExpanded
+            return fields
+        }
     }
 
     let orderedEntries = entries.map { (try? OrderedJSON.parse(encodeSessionEntry($0))) ?? .null }
