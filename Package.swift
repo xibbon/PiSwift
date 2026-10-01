@@ -160,7 +160,8 @@ let package = Package(
                 "PiSwiftAgent",
             ],
             resources: [
-                .copy("fixtures")
+                .copy("fixtures"),
+                .process("Resources")
             ],
             swiftSettings: strictConcurrencySettings
         ),
