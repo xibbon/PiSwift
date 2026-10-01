@@ -505,7 +505,7 @@ private func handleContentBlockDelta(
         if case .toolCall(var toolCall) = output.content[contentIndex] {
             let partial = (state.toolCallPartials[blockIndex] ?? "") + (toolUse.input ?? "")
             state.toolCallPartials[blockIndex] = partial
-            toolCall.arguments = parseStreamingJSON(partial)
+            toolCall.setArguments(from: partial)
             output.content[contentIndex] = .toolCall(toolCall)
             stream.push(.toolCallDelta(contentIndex: contentIndex, delta: toolUse.input ?? "", partial: output))
         }
@@ -558,7 +558,7 @@ private func handleContentBlockStop(
         stream.push(.thinkingEnd(contentIndex: contentIndex, content: thinkingContent.thinking, partial: output))
     case .toolCall(var toolCall):
         let partial = state.toolCallPartials[blockIndex] ?? ""
-        toolCall.arguments = parseStreamingJSON(partial)
+        toolCall.setArguments(from: partial)
         output.content[contentIndex] = .toolCall(toolCall)
         state.toolCallPartials.removeValue(forKey: blockIndex)
         stream.push(.toolCallEnd(contentIndex: contentIndex, toolCall: toolCall, partial: output))

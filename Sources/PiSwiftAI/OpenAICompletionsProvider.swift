@@ -103,8 +103,9 @@ public func streamOpenAICompletions(
                             stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
                         }
                         toolCall.arguments = [inputProperty: AnyCodable(currentToolCallArgs)]
+                        toolCall.argumentsJSON = toolArgumentsToOrderedJSON(toolCall.arguments)
                     } else {
-                        toolCall.arguments = parseStreamingJSON(currentToolCallArgs)
+                        toolCall.setArguments(from: currentToolCallArgs)
                     }
                     output.content[index] = .toolCall(toolCall)
                 default:
@@ -209,7 +210,7 @@ public func streamOpenAICompletions(
                             }
                             if let argsDelta = toolCall.function?.arguments {
                                 currentToolCallArgs += argsDelta
-                                tool.arguments = parseStreamingJSON(currentToolCallArgs)
+                                tool.setArguments(from: currentToolCallArgs)
                                 output.content[index] = .toolCall(tool)
                                 stream.push(.toolCallDelta(contentIndex: index, delta: argsDelta, partial: output))
                             }
@@ -253,6 +254,7 @@ public func streamOpenAICompletions(
                     if case .toolCall(var tool) = output.content[contentIndex] {
                         if tool.name.isEmpty { tool.name = customCall.name }
                         tool.arguments = [inputProperty: AnyCodable(nextInput)]
+                        tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
                         output.content[contentIndex] = .toolCall(tool)
                     }
                 }

@@ -34,7 +34,12 @@ private final class ManualWarmingClock: Sendable {
     }
 
     func advance(by delta: Int64) async {
-        for _ in 0..<10 { await Task.yield() }
+        // Wait (by wall-clock time) for the warmer's timer task to register its sleep. If the
+        // clock moved first, the sleep would be registered relative to the new time and never fire.
+        let deadline = ContinuousClock.now + .seconds(2)
+        while state.withLock({ $0.waiters.isEmpty }) && ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
         let ready = state.withLock { state -> [Waiter] in
             state.now += delta
             let ready = state.waiters.filter { $0.deadline <= state.now }

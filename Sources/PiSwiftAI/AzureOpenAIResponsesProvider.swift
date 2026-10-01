@@ -290,7 +290,7 @@ public func streamAzureOpenAIResponses(
                 case .thinking(let thinkingContent):
                     stream.push(.thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: output))
                 case .toolCall(var toolCall):
-                    toolCall.arguments = parseStreamingJSON(currentToolCallArgs)
+                    toolCall.setArguments(from: currentToolCallArgs)
                     output.content[index] = .toolCall(toolCall)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                 default:
@@ -366,7 +366,8 @@ public func streamAzureOpenAIResponses(
                             if arguments.isEmpty, !existing.arguments.isEmpty {
                                 arguments = existing.arguments
                             }
-                            let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments)
+                            let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments,
+                                                argumentsJSON: toolArgumentsSource(arguments) ?? parseToolArgumentsSource(toolCall.arguments) ?? parseToolArgumentsSource(preferredArgs))
                             output.content[index] = .toolCall(call)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
                             pendingToolCallIndices.remove(index)
@@ -415,14 +416,14 @@ public func streamAzureOpenAIResponses(
                     case .delta(let deltaEvent):
                         if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
                             currentToolCallArgs += deltaEvent.delta
-                            tool.arguments = parseStreamingJSON(currentToolCallArgs)
+                            tool.setArguments(from: currentToolCallArgs)
                             output.content[index] = .toolCall(tool)
                             stream.push(.toolCallDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
                         }
                     case .done(let doneEvent):
                         if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
                             currentToolCallArgs = doneEvent.arguments
-                            tool.arguments = parseStreamingJSON(currentToolCallArgs)
+                            tool.setArguments(from: currentToolCallArgs)
                             output.content[index] = .toolCall(tool)
                         }
                     }

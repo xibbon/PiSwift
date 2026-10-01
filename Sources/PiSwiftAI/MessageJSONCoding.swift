@@ -38,6 +38,10 @@ public func contentBlockToJSONObject(_ block: ContentBlock) -> [String: Any] {
 }
 
 public func contentBlockFromJSONObject(_ dict: [String: Any]) -> ContentBlock? {
+    contentBlockFromJSONObject(dict, ordered: nil)
+}
+
+public func contentBlockFromJSONObject(_ dict: [String: Any], ordered: OrderedJSON?) -> ContentBlock? {
     guard let type = dict["type"] as? String else { return nil }
     switch type {
     case "text":
@@ -58,7 +62,8 @@ public func contentBlockFromJSONObject(_ dict: [String: Any]) -> ContentBlock? {
         guard let id = dict["id"] as? String, let name = dict["name"] as? String else { return nil }
         let args = dict["arguments"] as? [String: Any] ?? [:]
         let anyArgs = args.mapValues { AnyCodable($0) }
-        return .toolCall(ToolCall(id: id, name: name, arguments: anyArgs, thoughtSignature: dict["thoughtSignature"] as? String, namespace: dict["namespace"] as? String))
+        let source = ordered?["arguments"].map(javascriptPropertyOrder)
+        return .toolCall(ToolCall(id: id, name: name, arguments: anyArgs, thoughtSignature: dict["thoughtSignature"] as? String, namespace: dict["namespace"] as? String, argumentsJSON: source))
     default:
         return nil
     }
@@ -130,8 +135,14 @@ public func assistantMessageToJSONObject(_ message: AssistantMessage) -> [String
 }
 
 public func assistantMessageFromJSONObject(_ dict: [String: Any]) -> AssistantMessage {
+    assistantMessageFromJSONObject(dict, ordered: nil)
+}
+
+public func assistantMessageFromJSONObject(_ dict: [String: Any], ordered: OrderedJSON?) -> AssistantMessage {
     var message = AssistantMessage(
-        content: (dict["content"] as? [[String: Any]] ?? []).compactMap(contentBlockFromJSONObject),
+        content: (dict["content"] as? [[String: Any]] ?? []).enumerated().compactMap { index, block in
+            contentBlockFromJSONObject(block, ordered: ordered?["content"]?[index])
+        },
         api: Api(rawValue: dict["api"] as? String ?? "") ?? .openAIResponses,
         provider: dict["provider"] as? String ?? "", model: dict["model"] as? String ?? "",
         responseModel: dict["responseModel"] as? String,
@@ -171,10 +182,14 @@ public func nestedToolCallsToJSONObject(_ nested: NestedToolCalls) -> [String: A
 }
 
 public func nestedToolCallsFromJSONObject(_ object: [String: Any]) -> NestedToolCalls? {
+    nestedToolCallsFromJSONObject(object, ordered: nil)
+}
+
+public func nestedToolCallsFromJSONObject(_ object: [String: Any], ordered: OrderedJSON?) -> NestedToolCalls? {
     guard let complete = object["complete"] as? Bool,
           let rawCalls = object["calls"] as? [[String: Any]] else { return nil }
     var calls: [NestedToolCallRecord] = []
-    for raw in rawCalls {
+    for (index, raw) in rawCalls.enumerated() {
         guard let id = raw["id"] as? String,
               let name = raw["name"] as? String,
               let statusText = raw["status"] as? String,
@@ -184,8 +199,33 @@ public func nestedToolCallsFromJSONObject(_ object: [String: Any]) -> NestedTool
             arguments: (raw["arguments"] as? [String: Any])?.mapValues(AnyCodable.init),
             argumentsBytes: raw["argumentsBytes"] as? Int,
             status: status, durationMs: (raw["durationMs"] as? NSNumber)?.doubleValue,
-            error: raw["error"] as? String
+            error: raw["error"] as? String,
+            argumentsJSON: ordered?["calls"]?[index]?["arguments"].map(javascriptPropertyOrder)
         ))
     }
     return NestedToolCalls(calls: calls, complete: complete)
+}
+
+/// Text codecs replace only typed argument objects. Dictionary codecs have no key order.
+public func contentBlockToOrderedJSON(_ block: ContentBlock) -> OrderedJSON {
+    var value = OrderedJSON.fromFoundation(contentBlockToJSONObject(block))
+    if case .toolCall(let call) = block {
+        value = replacingJSONMembers(value, with: ["arguments": toolArgumentsToOrderedJSON(call.arguments, argumentsJSON: call.argumentsJSON)])
+    }
+    return value
+}
+
+public func assistantMessageToOrderedJSON(_ message: AssistantMessage) -> OrderedJSON {
+    replacingJSONMembers(OrderedJSON.fromFoundation(assistantMessageToJSONObject(message)),
+                         with: ["content": .array(message.content.map(contentBlockToOrderedJSON))])
+}
+
+public func nestedToolCallsToOrderedJSON(_ nested: NestedToolCalls) -> OrderedJSON {
+    let base = OrderedJSON.fromFoundation(nestedToolCallsToJSONObject(nested))
+    let calls = nested.calls.enumerated().map { index, call in
+        let value = base["calls"]![index]!
+        guard let arguments = call.arguments else { return value }
+        return replacingJSONMembers(value, with: ["arguments": toolArgumentsToOrderedJSON(arguments, argumentsJSON: call.argumentsJSON)])
+    }
+    return replacingJSONMembers(base, with: ["calls": .array(calls)])
 }

@@ -3,6 +3,13 @@ import CoreFoundation
 
 public struct AnyCodable: Codable, Sendable, Equatable {
     private let storage: Storage
+    // Retain the containing tool argument object through dictionary-based event APIs.
+    // This is metadata only. Equality and Codable continue to use the JSON value.
+    var toolArgumentsSource: OrderedJSON?
+
+    public static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
+        lhs.storage == rhs.storage
+    }
 
     public var value: Any {
         storage.jsonValue

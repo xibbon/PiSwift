@@ -1221,13 +1221,15 @@ private func deepCopyContentBlock(_ block: ContentBlock) -> ContentBlock {
             id: call.id,
             name: call.name,
             arguments: deepCopyAnyCodableMap(call.arguments),
-            thoughtSignature: call.thoughtSignature
+            thoughtSignature: call.thoughtSignature,
+            namespace: call.namespace,
+            argumentsJSON: call.argumentsJSON
         ))
     }
 }
 
 private func deepCopyAnyCodableMap(_ dict: [String: AnyCodable]) -> [String: AnyCodable] {
-    dict.mapValues { deepCopyAnyCodable($0) }
+    toolArgumentsWithOrder(dict.mapValues { deepCopyAnyCodable($0) }, argumentsJSON: toolArgumentsSource(dict))
 }
 
 private func deepCopyAnyCodable(_ value: AnyCodable) -> AnyCodable {

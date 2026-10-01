@@ -233,7 +233,7 @@ public func streamGoogleGeminiCli(
                     }
 
                     if let candidate = response.candidates?.first, let parts = candidate.content?.parts {
-                        for part in parts {
+                        for (partIndex, part) in parts.enumerated() {
                             if let text = part.text {
                                 hasContent = true
                                 let isThinking = isThinkingPart(thought: part.thought)
@@ -291,16 +291,14 @@ public func streamGoogleGeminiCli(
                                     id: toolCallId,
                                     name: functionCall.name ?? "",
                                     arguments: args,
-                                    thoughtSignature: part.thoughtSignature
+                                    thoughtSignature: part.thoughtSignature,
+                                    argumentsJSON: (try? OrderedJSON.parse(payload, allowDuplicateKeys: true))?["response"]?["candidates"]?[0]?["content"]?["parts"]?[partIndex]?["functionCall"]?["args"].map(javascriptPropertyOrder)
                                 )
                                 output.content.append(.toolCall(call))
                                 let toolIndex = output.content.count - 1
                                 ensureStarted()
                                 stream.push(.toolCallStart(contentIndex: toolIndex, partial: output))
-                                let jsonArgs = String(
-                                    data: (try? JSONSerialization.data(withJSONObject: args.mapValues { $0.jsonValue }, options: [])) ?? Data(),
-                                    encoding: .utf8
-                                ) ?? "{}"
+                                let jsonArgs = toolArgumentsToOrderedJSON(call.arguments, argumentsJSON: call.argumentsJSON).serialized()
                                 stream.push(.toolCallDelta(contentIndex: toolIndex, delta: jsonArgs, partial: output))
                                 stream.push(.toolCallEnd(contentIndex: toolIndex, toolCall: call, partial: output))
                             }

@@ -14,6 +14,10 @@ public indirect enum OrderedJSON: Sendable {
         guard case .object(let pairs) = self else { return nil }
         return pairs.first { $0.0 == name }?.1
     }
+    public subscript(_ index: Int) -> OrderedJSON? {
+        guard case .array(let values) = self, values.indices.contains(index) else { return nil }
+        return values[index]
+    }
     public var objectEntries: [(String, OrderedJSON)]? {
         if case .object(let pairs) = self { return pairs }
         return nil

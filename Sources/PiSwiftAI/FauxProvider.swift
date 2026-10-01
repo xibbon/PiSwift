@@ -223,7 +223,7 @@ private func toSimpleOptions(_ options: StreamOptions) -> SimpleStreamOptions {
     )
 }
 
-private func fauxStream(
+func fauxStream(
     model: Model,
     context: TranscriptContext,
     registration: FauxProviderRegistration,
@@ -428,6 +428,13 @@ private func streamFauxWithDeltas(
     registration: FauxProviderRegistration,
     signal: CancellationToken?
 ) async {
+    var message = message
+    message.content = message.content.map { block in
+        guard case .toolCall(var call) = block else { return block }
+        if call.argumentsJSON == nil { call.argumentsJSON = toolArgumentsToOrderedJSON(call.arguments) }
+        call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+        return .toolCall(call)
+    }
     let (minTokenSize, maxTokenSize) = registration.tokenSizes()
     let tokensPerSecond = registration.tokensPerSecondValue
 
@@ -507,12 +514,7 @@ private func streamFauxWithDeltas(
         case .toolCall(let toolCall):
             partial.content.append(.toolCall(ToolCall(id: toolCall.id, name: toolCall.name, arguments: [:])))
             stream.push(.toolCallStart(contentIndex: index, partial: partial))
-            let argsJSON: String = {
-                if let data = try? JSONSerialization.data(withJSONObject: toolCall.arguments.mapValues { $0.value }, options: []), let str = String(data: data, encoding: .utf8) {
-                    return str
-                }
-                return "{}"
-            }()
+            let argsJSON = toolArgumentsToOrderedJSON(toolCall.arguments, argumentsJSON: toolCall.argumentsJSON).serialized()
             for chunk in splitStringByTokenSize(argsJSON, minTokenSize: minTokenSize, maxTokenSize: maxTokenSize) {
                 await scheduleFauxChunk(chunk, tokensPerSecond: tokensPerSecond)
                 if signal?.isCancelled == true {
@@ -526,9 +528,12 @@ private func streamFauxWithDeltas(
             }
             if case .toolCall(var existing) = partial.content[index] {
                 existing.arguments = toolCall.arguments
+                existing.argumentsJSON = toolCall.argumentsJSON ?? parseToolArgumentsSource(argsJSON)
                 partial.content[index] = .toolCall(existing)
             }
-            stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: partial))
+            if case .toolCall(let finalCall) = partial.content[index] {
+                stream.push(.toolCallEnd(contentIndex: index, toolCall: finalCall, partial: partial))
+            }
         case .image:
             continue
         }

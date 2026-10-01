@@ -148,7 +148,7 @@ public func streamOpenAICodexResponses(
                 guard let index = currentBlockIndex, currentBlockKind == "toolCall",
                       case .toolCall(var tool) = output.content[index] else { return }
                 currentToolCallPartial += delta
-                tool.arguments = parseStreamingJSON(currentToolCallPartial)
+                tool.setArguments(from: currentToolCallPartial)
                 output.content[index] = .toolCall(tool)
                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
             }
@@ -167,6 +167,7 @@ public func streamOpenAICodexResponses(
                     stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
                 }
                 tool.arguments = [inputProperty: AnyCodable(nextInput)]
+                tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
                 output.content[index] = .toolCall(tool)
                 currentToolCallPartial = nextInput
             }
@@ -176,7 +177,7 @@ public func streamOpenAICodexResponses(
                       case .toolCall(var tool) = output.content[index] else { return }
                 let previous = currentToolCallPartial
                 currentToolCallPartial = arguments
-                tool.arguments = parseStreamingJSON(currentToolCallPartial)
+                tool.setArguments(from: currentToolCallPartial)
                 output.content[index] = .toolCall(tool)
                 if let delta = finalToolCallArgumentsDelta(previous: previous, final: currentToolCallPartial) {
                     stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
@@ -189,7 +190,8 @@ public func streamOpenAICodexResponses(
                 stream.push(.start(partial: output))
             }
 
-            func processRawEvent(_ rawEvent: [String: Any]) throws {
+            func processRawEvent(_ event: CodexRawEvent) throws {
+                let rawEvent = event.object
                 if options.signal?.isCancelled == true {
                     throw OpenAICodexStreamError.aborted
                 }
@@ -307,7 +309,9 @@ public func streamOpenAICodexResponses(
                         }
                         var namespace = item["namespace"] as? String
                         if namespace == nil { namespace = existing.namespace }
-                        let toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: arguments, namespace: namespace)
+                        let source = toolArgumentsSource(arguments) ?? (item["arguments"] as? String).flatMap(parseToolArgumentsSource)
+                            ?? event.json?["item"]?["arguments"].flatMap { $0.objectEntries == nil ? nil : javascriptPropertyOrder($0) } ?? existing.argumentsJSON
+                        let toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: arguments, namespace: namespace, argumentsJSON: source)
                         output.content[index] = .toolCall(toolCall)
                         stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                         pendingToolCallIndices.remove(index)
@@ -421,7 +425,7 @@ public func streamOpenAICodexResponses(
                             },
                             onEvent: { event in
                                 do {
-                                    try await emitProviderStreamEvent(object: event, model: model, handler: options.onProviderStreamEvent)
+                                    try await emitProviderStreamEvent(object: event.object, model: model, handler: options.onProviderStreamEvent)
                                 } catch {
                                     throw CodexProviderStreamEventCallbackError(cause: error)
                                 }
@@ -503,7 +507,7 @@ public func streamOpenAICodexResponses(
             startStreamIfNeeded()
             for try await rawEvent in parseCodexSseStream(body: response.body) {
                 do {
-                    try await emitProviderStreamEvent(object: rawEvent, model: model, handler: options.onProviderStreamEvent)
+                    try await emitProviderStreamEvent(object: rawEvent.object, model: model, handler: options.onProviderStreamEvent)
                 } catch {
                     throw CodexProviderStreamEventCallbackError(cause: error)
                 }
@@ -803,7 +807,14 @@ private func parseCodexError(
     return CodexErrorInfo(message: message, status: statusCode, friendlyMessage: friendly)
 }
 
-private func parseCodexSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<[String: Any], Error> {
+private struct CodexRawEvent: Sendable {
+    var values: [String: AnyCodable]
+    var json: OrderedJSON?
+    var object: [String: Any] { values.mapValues(\.value) }
+    subscript(_ key: String) -> Any? { values[key]?.value }
+}
+
+private func parseCodexSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<CodexRawEvent, Error> {
     AsyncThrowingStream { continuation in
         Task {
             var buffer = Data()
@@ -836,7 +847,7 @@ private func parseCodexSseStream(bytes: URLSession.AsyncBytes) -> AsyncThrowingS
     }
 }
 
-private func parseCodexSseStream(body: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<[String: Any], Error> {
+private func parseCodexSseStream(body: AsyncThrowingStream<Data, Error>) -> AsyncThrowingStream<CodexRawEvent, Error> {
     AsyncThrowingStream { continuation in
         Task {
             var buffer = Data()
@@ -878,7 +889,7 @@ private func processCodexWebSocketStream(
     signal: CancellationToken?,
     websocketConnectTimeoutMs: Int?,
     onStart: () -> Void,
-    onEvent: ([String: Any]) async throws -> Void
+    onEvent: (CodexRawEvent) async throws -> Void
 ) async throws {
     var wsHeaders = headers
     wsHeaders["OpenAI-Beta"] = codexWebSocketBetaHeader
@@ -935,7 +946,7 @@ private func processCodexWebSocketStream(
     }
 }
 
-private func parseCodexWebSocketMessage(_ message: URLSessionWebSocketTask.Message) -> [String: Any]? {
+private func parseCodexWebSocketMessage(_ message: URLSessionWebSocketTask.Message) -> CodexRawEvent? {
     let text: String?
     switch message {
     case .string(let value):
@@ -951,7 +962,7 @@ private func parseCodexWebSocketMessage(_ message: URLSessionWebSocketTask.Messa
           let dict = object as? [String: Any] else {
         return nil
     }
-    return dict
+    return CodexRawEvent(values: dict.mapValues(AnyCodable.init), json: try? OrderedJSON.parse(text, allowDuplicateKeys: true))
 }
 
 private func findCodexDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range<Data.Index>? {
@@ -970,7 +981,7 @@ private func findCodexDelimiter(in buffer: Data, crlf: Data, lf: Data) -> Range<
     }
 }
 
-private func parseCodexSseEvent(from chunk: Data) -> [String: Any]? {
+private func parseCodexSseEvent(from chunk: Data) -> CodexRawEvent? {
     guard !chunk.isEmpty, let raw = String(data: chunk, encoding: .utf8) else { return nil }
     let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
@@ -991,7 +1002,7 @@ private func parseCodexSseEvent(from chunk: Data) -> [String: Any]? {
           let event = object as? [String: Any] else {
         return nil
     }
-    return event
+    return CodexRawEvent(values: event.mapValues(AnyCodable.init), json: try? OrderedJSON.parse(payload, allowDuplicateKeys: true))
 }
 
 private func collectCodexData(from bytes: URLSession.AsyncBytes) async throws -> Data {
@@ -1289,7 +1300,7 @@ private func parseCodexArguments(_ value: Any?) -> [String: AnyCodable] {
           let dict = object as? [String: Any] else {
         return [:]
     }
-    return dict.mapValues { AnyCodable($0) }
+    return toolArgumentsWithOrder(dict.mapValues { AnyCodable($0) }, argumentsJSON: parseToolArgumentsSource(string))
 }
 
 func mapCodexStopReason(_ status: String, incompleteReason: String? = nil) -> StopReasonResult {

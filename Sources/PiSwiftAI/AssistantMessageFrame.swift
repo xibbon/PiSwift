@@ -270,7 +270,7 @@ public func reduceAssistantMessageFrames<S: Sequence>(_ frames: S) throws -> Ass
 }
 
 extension AssistantMessageFrame: Codable {
-    public func encode(to encoder: any Encoder) throws {
+    fileprivate func jsonObject() -> [String: Any] {
         var object: [String: Any] = ["type": type]
         if let index { object["contentIndex"] = index }
         switch self {
@@ -290,7 +290,11 @@ extension AssistantMessageFrame: Codable {
         case .toolCallEnd(_, let tool):
             for (key, value) in contentBlockToJSONObject(.toolCall(tool)) where key != "type" { object[key] = value }
         }
-        try AnyCodable(object).encode(to: encoder)
+        return object
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        try AnyCodable(jsonObject()).encode(to: encoder)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -329,12 +333,51 @@ extension AssistantMessageFrame: Codable {
     }
 }
 
+/// Write frame arguments in order without adding transport metadata.
+public func encodeAssistantMessageFrameJSON(_ frame: AssistantMessageFrame) -> String {
+    var replacements: [String: OrderedJSON] = [:]
+    switch frame {
+    case .start(let message): replacements["partial"] = assistantMessageToOrderedJSON(message)
+    case .toolCallStart(_, let call): replacements["toolCall"] = contentBlockToOrderedJSON(.toolCall(call))
+    case .toolCallEnd(_, let call): replacements["arguments"] = toolArgumentsToOrderedJSON(call.arguments, argumentsJSON: call.argumentsJSON)
+    default: break
+    }
+    return replacingJSONMembers(OrderedJSON.fromFoundation(frame.jsonObject()), with: replacements).serialized()
+}
+
+/// Codable dictionary readers have unknown order. Read raw text to recover tool order.
+public func decodeAssistantMessageFrameJSON(_ text: String) throws -> AssistantMessageFrame {
+    let data = Data(text.utf8)
+    let frame = try JSONDecoder().decode(AssistantMessageFrame.self, from: data)
+    switch frame {
+    case .start(let message) where message.content.contains(where: { if case .toolCall = $0 { return true }; return false }):
+        let ordered = try OrderedJSON.parse(text, allowDuplicateKeys: true)
+        var result = message
+        result.content = message.content.enumerated().map { index, block in
+            guard case .toolCall(var call) = block else { return block }
+            call.argumentsJSON = ordered["partial"]?["content"]?[index]?["arguments"].map(javascriptPropertyOrder)
+            call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+            return .toolCall(call)
+        }
+        return .start(partial: result)
+    case .toolCallStart(let index, var call):
+        call.argumentsJSON = try OrderedJSON.parse(text, allowDuplicateKeys: true)["toolCall"]?["arguments"].map(javascriptPropertyOrder)
+        call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+        return .toolCallStart(contentIndex: index, toolCall: call)
+    case .toolCallEnd(let index, var call):
+        call.argumentsJSON = try OrderedJSON.parse(text, allowDuplicateKeys: true)["arguments"].map(javascriptPropertyOrder)
+        call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+        return .toolCallEnd(contentIndex: index, toolCall: call)
+    default: return frame
+    }
+}
+
 /// Frame checkpoints need the unfinished string/object values retained by upstream
 /// partial-json. The older provider JSON helper accepts complete objects only.
 private func parseFrameToolJSON(_ json: String) -> [String: AnyCodable] {
     if let data = json.data(using: .utf8),
        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-        return object.mapValues(AnyCodable.init)
+        return toolArgumentsWithOrder(object.mapValues(AnyCodable.init), argumentsJSON: parseToolArgumentsSource(json))
     }
     var reader = FramePartialJSONReader(characters: Array(json))
     guard case .object(let values)? = reader.readValue() else { return [:] }

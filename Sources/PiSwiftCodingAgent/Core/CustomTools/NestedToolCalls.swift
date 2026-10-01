@@ -44,6 +44,9 @@ public struct NestedCallRecorder: Sendable {
             complete = false
         } else {
             record.arguments = toolCall.arguments
+            record.argumentsJSON = toolCall.argumentsJSON.map {
+                toolArgumentsToOrderedJSON(toolCall.arguments, argumentsJSON: $0)
+            }
             argumentBytes += bytes
         }
         calls.append(record)
@@ -148,7 +151,8 @@ public actor NestedToolCallRunner {
         options: ExecuteToolOptions = ExecuteToolOptions()
     ) async -> AgentToolCallOutcome {
         var scope = scopes[callerId] ?? Scope(rootId: callerId, nextId: 1, holdsQueue: false)
-        let toolCall = AgentToolCall(id: "\(callerId)/\(scope.nextId)", name: name, arguments: args)
+        let toolCall = AgentToolCall(id: "\(callerId)/\(scope.nextId)", name: name, arguments: args,
+                                     argumentsJSON: options.argumentsJSON)
         scope.nextId += 1
         scopes[callerId] = scope
 
@@ -156,7 +160,7 @@ public actor NestedToolCallRunner {
         let recordIndex = recorder.start(toolCall)
         recorders[scope.rootId] = recorder
 
-        await host.emit(.start(toolCallId: toolCall.id, toolName: name, args: args, parentToolCallId: callerId))
+        await host.emit(.start(toolCallId: toolCall.id, toolName: name, args: toolCall.arguments, parentToolCallId: callerId))
 
         let exclusive = !scope.holdsQueue && (host.isSequential() ||
             host.getTools().first { $0.name == name }?.executionMode == .sequential)
@@ -166,7 +170,7 @@ public actor NestedToolCallRunner {
 
         let outcome = await host.runToolCall(toolCall, callerId, options.signal) { [host] partial in
             options.onUpdate?(partial)
-            await host.emit(.update(toolCallId: toolCall.id, toolName: name, args: args,
+            await host.emit(.update(toolCallId: toolCall.id, toolName: name, args: toolCall.arguments,
                                     partialResult: partial, parentToolCallId: callerId))
         }
 

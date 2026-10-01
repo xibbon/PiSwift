@@ -100,7 +100,7 @@ public func streamProxy(model: Model, context: TranscriptContext, options: Proxy
                 let payload = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !payload.isEmpty else { continue }
                 let eventData = Data(payload.utf8)
-                let event = try JSONDecoder().decode(ProxyAssistantMessageEvent.self, from: eventData)
+                let event = try decodeProxyAssistantMessageEventJSON(eventData)
                 let fields = try JSONSerialization.jsonObject(with: eventData) as? [String: Any] ?? [:]
                 if let level = fields["providerThinkingLevel"] as? String { partial.providerThinkingLevel = level }
                 if let level = fields["thinkingLevel"] as? String { partial.thinkingLevel = ModelThinkingLevel(rawValue: level) }
@@ -223,7 +223,7 @@ private func processProxyEvent(
         let existing = toolCallPartials[index] ?? ""
         let updated = existing + delta
         toolCallPartials[index] = updated
-        toolCall.arguments = parseStreamingJSON(updated)
+        toolCall.setArguments(from: updated)
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
         return .toolCallDelta(contentIndex: index, delta: delta, partial: partial)
 
@@ -233,6 +233,7 @@ private func processProxyEvent(
             return nil
         }
         var toolCall = finalToolCall ?? existing
+        toolCall.argumentsJSON = toolCall.argumentsJSON ?? existing.argumentsJSON
         toolCall.namespace = toolCall.namespace ?? existing.namespace
         toolCall.thoughtSignature = toolCall.thoughtSignature ?? existing.thoughtSignature
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
@@ -470,7 +471,17 @@ private struct ProxyUsagePayload: Encodable {
     }
 }
 
-private enum ProxyAssistantMessageEvent: Decodable {
+// Only final tool objects need the order-preserving parse. Delta text already keeps order.
+func decodeProxyAssistantMessageEventJSON(_ data: Data) throws -> ProxyAssistantMessageEvent {
+    let event = try JSONDecoder().decode(ProxyAssistantMessageEvent.self, from: data)
+    guard case .toolCallEnd(let index, var call?) = event else { return event }
+    let tree = try OrderedJSON.parse(String(decoding: data, as: UTF8.self), allowDuplicateKeys: true)
+    call.argumentsJSON = tree["toolCall"]?["arguments"].flatMap { toolArgumentsSource($0) }
+    call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+    return .toolCallEnd(contentIndex: index, toolCall: call)
+}
+
+enum ProxyAssistantMessageEvent: Decodable {
     case start
     case textStart(contentIndex: Int)
     case textDelta(contentIndex: Int, delta: String)

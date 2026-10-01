@@ -48,8 +48,21 @@ private func encodeUsage(_ usage: Usage) -> [String: Any] {
     usageToJSONObject(usage)
 }
 
-/// Encode a message while retaining ordered system sections.
+/// Encode a message with system section and tool argument order.
 public func encodeAgentMessageJSON(_ message: AgentMessage) -> OrderedJSON {
     if case .system(let system) = message { return systemMessageToOrderedJSON(system) }
-    return OrderedJSON.fromFoundation(encodeAgentMessageDict(message))
+    let base = OrderedJSON.fromFoundation(encodeAgentMessageDict(message))
+    switch message {
+    case .assistant(let assistant): return assistantMessageToOrderedJSON(assistant)
+    case .toolResult(let result):
+        var overrides: [String: OrderedJSON] = ["content": .array(result.content.map(contentBlockToOrderedJSON))]
+        if let nested = result.nestedCalls { overrides["nestedCalls"] = nestedToolCallsToOrderedJSON(nested) }
+        return replacingJSONMembers(base, with: overrides)
+    case .user(let user):
+        if case .blocks(let blocks) = user.content {
+            return replacingJSONMembers(base, with: ["content": .array(blocks.map(contentBlockToOrderedJSON))])
+        }
+        return base
+    default: return base
+    }
 }

@@ -187,7 +187,7 @@ public func streamMistral(
                 }
 
                 if let toolCalls = delta["tool_calls"] as? [[String: Any]] {
-                    for toolCall in toolCalls {
+                    for (callPosition, toolCall) in toolCalls.enumerated() {
                         if currentBlockIndex != nil {
                             finishCurrentBlock()
                         }
@@ -205,6 +205,8 @@ public func streamMistral(
                         let argDelta: String
                         if let args = function?["arguments"] as? String {
                             argDelta = args
+                        } else if let source = toolArgumentsSource(rawEvent)?["choices"]?[0]?["delta"]?["tool_calls"]?[callPosition]?["function"]?["arguments"] {
+                            argDelta = source.serialized()
                         } else if let argObj = function?["arguments"] {
                             argDelta = (try? String(data: JSONSerialization.data(withJSONObject: argObj, options: []), encoding: .utf8)) ?? ""
                         } else {
@@ -227,7 +229,7 @@ public func streamMistral(
                         if case .toolCall(var block) = output.content[contentIndex] {
                             if !name.isEmpty { block.name = name }
                             if let rawId, !rawId.isEmpty, rawId != "null" { block.id = rawId }
-                            block.arguments = parseStreamingJSON(combined)
+                            block.setArguments(from: combined)
                             output.content[contentIndex] = .toolCall(block)
                         }
                         stream.push(.toolCallDelta(contentIndex: contentIndex, delta: argDelta, partial: output))
@@ -238,7 +240,7 @@ public func streamMistral(
             finishCurrentBlock()
             for (index, args) in toolCallArgsByIndex {
                 if case .toolCall(var block) = output.content[index] {
-                    block.arguments = parseStreamingJSON(args)
+                    block.setArguments(from: args)
                     output.content[index] = .toolCall(block)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: block, partial: output))
                 }
@@ -648,7 +650,8 @@ private func parseMistralSseEvent(from chunk: Data) throws -> MistralSseEvent {
     if payload == "[DONE]" { return .done }
     guard let object = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
           object["choices"] is [Any] else { throw MistralStreamError.invalidStreamingEvent }
-    return .message(object.mapValues(AnyCodable.init))
+    return .message(toolArgumentsWithOrder(object.mapValues(AnyCodable.init),
+                                           argumentsJSON: try? OrderedJSON.parse(payload, allowDuplicateKeys: true)))
 }
 
 private func mistralCachedPromptTokens(_ usage: [String: Any], promptTokens: Int) -> Int {

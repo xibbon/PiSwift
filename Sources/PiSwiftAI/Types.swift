@@ -1384,13 +1384,16 @@ public struct ToolCall: Sendable {
     public var id: String
     public var name: String
     public var arguments: [String: AnyCodable]
+    /// Object order from the model. The arguments dictionary remains the value source.
+    public var argumentsJSON: OrderedJSON?
     public var thoughtSignature: String?
     public var namespace: String?
 
-    public init(id: String, name: String, arguments: [String: AnyCodable], thoughtSignature: String? = nil, namespace: String? = nil) {
+    public init(id: String, name: String, arguments: [String: AnyCodable], thoughtSignature: String? = nil, namespace: String? = nil, argumentsJSON: OrderedJSON? = nil) {
         self.id = id
         self.name = name
-        self.arguments = arguments
+        self.arguments = toolArgumentsWithOrder(arguments, argumentsJSON: argumentsJSON)
+        self.argumentsJSON = argumentsJSON ?? toolArgumentsSource(arguments)
         self.thoughtSignature = thoughtSignature
         self.namespace = namespace
     }
@@ -1533,9 +1536,13 @@ public enum NestedToolCallStatus: String, Sendable, Codable {
 }
 
 public struct NestedToolCallRecord: Sendable, Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, arguments, argumentsBytes, status, durationMs, error
+    }
     public var id: String
     public var name: String
     public var arguments: [String: AnyCodable]?
+    public var argumentsJSON: OrderedJSON? = nil
     public var argumentsBytes: Int?
     public var status: NestedToolCallStatus
     public var durationMs: Double?
@@ -1543,10 +1550,11 @@ public struct NestedToolCallRecord: Sendable, Codable {
 
     public init(id: String, name: String, arguments: [String: AnyCodable]? = nil,
                 argumentsBytes: Int? = nil, status: NestedToolCallStatus,
-                durationMs: Double? = nil, error: String? = nil) {
+                durationMs: Double? = nil, error: String? = nil, argumentsJSON: OrderedJSON? = nil) {
         self.id = id
         self.name = name
         self.arguments = arguments
+        self.argumentsJSON = argumentsJSON ?? arguments.flatMap(toolArgumentsSource)
         self.argumentsBytes = argumentsBytes
         self.status = status
         self.durationMs = durationMs

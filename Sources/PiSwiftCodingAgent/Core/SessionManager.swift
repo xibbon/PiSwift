@@ -473,6 +473,11 @@ public struct SessionInfo: Sendable {
 }
 
 public func parseSessionEntries(_ content: String, cancellationAware: Bool = false) -> [FileEntry] {
+    parseSessionEntries(content, cancellationAware: cancellationAware, orderedParser: { try OrderedJSON.parse($0, allowDuplicateKeys: true) })
+}
+
+// Injectable parser lets tests count selective second parses without global state.
+func parseSessionEntries(_ content: String, cancellationAware: Bool = false, orderedParser: (String) throws -> OrderedJSON) -> [FileEntry] {
     let normalized = content.hasPrefix("\u{FEFF}") ? String(content.dropFirst()) : content
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
     var entries: [FileEntry] = []
@@ -489,7 +494,7 @@ public func parseSessionEntries(_ content: String, cancellationAware: Bool = fal
             if let header = decodeSessionHeader(json) {
                 entries.append(.session(header))
             }
-        } else if let entry = decodeSessionEntry(json, ordered: isSystemMessageLine(json) ? try? OrderedJSON.parse(trimmed) : nil) {
+        } else if let entry = decodeSessionEntry(json, ordered: (isSystemMessageLine(json) || jsonObjectCarriesToolArguments(json)) ? try? orderedParser(trimmed) : nil) {
             entries.append(.entry(entry))
         }
     }
@@ -1791,7 +1796,7 @@ func encodeSessionHeader(_ header: SessionHeader) -> String {
     return String(data: data ?? Data(), encoding: .utf8) ?? ""
 }
 
-/// Only system messages carry ordered objects (`sections`), so only they need the order-preserving parse.
+/// System sections and tool arguments need the second, order-preserving parse.
 private func isSystemMessageLine(_ json: [String: Any]) -> Bool {
     if json["type"] as? String == "message" {
         return (json["message"] as? [String: Any])?["role"] as? String == "system"
@@ -1817,7 +1822,23 @@ func encodeSessionEntry(_ entry: SessionEntry) -> String {
     }
     let dict = codingAgentSessionEntryJSONObject(entry)
     let data = try? JSONSerialization.data(withJSONObject: dict, options: [])
-    return String(data: data ?? Data(), encoding: .utf8) ?? ""
+    let text = String(data: data ?? Data(), encoding: .utf8) ?? ""
+    guard jsonObjectCarriesToolArguments(dict), let base = try? OrderedJSON.parse(text) else { return text }
+    switch entry {
+    case .message(let message):
+        return replacingToolArgumentObjects(base, using: replacingJSONMembers(base, with: ["message": encodeAgentMessageJSON(message.message)])).serialized()
+    case .customMessage(let message):
+        if case .blocks(let blocks) = message.content {
+            return replacingToolArgumentObjects(base, using: replacingJSONMembers(base, with: ["content": .array(blocks.map(contentBlockToOrderedJSON))])).serialized()
+        }
+    case .contextEdit(let edit):
+        if case .blocks(let blocks) = edit.replacement, let replacement = base["replacement"] {
+            return replacingToolArgumentObjects(base, using: replacingJSONMembers(base, with: ["replacement": replacingJSONMembers(replacement,
+                with: ["content": .array(blocks.map(contentBlockToOrderedJSON))])])).serialized()
+        }
+    default: break
+    }
+    return text
 }
 
 private func decodeSessionHeader(_ dict: [String: Any]) -> SessionHeader? {
@@ -1882,7 +1903,9 @@ private func decodeSessionEntry(_ dict: [String: Any], ordered: OrderedJSON? = n
         if let value = dict["replacement"] as? [String: Any] {
             if let text = value["content"] as? String { replacement = .text(text) }
             else if let blocks = value["content"] as? [[String: Any]] {
-                replacement = .blocks(blocks.compactMap(contentBlockFromDict))
+                replacement = .blocks(blocks.enumerated().compactMap { index, block in
+                    contentBlockFromJSONObject(block, ordered: ordered?["replacement"]?["content"]?[index])
+                })
             } else { return nil }
         } else if dict["replacement"] is NSNull { replacement = nil }
         else { return nil }
@@ -1907,9 +1930,9 @@ private func decodeSessionEntry(_ dict: [String: Any], ordered: OrderedJSON? = n
         if let text = contentValue as? String {
             content = .text(text)
         } else if let blocks = contentValue as? [Any] {
-            let contentBlocks = blocks.compactMap { block -> ContentBlock? in
+            let contentBlocks = blocks.enumerated().compactMap { index, block -> ContentBlock? in
                 guard let dict = block as? [String: Any] else { return nil }
-                return contentBlockFromDict(dict)
+                return contentBlockFromJSONObject(dict, ordered: ordered?["content"]?[index])
             }
             content = .blocks(contentBlocks)
         } else {
@@ -1970,9 +1993,9 @@ private func decodeAgentMessage(_ dict: [String: Any], ordered: OrderedJSON? = n
         if let text = contentValue as? String {
             content = .text(text)
         } else if let blocks = contentValue as? [Any] {
-            let contentBlocks = blocks.compactMap { block -> ContentBlock? in
+            let contentBlocks = blocks.enumerated().compactMap { index, block -> ContentBlock? in
                 guard let dict = block as? [String: Any] else { return nil }
-                return contentBlockFromDict(dict)
+                return contentBlockFromJSONObject(dict, ordered: ordered?["content"]?[index])
             }
             content = .blocks(contentBlocks)
         } else {
@@ -1980,20 +2003,20 @@ private func decodeAgentMessage(_ dict: [String: Any], ordered: OrderedJSON? = n
         }
         return .user(UserMessage(content: content, timestamp: timestamp))
     case "assistant":
-        return .assistant(assistantMessageFromJSONObject(dict))
+        return .assistant(assistantMessageFromJSONObject(dict, ordered: ordered))
     case "toolResult":
         let timestamp = (dict["timestamp"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
         let toolCallId = dict["toolCallId"] as? String ?? ""
         let toolName = dict["toolName"] as? String ?? ""
         let isError = dict["isError"] as? Bool ?? false
         let details = dict["details"].map { AnyCodable($0) }
-        let contentBlocks = (dict["content"] as? [Any] ?? []).compactMap { block -> ContentBlock? in
+        let contentBlocks = (dict["content"] as? [Any] ?? []).enumerated().compactMap { index, block -> ContentBlock? in
             guard let dict = block as? [String: Any] else { return nil }
-            return contentBlockFromDict(dict)
+            return contentBlockFromJSONObject(dict, ordered: ordered?["content"]?[index])
         }
         let toolResult = ToolResultMessage(toolCallId: toolCallId, toolName: toolName, content: contentBlocks, details: details,
                                            usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject),
-                                           nestedCalls: (dict["nestedCalls"] as? [String: Any]).flatMap(nestedToolCallsFromJSONObject),
+                                           nestedCalls: (dict["nestedCalls"] as? [String: Any]).flatMap { nestedToolCallsFromJSONObject($0, ordered: ordered?["nestedCalls"]) },
                                            isError: isError, timestamp: timestamp)
         return .toolResult(toolResult)
     case "bashExecution", "hookMessage", "branchSummary", "compactionSummary":

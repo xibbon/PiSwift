@@ -338,7 +338,7 @@ public func streamOpenAIResponses(
                 case .thinking(let thinkingContent):
                     stream.push(.thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: output))
                 case .toolCall(var toolCall):
-                    toolCall.arguments = parseStreamingJSON(currentToolCallArgs)
+                    toolCall.setArguments(from: currentToolCallArgs)
                     output.content[index] = .toolCall(toolCall)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                 default:
@@ -409,7 +409,8 @@ public func streamOpenAIResponses(
                                     arguments = existing.arguments
                                 }
                             }
-                            let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments)
+                            let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments,
+                                                argumentsJSON: toolArgumentsSource(arguments) ?? parseToolArgumentsSource(toolCall.arguments) ?? parseToolArgumentsSource(preferredArgs))
                             if let index = blockIndexByOutputIndex[doneEvent.outputIndex] {
                                 output.content[index] = .toolCall(call)
                                 stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
@@ -459,7 +460,7 @@ public func streamOpenAIResponses(
                         if let index = blockIndexByOutputIndex[deltaEvent.outputIndex], case .toolCall(var tool) = output.content[index] {
                             let args = (toolCallArgsByOutputIndex[deltaEvent.outputIndex] ?? "") + deltaEvent.delta
                             toolCallArgsByOutputIndex[deltaEvent.outputIndex] = args
-                            tool.arguments = parseStreamingJSON(args)
+                            tool.setArguments(from: args)
                             output.content[index] = .toolCall(tool)
                             stream.push(.toolCallDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
                         }
@@ -467,7 +468,7 @@ public func streamOpenAIResponses(
                         if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .toolCall(var tool) = output.content[index] {
                             let previousArgs = toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
                             toolCallArgsByOutputIndex[doneEvent.outputIndex] = doneEvent.arguments
-                            tool.arguments = parseStreamingJSON(doneEvent.arguments)
+                            tool.setArguments(from: doneEvent.arguments)
                             output.content[index] = .toolCall(tool)
                             if let delta = finalToolCallArgumentsDelta(previous: previousArgs, final: doneEvent.arguments) {
                                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
@@ -1060,7 +1061,7 @@ func parseJSONStringArguments(_ json: String) -> [String: AnyCodable] {
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         return [:]
     }
-    return object.mapValues { AnyCodable($0) }
+    return toolArgumentsWithOrder(object.mapValues { AnyCodable($0) }, argumentsJSON: parseToolArgumentsSource(json))
 }
 
 func encodeTextSignatureV1(id: String, phase: String? = nil) -> String {

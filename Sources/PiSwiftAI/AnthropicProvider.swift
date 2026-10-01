@@ -389,7 +389,7 @@ public func streamAnthropic(
                                 let deltaText = event.delta?.partialJson ?? ""
                                 let partial = (toolCallPartials[index] ?? "") + deltaText
                                 toolCallPartials[index] = partial
-                                toolCall.arguments = parseStreamingJSON(partial)
+                                toolCall.setArguments(from: partial)
                                 output.content[contentIndex] = .toolCall(toolCall)
                                 stream.push(.toolCallDelta(contentIndex: contentIndex, delta: deltaText, partial: output))
                             }
@@ -412,7 +412,7 @@ public func streamAnthropic(
                         stream.push(.thinkingEnd(contentIndex: contentIndex, content: thinkingBlock.thinking, partial: output))
                     case .toolCall(var toolCall):
                         let partial = toolCallPartials[index] ?? ""
-                        toolCall.arguments = parseStreamingJSON(partial)
+                        toolCall.setArguments(from: partial)
                         output.content[contentIndex] = .toolCall(toolCall)
                         stream.push(.toolCallEnd(contentIndex: contentIndex, toolCall: toolCall, partial: output))
                     default:

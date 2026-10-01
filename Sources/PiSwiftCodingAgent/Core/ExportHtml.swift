@@ -101,7 +101,7 @@ private func buildSessionData(
     leafId: String?,
     systemPrompt: String?,
     tools: [AgentTool]?
-) -> [String: Any] {
+) -> OrderedJSON {
     let headerValue: Any = header.map { sessionHeaderToDict($0) } ?? NSNull()
     let entryValues = entries.map { sessionEntryToDict($0) }
 
@@ -118,10 +118,11 @@ private func buildSessionData(
         data["tools"] = NSNull()
     }
 
-    return data
+    let orderedEntries = entries.map { (try? OrderedJSON.parse(encodeSessionEntry($0))) ?? .null }
+    return replacingJSONMembers(OrderedJSON.fromFoundation(data), with: ["entries": .array(orderedEntries)])
 }
 
-private func generateHtml(_ sessionData: [String: Any], themeName: String?) throws -> String {
+private func generateHtml(_ sessionData: OrderedJSON, themeName: String?) throws -> String {
     let template = try loadTemplateFile(named: "template", ext: "html", subdir: "export-html")
     let templateCss = try loadTemplateFile(named: "template", ext: "css", subdir: "export-html")
     let templateJs = try loadTemplateFile(named: "template", ext: "js", subdir: "export-html")
@@ -133,7 +134,7 @@ private func generateHtml(_ sessionData: [String: Any], themeName: String?) thro
     let exportColors = deriveExportColors(colors["userMessageBg"] ?? "#343541")
     let themeExport = getThemeExportColors(themeName)
 
-    let sessionJson = try JSONSerialization.data(withJSONObject: sessionData, options: [])
+    let sessionJson = Data(sessionData.serialized().utf8)
     let sessionBase64 = sessionJson.base64EncodedString()
 
     let css = templateCss

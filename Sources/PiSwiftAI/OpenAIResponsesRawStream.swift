@@ -132,6 +132,7 @@ func processRawOpenAIResponsesStream(
         }
         slot.partialInput = nextInput
         tool.arguments = [property: AnyCodable(nextInput)]
+        tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
         output.content[slot.contentIndex] = .toolCall(tool)
         slots[index] = slot
     }
@@ -183,7 +184,7 @@ func processRawOpenAIResponsesStream(
                   let delta = event["delta"] as? String,
                   case .toolCall(var tool) = output.content[slot.contentIndex] else { continue }
             slot.partialInput += delta
-            tool.arguments = parseStreamingJSON(slot.partialInput)
+            tool.setArguments(from: slot.partialInput)
             output.content[slot.contentIndex] = .toolCall(tool)
             slots[index] = slot
             stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
@@ -195,7 +196,7 @@ func processRawOpenAIResponsesStream(
                 stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
             }
             slot.partialInput = arguments
-            tool.arguments = parseStreamingJSON(arguments)
+            tool.setArguments(from: arguments)
             output.content[slot.contentIndex] = .toolCall(tool)
             slots[index] = slot
         case "response.custom_tool_call_input.delta":
@@ -239,7 +240,7 @@ func processRawOpenAIResponsesStream(
                 if case .toolCall(var tool) = output.content[slot.contentIndex] {
                     let finalArguments = item["arguments"] as? String ?? ""
                     let arguments = finalArguments.isEmpty ? slot.partialInput : finalArguments
-                    tool.arguments = parseStreamingJSON(arguments)
+                    tool.setArguments(from: arguments)
                     output.content[slot.contentIndex] = .toolCall(tool)
                     stream.push(.toolCallEnd(contentIndex: slot.contentIndex, toolCall: tool, partial: output))
                 }

@@ -9,7 +9,21 @@ public func parseStreamingJSON(_ partialJson: String?) -> [String: AnyCodable] {
           let object = parsed as? [String: Any] else {
         return [:]
     }
-    return object.mapValues { AnyCodable($0) }
+    let text = String(decoding: json.utf8.prefix(end), as: UTF8.self)
+    return toolArgumentsWithOrder(object.mapValues { AnyCodable($0) },
+                                  argumentsJSON: parseToolArgumentsSource(text))
+}
+
+extension ToolCall {
+    /// Parse complete streamed arguments and retain their object order.
+    /// Keep the same complete-object prefix rule as parseStreamingJSON.
+    public mutating func setArguments(from text: String) {
+        arguments = parseStreamingJSON(text)
+        var json = text
+        argumentsJSON = json.withUTF8(topLevelObjectEnd).flatMap { end in
+            parseToolArgumentsSource(String(decoding: json.utf8.prefix(end), as: UTF8.self))
+        }
+    }
 }
 
 /// Byte offset just past the brace that closes the top-level object, or nil while

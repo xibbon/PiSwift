@@ -522,7 +522,7 @@ private func failToolCallsFromTruncatedMessage(
 ) async -> ToolBatchOutcome {
     var results: [ToolResultMessage] = []
     for toolCall in toolCalls {
-        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
+        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolArgumentsWithOrder(toolCall.arguments, argumentsJSON: toolCall.argumentsJSON)))
         let result = createErrorToolResult(
             "Tool call \"\(toolCall.name)\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments."
         )
@@ -579,7 +579,7 @@ private func executeToolCallsSequential(
     let hooks = ToolCallHooks(beforeToolCall: config.beforeToolCall, afterToolCall: config.afterToolCall)
 
     for toolCall in toolCalls {
-        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
+        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolArgumentsWithOrder(toolCall.arguments, argumentsJSON: toolCall.argumentsJSON)))
 
         let preparation = await prepareToolCall(
             context: context,
@@ -599,7 +599,7 @@ private func executeToolCallsSequential(
                 await emit(.toolExecutionUpdate(
                     toolCallId: prepared.toolCall.id,
                     toolName: prepared.toolCall.name,
-                    args: prepared.toolCall.arguments,
+                    args: toolArgumentsWithOrder(prepared.toolCall.arguments, argumentsJSON: prepared.toolCall.argumentsJSON),
                     partialResult: partialResult
                 ))
             }
@@ -642,7 +642,7 @@ private func executeToolCallsParallel(
 
     // Phase 1: prepare all tool calls sequentially
     for (index, toolCall) in toolCalls.enumerated() {
-        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments))
+        await emit(.toolExecutionStart(toolCallId: toolCall.id, toolName: toolCall.name, args: toolArgumentsWithOrder(toolCall.arguments, argumentsJSON: toolCall.argumentsJSON)))
 
         let preparation = await prepareToolCall(
             context: context,
@@ -683,7 +683,7 @@ private func executeToolCallsParallel(
                     await emit(.toolExecutionUpdate(
                         toolCallId: runnable.prepared.toolCall.id,
                         toolName: runnable.prepared.toolCall.name,
-                        args: runnable.prepared.toolCall.arguments,
+                        args: toolArgumentsWithOrder(runnable.prepared.toolCall.arguments, argumentsJSON: runnable.prepared.toolCall.argumentsJSON),
                         partialResult: partialResult
                     ))
                 }

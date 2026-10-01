@@ -75,10 +75,12 @@ public struct ToolLoadoutChanges: Sendable {
 public struct ExecuteToolOptions: Sendable {
     public var signal: CancellationToken?
     public var onUpdate: AgentToolUpdateCallback?
+    public var argumentsJSON: OrderedJSON?
 
-    public init(signal: CancellationToken? = nil, onUpdate: AgentToolUpdateCallback? = nil) {
+    public init(signal: CancellationToken? = nil, onUpdate: AgentToolUpdateCallback? = nil, argumentsJSON: OrderedJSON? = nil) {
         self.signal = signal
         self.onUpdate = onUpdate
+        self.argumentsJSON = argumentsJSON
     }
 }
 

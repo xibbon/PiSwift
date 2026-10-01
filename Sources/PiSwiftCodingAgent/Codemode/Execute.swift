@@ -257,7 +257,8 @@ private func handleTool(_ call: CodemodeRuntimeCall, tool: AgentTool?, context: 
             throw CodemodeBridgeError.message("Tool arguments must be an object")
         }
         let outcome = await context.executeTool(name: tool.name, args: args.mapValues(AnyCodable.init),
-                                                 options: ExecuteToolOptions(signal: call.signal))
+                                                 options: ExecuteToolOptions(signal: call.signal,
+                                                     argumentsJSON: parseToolArgumentsSource(argsJSON)))
         let body = textOf(outcome.result)
         let status: CodemodeNestedCallStatus = outcome.isError ? (call.signal.isCancelled ? .cancelled : .error) : .ok
         await state.finish(index: index, id: outcome.toolCall.id, status: status,
