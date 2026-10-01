@@ -265,11 +265,13 @@ private func c4cConnection(secret: String?, name: String = "secret") -> McpServe
         _ = try c4cConnection(secret: "${PI_MCP_C4C_MISSING_SECRET}").oauthSettings()
         Issue.record("A missing environment variable must fail")
     } catch McpRuntimeError.invalidConfig(let text) {
-        #expect(text == "MCP server \"secret\" oauth.clientSecret: environment variable PI_MCP_C4C_MISSING_SECRET is not set")
+        // Upstream resolveConfigValueUncached is wrapped by resolveConfigValueOrThrow.
+        #expect(text == "Failed to resolve MCP server \"secret\" oauth.clientSecret from environment variable: PI_MCP_C4C_MISSING_SECRET")
     }
 }
 
 @Test func c4cPublicOAuthSettingsCacheCommandSuccessAndFailure() throws {
+    // Upstream resolveConfigValueUncached runs both successful and failed commands on every call.
     let root = try c4cDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
@@ -277,7 +279,7 @@ private func c4cConnection(secret: String?, name: String = "secret") -> McpServe
     let command = "!printf 'run\\n' >> \(quote(success.path)); printf 'resolved\\n'"
     #expect(try c4cConnection(secret: command).oauthSettings().clientSecret == "resolved")
     #expect(try c4cConnection(secret: command, name: "other").oauthSettings().clientSecret == "resolved")
-    #expect(try String(contentsOf: success, encoding: .utf8) == "run\n")
+    #expect(try String(contentsOf: success, encoding: .utf8) == "run\nrun\n")
     let failure = root.appendingPathComponent("failure")
     let failedCommand = "!printf 'run\\n' >> \(quote(failure.path)); exit 1"
     for _ in 0..<2 {
@@ -285,10 +287,10 @@ private func c4cConnection(secret: String?, name: String = "secret") -> McpServe
             _ = try c4cConnection(secret: failedCommand).oauthSettings()
             Issue.record("A command with no value must fail")
         } catch McpRuntimeError.invalidConfig(let text) {
-            #expect(text == "MCP server \"secret\" oauth.clientSecret: command returned no value")
+            #expect(text == "Failed to resolve MCP server \"secret\" oauth.clientSecret from shell command: \(failedCommand.dropFirst())")
         }
     }
-    #expect(try String(contentsOf: failure, encoding: .utf8) == "run\n")
+    #expect(try String(contentsOf: failure, encoding: .utf8) == "run\nrun\n")
 }
 
 @Test(.timeLimit(.minutes(1))) func c4cListReportConnectionsWriteServerLog() async throws {

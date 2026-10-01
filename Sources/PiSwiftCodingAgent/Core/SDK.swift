@@ -568,14 +568,17 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let extensionPaths = (noExtensions ? explicitExtensionPaths : configuredExtensionPaths + explicitExtensionPaths)
         .filter { !$0.hasPrefix(BUILTIN_PATH_PREFIX) && !$0.hasPrefix("-" + BUILTIN_PATH_PREFIX) }
     let inlineExtensions = options.inlineExtensions ?? []
-    let disabledBuiltinPaths = Set((settingsManager.getGlobalSettings().extensions ?? [])
-        + (projectTrusted ? settingsManager.getProjectSettings().extensions ?? [] : []))
+    let globalExtensionEntries = settingsManager.getGlobalSettings().extensions ?? []
+    let projectExtensionEntries = projectTrusted ? settingsManager.getProjectSettings().extensions ?? [] : []
+    let projectExtensionBaseDir = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).path
     let explicitBuiltinPaths = Set(explicitExtensionPaths.filter { $0.hasPrefix(BUILTIN_PATH_PREFIX) })
     let knownBuiltinPaths = Set(inlineExtensions.filter(\.builtin).map { BUILTIN_PATH_PREFIX + $0.name })
     let selectedInlineExtensions = inlineExtensions.filter { item in
         if !item.builtin { return !noExtensions }
         let path = BUILTIN_PATH_PREFIX + item.name
-        return explicitBuiltinPaths.contains(path) || (!noExtensions && !disabledBuiltinPaths.contains("-" + path))
+        return explicitBuiltinPaths.contains(path) || (!noExtensions && resolveBuiltinExtension(path: path,
+            globalEntries: globalExtensionEntries, projectEntries: projectExtensionEntries,
+            globalBaseDir: agentDir, projectBaseDir: projectExtensionBaseDir).enabled)
     }
     let loadInlineExtensions: @Sendable () -> LoadExtensionsResult = {
         var hooks: [LoadedHook] = []

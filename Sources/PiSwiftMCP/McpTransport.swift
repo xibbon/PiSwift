@@ -77,6 +77,29 @@ private let stdioExitHook: Void = {
     }
 }()
 
+// Node reports spawn failures with the POSIX error name, not strerror text.
+private func stdioSpawnError(_ code: Int32, command: String) -> McpError {
+    let name: String
+    switch code {
+    case ENOENT: name = "ENOENT"
+    case EACCES: name = "EACCES"
+    case ENOTDIR: name = "ENOTDIR"
+    case ELOOP: name = "ELOOP"
+    case ENOEXEC: name = "ENOEXEC"
+    case ETXTBSY: name = "ETXTBSY"
+    case E2BIG: name = "E2BIG"
+    case ENOMEM: name = "ENOMEM"
+    case EMFILE: name = "EMFILE"
+    case ENFILE: name = "ENFILE"
+    case EIO: name = "EIO"
+    case EINVAL: name = "EINVAL"
+    case EAGAIN: name = "EAGAIN"
+    case EPERM: name = "EPERM"
+    default: name = "UNKNOWN"
+    }
+    return .connectionFailed("spawn \(command) \(name)")
+}
+
 /// A local MCP server with its own process group. `close()` shuts stdin,
 /// waits briefly, then signals the entire group, including wrapper children.
 public actor StdioTransport: McpTransport {
@@ -162,7 +185,7 @@ public actor StdioTransport: McpTransport {
         if let cwd {
             let directory = NSString(string: cwd).expandingTildeInPath
             let code = directory.withCString { posix_spawn_file_actions_addchdir_np(&actions, $0) }
-            guard code == 0 else { throw McpError.connectionFailed("Cannot set MCP server working directory: \(code)") }
+            guard code == 0 else { throw stdioSpawnError(code, command: command) }
         }
         posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
         posix_spawnattr_setpgroup(&attributes, 0)
@@ -185,7 +208,7 @@ public actor StdioTransport: McpTransport {
             }
         }
         guard result == 0 else {
-            throw McpError.connectionFailed("Cannot start MCP server \(command): \(String(cString: strerror(result)))")
+            throw stdioSpawnError(result, command: command)
         }
         _ = stdioExitHook
         liveStdioProcessGroups.withLock { $0.insert(child) }

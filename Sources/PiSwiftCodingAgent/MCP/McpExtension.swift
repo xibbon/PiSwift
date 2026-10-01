@@ -27,6 +27,34 @@ public struct McpExtensionOptions: Sendable {
     }
 }
 
+private let mcpExposureDescriptions: [(McpExposure, String)] = [
+    (.codemode, "called from codemode scripts, listed in the codemode description"),
+    (.codemodeDeferred, "called from codemode scripts, not listed; scripts find them with searchTools()"),
+    (.deferred, "not declared until tool_search loads them, then called directly; no codemode needed"),
+    (.direct, "declared to the model like built-in tools"),
+]
+
+private struct McpManagerPresenter: McpSignInPresenter {
+    let base: any McpSignInPresenter
+    let ui: any McpUi
+    let title: String
+
+    func redirectURL(for state: String) async throws -> URL { try await base.redirectURL(for: state) }
+
+    func present(authorizationURL: URL, state: String) async throws -> URL {
+        do {
+            let result = try await base.present(authorizationURL: authorizationURL, state: state)
+            await ui.status(title: title, message: "Connecting…")
+            return result
+        } catch is CancellationError {
+            await ui.status(title: title, message: "Connecting…")
+            throw CancellationError()
+        }
+    }
+
+    func cancel() async { await base.cancel() }
+}
+
 private struct BuiltinMcpServer: Sendable {
     var entry: McpServerEntry
     var connection: McpServerConnection?
@@ -40,6 +68,8 @@ public actor McpBuiltinRuntime {
     private let credentials: McpOAuthCredentialStore
     private let log: McpServerLog
     private var servers: [String: BuiltinMcpServer] = [:]
+    private var serverNames: [String] = []
+    private var orderedServers: [BuiltinMcpServer] { serverNames.compactMap { servers[$0] } }
     private var configuredEntries: [McpServerEntry] = []
     private var configErrors: [String] = []
     private var overridden: [String] = []
@@ -81,8 +111,16 @@ public actor McpBuiltinRuntime {
         let registered = registeredServers()
         overridden = registered.overridden
         servers = [:]
-        for entry in configuredEntries { servers[entry.name] = BuiltinMcpServer(entry: entry) }
-        for server in registered.servers { servers[server.entry.name] = server }
+        serverNames = []
+        serverMessages = [:]
+        for entry in configuredEntries {
+            if servers[entry.name] == nil { serverNames.append(entry.name) }
+            servers[entry.name] = BuiltinMcpServer(entry: entry)
+        }
+        for server in registered.servers {
+            serverNames.append(server.entry.name)
+            servers[server.entry.name] = server
+        }
         changed()
         let current = generation
         startup = Task { [weak self] in
@@ -136,7 +174,7 @@ public actor McpBuiltinRuntime {
     }
 
     private func connectEnabled(context: HookContext, generation current: Int) async {
-        let names = servers.values.filter { $0.entry.config.isEnabled }.map { $0.entry.name }
+        let names = orderedServers.filter { $0.entry.config.isEnabled }.map { $0.entry.name }
         let connections = names.compactMap { name -> McpServerConnection? in
             guard let server = servers[name] else { return nil }
             let connection = makeConnection(server.entry)
@@ -228,7 +266,7 @@ public actor McpBuiltinRuntime {
 
     private func resourceServers() async -> [McpServerConnection] {
         var result: [McpServerConnection] = []
-        for server in servers.values {
+        for server in orderedServers {
             if await hasVisibleResources(server.entry.name), let connection = server.connection { result.append(connection) }
         }
         return result
@@ -236,7 +274,7 @@ public actor McpBuiltinRuntime {
 
     private func syncResourceTools() async {
         var exposures: Set<McpExposure> = []
-        for server in servers.values where await hasVisibleResources(server.entry.name) {
+        for server in orderedServers where await hasVisibleResources(server.entry.name) {
             exposures.insert(server.entry.config.effectiveExposure)
         }
         let next = [McpExposure.direct, .codemode, .codemodeDeferred, .deferred].first(where: exposures.contains) ?? .hidden
@@ -255,7 +293,7 @@ public actor McpBuiltinRuntime {
 
     private func ensureDiscoveryActive(_ context: HookContext? = nil) async {
         var exposure: Set<McpExposure> = []
-        for server in servers.values where server.entry.config.isEnabled {
+        for server in orderedServers where server.entry.config.isEnabled {
             guard let connection = server.connection, await connection.state == .connected else { continue }
             for toolName in serverTools[server.entry.name] ?? [] {
                 if let owner = toolOwners[toolName], let rawName = owner.split(separator: "\u{0}").last {
@@ -312,16 +350,19 @@ public actor McpBuiltinRuntime {
         let registered = registeredServers()
         overridden = registered.overridden
         let next = Dictionary(uniqueKeysWithValues: registered.servers.map { ($0.entry.name, $0) })
-        let removed = servers.values.filter { server in
+        let removed = orderedServers.filter { server in
             server.entry.scope == .extension && next[server.entry.name]?.registeredConfig != server.registeredConfig
         }
         for server in removed {
             servers.removeValue(forKey: server.entry.name)
+            serverNames.removeAll { $0 == server.entry.name }
+            serverMessages.removeValue(forKey: server.entry.name)
             await hideTools(server.entry.name)
             await server.connection?.close()
         }
         var added: [McpServerConnection] = []
         for server in registered.servers where servers[server.entry.name] == nil {
+            serverNames.append(server.entry.name)
             servers[server.entry.name] = server
             if server.entry.config.isEnabled {
                 let connection = makeConnection(server.entry)
@@ -340,15 +381,17 @@ public actor McpBuiltinRuntime {
     public func shutdown() async {
         sessionActive = false
         generation += 1
-        let connections = servers.values.compactMap(\.connection)
+        let connections = orderedServers.compactMap(\.connection)
         servers = [:]
+        serverNames = []
+        serverMessages = [:]
         changed()
         for connection in connections { await connection.close() }
     }
 
     private func reportProblems(_ context: HookContext, only: Set<String>? = nil) async {
         var lines = only == nil ? configErrors.map { "config: \($0)" } : []
-        for server in servers.values where only == nil || only!.contains(server.entry.name) {
+        for server in orderedServers where only == nil || only!.contains(server.entry.name) {
             guard let connection = server.connection else { continue }
             let state = await connection.state
             if state == .needsAuth || state == .failed {
@@ -360,16 +403,16 @@ public actor McpBuiltinRuntime {
         }
     }
 
-    private func describeState(_ server: BuiltinMcpServer) async -> String {
+    private func describeState(_ server: BuiltinMcpServer, withError: Bool = true) async -> String {
         guard server.entry.config.isEnabled else { return "disabled" }
         guard let connection = server.connection else { return "starting" }
         switch await connection.state {
         case .needsAuth: return "needs sign-in"
-        case .failed: return "failed: \((await connection.error ?? "unknown error").components(separatedBy: "\n").first ?? "unknown error")"
+        case .failed: return !withError ? "failed" : "failed: \((await connection.error ?? "unknown error").components(separatedBy: "\n").first ?? "unknown error")"
         case .connected:
             let tools = await connection.tools.count
             let resources = await connection.resources.count
-            return "connected · \(tools) tool\(tools == 1 ? "" : "s")\(resources > 0 ? " · \(resources) resources" : "")"
+            return "connected · \(tools) tool\(tools == 1 ? "" : "s")\(resources > 0 ? " · \(resources) resource\(resources == 1 ? "" : "s")" : "")"
         case .connecting: return "connecting…"
         case .disconnected: return "disconnected"
         case .closed: return "closed"
@@ -378,7 +421,7 @@ public actor McpBuiltinRuntime {
 
     public func menu() async -> McpMenu {
         var ranked: [(rank: Int, server: BuiltinMcpServer)] = []
-        for server in servers.values {
+        for server in orderedServers {
             let rank: Int
             if !server.entry.config.isEnabled { rank = 5 }
             else {
@@ -393,7 +436,7 @@ public actor McpBuiltinRuntime {
             ranked.append((rank, server))
         }
         let sorted = ranked.sorted { $0.rank == $1.rank
-            ? $0.server.entry.name < $1.server.entry.name : $0.rank < $1.rank }.map(\.server)
+            ? $0.server.entry.name.compare($1.server.entry.name, locale: .current) == .orderedAscending : $0.rank < $1.rank }.map(\.server)
         var items: [McpMenuItem] = []
         for server in sorted {
             items.append(McpMenuItem(value: server.entry.name, label: server.entry.name,
@@ -407,8 +450,21 @@ public actor McpBuiltinRuntime {
 
     public func status() async -> String {
         var lines: [String] = []
-        for server in servers.values.sorted(by: { $0.entry.name < $1.entry.name }) {
-            lines.append("\(server.entry.name): \(await describeState(server)) (\(server.entry.config.effectiveExposure.rawValue))")
+        for server in orderedServers {
+            let name = server.entry.name
+            let exposure = server.entry.config.effectiveExposure.rawValue
+            let connection = server.connection
+            let state = await connection?.state
+            if state == .needsAuth {
+                lines.append("\(name): needs sign-in, run /mcp login \(name) (\(exposure))")
+                continue
+            }
+            let tools = state == .connected ? ", \(await connection?.tools.count ?? 0) tools" : ""
+            let description = !server.entry.config.isEnabled ? "disabled" : state == .disconnected
+                ? "disconnected, reconnects on next call" : state?.rawValue ?? "starting"
+            let failure = state != .connected ? await connection?.error : nil
+            let error = failure.map { "\n    " + $0.components(separatedBy: "\n").joined(separator: "\n    ") } ?? ""
+            lines.append("\(name): \(description)\(tools) (\(exposure))\(error)")
         }
         lines += configErrors.map { "config error: \($0)" }
         lines += overridden.map { "overridden: \($0)" }
@@ -422,13 +478,14 @@ public actor McpBuiltinRuntime {
                         eligible: (BuiltinMcpServer) -> Bool,
                         preferred: (BuiltinMcpServer) async -> Bool, none: String) async -> BuiltinMcpServer? {
         if let name {
-            guard let server = servers[name], eligible(server) else {
-                await context.ui.notify("No eligible MCP server named \"\(name)\".", .error)
+            guard let server = servers[name] else {
+                await context.ui.notify("No MCP server named \"\(name)\".", .error)
                 return nil
             }
+            guard eligible(server) else { await context.ui.notify(none, .error); return nil }
             return server
         }
-        let choices = servers.values.filter(eligible)
+        let choices = orderedServers.filter(eligible)
         guard !choices.isEmpty else { await context.ui.notify(none, .info); return nil }
         if choices.count == 1 { return choices[0] }
         var favored: [BuiltinMcpServer] = []
@@ -474,7 +531,8 @@ public actor McpBuiltinRuntime {
                 if let host = options.presenter { presenter = host }
                 else { presenter = try makeMcpMacOSSignInPresenter(settings: server.entry.config.oauth ?? .init(),
                     pasteRedirectURL: { [ui = context.ui] in
-                        await ui.input("Paste the MCP redirect URL", "http://127.0.0.1:.../callback?code=...") ?? ""
+                        guard let value = await ui.input("Waiting for sign-in to \"\(server.entry.name)\". If the browser cannot reach this machine, paste the URL it was redirected to.", "http://127.0.0.1:.../callback?code=...") else { throw CancellationError() }
+                        return value
                     }) }
                 #else
                 guard let presenter = options.presenter else { throw McpRuntimeError.invalidConfig("MCP sign-in needs a host presenter on iOS") }
@@ -483,10 +541,15 @@ public actor McpBuiltinRuntime {
                     settings: try connection.oauthSettings(),
                     challenge: await connection.challenge, presenter: presenter)
                 await connection.clearOAuthChallenge()
-                try await connection.reconnect()
+                do { try await connection.reconnect() }
+                catch {
+                    await context.ui.notify("Signed in, but \(error.localizedDescription)", .error)
+                    return
+                }
                 await ensureDiscoveryActive()
                 await context.ui.notify("Signed in to MCP server \"\(server.entry.name)\" (\(await connection.tools.count) tools).", .info)
-            } catch { await context.ui.notify("Sign-in failed: \(error.localizedDescription)", .error) }
+            } catch is CancellationError { await context.ui.notify("Sign-in cancelled.", .info) }
+            catch { await context.ui.notify("Sign-in failed: \(error.localizedDescription)", .error) }
         case "logout":
             guard let server = await choose(name, context: context, eligible: usesOAuth,
                 preferred: { await $0.connection?.state == .needsAuth }, none: "No enabled MCP server uses OAuth."),
@@ -526,7 +589,7 @@ public actor McpBuiltinRuntime {
                     await ui.status(title: "MCP server \(choice)", message: "Reconnecting…")
                     if let connection = server.connection {
                         do { try await connection.reconnect() }
-                        catch { message = error.localizedDescription }
+                        catch {}
                     }
                 case "signout":
                     if let connection = server.connection, let url = await connection.oauthURL {
@@ -553,34 +616,39 @@ public actor McpBuiltinRuntime {
     }
 
     private func signInForManager(server: BuiltinMcpServer, ui: any McpUi) async -> String? {
-        guard let connection = server.connection, let url = await connection.oauthURL else { return "This server does not use OAuth." }
+        guard let connection = server.connection, let url = await connection.oauthURL else { return "MCP server \"\(server.entry.name)\" does not use OAuth." }
         let title = "Sign in to \(server.entry.name)"
         await ui.status(title: title, message: "Contacting the authorization server…")
         do {
             #if os(macOS)
             let activeURL = LockedState<URL?>(nil)
             let presenter: any McpSignInPresenter
-            if let host = options.presenter { presenter = host }
+            if let host = options.presenter { presenter = McpManagerPresenter(base: host, ui: ui, title: title) }
             else { presenter = try makeMcpMacOSSignInPresenter(settings: server.entry.config.oauth ?? .init(),
                 pasteRedirectURL: {
                     guard let authorizationURL = activeURL.withLock({ $0 }) else { return "" }
-                    return await ui.redirectURL(title: title, authorizationURL: authorizationURL)?.absoluteString ?? ""
+                    let value = await ui.redirectURL(title: title, authorizationURL: authorizationURL)
+                    await ui.status(title: title, message: "Connecting…")
+                    guard let value else { throw CancellationError() }
+                    return value.absoluteString
                 }, openAuthorizationURL: { authorizationURL in
                     activeURL.withLock { $0 = authorizationURL }
                     let opened = await MainActor.run { NSWorkspace.shared.open(authorizationURL) }
                     if !opened { throw McpOAuthError.invalidRedirect }
                 }) }
             #else
-            guard let presenter = options.presenter else { return "MCP sign-in needs a host presenter on iOS." }
+            guard let host = options.presenter else { return "MCP sign-in needs a host presenter on iOS." }
+            let presenter = McpManagerPresenter(base: host, ui: ui, title: title)
             #endif
             try await signInMcpServer(serverURL: url, credentials: credentials,
                 settings: try connection.oauthSettings(),
                 challenge: await connection.challenge, presenter: presenter)
             await connection.clearOAuthChallenge()
-            await ui.status(title: title, message: "Connecting…")
-            try await connection.reconnect()
+            do { try await connection.reconnect() }
+            catch { return "Signed in, but \(error.localizedDescription)" }
             return nil
-        } catch { return "Sign-in failed: \(error.localizedDescription)" }
+        } catch is CancellationError { return "Sign-in cancelled." }
+        catch { return "Sign-in failed: \(error.localizedDescription)" }
     }
 
     private func serverMenu(_ name: String) async -> McpMenu {
@@ -588,6 +656,7 @@ public actor McpBuiltinRuntime {
             return McpMenu(title: name, items: [], empty: "This server is no longer configured.",
                            confirmLabel: "", cancelLabel: "back")
         }
+        let saved = server.entry.scope == .extension ? "for this session" : "saved to the \(server.entry.scope.rawValue) mcp.json"
         var items: [McpMenuItem] = []
         if server.entry.config.isEnabled {
             let state = await server.connection?.state
@@ -602,13 +671,14 @@ public actor McpBuiltinRuntime {
                 items.append(McpMenuItem(value: "signout", label: "Sign out", detail: "deletes the stored credentials"))
             }
             items.append(McpMenuItem(value: "exposure", label: "Exposure", detail: server.entry.config.effectiveExposure.rawValue))
-            items.append(McpMenuItem(value: "disable", label: "Disable", detail: server.entry.scope == .extension ? "for this session" : "saved to \(server.entry.source)"))
-        } else { items.append(McpMenuItem(value: "enable", label: "Enable")) }
+            items.append(McpMenuItem(value: "disable", label: "Disable", detail: saved))
+        } else { items.append(McpMenuItem(value: "enable", label: "Enable", detail: saved)) }
         let transport = server.entry.config.url ?? ([server.entry.config.command ?? ""] + (server.entry.config.args ?? [])).joined(separator: " ")
-        let details = "\(transport)\n\(server.entry.scope.rawValue): \(server.entry.source)\nState: \(await describeState(server))"
-        let connectionError = await server.connection?.error
+        let details = "\(transport)\n\(server.entry.scope.rawValue): \(server.entry.source)\nState: \(await describeState(server, withError: false))"
+        let connectionError = await server.connection?.state == .connected ? nil : await server.connection?.error
+        let error = [serverMessages[server.entry.name], connectionError].compactMap { $0 }.joined(separator: "\n")
         return McpMenu(title: "MCP server \(server.entry.name)", details: details,
-                       error: serverMessages[server.entry.name] ?? connectionError, items: items,
+                       error: error.isEmpty ? nil : error, items: items, selected: items.first?.value,
                        confirmLabel: "select", cancelLabel: "back")
     }
 
@@ -620,17 +690,20 @@ public actor McpBuiltinRuntime {
             items.append(McpMenuItem(value: tool.name, label: tool.name,
                 detail: exposure == server.entry.config.effectiveExposure ? summary : "[\(exposure.rawValue)] \(summary)"))
         }
-        return McpMenu(title: "Tools of \(server.entry.name)", details: "Exposure \(server.entry.config.effectiveExposure.rawValue)",
+        let exposure = server.entry.config.effectiveExposure
+        let description = mcpExposureDescriptions.first { $0.0 == exposure }?.1 ?? "unreachable"
+        let overrides = (server.entry.config.toolExposure?.isEmpty == false) ? "\nSome tools override it with toolExposure." : ""
+        return McpMenu(title: "Tools of \(server.entry.name)", details: "Exposure \(exposure.rawValue): \(description)\(overrides)",
             items: items, empty: "The server offers no tools.", confirmLabel: "back", cancelLabel: "back")
     }
 
     private func exposureMenu(_ server: BuiltinMcpServer) -> McpMenu {
-        let choices: [McpExposure] = [.codemode, .codemodeDeferred, .deferred, .direct]
+        let choices = mcpExposureDescriptions
         return McpMenu(title: "Exposure of \(server.entry.name)", details: server.entry.scope == .extension
             ? "Applies to this session; the server is registered by \(server.entry.source)."
             : "Saved to \(server.entry.source).",
-            items: choices.map { McpMenuItem(value: $0.rawValue,
-                label: "\($0 == server.entry.config.effectiveExposure ? "✓ " : "  ")\($0.rawValue)") },
+            items: choices.map { exposure, description in McpMenuItem(value: exposure.rawValue,
+                label: "\(exposure == server.entry.config.effectiveExposure ? "✓ " : "  ")\(exposure.rawValue)", detail: description) },
             selected: server.entry.config.effectiveExposure.rawValue, confirmLabel: "save", cancelLabel: "back")
     }
 

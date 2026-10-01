@@ -320,13 +320,9 @@ public final class DefaultPackageManager: PackageManager {
         var resolved = accumulator.toResolvedPaths()
         for name in builtinExtensions {
             let path = BUILTIN_PATH_PREFIX + name
-            let projectEnabled = applyAutoloadDisabledPatterns(
-                allPaths: [path], patterns: getOverridePatterns(projectSettings.extensions ?? []), baseDir: projectBaseDir
-            )[path]
-            resolved.extensions.append(ResolvedResource(path: path,
-                enabled: projectEnabled ?? isEnabledByOverrides(filePath: path,
-                    patterns: globalSettings.extensions ?? [], baseDir: globalBaseDir),
-                metadata: PathMetadata(source: "builtin", scope: projectEnabled == nil ? "user" : "project", origin: "top-level")))
+            resolved.extensions.append(resolveBuiltinExtension(path: path,
+                globalEntries: globalSettings.extensions ?? [], projectEntries: projectSettings.extensions ?? [],
+                globalBaseDir: globalBaseDir, projectBaseDir: projectBaseDir))
         }
         return resolved
     }
@@ -2108,6 +2104,18 @@ private func matchesAnyExactPattern(filePath: String, patterns: [String], baseDi
         }
         return false
     }
+}
+
+// Upstream v0.99.1 package-manager.ts: a project +, -, or ! match overrides the user setting.
+func resolveBuiltinExtension(path: String, globalEntries: [String], projectEntries: [String],
+                             globalBaseDir: String, projectBaseDir: String) -> ResolvedResource {
+    let projectEnabled = applyAutoloadDisabledPatterns(
+        allPaths: [path], patterns: getOverridePatterns(projectEntries), baseDir: projectBaseDir
+    )[path]
+    return ResolvedResource(path: path,
+        enabled: projectEnabled ?? isEnabledByOverrides(filePath: path,
+            patterns: globalEntries, baseDir: globalBaseDir),
+        metadata: PathMetadata(source: "builtin", scope: projectEnabled == nil ? "user" : "project", origin: "top-level"))
 }
 
 private func getOverridePatterns(_ entries: [String]) -> [String] {

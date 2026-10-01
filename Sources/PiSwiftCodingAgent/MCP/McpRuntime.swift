@@ -22,18 +22,56 @@ public typealias McpTransportFactory = @Sendable (
     _ entry: McpServerEntry, _ cwd: URL, _ authProvider: (any McpAuthProvider)?
 ) throws -> any McpTransport
 
-private struct McpCachedCommand: Sendable { var result: String? }
-private let mcpCommandResults = LockedState<[String: McpCachedCommand]>([:])
+// runtime.ts uses resolveConfigValueOrThrow -> resolveConfigValueUncached for MCP.
+// Keep this path separate from the shared, non-MCP configuration resolver.
+private func executeMcpSecretCommand(_ command: String) -> String? {
+    #if canImport(UIKit)
+    return nil
+    #else
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = ["-c", command]
+    process.standardInput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    let stdout = Pipe()
+    process.standardOutput = stdout
+    let exited = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in exited.signal() }
+    do { try process.run() }
+    catch { return nil }
+    // Drain stdout while the command runs, so a full pipe cannot block its exit.
+    stdout.fileHandleForWriting.closeFile()
+    let output = LockedState(Data())
+    let drained = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        stdout.fileHandleForReading.closeFile()
+        output.withLock { $0 = data }
+        drained.signal()
+    }
+    let deadline = DispatchTime.now() + 10
+    guard exited.wait(timeout: deadline) == .success,
+          drained.wait(timeout: deadline) == .success else {
+        if process.isRunning { process.terminate() }
+        return nil
+    }
+    guard process.terminationReason == .exit, process.terminationStatus == 0 else { return nil }
+    let data = output.withLock { $0 }
+    // execSync uses a 1 MiB default stdout limit and JavaScript String.trim().
+    guard data.count <= 1024 * 1024 else { return nil }
+    let whitespace = CharacterSet(charactersIn:
+        "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+    let trimmed = String(decoding: data, as: UTF8.self).trimmingCharacters(in: whitespace)
+    return trimmed.isEmpty ? nil : trimmed
+    #endif
+}
 
 private func resolveMcpSecret(_ value: String, context: String) throws -> String {
     if value.hasPrefix("!") {
-        let resolved: String?
-        if let cached = mcpCommandResults.withLock({ $0[value] }) { resolved = cached.result }
-        else {
-            resolved = resolveConfigValue(value)
-            mcpCommandResults.withLock { $0[value] = McpCachedCommand(result: resolved) }
+        let command = String(value.dropFirst())
+        guard let resolved = executeMcpSecretCommand(command) else {
+            throw McpRuntimeError.invalidConfig("Failed to resolve \(context) from shell command: \(command)")
         }
-        guard let resolved else { throw McpRuntimeError.invalidConfig("\(context): command returned no value") }
         return resolved
     }
     func isNameStart(_ character: Character) -> Bool {
@@ -42,9 +80,12 @@ private func resolveMcpSecret(_ value: String, context: String) throws -> String
     func isNamePart(_ character: Character) -> Bool {
         isNameStart(character) || character.isASCII && character.isNumber
     }
-    func environment(_ name: String) throws -> String {
-        guard let replacement = ProcessInfo.processInfo.environment[name], !replacement.isEmpty else {
-            throw McpRuntimeError.invalidConfig("\(context): environment variable \(name) is not set")
+    let environmentValues = ProcessInfo.processInfo.environment
+    var missingNames: [String] = []
+    func environment(_ name: String) -> String {
+        guard let replacement = environmentValues[name], !replacement.isEmpty else {
+            if !missingNames.contains(name) { missingNames.append(name) }
+            return ""
         }
         return replacement
     }
@@ -66,7 +107,7 @@ private func resolveMcpSecret(_ value: String, context: String) throws -> String
         if value[next] == "{", let end = value[value.index(after: next)...].firstIndex(of: "}") {
             let name = String(value[value.index(after: next)..<end])
             if let first = name.first, isNameStart(first), name.allSatisfy(isNamePart) {
-                output += try environment(name)
+                output += environment(name)
             } else { output += String(value[cursor...end]) }
             cursor = value.index(after: end)
             continue
@@ -74,12 +115,16 @@ private func resolveMcpSecret(_ value: String, context: String) throws -> String
         if isNameStart(value[next]) {
             var end = value.index(after: next)
             while end < value.endIndex && isNamePart(value[end]) { end = value.index(after: end) }
-            output += try environment(String(value[next..<end]))
+            output += environment(String(value[next..<end]))
             cursor = end
             continue
         }
         output.append("$")
         cursor = next
+    }
+    if !missingNames.isEmpty {
+        let label = missingNames.count == 1 ? "environment variable" : "environment variables"
+        throw McpRuntimeError.invalidConfig("Failed to resolve \(context) from \(label): \(missingNames.joined(separator: ", "))")
     }
     return output
 }
@@ -170,7 +215,7 @@ public actor McpServerConnection {
         return URL(string: raw)
     }
 
-    /// Resolve the client secret with the same expansion and command cache as connections.
+    /// Resolve the client secret on each call, with the same expansion as connections.
     public nonisolated func oauthSettings() throws -> McpOAuthConfig {
         try resolvedMcpOAuthSettings(entry)
     }

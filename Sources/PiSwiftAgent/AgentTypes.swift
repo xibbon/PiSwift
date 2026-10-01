@@ -106,7 +106,9 @@ public struct AfterToolCallResult: Sendable {
 /// Context passed to `beforeToolCall`.
 public struct BeforeToolCallContext: Sendable {
     public var assistantMessage: AssistantMessage
+    /// The original call from the assistant message.
     public var toolCall: AgentToolCall
+    /// The arguments after preparation and schema validation.
     public var args: [String: AnyCodable]
     public var context: AgentContext
 
@@ -121,7 +123,9 @@ public struct BeforeToolCallContext: Sendable {
 /// Context passed to `afterToolCall`.
 public struct AfterToolCallContext: Sendable {
     public var assistantMessage: AssistantMessage
+    /// The original call from the assistant message.
     public var toolCall: AgentToolCall
+    /// The arguments after preparation and schema validation.
     public var args: [String: AnyCodable]
     public var result: AgentToolResult
     public var isError: Bool

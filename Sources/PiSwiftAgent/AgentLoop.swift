@@ -755,8 +755,7 @@ public func runToolCall(_ toolCall: AgentToolCall, options: RunToolCallOptions) 
         toolCall: toolCall,
         config: options.hooks,
         signal: options.signal,
-        tools: options.tools,
-        preserveOriginalToolCall: true
+        tools: options.tools
     )
     switch preparation {
     case .immediate(let result, let isError):
@@ -784,8 +783,7 @@ private func prepareToolCall(
     toolCall: ToolCall,
     config: ToolCallHooks,
     signal: CancellationToken?,
-    tools: [AgentTool]? = nil,
-    preserveOriginalToolCall: Bool = false
+    tools: [AgentTool]? = nil
 ) async -> ToolCallPreparation {
     let tool = (tools ?? context.tools ?? []).first { $0.name == toolCall.name }
     guard let tool else {
@@ -806,13 +804,12 @@ private func prepareToolCall(
         }
 
         let validatedArgs = try validateToolArguments(tool: tool.aiTool, toolCall: rewrittenToolCall)
-        let reportedToolCall = preserveOriginalToolCall ? toolCall : rewrittenToolCall
 
         if let beforeToolCall = config.beforeToolCall {
             let beforeResult = await beforeToolCall(
                 BeforeToolCallContext(
                     assistantMessage: assistantMessage,
-                    toolCall: reportedToolCall,
+                    toolCall: toolCall,
                     args: validatedArgs,
                     context: context
                 ),
@@ -842,7 +839,8 @@ private func prepareToolCall(
             )
         }
 
-        return .prepared(PreparedToolCallInfo(toolCall: reportedToolCall, tool: tool, args: validatedArgs))
+        // Upstream retains the original call for hooks and events. Only args are prepared and validated.
+        return .prepared(PreparedToolCallInfo(toolCall: toolCall, tool: tool, args: validatedArgs))
     } catch {
         return .immediate(
             result: createErrorToolResult(error.localizedDescription),

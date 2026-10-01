@@ -23,7 +23,11 @@ public indirect enum OrderedJSON: Sendable {
         return nil
     }
     public static func parse(_ text: String) throws -> OrderedJSON {
-        var parser = Parser(Array(text.utf8))
+        try parse(text, allowDuplicateKeys: false)
+    }
+    /// Opt in to JSON.parse's last-value rule for repeated object keys.
+    public static func parse(_ text: String, allowDuplicateKeys: Bool) throws -> OrderedJSON {
+        var parser = Parser(Array(text.utf8), allowDuplicateKeys: allowDuplicateKeys)
         let value = try parser.value()
         parser.whitespace()
         guard parser.index == parser.bytes.count else { throw OrderedJSONError.invalid }
@@ -63,8 +67,12 @@ public enum OrderedJSONError: Error { case invalid }
 
 private struct Parser {
     let bytes: [UInt8]
+    let allowDuplicateKeys: Bool
     var index = 0
-    init(_ bytes: [UInt8]) { self.bytes = bytes }
+    init(_ bytes: [UInt8], allowDuplicateKeys: Bool) {
+        self.bytes = bytes
+        self.allowDuplicateKeys = allowDuplicateKeys
+    }
     mutating func whitespace() {
         while index < bytes.count && [UInt8(32), 9, 10, 13].contains(bytes[index]) { index += 1 }
     }
@@ -92,8 +100,13 @@ private struct Parser {
         if take(125) { return .object(pairs) }
         repeat {
             let name = try string()
-            guard !pairs.contains(where: { $0.0 == name }), take(58) else { throw OrderedJSONError.invalid }
-            pairs.append((name, try value()))
+            guard take(58) else { throw OrderedJSONError.invalid }
+            let member = try value()
+            if let existing = pairs.firstIndex(where: { $0.0 == name }) {
+                guard allowDuplicateKeys else { throw OrderedJSONError.invalid }
+                // JSON.parse retains the first key position and the last value.
+                pairs[existing].1 = member
+            } else { pairs.append((name, member)) }
             if take(125) { return .object(pairs) }
         } while take(44)
         throw OrderedJSONError.invalid

@@ -189,14 +189,16 @@ private actor RootStore {
             }
             let meta = params?["_meta"] as? [String: Any]
             let token = meta?["progressToken"] as? Int ?? -1
-            try await Task.sleep(for: .milliseconds(35))
+            try await Task.sleep(for: .milliseconds(200))
             let update = JsonRpcNotification(method: "notifications/progress", params: AnyCodable(["progressToken": token, "progress": 1, "total": 2]))
             try await server.transport.send(JsonRpc.encodeNotificationToLine(update))
-            try await Task.sleep(for: .milliseconds(35))
+            try await Task.sleep(for: .milliseconds(200))
             return AnyCodable(["content": [["type": "text", "text": "done"]]] as [String: Any])
         }
+        // Each step (200 ms) is shorter than the timeout (300 ms), the call (400 ms) is longer, so it
+        // succeeds only if progress renews the timeout. Wider than the first 35/50 ms values, which flaked.
         let recorder = ProgressRecorder()
-        let result = try await client.callTool(name: "slow", timeoutMs: 50, onProgress: { update in
+        let result = try await client.callTool(name: "slow", timeoutMs: 300, onProgress: { update in
             await recorder.record(update)
         })
         #expect(result.content.first?.text == "done")

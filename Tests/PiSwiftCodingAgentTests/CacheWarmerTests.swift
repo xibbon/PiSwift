@@ -46,10 +46,13 @@ private final class ManualWarmingClock: Sendable {
     }
 }
 
+// Waits by wall-clock time, not by scheduler turns: a fixed number of Task.yield() calls
+// was not enough when the full suite ran under load.
 private func waitForWarming(_ condition: @Sendable () async -> Bool) async {
-    for _ in 0..<10_000 {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while ContinuousClock.now < deadline {
         if await condition() { return }
-        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(1))
     }
 }
 

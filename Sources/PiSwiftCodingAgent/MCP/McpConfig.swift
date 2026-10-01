@@ -1,5 +1,6 @@
 import Foundation
 import CoreFoundation
+import PiSwiftAI
 
 /// How MCP tools are made available to the model.
 public enum McpExposure: String, Codable, Sendable, CaseIterable {
@@ -227,7 +228,7 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
         return nil
         #endif
     }
-    return prefix + "needs either \"command\" (stdio) or \"url\" (streamable HTTP)"
+    return "server \"\(name)\" needs either \"command\" (stdio) or \"url\" (streamable HTTP)"
 }
 
 public func loadMcpConfig(agentDir: URL, cwd: URL, projectTrusted: Bool) -> LoadedMcpConfig {
@@ -240,37 +241,44 @@ public func loadMcpConfig(agentDir: URL, cwd: URL, projectTrusted: Bool) -> Load
     return result
 }
 
+private func mcpParseJSON(_ text: String) throws -> OrderedJSON {
+    do { return try OrderedJSON.parse(text, allowDuplicateKeys: true) }
+    catch {
+        // Keep Foundation's existing malformed-JSON diagnostic for host callers.
+        _ = try JSONSerialization.jsonObject(with: Data(text.utf8), options: .fragmentsAllowed)
+        throw error
+    }
+}
+
 private func readMcpConfigFile(_ path: URL, scope: McpServerEntry.Scope, into result: inout LoadedMcpConfig) {
     guard FileManager.default.fileExists(atPath: path.path) else { return }
-    let root: [String: Any]
-    let text: String
+    let root: OrderedJSON
     do {
-        text = try String(contentsOf: path, encoding: .utf8)
-        guard let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              object["mcpServers"] == nil || object["mcpServers"] is [String: Any] else {
+        root = try mcpParseJSON(String(contentsOf: path, encoding: .utf8))
+        guard root.objectEntries != nil,
+              root["mcpServers"] == nil || root["mcpServers"]?.objectEntries != nil else {
             result.errors.append("\(path.path): expected an object with an \"mcpServers\" object")
             return
         }
-        root = object
     } catch {
         result.errors.append("\(path.path): \(error.localizedDescription)")
         return
     }
     if let auto = root["autoEnableCodemode"] {
-        if mcpIsBool(auto) { result.autoEnableCodemode = (auto as? NSNumber)?.boolValue }
+        if case .bool(let enabled) = auto { result.autoEnableCodemode = enabled }
         else { result.errors.append("\(path.path): autoEnableCodemode must be a boolean") }
     }
-    let servers = (root["mcpServers"] as? [String: Any]) ?? [:]
-    for name in servers.keys.sorted() {
-        guard let value = servers[name] else { continue }
-        if let error = validateMcpServerConfig(name: name, value: value) {
-            result.errors.append("\(path.path): \(error)")
-            continue
-        }
+    // A project replacement keeps the global Map position, as in upstream config.ts.
+    for (name, value) in mcpObjectEntries(root["mcpServers"]) {
         do {
-            let data = try JSONSerialization.data(withJSONObject: value)
+            let data = Data(value.serialized(escapeSlashes: false).utf8)
+            let raw = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+            if let error = validateMcpServerConfig(name: name, value: raw) {
+                result.errors.append("\(path.path): \(error)")
+                continue
+            }
             var config = try JSONDecoder().decode(McpServerConfig.self, from: data)
-            config.toolExposureOrder = mcpToolExposureOrder(text: text, serverName: name)
+            config.toolExposureOrder = mcpObjectEntries(value["toolExposure"]).map { $0.0 }
             let entry = McpServerEntry(name: name, config: config, source: path.path, scope: scope)
             if let index = result.servers.firstIndex(where: { $0.name == name }) { result.servers[index] = entry }
             else { result.servers.append(entry) }
@@ -280,79 +288,100 @@ private func readMcpConfigFile(_ path: URL, scope: McpServerEntry.Scope, into re
     }
 }
 
-// Read object-key order from the original JSON text. JSONDecoder does not preserve it.
-private func mcpToolExposureOrder(text: String, serverName: String) -> [String] {
-    guard let allServers = mcpObjectBody(text, key: "mcpServers"),
-          let server = mcpObjectBody(String(allServers), key: serverName),
-          let exposure = mcpObjectBody(String(server), key: "toolExposure") else { return [] }
-    let expression = try? NSRegularExpression(pattern: "\"((?:\\\\.|[^\"\\\\])*)\"\\s*:")
-    let source = String(exposure)
-    let range = NSRange(source.startIndex..<source.endIndex, in: source)
-    return expression?.matches(in: source, range: range).compactMap { match in
-        guard let keyRange = Range(match.range(at: 1), in: source) else { return nil }
-        let encoded = "\"\(source[keyRange])\""
-        return (try? JSONSerialization.jsonObject(with: Data(encoded.utf8), options: .fragmentsAllowed)) as? String
-    } ?? []
-}
-
-private func mcpObjectBody(_ text: String, key: String) -> Substring? {
-    guard let range = mcpObjectRange(text, key: key) else { return nil }
-    return text[text.index(after: range.lowerBound)..<text.index(before: range.upperBound)]
-}
-
-private func mcpObjectRange(_ text: String, key: String,
-                            within searchRange: Range<String.Index>? = nil) -> Range<String.Index>? {
-    let pattern = "\"\(NSRegularExpression.escapedPattern(for: key))\"\\s*:\\s*\\{"
-    guard let opening = text.range(of: pattern, options: .regularExpression,
-                                   range: searchRange ?? text.startIndex..<text.endIndex) else { return nil }
-    let bodyStart = text.index(before: opening.upperBound)
-    var depth = 1
-    var quoted = false
-    var escaped = false
-    var cursor = opening.upperBound
-    while cursor < text.endIndex {
-        let character = text[cursor]
-        if quoted {
-            if escaped { escaped = false }
-            else if character == "\\" { escaped = true }
-            else if character == "\"" { quoted = false }
-        } else if character == "\"" {
-            quoted = true
-        } else if character == "{" {
-            depth += 1
-        } else if character == "}" {
-            depth -= 1
-            if depth == 0 { return bodyStart..<text.index(after: cursor) }
-        }
-        cursor = text.index(after: cursor)
+// Object.entries and JSON.stringify put array-index keys first in numeric order.
+// All other keys keep insertion order.
+private func mcpObjectEntries(_ object: OrderedJSON?) -> [(String, OrderedJSON)] {
+    let entries = object?.objectEntries ?? []
+    func arrayIndex(_ name: String) -> UInt32? {
+        guard let index = UInt32(name), index != UInt32.max, String(index) == name else { return nil }
+        return index
     }
-    return nil
+    let indices = entries.compactMap { entry in arrayIndex(entry.0).map { ($0, entry) } }
+        .sorted { $0.0 < $1.0 }.map { $0.1 }
+    return indices + entries.filter { arrayIndex($0.0) == nil }
 }
 
-private func mcpRestoreToolExposureOrder(_ output: String, original: String, indent: Int) -> String {
-    guard !original.isEmpty else { return output }
-    var result = output
-    guard let servers = (try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])?["mcpServers"] as? [String: [String: Any]] else { return output }
-    for name in servers.keys.sorted() {
-        let order = mcpToolExposureOrder(text: original, serverName: name)
-        guard !order.isEmpty, let overrides = servers[name]?["toolExposure"] as? [String: String],
-              let allServersRange = mcpObjectRange(result, key: "mcpServers"),
-              let serverRange = mcpObjectRange(result, key: name, within: allServersRange),
-              let exposureRange = mcpObjectRange(result, key: "toolExposure", within: serverRange) else { continue }
-        let keys = order.filter { overrides[$0] != nil } + overrides.keys.filter { !order.contains($0) }.sorted()
-        let closing = result.index(before: exposureRange.upperBound)
-        let prefix = result[..<closing]
-        let closingIndent = String(prefix).components(separatedBy: "\n").last ?? ""
-        let keyIndent = closingIndent + String(repeating: " ", count: indent)
-        let lines = keys.compactMap { key -> String? in
-            guard let exposure = overrides[key],
-                  let keyData = try? JSONEncoder().encode(key),
-                  let valueData = try? JSONEncoder().encode(exposure) else { return nil }
-            return keyIndent + String(decoding: keyData, as: UTF8.self) + " : " + String(decoding: valueData, as: UTF8.self)
+// JSON.parse reads numbers as Double; JSON.stringify uses decimal notation from
+// 1e-6 through values below 1e21, and removes a negative zero and trailing .0.
+private func mcpJSONNumber(_ source: String) -> String {
+    guard let number = Double(source), number.isFinite else { return "null" }
+    if number == 0 { return "0" }
+    let negative = number < 0 ? "-" : ""
+    let parts = String(abs(number)).lowercased().split(separator: "e")
+    let mantissa = String(parts[0])
+    let exponent = parts.count == 2 ? Int(parts[1]) ?? 0 : 0
+    let decimal = mantissa.split(separator: ".", omittingEmptySubsequences: false)
+    let whole = String(decimal[0])
+    var digits = whole + (decimal.count == 2 ? String(decimal[1]) : "")
+    let decimalPosition = whole.count + exponent
+    while digits.count > 1 && digits.last == "0" { digits.removeLast() }
+    if abs(number) >= 1e-6 && abs(number) < 1e21 {
+        if decimalPosition <= 0 {
+            return negative + "0." + String(repeating: "0", count: -decimalPosition) + digits
         }
-        result.replaceSubrange(exposureRange, with: "{\n" + lines.joined(separator: ",\n") + "\n" + closingIndent + "}")
+        if decimalPosition >= digits.count {
+            return negative + digits + String(repeating: "0", count: decimalPosition - digits.count)
+        }
+        let position = digits.index(digits.startIndex, offsetBy: decimalPosition)
+        return negative + digits[..<position] + "." + digits[position...]
     }
-    return result
+    // Swift already uses scientific notation at these magnitudes.
+    let fraction = digits.count > 1 ? "." + digits.dropFirst() : ""
+    return negative + String(digits.prefix(1)) + fraction + "e" + (exponent >= 0 ? "+" : "") + String(exponent)
+}
+
+/// Set an object member without changing the position of an existing member.
+private func mcpSetMember(_ name: String, _ value: OrderedJSON?, in object: inout OrderedJSON) {
+    guard case .object(var entries) = object else { return }
+    if let index = entries.firstIndex(where: { $0.0 == name }) {
+        if let value { entries[index].1 = value }
+        else { entries.remove(at: index) }
+    } else if let value { entries.append((name, value)) }
+    object = .object(entries)
+}
+
+/// Use the spacing and slash rules of upstream JSON.stringify(value, null, indent).
+private func mcpJSONText(_ value: OrderedJSON, indent: String = "  ", depth: Int = 0) -> String {
+    let prefix = String(repeating: indent, count: depth)
+    let childPrefix = prefix + indent
+    switch value {
+    case .object(let entries) where !entries.isEmpty:
+        let lines = mcpObjectEntries(value).map { name, value in
+            childPrefix + OrderedJSON.string(name).serialized(escapeSlashes: false) + ": " +
+                mcpJSONText(value, indent: indent, depth: depth + 1)
+        }
+        return "{\n" + lines.joined(separator: ",\n") + "\n" + prefix + "}"
+    case .array(let values) where !values.isEmpty:
+        let lines = values.map { childPrefix + mcpJSONText($0, indent: indent, depth: depth + 1) }
+        return "[\n" + lines.joined(separator: ",\n") + "\n" + prefix + "]"
+    case .number(let source):
+        return mcpJSONNumber(source)
+    default:
+        return value.serialized(escapeSlashes: false)
+    }
+}
+
+/// Typed new entries use the transport fields first, as in upstream's add command.
+private func mcpConfigJSON(_ config: McpServerConfig) throws -> OrderedJSON {
+    let parsed = try OrderedJSON.parse(String(decoding: JSONEncoder().encode(config), as: UTF8.self))
+    let keys = ["type", "command", "args", "env", "cwd", "url", "headers", "oauth",
+                "exposure", "toolExposure", "enabled", "timeout"]
+    var entries: [(String, OrderedJSON)] = []
+    for key in keys {
+        guard var value = parsed[key] else { continue }
+        if key == "toolExposure", let overrides = value.objectEntries {
+            let order = config.toolExposureOrder + overrides.map { $0.0 }.filter { !config.toolExposureOrder.contains($0) }.sorted()
+            value = .object(order.compactMap { name in value[name].map { (name, $0) } })
+        } else if key == "oauth" {
+            value = .object(["clientId", "clientSecret", "callbackPort", "callbackUrl", "scope"]
+                .compactMap { name in value[name].map { (name, $0) } })
+        } else if let members = value.objectEntries {
+            // Swift maps have no insertion order. Existing file objects retain their source order.
+            value = .object(members.sorted { $0.0 < $1.0 })
+        }
+        entries.append((key, value))
+    }
+    return .object(entries)
 }
 
 public struct McpServerConfigPatch: Sendable {
@@ -365,16 +394,15 @@ public struct McpServerConfigPatch: Sendable {
 }
 
 public func updateMcpServerConfig(path: URL, name: String, patch: McpServerConfigPatch) throws {
-    try editMcpServers(path: path) { servers, _ in
-        guard var server = servers[name] as? [String: Any] else { throw McpConfigError.missingServer("\(path.path) does not define MCP server \"\(name)\"") }
-        if let enabled = patch.enabled {
-            if enabled { server.removeValue(forKey: "enabled") } else { server["enabled"] = false }
+    try editMcpServers(path: path) { servers in
+        guard var server = servers[name], server.objectEntries != nil else {
+            throw McpConfigError.missingServer("\(path.path) does not define MCP server \"\(name)\"")
         }
+        if let enabled = patch.enabled { mcpSetMember("enabled", enabled ? nil : .bool(false), in: &server) }
         if let exposure = patch.exposure {
-            if exposure == .codemode { server.removeValue(forKey: "exposure") }
-            else { server["exposure"] = exposure.rawValue }
+            mcpSetMember("exposure", exposure == .codemode ? nil : .string(exposure.rawValue), in: &server)
         }
-        servers[name] = server
+        mcpSetMember(name, server, in: &servers)
         return true
     }
 }
@@ -382,12 +410,11 @@ public func updateMcpServerConfig(path: URL, name: String, patch: McpServerConfi
 @discardableResult
 public func addMcpServerConfig(path: URL, name: String, config: McpServerConfig) throws -> Bool {
     if let error = validateMcpServerConfig(name: name, config: config) { throw McpConfigError.invalid(error) }
-    let data = try JSONEncoder().encode(config)
-    let value = try JSONSerialization.jsonObject(with: data)
+    let value = try mcpConfigJSON(config)
     var replaced = false
-    try editMcpServers(path: path) { servers, _ in
+    try editMcpServers(path: path) { servers in
         replaced = servers[name] != nil
-        servers[name] = value
+        mcpSetMember(name, value, in: &servers)
         return true
     }
     return replaced
@@ -397,42 +424,32 @@ public func addMcpServerConfig(path: URL, name: String, config: McpServerConfig)
 public func removeMcpServerConfig(path: URL, name: String) throws -> Bool {
     guard FileManager.default.fileExists(atPath: path.path) else { return false }
     var removed = false
-    try editMcpServers(path: path) { servers, _ in
-        removed = servers.removeValue(forKey: name) != nil
+    try editMcpServers(path: path) { servers in
+        removed = servers[name] != nil
+        mcpSetMember(name, nil, in: &servers)
         return removed
     }
     return removed
 }
 
-private func editMcpServers(path: URL, edit: (inout [String: Any], inout [String: Any]) throws -> Bool) throws {
+private func editMcpServers(path: URL, edit: (inout OrderedJSON) throws -> Bool) throws {
     let text = FileManager.default.fileExists(atPath: path.path) ? try String(contentsOf: path, encoding: .utf8) : nil
-    let root: [String: Any]
-    if let text {
-        guard let value = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              value["mcpServers"] == nil || value["mcpServers"] is [String: Any] else {
-            throw McpConfigError.invalid("\(path.path): expected an object with an \"mcpServers\" object")
-        }
-        root = value
-    } else { root = [:] }
-    var changedRoot = root
-    var servers = (root["mcpServers"] as? [String: Any]) ?? [:]
-    guard try edit(&servers, &changedRoot) else { return }
-    if changedRoot["mcpServers"] != nil || !servers.isEmpty { changedRoot["mcpServers"] = servers }
-    let indent: Int
-    if let text, let match = text.range(of: "(?m)^([ \\t]+)\\S", options: .regularExpression) {
-        indent = text[match].prefix(while: { $0 == " " || $0 == "\t" }).count
-    } else { indent = 2 }
-    let encoded = try JSONSerialization.data(withJSONObject: changedRoot, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-    var output = String(decoding: encoded, as: UTF8.self)
-    if indent != 2 {
-        output = output.components(separatedBy: "\n").map { line in
-            let count = line.prefix(while: { $0 == " " }).count
-            return String(repeating: " ", count: count / 2 * indent) + String(line.dropFirst(count))
-        }.joined(separator: "\n")
+    var root = try text.map(mcpParseJSON) ?? .object([])
+    guard root.objectEntries != nil,
+          root["mcpServers"] == nil || root["mcpServers"]?.objectEntries != nil else {
+        throw McpConfigError.invalid("\(path.path): expected an object with an \"mcpServers\" object")
     }
-    output = mcpRestoreToolExposureOrder(output, original: text ?? "", indent: indent)
+    var servers = root["mcpServers"] ?? .object([])
+    guard try edit(&servers) else { return }
+    mcpSetMember("mcpServers", servers, in: &root)
+    let indent: String
+    if let text, let match = text.range(of: "(?m)^([ \\t]+)\\S", options: .regularExpression) {
+        // JSON.stringify uses at most ten characters of a string indentation argument.
+        indent = String(text[match].prefix(while: { $0 == " " || $0 == "\t" }).prefix(10))
+    } else { indent = "  " }
+    let output = mcpJSONText(root, indent: indent) + "\n"
     try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try (output + "\n").write(to: path, atomically: true, encoding: .utf8)
+    try output.write(to: path, atomically: true, encoding: .utf8)
 }
 
 /// Data for `pi mcp list` and the `/mcp` manager.
@@ -462,6 +479,27 @@ public struct McpServerListReport: Codable, Sendable, Equatable {
     }
 }
 
+private extension McpServerListReport {
+    var orderedJSON: OrderedJSON {
+        var entries: [(String, OrderedJSON)] = [
+            ("name", .string(name)), ("scope", .string(scope.rawValue)), ("source", .string(source)),
+            ("enabled", .bool(enabled)), ("exposure", .string(exposure.rawValue)),
+            ("transport", .string(transport)), ("state", .string(state)),
+            ("tools", .array(tools.map(OrderedJSON.string)))
+        ]
+        if let overrides = toolExposure {
+            let names = tools.filter { overrides[$0] != nil } + overrides.keys.filter { !tools.contains($0) }.sorted()
+            entries.append(("toolExposure", .object(names.compactMap { name in
+                overrides[name].map { (name, .string($0.rawValue)) }
+            })))
+        }
+        if let resources { entries.append(("resources", .number(String(resources)))) }
+        if let resourceTemplates { entries.append(("resourceTemplates", .number(String(resourceTemplates)))) }
+        if let error { entries.append(("error", .string(error))) }
+        return .object(entries)
+    }
+}
+
 public func mcpServerListReport(_ loaded: LoadedMcpConfig) -> [McpServerListReport] {
     loaded.servers.map(McpServerListReport.init(entry:))
 }
@@ -474,14 +512,12 @@ public struct McpListReport: Sendable {
     public var failed: Bool
 
     public func jsonData() throws -> Data {
-        struct Payload: Encodable {
-            var servers: [McpServerListReport]
-            var errors: [String]
-            var note: String?
-        }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try encoder.encode(Payload(servers: servers, errors: errors, note: note))
+        var entries: [(String, OrderedJSON)] = [
+            ("servers", .array(servers.map { $0.orderedJSON })),
+            ("errors", .array(errors.map(OrderedJSON.string)))
+        ]
+        if let note { entries.append(("note", .string(note))) }
+        return Data(mcpJSONText(.object(entries)).utf8)
     }
 }
 
