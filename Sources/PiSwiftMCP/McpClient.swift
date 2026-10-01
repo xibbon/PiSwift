@@ -696,7 +696,9 @@ public actor McpClient {
     }
 }
 
-private extension McpError {
+extension McpError: LocalizedError {
+    public var errorDescription: String? { description }
+
     var description: String {
         switch self {
         case .connectionFailed(let message), .protocolError(let message), .initializationFailed(let message):

@@ -372,3 +372,18 @@ private actor EventRecorder {
         await client.close(); await server.close()
     }
 }
+
+// Users see `localizedDescription` (for example in `pi mcp list`); it must carry the upstream texts.
+@Test func mcpErrorsHaveReadableDescriptions() {
+    #expect(McpError.connectionClosed.localizedDescription == "MCP connection closed")
+    #expect(McpError.requestTimeout(500).localizedDescription == "MCP request timed out after 500ms")
+    #expect(McpError.aborted.localizedDescription == "MCP request aborted")
+    #expect(McpError.connectionFailed("spawn failed").localizedDescription == "spawn failed")
+}
+
+@Test func mcpTransportErrorsHaveReadableDescriptions() {
+    #expect(McpTransportError.connectionClosed(stderr: "").localizedDescription == "Connection closed")
+    #expect(McpTransportError.connectionClosed(stderr: "boom\n").localizedDescription == "Connection closed\nboom")
+    #expect(McpTransportError.messageTooLarge(limit: 16).localizedDescription == "MCP message exceeds 16 bytes")
+    #expect(McpHTTPError(status: 404, body: "", message: "MCP session expired").localizedDescription == "MCP session expired")
+}

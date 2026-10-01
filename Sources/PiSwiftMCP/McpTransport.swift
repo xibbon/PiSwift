@@ -343,3 +343,24 @@ public actor StdioTransport: McpTransport {
     public func close() async {}
 }
 #endif
+
+// Readable texts for `localizedDescription` (shown by `pi mcp list` and `/mcp`); upstream wording.
+extension McpTransportError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .messageTooLarge(let limit):
+            return "MCP message exceeds \(limit) bytes"
+        case .stdioUnavailable:
+            return "MCP stdio servers are not available on this platform"
+        case .connectionClosed(let stderr):
+            let tail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            return tail.isEmpty ? "Connection closed" : "Connection closed\n\(String(tail.suffix(2_000)))"
+        case .invalidResponse(let message), .responseStreamFailed(let message):
+            return message
+        }
+    }
+}
+
+extension McpHTTPError: LocalizedError {
+    public var errorDescription: String? { message }
+}
