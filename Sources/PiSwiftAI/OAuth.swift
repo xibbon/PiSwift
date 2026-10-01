@@ -378,12 +378,12 @@ public func refreshOpenAICodexToken(_ refreshToken: String, signal: Cancellation
     )
 }
 
-private struct PKCEPair {
-    let verifier: String
-    let challenge: String
+public struct PKCEPair: Sendable {
+    public let verifier: String
+    public let challenge: String
 }
 
-private func generatePKCE() throws -> PKCEPair {
+public func generatePKCE() throws -> PKCEPair {
     let verifierBytes = randomBytes(count: 32)
     let verifier = base64UrlEncode(verifierBytes)
 

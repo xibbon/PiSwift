@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftMCP
 #if os(macOS)
 import PiSwiftCodingAgent
 #endif
@@ -281,12 +282,6 @@ public actor McpServerManager {
             },
             capabilities: clientCapabilities
         )
-
-        if let stdioTransport = baseTransport as? StdioTransport {
-            try await stdioTransport.start()
-        } else if let socketTransport = baseTransport as? UnixSocketTransport {
-            try await socketTransport.start()
-        }
 
         let transport: any McpTransport
         if definition.trace ?? traceSettings?.enabled == true, let traceSink {

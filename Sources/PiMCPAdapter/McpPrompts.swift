@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftCodingAgent
+import PiSwiftMCP
 
 struct ParsedPromptArguments: Sendable {
     var positional: [String]

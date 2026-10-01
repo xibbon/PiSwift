@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftMCP
 
 /// Persistence for adapter-owned tool metadata. It never reads or writes MCP
 /// configuration files.

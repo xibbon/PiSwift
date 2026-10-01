@@ -40,7 +40,7 @@ public func transformMcpContent(_ content: [McpContent]) -> [ContentBlock] {
 /// to return only `structuredContent`; retain that information instead of
 /// presenting an empty result to the model.
 public func resolveMcpResultContent(_ result: McpToolResult) -> [ContentBlock] {
-    let blocks = transformMcpContent(result.content)
+    let blocks = toLlmContent(result)
     guard blocks.isEmpty, let structuredContent = result.structuredContent else {
         return blocks
     }
@@ -49,4 +49,38 @@ public func resolveMcpResultContent(_ result: McpToolResult) -> [ContentBlock] {
         return [.text(TextContent(text: text))]
     }
     return [.text(TextContent(text: String(describing: structuredContent.value)))]
+}
+
+/// Convert MCP result blocks to the text and image content accepted by LLM APIs.
+public func toLlmContent(_ result: McpToolResult) -> [ContentBlock] {
+    var blocks: [ContentBlock] = result.content.map { content in
+        switch content.type {
+        case "text":
+            return .text(TextContent(text: content.text ?? ""))
+        case "image":
+            return .image(ImageContent(data: content.data ?? "", mimeType: content.mimeType ?? ""))
+        case "audio":
+            return .text(TextContent(text: "[audio \(content.mimeType ?? "unknown type") omitted]"))
+        case "resource_link":
+            return .text(TextContent(text: "\(content.name ?? ""): \(content.uri ?? "")"))
+        case "resource":
+            guard let resource = content.resource else {
+                return .text(TextContent(text: "[unsupported MCP content resource]"))
+            }
+            if let text = resource.text { return .text(TextContent(text: text)) }
+            if let mimeType = resource.mimeType, mimeType.hasPrefix("image/"), let data = resource.blob {
+                return .image(ImageContent(data: data, mimeType: mimeType))
+            }
+            return .text(TextContent(text: "[binary resource \(resource.uri) (\(resource.mimeType ?? "unknown type")) omitted]"))
+        default:
+            return .text(TextContent(text: "[unsupported MCP content \(content.type)]"))
+        }
+    }
+    if blocks.isEmpty, let structuredContent = result.structuredContent {
+        if let data = try? JSONSerialization.data(withJSONObject: structuredContent.value, options: [.prettyPrinted, .sortedKeys]),
+           let text = String(data: data, encoding: .utf8) {
+            blocks.append(.text(TextContent(text: text)))
+        }
+    }
+    return blocks
 }

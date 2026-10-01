@@ -37,6 +37,10 @@ let package = Package(
             targets: ["PiMCPAdapter"]
         ),
         .library(
+            name: "PiSwiftMCP",
+            targets: ["PiSwiftMCP"]
+        ),
+        .library(
             name: "PiExtensionSDK",
             type: .dynamic,
             targets: ["PiExtensionSDK"]
@@ -90,8 +94,14 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .target(
+            name: "PiSwiftMCP",
+            dependencies: ["PiSwiftAI"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
             name: "PiMCPAdapter",
             dependencies: [
+                "PiSwiftMCP",
                 "PiSwiftCodingAgent",
                 "PiSwiftAI",
                 "PiSwiftAgent",
@@ -151,6 +161,12 @@ let package = Package(
             resources: [
                 .copy("fixtures")
             ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiSwiftMCPTests",
+            dependencies: ["PiSwiftMCP", "PiSwiftAI"],
+            resources: [.copy("fixtures")],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(

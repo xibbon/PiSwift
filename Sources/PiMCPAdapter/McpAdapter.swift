@@ -2,6 +2,7 @@ import Foundation
 import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftCodingAgent
+import PiSwiftMCP
 
 // MARK: - Extension State
 

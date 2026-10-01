@@ -13,14 +13,14 @@ enum OAuthCallbackOrManual<Value: Sendable>: Sendable {
 #if canImport(Network)
 import Network
 
-enum OAuthCallbackMode: Sendable, Equatable {
+public enum OAuthCallbackMode: Sendable, Equatable {
     case standard
     // pi-mono v0.99.1 uses a distinct handler for ChatGPT. It keeps waiting
     // after invalid state, code, or client_id callbacks and has no 409 rule.
     case chatGPT
 }
 
-actor OAuthCallbackServer<Value: Sendable> {
+public actor OAuthCallbackServer<Value: Sendable> {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "pi.oauth.callback")
     private let providerName: String
@@ -51,7 +51,7 @@ actor OAuthCallbackServer<Value: Sendable> {
         self.complete = complete
     }
 
-    static func start(
+    public static func start(
         providerName: String, host: String = "127.0.0.1", port: UInt16,
         path: String, redirectHost: String? = nil, state: String? = nil,
         mode: OAuthCallbackMode = .standard, signal: CancellationToken? = nil,
@@ -78,12 +78,12 @@ actor OAuthCallbackServer<Value: Sendable> {
         return server
     }
 
-    func redirectUri() -> String {
+    public func redirectUri() -> String {
         let host = redirectHost.contains(":") ? "[\(redirectHost)]" : redirectHost
         return "http://\(host):\(boundPort ?? 0)\(path)"
     }
 
-    func wait() async throws -> Value? {
+    public func wait() async throws -> Value? {
         try await withCheckedThrowingContinuation { continuation in
             if let settled {
                 continuation.resume(with: settled)
@@ -99,7 +99,7 @@ actor OAuthCallbackServer<Value: Sendable> {
         return true
     }
 
-    func close() {
+    public func close() {
         finish(.failure(OAuthCallbackFailure(message: "OAuth callback server closed")))
         listener.cancel()
         for connection in connections { connection.cancel() }

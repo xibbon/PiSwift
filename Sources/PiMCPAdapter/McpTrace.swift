@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftMCP
 
 public struct McpTraceSettings: Codable, Sendable {
     public var enabled: Bool?
@@ -48,6 +49,14 @@ actor McpTracingTransport: McpTransport {
         self.serverName = serverName
         self.transportName = transportName
         self.sink = sink
+    }
+
+    func start() async throws {
+        try await base.start()
+    }
+
+    func setProtocolVersion(_ version: String) async {
+        await base.setProtocolVersion(version)
     }
 
     func send(_ data: Data) async throws {

@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftMCP
 
 /// Versioned EventBus channel for `McpStatusSnapshot` values.
 public let mcpStatusEvent = "pi-mcp-adapter/status/v1"

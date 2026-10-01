@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import PiSwiftAI
+import PiSwiftMCP
 
 // MARK: - Cache Types
 

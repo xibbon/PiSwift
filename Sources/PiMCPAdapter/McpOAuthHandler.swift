@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftMCP
 
 // MARK: - OAuth Token Types
 

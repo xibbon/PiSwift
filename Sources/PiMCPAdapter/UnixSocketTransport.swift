@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import PiSwiftAI
+import PiSwiftMCP
 
 /// JSON-lines MCP transport for an explicit Unix-domain socket endpoint.
 /// It is available on Apple platforms that provide the Network framework.

@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftMCP
 
 public let defaultMcpOutputMaxBytes = 50 * 1024
 public let defaultMcpOutputMaxLines = 2_000
