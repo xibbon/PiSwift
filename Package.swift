@@ -87,6 +87,7 @@ let package = Package(
             dependencies: [
                 "PiSwiftAI",
                 "PiSwiftAgent",
+                "PiSwiftMCP",
             ],
             resources: [
                 .process("Resources")

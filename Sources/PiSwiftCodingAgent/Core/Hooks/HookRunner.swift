@@ -24,6 +24,7 @@ public final class HookRunner: Sendable {
     public let cwd: String
     private let sessionManager: SessionManager
     private let modelRegistry: ModelRegistry
+    public let mcpServers: McpServerRegistry
     private let settingsManager: SettingsManager?
     private let state: LockedState<State>
     private let eventObservers = LockedState<[UUID: @Sendable (any HookEvent) -> Void]>([:])
@@ -56,6 +57,7 @@ public final class HookRunner: Sendable {
         var mode: HookMode
         var hasUI: Bool
         var errorListeners: [UUID: @Sendable (HookError) -> Void]
+        var reportedMcpServers: Set<String>
         /// Per-hook setters captured at initialize() so they can be re-applied to hooks
         /// added via `replaceExtensionHooks(_:)` without re-plumbing the whole TUI.
         var wiring: HookWiring?
@@ -221,6 +223,7 @@ public final class HookRunner: Sendable {
 
     public init(_ hooks: [LoadedHook], _ cwd: String, _ sessionManager: SessionManager, _ modelRegistry: ModelRegistry,
                 settingsManager: SettingsManager? = nil) {
+        self.mcpServers = hooks.compactMap(\.mcpServerRegistry).first ?? McpServerRegistry()
         self.cwd = cwd
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
@@ -253,6 +256,7 @@ public final class HookRunner: Sendable {
             mode: .print,
             hasUI: false,
             errorListeners: [:],
+            reportedMcpServers: [],
             wiring: nil
         ))
         for hook in hooks {
@@ -269,6 +273,16 @@ public final class HookRunner: Sendable {
         hook.setUnregisterProviderHandler { [modelRegistry] provider in
             modelRegistry.unregisterProvider(provider, sourceId: sourceId)
         }
+        hook.setRegisterMcpServerHandler { [mcpServers] name, config in
+            if let owner = mcpServers.get(name)?.extensionPath, owner != sourceId {
+                throw HookAPIError.mcpServerAlreadyRegistered(name: name, owner: owner)
+            }
+            mcpServers.register(RegisteredMcpServer(name: name, config: config, extensionPath: sourceId))
+        }
+        hook.setUnregisterMcpServerHandler { [mcpServers] name in
+            mcpServers.unregister(name: name, extensionPath: sourceId)
+        }
+        hook.setGetMcpServersHandler { [mcpServers] in mcpServers.list() }
         let registerVirtual: HookRegisterVirtualModelHandler = { [weak self, modelRegistry] definition in
             try modelRegistry.registerVirtualModel(
                 definition.withContext { [weak self] in
@@ -282,6 +296,15 @@ public final class HookRunner: Sendable {
         }
         for config in hook.providerRegistrations.values {
             modelRegistry.registerProvider(config, sourceId: sourceId)
+        }
+        for (name, config) in hook.mcpServerRegistrations {
+            if hook.mcpServerRegistry === mcpServers { continue }
+            if let owner = mcpServers.get(name)?.extensionPath, owner != sourceId {
+                emitError(HookError(hookPath: hook.path, event: "register_mcp_server",
+                                    error: HookAPIError.mcpServerAlreadyRegistered(name: name, owner: owner).localizedDescription))
+            } else {
+                mcpServers.register(RegisteredMcpServer(name: name, config: config, extensionPath: sourceId))
+            }
         }
         for models in hook.virtualModelRegistrations.values {
             for definition in models.values {
@@ -391,6 +414,13 @@ public final class HookRunner: Sendable {
             wireProviderHandlers(for: hook)
             wiring.apply(to: hook)
         }
+        mcpServers.setChangeListener { [weak self] in
+            guard let self else { return }
+            let event = McpServersChangeEvent(servers: self.mcpServers.list())
+            Task { _ = await self.emit(event) }
+            self.reportUnhandledMcpServers()
+        }
+        reportUnhandledMcpServers()
     }
 
     /// Attach a host UI without re-running `initialize`, which resets handlers only
@@ -455,6 +485,14 @@ public final class HookRunner: Sendable {
         }
         for hook in droppedHooks {
             modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
+            // New hooks are loaded before this call. A reload of the same path has
+            // already replaced its registrations in the shared registry.
+            let keepNames = Set(newExtensionHooks
+                .filter { $0.resolvedPath == hook.resolvedPath }
+                .flatMap { $0.mcpServerRegistrations.keys })
+            for server in mcpServers.list() where server.extensionPath == hook.resolvedPath && !keepNames.contains(server.name) {
+                mcpServers.unregister(name: server.name, extensionPath: hook.resolvedPath)
+            }
             hook.dispose()
         }
         for hook in newExtensionHooks {
@@ -485,8 +523,10 @@ public final class HookRunner: Sendable {
             if hook.isExtension {
                 modelRegistry.unregisterProviders(sourceId: hook.resolvedPath)
             }
+            mcpServers.unregisterAll(extensionPath: hook.resolvedPath)
             hook.dispose()
         }
+        mcpServers.setChangeListener(nil)
     }
 
     public func emitResourcesDiscover(cwd: String, reason: ResourcesDiscoverReason) async -> ResourceExtensionPaths {
@@ -663,6 +703,19 @@ public final class HookRunner: Sendable {
             }
         }
         return false
+    }
+
+    public func getMcpServers() -> [RegisteredMcpServer] { mcpServers.list() }
+
+    /// Report registrations that no loaded extension can connect.
+    public func reportUnhandledMcpServers() {
+        guard !hasHandlers("mcp_servers_change") else { return }
+        for server in mcpServers.list() {
+            let shouldReport = state.withLock { state in state.reportedMcpServers.insert(server.name).inserted }
+            guard shouldReport else { continue }
+            emitError(HookError(hookPath: server.extensionPath, event: "register_mcp_server",
+                error: "MCP server \"\(server.name)\" is registered, but no loaded extension connects MCP servers; another extension may have replaced the built-in MCP support"))
+        }
     }
 
     private func createContext() -> HookContext {

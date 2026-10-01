@@ -48,6 +48,8 @@ public struct ExtensionLoader {
             tools: api.tools,
             currentTools: { api.tools },
             providerRegistrations: api.providerRegistrations,
+            mcpServerRegistrations: api.mcpServerRegistrations,
+            mcpServerRegistry: api.mcpServerRegistry,
             virtualModelRegistrations: api.virtualModelRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
             setSendUserMessageHandler: api.setSendUserMessageHandler,
@@ -65,6 +67,9 @@ public struct ExtensionLoader {
             setSetThinkingLevelHandler: api.setSetThinkingLevelHandler,
             setRegisterProviderHandler: api.setRegisterProviderHandler,
             setUnregisterProviderHandler: api.setUnregisterProviderHandler,
+            setRegisterMcpServerHandler: api.setRegisterMcpServerHandler,
+            setUnregisterMcpServerHandler: api.setUnregisterMcpServerHandler,
+            setGetMcpServersHandler: api.setGetMcpServersHandler,
             setRegisterVirtualModelHandler: api.setRegisterVirtualModelHandler,
             setUnregisterVirtualModelHandler: api.setUnregisterVirtualModelHandler,
             setRegisterToolHandler: api.setRegisterToolHandler,
@@ -233,6 +238,7 @@ public func omitReplacedExtensions(_ hooks: [LoadedHook]) -> LoadExtensionsResul
             warnings.append(ResourceDiagnostic(type: "warning", message:
                 "Extension \(replacingPath) registers \(kind) `\(prefix)\(registered)`, so built-in extension `\(builtin)` was not loaded. To use `\(builtin)`, run `pi config` and make sure it is enabled under Built-in extensions, then disable or remove the existing extension. We recommend only having one or the other loaded at a time.", path: hook.path))
         }
+        hook.mcpServerRegistry?.unregisterAll(extensionPath: hook.resolvedPath)
     }
     return LoadExtensionsResult(hooks: kept, warnings: warnings)
 }

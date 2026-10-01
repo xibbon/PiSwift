@@ -275,5 +275,5 @@ public func createToolSearchExtension() -> InlineExtension {
 }
 
 /// Built-ins available to a host application. SDK sessions opt in by passing this list.
-// Codemode precedes tool-search, as in the upstream built-in load order.
-public let builtInExtensions: [InlineExtension] = [createCodemodeExtension(), createToolSearchExtension()]
+// The MCP built-in follows tool-search in the upstream built-in load order.
+public let builtInExtensions: [InlineExtension] = [createCodemodeExtension(), createToolSearchExtension(), createMcpExtension()]

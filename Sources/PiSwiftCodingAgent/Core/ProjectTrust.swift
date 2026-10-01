@@ -170,6 +170,7 @@ public func hasTrustRequiringProjectResources(_ cwd: String) -> Bool {
     let projectConfigDir = URL(fileURLWithPath: currentDir).appendingPathComponent(CONFIG_DIR_NAME)
     let resourceNames = [
         "settings.json",
+        "mcp.json",
         "extensions",
         "skills",
         "prompts",

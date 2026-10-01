@@ -385,6 +385,8 @@ public actor McpClient {
     public func negotiatedProtocolVersion() -> String? { negotiatedVersion }
     public func serverImplementation() -> AnyCodable? { serverInfo }
     public func advertisedServerCapabilities() -> AnyCodable? { serverCapabilities }
+    /// Whether setup completed and the receive loop has not closed the transport.
+    public func isConnected() -> Bool { transport != nil && !isClosed && negotiatedVersion != nil }
 
     public func setRoots(_ roots: [McpRoot]) async throws {
         self.roots = roots

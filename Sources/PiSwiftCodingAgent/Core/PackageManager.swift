@@ -318,11 +318,15 @@ public final class DefaultPackageManager: PackageManager {
         )
 
         var resolved = accumulator.toResolvedPaths()
-        let disabled = Set((globalSettings.extensions ?? []) + (projectSettings.extensions ?? []))
         for name in builtinExtensions {
             let path = BUILTIN_PATH_PREFIX + name
-            resolved.extensions.append(ResolvedResource(path: path, enabled: !disabled.contains("-" + path),
-                metadata: PathMetadata(source: "builtin", scope: "user", origin: "top-level")))
+            let projectEnabled = applyAutoloadDisabledPatterns(
+                allPaths: [path], patterns: getOverridePatterns(projectSettings.extensions ?? []), baseDir: projectBaseDir
+            )[path]
+            resolved.extensions.append(ResolvedResource(path: path,
+                enabled: projectEnabled ?? isEnabledByOverrides(filePath: path,
+                    patterns: globalSettings.extensions ?? [], baseDir: globalBaseDir),
+                metadata: PathMetadata(source: "builtin", scope: projectEnabled == nil ? "user" : "project", origin: "top-level")))
         }
         return resolved
     }
@@ -2108,6 +2112,22 @@ private func matchesAnyExactPattern(filePath: String, patterns: [String], baseDi
 
 private func getOverridePatterns(_ entries: [String]) -> [String] {
     entries.filter { $0.hasPrefix("!") || $0.hasPrefix("+") || $0.hasPrefix("-") }
+}
+
+private func applyAutoloadDisabledPatterns(allPaths: [String], patterns: [String], baseDir: String) -> [String: Bool] {
+    var result: [String: Bool] = [:]
+    for pattern in patterns {
+        let target = String(pattern.dropFirst())
+        let enabled = pattern.hasPrefix("+")
+        let exact = pattern.hasPrefix("+") || pattern.hasPrefix("-")
+        for path in allPaths {
+            let matches = exact
+                ? matchesAnyExactPattern(filePath: path, patterns: [target], baseDir: baseDir)
+                : matchesAnyPattern(filePath: path, patterns: [target], baseDir: baseDir)
+            if matches { result[path] = enabled }
+        }
+    }
+    return result
 }
 
 private func isEnabledByOverrides(filePath: String, patterns: [String], baseDir: String) -> Bool {

@@ -62,7 +62,11 @@ public actor OAuthCallbackServer<Value: Sendable> {
         let nwPort = NWEndpoint.Port(rawValue: port) ?? .any
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: nwPort)
-        let listener = try NWListener(using: parameters, on: nwPort)
+        // A fixed port is already specified by requiredLocalEndpoint. Passing it
+        // again as `on:` causes NWError 22 on macOS.
+        let listener = port == 0
+            ? try NWListener(using: parameters, on: nwPort)
+            : try NWListener(using: parameters)
         let server = OAuthCallbackServer(
             listener: listener, providerName: providerName, path: path, state: state,
             redirectHost: redirectHost ?? host, mode: mode, complete: complete

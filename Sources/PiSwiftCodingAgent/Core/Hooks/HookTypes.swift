@@ -358,6 +358,12 @@ public typealias HookRegisterProviderHandler = @Sendable (_ config: HookProvider
 public typealias HookUnregisterProviderHandler = @Sendable (_ provider: String) -> Void
 public typealias HookRegisterProviderSetter = @Sendable (@escaping HookRegisterProviderHandler) -> Void
 public typealias HookUnregisterProviderSetter = @Sendable (@escaping HookUnregisterProviderHandler) -> Void
+public typealias HookRegisterMcpServerHandler = @Sendable (_ name: String, _ config: McpServerConfig) throws -> Void
+public typealias HookUnregisterMcpServerHandler = @Sendable (_ name: String) -> Void
+public typealias HookGetMcpServersHandler = @Sendable () -> [RegisteredMcpServer]
+public typealias HookRegisterMcpServerSetter = @Sendable (@escaping HookRegisterMcpServerHandler) -> Void
+public typealias HookUnregisterMcpServerSetter = @Sendable (@escaping HookUnregisterMcpServerHandler) -> Void
+public typealias HookGetMcpServersSetter = @Sendable (@escaping HookGetMcpServersHandler) -> Void
 public typealias HookRegisterVirtualModelHandler = @Sendable (HookVirtualModelDefinition) throws -> Void
 public typealias HookUnregisterVirtualModelHandler = @Sendable (String, String) -> Void
 public typealias HookRegisterVirtualModelSetter = @Sendable (@escaping HookRegisterVirtualModelHandler) -> Void
@@ -1051,6 +1057,14 @@ public struct SessionStartEvent: HookEvent, Sendable {
         self.reason = reason
         self.previousSessionFile = previousSessionFile
     }
+}
+
+/// Sent after a bound extension registers or unregisters an MCP server.
+public struct McpServersChangeEvent: HookEvent, Sendable {
+    public let type = "mcp_servers_change"
+    public var servers: [RegisteredMcpServer]
+
+    public init(servers: [RegisteredMcpServer]) { self.servers = servers }
 }
 
 public struct SessionBeforeSwitchEvent: HookEvent, Sendable {
@@ -1882,6 +1896,8 @@ public struct LoadedHook: Sendable {
     /// session start visible to reload bookkeeping.
     public var currentTools: @Sendable () -> [String: CustomTool]
     public var providerRegistrations: [String: HookProviderConfig]
+    public var mcpServerRegistrations: [String: McpServerConfig]
+    public var mcpServerRegistry: McpServerRegistry?
     public var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]]
     public var setSendMessageHandler: HookSendMessageSetter
     public var setSendUserMessageHandler: HookSendUserMessageSetter
@@ -1899,6 +1915,9 @@ public struct LoadedHook: Sendable {
     public var setSetThinkingLevelHandler: HookSetThinkingLevelSetter
     public var setRegisterProviderHandler: HookRegisterProviderSetter
     public var setUnregisterProviderHandler: HookUnregisterProviderSetter
+    public var setRegisterMcpServerHandler: HookRegisterMcpServerSetter
+    public var setUnregisterMcpServerHandler: HookUnregisterMcpServerSetter
+    public var setGetMcpServersHandler: HookGetMcpServersSetter
     public var setRegisterVirtualModelHandler: HookRegisterVirtualModelSetter
     public var setUnregisterVirtualModelHandler: HookUnregisterVirtualModelSetter
     public var setRegisterToolHandler: HookRegisterToolSetter
@@ -1928,6 +1947,8 @@ public struct LoadedHook: Sendable {
         tools: [String: CustomTool] = [:],
         currentTools: (@Sendable () -> [String: CustomTool])? = nil,
         providerRegistrations: [String: HookProviderConfig] = [:],
+        mcpServerRegistrations: [String: McpServerConfig] = [:],
+        mcpServerRegistry: McpServerRegistry? = nil,
         virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]] = [:],
         setSendMessageHandler: @escaping HookSendMessageSetter = { _ in },
         setSendUserMessageHandler: @escaping HookSendUserMessageSetter = { _ in },
@@ -1945,6 +1966,9 @@ public struct LoadedHook: Sendable {
         setSetThinkingLevelHandler: @escaping HookSetThinkingLevelSetter = { _ in },
         setRegisterProviderHandler: @escaping HookRegisterProviderSetter = { _ in },
         setUnregisterProviderHandler: @escaping HookUnregisterProviderSetter = { _ in },
+        setRegisterMcpServerHandler: @escaping HookRegisterMcpServerSetter = { _ in },
+        setUnregisterMcpServerHandler: @escaping HookUnregisterMcpServerSetter = { _ in },
+        setGetMcpServersHandler: @escaping HookGetMcpServersSetter = { _ in },
         setRegisterVirtualModelHandler: @escaping HookRegisterVirtualModelSetter = { _ in },
         setUnregisterVirtualModelHandler: @escaping HookUnregisterVirtualModelSetter = { _ in },
         setRegisterToolHandler: @escaping HookRegisterToolSetter = { _ in },
@@ -1969,6 +1993,8 @@ public struct LoadedHook: Sendable {
         self.tools = tools
         self.currentTools = currentTools ?? { tools }
         self.providerRegistrations = providerRegistrations
+        self.mcpServerRegistrations = mcpServerRegistrations
+        self.mcpServerRegistry = mcpServerRegistry
         self.virtualModelRegistrations = virtualModelRegistrations
         self.setSendMessageHandler = setSendMessageHandler
         self.setSendUserMessageHandler = setSendUserMessageHandler
@@ -1986,6 +2012,9 @@ public struct LoadedHook: Sendable {
         self.setSetThinkingLevelHandler = setSetThinkingLevelHandler
         self.setRegisterProviderHandler = setRegisterProviderHandler
         self.setUnregisterProviderHandler = setUnregisterProviderHandler
+        self.setRegisterMcpServerHandler = setRegisterMcpServerHandler
+        self.setUnregisterMcpServerHandler = setUnregisterMcpServerHandler
+        self.setGetMcpServersHandler = setGetMcpServersHandler
         self.setRegisterVirtualModelHandler = setRegisterVirtualModelHandler
         self.setUnregisterVirtualModelHandler = setUnregisterVirtualModelHandler
         self.setRegisterToolHandler = setRegisterToolHandler
@@ -2018,12 +2047,18 @@ public enum HookAPIError: LocalizedError, Sendable {
     case inactive(String)
     case invalidFlagDefault(String)
     case missingToolParameters(name: String, path: String)
+    case invalidMcpServer(extensionPath: String, detail: String)
+    case mcpServerAlreadyRegistered(name: String, owner: String)
     public var errorDescription: String? {
         switch self {
         case .inactive(let path): return "Extension \"\(path)\" failed to load and its API is no longer active."
         case .invalidFlagDefault(let name): return "Flag \"\(name)\" default must match its declared type."
         case .missingToolParameters(let name, let path):
             return "Tool \"\(name)\" registered by extension \"\(path)\" must define an object parameter schema."
+        case .invalidMcpServer(let path, let detail):
+            return "Invalid MCP server registered by extension \"\(path)\": \(detail)"
+        case .mcpServerAlreadyRegistered(let name, let owner):
+            return "MCP server \"\(name)\" is already registered by extension \"\(owner)\""
         }
     }
 }
@@ -2038,11 +2073,13 @@ public final class HookAPI: Sendable {
 
     func invalidateAfterLoadFailure() {
         loadFailure.withLock { $0 = .inactive(hookPath) }
+        mcpServerRegistry?.unregisterAll(extensionPath: hookPath)
         disposeEventBusListeners()
         state.withLock { state in
             state.flags.removeAll()
             state.flagValues.removeAll()
             state.providerRegistrations.removeAll()
+            state.mcpServerRegistrations.removeAll()
             state.virtualModelRegistrations.removeAll()
             state.handlers.removeAll()
             state.tools.removeAll()
@@ -2051,6 +2088,7 @@ public final class HookAPI: Sendable {
     }
 
     public let events: EventBus
+    public let mcpServerRegistry: McpServerRegistry?
     private let trackedEventBus: TrackedEventBus
     private let state: LockedState<State>
 
@@ -2066,9 +2104,13 @@ public final class HookAPI: Sendable {
         /// Keyed by tool name; collisions overwrite (last write wins).
         var tools: [String: CustomTool]
         var providerRegistrations: [String: HookProviderConfig]
+        var mcpServerRegistrations: [String: McpServerConfig]
         var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]]
         var registerProviderHandler: HookRegisterProviderHandler
         var unregisterProviderHandler: HookUnregisterProviderHandler
+        var registerMcpServerHandler: HookRegisterMcpServerHandler
+        var unregisterMcpServerHandler: HookUnregisterMcpServerHandler
+        var getMcpServersHandler: HookGetMcpServersHandler?
         var registerVirtualModelHandler: HookRegisterVirtualModelHandler
         var unregisterVirtualModelHandler: HookUnregisterVirtualModelHandler
         var registerToolHandler: HookRegisterToolHandler
@@ -2137,6 +2179,11 @@ public final class HookAPI: Sendable {
         set { state.withLock { $0.providerRegistrations = newValue } }
     }
 
+    public private(set) var mcpServerRegistrations: [String: McpServerConfig] {
+        get { state.withLock { $0.mcpServerRegistrations } }
+        set { state.withLock { $0.mcpServerRegistrations = newValue } }
+    }
+
     public private(set) var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]] {
         get { state.withLock { $0.virtualModelRegistrations } }
         set { state.withLock { $0.virtualModelRegistrations = newValue } }
@@ -2150,6 +2197,16 @@ public final class HookAPI: Sendable {
     private var unregisterProviderHandler: HookUnregisterProviderHandler {
         get { state.withLock { $0.unregisterProviderHandler } }
         set { state.withLock { $0.unregisterProviderHandler = newValue } }
+    }
+
+    private var registerMcpServerHandler: HookRegisterMcpServerHandler {
+        get { state.withLock { $0.registerMcpServerHandler } }
+        set { state.withLock { $0.registerMcpServerHandler = newValue } }
+    }
+
+    private var unregisterMcpServerHandler: HookUnregisterMcpServerHandler {
+        get { state.withLock { $0.unregisterMcpServerHandler } }
+        set { state.withLock { $0.unregisterMcpServerHandler = newValue } }
     }
 
     private var registerVirtualModelHandler: HookRegisterVirtualModelHandler {
@@ -2253,6 +2310,7 @@ public final class HookAPI: Sendable {
     }
 
     public init(events: EventBus = createEventBus(), hookPath: String? = nil) {
+        self.mcpServerRegistry = (events as? EventBusImpl)?.mcpServers
         let trackedEventBus = TrackedEventBus(events)
         self.trackedEventBus = trackedEventBus
         self.events = trackedEventBus
@@ -2267,9 +2325,13 @@ public final class HookAPI: Sendable {
             shortcuts: [:],
             tools: [:],
             providerRegistrations: [:],
+            mcpServerRegistrations: [:],
             virtualModelRegistrations: [:],
             registerProviderHandler: { _ in },
             unregisterProviderHandler: { _ in },
+            registerMcpServerHandler: { _, _ in },
+            unregisterMcpServerHandler: { _ in },
+            getMcpServersHandler: nil,
             registerVirtualModelHandler: { _ in },
             unregisterVirtualModelHandler: { _, _ in },
             registerToolHandler: { _ in },
@@ -2375,6 +2437,18 @@ public final class HookAPI: Sendable {
 
     public func setUnregisterProviderHandler(_ handler: @escaping HookUnregisterProviderHandler) {
         unregisterProviderHandler = handler
+    }
+
+    public func setRegisterMcpServerHandler(_ handler: @escaping HookRegisterMcpServerHandler) {
+        registerMcpServerHandler = handler
+    }
+
+    public func setUnregisterMcpServerHandler(_ handler: @escaping HookUnregisterMcpServerHandler) {
+        unregisterMcpServerHandler = handler
+    }
+
+    public func setGetMcpServersHandler(_ handler: @escaping HookGetMcpServersHandler) {
+        state.withLock { $0.getMcpServersHandler = handler }
     }
 
     public func setRegisterVirtualModelHandler(_ handler: @escaping HookRegisterVirtualModelHandler) {
@@ -2542,9 +2616,10 @@ public final class HookAPI: Sendable {
         entryRenderers[customType] = renderer
     }
 
-    public func registerCommand(_ name: String, description: String? = nil, handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
+    public func registerCommand(_ name: String, description: String? = nil, sourceInfo: SourceInfo? = nil,
+                                handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
         guard loadFailure.withLock({ $0 == nil }) else { return }
-        commands[name] = RegisteredCommand(name: name, description: description, handler: handler)
+        commands[name] = RegisteredCommand(name: name, description: description, sourceInfo: sourceInfo, handler: handler)
     }
 
     /// Remove a command that this extension registered.
@@ -2589,6 +2664,40 @@ public final class HookAPI: Sendable {
         guard loadFailure.withLock({ $0 == nil }) else { return }
         providerRegistrations.removeValue(forKey: provider)
         unregisterProviderHandler(provider)
+    }
+
+    /// Register or replace an MCP server owned by this extension.
+    public func registerMcpServer(_ name: String, config: McpServerConfig) throws {
+        try validateActive()
+        if let detail = validateMcpServerConfig(name: name, config: config) {
+            throw HookAPIError.invalidMcpServer(extensionPath: hookPath, detail: detail)
+        }
+        if let mcpServerRegistry {
+            if let owner = mcpServerRegistry.get(name)?.extensionPath, owner != hookPath {
+                throw HookAPIError.mcpServerAlreadyRegistered(name: name, owner: owner)
+            }
+            mcpServerRegistry.register(RegisteredMcpServer(name: name, config: config, extensionPath: hookPath))
+        } else {
+            try registerMcpServerHandler(name, config)
+        }
+        mcpServerRegistrations[name] = config
+    }
+
+    public func unregisterMcpServer(_ name: String) {
+        guard loadFailure.withLock({ $0 == nil }) else { return }
+        mcpServerRegistrations.removeValue(forKey: name)
+        if let mcpServerRegistry { mcpServerRegistry.unregister(name: name, extensionPath: hookPath) }
+        else { unregisterMcpServerHandler(name) }
+    }
+
+    public func getMcpServers() -> [RegisteredMcpServer] {
+        let (handler, local, path) = state.withLock { state in
+            (state.getMcpServersHandler, state.mcpServerRegistrations, state.hookPath)
+        }
+        if let mcpServerRegistry { return mcpServerRegistry.list() }
+        if let handler { return handler() }
+        return local.map { RegisteredMcpServer(name: $0.key, config: $0.value, extensionPath: path) }
+            .sorted { $0.name < $1.name }
     }
 
     public func registerVirtualModel(_ definition: HookVirtualModelDefinition) throws {

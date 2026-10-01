@@ -62,16 +62,26 @@ private actor FirstOAuthRedirect {
 public actor McpMacOSSignInPresenter: McpSignInPresenter {
     private let pasteRedirectURL: (@Sendable () async throws -> String)?
     private let openAuthorizationURL: @Sendable (URL) async throws -> Void
+    private let callbackHost: String
+    private let callbackPort: UInt16
+    private let callbackPath: String
+    private let redirectHost: String?
     private var callback: OAuthCallbackServer<String>?
     private var activeRace: FirstOAuthRedirect?
 
     public init(
+        callbackHost: String = "127.0.0.1", callbackPort: UInt16 = 0,
+        callbackPath: String = "/callback", redirectHost: String? = nil,
         pasteRedirectURL: (@Sendable () async throws -> String)? = nil,
         openAuthorizationURL: @escaping @Sendable (URL) async throws -> Void = { url in
             let opened = await MainActor.run { NSWorkspace.shared.open(url) }
             if !opened { throw McpOAuthError.invalidRedirect }
         }
     ) {
+        self.callbackHost = callbackHost
+        self.callbackPort = callbackPort
+        self.callbackPath = callbackPath
+        self.redirectHost = redirectHost
         self.pasteRedirectURL = pasteRedirectURL
         self.openAuthorizationURL = openAuthorizationURL
     }
@@ -79,7 +89,8 @@ public actor McpMacOSSignInPresenter: McpSignInPresenter {
     public func redirectURL(for state: String) async throws -> URL {
         if let callback { await callback.close() }
         let server = try await OAuthCallbackServer<String>.start(
-            providerName: "MCP", port: 0, path: "/callback", state: state,
+            providerName: "MCP", host: callbackHost, port: callbackPort,
+            path: callbackPath, redirectHost: redirectHost, state: state,
             timeoutMs: 5 * 60_000,
             complete: { components in
                 guard let url = components.url else { throw McpOAuthError.invalidRedirect }

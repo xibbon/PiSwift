@@ -13,6 +13,7 @@ public protocol EventBusController: EventBus {
 }
 
 public final class EventBusImpl: Sendable, EventBusController {
+    public let mcpServers = McpServerRegistry()
     private let state = LockedState([String: [(UUID, EventBusHandler)]]())
 
     public init() {}
