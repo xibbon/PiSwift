@@ -275,4 +275,5 @@ public func createToolSearchExtension() -> InlineExtension {
 }
 
 /// Built-ins available to a host application. SDK sessions opt in by passing this list.
-public let builtInExtensions: [InlineExtension] = [createToolSearchExtension()]
+// Codemode precedes tool-search, as in the upstream built-in load order.
+public let builtInExtensions: [InlineExtension] = [createCodemodeExtension(), createToolSearchExtension()]

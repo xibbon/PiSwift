@@ -868,6 +868,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     }
 
     let allowedNames = options.toolNames.map(Set.init)
+    let configuredDefaultNames = Set(settingsManager.getDefaultTools() ?? [])
     if let allowedNames {
         // An explicit initial loadout must still leave extension/custom tools
         // registered so discovery can activate a deferred match later.
@@ -889,6 +890,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         guard options.noTools != .all else { return false }
         guard let definition = toolDefinitions[tool.name] else { return true }
         let exposure = definition.exposure ?? .direct
+        if configuredDefaultNames.contains(tool.name) { return exposure != .hidden }
         return (exposure == .direct || exposure == .modelOnly) && definition.defaultActive != false
     }
     time("combineTools")
