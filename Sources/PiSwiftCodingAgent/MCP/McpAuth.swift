@@ -330,14 +330,19 @@ private actor McpSignInCapture {
 
 #if os(macOS)
 /// Make a loopback presenter for the callback address in an MCP server config.
+/// The callback timeout is in seconds. It must be finite and greater than zero.
 public func makeMcpMacOSSignInPresenter(
     settings: McpOAuthConfig,
+    callbackTimeoutSeconds: TimeInterval = 300,
     pasteRedirectURL: (@Sendable () async throws -> String)? = nil,
     openAuthorizationURL: @escaping @Sendable (URL) async throws -> Void = { url in
         let opened = await MainActor.run { NSWorkspace.shared.open(url) }
         if !opened { throw McpOAuthError.invalidRedirect }
     }
 ) throws -> McpMacOSSignInPresenter {
+    guard callbackTimeoutSeconds.isFinite, callbackTimeoutSeconds > 0 else {
+        throw McpOAuthError.invalidMetadata("callbackTimeoutSeconds")
+    }
     let parts = URLComponents(string: settings.callbackUrl ?? "http://127.0.0.1/callback")
     let port = settings.callbackPort ?? parts?.port ?? 0
     guard let redirectHost = parts?.host, (0...65535).contains(port) else {
@@ -348,6 +353,7 @@ public func makeMcpMacOSSignInPresenter(
     let path = parts?.path.isEmpty == false ? parts!.path : "/callback"
     return McpMacOSSignInPresenter(callbackHost: listenHost,
         callbackPort: UInt16(port), callbackPath: path, redirectHost: cleanHost,
+        callbackTimeoutSeconds: callbackTimeoutSeconds,
         pasteRedirectURL: pasteRedirectURL, openAuthorizationURL: openAuthorizationURL)
 }
 #endif

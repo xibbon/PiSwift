@@ -170,6 +170,17 @@ public actor McpServerConnection {
         return URL(string: raw)
     }
 
+    /// Resolve the client secret with the same expansion and command cache as connections.
+    public nonisolated func oauthSettings() throws -> McpOAuthConfig {
+        try resolvedMcpOAuthSettings(entry)
+    }
+
+    /// Call after successful sign-in, before reconnecting. A failed sign-in keeps its challenge.
+    public func clearOAuthChallenge() async {
+        challenge = nil
+        await changed()
+    }
+
     private func changed() async { await onChange?(self) }
 
     public func connect() async throws {

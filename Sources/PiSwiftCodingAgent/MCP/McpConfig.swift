@@ -487,13 +487,14 @@ public struct McpListReport: Sendable {
 
 public func inspectMcpServers(
     _ loaded: LoadedMcpConfig, cwd: URL, credentials: McpOAuthCredentialStore,
-    note: String? = nil, createTransport: @escaping McpTransportFactory = createDefaultMcpTransport
+    note: String? = nil, log: McpServerLog? = nil,
+    createTransport: @escaping McpTransportFactory = createDefaultMcpTransport
 ) async -> McpListReport {
     let reports = await withTaskGroup(of: (Int, McpServerListReport).self) { group in
         for (index, entry) in loaded.servers.enumerated() {
             group.addTask {
                 let report = await inspectMcpServer(entry, cwd: cwd, credentials: credentials,
-                    createTransport: createTransport)
+                    log: log, createTransport: createTransport)
                 return (index, report)
             }
         }
@@ -507,12 +508,13 @@ public func inspectMcpServers(
 
 private func inspectMcpServer(
     _ entry: McpServerEntry, cwd: URL, credentials: McpOAuthCredentialStore,
+    log: McpServerLog?,
     createTransport: @escaping McpTransportFactory
 ) async -> McpServerListReport {
     var report = McpServerListReport(entry: entry)
     guard report.enabled else { return report }
     let connection = McpServerConnection(entry: entry, cwd: cwd,
-        createTransport: createTransport, credentials: credentials)
+        createTransport: createTransport, credentials: credentials, log: log)
     try? await connection.connect()
     report.state = await connection.state.rawValue
     let tools = await connection.tools

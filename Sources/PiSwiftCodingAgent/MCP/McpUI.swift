@@ -1,7 +1,9 @@
 import Foundation
 
 /// Data for a host's `/mcp` manager. The host controls rendering and selection.
-public struct McpMenuItem: Sendable, Equatable {
+public struct McpMenuItem: Sendable, Equatable, Identifiable {
+    /// Keep selection by this value when the menu changes.
+    public var id: String { value }
     public var value: String
     public var label: String
     public var detail: String?
@@ -33,6 +35,17 @@ public struct McpMenu: Sendable, Equatable {
 /// A mobile or TUI host implements this to render the manager and OAuth paste prompt.
 @MainActor public protocol McpUi: Sendable {
     func menu(_ menu: McpMenu) async -> String?
+    /// Build the initial menu and rebuild it for each change. Keep selection by item ID.
+    /// Stop consuming changes when the menu returns or the task is cancelled.
+    func menu(build: @escaping @Sendable () async -> McpMenu, changes: AsyncStream<Void>?) async -> String?
     func status(title: String, message: String)
     func redirectURL(title: String, authorizationURL: URL) async -> URL?
+}
+
+public extension McpUi {
+    /// Hosts that use snapshots can keep their existing implementation.
+    func menu(build: @escaping @Sendable () async -> McpMenu,
+              changes: AsyncStream<Void>? = nil) async -> String? {
+        await menu(await build())
+    }
 }
