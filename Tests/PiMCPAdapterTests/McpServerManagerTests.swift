@@ -5,7 +5,7 @@ import PiSwiftAI
 
 @Suite("MCP Server Manager")
 struct McpServerManagerTests {
-    @Test("resolves command secrets only when a connection needs them")
+    @Test("resolves command secrets only when a connection needs them", .timeLimit(.minutes(1)))
     func resolvesCommandSecrets() async throws {
         #expect(try await resolveCommandSecret("!!literal", context: "test") == "!literal")
         #expect(try await resolveCommandSecret("!printf token", context: "test") == "token")
@@ -17,7 +17,7 @@ struct McpServerManagerTests {
         }
     }
 
-    @Test("shares one connection attempt and records an unexpected close")
+    @Test("shares one connection attempt and records an unexpected close", .timeLimit(.minutes(1)))
     func sharesConnectionAttempt() async throws {
         let factory = CountingTransportFactory()
         let manager = McpServerManager(transportFactory: { _, _ in
@@ -39,7 +39,7 @@ struct McpServerManagerTests {
         await manager.closeAll()
     }
 
-    @Test("retries only a proven terminated HTTP session once")
+    @Test("retries only a proven terminated HTTP session once", .timeLimit(.minutes(1)))
     func retriesTerminatedHttpSession() async throws {
         let factory = CountingTransportFactory()
         let manager = McpServerManager(transportFactory: { _, _ in
@@ -59,7 +59,7 @@ struct McpServerManagerTests {
         await manager.closeAll()
     }
 
-    @Test("falls back to the legacy SSE transport for remote servers")
+    @Test("falls back to the legacy SSE transport for remote servers", .timeLimit(.minutes(1)))
     func fallsBackToLegacySSE() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LegacySSEURLProtocol.self]
@@ -77,7 +77,7 @@ struct McpServerManagerTests {
         await transport.close()
     }
 
-    @Test("skips optional lists that the server does not advertise")
+    @Test("skips optional lists that the server does not advertise", .timeLimit(.minutes(1)))
     func skipsUnadvertisedOptionalLists() async throws {
         let transport = ManagerTransport(messages: [
             Data(#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{"tools":{}}}}"#.utf8),
@@ -92,7 +92,7 @@ struct McpServerManagerTests {
         await manager.closeAll()
     }
 
-    @Test("keeps prompt-discovery failure separate from an empty prompt list")
+    @Test("keeps prompt-discovery failure separate from an empty prompt list", .timeLimit(.minutes(1)))
     func recordsPromptDiscoveryFailure() async throws {
         let transport = ManagerTransport(messages: [
             Data(#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{"tools":{},"prompts":{}}}}"#.utf8),

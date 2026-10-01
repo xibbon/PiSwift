@@ -42,7 +42,7 @@ private func storeTestModel(id: String = "dynamic-model") -> Model {
     #expect(decoded.etag == "\"catalog-v1\"")
 }
 
-@Test func inMemoryModelsStoreRoundTripAndCancellation() async throws {
+@Test(.timeLimit(.minutes(1))) func inMemoryModelsStoreRoundTripAndCancellation() async throws {
     let store = InMemoryModelsStore()
     let entry = ModelsStoreEntry(models: [storeTestModel()], etag: "etag")
     try await store.write(providerId: "openai", entry: entry, signal: nil)

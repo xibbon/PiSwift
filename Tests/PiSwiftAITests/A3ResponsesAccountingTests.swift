@@ -26,7 +26,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
 }
 
 // Port of openai-responses-terminal-event.test.ts: incomplete tool calls are never runnable.
-@Test func a3ResponsesRejectsToolCallWithoutOutputItemDone() async throws {
+@Test(.timeLimit(.minutes(1))) func a3ResponsesRejectsToolCallWithoutOutputItemDone() async throws {
     let events: [[String: Any]] = [
         ["type": "response.output_item.added", "output_index": 0,
          "item": ["type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "bash", "arguments": ""]],
@@ -43,7 +43,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
 }
 
 // Port of #9974's parallel tool calls without output_index case.
-@Test func a3ResponsesRejectsParallelCallsWithoutOutputIndex() async throws {
+@Test(.timeLimit(.minutes(1))) func a3ResponsesRejectsParallelCallsWithoutOutputIndex() async throws {
     let call: (String) -> [String: Any] = { suffix in
         ["type": "function_call", "id": "fc_\(suffix)", "call_id": "call_\(suffix)", "name": "bash", "arguments": ""]
     }
@@ -65,7 +65,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
 }
 
 // Port of #10034: actual response tier wins over the requested tier, including fast.
-@Test func a3ResponsesUsesActualFastTierForPricing() async throws {
+@Test(.timeLimit(.minutes(1))) func a3ResponsesUsesActualFastTierForPricing() async throws {
     let events: [[String: Any]] = [[
         "type": "response.completed",
         "response": ["id": "resp_fast", "status": "completed", "service_tier": "fast",
@@ -95,7 +95,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
     #expect(variant.cost.input == 0.002)
 }
 
-@Test func a3ResponsesSendsFastTierOnWire() async throws {
+@Test(.timeLimit(.minutes(1))) func a3ResponsesSendsFastTierOnWire() async throws {
     let captured = LockedState<String?>(nil)
     let events: [[String: Any]] = [[
         "type": "response.completed", "response": ["status": "completed", "service_tier": "fast"]
@@ -113,7 +113,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
     #expect(payload["service_tier"] as? String == "fast")
 }
 
-@Test func a3AzureResponsesRejectsUnfinishedToolCall() async throws {
+@Test(.timeLimit(.minutes(1))) func a3AzureResponsesRejectsUnfinishedToolCall() async throws {
     let events: [[String: Any]] = [
         ["type": "response.output_item.added", "output_index": 0,
          "item": ["type": "function_call", "id": "fc_azure", "call_id": "call_azure", "name": "bash", "arguments": ""]],
@@ -131,7 +131,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
     #expect(result.errorMessage?.contains("OpenAI Responses stream completed with an unfinished tool call: bash (call_azure|fc_azure)") == true)
 }
 
-@Test func a3CodexResponsesRejectsUnfinishedToolCall() async throws {
+@Test(.timeLimit(.minutes(1))) func a3CodexResponsesRejectsUnfinishedToolCall() async throws {
     let events: [[String: Any]] = [
         ["type": "response.output_item.added",
          "item": ["type": "function_call", "id": "fc_codex", "call_id": "call_codex", "name": "bash", "arguments": ""]],
@@ -154,7 +154,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
     #expect(result.errorMessage?.contains("OpenAI Responses stream completed with an unfinished tool call: bash (call_codex|fc_codex)") == true)
 }
 
-@Test func a3CodexUsesReportedTierAndHonorsDefaultEcho() async throws {
+@Test(.timeLimit(.minutes(1))) func a3CodexUsesReportedTierAndHonorsDefaultEcho() async throws {
     let payload = Data(#"{"https://api.openai.com/auth":{"chatgpt_account_id":"acc_test"}}"#.utf8).base64EncodedString()
     let model = Model(
         id: "gpt-5.5", name: "gpt-5.5", api: .openAICodexResponses, provider: "openai-codex",

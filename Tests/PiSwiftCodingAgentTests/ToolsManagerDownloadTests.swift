@@ -193,7 +193,7 @@ struct ToolsManagerDownloadTests {
         }
     }
 
-    @Test func concurrentInstallsUseSeparateExtractionDirectories() async throws {
+    @Test(.timeLimit(.minutes(1))) func concurrentInstallsUseSeparateExtractionDirectories() async throws {
         let directory = try DownloadTestDirectory()
         defer { directory.remove() }
         let extractionDirectories = LockedState<[String]>([])

@@ -124,7 +124,7 @@ private let v087Settings = CompactionSettings(enabled: true, reserveTokens: 16_3
     #expect(prepareCompaction(session.getBranch(), v087Settings) == nil)
 }
 
-@Test func splitTurnPromptSeparatesConversationAndInstructions() async throws {
+@Test(.timeLimit(.minutes(1))) func splitTurnPromptSeparatesConversationAndInstructions() async throws {
     let prompts = LockedState([String]())
     let model = Model(id: "compaction-test", name: "Compaction", api: .openAICompletions,
                       provider: "openai", baseUrl: "https://example.invalid", reasoning: false,

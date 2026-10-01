@@ -18,7 +18,7 @@ private func transcriptProviderModel(_ api: Api) -> Model {
 
 // Explicit `.short` retention: other tests set PI_CACHE_RETENTION=long concurrently (their EnvLock only
 // serializes writers), and the env var otherwise adds `prompt_cache_retention` to the Completions body.
-@Test func transcriptProviderBodiesGolden() async throws {
+@Test(.timeLimit(.minutes(1))) func transcriptProviderBodiesGolden() async throws {
     let plain = Context(systemPrompt: "Base", messages: [.user(UserMessage(content: .text("hello")))])
     let anthropicClient = TranscriptCaptureClient()
     _ = await streamAnthropic(model: transcriptProviderModel(.anthropicMessages), context: normalizeContext(plain),
@@ -48,7 +48,7 @@ private func transcriptProviderModel(_ api: Api) -> Model {
             "actual body: \(String(decoding: openAIBody, as: UTF8.self))")
 }
 
-@Test func transcriptLaterSystemCollapsesForProviders() async throws {
+@Test(.timeLimit(.minutes(1))) func transcriptLaterSystemCollapsesForProviders() async throws {
     let context = Context(systemPrompt: "Base", messages: [
         .user(UserMessage(content: .text("hello"))),
         .system(SystemMessage(content: .text("Later"), sections: SystemPromptSections([("section", "value")]), timestamp: 1))

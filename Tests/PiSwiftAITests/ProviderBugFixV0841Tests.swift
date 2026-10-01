@@ -33,7 +33,7 @@ private func workOrderModel(
     )
 }
 
-@Test func anthropicCapturesContentFromBlockStart() async {
+@Test(.timeLimit(.minutes(1))) func anthropicCapturesContentFromBlockStart() async {
     let sse = """
     event: message_start
     data: {"type":"message_start","message":{"id":"msg_initial","type":"message","role":"assistant","content":[],"model":"claude-test","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}
@@ -123,7 +123,7 @@ private func workOrderModel(
     #expect(functionCall["id"] as? String == "call_replay_1")
 }
 
-@Test func googleRequestsRetryTransientProviderFailures() async throws {
+@Test(.timeLimit(.minutes(1))) func googleRequestsRetryTransientProviderFailures() async throws {
     let attempts = LockedState(0)
     let client = WorkOrderHTTPClient { _ in
         let attempt = attempts.withLock { value -> Int in value += 1; return value }
@@ -172,7 +172,7 @@ private func workOrderModel(
     #expect(!isRecoverableLength(message, desiredMaxOutput: 20))
 }
 
-@Test func completionsKeepsFunctionArgumentsWhenCustomPayloadIsEmpty() async {
+@Test(.timeLimit(.minutes(1))) func completionsKeepsFunctionArgumentsWhenCustomPayloadIsEmpty() async {
     let payload = """
     data: {"id":"chatcmpl-tool","object":"chat.completion.chunk","created":0,"model":"test","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"custom","function":{"name":"lookup","arguments":"{\\"value\\":42}"},"custom":{}}]},"finish_reason":"tool_calls"}]}
 

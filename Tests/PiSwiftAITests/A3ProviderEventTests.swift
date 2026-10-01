@@ -23,7 +23,7 @@ private func a3ProviderEventSSE(_ events: [[String: Any]]) throws -> Data {
 }
 
 // Port of openai-completions-provider-stream-event.test.ts: unknown fields survive before typed decoding.
-@Test func a3CompletionsObservesRawProviderJSONInOrder() async throws {
+@Test(.timeLimit(.minutes(1))) func a3CompletionsObservesRawProviderJSONInOrder() async throws {
     let model = a3ProviderEventModel(api: .openAICompletions, provider: "custom")
     let events: [[String: Any]] = [
         ["id": "chunk_1", "created": 0, "model": model.id, "object": "chat.completion.chunk",
@@ -46,7 +46,7 @@ private func a3ProviderEventSSE(_ events: [[String: Any]]) throws -> Data {
 }
 
 // Port of openai-responses-terminal-event.test.ts callback coverage: observer failures fail the stream.
-@Test func a3ResponsesObserverFailureStopsAtFirstEvent() async throws {
+@Test(.timeLimit(.minutes(1))) func a3ResponsesObserverFailureStopsAtFirstEvent() async throws {
     let model = a3ProviderEventModel(api: .openAIResponses, provider: "openai")
     let events: [[String: Any]] = [
         ["type": "response.created", "provider_extra": 7, "response": ["id": "resp_1"]],
@@ -67,7 +67,7 @@ private func a3ProviderEventSSE(_ events: [[String: Any]]) throws -> Data {
 private enum A3ProviderObserverFailure: Error { case observer }
 
 // Port of anthropic-sse-parsing.test.ts observer case: observe the unmodified event object.
-@Test func a3AnthropicObserverSeesUnknownFields() async throws {
+@Test(.timeLimit(.minutes(1))) func a3AnthropicObserverSeesUnknownFields() async throws {
     let model = a3ProviderEventModel(api: .anthropicMessages, provider: "anthropic")
     let events: [[String: Any]] = [
         ["type": "message_start", "provider_extra": ["token": "kept"],
@@ -93,7 +93,7 @@ private enum A3ProviderObserverFailure: Error { case observer }
 }
 
 // Port of google-raw-stop-reason.test.ts observer case; both adapters use the same raw SSE payload.
-@Test(arguments: [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
 func a3GoogleObserversSeeRawProviderJSON(vertex: Bool) async throws {
     let model = a3ProviderEventModel(api: vertex ? .googleVertex : .googleGenerativeAI,
                                      provider: vertex ? "vertex" : "google")
@@ -122,7 +122,7 @@ func a3GoogleObserversSeeRawProviderJSON(vertex: Bool) async throws {
 }
 
 // Port of openai-codex-stream.test.ts observer case: a callback failure ends SSE immediately.
-@Test func a3CodexObserverFailureDoesNotConsumeLaterEvents() async throws {
+@Test(.timeLimit(.minutes(1))) func a3CodexObserverFailureDoesNotConsumeLaterEvents() async throws {
     let model = a3ProviderEventModel(api: .openAICodexResponses, provider: "openai-codex")
     let tokenPayload = Data(#"{"https://api.openai.com/auth":{"chatgpt_account_id":"acc_test"}}"#.utf8).base64EncodedString()
     let events: [[String: Any]] = [
@@ -143,7 +143,7 @@ func a3GoogleObserversSeeRawProviderJSON(vertex: Bool) async throws {
 }
 
 // Port of azure-openai-base-url.test.ts observer case: Azure exposes raw Responses fields.
-@Test func a3AzureResponsesObserverSeesUnknownFields() async throws {
+@Test(.timeLimit(.minutes(1))) func a3AzureResponsesObserverSeesUnknownFields() async throws {
     let model = a3ProviderEventModel(api: .azureOpenAIResponses, provider: "azure-openai-responses")
     let events: [[String: Any]] = [
         ["type": "response.created", "provider_extra": "azure-field", "response": ["id": "resp_1"]],
@@ -164,7 +164,7 @@ func a3GoogleObserversSeeRawProviderJSON(vertex: Bool) async throws {
 }
 
 // The Swift-only Gemini CLI adapter shares the provider event observer through its SSE stream.
-@Test func a3GeminiCliObserverSeesUnknownFields() async throws {
+@Test(.timeLimit(.minutes(1))) func a3GeminiCliObserverSeesUnknownFields() async throws {
     await codexRequestLock.withLock {
         let observed = LockedState<String?>(nil)
         GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -242,7 +242,7 @@ private func a3BedrockFrame(type: String, event: [String: Any]) throws -> Data {
 }
 
 // Port of bedrock-raw-stop-reason.test.ts observer case: the decoded event-stream JSON is exposed.
-@Test func a3BedrockObserverSeesDecodedEventStreamJSON() async throws {
+@Test(.timeLimit(.minutes(1))) func a3BedrockObserverSeesDecodedEventStreamJSON() async throws {
     try await codexRequestLock.withLock {
         var body = try a3BedrockFrame(type: "messageStart", event: ["role": "assistant", "provider_extra": "bedrock-field"])
         body.append(try a3BedrockFrame(type: "messageStop", event: ["stopReason": "end_turn"]))
@@ -266,7 +266,7 @@ private func a3BedrockFrame(type: String, event: [String: Any]) throws -> Data {
     }
 }
 
-@Test func a3SimpleOptionsForwardProviderObserverToCompletions() async throws {
+@Test(.timeLimit(.minutes(1))) func a3SimpleOptionsForwardProviderObserverToCompletions() async throws {
     let model = a3ProviderEventModel(api: .openAICompletions, provider: "custom")
     let observed = LockedState<Int>(0)
     let client = A3ProviderEventClient(body: try a3ProviderEventSSE([[

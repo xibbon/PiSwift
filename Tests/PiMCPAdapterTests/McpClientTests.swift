@@ -77,7 +77,7 @@ struct McpClientTests {
         await client.close()
     }
 
-    @Test("stops waiting when the host cancellation token is cancelled")
+    @Test("stops waiting when the host cancellation token is cancelled", .timeLimit(.minutes(1)))
     func cancelsRequestWithHostToken() async throws {
         let transport = ScriptedTransport(messages: [
             Data(#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#.utf8),

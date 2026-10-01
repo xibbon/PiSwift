@@ -60,7 +60,7 @@ private func transcriptUser(_ text: String) -> AgentMessage { .user(UserMessage(
     }
 }
 
-@Test func toolDeltaInsertsBeforeUserAndMergesLastPendingSystem() async {
+@Test(.timeLimit(.minutes(1))) func toolDeltaInsertsBeforeUserAndMergesLastPendingSystem() async {
     let tool = transcriptTool("lookup")
     let requested = LockedState<[[Message]]>([])
     let events = LockedState<[String]>([])
@@ -97,7 +97,7 @@ private func transcriptUser(_ text: String) -> AgentMessage { .user(UserMessage(
     } else { Issue.record("Expected pending system update") }
 }
 
-@Test func finishTurnRunsAfterResultsBeforeTurnEndAndEndKeepsQueues() async throws {
+@Test(.timeLimit(.minutes(1))) func finishTurnRunsAfterResultsBeforeTurnEndAndEndKeepsQueues() async throws {
     let tool = transcriptTool("lookup")
     let order = LockedState<[String]>([])
     let calls = LockedState(0)
@@ -129,7 +129,7 @@ private func transcriptUser(_ text: String) -> AgentMessage { .user(UserMessage(
     #expect(agent.peekQueuedMessages().count == 1)
 }
 
-@Test func continuationUsesOneContextOnlyRequestAndPrepareRequestSeesPreparedMessages() async {
+@Test(.timeLimit(.minutes(1))) func continuationUsesOneContextOnlyRequestAndPrepareRequestSeesPreparedMessages() async {
     let calls = LockedState(0)
     let preparations = LockedState<[String]>([])
     let eventRoles = LockedState<[String]>([])
@@ -178,7 +178,7 @@ private func transcriptUser(_ text: String) -> AgentMessage { .user(UserMessage(
     #expect(agent.peekQueuedMessages().count == 2)
 }
 
-@Test func naturalToolResultRequestSatisfiesContinuation() async {
+@Test(.timeLimit(.minutes(1))) func naturalToolResultRequestSatisfiesContinuation() async {
     let calls = LockedState(0)
     let tool = transcriptTool("lookup")
     let config = AgentLoopConfig(model: transcriptModel(), convertToLlm: { $0.compactMap(\.asMessage) },
@@ -196,7 +196,7 @@ private func transcriptUser(_ text: String) -> AgentMessage { .user(UserMessage(
     #expect(calls.withLock { $0 } == 2)
 }
 
-@Test(arguments: [StopReason.error, .aborted])
+@Test(.timeLimit(.minutes(1)), arguments: [StopReason.error, .aborted])
 func finishTurnObservesHardExitBeforeTurnEnd(_ reason: StopReason) async {
     let order = LockedState<[String]>([])
     let config = AgentLoopConfig(model: transcriptModel(), convertToLlm: { $0.compactMap(\.asMessage) },

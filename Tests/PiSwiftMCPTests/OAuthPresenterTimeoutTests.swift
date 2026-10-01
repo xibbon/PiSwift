@@ -72,7 +72,7 @@ func macOSOAuthPresenterCallbackTimeoutExpires() async throws {
 }
 
 @Test("The callback timeout rejects zero, negative, and nonfinite seconds",
-    arguments: [0.0, -1.0, .infinity, -.infinity, .nan])
+    .timeLimit(.minutes(1)), arguments: [0.0, -1.0, .infinity, -.infinity, .nan])
 func macOSOAuthPresenterRejectsInvalidCallbackTimeout(seconds: Double) async throws {
     let presenter = McpMacOSSignInPresenter(callbackTimeoutSeconds: seconds,
         openAuthorizationURL: { _ in })

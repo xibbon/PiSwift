@@ -50,7 +50,7 @@ private func v0841Stream(_ message: AssistantMessage) -> AssistantMessageEventSt
     return stream
 }
 
-@Test func nullableHeadersSuppressDefaultsAtTheRequestBoundary() async throws {
+@Test(.timeLimit(.minutes(1))) func nullableHeadersSuppressDefaultsAtTheRequestBoundary() async throws {
     let capturedRequest = LockedState<URLRequest?>(nil)
     let client = V0841HTTPClient { request in
         capturedRequest.withLock { $0 = request }
@@ -321,7 +321,7 @@ private func v0841Stream(_ message: AssistantMessage) -> AssistantMessageEventSt
     runner.dispose()
 }
 
-@Test func blockedHookToolCallTerminateEndsTheBatch() async throws {
+@Test(.timeLimit(.minutes(1))) func blockedHookToolCallTerminateEndsTheBatch() async throws {
     let model = v0841CodingModel()
     let handler: HookHandler = { event, _ in
         guard event is ToolCallEvent else { return nil }
@@ -387,7 +387,7 @@ private func v0841Stream(_ message: AssistantMessage) -> AssistantMessageEventSt
     #expect(blockedResult?.isError == true)
 }
 
-@Test func extensionModelAuthPreservesCredentialResolvedEndpoint() async throws {
+@Test(.timeLimit(.minutes(1))) func extensionModelAuthPreservesCredentialResolvedEndpoint() async throws {
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey(
         OAuthProvider.githubCopilot.rawValue,
@@ -504,7 +504,7 @@ private func makeV0841CompactionSession(
     )
 }
 
-@Test func manualCompactionAbortsAutoCompactionBeforeTakingItsState() async throws {
+@Test(.timeLimit(.minutes(1))) func manualCompactionAbortsAutoCompactionBeforeTakingItsState() async throws {
     let gate = V0841CompactionGate()
     let calls = LockedState(0)
     let handler: HookHandler = { event, _ in
@@ -530,7 +530,7 @@ private func makeV0841CompactionSession(
     #expect(context.session.sessionManager.getEntries().filter { if case .compaction = $0 { return true }; return false }.count == 1)
 }
 
-@Test func promptQueuedDuringManualCompactionRunsAfterCompletion() async throws {
+@Test(.timeLimit(.minutes(1))) func promptQueuedDuringManualCompactionRunsAfterCompletion() async throws {
     let gate = V0841CompactionGate()
     let handler: HookHandler = { event, _ in
         guard let event = event as? SessionBeforeCompactEvent else { return nil }
@@ -876,7 +876,7 @@ private struct V0841CapturingBashOperations: BashOperations {
     #expect(environment == expected)
 }
 
-@Test func truncatedBelowOutputLimitCompactsAndRetriesExactlyOnce() async throws {
+@Test(.timeLimit(.minutes(1))) func truncatedBelowOutputLimitCompactsAndRetriesExactlyOnce() async throws {
     let compactionCalls = LockedState(0)
     let handler: HookHandler = { event, _ in
         guard let event = event as? SessionBeforeCompactEvent else { return nil }
@@ -917,7 +917,7 @@ private struct V0841CapturingBashOperations: BashOperations {
     #expect(context.session.getLastAssistantText() == "complete")
 }
 
-@Test func longRunningAuthStorageReloadsExternalCredentialUpdates() async throws {
+@Test(.timeLimit(.minutes(1))) func longRunningAuthStorageReloadsExternalCredentialUpdates() async throws {
     let root = try v0841TempDirectory("auth-reload")
     defer { try? FileManager.default.removeItem(at: root) }
     let authPath = root.appendingPathComponent("auth.json")
@@ -952,7 +952,7 @@ private struct V0841CancellableBashOperations: BashOperations {
     }
 }
 
-@Test func abortBashCancelsEveryConcurrentUserCommand() async throws {
+@Test(.timeLimit(.minutes(1))) func abortBashCancelsEveryConcurrentUserCommand() async throws {
     let context = makeV0841CompactionSession()
     defer { context.session.dispose() }
     let started = LockedState(0)

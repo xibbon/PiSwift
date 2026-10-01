@@ -26,7 +26,7 @@ private actor CerebrasRequestClient: ProviderHTTPClient {
     func requestBody() -> Data? { body }
 }
 
-@Test func cerebrasCatalogModelOmitsStrictToolFlag() async throws {
+@Test(.timeLimit(.minutes(1))) func cerebrasCatalogModelOmitsStrictToolFlag() async throws {
     let model = try #require(getModel(provider: "cerebras", modelId: "gpt-oss-120b"))
     let client = CerebrasRequestClient()
     let tool = AITool(name: "ping", description: "Ping", parameters: ["type": AnyCodable("object")])

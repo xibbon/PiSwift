@@ -83,7 +83,7 @@ private func c3Session(
         hookRunner: runner, modelRegistry: registry))
 }
 
-@Test func turnEndBoundaryCommitsBeforeNotificationAndContinuesOnce() async throws {
+@Test(.timeLimit(.minutes(1))) func turnEndBoundaryCommitsBeforeNotificationAndContinuesOnce() async throws {
     let order = LockedState<[String]>([])
     let calls = LockedState(0)
     let api = HookAPI()
@@ -119,7 +119,7 @@ private func c3Session(
     #expect(events.firstIndex(of: "turn-end")! < events.firstIndex(of: "request-2")!)
 }
 
-@Test func retainNoneBoundaryCompactionCommitsAndContinuesOnce() async throws {
+@Test(.timeLimit(.minutes(1))) func retainNoneBoundaryCompactionCommitsAndContinuesOnce() async throws {
     let order = LockedState<[String]>([])
     let calls = LockedState(0)
     let api = HookAPI()
@@ -144,7 +144,7 @@ private func c3Session(
     #expect(order.withLock { $0.filter { $0.hasPrefix("request-") }.count } == 2)
 }
 
-@Test func beforeSettleCustomMessageContinuesBeforeFinalSettlement() async throws {
+@Test(.timeLimit(.minutes(1))) func beforeSettleCustomMessageContinuesBeforeFinalSettlement() async throws {
     let order = LockedState<[String]>([])
     let calls = LockedState(0)
     let api = HookAPI()
@@ -168,7 +168,7 @@ private func c3Session(
     #expect(events.firstIndex(of: "request-2")! < events.firstIndex(of: "settled")!)
 }
 
-@Test func invalidTurnBoundaryDraftDoesNotCommitOrContinue() async throws {
+@Test(.timeLimit(.minutes(1))) func invalidTurnBoundaryDraftDoesNotCommitOrContinue() async throws {
     let order = LockedState<[String]>([])
     let api = HookAPI()
     api.on("turn_end") { (_: TurnEndEvent, _: HookContext) in
@@ -182,7 +182,7 @@ private func c3Session(
     #expect(!session.sessionManager.getBranch().contains { $0.type == "context_edit" })
 }
 
-@Test func settledHandlersDeferNewRunUntilAllHaveFinished() async throws {
+@Test(.timeLimit(.minutes(1))) func settledHandlersDeferNewRunUntilAllHaveFinished() async throws {
     let order = LockedState<[String]>([])
     let calls = LockedState(0)
     let sessionBox = LockedState<AgentSession?>(nil)
@@ -217,7 +217,7 @@ private func c3Session(
     #expect(events.firstIndex(of: "settled-2")! < events.lastIndex(of: "agent-start")!)
 }
 
-@Test func retryKeepsRawErrorButOmitsItFromProviderContext() async throws {
+@Test(.timeLimit(.minutes(1))) func retryKeepsRawErrorButOmitsItFromProviderContext() async throws {
     let order = LockedState<[String]>([])
     var settings = Settings()
     settings.compaction = CompactionSettingsOverrides(enabled: false)
@@ -254,7 +254,7 @@ private func c3Session(
     #expect(order.withLock { $0.filter { $0.hasPrefix("request-") }.count } == 2)
 }
 
-@Test func nonretryableSecondErrorFinalizesRetryState() async throws {
+@Test(.timeLimit(.minutes(1))) func nonretryableSecondErrorFinalizesRetryState() async throws {
     let order = LockedState<[String]>([])
     var settings = Settings()
     settings.compaction = CompactionSettingsOverrides(enabled: false)
@@ -276,7 +276,7 @@ private func c3Session(
     #expect(ends.withLock { $0 } == [false])
 }
 
-@Test func failedLengthRecoveryKeepsRawAttemptAndDurableOmission() async throws {
+@Test(.timeLimit(.minutes(1))) func failedLengthRecoveryKeepsRawAttemptAndDurableOmission() async throws {
     let order = LockedState<[String]>([])
     let api = HookAPI()
     api.on("session_before_compact") { (_: SessionBeforeCompactEvent, _: HookContext) in
@@ -342,7 +342,7 @@ private func c3Session(
     #expect(order.withLock { $0.isEmpty })
 }
 
-@Test func cancellationInterruptsSummarizationAuthWait() async throws {
+@Test(.timeLimit(.minutes(1))) func cancellationInterruptsSummarizationAuthWait() async throws {
     let order = LockedState<[String]>([])
     let backend = C3BlockingAuthBackend()
     var settings = Settings()

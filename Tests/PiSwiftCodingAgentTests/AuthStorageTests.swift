@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TestEnvironmentSupport
 import PiSwiftAI
 @testable import PiSwiftCodingAgent
 
@@ -111,7 +112,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     }
 }
 
-@Test func authStorageUsesConsumerProvidedBackend() async {
+@Test(.timeLimit(.minutes(1))) func authStorageUsesConsumerProvidedBackend() async {
     let backend = SecureStoreTestBackend()
     let storage = AuthStorage(storage: backend)
 
@@ -122,7 +123,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(await reloaded.getApiKey("anthropic") == "secure-key")
 }
 
-@Test func inMemoryBackendSerializesAsyncTransactions() async throws {
+@Test(.timeLimit(.minutes(1))) func inMemoryBackendSerializesAsyncTransactions() async throws {
     let backend = InMemoryAuthStorageBackend()
     let barrier = AsyncTransactionBarrier()
 
@@ -150,7 +151,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(try await second.value == "first")
 }
 
-@Test func authStorageInMemoryRefreshesExpiredOAuthOnlyOnce() async {
+@Test(.timeLimit(.minutes(1))) func authStorageInMemoryRefreshesExpiredOAuthOnlyOnce() async {
     let now = Date().timeIntervalSince1970 * 1000
     let storage = AuthStorage.inMemory([
         "anthropic": .oauth(OAuthCredential(
@@ -183,7 +184,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(refreshCount.withLock { $0 } == 1)
 }
 
-@Test func authStorageRefreshesWithinMinimumValidityWindow() async {
+@Test(.timeLimit(.minutes(1))) func authStorageRefreshesWithinMinimumValidityWindow() async {
     let now = Date().timeIntervalSince1970 * 1000
 
     func makeStorage(expires: Double, refreshCount: LockedState<Int>) -> AuthStorage {
@@ -228,7 +229,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(forcedCount.withLock { $0 } == 1)
 }
 
-@Test func authStorageCancelledRefreshDoesNotCommit() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCancelledRefreshDoesNotCommit() async {
     let now = Date().timeIntervalSince1970 * 1000
     let storage = AuthStorage.inMemory([
         "xai": .oauth(OAuthCredential(
@@ -266,7 +267,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(stored.access == "old-access")
 }
 
-@Test func authStorageCacheFollowsTransactionCommitOrder() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCacheFollowsTransactionCommitOrder() async {
     let backend = OutOfOrderReturnBackend()
     let storage = AuthStorage(storage: backend)
 
@@ -287,7 +288,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(storage.has("openai"))
 }
 
-@Test func authStorageLiteralApiKeyReturned() async {
+@Test(.timeLimit(.minutes(1))) func authStorageLiteralApiKeyReturned() async {
     let tempDir = makeTempDir("auth-storage-literal")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -299,7 +300,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "sk-ant-literal-key")
 }
 
-@Test func authStorageCommandApiKeyUsesStdout() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeyUsesStdout() async {
     let tempDir = makeTempDir("auth-storage-command")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -311,7 +312,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "test-api-key-from-command")
 }
 
-@Test func authStorageCommandApiKeyTrimsWhitespace() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeyTrimsWhitespace() async {
     let tempDir = makeTempDir("auth-storage-trim")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -323,7 +324,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "spaced-key")
 }
 
-@Test func authStorageCommandApiKeyHandlesMultilineOutput() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeyHandlesMultilineOutput() async {
     let tempDir = makeTempDir("auth-storage-multiline")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -335,7 +336,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "line1\nline2")
 }
 
-@Test func authStorageCommandApiKeyFailureReturnsNil() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeyFailureReturnsNil() async {
     let tempDir = makeTempDir("auth-storage-fail")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -347,7 +348,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == nil)
 }
 
-@Test func authStorageCommandApiKeyNonexistentCommandReturnsNil() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeyNonexistentCommandReturnsNil() async {
     let tempDir = makeTempDir("auth-storage-missing")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -359,7 +360,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == nil)
 }
 
-@Test func authStorageCommandApiKeyEmptyOutputReturnsNil() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeyEmptyOutputReturnsNil() async {
     let tempDir = makeTempDir("auth-storage-empty")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -371,7 +372,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == nil)
 }
 
-@Test func authStorageEnvVarNameResolves() async {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func authStorageEnvVarNameResolves() async {
     let tempDir = makeTempDir("auth-storage-env")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -394,11 +395,19 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "env-api-key-value")
 }
 
-@Test func authStorageLiteralValueUsedWhenNotEnv() async {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func authStorageLiteralValueUsedWhenNotEnv() async {
     let tempDir = makeTempDir("auth-storage-literal-env")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
+    let previous = ProcessInfo.processInfo.environment["literal_api_key_value"]
     unsetenv("literal_api_key_value")
+    defer {
+        if let previous {
+            setenv("literal_api_key_value", previous, 1)
+        } else {
+            unsetenv("literal_api_key_value")
+        }
+    }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
     writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "literal_api_key_value"]])
@@ -408,7 +417,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "literal_api_key_value")
 }
 
-@Test func authStorageCommandApiKeySupportsPipes() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandApiKeySupportsPipes() async {
     let tempDir = makeTempDir("auth-storage-pipes")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -424,7 +433,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
 /// was removed because it caused expiring tokens (OAuth, AWS STS) to be returned stale.
 /// Each call to `getApiKey` re-executes the underlying command. Caching policy is the
 /// responsibility of the user-provided wrapper command.
-@Test func authStorageCommandExecutesEveryCall() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandExecutesEveryCall() async {
     let tempDir = makeTempDir("auth-storage-cache")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -445,7 +454,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(count == 3)
 }
 
-@Test func authStorageCommandExecutesPerInstance() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCommandExecutesPerInstance() async {
     let tempDir = makeTempDir("auth-storage-cache-instances")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -467,7 +476,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(count == 2)
 }
 
-@Test func authStorageCachesDifferentCommandsSeparately() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCachesDifferentCommandsSeparately() async {
     let tempDir = makeTempDir("auth-storage-cache-separate")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -487,7 +496,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
 
 /// v0.63.0: failures are no longer cached either — each call re-executes, giving the
 /// wrapper command a fresh chance to recover.
-@Test func authStorageFailedCommandsRetry() async {
+@Test(.timeLimit(.minutes(1))) func authStorageFailedCommandsRetry() async {
     let tempDir = makeTempDir("auth-storage-cache-fail")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -510,7 +519,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(count == 2)
 }
 
-@Test func authStorageEnvVarsNotCached() async {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func authStorageEnvVarsNotCached() async {
     let tempDir = makeTempDir("auth-storage-env-cache")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -537,7 +546,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(key2 == "second-value")
 }
 
-@Test func authStorageOAuthLockFailureAllowsLaterRetry() async {
+@Test(.timeLimit(.minutes(1))) func authStorageOAuthLockFailureAllowsLaterRetry() async {
     let tempDir = makeTempDir("auth-storage-oauth-lock")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -574,7 +583,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(secondTry == "Bearer refreshed-access-token")
 }
 
-@Test func authStorageRuntimeOverrideTakesPriority() async {
+@Test(.timeLimit(.minutes(1))) func authStorageRuntimeOverrideTakesPriority() async {
     let tempDir = makeTempDir("auth-storage-runtime")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -587,7 +596,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "runtime-key")
 }
 
-@Test func authStorageRuntimeOverrideRemovalFallsBack() async {
+@Test(.timeLimit(.minutes(1))) func authStorageRuntimeOverrideRemovalFallsBack() async {
     let tempDir = makeTempDir("auth-storage-runtime-fallback")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -601,7 +610,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "stored-key")
 }
 
-@Test func authStorageSetPreservesUnrelatedExternalEdits() async {
+@Test(.timeLimit(.minutes(1))) func authStorageSetPreservesUnrelatedExternalEdits() async {
     let tempDir = makeTempDir("auth-storage-preserve-set")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -629,7 +638,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(google?["key"] as? String == "google-key")
 }
 
-@Test func authStorageRemovePreservesUnrelatedExternalEdits() async {
+@Test(.timeLimit(.minutes(1))) func authStorageRemovePreservesUnrelatedExternalEdits() async {
     let tempDir = makeTempDir("auth-storage-preserve-remove")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -654,7 +663,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect((json?["google"] as? [String: Any])?["key"] as? String == "google-key")
 }
 
-@Test func authStorageDoesNotOverwriteMalformedFileAfterReloadError() async throws {
+@Test(.timeLimit(.minutes(1))) func authStorageDoesNotOverwriteMalformedFileAfterReloadError() async throws {
     let tempDir = makeTempDir("auth-storage-malformed")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
@@ -670,7 +679,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(raw == "{invalid-json")
 }
 
-@Test func authStorageDrainErrorsClearsAfterRead() async throws {
+@Test(.timeLimit(.minutes(1))) func authStorageDrainErrorsClearsAfterRead() async throws {
     let tempDir = makeTempDir("auth-storage-errors")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 

@@ -94,7 +94,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
     return (callCount.withLock { $0 }, result)
 }
 
-@Test func blockedToolTerminateControlsBatchEarlyTermination() async {
+@Test(.timeLimit(.minutes(1))) func blockedToolTerminateControlsBatchEarlyTermination() async {
     let terminating = await blockedToolCallRun(terminate: true)
     #expect(terminating.calls == 1)
     #expect(terminating.result?.isError == true)
@@ -104,7 +104,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
     #expect(continuing.result?.isError == true)
 }
 
-@Test func toolUsageIsEmittedAndExcludedFromAssistantUsageAccounting() async {
+@Test(.timeLimit(.minutes(1))) func toolUsageIsEmittedAndExcludedFromAssistantUsageAccounting() async {
     let executedUsage = v0841Usage(input: 40, output: 2, totalTokens: 42)
     let finalizedUsage = v0841Usage(input: 90, output: 9, totalTokens: 99)
     let tool = AgentTool(
@@ -172,7 +172,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
     #expect(assistantTotal == 18)
 }
 
-@Test func agentOptionStopsAfterTurnAndLeavesFollowUpQueued() async throws {
+@Test(.timeLimit(.minutes(1))) func agentOptionStopsAfterTurnAndLeavesFollowUpQueued() async throws {
     let callCount = LockedState(0)
     let sawExpectedContext = LockedState(false)
     let sawSignal = LockedState(false)
@@ -208,7 +208,7 @@ private func blockedToolCallRun(terminate: Bool) async -> (calls: Int, result: T
     #expect(agent.state.messages.count == 2)
 }
 
-@Test func resetRejectsActiveRunThenSucceedsWhenIdle() async throws {
+@Test(.timeLimit(.minutes(1))) func resetRejectsActiveRunThenSucceedsWhenIdle() async throws {
     let release = LockedState<CheckedContinuation<Void, Never>?>(nil)
     let streamFn: StreamFn = { _, _, _ in
         let stream = AssistantMessageEventStream()

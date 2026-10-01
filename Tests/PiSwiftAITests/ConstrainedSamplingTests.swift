@@ -140,7 +140,7 @@ private func applyResponsesMiddleware(
     }
 }
 
-@Test func openAIResponsesStreamsGrammarInputThroughSyntheticProperty() async throws {
+@Test(.timeLimit(.minutes(1))) func openAIResponsesStreamsGrammarInputThroughSyntheticProperty() async throws {
     await codexRequestLock.withLock {
         let capturedPayload = LockedState<String?>(nil)
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["grammar.example"] }

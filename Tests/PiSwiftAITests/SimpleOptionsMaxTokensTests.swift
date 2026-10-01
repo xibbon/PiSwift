@@ -57,7 +57,7 @@ struct SimpleOptionsMaxTokensTests {
         #expect(try mapper.maxTokens(model: maxTokensModel(), options: SimpleStreamOptions(maxTokens: 48_000)) == 48_000)
     }
 
-    @Test(arguments: [Api.azureOpenAIResponses, .googleGeminiCli], [nil, 48_000] as [Int?])
+    @Test(.timeLimit(.minutes(1)), arguments: [Api.azureOpenAIResponses, .googleGeminiCli], [nil, 48_000] as [Int?])
     func directProviderUsesResolvedMaxTokens(api: Api, explicitMaxTokens: Int?) async throws {
         let token = CancellationToken()
         let payload = LockedState<String?>(nil)

@@ -25,7 +25,7 @@ private struct HTTP085Client: ProviderHTTPClient {
     #expect(cancelled.withLock { $0 })
 }
 
-@Test func management085AttemptTimeoutCancelsResponseBody() async throws {
+@Test(.timeLimit(.minutes(1))) func management085AttemptTimeoutCancelsResponseBody() async throws {
     let attempts = LockedState(0)
     let client = HTTP085Client {
         let attempt = attempts.withLock { $0 += 1; return $0 }

@@ -32,7 +32,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
                     contextWindow: 64_000, headers: headers)
 }
 
-@Test func systemOneTypesafeRequestAnswerAndBilling() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOneTypesafeRequestAnswerAndBilling() async throws {
     let client = SystemOneTestClient([systemOneReply(#"{"answers":\#(systemOneAnswers),"usage":{"input_tokens":308,"output_tokens":23}}"#)])
     let result = await classify(model: systemOneModel(), context: systemOneContext(),
                                 options: ClassifierOptions(apiKey: "secret", httpClient: client, temperature: 1.5))
@@ -50,7 +50,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(!body.contains("temperature"))
 }
 
-@Test func systemOneStrictParsingKeepsUsage() async {
+@Test(.timeLimit(.minutes(1))) func systemOneStrictParsingKeepsUsage() async {
     let client = SystemOneTestClient([systemOneReply(#"{"answers":{},"usage":{"input_tokens":10,"output_tokens":2}}"#)])
     let result = await classify(model: systemOneModel(), context: systemOneContext(),
                                 options: ClassifierOptions(apiKey: "secret", httpClient: client))
@@ -60,7 +60,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(result.answers.isEmpty)
 }
 
-@Test func systemOneCloudflareResolvesAccountAndParsesEnvelope() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOneCloudflareResolvesAccountAndParsesEnvelope() async throws {
     let reply = #"{"success":true,"result":{"state":"Completed","result":{"answers":\#(systemOneAnswers),"usage":{"input_tokens":4,"output_tokens":1}}}}"#
     let client = SystemOneTestClient([systemOneReply(reply)])
     let model = systemOneModel(api: .cloudflareWorkersAISystemOne, provider: "cloudflare-workers-ai",
@@ -77,7 +77,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(body.contains(#""type":"noul""#))
 }
 
-@Test func systemOneHeadersRetryAndMissingKey() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOneHeadersRetryAndMissingKey() async throws {
     let client = SystemOneTestClient([
         systemOneReply("retry", status: 500, headers: ["retry-after-ms": "0"]),
         systemOneReply(#"{"answers":\#(systemOneAnswers)}"#)
@@ -108,7 +108,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     })
 }
 
-@Test func systemOneCatalogRoutesVercelAndOpenCode() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOneCatalogRoutesVercelAndOpenCode() async throws {
     let rows: [(String, String, String)] = [
         ("vercel-ai-gateway", "typesafe-ai/jev", "https://ai-gateway.vercel.sh/typesafe/v1/systemone"),
         ("opencode", "jev-1.13", "https://opencode.ai/zen/v1/systemone"),
@@ -133,7 +133,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     }
 }
 
-@Test func systemOneDirectAPIMismatchAndOpenRouterEndpoint() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOneDirectAPIMismatchAndOpenRouterEndpoint() async throws {
     let client = SystemOneTestClient([systemOneReply(#"{"answers":\#(systemOneAnswers)}"#)])
     let wrong = systemOneModel(api: .cloudflareWorkersAISystemOne)
     let rejected = await classifyTypeSafeSystemOne(model: wrong, context: systemOneContext(),
@@ -148,7 +148,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(await client.captured().first?.url?.absoluteString == "https://openrouter.ai/api/v1/systemone")
 }
 
-@Test func systemOnePrototypeSensitiveIDAndMalformedUsage() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOnePrototypeSensitiveIDAndMalformedUsage() async throws {
     let context = ClassifierContext(state: [:], questions: ClassifierQuestions([
         ("__proto__", .bool(instructions: "True?", trueCriterion: "Yes", falseCriterion: "No"))
     ]))
@@ -168,7 +168,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(second.usage == nil)
 }
 
-@Test func systemOneCloudflareEnvelopeFailures() async {
+@Test(.timeLimit(.minutes(1))) func systemOneCloudflareEnvelopeFailures() async {
     let model = systemOneModel(api: .cloudflareWorkersAISystemOne, provider: "cloudflare-workers-ai")
     let client = SystemOneTestClient([
         systemOneReply(#"{"success":true,"result":{"state":"Queued","result":null}}"#),
@@ -183,7 +183,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(failed.errorMessage?.contains("No such model") == true)
 }
 
-@Test func systemOnePayloadResponseCallbacksAndSuppressedHeader() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOnePayloadResponseCallbacksAndSuppressedHeader() async throws {
     let client = SystemOneTestClient([systemOneReply(#"{"answers":\#(systemOneAnswers)}"#, headers: ["x-request-id": "one"])])
     let payloads = LockedState(0)
     let responses = LockedState(0)
@@ -205,7 +205,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(String(data: bodyData, encoding: .utf8)?.contains(#""tag":"added""#) == true)
 }
 
-@Test func systemOneTwoCallsProduceIdenticalOrderedBodies() async throws {
+@Test(.timeLimit(.minutes(1))) func systemOneTwoCallsProduceIdenticalOrderedBodies() async throws {
     let client = SystemOneTestClient(Array(repeating: systemOneReply(#"{"answers":\#(systemOneAnswers)}"#), count: 2))
     let options = ClassifierOptions(apiKey: "secret", httpClient: client)
     let model = systemOneModel()
@@ -224,7 +224,7 @@ private actor SystemOneSlowClient: ProviderHTTPClient {
     }
 }
 
-@Test func systemOneTimeoutIsAnError() async {
+@Test(.timeLimit(.minutes(1))) func systemOneTimeoutIsAnError() async {
     let result = await classify(model: systemOneModel(), context: systemOneContext(),
         options: ClassifierOptions(apiKey: "secret", httpClient: SystemOneSlowClient(),
                                    timeoutMs: 5, maxRetries: 0))
@@ -232,7 +232,7 @@ private actor SystemOneSlowClient: ProviderHTTPClient {
     #expect(result.errorMessage == "Request timed out after 5ms")
 }
 
-@Test func systemOneTimeoutRestartsForRetry() async {
+@Test(.timeLimit(.minutes(1))) func systemOneTimeoutRestartsForRetry() async {
     let client = SystemOneTestClient([
         systemOneReply("retry", status: 500, headers: ["retry-after-ms": "0"]),
         systemOneReply(#"{"answers":\#(systemOneAnswers)}"#)

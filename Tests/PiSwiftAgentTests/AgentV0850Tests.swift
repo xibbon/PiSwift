@@ -12,7 +12,7 @@ private func portResponse(_ content: [ContentBlock], _ reason: StopReason = .sto
     return stream
 }
 
-@Test func prepareNextTurnRunsOnlyBeforeContinuationAndAfterStopCheck() async {
+@Test(.timeLimit(.minutes(1))) func prepareNextTurnRunsOnlyBeforeContinuationAndAfterStopCheck() async {
     let calls = LockedState(0)
     let prepared = LockedState(0)
     let order = LockedState<[String]>([])
@@ -45,7 +45,7 @@ private func portResponse(_ content: [ContentBlock], _ reason: StopReason = .sto
     #expect(order.withLock { $0 } == ["start", "stop", "prepare", "start", "stop"])
 }
 
-@Test func parallelPreflightAbortDoesNotExecuteEarlierPreparedCall() async {
+@Test(.timeLimit(.minutes(1))) func parallelPreflightAbortDoesNotExecuteEarlierPreparedCall() async {
     let signal = CancellationToken()
     let executions = LockedState(0)
     let ends = LockedState<[String]>([])
@@ -81,7 +81,7 @@ private final class ProxyPortURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
-@Test(arguments: ["metadata", "residual", "eof"])
+@Test(.timeLimit(.minutes(1)), arguments: ["metadata", "residual", "eof"])
 func proxyV085TerminalCases(_ scenario: String) async throws {
     let usage = #""usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}"#
     var body = "data: {\"type\":\"start\"}\n\n"

@@ -42,7 +42,7 @@ private func captureFD(_ fd: Int32, operation: () async -> Void) async -> String
 }
 
 @MainActor
-@Test func listModelsReportsModelsJsonParseErrorToStderr() async throws {
+@Test(.timeLimit(.minutes(1))) func listModelsReportsModelsJsonParseErrorToStderr() async throws {
     await processOutputCaptureGate.acquire()
     defer { Task { await processOutputCaptureGate.release() } }
     let tempDir = FileManager.default.temporaryDirectory
@@ -67,7 +67,7 @@ private func captureFD(_ fd: Int32, operation: () async -> Void) async -> String
 }
 
 @MainActor
-@Test func listModelsShowsModelsWithConfiguredHeadersOnly() async throws {
+@Test(.timeLimit(.minutes(1))) func listModelsShowsModelsWithConfiguredHeadersOnly() async throws {
     await processOutputCaptureGate.acquire()
     defer { Task { await processOutputCaptureGate.release() } }
     let tempDir = FileManager.default.temporaryDirectory

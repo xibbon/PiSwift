@@ -30,7 +30,7 @@ private func a4Error(_ text: String, provider: String = "test") -> AssistantMess
         maxAgentDelayMs: .greatestFiniteMagnitude), attempt: 100) == 9_007_199_254_740_991)
 }
 
-@Test func a4AssistantRetrySchedulesCappedDelay() async {
+@Test(.timeLimit(.minutes(1))) func a4AssistantRetrySchedulesCappedDelay() async {
     let signal = CancellationToken()
     let scheduled = LockedState<Double?>(nil)
     let response = await retryAssistantCall(

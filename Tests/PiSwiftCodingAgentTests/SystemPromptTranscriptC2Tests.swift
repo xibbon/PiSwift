@@ -39,7 +39,7 @@ private func c2Tool() -> AgentTool {
     }
 }
 
-@Test func c2FirstRequestPersistsStructuredHeadAndReloads() async throws {
+@Test(.timeLimit(.minutes(1))) func c2FirstRequestPersistsStructuredHeadAndReloads() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c2-head-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -60,7 +60,7 @@ private func c2Tool() -> AgentTool {
     #expect(getCurrentSystemPrompt(reopened.buildSessionProjection().messages) == getSystemMessageText(system))
 }
 
-@Test func c2ProviderUsesCanonicalProjectionAfterDirectAgentMutation() async throws {
+@Test(.timeLimit(.minutes(1))) func c2ProviderUsesCanonicalProjectionAfterDirectAgentMutation() async throws {
     let manager = SessionManager.inMemory()
     let requests = LockedState<[TranscriptContext]>([])
     let session = c2Session(manager, requests: requests)
@@ -99,7 +99,7 @@ private func c2Tool() -> AgentTool {
     #expect(first.entries.prefix(5).map(\.value) == unchangedPrefix)
 }
 
-@Test func c2ForcedPromptIsOnlyAtProviderHead() async throws {
+@Test(.timeLimit(.minutes(1))) func c2ForcedPromptIsOnlyAtProviderHead() async throws {
     let manager = SessionManager.inMemory()
     let requests = LockedState<[TranscriptContext]>([])
     let count = LockedState(0)
@@ -123,7 +123,7 @@ private func c2Tool() -> AgentTool {
     })
 }
 
-@Test func c2ToolRemovalReplaysAcrossBranchAndKeepsRequestPrefix() async throws {
+@Test(.timeLimit(.minutes(1))) func c2ToolRemovalReplaysAcrossBranchAndKeepsRequestPrefix() async throws {
     let manager = SessionManager.inMemory()
     let requests = LockedState<[TranscriptContext]>([])
     let model = getModel(provider: .anthropic, modelId: "claude-fable-5")
@@ -194,7 +194,7 @@ private func c2Tool() -> AgentTool {
     }
 }
 
-@Test func c2TreeNavigationWaitsForActiveCompaction() async throws {
+@Test(.timeLimit(.minutes(1))) func c2TreeNavigationWaitsForActiveCompaction() async throws {
     let manager = SessionManager.inMemory()
     let requests = LockedState<[TranscriptContext]>([])
     let started = LockedState(false)
@@ -230,7 +230,7 @@ private func c2Tool() -> AgentTool {
     _ = try await task.value
 }
 
-@Test func c2LegacyBeforeStartAppendIsRemovedOnNextRun() async throws {
+@Test(.timeLimit(.minutes(1))) func c2LegacyBeforeStartAppendIsRemovedOnNextRun() async throws {
     let manager = SessionManager.inMemory()
     let requests = LockedState<[TranscriptContext]>([])
     let count = LockedState(0)
@@ -250,7 +250,7 @@ private func c2Tool() -> AgentTool {
     #expect(systems.last?.sections?.entries.contains { $0.name == "addendum" && $0.value == nil } == true)
 }
 
-@Test func c2ResumedSessionReplaysHeadWithoutDuplicate() async throws {
+@Test(.timeLimit(.minutes(1))) func c2ResumedSessionReplaysHeadWithoutDuplicate() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c2-resume-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -279,7 +279,7 @@ private func c2Tool() -> AgentTool {
     #expect(encodeAgentMessageJSON(.system(requestHead)).serialized() == encodeAgentMessageJSON(.system(firstHead)).serialized())
 }
 
-@Test func c2LegacySessionAddsPromptAtFirstNewRequest() async throws {
+@Test(.timeLimit(.minutes(1))) func c2LegacySessionAddsPromptAtFirstNewRequest() async throws {
     let manager = SessionManager.inMemory()
     manager.appendMessage(.user(UserMessage(content: .text("legacy"))))
     let requests = LockedState<[TranscriptContext]>([])
@@ -328,7 +328,7 @@ private final class C2SkillLoader: ResourceLoader {
     func reload() async {}
 }
 
-@Test func c2AddingSkillPersistsOnlySkillsPatch() async throws {
+@Test(.timeLimit(.minutes(1))) func c2AddingSkillPersistsOnlySkillsPatch() async throws {
     let manager = SessionManager.inMemory()
     let requests = LockedState<[TranscriptContext]>([])
     let loader = C2SkillLoader()

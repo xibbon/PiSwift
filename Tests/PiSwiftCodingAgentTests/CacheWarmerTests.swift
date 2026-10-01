@@ -162,7 +162,7 @@ private final class WarmingHarness: Sendable {
     #expect(isCacheWarmReplayable(model: budget))
 }
 
-@Test func cacheWarmingReplaysProfitableRequestAndRecordsUsage() async {
+@Test(.timeLimit(.minutes(1))) func cacheWarmingReplaysProfitableRequestAndRecordsUsage() async {
     let harness = WarmingHarness()
     let originalToken = CancellationToken()
     await harness.start(options: SimpleStreamOptions(
@@ -185,7 +185,7 @@ private final class WarmingHarness: Sendable {
     await harness.warmer.cancel()
 }
 
-@Test func cacheWarmingStopsAfterDelayedTimerAndDecision() async {
+@Test(.timeLimit(.minutes(1))) func cacheWarmingStopsAfterDelayedTimerAndDecision() async {
     let late = WarmingHarness()
     await late.start()
     await late.advance(by: 285_001)
@@ -215,7 +215,7 @@ private final class WarmingHarness: Sendable {
     #expect(status.reason == "cache refresh deadline missed", "\(status)")
 }
 
-@Test func cacheWarmingEconomicsAndExtensionOverrides() async {
+@Test(.timeLimit(.minutes(1))) func cacheWarmingEconomicsAndExtensionOverrides() async {
     let unprofitable = WarmingHarness(promptTokens: 5_000)
     await unprofitable.start()
     await unprofitable.advance(by: 270_000)
@@ -243,7 +243,7 @@ private final class WarmingHarness: Sendable {
     #expect(unavailable.calls.isEmpty)
 }
 
-@Test func cacheWarmingStopsOnUnsupportedRequestsAndContextChanges() async {
+@Test(.timeLimit(.minutes(1))) func cacheWarmingStopsOnUnsupportedRequestsAndContextChanges() async {
     let harness = WarmingHarness()
     harness.state.withLock { $0.mode = .off }
     await harness.start()
@@ -276,7 +276,7 @@ private final class WarmingHarness: Sendable {
     #expect(await changedMode.warmer.status().reason == "cache warming disabled")
 }
 
-@Test func cacheWarmingCancelsReplacedRequestAndSkipsFailure() async {
+@Test(.timeLimit(.minutes(1))) func cacheWarmingCancelsReplacedRequestAndSkipsFailure() async {
     let harness = WarmingHarness(response: { model in
         warmingResponse(model: model, stopReason: .error)
     })
@@ -289,7 +289,7 @@ private final class WarmingHarness: Sendable {
     await harness.warmer.cancel()
 }
 
-@Test func cacheWarmingAbortsInFlightReplacedRequest() async {
+@Test(.timeLimit(.minutes(1))) func cacheWarmingAbortsInFlightReplacedRequest() async {
     let pending = LockedState<CheckedContinuation<AssistantMessage, Never>?>(nil)
     let harness = WarmingHarness(response: { model in
         await withCheckedContinuation { continuation in

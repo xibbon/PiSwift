@@ -156,7 +156,7 @@ private func c3Virtual(_ route: @escaping @Sendable (ModelRouteRequest) async th
     }
 }
 
-@Test func virtualModelDirectStreamClampsBudgetAndKeepsCredentialsWithProvider() async throws {
+@Test(.timeLimit(.minutes(1))) func virtualModelDirectStreamClampsBudgetAndKeepsCredentialsWithProvider() async throws {
     let observed = LockedState<[(String, Int?, String?)]>([])
     let registry = ModelRegistry(AuthStorage(":memory:"))
     registry.registerProvider(HookProviderConfig(
@@ -184,7 +184,7 @@ private func c3Virtual(_ route: @escaping @Sendable (ModelRouteRequest) async th
     #expect(observed.withLock { $0.first?.2 } != "caller-key")
 }
 
-@Test func agentSessionRoutesUserRetryContinuationAndPersistsState() async throws {
+@Test(.timeLimit(.minutes(1))) func agentSessionRoutesUserRetryContinuationAndPersistsState() async throws {
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey("physical", "physical-key")
     let registry = ModelRegistry(auth)
@@ -301,7 +301,7 @@ private func c3Virtual(_ route: @escaping @Sendable (ModelRouteRequest) async th
     #expect(fallback.session.routedModel == nil)
 }
 
-@Test func agentSessionCompactsBeforeSendingToSmallerRoutedModel() async throws {
+@Test(.timeLimit(.minutes(1))) func agentSessionCompactsBeforeSendingToSmallerRoutedModel() async throws {
     let registry = ModelRegistry(AuthStorage(":memory:"))
     registry.registerProvider(HookProviderConfig(
         provider: "physical", api: .openAIResponses, baseUrl: "https://example.invalid/v1",

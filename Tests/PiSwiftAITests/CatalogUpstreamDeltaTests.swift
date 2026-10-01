@@ -60,7 +60,7 @@ private func catalog085Request(_ model: Model, effort: ThinkingLevel) async thro
     return try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
 }
 
-@Test(arguments: catalog085QwenProviders, ["qwen3.8-flash", "qwen3.8-max"])
+@Test(.timeLimit(.minutes(1)), arguments: catalog085QwenProviders, ["qwen3.8-flash", "qwen3.8-max"])
 func catalog085Qwen38SendsXhighEffort(_ provider: String, _ id: String) async throws {
     let model = try #require(getModel(provider: provider, modelId: id))
     let payload = try await catalog085Request(model, effort: .xhigh)
@@ -69,7 +69,7 @@ func catalog085Qwen38SendsXhighEffort(_ provider: String, _ id: String) async th
     #expect(payload["thinking"] == nil)
 }
 
-@Test func catalog085NewIndividualDeepSeekEffort() async throws {
+@Test(.timeLimit(.minutes(1))) func catalog085NewIndividualDeepSeekEffort() async throws {
     let model = try #require(getModel(provider: "qwen-token-plan-individual", modelId: "deepseek-v4-pro-0813"))
     let map = try #require(model.thinkingLevelMap)
     for level in [ModelThinkingLevel.minimal, .low, .medium, .xhigh] {

@@ -56,7 +56,7 @@ private func extensionSurfaceSession(
     ))
 }
 
-@Test func agentSettledDispatchesBeforeIdleWaitReturns() async throws {
+@Test(.timeLimit(.minutes(1))) func agentSettledDispatchesBeforeIdleWaitReturns() async throws {
     let recorder = ExtensionSurfaceRecorder()
     let api = HookAPI(hookPath: "<test:settled>")
     api.on("agent_settled") { (_: AgentSettledEvent, _: HookContext) in
@@ -81,7 +81,7 @@ private func extensionSurfaceSession(
     #expect(session.isStreaming == false)
 }
 
-@Test func beforeProviderHeadersMergesHandlerResultIntoOutgoingOptions() async throws {
+@Test(.timeLimit(.minutes(1))) func beforeProviderHeadersMergesHandlerResultIntoOutgoingOptions() async throws {
     let capturedHeaders = LockedState<ProviderHeaders?>(nil)
     let baseModel = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let model = Model(

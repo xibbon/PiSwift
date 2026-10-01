@@ -73,7 +73,7 @@ private func a3SamplingPayload(
 }
 
 // Port of sampling-options.test.ts (#9506).
-@Test func a3SamplingOptionsApplyToDirectAndSimpleStreams() async throws {
+@Test(.timeLimit(.minutes(1))) func a3SamplingOptionsApplyToDirectAndSimpleStreams() async throws {
     let direct = try await a3SamplingPayload(api: .openAICompletions,
         requestSampling: ["top_p": AnyCodable(0.95), "top_k": AnyCodable(0), "min_p": AnyCodable(0)])
     #expect(direct["top_p"] as? Double == 0.95)
@@ -135,7 +135,7 @@ private func a3AnthropicCacheEvents(startDetail: [String: Int]?, deltaDetail: [S
 }
 
 // Port of anthropic-cache-write-1h-cost.test.ts (#9210).
-@Test func a3AnthropicPricesOneHourCacheWritesFromStartOrDelta() async throws {
+@Test(.timeLimit(.minutes(1))) func a3AnthropicPricesOneHourCacheWritesFromStartOrDelta() async throws {
     let opus = try #require(getModel(provider: "anthropic", modelId: "claude-opus-4-8"))
     let cases: [(start: [String: Int]?, delta: [String: Int]?, oneHour: Int, expected: Double)] = [
         (["ephemeral_5m_input_tokens": 600_000, "ephemeral_1h_input_tokens": 400_000], nil, 400_000, 7.75),
@@ -174,7 +174,7 @@ private func a3AnthropicCacheEvents(startDetail: [String: Int]?, deltaDetail: [S
 }
 
 // Port of the catalog assertion from anthropic-empty-thinking-signature-compat.test.ts (#10047).
-@Test func a3QwenFlashPreservesEmptyThinkingSignaturesForZenAndGo() async throws {
+@Test(.timeLimit(.minutes(1))) func a3QwenFlashPreservesEmptyThinkingSignaturesForZenAndGo() async throws {
     for provider in ["opencode", "opencode-go"] {
         let model = try #require(getModel(provider: provider, modelId: "qwen3.8-flash"))
         #expect(model.compat?.allowEmptySignature == true)

@@ -4,7 +4,7 @@ import Testing
 
 @Suite("MCP Trace")
 struct McpTraceTests {
-    @Test("records protocol metadata without recording payload content")
+    @Test("records protocol metadata without recording payload content", .timeLimit(.minutes(1)))
     func recordsMetadataOnly() async throws {
         let secret = "do-not-persist-this-value"
         let base = TraceTransport(received: Data(#"{"jsonrpc":"2.0","id":2,"result":{"token":"\#(secret)"}}"#.utf8))

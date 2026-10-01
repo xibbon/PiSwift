@@ -28,7 +28,7 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     return session.isStreaming
 }
 
-@Test func promptThrowsWhileStreaming() async throws {
+@Test(.timeLimit(.minutes(1))) func promptThrowsWhileStreaming() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-concurrent-\(UUID().uuidString)")
         .path
@@ -88,7 +88,7 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     _ = try? await firstPrompt.value
 }
 
-@Test func submitPromptThrowsWhileStreamingBeforeStartingBackgroundTurn() async throws {
+@Test(.timeLimit(.minutes(1))) func submitPromptThrowsWhileStreamingBeforeStartingBackgroundTurn() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-submit-concurrent-\(UUID().uuidString)")
         .path
@@ -137,7 +137,7 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     _ = try? await firstPrompt.value
 }
 
-@Test func promptAllowsHeaderOnlyCustomModelAuth() async throws {
+@Test(.timeLimit(.minutes(1))) func promptAllowsHeaderOnlyCustomModelAuth() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-header-auth-prompt-\(UUID().uuidString)")
         .path
@@ -200,7 +200,7 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     })
 }
 
-@Test func steerWhileStreaming() async throws {
+@Test(.timeLimit(.minutes(1))) func steerWhileStreaming() async throws {
     let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let agent = Agent(AgentOptions(
         initialState: AgentState(systemPrompt: "Test", model: model, tools: []),
@@ -237,7 +237,7 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     _ = try? await firstPrompt.value
 }
 
-@Test func followUpWhileStreaming() async throws {
+@Test(.timeLimit(.minutes(1))) func followUpWhileStreaming() async throws {
     let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let agent = Agent(AgentOptions(
         initialState: AgentState(systemPrompt: "Test", model: model, tools: []),
@@ -274,7 +274,7 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     _ = try? await firstPrompt.value
 }
 
-@Test func promptAfterCompletion() async throws {
+@Test(.timeLimit(.minutes(1))) func promptAfterCompletion() async throws {
     guard let apiKey = API_KEY else { return }
     let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let agent = Agent(AgentOptions(

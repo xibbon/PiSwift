@@ -21,7 +21,7 @@ private struct C1CatalogClient: ProviderHTTPClient {
     }
 }
 
-@Test func c1SettingsToolModifiersWheelAndDeviceId() async throws {
+@Test(.timeLimit(.minutes(1))) func c1SettingsToolModifiersWheelAndDeviceId() async throws {
     let root = try c1Directory()
     defer { try? FileManager.default.removeItem(at: root) }
     let project = root.appendingPathComponent("project")
@@ -237,7 +237,7 @@ private struct C1CatalogClient: ProviderHTTPClient {
     #expect(sum.totalTokens == 36 && sum.cost.total == 36)
 }
 
-@Test func c1SessionEntryCountAndExtensionSettingsCopy() async throws {
+@Test(.timeLimit(.minutes(1))) func c1SessionEntryCountAndExtensionSettingsCopy() async throws {
     let sessionManager = SessionManager.inMemory()
     #expect(sessionManager.getEntryCount() == 0)
     sessionManager.appendMessage(userMsg("first"))
@@ -266,7 +266,7 @@ private struct C1CatalogClient: ProviderHTTPClient {
     #expect(settingsManager.getDefaultTools() == ["read"])
 }
 
-@Test func c1PromptAndQueuedInputDispositions() async throws {
+@Test(.timeLimit(.minutes(1))) func c1PromptAndQueuedInputDispositions() async throws {
     let model = try #require(getModel(provider: .anthropic, modelId: "claude-sonnet-4-5"))
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
     let registry = ModelRegistry(auth)
@@ -329,7 +329,7 @@ private struct C1CatalogClient: ProviderHTTPClient {
     #expect((event.data.jsonValue as? [String: String])?["kind"] == "chunk")
 }
 
-@Test func c1RejectedPromptDoesNotReportDisposition() async throws {
+@Test(.timeLimit(.minutes(1))) func c1RejectedPromptDoesNotReportDisposition() async throws {
     let model = try #require(getModel(provider: .anthropic, modelId: "claude-sonnet-4-5"))
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
     let recorded = LockedState<[String]>([])

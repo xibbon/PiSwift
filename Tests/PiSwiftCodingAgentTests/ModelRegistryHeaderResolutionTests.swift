@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TestEnvironmentSupport
 import PiSwiftAI
 import PiSwiftCodingAgent
 
@@ -20,7 +21,7 @@ private func withEnvValue(_ key: String, value: String?, _ work: () throws -> Vo
     try work()
 }
 
-@Test func modelRegistryResolvesProviderHeadersFromEnvAndCommand() throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func modelRegistryResolvesProviderHeadersFromEnvAndCommand() throws {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-models-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     let modelsPath = tempDir.appendingPathComponent("models.json")

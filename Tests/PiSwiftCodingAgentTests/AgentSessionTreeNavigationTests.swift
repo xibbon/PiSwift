@@ -1,7 +1,7 @@
 import Testing
 import PiSwiftCodingAgent
 
-@Test func navigateToUserMessagePutsTextInEditor() async throws {
+@Test(.timeLimit(.minutes(1))) func navigateToUserMessagePutsTextInEditor() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession(options: TestSessionOptions(systemPrompt: "You are a helpful assistant. Reply with just a few words."))
@@ -23,7 +23,7 @@ import PiSwiftCodingAgent
     #expect(ctx.session.sessionManager.getLeafId() == nil)
 }
 
-@Test func navigateToAssistantMessageNoEditorText() async throws {
+@Test(.timeLimit(.minutes(1))) func navigateToAssistantMessageNoEditorText() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -47,7 +47,7 @@ import PiSwiftCodingAgent
     #expect(ctx.session.sessionManager.getLeafId() == assistantEntry!.id)
 }
 
-@Test func navigateCreatesBranchSummary() async throws {
+@Test(.timeLimit(.minutes(1))) func navigateCreatesBranchSummary() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -71,7 +71,7 @@ import PiSwiftCodingAgent
     #expect(ctx.session.sessionManager.getLeafId() == result.summaryEntry?.id)
 }
 
-@Test func summaryAttachesToParentWhenNavigatingNestedUserMessage() async throws {
+@Test(.timeLimit(.minutes(1))) func summaryAttachesToParentWhenNavigatingNestedUserMessage() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -109,7 +109,7 @@ import PiSwiftCodingAgent
     }
 }
 
-@Test func summaryAttachesToAssistantEntry() async throws {
+@Test(.timeLimit(.minutes(1))) func summaryAttachesToAssistantEntry() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -137,7 +137,7 @@ import PiSwiftCodingAgent
     #expect(ctx.session.sessionManager.getLeafId() == result.summaryEntry?.id)
 }
 
-@Test func abortDuringSummarization() async throws {
+@Test(.timeLimit(.minutes(1))) func abortDuringSummarization() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -172,7 +172,7 @@ import PiSwiftCodingAgent
     #expect(ctx.session.sessionManager.getLeafId() == leafBefore)
 }
 
-@Test func navigateWithoutSummarizeCreatesNoSummary() async throws {
+@Test(.timeLimit(.minutes(1))) func navigateWithoutSummarizeCreatesNoSummary() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -194,7 +194,7 @@ import PiSwiftCodingAgent
     #expect(summaries.isEmpty)
 }
 
-@Test func navigateToSamePositionNoOp() async throws {
+@Test(.timeLimit(.minutes(1))) func navigateToSamePositionNoOp() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -214,7 +214,7 @@ import PiSwiftCodingAgent
     }
 }
 
-@Test func navigationSupportsCustomInstructions() async throws {
+@Test(.timeLimit(.minutes(1))) func navigationSupportsCustomInstructions() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -232,7 +232,7 @@ import PiSwiftCodingAgent
     }
 }
 
-@Test func navigateAcrossBranchesSummarizesPreviousBranch() async throws {
+@Test(.timeLimit(.minutes(1))) func navigateAcrossBranchesSummarizesPreviousBranch() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession(options: TestSessionOptions(systemPrompt: "You are a helpful assistant. Reply with just a few words."))

@@ -120,7 +120,7 @@ private enum BridgeEmission: String, CaseIterable, Sendable {
         #expect(fixture.session.hookRunner == nil)
     }
 
-    @Test func manualCompactionFailureReachesHostWithItsFields() async throws {
+    @Test(.timeLimit(.minutes(1))) func manualCompactionFailureReachesHostWithItsFields() async throws {
         let handled = LockedState<[SessionCompactFailedEvent]>([])
         let api = HookAPI()
         api.on("session_compact_failed") { (event: SessionCompactFailedEvent, _: HookContext) in

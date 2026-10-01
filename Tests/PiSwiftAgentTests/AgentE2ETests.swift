@@ -27,7 +27,7 @@ private func hasBedrockCredentials() -> Bool {
         env["AWS_BEARER_TOKEN_BEDROCK"] != nil
 }
 
-@Test func openAIE2E() async throws {
+@Test(.timeLimit(.minutes(1))) func openAIE2E() async throws {
     guard ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
         return
     }
@@ -39,7 +39,7 @@ private func hasBedrockCredentials() -> Bool {
     try await multiTurnConversation(model: model)
 }
 
-@Test func anthropicE2E() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicE2E() async throws {
     guard RUN_ANTHROPIC_TESTS else {
         return
     }
@@ -51,7 +51,7 @@ private func hasBedrockCredentials() -> Bool {
     try await multiTurnConversation(model: model)
 }
 
-@Test func bedrockE2E() async throws {
+@Test(.timeLimit(.minutes(1))) func bedrockE2E() async throws {
     guard hasBedrockCredentials() else {
         return
     }
@@ -65,7 +65,7 @@ private func hasBedrockCredentials() -> Bool {
     try await multiTurnConversation(model: model)
 }
 
-@Test func continueValidation() async {
+@Test(.timeLimit(.minutes(1))) func continueValidation() async {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let agent = Agent(AgentOptions(initialState: AgentState(systemPrompt: "Test", model: model)))
 
@@ -83,7 +83,7 @@ private func hasBedrockCredentials() -> Bool {
     await assertThrowsAsync({ try await agent.continue() }, message: "Cannot continue from message role: assistant")
 }
 
-@Test func continueFromUserMessage() async throws {
+@Test(.timeLimit(.minutes(1))) func continueFromUserMessage() async throws {
     guard RUN_ANTHROPIC_TESTS else {
         return
     }

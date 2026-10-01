@@ -88,7 +88,7 @@ private func catalogRegistry(
     )
 }
 
-@Test func fileModelsStoreRoundTripConcurrentWritesAndCancellation() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreRoundTripConcurrentWritesAndCancellation() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -159,7 +159,7 @@ private func catalogRegistry(
     #expect(try await store.read(providerId: "cancelled-in-flight", signal: nil) == nil)
 }
 
-@Test func managementFetchRetriesTransientStatusesWithSharedRetryDriver() async throws {
+@Test(.timeLimit(.minutes(1))) func managementFetchRetriesTransientStatusesWithSharedRetryDriver() async throws {
     let attempts = LockedState(0)
     let client = CatalogStubHTTPClient { _ in
         let attempt = attempts.withLock { value -> Int in
@@ -180,7 +180,7 @@ private func catalogRegistry(
     #expect(attempts.withLock { $0 } == 2)
 }
 
-@Test func remoteCatalog200PublishesAndPersistsMetadata() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalog200PublishesAndPersistsMetadata() async throws {
     let store = InMemoryCodingAgentModelsStore()
     let requests = LockedState<[URLRequest]>([])
     let client = CatalogStubHTTPClient { request in
@@ -206,7 +206,7 @@ private func catalogRegistry(
     #expect(requests.withLock { $0.first?.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("pi/") } == true)
 }
 
-@Test func remoteCatalogAcceptsAllUpstreamPayloadShapesAndForcesProvider() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalogAcceptsAllUpstreamPayloadShapesAndForcesProvider() async throws {
     let model = """
     {
       "id": "shape-model",
@@ -248,7 +248,7 @@ private func catalogRegistry(
     }
 }
 
-@Test func remoteCatalog304PreservesOverlayAndAdvancesCheckedAt() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalog304PreservesOverlayAndAdvancesCheckedAt() async throws {
     let model = catalogModel(id: "cached", name: "Cached")
     let store = InMemoryCodingAgentModelsStore(entries: [
         "openai": ModelsStoreEntry(
@@ -275,7 +275,7 @@ private func catalogRegistry(
     #expect(requests.withLock { $0.first?.value(forHTTPHeaderField: "If-None-Match") } == "\"cached\"")
 }
 
-@Test(arguments: [404, 501])
+@Test(.timeLimit(.minutes(1)), arguments: [404, 501])
 func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async throws {
     let store = InMemoryCodingAgentModelsStore(entries: [
         "openai": ModelsStoreEntry(
@@ -298,7 +298,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(persisted.checkedAt == 2_200_000_000_000)
 }
 
-@Test func remoteCatalogNonOKRetainsValidatorAndReturnsError() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalogNonOKRetainsValidatorAndReturnsError() async throws {
     let store = InMemoryCodingAgentModelsStore(entries: [
         "openai": ModelsStoreEntry(
             models: [catalogModel(id: "cached", name: "Cached")],
@@ -320,7 +320,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(persisted.checkedAt == 2_200_000_000_000)
 }
 
-@Test func remoteCatalogThrottleAndForce() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalogThrottleAndForce() async throws {
     let store = InMemoryCodingAgentModelsStore()
     let requestCount = LockedState(0)
     let clock = LockedState(2_200_000_000_000.0)
@@ -347,7 +347,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(requestCount.withLock { $0 } == 2)
 }
 
-@Test func conditionalValidatorRequiresCachedBody() async throws {
+@Test(.timeLimit(.minutes(1))) func conditionalValidatorRequiresCachedBody() async throws {
     let requests = LockedState<[URLRequest]>([])
     let client = CatalogStubHTTPClient { request in
         requests.withLock { $0.append(request) }
@@ -370,7 +370,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(requests.withLock { $0.first?.value(forHTTPHeaderField: "If-None-Match") } == nil)
 }
 
-@Test func newerRefreshGenerationWinsOverLateOlderPublication() async throws {
+@Test(.timeLimit(.minutes(1))) func newerRefreshGenerationWinsOverLateOlderPublication() async throws {
     let store = InMemoryCodingAgentModelsStore()
     let gate = CatalogGate()
     let attempts = LockedState(0)
@@ -411,7 +411,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(persisted.models.first?.name == "New")
 }
 
-@Test func staleStoredCatalogIsIgnored() async throws {
+@Test(.timeLimit(.minutes(1))) func staleStoredCatalogIsIgnored() async throws {
     let generatedAt = try #require(getBuiltinModelDataGeneratedAt())
     let store = InMemoryCodingAgentModelsStore(entries: [
         "openai": ModelsStoreEntry(
@@ -433,7 +433,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(registry.find("openai", "gpt-4o-mini") != nil)
 }
 
-@Test func remoteMergeReplacesBuiltInAppendsUnknownAndUserConfigWins() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteMergeReplacesBuiltInAppendsUnknownAndUserConfigWins() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-catalog-order-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -482,7 +482,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(registry.find("openai", "remote-unknown")?.name == "Remote Unknown")
 }
 
-@Test func refreshProviderRestrictionAndUnknownIdsAreIgnored() async throws {
+@Test(.timeLimit(.minutes(1))) func refreshProviderRestrictionAndUnknownIdsAreIgnored() async throws {
     let store = InMemoryCodingAgentModelsStore(entries: [
         "openai": ModelsStoreEntry(
             models: [catalogModel(id: "openai-remote", name: "OpenAI Remote")],
@@ -507,7 +507,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(registry.find("anthropic", "anthropic-remote") == nil)
 }
 
-@Test func callerCancellationAbortsWithoutCatalogCommit() async throws {
+@Test(.timeLimit(.minutes(1))) func callerCancellationAbortsWithoutCatalogCommit() async throws {
     let store = InMemoryCodingAgentModelsStore()
     let gate = CatalogGate()
     let started = LockedState(false)
@@ -535,7 +535,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     await gate.release()
 }
 
-@Test func remoteCatalogSkipsUndecodableEntriesAndStillPersists() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalogSkipsUndecodableEntriesAndStillPersists() async throws {
     let good = String(decoding: try JSONEncoder().encode(catalogModel(id: "good-model", name: "Good")), as: UTF8.self)
     let payload = """
     [
@@ -574,7 +574,7 @@ func missingRemoteCatalogZerosFreshnessAndDropsValidator(status: Int) async thro
     #expect(persisted.etag == nil)
 }
 
-@Test(arguments: [
+@Test(.timeLimit(.minutes(1)), arguments: [
     "Wednesday, 12-Aug-37 12:00:00 GMT",
     "Wed Aug 12 12:00:00 2037"
 ])
@@ -596,7 +596,7 @@ func remoteCatalogAcceptsObsoleteLastModifiedFormats(lastModified: String) async
     #expect((persisted.lastModified ?? 0) > (getBuiltinModelDataGeneratedAt() ?? 0))
 }
 
-@Test func fileModelsStoreToleratesByteOrderMarkAndRecoversFromATruncatedFile() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreToleratesByteOrderMarkAndRecoversFromATruncatedFile() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-recovery-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -631,7 +631,7 @@ func remoteCatalogAcceptsObsoleteLastModifiedFormats(lastModified: String) async
     #expect(rawEntries["openai"]?.etag == "\"v1\"")
 }
 
-@Test func fileModelsStoreInstancesSerializeConcurrentWrites() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreInstancesSerializeConcurrentWrites() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-instances-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -661,7 +661,7 @@ func remoteCatalogAcceptsObsoleteLastModifiedFormats(lastModified: String) async
     #expect(rawEntries.count == 16)
 }
 
-@Test func fileModelsStoreKeepsProvidersAndModelsItCannotDecode() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreKeepsProvidersAndModelsItCannotDecode() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-forward-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -716,7 +716,7 @@ func remoteCatalogAcceptsObsoleteLastModifiedFormats(lastModified: String) async
     #expect((afterDelete["google"] as? [String: Any])?["futureField"] as? String == "kept")
 }
 
-@Test func fileModelsStoreDropsOnlyTheProviderJSONSerializationCannotWriteBack() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreDropsOnlyTheProviderJSONSerializationCannotWriteBack() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-infinite-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -743,7 +743,7 @@ func remoteCatalogAcceptsObsoleteLastModifiedFormats(lastModified: String) async
     #expect(Set(rewritten.keys) == ["openai", "anthropic"])
 }
 
-@Test(arguments: [
+@Test(.timeLimit(.minutes(1)), arguments: [
     #"[{"id": "renamed-fields", "title": "No required fields"}]"#,
     #"[{"modelId": "renamed-id", "name": "Renamed id"}]"#,
     #"{"object": "list", "data": [{"id": "wrapped"}]}"#
@@ -781,7 +781,7 @@ func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) asy
     }
 }
 
-@Test func fileModelsStoreWritesThroughASymlink() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreWritesThroughASymlink() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-symlink-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -803,7 +803,7 @@ func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) asy
     #expect(stored?["openai"] != nil)
 }
 
-@Test func fileModelsStoreNoticesATargetRewrittenBehindASymlink() async throws {
+@Test(.timeLimit(.minutes(1))) func fileModelsStoreNoticesATargetRewrittenBehindASymlink() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-symlink-revision-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -822,7 +822,7 @@ func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) asy
     #expect(try await store.read(providerId: "openai", signal: nil)?.models.first?.id == "rewritten-elsewhere")
 }
 
-@Test func remoteCatalogMetadataOnlyObjectIsAnEmptyCatalog() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalogMetadataOnlyObjectIsAnEmptyCatalog() async throws {
     let store = InMemoryCodingAgentModelsStore()
     let registry = catalogRegistry(
         store: store,
@@ -841,7 +841,7 @@ func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) asy
     #expect(persisted.models.isEmpty)
 }
 
-@Test func remoteCatalogDropsANonFiniteStringPriceSoTheEntryPersists() async throws {
+@Test(.timeLimit(.minutes(1))) func remoteCatalogDropsANonFiniteStringPriceSoTheEntryPersists() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-model-store-price-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

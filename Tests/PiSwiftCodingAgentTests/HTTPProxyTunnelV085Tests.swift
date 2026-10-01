@@ -69,7 +69,7 @@ private func tunnelTestWrite(_ fd: Int32, _ text: String) throws {
     }
 }
 
-@Test(arguments: [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
 func codingAgent085HTTPProxyUsesCONNECT(authentication: Bool) async throws {
     let listener = try tunnelTestListener()
     defer { close(listener.fd) }

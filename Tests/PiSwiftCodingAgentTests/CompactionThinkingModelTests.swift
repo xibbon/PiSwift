@@ -3,7 +3,7 @@ import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftCodingAgent
 
-@Test func compactionThinkingModelAnthropic() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionThinkingModelAnthropic() async throws {
     let apiKey = await resolveApiKey("anthropic") ?? API_KEY
     guard let apiKey else { return }
 
@@ -29,7 +29,7 @@ import PiSwiftCodingAgent
     #expect(messagesAfterCompact.first?.role == "compactionSummary")
 }
 
-@Test func compactionThinkingModelAntigravity() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionThinkingModelAntigravity() async throws {
     guard hasAuthForProvider("google-antigravity") else { return }
     guard let apiKey = await resolveApiKey("google-antigravity") else { return }
     guard let model = getModel(provider: "google-antigravity", modelId: "claude-opus-4-5-thinking") else { return }

@@ -162,7 +162,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(agent.hasQueuedMessages() == false)
 }
 
-@Test func promptWhileStreamingThrows() async throws {
+@Test(.timeLimit(.minutes(1))) func promptWhileStreamingThrows() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let streamFn: StreamFn = { model, _, _ in
         let stream = AssistantMessageEventStream()
@@ -210,7 +210,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     agent.abort()
 }
 
-@Test func forwardsSessionIdToStreamOptions() async throws {
+@Test(.timeLimit(.minutes(1))) func forwardsSessionIdToStreamOptions() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedSessionId = LockedState<String?>(nil)
     let streamFn: StreamFn = { model, _, options in
@@ -240,7 +240,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(receivedSessionId.withLock { $0 } == "session-def")
 }
 
-@Test func forwardsTransportToStreamOptions() async throws {
+@Test(.timeLimit(.minutes(1))) func forwardsTransportToStreamOptions() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedTransport = LockedState<Transport?>(nil)
     let streamFn: StreamFn = { model, _, options in
@@ -275,7 +275,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(receivedTransport.withLock { $0 } == .auto)
 }
 
-@Test func forwardsTimeoutsToStreamOptions() async throws {
+@Test(.timeLimit(.minutes(1))) func forwardsTimeoutsToStreamOptions() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedTimeoutMs = LockedState<Int?>(nil)
     let receivedWebSocketConnectTimeoutMs = LockedState<Int?>(nil)
@@ -316,7 +316,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(receivedWebSocketConnectTimeoutMs.withLock { $0 } == nil)
 }
 
-@Test func continueWhileStreamingThrows() async throws {
+@Test(.timeLimit(.minutes(1))) func continueWhileStreamingThrows() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let streamFn: StreamFn = { model, _, _ in
         let stream = AssistantMessageEventStream()
@@ -356,7 +356,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     _ = try await task.value
 }
 
-@Test func continueUsesQueuedMessagesWhenLastIsAssistant() async throws {
+@Test(.timeLimit(.minutes(1))) func continueUsesQueuedMessagesWhenLastIsAssistant() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let streamFn: StreamFn = { model, _, _ in
         let stream = AssistantMessageEventStream()
@@ -401,7 +401,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(agent.hasQueuedMessages() == false)
 }
 
-@Test func thinkingBudgetsGetterSetter() async throws {
+@Test(.timeLimit(.minutes(1))) func thinkingBudgetsGetterSetter() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedBudgets = LockedState<ThinkingBudgets?>(nil)
     let streamFn: StreamFn = { model, _, options in
@@ -440,7 +440,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(receivedBudgets.withLock { $0?[.high] } == 8192)
 }
 
-@Test func getApiKeyCallback() async throws {
+@Test(.timeLimit(.minutes(1))) func getApiKeyCallback() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedApiKey = LockedState<String?>(nil)
     let providerRequested = LockedState<String?>(nil)
@@ -478,7 +478,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
     #expect(receivedApiKey.withLock { $0 } == "dynamic-api-key-openai")
 }
 
-@Test func getModelAuthCallbackOverridesProviderAuth() async throws {
+@Test(.timeLimit(.minutes(1))) func getModelAuthCallbackOverridesProviderAuth() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let receivedApiKey = LockedState<String?>(nil)
     let receivedHeaders = LockedState<ProviderHeaders?>(nil)
@@ -528,7 +528,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
 
 /// v0.63.2: Agent.signal exposes the active turn's cancellation token so subscribers
 /// and extensions can forward cancellation into nested async work.
-@Test func agentSignalExposesTurnCancellationToken() async throws {
+@Test(.timeLimit(.minutes(1))) func agentSignalExposesTurnCancellationToken() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let signalDuringTurn = LockedState<CancellationToken?>(nil)
 
@@ -571,7 +571,7 @@ private func makeAssistant(stopReason: StopReason) -> AssistantMessage {
 
 /// v0.65.0: subscribe listeners are awaited; agent.prompt() does not return until every
 /// agent_end listener finishes, and state.isStreaming stays true until that settlement.
-@Test func subscribeListenersAreAwaitedBeforePromptReturns() async throws {
+@Test(.timeLimit(.minutes(1))) func subscribeListenersAreAwaitedBeforePromptReturns() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
 
     let streamFn: StreamFn = { _, _, _ in

@@ -17,7 +17,7 @@ private func retryTestMessage(
     )
 }
 
-@Test func retryAssistantCallRetriesTransientFailureAndOrdersCallbacks() async {
+@Test(.timeLimit(.minutes(1))) func retryAssistantCallRetriesTransientFailureAndOrdersCallbacks() async {
     let calls = LockedState(0)
     let events = LockedState<[String]>([])
     let response = await retryAssistantCall(
@@ -65,7 +65,7 @@ private func retryTestMessage(
     ])
 }
 
-@Test func retryAssistantCallStopsAtRetryBound() async {
+@Test(.timeLimit(.minutes(1))) func retryAssistantCallStopsAtRetryBound() async {
     let calls = LockedState(0)
     let finished = LockedState<(Bool, Int, String?)?>(nil)
     let response = await retryAssistantCall(
@@ -89,7 +89,7 @@ private func retryTestMessage(
     #expect(finished.withLock { $0?.2 } == "503 service unavailable")
 }
 
-@Test func retryAssistantCallAbortsBackoffPromptly() async {
+@Test(.timeLimit(.minutes(1))) func retryAssistantCallAbortsBackoffPromptly() async {
     let token = CancellationToken()
     let retryScheduled = LockedState(false)
     let finished = LockedState<(Bool, Int, String?)?>(nil)

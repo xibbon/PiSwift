@@ -36,7 +36,7 @@ private func a5CaptureResponsesPayload(model: Model, apiKey: String) async throw
 
 @Suite("A5 ChatGPT Responses")
 struct A5ChatGPTResponsesTests {
-    @Test func requestOmitsUnsupportedFieldsForChatGPTToken() async throws {
+    @Test(.timeLimit(.minutes(1))) func requestOmitsUnsupportedFieldsForChatGPTToken() async throws {
         let payload = try await a5CaptureResponsesPayload(model: a5ResponsesModel(), apiKey: "chatgpt-access-token")
         #expect(payload["max_output_tokens"] == nil)
         #expect(payload["temperature"] == nil)
@@ -44,7 +44,7 @@ struct A5ChatGPTResponsesTests {
         #expect(payload["prompt_cache_options"] == nil)
     }
 
-    @Test func explicitCacheOptionsOmittedOnlyForChatGPTToken() async throws {
+    @Test(.timeLimit(.minutes(1))) func explicitCacheOptionsOmittedOnlyForChatGPTToken() async throws {
         let model = a5ResponsesModel(compat: OpenAICompat(supportsExplicitPromptCacheMode: true))
         let tokenPayload = try await a5CaptureResponsesPayload(model: model, apiKey: "chatgpt-access-token")
         let apiKeyPayload = try await a5CaptureResponsesPayload(model: model, apiKey: "sk-test")
@@ -52,7 +52,7 @@ struct A5ChatGPTResponsesTests {
         #expect((apiKeyPayload["prompt_cache_options"] as? [String: String])?["ttl"] == "30m")
     }
 
-    @Test func apiKeyAndOtherEndpointKeepFields() async throws {
+    @Test(.timeLimit(.minutes(1))) func apiKeyAndOtherEndpointKeepFields() async throws {
         let apiKeyPayload = try await a5CaptureResponsesPayload(model: a5ResponsesModel(), apiKey: "sk-test")
         let otherEndpointPayload = try await a5CaptureResponsesPayload(
             model: a5ResponsesModel(baseUrl: "https://gateway.example.com/v1"), apiKey: "gateway-key"
@@ -64,7 +64,7 @@ struct A5ChatGPTResponsesTests {
         }
     }
 
-    @Test func httpAndStreamLimitErrorsLinkToUsage() async throws {
+    @Test(.timeLimit(.minutes(1))) func httpAndStreamLimitErrorsLinkToUsage() async throws {
         let body = Data(#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"Usage limit reached."}}"#.utf8)
         let httpClient = A5ResponsesHTTPClient(response: ProviderHTTPResponse(statusCode: 429, body: body))
         let context = normalizeContext(Context(messages: [.user(UserMessage(content: .text("hi")))]))

@@ -3,6 +3,33 @@ import Testing
 @testable import PiSwiftAI
 
 #if canImport(Network)
+import Darwin
+import Network
+
+private func a5BoundSocket() -> (descriptor: Int32, port: UInt16)? {
+    let descriptor = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard descriptor >= 0 else { return nil }
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    let bound = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let read = withUnsafeMutablePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            getsockname(descriptor, $0, &length)
+        }
+    }
+    guard bound == 0, read == 0 else {
+        Darwin.close(descriptor)
+        return nil
+    }
+    return (descriptor, UInt16(bigEndian: address.sin_port))
+}
 
 private func a5Request(_ uri: String, method: String = "GET") async throws -> (Int, String) {
     var request = URLRequest(url: URL(string: uri)!)
@@ -23,8 +50,111 @@ private func a5Start(
     )
 }
 
-@Suite("A5 shared OAuth callback server")
+@Suite("A5 shared OAuth callback server", .timeLimit(.minutes(1)))
 struct A5SharedCallbackServerTests {
+    @Test func fixedFreePortCompletesCallback() async throws {
+        let socket = try #require(a5BoundSocket())
+        let port = socket.port
+        Darwin.close(socket.descriptor)
+        let server = try await OAuthCallbackServer<String>.start(
+            providerName: "Example", port: port, path: "/callback", state: "state"
+        ) { components in
+            components.queryItems?.first { $0.name == "code" }?.value ?? ""
+        }
+        defer { Task { await server.close() } }
+        let uri = await server.redirectUri()
+        #expect(URL(string: uri)?.port == Int(port))
+        #expect((try await a5Request(uri + "?state=state&code=fixed-port")).0 == 200)
+        #expect(try await server.wait() == "fixed-port")
+    }
+
+    @Test func fixedOccupiedPortFailsToStart() async throws {
+        let socket = try #require(a5BoundSocket())
+        defer { Darwin.close(socket.descriptor) }
+        #expect(Darwin.listen(socket.descriptor, 1) == 0)
+        do {
+            let server = try await OAuthCallbackServer<String>.start(
+                providerName: "Example", port: socket.port, path: "/callback"
+            ) { _ in "unused" }
+            await server.close()
+            Issue.record("Expected the occupied port to fail")
+        } catch {
+            #expect((error as? NWError) == .posix(.EADDRINUSE))
+        }
+    }
+
+    @Test func cancelledWaitSettlesBeforeAndAfterRegistration() async throws {
+        for cancelBeforeWait in [true, false] {
+            let server = try await a5Start()
+            let finished = LockedState(false)
+            let task = Task {
+                if cancelBeforeWait { withUnsafeCurrentTask { $0?.cancel() } }
+                defer { finished.withLock { $0 = true } }
+                return try await server.wait()
+            }
+            if !cancelBeforeWait {
+                try await Task.sleep(for: .milliseconds(20))
+                task.cancel()
+            }
+            for _ in 0..<100 {
+                if finished.withLock({ $0 }) { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(finished.withLock { $0 })
+            // Close after the assertion so a failed regression cannot retain the wait.
+            await server.close()
+            do { _ = try await task.value; Issue.record("Expected task cancellation") }
+            catch { #expect(error is CancellationError) }
+        }
+    }
+
+    @Test func cancelledTaskDoesNotStartListener() async throws {
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                let server = try await a5Start()
+                await server.close()
+                Issue.record("Expected task cancellation")
+            } catch {
+                #expect(error is CancellationError)
+            }
+        }
+        await task.value
+    }
+
+    @Test func cancelledManualRaceSettlesBeforeAndAfterRegistration() async throws {
+        for cancelBeforeWait in [true, false] {
+            let server = try await a5Start()
+            let promptStarted = AsyncStream<Void>.makeStream()
+            let finished = LockedState(false)
+            let callbacks = OAuthLoginCallbacks(onAuth: { _ in }, onPrompt: { _ in
+                promptStarted.continuation.yield(())
+                try await Task.sleep(for: .seconds(3600))
+                return "unused"
+            })
+            let task = Task {
+                if cancelBeforeWait { withUnsafeCurrentTask { $0?.cancel() } }
+                defer { finished.withLock { $0 = true } }
+                return try await waitForCallbackOrManualInput(
+                    callbacks: callbacks, callback: server, prompt: OAuthPrompt(message: "Paste")
+                )
+            }
+            if !cancelBeforeWait {
+                for await _ in promptStarted.stream { break }
+                task.cancel()
+            }
+            for _ in 0..<100 {
+                if finished.withLock({ $0 }) { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(finished.withLock { $0 })
+            await server.close()
+            promptStarted.continuation.finish()
+            do { _ = try await task.value; Issue.record("Expected task cancellation") }
+            catch { #expect(error is CancellationError) }
+        }
+    }
+
     @Test func pathMethodStateAndMissingCodeKeepWaiting() async throws {
         let server = try await a5Start()
         defer { Task { await server.close() } }
@@ -160,7 +290,7 @@ struct A5SharedCallbackServerTests {
     }
 }
 
-@Suite("A5 ChatGPT callback mode")
+@Suite("A5 ChatGPT callback mode", .timeLimit(.minutes(1)))
 struct A5ChatGPTCallbackModeTests {
     @Test func invalidCallbackKeepsWaitingSuccessHasNo409() async throws {
         let server = try await OAuthCallbackServer<String>.start(

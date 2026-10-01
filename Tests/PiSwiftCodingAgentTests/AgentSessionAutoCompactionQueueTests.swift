@@ -21,7 +21,7 @@ private func makeStubStreamFn() -> StreamFn {
     }
 }
 
-@Test func autoCompactionResumesWhenOnlyAgentQueueExists() async throws {
+@Test(.timeLimit(.minutes(1))) func autoCompactionResumesWhenOnlyAgentQueueExists() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-auto-compaction-\(UUID().uuidString)")
         .path

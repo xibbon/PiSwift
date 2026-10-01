@@ -31,7 +31,7 @@ public actor OAuthCallbackServer<Value: Sendable> {
     private let complete: @Sendable (URLComponents) async throws -> Value
     private var claimed = false
     private var settled: Result<Value?, Error>?
-    private var waiters: [CheckedContinuation<Value?, Error>] = []
+    private var waiters: [UUID: CheckedContinuation<Value?, Error>] = [:]
     private var timeoutTask: Task<Void, Never>?
     private var removeCancellationHandler: (@Sendable () -> Void)?
     private var connections: [NWConnection] = []
@@ -58,6 +58,7 @@ public actor OAuthCallbackServer<Value: Sendable> {
         timeoutMs: Int? = nil,
         complete: @escaping @Sendable (URLComponents) async throws -> Value
     ) async throws -> OAuthCallbackServer<Value> {
+        try Task.checkCancellation()
         if signal?.isCancelled == true { throw OAuthCallbackFailure(message: "Login cancelled") }
         let nwPort = NWEndpoint.Port(rawValue: port) ?? .any
         let parameters = NWParameters.tcp
@@ -88,13 +89,24 @@ public actor OAuthCallbackServer<Value: Sendable> {
     }
 
     public func wait() async throws -> Value? {
-        try await withCheckedThrowingContinuation { continuation in
-            if let settled {
-                continuation.resume(with: settled)
-            } else {
-                waiters.append(continuation)
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if let settled {
+                    continuation.resume(with: settled)
+                } else {
+                    waiters[id] = continuation
+                }
             }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
         }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
     }
 
     @discardableResult func cancel() -> Bool {
@@ -130,12 +142,32 @@ public actor OAuthCallbackServer<Value: Sendable> {
         timeoutTask?.cancel()
         removeCancellationHandler?()
         removeCancellationHandler = nil
-        for waiter in waiters { waiter.resume(with: result) }
+        for waiter in waiters.values { waiter.resume(with: result) }
         waiters.removeAll()
     }
 
     private func startListener() async throws {
+        let listener = self.listener
+        do {
+            try await withTaskCancellationHandler {
+                try await waitForListener()
+                try Task.checkCancellation()
+            } onCancel: {
+                listener.cancel()
+            }
+        } catch {
+            listener.cancel()
+            if Task.isCancelled { throw CancellationError() }
+            throw error
+        }
+    }
+
+    private func waitForListener() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            if Task.isCancelled {
+                continuation.resume(throwing: CancellationError())
+                return
+            }
             let resumed = LockedState(false)
             listener.stateUpdateHandler = { [weak self] state in
                 switch state {
@@ -277,51 +309,93 @@ public actor OAuthCallbackServer<Value: Sendable> {
     }
 }
 
+/// Store a result if cancellation occurs before the continuation is installed.
+final class OAuthCallbackRace<Value: Sendable>: Sendable {
+    private struct State {
+        var result: Result<Value, Error>?
+        var continuation: CheckedContinuation<Value, Error>?
+        var tasks: [Task<Void, Never>] = []
+    }
+
+    private let state = LockedState(State())
+
+    func install(_ continuation: CheckedContinuation<Value, Error>) {
+        let result = state.withLock { state -> Result<Value, Error>? in
+            if let result = state.result { return result }
+            state.continuation = continuation
+            return nil
+        }
+        if let result { continuation.resume(with: result) }
+    }
+
+    func add(_ task: Task<Void, Never>) {
+        let cancel = state.withLock { state in
+            if state.result != nil { return true }
+            state.tasks.append(task)
+            return false
+        }
+        if cancel { task.cancel() }
+    }
+
+    func finish(_ result: Result<Value, Error>) {
+        let completion = state.withLock { state -> (CheckedContinuation<Value, Error>?, [Task<Void, Never>]) in
+            guard state.result == nil else { return (nil, []) }
+            state.result = result
+            let completion = (state.continuation, state.tasks)
+            state.continuation = nil
+            state.tasks.removeAll()
+            return completion
+        }
+        for task in completion.1 { task.cancel() }
+        completion.0?.resume(with: result)
+    }
+}
+
 /// A continuation race. The callback server and prompt can both finish first.
 func waitForCallbackOrManualInput<Value: Sendable>(
     callbacks: OAuthLoginCallbacks, callback: OAuthCallbackServer<Value>?, prompt: OAuthPrompt
 ) async throws -> OAuthCallbackOrManual<Value> {
+    try Task.checkCancellation()
     guard let callback else {
         if let manual = callbacks.onManualCodeInput { return .manual(try await manual() ?? "") }
         return .manual(try await callbacks.onPrompt(prompt))
     }
-    let resolved = LockedState(false)
+    let race = OAuthCallbackRace<OAuthCallbackOrManual<Value>>()
     let manualFailure = LockedState<String?>(nil)
-    return try await withCheckedThrowingContinuation { continuation in
-        func settle(_ result: Result<OAuthCallbackOrManual<Value>, Error>) {
-            if resolved.withLock({ value in if value { return false }; value = true; return true }) {
-                continuation.resume(with: result)
-            }
-        }
-        let manual = Task {
-            do {
-                let input: String
-                if let provider = callbacks.onManualCodeInput {
-                    input = try await provider() ?? ""
-                } else {
-                    input = try await callbacks.onPrompt(prompt)
-                }
-                if await callback.cancel() { settle(.success(.manual(input))) }
-            } catch {
-                manualFailure.withLock { $0 = error.localizedDescription }
-                if await callback.cancel() { settle(.failure(error)) }
-            }
-        }
-        Task {
-            do {
-                if let value = try await callback.wait() {
-                    manual.cancel()
-                    if let message = manualFailure.withLock({ $0 }) {
-                        settle(.failure(OAuthCallbackFailure(message: message)))
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            race.install(continuation)
+            race.add(Task {
+                do {
+                    try Task.checkCancellation()
+                    let input: String
+                    if let provider = callbacks.onManualCodeInput {
+                        input = try await provider() ?? ""
                     } else {
-                        settle(.success(.callback(value)))
+                        input = try await callbacks.onPrompt(prompt)
                     }
+                    if await callback.cancel() { race.finish(.success(.manual(input))) }
+                } catch {
+                    manualFailure.withLock { $0 = error.localizedDescription }
+                    if await callback.cancel() { race.finish(.failure(error)) }
                 }
-            } catch {
-                manual.cancel()
-                settle(.failure(error))
-            }
+            })
+            race.add(Task {
+                do {
+                    if let value = try await callback.wait() {
+                        if let message = manualFailure.withLock({ $0 }) {
+                            race.finish(.failure(OAuthCallbackFailure(message: message)))
+                        } else {
+                            race.finish(.success(.callback(value)))
+                        }
+                    }
+                } catch {
+                    race.finish(.failure(error))
+                }
+            })
         }
+    } onCancel: {
+        race.finish(.failure(CancellationError()))
     }
 }
 #endif

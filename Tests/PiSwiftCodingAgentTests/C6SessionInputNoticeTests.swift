@@ -29,7 +29,7 @@ private func c6SessionFile(_ directory: URL, name: String, id: String, modified:
     #expect(result.map { URL(fileURLWithPath: $0.path).lastPathComponent } == [new.lastPathComponent, old.lastPathComponent])
 }
 
-@Test func cancelledListingThrowsAndPublishesNoLateBatch() async throws {
+@Test(.timeLimit(.minutes(1))) func cancelledListingThrowsAndPublishesNoLateBatch() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("c6-cancel-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
     let folder = root.appendingPathComponent("sessions/project")
@@ -52,7 +52,7 @@ private func c6SessionFile(_ directory: URL, name: String, id: String, modified:
     }
 }
 
-@Test func rpcQueueInputRunsExtensionHandlersForSteerAndFollowUp() async throws {
+@Test(.timeLimit(.minutes(1))) func rpcQueueInputRunsExtensionHandlersForSteerAndFollowUp() async throws {
     let manager = SessionManager.inMemory("/tmp")
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey("anthropic", "test-key")

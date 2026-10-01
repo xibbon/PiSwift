@@ -52,33 +52,6 @@ private func testSDKPaths() -> ExtensionCompiler.SDKPaths? {
     return ExtensionCompiler.resolveSDKPaths()
 }
 
-/// Seed `PI_EXTENSION_SDK_PATH` once for the whole suite. The reload-lifecycle tests
-/// drive `createAgentSession`, which calls `discoverAndLoadExtensions`, which calls
-/// `ExtensionCompiler.resolveSDKPaths()`. From within an xctest bundle the SPM
-/// walk-up doesn't find `.build/<config>` reliably (argv[0] points into the bundle),
-/// so we pin the env var to the SPM build dir up-front. Tests that need to verify
-/// alternative layouts use `ExtensionCompiler.sdkPathsAt(_:)` directly.
-private nonisolated(unsafe) let _seedExtensionSDK: Void = {
-    if let paths = ExtensionCompiler.resolveSDKPaths() {
-        setenv("PI_EXTENSION_SDK_PATH", paths.libPath, 1)
-        return
-    }
-    // Best-effort fallback: walk up from this source file.
-    let filePath = (#filePath as NSString).deletingLastPathComponent
-    var dir = filePath as NSString
-    for _ in 0..<10 {
-        for config in ["debug", "release"] {
-            let candidate = (dir as NSString).appendingPathComponent(".build/\(config)")
-            let dylib = (candidate as NSString).appendingPathComponent("libPiExtensionSDK.dylib")
-            if FileManager.default.fileExists(atPath: dylib) {
-                setenv("PI_EXTENSION_SDK_PATH", candidate, 1)
-                return
-            }
-        }
-        dir = dir.deletingLastPathComponent as NSString
-    }
-}()
-
 private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-ext-test-\(UUID().uuidString)")
@@ -404,7 +377,6 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func reloadAddsExtensionToolToAgentRoster() async throws {
-    _ = _seedExtensionSDK
     guard testSDKPaths() != nil else {
         Issue.record("SDK paths not available")
         return
@@ -453,7 +425,6 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func reloadRemovesToolWhenExtensionDeleted() async throws {
-    _ = _seedExtensionSDK
     guard testSDKPaths() != nil else {
         Issue.record("SDK paths not available")
         return
@@ -959,7 +930,6 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func discoverAndLoadExtensionsCanSkipProjectExtensions() async throws {
-    _ = _seedExtensionSDK
     guard testSDKPaths() != nil else {
         Issue.record("SDK paths not available")
         return
@@ -1218,7 +1188,6 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func createAgentSessionCanSelectExtensionRegisteredDefaultModel() async throws {
-    _ = _seedExtensionSDK
     guard testSDKPaths() != nil else {
         Issue.record("SDK paths not available")
         return
@@ -1263,7 +1232,6 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 }
 
 @Test func createAgentSessionLoadsResourcesDiscoveredByExtension() async throws {
-    _ = _seedExtensionSDK
     guard testSDKPaths() != nil else {
         Issue.record("SDK paths not available")
         return
@@ -1309,7 +1277,6 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     // End-to-end: build a session with the hello-extension fixture, swap it for the
     // event-counter fixture via session.reloadExtensions(), and confirm both the
     // dropped/loaded paths and the live commands tracked the swap.
-    _ = _seedExtensionSDK
     guard testSDKPaths() != nil else {
         Issue.record("SDK paths not available")
         return

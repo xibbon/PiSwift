@@ -57,7 +57,7 @@ private struct FrameHTTPClient: ProviderHTTPClient {
     let data: Data
     func send(_ request: URLRequest) async throws -> ProviderHTTPResponse { ProviderHTTPResponse(statusCode: 200, body: data) }
 }
-@Test func framesRoundTripAuthoritativeResponsesEndEvents() async throws {
+@Test(.timeLimit(.minutes(1))) func framesRoundTripAuthoritativeResponsesEndEvents() async throws {
     let sse = """
     data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg","content":[]}}
 

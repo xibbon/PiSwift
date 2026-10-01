@@ -18,7 +18,7 @@ private func providerTestError(
     .providerRequest(statusCode: statusCode, headers: headers, message: message)
 }
 
-@Test func abortableSleepReturnsPromptlyWhenCancelled() async {
+@Test(.timeLimit(.minutes(1))) func abortableSleepReturnsPromptlyWhenCancelled() async {
     let token = CancellationToken()
     let started = Date()
     let task = Task {
@@ -81,7 +81,7 @@ private func providerTestError(
     }
 }
 
-@Test func providerRetryDriverRetriesTransientFailureAndStopsAtLimit() async throws {
+@Test(.timeLimit(.minutes(1))) func providerRetryDriverRetriesTransientFailureAndStopsAtLimit() async throws {
     let attempts = LockedState(0)
     let value: String = try await retryProviderRequest(
         maxRetries: 2,
@@ -114,7 +114,7 @@ private func providerTestError(
     }
 }
 
-@Test func providerRetryDriverCancellationStopsMidBackoff() async {
+@Test(.timeLimit(.minutes(1))) func providerRetryDriverCancellationStopsMidBackoff() async {
     let token = CancellationToken()
     let attempts = LockedState(0)
     let task = Task {
@@ -139,7 +139,7 @@ private func providerTestError(
     #expect(attempts.withLock { $0 } == 1)
 }
 
-@Test func providerRetryDriverDoesNotRetryAuthenticationFailure() async {
+@Test(.timeLimit(.minutes(1))) func providerRetryDriverDoesNotRetryAuthenticationFailure() async {
     let attempts = LockedState(0)
     do {
         let _: String = try await retryProviderRequest(maxRetries: 3, maxRetryDelayMs: 1) {
@@ -173,7 +173,7 @@ private func providerTestError(
     }
 }
 
-@Test func imageTransportInjectionUsesCustomClientResponse() async {
+@Test(.timeLimit(.minutes(1))) func imageTransportInjectionUsesCustomClientResponse() async {
     let requests = LockedState<[URLRequest]>([])
     let body = Data(#"{"id":"custom-response","choices":[{"message":{"content":"from custom client"}}]}"#.utf8)
     let client = RetryTestHTTPClient { request in
@@ -206,7 +206,7 @@ private func providerTestError(
     })
 }
 
-@Test func openAICompletionsRetriesInjectedTransportBeforeStreaming() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsRetriesInjectedTransportBeforeStreaming() async {
     let attempts = LockedState(0)
     let sse = Data(
         "data: {\"id\":\"chatcmpl-retry\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"retry-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n".utf8

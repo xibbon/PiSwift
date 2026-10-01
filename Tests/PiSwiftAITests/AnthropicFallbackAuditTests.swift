@@ -65,7 +65,7 @@ private func anthropicAuditResult(_ client: AnthropicAuditHTTP, model: Model? = 
         context: normalizeContext(context ?? Context(messages: [.user(UserMessage(content: .text("hello")))])), options: options).result()
 }
 
-@Test(arguments: ["served-model", "foreign-model", "unknown-model", "requested-model"])
+@Test(.timeLimit(.minutes(1)), arguments: ["served-model", "foreign-model", "unknown-model", "requested-model"])
 func anthropicServingModelControlsOutputAndMatchingFallbackCosts(_ serving: String) async throws {
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents(serving: serving))
     let result = await anthropicAuditResult(client)
@@ -84,7 +84,7 @@ func anthropicServingModelControlsOutputAndMatchingFallbackCosts(_ serving: Stri
     #expect(result.usage.totalTokens == 10_000_000)
 }
 
-@Test func anthropicFallbackCostsAreAvailableWhenStreamErrorsEarly() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicFallbackCostsAreAvailableWhenStreamErrorsEarly() async throws {
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents(errorAfterStart: true))
     let result = await anthropicAuditResult(client)
     #expect(result.stopReason == .error)
@@ -97,7 +97,7 @@ func anthropicServingModelControlsOutputAndMatchingFallbackCosts(_ serving: Stri
     #expect(result.diagnostics == nil)
 }
 
-@Test(arguments: ["replace", "absent", "empty", "null"])
+@Test(.timeLimit(.minutes(1)), arguments: ["replace", "absent", "empty", "null"])
 func anthropicFinalTransformationsReplaceRatherThanAppend(_ mode: String) async throws {
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents(transformationMode: mode))
     let result = await anthropicAuditResult(client)
@@ -112,7 +112,7 @@ func anthropicFinalTransformationsReplaceRatherThanAppend(_ mode: String) async 
     #expect(transformations[0]["ignored"] == nil)
 }
 
-@Test func anthropicMidOutputFallbackRetainsPartialTextAndFails() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicMidOutputFallbackRetainsPartialTextAndFails() async throws {
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents(midOutput: true))
     let result = await anthropicAuditResult(client)
     #expect(result.stopReason == .error)
@@ -122,7 +122,7 @@ func anthropicFinalTransformationsReplaceRatherThanAppend(_ mode: String) async 
     #expect(result.diagnostics == nil)
 }
 
-@Test func anthropicManagedWirePayloadKeepsEffortBindingFallbacksAndStrictTools() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicManagedWirePayloadKeepsEffortBindingFallbacksAndStrictTools() async throws {
     let model = anthropicAuditModel()
     let history = AssistantMessage(content: [.text(TextContent(text: "previous"))], api: model.api, provider: model.provider, model: model.id,
         usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0), stopReason: .stop, providerThinkingLevel: "low")
@@ -158,7 +158,7 @@ func anthropicFinalTransformationsReplaceRatherThanAppend(_ mode: String) async 
     #expect(optional["anyOf"] as? [[String: String]] == [["type": "number"], ["type": "null"]])
 }
 
-@Test func anthropicWireHeadersPreserveUserAgentAndBetaOverrides() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicWireHeadersPreserveUserAgentAndBetaOverrides() async throws {
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents())
     _ = await anthropicAuditResult(client)
     #expect(await client.requests.last?.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())

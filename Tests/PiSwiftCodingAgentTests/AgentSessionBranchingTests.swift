@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import PiSwiftCodingAgent
 
-@Test func forkFromSingleMessage() async throws {
+@Test(.timeLimit(.minutes(1))) func forkFromSingleMessage() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -28,7 +28,7 @@ import PiSwiftCodingAgent
     }
 }
 
-@Test func forkInMemory() async throws {
+@Test(.timeLimit(.minutes(1))) func forkInMemory() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession(options: TestSessionOptions(inMemory: true))
@@ -51,7 +51,7 @@ import PiSwiftCodingAgent
     #expect(ctx.session.sessionFile == nil)
 }
 
-@Test func forkFromMiddleOfConversation() async throws {
+@Test(.timeLimit(.minutes(1))) func forkFromMiddleOfConversation() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()

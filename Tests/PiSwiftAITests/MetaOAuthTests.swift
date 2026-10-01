@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TestEnvironmentSupport
 @testable import PiSwiftAI
 
 private actor MetaHTTPFixture {
@@ -48,7 +49,7 @@ private func metaFixtureClient(_ fixture: MetaHTTPFixture) -> MetaOAuthHTTPClien
 
 @Suite("Meta OAuth", .serialized)
 struct MetaOAuthTests {
-    @Test func deviceFlowPendingSlowDownAndMint() async throws {
+    @Test(.timeLimit(.minutes(1))) func deviceFlowPendingSlowDownAndMint() async throws {
         let fixture = MetaHTTPFixture([
             .init(status: 200, body: #"{"device_code":"device-1","user_code":"ABCD","verification_uri":"https://auth.meta.com/enter","verification_uri_complete":"https://auth.meta.com/enter?code=ABCD","interval":1,"expires_in":30}"#),
             .init(status: 400, body: #"{"error":"authorization_pending"}"#),
@@ -83,7 +84,7 @@ struct MetaOAuthTests {
         #expect(progress.contains("Enabling Meta Model API access..."))
     }
 
-    @Test func expiredDeviceCodeRequiresNewLogin() async {
+    @Test(.timeLimit(.minutes(1))) func expiredDeviceCodeRequiresNewLogin() async {
         let fixture = MetaHTTPFixture([
             .init(status: 200, body: #"{"device_code":"device-1","user_code":"ABCD","verification_uri":"https://auth.meta.com/enter","interval":1,"expires_in":10}"#),
             .init(status: 400, body: #"{"error":"expired_token"}"#),
@@ -97,7 +98,7 @@ struct MetaOAuthTests {
         #expect(await fixture.recordedRequests().count == 2)
     }
 
-    @Test func remintsAfterOneDayAndRejectsExpiredIdentity() async throws {
+    @Test(.timeLimit(.minutes(1))) func remintsAfterOneDayAndRejectsExpiredIdentity() async throws {
         let fixture = MetaHTTPFixture([
             .init(status: 200, body: #"{"api_key":"first-key"}"#),
             .init(status: 200, body: #"{"api_key":"second-key"}"#),
@@ -122,7 +123,7 @@ struct MetaOAuthTests {
         #expect(await fixture.recordedRequests().count == 3)
     }
 
-    @Test func missingKeyReportsSetupURL() async {
+    @Test(.timeLimit(.minutes(1))) func missingKeyReportsSetupURL() async {
         let fixture = MetaHTTPFixture([
             .init(status: 200, body: #"{"action_url":"https://api.meta.ai/setup"}"#),
         ])
@@ -134,7 +135,7 @@ struct MetaOAuthTests {
         }
     }
 
-    @Test func environmentKeyAndProviderRegistration() {
+    @Test(.timeLimit(.minutes(1)), .processEnvironment) func environmentKeyAndProviderRegistration() {
         let prior = getenv("META_API_KEY").map { String(cString: $0) }
         setenv("META_API_KEY", "meta-env-key", 1)
         defer {

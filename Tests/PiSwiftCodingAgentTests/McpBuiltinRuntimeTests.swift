@@ -78,7 +78,7 @@ private actor RetryResourceTransport: McpTransport {
     }
 }
 
-@Test func mcpToolNamesExposureAndOutputGuard() async throws {
+@Test(.timeLimit(.minutes(1))) func mcpToolNamesExposureAndOutputGuard() async throws {
     #expect(createMcpToolName(server: "alpha", tool: "search") == "mcp__alpha__search")
     #expect(createMcpToolName(server: "alpha", tool: "a.b") == "mcp__alpha__a_b")
     #expect(createMcpToolName(server: "alpha", tool: "😀") == "mcp__alpha____")

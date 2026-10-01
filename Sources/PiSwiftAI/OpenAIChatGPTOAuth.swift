@@ -62,6 +62,7 @@ private func waitForChatGPTAuthorization(
     callbacks: OAuthLoginCallbacks, callback: OAuthCallbackServer<ChatGPTAuthorizationResult>?,
     state: String, redirectUri: String
 ) async throws -> ChatGPTAuthorizationResult {
+    try Task.checkCancellation()
     let prompt = OAuthPrompt(
         message: "Complete login in your browser, or paste the final redirect URL here:",
         placeholder: redirectUri
@@ -70,32 +71,31 @@ private func waitForChatGPTAuthorization(
         let input = try await callbacks.onPrompt(prompt)
         return try chatGPTManualResult(input, expectedState: state, redirectUri: redirectUri)
     }
-    let resolved = LockedState(false)
-    return try await withCheckedThrowingContinuation { continuation in
-        func settle(_ result: Result<ChatGPTAuthorizationResult, Error>) {
-            if resolved.withLock({ value in if value { return false }; value = true; return true }) {
-                continuation.resume(with: result)
-            }
-        }
-        let manual = Task {
-            do {
-                let input = try await callbacks.onPrompt(prompt)
-                settle(.success(try chatGPTManualResult(input, expectedState: state, redirectUri: redirectUri)))
-            } catch {
-                settle(.failure(error))
-            }
-        }
-        Task {
-            do {
-                if let authorization = try await callback.wait() {
-                    manual.cancel()
-                    settle(.success(authorization))
+    let race = OAuthCallbackRace<ChatGPTAuthorizationResult>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            race.install(continuation)
+            race.add(Task {
+                do {
+                    try Task.checkCancellation()
+                    let input = try await callbacks.onPrompt(prompt)
+                    race.finish(.success(try chatGPTManualResult(input, expectedState: state, redirectUri: redirectUri)))
+                } catch {
+                    race.finish(.failure(error))
                 }
-            } catch {
-                manual.cancel()
-                settle(.failure(error))
-            }
+            })
+            race.add(Task {
+                do {
+                    if let authorization = try await callback.wait() {
+                        race.finish(.success(authorization))
+                    }
+                } catch {
+                    race.finish(.failure(error))
+                }
+            })
         }
+    } onCancel: {
+        race.finish(.failure(CancellationError()))
     }
 }
 #endif

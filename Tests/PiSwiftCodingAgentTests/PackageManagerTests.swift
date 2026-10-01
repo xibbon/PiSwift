@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TestEnvironmentSupport
 @testable import PiSwiftCodingAgent
 
 // MARK: - Helper functions
@@ -28,6 +29,10 @@ private enum MatchMode {
 }
 
 // MARK: - Test fixture
+
+private enum TestCommandError: Error {
+    case unavailable
+}
 
 private final class PackageManagerTestFixture {
     let tempDir: String
@@ -59,6 +64,10 @@ private final class PackageManagerTestFixture {
 
         settingsManager = SettingsManager.inMemory()
         packageManager = DefaultPackageManager(cwd: tempDir, agentDir: agentDir, settingsManager: settingsManager)
+        // Use the existing command seam to prevent credential prompts and npm runs.
+        packageManager.setCommandRunnerForTests { _, _, _ in
+            throw TestCommandError.unavailable
+        }
     }
 
     deinit {
@@ -137,7 +146,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - resolve tests
 
-@Test func resolveReturnsEmptyPathsWhenNoSourcesConfigured() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveReturnsEmptyPathsWhenNoSourcesConfigured() async throws {
     let fixture = try PackageManagerTestFixture()
     let result = try await fixture.packageManager.resolve()
     #expect(result.extensions.isEmpty)
@@ -146,7 +155,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.themes.isEmpty)
 }
 
-@Test func resolveLocalExtensionPathsFromSettings() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveLocalExtensionPathsFromSettings() async throws {
     let fixture = try PackageManagerTestFixture()
     let extPath = try fixture.writeAgentFile("extensions/my-extension.ts", content: "export default function() {}")
     fixture.settingsManager.setExtensionPaths(["extensions/my-extension.ts"])
@@ -155,7 +164,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.extensions.contains { $0.path == extPath && $0.enabled })
 }
 
-@Test func resolveProjectPathsRelativeToPi() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveProjectPathsRelativeToPi() async throws {
     let fixture = try PackageManagerTestFixture()
     let extPath = try fixture.writeFile(".pi/extensions/project-ext.ts", content: "export default function() {}")
     fixture.settingsManager.setProjectExtensionPaths(["extensions/project-ext.ts"])
@@ -167,7 +176,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - resolveExtensionSources tests
 
-@Test func resolveExtensionSourcesResolvesLocalPaths() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveExtensionSourcesResolvesLocalPaths() async throws {
     let fixture = try PackageManagerTestFixture()
     let extPath = try fixture.writeFile("ext.ts", content: "export default function() {}")
 
@@ -176,7 +185,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.extensions.contains { $0.path == extPath && $0.enabled })
 }
 
-@Test func resolveExtensionSourcesHandlesDirectoriesWithPiManifest() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveExtensionSourcesHandlesDirectoriesWithPiManifest() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("my-package")
 
@@ -201,7 +210,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.skills.contains { $0.path.hasSuffix("my-skill/SKILL.md") && $0.enabled })
 }
 
-@Test func malformedManifestResourceArraysDoNotAbortPackageResolution() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func malformedManifestResourceArraysDoNotAbortPackageResolution() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("malformed-package")
     let manifestContent = """
@@ -222,7 +231,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.extensions.contains { $0.path.hasSuffix("extensions/main.ts") && $0.enabled })
 }
 
-@Test func resolveExtensionSourcesHandlesAutoDiscoveryLayout() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveExtensionSourcesHandlesAutoDiscoveryLayout() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("auto-pkg")
     _ = try fixture.writeFile("auto-pkg/extensions/main.ts", content: "export default function() {}")
@@ -233,7 +242,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.themes.contains { $0.path.hasSuffix("dark.json") && $0.enabled })
 }
 
-@Test func autoDiscoveryScansAncestorAgentsSkillsUpToGitRoot() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func autoDiscoveryScansAncestorAgentsSkillsUpToGitRoot() async throws {
     let fixture = try PackageManagerTestFixture()
     let repoRoot = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("repo").path
     let nestedCwd = URL(fileURLWithPath: repoRoot).appendingPathComponent("packages").appendingPathComponent("feature").path
@@ -275,7 +284,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(!result.skills.contains { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == aboveRepoSkillResolved })
 }
 
-@Test func autoDiscoveryScansAncestorAgentsSkillsWithoutGitRepo() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func autoDiscoveryScansAncestorAgentsSkillsWithoutGitRepo() async throws {
     let fixture = try PackageManagerTestFixture()
     let nonRepoRoot = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("non-repo").path
     let nestedCwd = URL(fileURLWithPath: nonRepoRoot).appendingPathComponent("a").appendingPathComponent("b").path
@@ -307,7 +316,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - progress callback tests
 
-@Test func progressCallbackEmitsEvents() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func progressCallbackEmitsEvents() async throws {
     let fixture = try PackageManagerTestFixture()
     let collector = EventCollector()
     fixture.packageManager.setProgressCallback { event in
@@ -325,7 +334,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - source parsing tests
 
-@Test func sourceParsingEmitsProgressEventsOnInstallAttempt() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func sourceParsingEmitsProgressEventsOnInstallAttempt() async throws {
     let fixture = try PackageManagerTestFixture()
     let collector = EventCollector()
     fixture.packageManager.setProgressCallback { event in
@@ -345,22 +354,11 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(collector.events.contains { $0.type == "error" })
 }
 
-@Test func sourceParsingRecognizesGithubURLsWithoutGitPrefix() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func sourceParsingRecognizesGithubURLsWithoutGitPrefix() async throws {
     let fixture = try PackageManagerTestFixture()
     let collector = EventCollector()
     fixture.packageManager.setProgressCallback { event in
         collector.append(event)
-    }
-
-    // Prevent git from prompting for credentials (which blocks the test runner)
-    let previousValue = ProcessInfo.processInfo.environment["GIT_TERMINAL_PROMPT"]
-    setenv("GIT_TERMINAL_PROMPT", "0", 1)
-    defer {
-        if let previousValue {
-            setenv("GIT_TERMINAL_PROMPT", previousValue, 1)
-        } else {
-            unsetenv("GIT_TERMINAL_PROMPT")
-        }
     }
 
     // This should be parsed as a git source, not throw "unsupported"
@@ -374,7 +372,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(collector.events.contains { $0.type == "start" && $0.action == "install" })
 }
 
-@Test func addSourceToSettingsNormalizesLocalUserPackageWithDotPrefix() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func addSourceToSettingsNormalizesLocalUserPackageWithDotPrefix() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("local-package")
 
@@ -390,7 +388,7 @@ private final class CommandRecorder: @unchecked Sendable {
     }
 }
 
-@Test func addSourceToSettingsNormalizesLocalProjectPackageWithDotPrefix() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func addSourceToSettingsNormalizesLocalProjectPackageWithDotPrefix() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("project-local")
 
@@ -408,7 +406,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - Git URL parsing tests
 
-@Test func parseSourceSupportsProtocolGitUrls() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func parseSourceSupportsProtocolGitUrls() async throws {
     let fixture = try PackageManagerTestFixture()
     let parsed = fixture.packageManager.parseSource("ssh://git@github.com/user/repo")
     if case .git(let git) = parsed {
@@ -420,7 +418,7 @@ private final class CommandRecorder: @unchecked Sendable {
     }
 }
 
-@Test func parseSourceSupportsGitPrefixShorthandUrls() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func parseSourceSupportsGitPrefixShorthandUrls() async throws {
     let fixture = try PackageManagerTestFixture()
     let parsed = fixture.packageManager.parseSource("git:git@github.com:user/repo")
     if case .git(let git) = parsed {
@@ -434,7 +432,7 @@ private final class CommandRecorder: @unchecked Sendable {
     }
 }
 
-@Test func parseSourceSupportsGitPrefixShorthandWithRef() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func parseSourceSupportsGitPrefixShorthandWithRef() async throws {
     let fixture = try PackageManagerTestFixture()
     let parsed = fixture.packageManager.parseSource("git:git@github.com:user/repo@v1.0.0")
     if case .git(let git) = parsed {
@@ -448,7 +446,7 @@ private final class CommandRecorder: @unchecked Sendable {
     }
 }
 
-@Test func parseSourceRejectsShorthandWithoutGitPrefix() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func parseSourceRejectsShorthandWithoutGitPrefix() async throws {
     let fixture = try PackageManagerTestFixture()
     let parsed = fixture.packageManager.parseSource("git@github.com:user/repo.git")
     if case .local(let local) = parsed {
@@ -465,7 +463,7 @@ private final class CommandRecorder: @unchecked Sendable {
     }
 }
 
-@Test func packageIdentityNormalizesGitUrls() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func packageIdentityNormalizesGitUrls() async throws {
     let fixture = try PackageManagerTestFixture()
     let sshIdentity = fixture.packageManager.getPackageIdentity("git:git@github.com:user/repo")
     let httpsIdentity = fixture.packageManager.getPackageIdentity("https://github.com/user/repo")
@@ -473,14 +471,14 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(sshIdentity == "git:github.com/user/repo")
 }
 
-@Test func packageIdentityIgnoresRefs() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func packageIdentityIgnoresRefs() async throws {
     let fixture = try PackageManagerTestFixture()
     let withRef = fixture.packageManager.getPackageIdentity("git:git@github.com:user/repo@v1.0.0")
     let withoutRef = fixture.packageManager.getPackageIdentity("git:git@github.com:user/repo")
     #expect(withRef == withoutRef)
 }
 
-@Test func parseSourceSupportsEnterpriseHosts() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func parseSourceSupportsEnterpriseHosts() async throws {
     let fixture = try PackageManagerTestFixture()
     let parsed = fixture.packageManager.parseSource("git:github.tools.sap/agent-dev/sap-pie@v1")
     if case .git(let git) = parsed {
@@ -494,21 +492,11 @@ private final class CommandRecorder: @unchecked Sendable {
     }
 }
 
-@Test func sshInstallEmitsStartEvent() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func sshInstallEmitsStartEvent() async throws {
     let fixture = try PackageManagerTestFixture()
     let collector = EventCollector()
     fixture.packageManager.setProgressCallback { event in
         collector.append(event)
-    }
-
-    let previousValue = ProcessInfo.processInfo.environment["GIT_TERMINAL_PROMPT"]
-    setenv("GIT_TERMINAL_PROMPT", "0", 1)
-    defer {
-        if let previousValue {
-            setenv("GIT_TERMINAL_PROMPT", previousValue, 1)
-        } else {
-            unsetenv("GIT_TERMINAL_PROMPT")
-        }
     }
 
     do {
@@ -520,21 +508,11 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(collector.events.contains { $0.type == "start" && $0.action == "install" })
 }
 
-@Test func sshProtocolInstallEmitsStartEvent() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func sshProtocolInstallEmitsStartEvent() async throws {
     let fixture = try PackageManagerTestFixture()
     let collector = EventCollector()
     fixture.packageManager.setProgressCallback { event in
         collector.append(event)
-    }
-
-    let previousValue = ProcessInfo.processInfo.environment["GIT_TERMINAL_PROMPT"]
-    setenv("GIT_TERMINAL_PROMPT", "0", 1)
-    defer {
-        if let previousValue {
-            setenv("GIT_TERMINAL_PROMPT", previousValue, 1)
-        } else {
-            unsetenv("GIT_TERMINAL_PROMPT")
-        }
     }
 
     do {
@@ -548,7 +526,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - pattern filtering in pi manifest tests
 
-@Test func manifestSupportGlobPatternsInExtensions() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func manifestSupportGlobPatternsInExtensions() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("manifest-pkg")
     _ = try fixture.writeFile("manifest-pkg/extensions/local.ts", content: "export default function() {}")
@@ -570,7 +548,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(!result.extensions.contains { $0.path.hasSuffix("skip.ts") })
 }
 
-@Test func manifestSupportGlobPatternsInSkills() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func manifestSupportGlobPatternsInSkills() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("skill-manifest-pkg")
     _ = try fixture.writeFile(
@@ -598,7 +576,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - multi-file extension discovery tests
 
-@Test func multiFileExtensionDiscoveryOnlyLoadIndexTs() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func multiFileExtensionDiscoveryOnlyLoadIndexTs() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("multifile-pkg")
     _ = try fixture.writeFile(
@@ -626,7 +604,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(!result.extensions.contains { $0.path.hasSuffix("agents.ts") })
 }
 
-@Test func multiFileExtensionDiscoveryHandlesMixedTopLevelAndSubdirs() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func multiFileExtensionDiscoveryHandlesMixedTopLevelAndSubdirs() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("mixed-pkg")
 
@@ -655,7 +633,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.extensions.filter { $0.enabled }.count == 2)
 }
 
-@Test func multiFileExtensionDiscoverySkipsSubdirsWithoutIndexOrManifest() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func multiFileExtensionDiscoverySkipsSubdirsWithoutIndexOrManifest() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("no-entry-pkg")
 
@@ -675,7 +653,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - Package source metadata tests
 
-@Test func resolvedResourcesContainCorrectMetadata() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolvedResourcesContainCorrectMetadata() async throws {
     let fixture = try PackageManagerTestFixture()
     let extPath = try fixture.writeAgentFile("extensions/test.ts", content: "export default function() {}")
     fixture.settingsManager.setExtensionPaths(["extensions/test.ts"])
@@ -687,7 +665,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(resource?.metadata.origin == "top-level")
 }
 
-@Test func projectResourcesHaveProjectScope() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func projectResourcesHaveProjectScope() async throws {
     let fixture = try PackageManagerTestFixture()
     let extPath = try fixture.writeFile(".pi/extensions/project.ts", content: "export default function() {}")
     fixture.settingsManager.setProjectExtensionPaths(["extensions/project.ts"])
@@ -700,7 +678,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - Package resolution with packages tests
 
-@Test func resolvePackagesFromSettingsWithManifest() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func resolvePackagesFromSettingsWithManifest() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("test-package")
     _ = try fixture.writeFile("test-package/extensions/pkg-ext.ts", content: "export default function() {}")
@@ -721,7 +699,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.extensions.contains { $0.path.hasSuffix("pkg-ext.ts") && $0.enabled })
 }
 
-@Test func offlineResolveSkipsMissingNpmPackageWithoutNetworkCommand() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func offlineResolveSkipsMissingNpmPackageWithoutNetworkCommand() async throws {
     let fixture = try PackageManagerTestFixture()
     fixture.settingsManager.setProjectPackages([.simple("npm:missing-package")])
     let manager = DefaultPackageManager(
@@ -741,7 +719,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(recorder.calls.isEmpty)
 }
 
-@Test func offlineResolveUsesInstalledUnpinnedNpmPackageWithoutCheckingLatest() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func offlineResolveUsesInstalledUnpinnedNpmPackageWithoutCheckingLatest() async throws {
     let fixture = try PackageManagerTestFixture()
     let packageRoot = try fixture.createDir(".pi/npm/node_modules/test-package")
     let manifestContent = """
@@ -777,7 +755,7 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(recorder.calls.isEmpty)
 }
 
-@Test func offlineInstallAndUpdateRejectNetworkPackageOperations() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func offlineInstallAndUpdateRejectNetworkPackageOperations() async throws {
     let fixture = try PackageManagerTestFixture()
     let manager = DefaultPackageManager(
         cwd: fixture.tempDir,
@@ -810,7 +788,7 @@ private final class CommandRecorder: @unchecked Sendable {
 
 // MARK: - getInstalledPath tests
 
-@Test func getInstalledPathReturnsNilForNonexistent() async throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func getInstalledPathReturnsNilForNonexistent() async throws {
     let fixture = try PackageManagerTestFixture()
     let path = fixture.packageManager.getInstalledPath("npm:nonexistent", scope: "user")
     #expect(path == nil)

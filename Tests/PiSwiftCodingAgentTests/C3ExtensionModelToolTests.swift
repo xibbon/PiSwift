@@ -17,7 +17,7 @@ private func c3ExtensionReply(_ model: Model) -> AssistantMessageEventStream {
     return stream
 }
 
-@Test(arguments: [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
 func c3ExtensionRegistryStreamsWithResolvedAuth(simple: Bool) async throws {
     let auth = AuthStorage(":memory:")
     let registry = ModelRegistry(auth)

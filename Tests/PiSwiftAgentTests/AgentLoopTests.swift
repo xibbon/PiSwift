@@ -3,7 +3,7 @@ import Testing
 import PiSwiftAI
 import PiSwiftAgent
 
-@Test func agentLoopEmitsEvents() async {
+@Test(.timeLimit(.minutes(1))) func agentLoopEmitsEvents() async {
     let context = testAgentContext(systemPrompt: "You are helpful.", messages: [], tools: [])
     let userPrompt = createUserMessage("Hello")
 
@@ -49,7 +49,7 @@ import PiSwiftAgent
     #expect(eventTypes.contains("agent_end"))
 }
 
-@Test func customMessagesWithConverter() async {
+@Test(.timeLimit(.minutes(1))) func customMessagesWithConverter() async {
     let notification = AgentMessage.custom(AgentCustomMessage(role: "notification", payload: AnyCodable("note")))
 
     let context = testAgentContext(systemPrompt: "You are helpful.", messages: [notification], tools: [])
@@ -81,7 +81,7 @@ import PiSwiftAgent
     #expect(converted.withLock { $0.map(\.role) } == ["system", "user"])
 }
 
-@Test func transformContextBeforeConvert() async {
+@Test(.timeLimit(.minutes(1))) func transformContextBeforeConvert() async {
     let context = testAgentContext(
         systemPrompt: "You are helpful.",
         messages: [
@@ -126,7 +126,7 @@ import PiSwiftAgent
     #expect(converted.withLock { $0.count } == 2)
 }
 
-@Test func toolCallsAndResults() async {
+@Test(.timeLimit(.minutes(1))) func toolCallsAndResults() async {
     let executed = LockedState<[String]>([])
     let tool = AgentTool(
         label: "Echo",
@@ -179,7 +179,7 @@ import PiSwiftAgent
     }
 }
 
-@Test func lengthTruncatedToolCallsFailWithoutExecuting() async {
+@Test(.timeLimit(.minutes(1))) func lengthTruncatedToolCallsFailWithoutExecuting() async {
     let executed = LockedState<[String]>([])
     let tool = AgentTool(
         label: "Echo",
@@ -230,7 +230,7 @@ import PiSwiftAgent
 
 /// v0.61.1 behavior: steering messages are delivered AFTER all tool calls
 /// complete in the current turn (they no longer skip remaining tools).
-@Test func steeringMessagesDeliveredAfterAllToolCalls() async {
+@Test(.timeLimit(.minutes(1))) func steeringMessagesDeliveredAfterAllToolCalls() async {
     let executed = LockedState<[String]>([])
     let tool = AgentTool(
         label: "Echo",
@@ -353,7 +353,7 @@ import PiSwiftAgent
     }
 }
 
-@Test func runAgentLoopContinueValidationThrowsInsteadOfCrashing() async {
+@Test(.timeLimit(.minutes(1))) func runAgentLoopContinueValidationThrowsInsteadOfCrashing() async {
     let emptyContext = AgentContext(messages: [], tools: [])
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
 
@@ -375,7 +375,7 @@ import PiSwiftAgent
     }
 }
 
-@Test func agentLoopContinueWithExistingContext() async throws {
+@Test(.timeLimit(.minutes(1))) func agentLoopContinueWithExistingContext() async throws {
     let userMessage = createUserMessage("Hello")
     let context = testAgentContext(systemPrompt: "You are helpful.", messages: [userMessage], tools: [])
     let config = AgentLoopConfig(model: createModel(), convertToLlm: identityConverter)
@@ -450,7 +450,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     return stream
 }
 
-@Test func agentLoopContinueWithCustomMessageAsLast() async throws {
+@Test(.timeLimit(.minutes(1))) func agentLoopContinueWithCustomMessageAsLast() async throws {
     // Custom message that will be converted to user message by convertToLlm
     let customMessage = AgentMessage.custom(AgentCustomMessage(role: "hook", payload: AnyCodable("Hook content")))
 
@@ -495,7 +495,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(converted.withLock { $0.map(\.role) } == ["system", "user"])
 }
 
-@Test func followUpMessagesProcessed() async {
+@Test(.timeLimit(.minutes(1))) func followUpMessagesProcessed() async {
     let context = testAgentContext(systemPrompt: "", messages: [], tools: [])
     let userPrompt = createUserMessage("start")
 
@@ -577,7 +577,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(followUpEvent != nil)
 }
 
-@Test func shouldStopAfterTurnSkipsQueuedFollowUps() async {
+@Test(.timeLimit(.minutes(1))) func shouldStopAfterTurnSkipsQueuedFollowUps() async {
     let context = testAgentContext(systemPrompt: "", messages: [], tools: [])
     let userPrompt = createUserMessage("start")
 
@@ -624,7 +624,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 // MARK: - v0.54.0→v0.61.1 new tests
 
 /// Parallel tool execution: tools execute concurrently but results emit in source order.
-@Test func parallelToolExecutionEmitsResultsInSourceOrder() async {
+@Test(.timeLimit(.minutes(1))) func parallelToolExecutionEmitsResultsInSourceOrder() async {
     let firstReleased = LockedState(false)
     let parallelObserved = LockedState(false)
     let firstContinuation = LockedState<CheckedContinuation<Void, Never>?>(nil)
@@ -709,7 +709,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(toolResultIds == ["tool-1", "tool-2"])
 }
 
-@Test func afterToolCallThrowBecomesErrorToolResult() async {
+@Test(.timeLimit(.minutes(1))) func afterToolCallThrowBecomesErrorToolResult() async {
     struct HookFailure: LocalizedError {
         var errorDescription: String? { "after hook failed" }
     }
@@ -772,7 +772,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     }
 }
 
-@Test func lateToolProgressAfterResultIsSuppressed() async {
+@Test(.timeLimit(.minutes(1))) func lateToolProgressAfterResultIsSuppressed() async {
     let capturedUpdate = LockedState<AgentToolUpdateCallback?>(nil)
     let tool = AgentTool(
         label: "Reporter",
@@ -832,7 +832,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 }
 
 /// beforeToolCall hook can block tool execution.
-@Test func beforeToolCallBlocksExecution() async {
+@Test(.timeLimit(.minutes(1))) func beforeToolCallBlocksExecution() async {
     let executed = LockedState<[String]>([])
     let tool = AgentTool(
         label: "Echo",
@@ -903,7 +903,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 }
 
 /// afterToolCall hook can override tool result content.
-@Test func afterToolCallOverridesResult() async {
+@Test(.timeLimit(.minutes(1))) func afterToolCallOverridesResult() async {
     let tool = AgentTool(
         label: "Echo",
         name: "echo",
@@ -976,7 +976,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     }.first
 }
 
-@Test func steeringMessagesAtLoopStart() async {
+@Test(.timeLimit(.minutes(1))) func steeringMessagesAtLoopStart() async {
     // Test that steering messages are checked at the start of the loop
     let context = testAgentContext(systemPrompt: "", messages: [], tools: [])
     let userPrompt = createUserMessage("start")
@@ -1028,7 +1028,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 }
 
 /// v0.64.0: AgentTool.prepareArguments runs before schema validation and can rewrite raw args.
-@Test func prepareArgumentsRewritesArgsBeforeValidation() async {
+@Test(.timeLimit(.minutes(1))) func prepareArgumentsRewritesArgsBeforeValidation() async {
     let receivedValue = LockedState<String?>(nil)
     let tool = AgentTool(
         label: "Echo",
@@ -1088,7 +1088,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 
 /// v0.69.0: when every finalized result in a tool batch sets terminate=true,
 /// the loop skips the automatic follow-up LLM turn.
-@Test func terminateHintSkipsFollowUpTurn() async {
+@Test(.timeLimit(.minutes(1))) func terminateHintSkipsFollowUpTurn() async {
     let tool = AgentTool(
         label: "Final",
         name: "final",
@@ -1139,7 +1139,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     #expect(llmCallCount.withLock { $0 } == 1)
 }
 
-@Test func toolResultTerminateHintSkipsFollowUpTurn() async {
+@Test(.timeLimit(.minutes(1))) func toolResultTerminateHintSkipsFollowUpTurn() async {
     let tool = AgentTool(
         label: "Final",
         name: "final",
@@ -1183,7 +1183,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 
 /// v0.69.0: terminate is only honored when EVERY finalized result opts in.
 /// One non-terminating result keeps the follow-up turn.
-@Test func terminateRequiresAllResultsToOptIn() async {
+@Test(.timeLimit(.minutes(1))) func terminateRequiresAllResultsToOptIn() async {
     let tool = AgentTool(
         label: "Echo",
         name: "echo",

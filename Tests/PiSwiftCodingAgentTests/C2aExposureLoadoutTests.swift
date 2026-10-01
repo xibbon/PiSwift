@@ -88,7 +88,7 @@ private func c2aExposureSession() -> AgentSession {
     #expect(system.toolsAdded?.map(\.name).contains("model") == true)
 }
 
-@Test func c2aNestedCallPersistsRecordUsageAndParentEvents() async throws {
+@Test(.timeLimit(.minutes(1))) func c2aNestedCallPersistsRecordUsageAndParentEvents() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let count = LockedState(0)
     let sessionBox = LockedState<AgentSession?>(nil)

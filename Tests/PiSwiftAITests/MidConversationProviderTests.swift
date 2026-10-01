@@ -49,7 +49,7 @@ private func captureMidBody(_ api: Api, compat: OpenAICompat?, context: Transcri
     return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 }
 
-@Test(arguments: [Api.openAICompletions, .openAIResponses, .mistralConversations])
+@Test(.timeLimit(.minutes(1)), arguments: [Api.openAICompletions, .openAIResponses, .mistralConversations])
 func midConversationSystemReplayByCompat(_ api: Api) async throws {
     let context = midContext([midSystem("Later")])
     let collapsed = try await captureMidBody(api, compat: nil, context: context)
@@ -66,7 +66,7 @@ func midConversationSystemReplayByCompat(_ api: Api) async throws {
     #expect((collapsedMessages.first?["content"] as? String)?.contains("Base\n\nLater") == true)
 }
 
-@Test(arguments: [Api.anthropicMessages, .openAICompletions, .openAIResponses, .mistralConversations])
+@Test(.timeLimit(.minutes(1)), arguments: [Api.anthropicMessages, .openAICompletions, .openAIResponses, .mistralConversations])
 func midConversationSectionUpdateFraming(_ api: Api) async throws {
     let update = Message.system(SystemMessage(content: .text("Later"),
         sections: SystemPromptSections([("rules", "New rule"), ("old", nil)]), timestamp: 1))
@@ -82,7 +82,7 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect(text == "Later\n\nUpdated system prompt section \"rules\":\n\nNew rule\n\nRemoved system prompt section \"old\".")
 }
 
-@Test func midConversationCompletionsToolPlacementAndFallback() async throws {
+@Test(.timeLimit(.minutes(1))) func midConversationCompletionsToolPlacementAndFallback() async throws {
     let compat = OpenAICompat(supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true)
     let added = try await captureMidBody(.openAICompletions, compat: compat,
         context: midContext([midSystem("Later", added: [midTool("search")])]))
@@ -97,7 +97,7 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect((redefined["tools"] as? [[String: Any]])?.count == 1)
 }
 
-@Test func midConversationMistralUsesCurrentTools() async throws {
+@Test(.timeLimit(.minutes(1))) func midConversationMistralUsesCurrentTools() async throws {
     let context = midContext([
         midSystem("", added: [midTool("search")]),
         midSystem("", removed: [ToolReference(name: "read")])
@@ -109,7 +109,7 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect(tools.count == 1)
 }
 
-@Test func midConversationResponsesToolPlacementAndFallback() async throws {
+@Test(.timeLimit(.minutes(1))) func midConversationResponsesToolPlacementAndFallback() async throws {
     let compat = OpenAICompat(supportsMidConvoSystemMessages: true, supportsAdditionalTools: true)
     let added = try await captureMidBody(.openAIResponses, compat: compat,
         context: midContext([midSystem("Later", added: [midTool("search")])]))
@@ -130,7 +130,7 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect(searched.contains { $0["type"] as? String == "tool_search_output" })
 }
 
-@Test func midConversationAnthropicNativeToolBlocksAndFallback() async throws {
+@Test(.timeLimit(.minutes(1))) func midConversationAnthropicNativeToolBlocksAndFallback() async throws {
     let compat = OpenAICompat(supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true)
     let context = midContext([
         midSystem("Later", added: [midTool("search")], removed: [ToolReference(name: "read")])
@@ -165,7 +165,7 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect((redefined["messages"] as? [[String: Any]])?.count == 1)
 }
 
-@Test func midConversationSystemWaitsForToolResultsOnWire() async throws {
+@Test(.timeLimit(.minutes(1))) func midConversationSystemWaitsForToolResultsOnWire() async throws {
     let model = midModel(.openAICompletions)
     let assistant = AssistantMessage(content: [.toolCall(ToolCall(id: "call", name: "read", arguments: [:]))],
         api: model.api, provider: model.provider, model: model.id,

@@ -46,7 +46,7 @@ private actor CopilotRetryState {
     }
 }
 
-@Test func copilotRefreshDoesNotRetryCatalogThrottle() async throws {
+@Test(.timeLimit(.minutes(1))) func copilotRefreshDoesNotRetryCatalogThrottle() async throws {
     let state = CopilotRetryState()
     let response = try await copilotRateLimitRetry(signal: nil, maxRetries: 0, maxElapsedMs: 0,
         sleep: { delay, _ in await state.sleep(delay) },
@@ -57,7 +57,7 @@ private actor CopilotRetryState {
     #expect(await state.timeouts == [5000])
 }
 
-@Test func copilotPolicyRetriesAfterServerDelay() async throws {
+@Test(.timeLimit(.minutes(1))) func copilotPolicyRetriesAfterServerDelay() async throws {
     let state = CopilotRetryState()
     let response = try await copilotRateLimitRetry(signal: nil, maxRetries: 2, maxElapsedMs: 5000,
         now: { 0 }, sleep: { delay, _ in await state.sleep(delay) },
@@ -67,7 +67,7 @@ private actor CopilotRetryState {
     #expect(await state.delays == [1000])
 }
 
-@Test func copilotStopsWhenRetryExceedsBudget() async throws {
+@Test(.timeLimit(.minutes(1))) func copilotStopsWhenRetryExceedsBudget() async throws {
     let state = CopilotRetryState()
     let response = try await copilotRateLimitRetry(signal: nil, maxRetries: 2, maxElapsedMs: 5000,
         now: { 0 }, sleep: { delay, _ in await state.sleep(delay) },
@@ -77,7 +77,7 @@ private actor CopilotRetryState {
     #expect(await state.delays == [])
 }
 
-@Test func copilotLimitsRetriesAndUsesExponentialDelay() async throws {
+@Test(.timeLimit(.minutes(1))) func copilotLimitsRetriesAndUsesExponentialDelay() async throws {
     let state = CopilotRetryState()
     let response = try await copilotRateLimitRetry(signal: nil, maxRetries: 2, maxElapsedMs: 5000,
         now: { 0 }, sleep: { delay, _ in await state.sleep(delay) },
@@ -87,7 +87,7 @@ private actor CopilotRetryState {
     #expect(await state.delays == [500, 1000])
 }
 
-@Test func copilotDoesNotRetryOtherStatuses() async throws {
+@Test(.timeLimit(.minutes(1))) func copilotDoesNotRetryOtherStatuses() async throws {
     let state = CopilotRetryState()
     let response = try await copilotRateLimitRetry(signal: nil, maxRetries: 2, maxElapsedMs: 5000,
         request: { await state.response(timeout: $0, successAfter: 99, status: 500) })
@@ -95,7 +95,7 @@ private actor CopilotRetryState {
     #expect(await state.attempts == 1)
 }
 
-@Test func copilotPolicyBatchIsSequentialAndStopsOnRateLimit() async throws {
+@Test(.timeLimit(.minutes(1))) func copilotPolicyBatchIsSequentialAndStopsOnRateLimit() async throws {
     let state = CopilotRetryState()
     let enabled = try await enableGitHubCopilotModels(["one", "two", "three", "four"], signal: nil) {
         try await state.enable($0, throwsOn: "three", failsOn: "one")
@@ -113,7 +113,7 @@ private actor CopilotRetryState {
     #expect(copilotRetryDelayMs(retryAfter: "Infinity", retry: 0, now: 0) == nil)
 }
 
-@Test func copilotRetryPropagatesCancellation() async {
+@Test(.timeLimit(.minutes(1))) func copilotRetryPropagatesCancellation() async {
     let signal = CancellationToken()
     signal.cancel()
     await #expect(throws: OAuthError.self) {

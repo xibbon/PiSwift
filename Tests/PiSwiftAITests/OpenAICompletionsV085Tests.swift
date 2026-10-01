@@ -94,7 +94,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     return try #require(messages.first { $0["role"] as? String == "assistant" })
 }
 
-@Test func completions085PreservesEncryptedReasoningInThinkingSignature() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085PreservesEncryptedReasoningInThinkingSignature() async throws {
     let detail: [String: Any] = ["type": "reasoning.encrypted", "id": "call_1", "data": "encrypted-signature"]
     let frames = try completions085Frame(["reasoning_details": [detail]]) + completions085ToolFrame() + completions085Frame([:], finish: "tool_calls")
     let client = Completions085Client(frames: frames)
@@ -112,7 +112,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect((replay["reasoning_details"] as? [[String: Any]])?.count == 1)
 }
 
-@Test func completions085ReplaysLegacyEncryptedToolSignatures() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085ReplaysLegacyEncryptedToolSignatures() async throws {
     let signature = #"{"type":"reasoning.encrypted","id":"call_1","data":"encrypted-signature"}"#
     let model = completions085Model()
     let message = AssistantMessage(content: [.toolCall(ToolCall(id: "call_1", name: "read", arguments: [:], thoughtSignature: signature))],
@@ -122,7 +122,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(details.first?["data"] as? String == "encrypted-signature")
 }
 
-@Test func completions085PreservesSignedTextAndSummaryOrder() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085PreservesSignedTextAndSummaryOrder() async throws {
     let details: [[String: Any]] = [
         ["type": "reasoning.text", "text": "I should call read.", "signature": "sha256:signed-text", "id": "text-1", "format": "anthropic-claude-v1", "index": 0],
         ["type": "reasoning.encrypted", "id": "call_1", "data": "opaque"],
@@ -141,7 +141,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect((replay["reasoning_details"] as? [[String: Any]])?.count == 3)
 }
 
-@Test func completions085MergesConsecutiveReasoningDetails() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085MergesConsecutiveReasoningDetails() async throws {
     let details: [[String: Any]] = [
         ["type": "reasoning.text", "text": "The", "index": 0],
         ["type": "reasoning.text", "text": " user wants the time.", "signature": "sha256:text", "format": "openai-responses-v1", "index": 0],
@@ -176,7 +176,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect((replay["reasoning_details"] as? [[String: Any]])?.count == 4)
 }
 
-@Test func completions085FinalizesReasoningMetadataOnError() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085FinalizesReasoningMetadataOnError() async throws {
     let detail: [String: Any] = ["type": "reasoning.encrypted", "data": "opaque"]
     let client = Completions085Client(frames: try completions085Frame(["reasoning_details": [detail]]), failAfterBody: true)
     let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
@@ -185,7 +185,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(try completions085Details(result) == [detail.mapValues(AnyCodable.init)])
 }
 
-@Test func completions085RejectsInvalidReasoningDetailsAndRawFieldNames() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085RejectsInvalidReasoningDetailsAndRawFieldNames() async throws {
     let invalid: [Any] = [NSNull(), ["type": "reasoning.text", "text": 42],
         ["type": "reasoning.text", "text": "bad", "index": true],
         ["type": "reasoning.encrypted", "data": "bad", "format": NSNull()],
@@ -200,7 +200,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(replay["arbitrary_field"] == nil)
 }
 
-@Test func completions085PriorityIsOptionalAndPreservesZero() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085PriorityIsOptionalAndPreservesZero() async throws {
     for value in [10, 0, -1] {
         var compat = OpenAICompat()
         compat.vllmPriority = value
@@ -211,7 +211,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(payload["priority"] == nil)
 }
 
-@Test func completions085SupportsAllThinkingBudgetFields() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085SupportsAllThinkingBudgetFields() async throws {
     for field in [ThinkingTokenBudgetField.thinkingTokenBudget, .thinkingBudget, .thinkingBudgetTokens] {
         var compat = OpenAICompat(thinkingFormat: .qwen)
         compat.thinkingTokenBudgetField = field
@@ -224,7 +224,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     }
 }
 
-@Test func completions085ThinkingBudgetFieldOverridesAlias() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085ThinkingBudgetFieldOverridesAlias() async throws {
     var compat = OpenAICompat(thinkingFormat: .zai, supportsThinkingTokenBudget: true)
     compat.thinkingTokenBudgetField = .thinkingBudget
     let payload = try await completions085Capture(model: completions085Model(compat: compat),
@@ -233,7 +233,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(payload["thinking_token_budget"] == nil)
 }
 
-@Test func completions085ThinkingBudgetDefaultsClampsAndOff() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085ThinkingBudgetDefaultsClampsAndOff() async throws {
     let model = completions085Model(compat: OpenAICompat(thinkingFormat: .zai, supportsThinkingTokenBudget: true))
     for level in [ThinkingLevel.xhigh, .max] {
         let payload = try await completions085Capture(model: model,
@@ -250,7 +250,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(unset["thinking_token_budget"] == nil)
 }
 
-@Test func completions085ChatTemplatesUseSameBudgetAsTopLevel() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085ChatTemplatesUseSameBudgetAsTopLevel() async throws {
     for format in [OpenAICompatThinkingFormat.chatTemplate, .baseten] {
         let values: [String: ChatTemplateKwargValue] = [
             "enable_thinking": .variable(.thinkingEnabled), "thinking_budget": .variable(.thinkingBudget),
@@ -274,13 +274,13 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     }
 }
 
-@Test func completions085ToolChoiceIsSentWithoutTools() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085ToolChoiceIsSentWithoutTools() async throws {
     let payload = try await completions085Capture(options: OpenAICompletionsOptions(apiKey: "test", toolChoice: OpenAIToolChoice.none))
     #expect(payload["tool_choice"] as? String == "none")
     #expect(payload["tools"] == nil)
 }
 
-@Test func completions085SimpleToolChoiceIsForwarded() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085SimpleToolChoiceIsForwarded() async throws {
     let client = Completions085Client(frames: try completions085Frame([:], finish: "stop"))
     let result = try await streamSimple(model: completions085Model(), context: Context(messages: [.user(UserMessage(content: .text("Hi")))]),
         options: SimpleStreamOptions(apiKey: "test", httpClient: client, toolChoice: ToolChoice.none)).result()
@@ -292,7 +292,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(payload["tools"] == nil)
 }
 
-@Test func completions085DeepSeekUsesMaxTokensForMixedCaseURLs() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085DeepSeekUsesMaxTokensForMixedCaseURLs() async throws {
     for url in ["https://api.deepseek.com", "https://API.DeepSeek.COM"] {
         let model = completions085Model(provider: "custom-deepseek", baseUrl: url)
         let payload = try await completions085Capture(model: model, options: OpenAICompletionsOptions(maxTokens: 123, apiKey: "test"))
@@ -301,7 +301,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     }
 }
 
-@Test func completions085TopLevelCachedTokensAreCacheReads() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085TopLevelCachedTokensAreCacheReads() async throws {
     let client = Completions085Client(frames: try completions085Frame([:], finish: "stop",
         usage: ["prompt_tokens": 100, "completion_tokens": 5, "cached_tokens": 40]))
     let result = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
@@ -311,7 +311,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(result.usage.totalTokens == 105)
 }
 
-@Test func completions085OpenRouterMandatoryReasoningRemainsEnabled() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085OpenRouterMandatoryReasoningRemainsEnabled() async throws {
     let model = completions085Model(thinkingLevelMap: [.off: nil, .low: "low", .high: "high", .max: "max"])
     let background = try await completions085Capture(model: model)
     #expect(background["reasoning"] == nil)
@@ -321,7 +321,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect((optional["reasoning"] as? [String: Any])?["effort"] as? String == "none")
 }
 
-@Test func completions085UserAgentAllowsHeaderOverridesAndDeletion() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085UserAgentAllowsHeaderOverridesAndDeletion() async throws {
     for override in ["custom-agent", ""] {
         let model = completions085Model(headers: ["User-Agent": "model-agent"])
         let client = Completions085Client(frames: try completions085Frame([:], finish: "stop"))
@@ -338,7 +338,7 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     #expect(request.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
 }
 
-@Test func completions085StrictSchemaConvertsOptionalProperties() async throws {
+@Test(.timeLimit(.minutes(1))) func completions085StrictSchemaConvertsOptionalProperties() async throws {
     let tool = AITool(name: "read", description: "Read a file", parameters: [
         "type": AnyCodable("object"), "properties": AnyCodable(["path": ["type": "string"]]),
     ], constrainedSampling: .jsonSchema(strict: .require))

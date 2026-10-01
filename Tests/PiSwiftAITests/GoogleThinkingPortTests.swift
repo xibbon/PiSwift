@@ -103,7 +103,7 @@ private func googlePortResult(client: GooglePortHTTP, vertex: Bool, headers: Pro
         options: GoogleOptions(apiKey: "test", httpClient: client, headers: headers)).result()
 }
 
-@Test(arguments: [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
 func googleRawErrorReasonsWithoutContent(_ vertex: Bool) async throws {
     let reason = vertex ? "SAFETY" : "MALFORMED_FUNCTION_CALL"
     let client = try GooglePortHTTP(finish: reason, includeParts: false)
@@ -113,7 +113,7 @@ func googleRawErrorReasonsWithoutContent(_ vertex: Bool) async throws {
     #expect(result.errorMessage == "Provider stopped with: \(reason)")
 }
 
-@Test(arguments: [false, true], ["MAX_TOKENS", "STOP"])
+@Test(.timeLimit(.minutes(1)), arguments: [false, true], ["MAX_TOKENS", "STOP"])
 func googleToolCallsPreserveRawStopAndLength(_ vertex: Bool, _ reason: String) async throws {
     let client = try GooglePortHTTP(finish: reason, tool: true)
     let result = await googlePortResult(client: client, vertex: vertex)
@@ -122,7 +122,7 @@ func googleToolCallsPreserveRawStopAndLength(_ vertex: Bool, _ reason: String) a
     #expect(result.content.contains { if case .toolCall = $0 { return true }; return false })
 }
 
-@Test func googlePayloadContainsMappedNativeThinkingLevel() async throws {
+@Test(.timeLimit(.minutes(1))) func googlePayloadContainsMappedNativeThinkingLevel() async throws {
     let client = try GooglePortHTTP()
     let model = googlePortModel(map: [.max: "high"])
     let options = try mapGoogleSimpleOptionsValidated(model: model, options: SimpleStreamOptions(httpClient: client, reasoning: .max), apiKey: "test")
@@ -136,7 +136,7 @@ func googleToolCallsPreserveRawStopAndLength(_ vertex: Bool, _ reason: String) a
     #expect(config["thinkingLevel"] as? String == "HIGH")
 }
 
-@Test func googleUserAgentDefaultAndExplicitOverride() async throws {
+@Test(.timeLimit(.minutes(1))) func googleUserAgentDefaultAndExplicitOverride() async throws {
     let defaultClient = try GooglePortHTTP()
     _ = await googlePortResult(client: defaultClient, vertex: false)
     #expect(await defaultClient.request?.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())

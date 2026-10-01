@@ -141,7 +141,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PiSwiftAITests",
-            dependencies: ["PiSwiftAI"],
+            dependencies: ["PiSwiftAI", "TestEnvironmentSupport"],
             resources: [
                 .process("Resources")
             ],
@@ -158,6 +158,7 @@ let package = Package(
                 "PiSwiftCodingAgent",
                 "PiSwiftAI",
                 "PiSwiftAgent",
+                "TestEnvironmentSupport",
             ],
             resources: [
                 .copy("fixtures"),
@@ -190,6 +191,11 @@ let package = Package(
         .testTarget(
             name: "PiSwiftTests",
             dependencies: ["PiSwift"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "TestEnvironmentSupport",
+            path: "Tests/Support",
             swiftSettings: strictConcurrencySettings
         ),
     ],

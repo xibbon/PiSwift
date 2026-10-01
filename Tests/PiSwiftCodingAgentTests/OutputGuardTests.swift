@@ -3,7 +3,7 @@ import Foundation
 import Testing
 import PiSwiftCodingAgent
 
-@Test func machineReadableOutputRedirectsRegularStdoutToStderr() async throws {
+@Test(.timeLimit(.minutes(1))) func machineReadableOutputRedirectsRegularStdoutToStderr() async throws {
     await processOutputCaptureGate.acquire()
     defer { Task { await processOutputCaptureGate.release() } }
     let savedStdout = dup(STDOUT_FILENO)

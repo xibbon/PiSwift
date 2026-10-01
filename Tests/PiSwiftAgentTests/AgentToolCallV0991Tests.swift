@@ -202,7 +202,7 @@ private func g1EchoTool() -> AgentTool {
     #expect(g1Text(failed.result) != nil)
 }
 
-@Test func agentLoopTreatsReturnedIsErrorAsErrorAndKeepsMetadata() async {
+@Test(.timeLimit(.minutes(1))) func agentLoopTreatsReturnedIsErrorAsErrorAndKeepsMetadata() async {
     let call = g1Call("error-1", "failing")
     let tool = AgentTool(label: "Failing", name: "failing", description: "Fails", parameters: ["type": AnyCodable("object")]) { _, _, _, _ in
         AgentToolResult(

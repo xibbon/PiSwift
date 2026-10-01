@@ -86,7 +86,7 @@ private struct A3MistralSSEClient: ProviderHTTPClient {
 }
 
 // Port of mistral-http-transport.test.ts, "ignores empty content deltas" (#9674).
-@Test func a3MistralIgnoresEmptyContentDeltas() async throws {
+@Test(.timeLimit(.minutes(1))) func a3MistralIgnoresEmptyContentDeltas() async throws {
     let model = a3MistralModel("zai-glm-5-3")
     let deltas: [[String: Any]] = [
         ["content": ""],
@@ -138,7 +138,7 @@ private struct A3MistralObserverFailure: Error, LocalizedError {
     var errorDescription: String? { "observer sentinel" }
 }
 
-@Test func a3MistralProviderObserverReceivesRawEventsAndCanFailStream() async throws {
+@Test(.timeLimit(.minutes(1))) func a3MistralProviderObserverReceivesRawEventsAndCanFailStream() async throws {
     let model = a3MistralModel("mistral-large-latest")
     let first: [String: Any] = ["id": "response-1", "unknown_field": ["marker": "kept"],
         "choices": [["index": 0, "finish_reason": NSNull(), "delta": ["content": "first"]]]]

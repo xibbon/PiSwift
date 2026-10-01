@@ -22,7 +22,7 @@ private func waitForCondition(timeoutMs: Int, pollMs: Int = 5, _ condition: @esc
     return condition()
 }
 
-@Test func autoRetrySchedulesContinueOnRetryableError() async throws {
+@Test(.timeLimit(.minutes(1))) func autoRetrySchedulesContinueOnRetryableError() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-retry-test-\(UUID().uuidString)")
         .path

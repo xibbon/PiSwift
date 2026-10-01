@@ -38,7 +38,7 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
 }
 
 // Port of openai-responses-namespace.test.ts: function/custom namespaces supplied at done.
-@Test(arguments: [false, true]) func responses085NamespaceRoundTrip(custom: Bool) async throws {
+@Test(.timeLimit(.minutes(1)), arguments: [false, true]) func responses085NamespaceRoundTrip(custom: Bool) async throws {
     let model = responses085Model()
     let type = custom ? "custom_tool_call" : "function_call"
     let name = custom ? "query" : "lookup"
@@ -125,7 +125,7 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
     #expect((payload["tools"] as? [Any])?.count == 1)
 }
 
-@Test func responses085AzureSimpleToolChoice() async throws {
+@Test(.timeLimit(.minutes(1))) func responses085AzureSimpleToolChoice() async throws {
     let capture = LockedState<Data?>(nil)
     let client = Responses085HTTPClient { request in
         capture.withLock { $0 = request.httpBody }
@@ -142,7 +142,7 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
 }
 
 // Port of openai-codex-stream.test.ts EOF, end_turn and User-Agent additions.
-@Test(arguments: ["response.completed", "response.done", "response.incomplete"], [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: ["response.completed", "response.done", "response.incomplete"], [false, true])
 func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) async throws {
     let incomplete = terminal == "response.incomplete"
     let sse = "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"id\":\"msg_test\"}}\n\n"
@@ -180,7 +180,7 @@ func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) as
     #expect(payload["reasoning"] == nil)
 }
 
-@Test func responses085RawFinalizationPreservesBufferedArgumentsAndContent() async throws {
+@Test(.timeLimit(.minutes(1))) func responses085RawFinalizationPreservesBufferedArgumentsAndContent() async throws {
     let events: [[String: Any]] = [
         ["type": "response.output_item.added", "output_index": 0, "item": ["type": "function_call", "id": "fc", "call_id": "call", "name": "lookup"]],
         ["type": "response.function_call_arguments.delta", "output_index": 0, "delta": #"{"value":"hello"}"#],
@@ -199,7 +199,7 @@ func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) as
     #expect(thinking.thinking == "reason")
 }
 
-@Test func responses085RawFailurePreservesCodeAndStatus() async {
+@Test(.timeLimit(.minutes(1))) func responses085RawFailurePreservesCodeAndStatus() async {
     let client = Responses085HTTPClient { _ in ProviderHTTPResponse(statusCode: 200, body: Data(#"data: {"type":"response.failed","response":{"status":"failed","error":{"code":"invalid_request","message":"details"}}}"#.utf8) + Data("\n\n".utf8)) }
     let result = await streamOpenAIResponses(model: responses085Model(), context: normalizeContext(Context(messages: [])), options: OpenAIResponsesOptions(apiKey: "test", httpClient: client, maxRetries: 0)).result()
     #expect(result.stopReason == .error)

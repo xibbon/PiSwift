@@ -108,7 +108,7 @@ private func userAgent085Request(
 // Port of the User-Agent cases in anthropic-auth-token.test.ts,
 // azure-openai-base-url.test.ts, google-raw-stop-reason.test.ts,
 // google-vertex-api-key-resolution.test.ts, and openai-codex-stream.test.ts.
-@Test(arguments: UserAgent085Adapter.allCases)
+@Test(.timeLimit(.minutes(1)), arguments: UserAgent085Adapter.allCases)
 private func provider085UserAgentDefaults(adapter: UserAgent085Adapter) async throws {
     let request = try await userAgent085Request(adapter: adapter)
     #expect(request.value(forHTTPHeaderField: "User-Agent") == adapter.defaultUserAgent)
@@ -123,7 +123,7 @@ private func provider085UserAgentDefaults(adapter: UserAgent085Adapter) async th
 
 // Header names are case-insensitive. Model/option overrides, including explicit
 // deletion, take precedence over the new User-Agent defaults.
-@Test(arguments: UserAgent085Adapter.allCases, UserAgent085Override.allCases)
+@Test(.timeLimit(.minutes(1)), arguments: UserAgent085Adapter.allCases, UserAgent085Override.allCases)
 private func provider085UserAgentOverrides(adapter: UserAgent085Adapter, override: UserAgent085Override) async throws {
     let modelHeaders: ProviderHeaders?
     let optionHeaders: ProviderHeaders?

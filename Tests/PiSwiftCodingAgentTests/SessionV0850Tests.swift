@@ -56,7 +56,7 @@ private func portSession(model: Model = sessionPortModel(), settings: Settings =
     #expect(THINKING_LEVEL_OPTIONS == [.off, .minimal, .low, .medium, .high, .xhigh, .max])
 }
 
-@Test func contextOnlyCustomMessagesFollowAllToolResults() async throws {
+@Test(.timeLimit(.minutes(1))) func contextOnlyCustomMessagesFollowAllToolResults() async throws {
     let holder = LockedState<AgentSession?>(nil)
     let calls = LockedState(0)
     let tool = AgentTool(label: "test", name: "test", description: "test", parameters: ["type": AnyCodable("object")]) { _, _, _, _ in
@@ -87,7 +87,7 @@ private func portSession(model: Model = sessionPortModel(), settings: Settings =
     #expect(seen.withLock { $0 }.contains("toolResult"))
 }
 
-@Test func zeroUsageToolOutputCompactsBeforeNextAssistant() async throws {
+@Test(.timeLimit(.minutes(1))) func zeroUsageToolOutputCompactsBeforeNextAssistant() async throws {
     let calls = LockedState(0)
     let preparedAfterCompaction = LockedState(false)
     let compacted = LockedState(false)
@@ -123,7 +123,7 @@ private actor PortLatch {
     func wait() async { if open { return }; await withCheckedContinuation { waiters.append($0) } }
 }
 
-@Test func abortCancelsManualCompactionAndResolvesIdle() async throws {
+@Test(.timeLimit(.minutes(1))) func abortCancelsManualCompactionAndResolvesIdle() async throws {
     let started = PortLatch()
     let failures = LockedState<[SessionCompactFailedEvent]>([])
     let api = HookAPI()
@@ -176,7 +176,7 @@ private actor PortLatch {
     #expect(invalid.error != nil)
 }
 
-@Test func truncatedCompactionDoesNotStoreSummary() async throws {
+@Test(.timeLimit(.minutes(1))) func truncatedCompactionDoesNotStoreSummary() async throws {
     let failures = LockedState<[SessionCompactFailedEvent]>([])
     let api = HookAPI()
     api.on("session_compact_failed") { (event: SessionCompactFailedEvent, _: HookContext) in failures.withLock { $0.append(event) }; return nil }
@@ -196,7 +196,7 @@ private actor PortLatch {
     #expect(failures.withLock { $0.count } == 1)
 }
 
-@Test func terminatingToolDoesNotTriggerNextTurnCompaction() async throws {
+@Test(.timeLimit(.minutes(1))) func terminatingToolDoesNotTriggerNextTurnCompaction() async throws {
     let calls = LockedState(0)
     let tool = AgentTool(label: "large", name: "large", description: "large", parameters: ["type": AnyCodable("object")]) { _, _, _, _ in
         AgentToolResult(content: [.text(TextContent(text: String(repeating: "x", count: 6000)))], terminate: true)
@@ -292,7 +292,7 @@ private final class PortUIContext: HookUIContext {
     #expect(events.withLock { $0 } == ["start:select:outer", "end:select"])
 }
 
-@Test func extensionTurnEndCustomMessageJoinsTheSameFlush() async throws {
+@Test(.timeLimit(.minutes(1))) func extensionTurnEndCustomMessageJoinsTheSameFlush() async throws {
     let api = HookAPI()
     api.on("turn_end") { [weak api] (event: TurnEndEvent, _: HookContext) in
         if !event.toolResults.isEmpty {
@@ -321,7 +321,7 @@ private final class PortUIContext: HookUIContext {
     #expect(sawNote.withLock { $0 })
 }
 
-@Test func inMemoryForkDoesNotReceiveTheAbortedToolTurn() async throws {
+@Test(.timeLimit(.minutes(1))) func inMemoryForkDoesNotReceiveTheAbortedToolTurn() async throws {
     let started = PortLatch()
     let calls = LockedState(0)
     let roles = LockedState<[String]>([])
@@ -354,7 +354,7 @@ private final class PortUIContext: HookUIContext {
     #expect(roles.withLock { $0.filter { $0 != "system" } } == ["user"])
 }
 
-@Test func manualCompactionStoresTheAbortedResponseBeforeItsSummary() async throws {
+@Test(.timeLimit(.minutes(1))) func manualCompactionStoresTheAbortedResponseBeforeItsSummary() async throws {
     let started = PortLatch()
     let calls = LockedState(0)
     let api = HookAPI()
@@ -384,7 +384,7 @@ private final class PortUIContext: HookUIContext {
     #expect(entries.filter { if case .compaction = $0 { return true }; return false }.count == 1)
 }
 
-@Test func userMessagesExpandTemplatesOnlyWhenRequested() async throws {
+@Test(.timeLimit(.minutes(1))) func userMessagesExpandTemplatesOnlyWhenRequested() async throws {
     let texts = LockedState<[String]>([])
     var settings = Settings()
     settings.compaction = CompactionSettingsOverrides(enabled: false)
@@ -407,7 +407,7 @@ private final class PortUIContext: HookUIContext {
     #expect(texts.withLock { $0 } == ["/hello one", "expanded two", "/hello three"])
 }
 
-@Test func extensionBranchSummaryUsesTheSourceLeafAndPreservesUsage() async throws {
+@Test(.timeLimit(.minutes(1))) func extensionBranchSummaryUsesTheSourceLeafAndPreservesUsage() async throws {
     let api = HookAPI()
     let usage = Usage(input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12)
     api.on("session_before_tree") { (_: SessionBeforeTreeEvent, _: HookContext) in

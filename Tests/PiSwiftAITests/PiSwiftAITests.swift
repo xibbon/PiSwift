@@ -3,6 +3,7 @@ import Foundation
 import OpenAI
 import SwiftAnthropic
 import Testing
+import TestEnvironmentSupport
 @testable import PiSwiftAI
 
 private let RUN_ANTHROPIC_TESTS: Bool = {
@@ -52,6 +53,8 @@ final class MockURLProtocol: URLProtocol {
 final class BlockingOAuthURLProtocol: URLProtocol {
     static let started = LockedState(false)
     static let stopped = LockedState(false)
+    static let onStart = LockedState<(@Sendable () -> Void)?>(nil)
+    static let onStop = LockedState<(@Sendable () -> Void)?>(nil)
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "auth.x.ai"
@@ -61,10 +64,12 @@ final class BlockingOAuthURLProtocol: URLProtocol {
 
     override func startLoading() {
         Self.started.withLock { $0 = true }
+        Self.onStart.withLock { $0 }?()
     }
 
     override func stopLoading() {
         Self.stopped.withLock { $0 = true }
+        Self.onStop.withLock { $0 }?()
     }
 }
 
@@ -661,18 +666,6 @@ private func runCodexToolCallRequest(
     argumentEvents: [CodexArgumentStreamEvent] = [.delta("{\"path\":\"x\"}")]
 ) async throws -> CodexToolCallCapture {
     try await codexRequestLock.withLock {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codex-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let previousAgentDir = ProcessInfo.processInfo.environment["PI_CODING_AGENT_DIR"]
-        setenv("PI_CODING_AGENT_DIR", tempDir.path, 1)
-        defer {
-            if let previousAgentDir {
-                setenv("PI_CODING_AGENT_DIR", previousAgentDir, 1)
-            } else {
-                unsetenv("PI_CODING_AGENT_DIR")
-            }
-        }
-
         let token = try codexSubscriptionToken()
 
         MockURLProtocol.allowedHosts.withLock { $0 = ["api.github.com", "raw.githubusercontent.com", "chatgpt.com"] }
@@ -804,18 +797,6 @@ private func runCodexSessionRequest(
     tools: [AITool]? = nil
 ) async throws -> CodexRequestCapture {
     try await codexRequestLock.withLock {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codex-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let previousAgentDir = ProcessInfo.processInfo.environment["PI_CODING_AGENT_DIR"]
-        setenv("PI_CODING_AGENT_DIR", tempDir.path, 1)
-        defer {
-            if let previousAgentDir {
-                setenv("PI_CODING_AGENT_DIR", previousAgentDir, 1)
-            } else {
-                unsetenv("PI_CODING_AGENT_DIR")
-            }
-        }
-
         let token = try codexSubscriptionToken()
 
         let seenConversationId = LockedState<String?>(nil)
@@ -1151,7 +1132,7 @@ private func runCodexSessionRequest(
     #expect(isContextOverflow(message))
 }
 
-@Test func openAICodexSessionIdForwarding() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexSessionIdForwarding() async throws {
     let sessionId = String(repeating: "session-", count: 10)
     let expectedSessionId = String(sessionId.prefix(OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH))
     let capture = try await runCodexSessionRequest(sessionId: sessionId)
@@ -1161,7 +1142,7 @@ private func runCodexSessionRequest(
     #expect(capture.promptCacheKey == expectedSessionId)
 }
 
-@Test func openAICodexNoSessionId() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexNoSessionId() async throws {
     let capture = try await runCodexSessionRequest(sessionId: nil)
     #expect(capture.conversationId == nil)
     #expect(capture.sessionId == nil)
@@ -1170,14 +1151,14 @@ private func runCodexSessionRequest(
     #expect(capture.serviceTier == nil)
 }
 
-@Test func openAICodexOmitsToolFieldsForExplicitEmptyTools() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexOmitsToolFieldsForExplicitEmptyTools() async throws {
     let capture = try await runCodexSessionRequest(sessionId: nil, tools: [])
     #expect(capture.hasTools == false)
     #expect(capture.toolChoice == nil)
     #expect(capture.parallelToolCalls == nil)
 }
 
-@Test func openAICodexKeepsToolFieldsForNonEmptyTools() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexKeepsToolFieldsForNonEmptyTools() async throws {
     let capture = try await runCodexSessionRequest(
         sessionId: nil,
         tools: [
@@ -1193,7 +1174,7 @@ private func runCodexSessionRequest(
     #expect(capture.parallelToolCalls == true)
 }
 
-@Test func openAICodexForwardsServiceTierAndAppliesPricing() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexForwardsServiceTierAndAppliesPricing() async throws {
     let capture = try await runCodexSessionRequest(sessionId: "tier-session", serviceTier: .priority)
     #expect(capture.serviceTier == "priority")
 
@@ -1211,7 +1192,7 @@ private func runCodexSessionRequest(
     #expect(openAIResponsesForeignFunctionCallItemId(rawItemId) == "fc_14qw7aq1pijvw1")
 }
 
-@Test func openAICodexForeignToolCallItemIdsAreHashed() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexForeignToolCallItemIdsAreHashed() async throws {
     let rawItemId = "foreign.item/id with punctuation and a very very very very very long suffix"
     let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
     let foreignAssistant = AssistantMessage(
@@ -1236,7 +1217,7 @@ private func runCodexSessionRequest(
     #expect(itemId?.count ?? 0 <= 64)
 }
 
-@Test func openAICodexToolCallUsesStreamingArguments() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexToolCallUsesStreamingArguments() async throws {
     let capture = try await runCodexToolCallRequest()
     let toolCall = capture.message.content.compactMap { block -> ToolCall? in
         if case .toolCall(let call) = block { return call }
@@ -1249,7 +1230,7 @@ private func runCodexSessionRequest(
     #expect(capture.deltas == ["{\"path\":\"x\"}"])
 }
 
-@Test func openAICodexToolCallDoneOnlyArgumentsEmitDelta() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexToolCallDoneOnlyArgumentsEmitDelta() async throws {
     let capture = try await runCodexToolCallRequest(argumentEvents: [.done("{\"path\":\"x\"}")])
     let toolCall = capture.message.content.compactMap { block -> ToolCall? in
         if case .toolCall(let call) = block { return call }
@@ -1259,7 +1240,7 @@ private func runCodexSessionRequest(
     #expect(capture.deltas == ["{\"path\":\"x\"}"])
 }
 
-@Test func openAICodexToolCallDoneArgumentsEmitOnlyMissingSuffix() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexToolCallDoneArgumentsEmitOnlyMissingSuffix() async throws {
     let capture = try await runCodexToolCallRequest(argumentEvents: [
         .delta("{\"path\""),
         .done("{\"path\":\"x\"}"),
@@ -1293,7 +1274,7 @@ private func runCodexSessionRequest(
     #expect(tools?.count == 1)
 }
 
-@Test func openAICompletionsToolCallIdResolutionUsesIndexMapping() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsToolCallIdResolutionUsesIndexMapping() async throws {
     var toolCallIdByIndex: [Int: String] = [:]
     let firstFunction = ChatStreamResult.Choice.ChoiceDelta.ChoiceDeltaToolCall.ChoiceDeltaToolCallFunction(
         arguments: nil,
@@ -1363,7 +1344,7 @@ private func runCodexSessionRequest(
     #expect(resolvedThird.id == "toolcall_2")
 }
 
-@Test func openAICompletionsUsagePreservesCacheWriteTokens() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsUsagePreservesCacheWriteTokens() async throws {
     await codexRequestLock.withLock {
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["api.openai.com"] }
         OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -1455,7 +1436,7 @@ private func runCodexSessionRequest(
     }
 }
 
-@Test func openAICompletionsMissingFinishReasonEmitsError() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsMissingFinishReasonEmitsError() async {
     let capture = await runOpenAICompletionsStopReasonStream(payloads: [
         openAIStopReasonChunk(delta: ["content": "partial"], finishReason: NSNull()),
     ])
@@ -1466,7 +1447,7 @@ private func runCodexSessionRequest(
     #expect(capture.message.errorMessage?.contains("Stream ended without finish_reason") == true)
 }
 
-@Test func openAICompletionsUnknownFinishReasonIsProviderError() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsUnknownFinishReasonIsProviderError() async {
     let capture = await runOpenAICompletionsStopReasonStream(payloads: [
         openAIStopReasonChunk(delta: ["content": "partial"], finishReason: "future_reason"),
     ])
@@ -1478,7 +1459,7 @@ private func runCodexSessionRequest(
     #expect(capture.message.errorMessage?.contains("Provider stopped with: future_reason") == true)
 }
 
-@Test func openAICompletionsPreservesRecognizedRawFinishReason() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsPreservesRecognizedRawFinishReason() async {
     let capture = await runOpenAICompletionsStopReasonStream(payloads: [
         openAIStopReasonChunk(delta: ["content": "done"], finishReason: "stop"),
     ])
@@ -1489,7 +1470,7 @@ private func runCodexSessionRequest(
     #expect(capture.message.rawStopReason == "stop")
 }
 
-@Test func openAICompletionsWithoutFinishReasonInfersStopWhenUnsupported() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsWithoutFinishReasonInfersStopWhenUnsupported() async {
     let capture = await runOpenAICompletionsStopReasonStream(
         payloads: [openAIStopReasonChunk(delta: ["content": "done"], finishReason: NSNull())],
         compat: OpenAICompat(supportsFinishReason: false)
@@ -1501,7 +1482,7 @@ private func runCodexSessionRequest(
     #expect(capture.message.rawStopReason == nil)
 }
 
-@Test func openAICompletionsWithoutFinishReasonInfersToolUseWhenUnsupported() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsWithoutFinishReasonInfersToolUseWhenUnsupported() async {
     let capture = await runOpenAICompletionsStopReasonStream(
         payloads: [
             openAIStopReasonChunk(
@@ -1603,7 +1584,7 @@ private func runCodexSessionRequest(
     #expect(mapped.errorMessage == explanation)
 }
 
-@Test func openAICompletionsUsageFallsBackToChoiceUsage() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsUsageFallsBackToChoiceUsage() async throws {
     await codexRequestLock.withLock {
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["moonshot.example"] }
         OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -1670,7 +1651,7 @@ private func runCodexSessionRequest(
     }
 }
 
-@Test func openAICompletionsIgnoresNullSSEChunks() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsIgnoresNullSSEChunks() async throws {
     await codexRequestLock.withLock {
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["null-chunk.example"] }
         OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -1732,7 +1713,7 @@ private func runCodexSessionRequest(
     }
 }
 
-@Test func openAICompletionsRequiresThinkingAsTextUsesAssistantContentParts() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsRequiresThinkingAsTextUsesAssistantContentParts() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["thinking-as-text.example"] }
@@ -1819,7 +1800,7 @@ private func runCodexSessionRequest(
     }
 }
 
-@Test func openAICompletionsSmoke() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func openAICompletionsSmoke() async throws {
     guard RUN_OPENAI_TESTS, ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
         return
     }
@@ -1830,7 +1811,7 @@ private func runCodexSessionRequest(
     #expect(response.stopReason != .error)
 }
 
-@Test func openAIResponsesSmoke() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func openAIResponsesSmoke() async throws {
     guard RUN_OPENAI_TESTS, ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil else {
         return
     }
@@ -1841,7 +1822,7 @@ private func runCodexSessionRequest(
     #expect(response.stopReason != .error)
 }
 
-@Test func anthropicSmoke() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func anthropicSmoke() async throws {
     guard RUN_ANTHROPIC_TESTS else {
         return
     }
@@ -1852,7 +1833,7 @@ private func runCodexSessionRequest(
     #expect(response.stopReason != .error)
 }
 
-@Test func minimaxSmoke() async throws {
+@Test(.timeLimit(.minutes(1))) func minimaxSmoke() async throws {
     guard ProcessInfo.processInfo.environment["MINIMAX_API_KEY"] != nil else {
         return
     }
@@ -1863,7 +1844,7 @@ private func runCodexSessionRequest(
     #expect(response.stopReason != .error)
 }
 
-@Test func vercelAiGatewaySmoke() async throws {
+@Test(.timeLimit(.minutes(1))) func vercelAiGatewaySmoke() async throws {
     guard ProcessInfo.processInfo.environment["AI_GATEWAY_API_KEY"] != nil else {
         return
     }
@@ -1874,7 +1855,7 @@ private func runCodexSessionRequest(
     #expect(response.stopReason != .error)
 }
 
-@Test func zaiSmoke() async throws {
+@Test(.timeLimit(.minutes(1))) func zaiSmoke() async throws {
     guard ProcessInfo.processInfo.environment["ZAI_API_KEY"] != nil else {
         return
     }
@@ -1885,29 +1866,23 @@ private func runCodexSessionRequest(
     #expect(response.stopReason != .error)
 }
 
-private actor EnvLock {
-    func withEnv(_ key: String, value: String?, work: @Sendable () async -> Void) async {
-        let previous = ProcessInfo.processInfo.environment[key]
-        if let value {
-            setenv(key, value, 1)
+// The processEnvironment test trait holds the shared lock for each complete test.
+// This helper also permits nested key changes without taking the lock again.
+private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -> Void) async {
+    let previous = ProcessInfo.processInfo.environment[key]
+    if let value {
+        setenv(key, value, 1)
+    } else {
+        unsetenv(key)
+    }
+    defer {
+        if let previous {
+            setenv(key, previous, 1)
         } else {
             unsetenv(key)
         }
-        defer {
-            if let previous {
-                setenv(key, previous, 1)
-            } else {
-                unsetenv(key)
-            }
-        }
-        await work()
     }
-}
-
-private let envLock = EnvLock()
-
-private func withEnv(_ key: String, value: String?, _ work: @Sendable () async -> Void) async {
-    await envLock.withEnv(key, value: value, work: work)
+    await work()
 }
 
 private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
@@ -1932,7 +1907,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func explicitBedrockProfileTakesPrecedenceOverAmbientAccessKeys() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func explicitBedrockProfileTakesPrecedenceOverAmbientAccessKeys() async throws {
     let credentialsUrl = FileManager.default.temporaryDirectory
         .appendingPathComponent("piswift-bedrock-\(UUID().uuidString).ini")
     try Data("[selected]\naws_access_key_id = profile-access\naws_secret_access_key = profile-secret\n".utf8)
@@ -1952,7 +1927,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(resolved.withLock { $0 } == "profile-access")
 }
 
-@Test func findEnvKeysReturnsConfiguredNamesWithoutValues() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func findEnvKeysReturnsConfiguredNamesWithoutValues() async throws {
     await withEnv("OPENAI_API_KEY", value: "sk-secret-value") {
         #expect(findEnvKeys(provider: "openai") == ["OPENAI_API_KEY"])
         #expect(findEnvKeys(provider: .openai) == ["OPENAI_API_KEY"])
@@ -1961,7 +1936,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func newProvidersResolveTheirDocumentedEnvironmentKeys() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func newProvidersResolveTheirDocumentedEnvironmentKeys() async {
     await withEnv("BASETEN_API_KEY", value: "baseten-test-key") {
         #expect(findEnvKeys(provider: .baseten) == ["BASETEN_API_KEY"])
         #expect(getEnvApiKey(provider: .baseten) == "baseten-test-key")
@@ -1978,7 +1953,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func findEnvKeysOnlyReturnsSetProviderKeys() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func findEnvKeysOnlyReturnsSetProviderKeys() async throws {
     await withEnv("ANTHROPIC_AUTH_TOKEN", value: nil) {
         await withEnv("ANTHROPIC_OAUTH_TOKEN", value: nil) {
             await withEnv("ANTHROPIC_API_KEY", value: "sk-ant-api") {
@@ -2008,7 +1983,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func findEnvKeysExcludesAmbientCredentialSources() async throws {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func findEnvKeysExcludesAmbientCredentialSources() async throws {
     await withEnv("AWS_PROFILE", value: "dev-profile") {
         #expect(findEnvKeys(provider: "amazon-bedrock") == nil)
         #expect(getEnvApiKey(provider: "amazon-bedrock") == "<authenticated>")
@@ -2035,7 +2010,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(getPromptCacheRetention(baseUrl: "https://proxy.example.com/v1", cacheRetention: .long) == "24h")
 }
 
-@Test func openAIResponsesCacheMiddlewareInjection() async throws {
+@Test(.timeLimit(.minutes(1))) func openAIResponsesCacheMiddlewareInjection() async throws {
     let payload: [String: Any] = [
         "model": "gpt-4o-mini",
         "input": [],
@@ -2061,7 +2036,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == sessionId)
 }
 
-@Test func openAIResponsesCacheMiddlewareDisabled() async throws {
+@Test(.timeLimit(.minutes(1))) func openAIResponsesCacheMiddlewareDisabled() async throws {
     let payload: [String: Any] = [
         "model": "gpt-4o-mini",
         "input": [],
@@ -2172,18 +2147,15 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(!json.contains("Juice"))
 }
 
-@Test func anthropicCacheRetentionHelper() async throws {
-    await withEnv("PI_CACHE_RETENTION", value: nil) {
-        #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com") == nil)
-    }
-    await withEnv("PI_CACHE_RETENTION", value: "long") {
-        #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com") == "1h")
-        #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com", supportsLongCacheRetention: false) == nil)
-        #expect(anthropicCacheTtl(baseUrl: "https://proxy.example.com") == nil)
-    }
+@Test(.timeLimit(.minutes(1))) func anthropicCacheRetentionHelper() async throws {
+    #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com", cacheRetention: .short) == nil)
+    #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com", cacheRetention: .long) == "1h")
+    #expect(anthropicCacheTtl(baseUrl: "https://api.anthropic.com", supportsLongCacheRetention: false,
+                             cacheRetention: .long) == nil)
+    #expect(anthropicCacheTtl(baseUrl: "https://proxy.example.com", cacheRetention: .long) == nil)
 }
 
-@Test func anthropicCacheControlInjection() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicCacheControlInjection() async throws {
     let payload: [String: Any] = [
         "model": "claude-3-5-haiku-20241022",
         "messages": [
@@ -2508,7 +2480,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(noToolHeaders?.contains("fine-grained-tool-streaming-2025-05-14") != true)
 }
 
-@Test func anthropicMetadataInjection() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicMetadataInjection() async throws {
     let payload: [String: Any] = [
         "model": "claude-3-5-haiku-20241022",
         "messages": [
@@ -2565,7 +2537,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(gatedTools.last?["cache_control"] == nil)
 }
 
-@Test func fireworksAnthropicCompatGatesCacheAndEagerToolMarkers() async throws {
+@Test(.timeLimit(.minutes(1))) func fireworksAnthropicCompatGatesCacheAndEagerToolMarkers() async throws {
     let model = catalogV0841Model(provider: .fireworks, modelId: "accounts/fireworks/models/deepseek-v4-flash")
     #expect(model.api == .anthropicMessages)
     #expect(model.compat?.supportsLongCacheRetention == false)
@@ -2582,12 +2554,11 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     )
     #expect(headers?.contains("fine-grained-tool-streaming-2025-05-14") == true)
 
-    await withEnv("PI_CACHE_RETENTION", value: "long") {
-        #expect(anthropicCacheTtl(
-            baseUrl: "https://api.anthropic.com",
-            supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true
-        ) == nil)
-    }
+    #expect(anthropicCacheTtl(
+        baseUrl: "https://api.anthropic.com",
+        supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
+        cacheRetention: .long
+    ) == nil)
 
     let payload: [String: Any] = [
         "model": model.id,
@@ -2676,7 +2647,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(opus.api == .anthropicMessages)
 }
 
-@Test func bedrockInterleavedThinkingDefaultsToEnabled() {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockInterleavedThinkingDefaultsToEnabled() {
     let model = Model(
         id: "anthropic.claude-sonnet-4-5-20250929-v1:0",
         name: "Claude Sonnet 4.5 Bedrock",
@@ -2699,7 +2670,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect(thinking?["budget_tokens"] as? Int == 16384)
 }
 
-@Test func bedrockAdaptiveThinkingOmitsInterleavedBeta() {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockAdaptiveThinkingOmitsInterleavedBeta() {
     let model = Model(
         id: "anthropic.claude-opus-4-6-v1",
         name: "Claude Opus 4.6 Bedrock",
@@ -2724,7 +2695,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 /// v0.67.67 / v0.68.0 / v0.62.0: Bedrock supports bearer-token auth, custom
 /// non-reserved headers, catalog endpoint regions, Claude default maxTokens, request
 /// metadata, and summarized thinking display.
-@Test func bedrockBearerHeadersPayloadAndCatalogEndpoint() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockBearerHeadersPayloadAndCatalogEndpoint() async {
     await codexRequestLock.withLock {
         await withCleanBedrockEnv {
             let capturedURL = LockedState<String?>(nil)
@@ -2813,7 +2784,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 /// v0.68.1: explicit region/profile settings override built-in regional Bedrock runtime endpoints.
-@Test func bedrockConfiguredRegionOverridesCatalogEndpoint() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockConfiguredRegionOverridesCatalogEndpoint() async {
     await codexRequestLock.withLock {
         await withCleanBedrockEnv {
             let capturedHost = LockedState<String?>(nil)
@@ -2862,7 +2833,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 /// v0.68.1: an ARN model ID's embedded region wins over a standard catalog endpoint region.
-@Test func bedrockArnRegionOverridesStandardCatalogEndpoint() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockArnRegionOverridesStandardCatalogEndpoint() async {
     await codexRequestLock.withLock {
         await withCleanBedrockEnv {
             let capturedHost = LockedState<String?>(nil)
@@ -2912,7 +2883,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 
 /// v0.68.0: non-Claude Bedrock requests omit unset inference fields instead of sending
 /// guessed maxTokens or null/default temperature.
-@Test func bedrockNonClaudeOmitsUnsetInferenceFields() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockNonClaudeOmitsUnsetInferenceFields() async {
     await codexRequestLock.withLock {
         await withCleanBedrockEnv {
             let capturedBody = LockedState<String?>(nil)
@@ -2972,7 +2943,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 
 /// v0.67.6 / v0.70.3: GovCloud omits `thinking.display`, and inference-profile
 /// names participate in adaptive/xhigh capability checks.
-@Test func bedrockGovCloudOmitsThinkingDisplayAndModelNameDrivesAdaptiveXhigh() {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockGovCloudOmitsThinkingDisplayAndModelNameDrivesAdaptiveXhigh() {
     let govModel = Model(
         id: "us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
         name: "Claude Sonnet 4.5 GovCloud",
@@ -3021,7 +2992,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 /// v0.70.0: transient Bedrock HTTP/2 no-response transport failures are retried.
-@Test func bedrockRetriesHTTP2NoResponseTransportFailure() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func bedrockRetriesHTTP2NoResponseTransportFailure() async {
     await codexRequestLock.withLock {
         await withCleanBedrockEnv {
             let requestCount = LockedState(0)
@@ -3079,7 +3050,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func supportsXhighModels() async throws {
+@Test(.timeLimit(.minutes(1))) func supportsXhighModels() async throws {
     let gpt52 = getModel(provider: .openai, modelId: "gpt-5.2")
     #expect(supportsXhigh(model: gpt52))
 
@@ -3139,7 +3110,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     #expect((delay ?? 0) <= 3100)
 }
 
-@Test func googleGeminiCliRetriesEmptyStreamWithoutDuplicateStart() async {
+@Test(.timeLimit(.minutes(1))) func googleGeminiCliRetriesEmptyStreamWithoutDuplicateStart() async {
     await codexRequestLock.withLock {
         let requestCount = LockedState(0)
         GeminiRetryMockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -3214,7 +3185,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
 }
 
-@Test func openAICompletionsToolChoiceAndStrictPayload() async {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsToolChoiceAndStrictPayload() async {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["zai.example"] }
@@ -3290,7 +3261,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 
 /// v0.61.0 / v0.62.0: OpenRouter-compatible Chat Completions uses nested
 /// `reasoning.effort`, and defaults disabled reasoning to `none`.
-@Test func openAICompletionsOpenRouterReasoningUsesNestedNoneEffort() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsOpenRouterReasoningUsesNestedNoneEffort() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["openrouter-chat.example"] }
@@ -3363,7 +3334,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 
 /// v0.70.1: DeepSeek V4 replay requires both the DeepSeek thinking payload and
 /// `reasoning_content` on prior assistant turns, even when no thinking block exists.
-@Test func openAICompletionsDeepSeekV4ReplayPayloadsInjectReasoningContent() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsDeepSeekV4ReplayPayloadsInjectReasoningContent() async throws {
     await codexRequestLock.withLock {
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["deepseek-replay.example"] }
         OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -3457,7 +3428,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 /// v0.67.0: OpenRouter provider-selection routing emits the full routing field set.
-@Test func openAICompletionsOpenRouterRoutingPayload() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsOpenRouterRoutingPayload() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["openrouter.ai"] }
@@ -3564,7 +3535,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 }
 
 /// v0.67.67: Qwen chat-template requests preserve thinking state across tool-call turns.
-@Test func openAICompletionsQwenChatTemplatePreservesThinking() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICompletionsQwenChatTemplatePreservesThinking() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
         OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["qwen-template.example"] }
@@ -4378,18 +4349,18 @@ struct OAuthTests {
         #expect(providers.first { $0.id == .kimiCoding }?.name == "Kimi Code (subscription)")
     }
 
-    @Test func openRouterPkceExchangesPastedRedirectUrl() async throws {
+    @Test(.timeLimit(.minutes(1))) func openRouterPkceExchangesPastedRedirectUrl() async throws {
         try await assertOpenRouterManualInput(
             "http://127.0.0.1:4567/oauth/callback/test?code=redirect-code",
             expectedCode: "redirect-code"
         )
     }
 
-    @Test func openRouterPkceExchangesPastedBareCode() async throws {
+    @Test(.timeLimit(.minutes(1))) func openRouterPkceExchangesPastedBareCode() async throws {
         try await assertOpenRouterManualInput("bare-code", expectedCode: "bare-code")
     }
 
-    @Test func openRouterLoopbackCallbackExchangesCode() async throws {
+    @Test(.timeLimit(.minutes(1))) func openRouterLoopbackCallbackExchangesCode() async throws {
         try await codexRequestLock.withLock {
             let callbackTask = LockedState<Task<Int, Never>?>(nil)
             MockURLProtocol.allowedHosts.withLock { $0 = ["openrouter.ai"] }
@@ -4500,7 +4471,7 @@ struct OAuthTests {
         }
     }
 
-    @Test func kimiCodingDeviceFlowHandlesSlowDown() async throws {
+    @Test(.timeLimit(.minutes(1)), .processEnvironment) func kimiCodingDeviceFlowHandlesSlowDown() async throws {
         try await codexRequestLock.withLock {
             let pollCount = LockedState(0)
             let authInfo = LockedState<OAuthAuthInfo?>(nil)
@@ -4556,7 +4527,7 @@ struct OAuthTests {
         }
     }
 
-    @Test func kimiCodingRefreshUsesHostOverride() async throws {
+    @Test(.timeLimit(.minutes(1)), .processEnvironment) func kimiCodingRefreshUsesHostOverride() async throws {
         await codexRequestLock.withLock {
             await withEnv("KIMI_CODE_OAUTH_HOST", value: "https://kimi-oauth.example/") {
                 MockURLProtocol.allowedHosts.withLock { $0 = ["kimi-oauth.example"] }
@@ -4589,20 +4560,28 @@ struct OAuthTests {
         }
     }
 
-    @Test func refreshCancellationAbortsNetworkRequest() async {
+    @Test(.timeLimit(.minutes(1))) func refreshCancellationAbortsNetworkRequest() async {
         await codexRequestLock.withLock {
+            let started = AsyncStream<Void>.makeStream()
+            let stopped = AsyncStream<Void>.makeStream()
             BlockingOAuthURLProtocol.started.withLock { $0 = false }
             BlockingOAuthURLProtocol.stopped.withLock { $0 = false }
+            BlockingOAuthURLProtocol.onStart.withLock { $0 = { started.continuation.yield(()) } }
+            BlockingOAuthURLProtocol.onStop.withLock { $0 = { stopped.continuation.yield(()) } }
             URLProtocol.registerClass(BlockingOAuthURLProtocol.self)
-            defer { URLProtocol.unregisterClass(BlockingOAuthURLProtocol.self) }
+            defer {
+                URLProtocol.unregisterClass(BlockingOAuthURLProtocol.self)
+                BlockingOAuthURLProtocol.onStart.withLock { $0 = nil }
+                BlockingOAuthURLProtocol.onStop.withLock { $0 = nil }
+                started.continuation.finish()
+                stopped.continuation.finish()
+            }
 
             let signal = CancellationToken()
             let task = Task {
                 try await refreshXaiToken("refresh-token", signal: signal)
             }
-            while !BlockingOAuthURLProtocol.started.withLock({ $0 }) {
-                await Task.yield()
-            }
+            for await _ in started.stream { break }
             signal.cancel()
             do {
                 _ = try await task.value
@@ -4616,9 +4595,7 @@ struct OAuthTests {
             } catch {
                 Issue.record(error)
             }
-            for _ in 0..<100 where !BlockingOAuthURLProtocol.stopped.withLock({ $0 }) {
-                await Task.yield()
-            }
+            for await _ in stopped.stream { break }
             #expect(BlockingOAuthURLProtocol.stopped.withLock { $0 })
         }
     }
@@ -4673,7 +4650,7 @@ struct OAuthTests {
         #expect(fallbackUrl == "https://api.individual.githubcopilot.com")
     }
 
-    @Test func gitHubCopilotLoginDeviceFlowExchangesTokenAndEnablesModels() async throws {
+    @Test(.timeLimit(.minutes(1))) func gitHubCopilotLoginDeviceFlowExchangesTokenAndEnablesModels() async throws {
         try await codexRequestLock.withLock {
             let seenDeviceCode = LockedState(false)
             let seenAccessToken = LockedState(false)
@@ -4761,7 +4738,7 @@ struct OAuthTests {
         }
     }
 
-    @Test func xaiLoginDeviceFlowPollsAndReturnsBearerApiKey() async throws {
+    @Test(.timeLimit(.minutes(1))) func xaiLoginDeviceFlowPollsAndReturnsBearerApiKey() async throws {
         try await codexRequestLock.withLock {
             let tokenPollCount = LockedState(0)
             let authInfo = LockedState<OAuthAuthInfo?>(nil)
@@ -4836,7 +4813,7 @@ struct OAuthTests {
         }
     }
 
-    @Test func refreshXaiTokenPreservesUnrotatedRefreshToken() async throws {
+    @Test(.timeLimit(.minutes(1))) func refreshXaiTokenPreservesUnrotatedRefreshToken() async throws {
         try await codexRequestLock.withLock {
             MockURLProtocol.allowedHosts.withLock { $0 = ["auth.x.ai"] }
             MockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -5068,7 +5045,7 @@ struct ApiRegistryTests {
         resetApiProviders()
     }
 
-    @Test func streamUsesRegisteredProviderDispatch() async throws {
+    @Test(.timeLimit(.minutes(1))) func streamUsesRegisteredProviderDispatch() async throws {
         resetApiProviders()
         let invoked = LockedState(false)
 
@@ -5136,7 +5113,7 @@ struct ApiRegistryTests {
         resetApiProviders()
     }
 
-    @Test func fauxProviderStreamsScriptedMessagesAndFactories() async throws {
+    @Test(.timeLimit(.minutes(1))) func fauxProviderStreamsScriptedMessagesAndFactories() async throws {
         resetApiProviders()
         defer { resetApiProviders() }
 
@@ -5905,7 +5882,7 @@ struct ApiRegistryTests {
 
 /// v0.63.0: cached prompt tokens are cache-read tokens, not billable input tokens.
 /// v0.62.0: disabled thinking payloads use Gemini 3 fallback levels where required.
-@Test func googleUsageSubtractsCachedTokensAndPayloadDisablesThinking() async {
+@Test(.timeLimit(.minutes(1))) func googleUsageSubtractsCachedTokensAndPayloadDisablesThinking() async {
     await codexRequestLock.withLock {
         let capturedPayload = LockedState<String?>(nil)
         MockURLProtocol.allowedHosts.withLock { $0 = ["google-usage.example"] }
@@ -5987,7 +5964,7 @@ struct ApiRegistryTests {
 
 /// v0.63.0: Vertex also subtracts cached prompt tokens from billable input tokens.
 /// v0.67.3: `gcp-vertex-credentials` is an ADC marker, not a literal bearer token.
-@Test func googleVertexUsageSubtractsCachedTokens() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func googleVertexUsageSubtractsCachedTokens() async {
     await codexRequestLock.withLock {
         await withEnv("GOOGLE_CLOUD_API_KEY", value: nil) {
             await withEnv("GOOGLE_ACCESS_TOKEN", value: "vertex-adc-token") {
@@ -6069,7 +6046,7 @@ struct ApiRegistryTests {
 
 /// v0.67.1 / v0.62.0: Antigravity uses the current upstream default User-Agent and sends
 /// disabled-thinking fallback config through Cloud Code Assist payloads.
-@Test func googleAntigravityUserAgentAndDisabledThinkingPayload() async {
+@Test(.timeLimit(.minutes(1)), .processEnvironment) func googleAntigravityUserAgentAndDisabledThinkingPayload() async {
     await codexRequestLock.withLock {
         await withEnv("PI_AI_ANTIGRAVITY_VERSION", value: nil) {
             let capturedUserAgent = LockedState<String?>(nil)
@@ -6316,7 +6293,7 @@ struct ApiRegistryTests {
 }
 
 /// v0.70.1: `maxRetries` retries retryable Mistral response setup failures before stream consumption.
-@Test func mistralRetriesRetryableHTTPFailure() async {
+@Test(.timeLimit(.minutes(1))) func mistralRetriesRetryableHTTPFailure() async {
     await codexRequestLock.withLock {
         let requestCount = LockedState(0)
         let capturedBody = LockedState<String?>(nil)
@@ -6568,7 +6545,7 @@ struct ApiRegistryTests {
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }
 
-@Test func openRouterImagesGenerateBuildsPayloadAndParsesResponse() async throws {
+@Test(.timeLimit(.minutes(1))) func openRouterImagesGenerateBuildsPayloadAndParsesResponse() async throws {
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     let payloadJSON = LockedState<String?>(nil)
     let responseStatus = LockedState<Int?>(nil)

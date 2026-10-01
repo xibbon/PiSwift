@@ -128,7 +128,7 @@ private func captureAzureResponsesPayload(
     return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
 }
 
-@Test func samplingParamsMergeModelAndRequestValuesAndApplyLast() async throws {
+@Test(.timeLimit(.minutes(1))) func samplingParamsMergeModelAndRequestValuesAndApplyLast() async throws {
     await codexRequestLock.withLock {
         let modelOnly = await captureCompletionsPayload(
             model: requestTestModel(
@@ -181,7 +181,7 @@ private func captureAzureResponsesPayload(
     }
 }
 
-@Test func nonOpenAIAdapterIgnoresModelSamplingParams() async throws {
+@Test(.timeLimit(.minutes(1))) func nonOpenAIAdapterIgnoresModelSamplingParams() async throws {
     await codexRequestLock.withLock {
         let captured = LockedState<String?>(nil)
         MockURLProtocol.allowedHosts.withLock { $0 = ["sampling-google.example"] }
@@ -231,7 +231,7 @@ private func captureAzureResponsesPayload(
     }
 }
 
-@Test func responsesAdaptersApplySamplingParamsLast() async throws {
+@Test(.timeLimit(.minutes(1))) func responsesAdaptersApplySamplingParamsLast() async throws {
     await codexRequestLock.withLock {
         let responsesModel = Model(
             id: "responses-sampling-test",
@@ -283,7 +283,7 @@ private func captureAzureResponsesPayload(
     }
 }
 
-@Test func basetenThinkingEmitsTemplateArgsAndMappedReasoningEffort() async throws {
+@Test(.timeLimit(.minutes(1))) func basetenThinkingEmitsTemplateArgsAndMappedReasoningEffort() async throws {
     await codexRequestLock.withLock {
         let catalogModel = getModel(provider: .baseten, modelId: "zai-org/GLM-5.2")
         let model = Model(
@@ -312,7 +312,7 @@ private func captureAzureResponsesPayload(
     }
 }
 
-@Test func thinkingTokenBudgetHonorsFlagAndAnswerRoom() async throws {
+@Test(.timeLimit(.minutes(1))) func thinkingTokenBudgetHonorsFlagAndAnswerRoom() async throws {
     await codexRequestLock.withLock {
         let enabled = requestTestModel(
             host: "thinking-budget.example",

@@ -54,7 +54,7 @@ func uuidV7RejectsInvalidTimestamp(_ timestamp: Int64) {
     #expect(throws: StreamError.self) { try generator.generate(now: 0) }
 }
 
-@Test func uuidV7ConcurrentCallsRemainUnique() async throws {
+@Test(.timeLimit(.minutes(1))) func uuidV7ConcurrentCallsRemainUnique() async throws {
     let ids = try await withThrowingTaskGroup(of: String.self, returning: [String].self) { group in
         for _ in 0..<128 { group.addTask { try uuidv7(timestampMs: 0x0123456789ab) } }
         var ids: [String] = []

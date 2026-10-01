@@ -56,7 +56,7 @@ private func a4JSON(_ data: Data?) throws -> [String: Any] {
 }
 
 // Port of tagged getCompat: unknown compatible endpoints have no strict tool capability.
-@Test func a4UnknownCompletionsEndpointOmitsStrict() async throws {
+@Test(.timeLimit(.minutes(1))) func a4UnknownCompletionsEndpointOmitsStrict() async throws {
     let tool = AITool(name: "lookup", description: "lookup", parameters: ["type": AnyCodable("object")])
     let client = A4CompletionsClient()
     _ = await streamOpenAICompletions(model: a4Model(),
@@ -68,7 +68,7 @@ private func a4JSON(_ data: Data?) throws -> [String: Any] {
     #expect(function["strict"] == nil)
 }
 
-@Test func a4OpenRouterCompletionsDetectsSessionAffinity() async throws {
+@Test(.timeLimit(.minutes(1))) func a4OpenRouterCompletionsDetectsSessionAffinity() async throws {
     let client = A4CompletionsClient()
     let model = a4Model(provider: "openrouter")
     _ = await streamOpenAICompletions(model: model,
@@ -122,7 +122,7 @@ private func a4JSON(_ data: Data?) throws -> [String: Any] {
     }
 }
 
-@Test func a4ImageOnlyCompletionsHasNoEmptyTextPart() async throws {
+@Test(.timeLimit(.minutes(1))) func a4ImageOnlyCompletionsHasNoEmptyTextPart() async throws {
     let client = A4CompletionsClient()
     let image = ImageContent(data: "aGVsbG8=", mimeType: "image/png")
     let user = UserMessage(content: .blocks([.text(TextContent(text: "")), .image(image)]))

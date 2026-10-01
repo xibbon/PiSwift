@@ -43,7 +43,7 @@ private func containsOrderedSubsequence(_ values: [String], _ expected: [String]
     return index == expected.count
 }
 
-@Test func agentSessionDispatchesMessageLifecycleHooks() async throws {
+@Test(.timeLimit(.minutes(1))) func agentSessionDispatchesMessageLifecycleHooks() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-lifecycle-message-\(UUID().uuidString)")
         .path
@@ -118,7 +118,7 @@ private func containsOrderedSubsequence(_ values: [String], _ expected: [String]
     ]))
 }
 
-@Test func agentSessionDispatchesToolExecutionLifecycleHooks() async throws {
+@Test(.timeLimit(.minutes(1))) func agentSessionDispatchesToolExecutionLifecycleHooks() async throws {
     let tempDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pi-lifecycle-tool-\(UUID().uuidString)")
         .path

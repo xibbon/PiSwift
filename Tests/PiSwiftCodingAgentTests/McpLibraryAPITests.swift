@@ -241,7 +241,7 @@ func c4cServerMenuRebuildsWhenItsRegistrationIsRemoved() async throws {
     func redirectURL(title: String, authorizationURL: URL) async -> URL? { nil }
 }
 
-@Test @MainActor func c4cLiveMenuDefaultKeepsSnapshotHosts() async {
+@Test(.timeLimit(.minutes(1))) @MainActor func c4cLiveMenuDefaultKeepsSnapshotHosts() async {
     let host: any McpUi = C4cSnapshotUi()
     let expected = McpMenu(title: "Snapshot", items: [], confirmLabel: "select", cancelLabel: "back")
     #expect(await host.menu(build: { expected }) == "kept")

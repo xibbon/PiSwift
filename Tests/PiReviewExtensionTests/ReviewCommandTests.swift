@@ -161,7 +161,7 @@ private func runReview(_ review: ReviewSession, _ command: String = "/review unc
 struct ReviewCommandTests {
     /// The whole host path: `hasUI`, the git gate, origin resolution, and the
     /// `appendEntryHandler` that persists `review-session`.
-    @Test("review uncommitted reaches the model in a fresh session")
+    @Test("review uncommitted reaches the model in a fresh session", .timeLimit(.minutes(1)))
     func reviewUncommittedStartsATurn() async throws {
         let repository = try makeRepository()
         defer { try? FileManager.default.removeItem(atPath: repository) }
@@ -188,7 +188,7 @@ struct ReviewCommandTests {
 
     /// Review state used to live in one process-wide store, so an open review in
     /// one session refused /review in every other session of the process.
-    @Test("an open review in one session does not block another")
+    @Test("an open review in one session does not block another", .timeLimit(.minutes(1)))
     func reviewsInSeparateSessionsAreIndependent() async throws {
         let repository = try makeRepository()
         defer { try? FileManager.default.removeItem(atPath: repository) }
@@ -207,7 +207,7 @@ struct ReviewCommandTests {
 
     /// Hosts that pick or drop paths quote the ones with spaces; both the command's
     /// arguments and the folder prompt used to split them apart.
-    @Test("quoted folder paths keep their spaces", arguments: [
+    @Test("quoted folder paths keep their spaces", .timeLimit(.minutes(1)), arguments: [
         ("/review folder \"My Scenes\" ui", [String]()),
         ("/review", ["Review a folder (or more) (snapshot, not diff)", "\"My Scenes\"\nui"]),
     ])
@@ -226,7 +226,7 @@ struct ReviewCommandTests {
 
     /// Saved custom instructions live in the session, and nothing fires to load
     /// them into a new session's store unless /review does it itself.
-    @Test("saved custom review instructions reach a new session's review")
+    @Test("saved custom review instructions reach a new session's review", .timeLimit(.minutes(1)))
     func savedCustomInstructionsAreLoaded() async throws {
         let repository = try makeRepository()
         defer { try? FileManager.default.removeItem(atPath: repository) }
@@ -245,7 +245,7 @@ struct ReviewCommandTests {
 
     /// A host whose unsaved work git cannot see turns PR mode off, since it runs
     /// `gh pr checkout` in the working copy.
-    @Test("pull request review can be turned off by the host")
+    @Test("pull request review can be turned off by the host", .timeLimit(.minutes(1)))
     func pullRequestReviewCanBeDisabled() async throws {
         let repository = try makeRepository()
         defer { try? FileManager.default.removeItem(atPath: repository) }
@@ -269,7 +269,7 @@ struct ReviewCommandTests {
 
     /// A session rebuilt on the same file starts with an empty store; the persisted
     /// state must still refuse a nested review.
-    @Test("a session reopened mid-review refuses a nested review")
+    @Test("a session reopened mid-review refuses a nested review", .timeLimit(.minutes(1)))
     func reopenedSessionRefusesANestedReview() async throws {
         let repository = try makeRepository()
         defer { try? FileManager.default.removeItem(atPath: repository) }

@@ -182,7 +182,7 @@ private func deferredSearchTool(_ name: String, _ description: String,
     #expect(!created.session.getAllTools().contains(where: isToolSearchTool))
 }
 
-@Test func toolSearchActivationIsRecordedForTheNextModelCallAndTranscript() async throws {
+@Test(.timeLimit(.minutes(1))) func toolSearchActivationIsRecordedForTheNextModelCallAndTranscript() async throws {
     let created = await toolSearchSession(customTools: [
         deferredSearchTool("mcp__docs__search", "Search documentation.",
             namespace: ToolNamespace(name: "mcp__docs", description: "Docs server"))

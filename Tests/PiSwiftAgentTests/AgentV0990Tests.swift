@@ -3,7 +3,7 @@ import PiSwiftAI
 import PiSwiftAgent
 
 // v0.99.0 packages/agent/test/agent.test.ts: "forwards provider stream event observers through AgentOptions".
-@Test func agentForwardsProviderStreamEventObserver() async throws {
+@Test(.timeLimit(.minutes(1))) func agentForwardsProviderStreamEventObserver() async throws {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let observed = LockedState<[(AnyCodable, String)]>([])
     let streamFn: StreamFn = { model, _, options in
@@ -40,7 +40,7 @@ private enum A3TerminalStyle: CaseIterable, Sendable {
 }
 
 // v0.99.0 packages/agent/src/agent-loop.ts records the requested level from response.result().
-@Test func agentLoopRecordsRequestedThinkingLevelForEveryTerminalPath() async {
+@Test(.timeLimit(.minutes(1))) func agentLoopRecordsRequestedThinkingLevelForEveryTerminalPath() async {
     let requestedLevels: [(ReasoningEffort?, ModelThinkingLevel)] = [(.high, .high), (nil, .off)]
     let scenarios = requestedLevels.flatMap { request in
         A3TerminalStyle.allCases.map { (request.0, request.1, $0) }

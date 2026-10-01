@@ -88,7 +88,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
     return HookTestContext(session: session, tempDir: tempDir, cleanup: cleanup)
 }
 
-@Test func compactionHooksEmitEvents() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionHooksEmitEvents() async throws {
     guard API_KEY != nil else { return }
 
     try await withTempDir { tempDir in
@@ -126,7 +126,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
     }
 }
 
-@Test func compactionHooksCanCancel() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionHooksCanCancel() async throws {
     guard API_KEY != nil else { return }
 
     try await withTempDir { tempDir in
@@ -146,7 +146,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
     }
 }
 
-@Test func compactionHooksCanProvideCustomCompaction() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionHooksCanProvideCustomCompaction() async throws {
     guard API_KEY != nil else { return }
 
     try await withTempDir { tempDir in
@@ -183,7 +183,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
     }
 }
 
-@Test func compactionHooksContinueWhenHookThrows() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionHooksContinueWhenHookThrows() async throws {
     guard API_KEY != nil else { return }
 
     try await withTempDir { tempDir in
@@ -216,7 +216,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
     }
 }
 
-@Test func compactionHooksCallOrder() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionHooksCallOrder() async throws {
     guard API_KEY != nil else { return }
 
     try await withTempDir { tempDir in
@@ -253,7 +253,7 @@ private func createSession(tempDir: String, hooks: [LoadedHook]) -> HookTestCont
     }
 }
 
-@Test func compactionHooksEventData() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionHooksEventData() async throws {
     guard API_KEY != nil else { return }
 
     try await withTempDir { tempDir in

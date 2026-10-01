@@ -160,7 +160,7 @@ private func effortEvents(fallbackAfterContent: Bool = false) -> [[String: Any]]
     return events
 }
 
-@Test func anthropicManagedTransportAndFinalTransformations() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicManagedTransportAndFinalTransformations() async throws {
     let client = try EffortHTTPClient(events: effortEvents())
     let result = await streamAnthropic(model: managedEffortModel(), context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("one")))])),
         options: AnthropicOptions(apiKey: "test-key", httpClient: client, effort: .low)).result()
@@ -181,7 +181,7 @@ private func effortEvents(fallbackAfterContent: Bool = false) -> [[String: Any]]
     #expect(payload["stream"] as? Bool == true)
 }
 
-@Test func anthropicRejectsFallbackAfterOutput() async throws {
+@Test(.timeLimit(.minutes(1))) func anthropicRejectsFallbackAfterOutput() async throws {
     let client = try EffortHTTPClient(events: effortEvents(fallbackAfterContent: true))
     let result = await streamAnthropic(model: managedEffortModel(), context: normalizeContext(Context(messages: [])),
         options: AnthropicOptions(apiKey: "test-key", httpClient: client)).result()

@@ -35,6 +35,38 @@ private func a5Form(_ request: URLRequest) -> [String: String] {
 struct A5ChatGPTOAuthTests {
     private let redirect = "http://127.0.0.1:1455/auth/callback"
 
+    @Test(.timeLimit(.minutes(1))) func cancelledChatGPTLoginSettlesWhilePromptWaits() async throws {
+        let signal = CancellationToken()
+        let promptStarted = AsyncStream<Void>.makeStream()
+        let finished = LockedState(false)
+        let callbacks = OAuthLoginCallbacks(
+            onAuth: { _ in },
+            onPrompt: { _ in
+                promptStarted.continuation.yield(())
+                try await Task.sleep(for: .seconds(3600))
+                return "unused"
+            },
+            signal: signal,
+            getDeviceId: { "12345678-1234-1234-1234-123456789ABC" }
+        )
+        let task = Task {
+            defer { finished.withLock { $0 = true } }
+            return try await loginOpenAIChatGPT(callbacks, callbackPort: 0)
+        }
+        for await _ in promptStarted.stream { break }
+        task.cancel()
+        for _ in 0..<100 {
+            if finished.withLock({ $0 }) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(finished.withLock { $0 })
+        // Abort the server after the assertion to release an unfixed login wait.
+        signal.cancel()
+        promptStarted.continuation.finish()
+        do { _ = try await task.value; Issue.record("Expected task cancellation") }
+        catch { #expect(error is CancellationError) }
+    }
+
     @Test func credentialCodingPreservesNewFieldsAndReadsLegacyData() throws {
         let credentials = OAuthCredentials(
             refresh: "refresh", access: "access", expires: 1234,
@@ -67,7 +99,7 @@ struct A5ChatGPTOAuthTests {
         }
     }
 
-    @Test func deviceIdIsRequiredBeforeAuthorization() async {
+    @Test(.timeLimit(.minutes(1))) func deviceIdIsRequiredBeforeAuthorization() async {
         let sawAuth = LockedState(false)
         let callbacks = OAuthLoginCallbacks(onAuth: { _ in sawAuth.withLock { $0 = true } }, onPrompt: { _ in "" })
         do { _ = try await loginOpenAIChatGPT(callbacks, callbackPort: 0); Issue.record("Expected missing device ID") }
@@ -79,7 +111,7 @@ struct A5ChatGPTOAuthTests {
         #expect(!sawAuth.withLock { $0 })
     }
 
-    @Test func dynamicClientManualLoginAndRefresh() async throws {
+    @Test(.timeLimit(.minutes(1))) func dynamicClientManualLoginAndRefresh() async throws {
         try await codexRequestLock.withLock {
             let authorizationURL = LockedState<URL?>(nil)
             let exchange = LockedState<[String: String]>([:])
@@ -133,7 +165,7 @@ struct A5ChatGPTOAuthTests {
         }
     }
 
-    @Test func browserCallbackUsesIssuedClientAndShowsSuccessPage() async throws {
+    @Test(.timeLimit(.minutes(1))) func browserCallbackUsesIssuedClientAndShowsSuccessPage() async throws {
         try await codexRequestLock.withLock {
             let callbackTask = LockedState<Task<(Int, String), Never>?>(nil)
             let exchanged = LockedState<[String: String]>([:])
@@ -180,7 +212,7 @@ struct A5ChatGPTOAuthTests {
         }
     }
 
-    @Test func missingDirectScopeAndIdTokenAreRejected() async throws {
+    @Test(.timeLimit(.minutes(1))) func missingDirectScopeAndIdTokenAreRejected() async throws {
         try await codexRequestLock.withLock {
             let responseBody = LockedState(#"{"access_token":"access","refresh_token":"refresh","expires_in":3600,"id_token":"id","scope":"openid"}"#)
             MockURLProtocol.allowedHosts.withLock { $0 = ["auth.openai.com"] }
@@ -219,7 +251,7 @@ struct A5ChatGPTOAuthTests {
 #if canImport(Network)
 @Suite("A5 Anthropic and Codex OAuth", .serialized)
 struct A5OtherOAuthTests {
-    @Test func anthropicBrowserCallbackAndRefreshUsePlatformEndpoint() async throws {
+    @Test(.timeLimit(.minutes(1))) func anthropicBrowserCallbackAndRefreshUsePlatformEndpoint() async throws {
         try await codexRequestLock.withLock {
             let callbackTask = LockedState<Task<(Int, String), Never>?>(nil)
             let captured = LockedState<[[String: String]]>([])
@@ -269,7 +301,7 @@ struct A5OtherOAuthTests {
         }
     }
 
-    @Test func anthropicFallsBackToPasteWhenPortIsInUse() async throws {
+    @Test(.timeLimit(.minutes(1))) func anthropicFallsBackToPasteWhenPortIsInUse() async throws {
         try await codexRequestLock.withLock {
             let occupied = try await OAuthCallbackServer<String>.start(providerName: "Occupied", port: 0, path: "/occupied") { _ in "" }
             defer { Task { await occupied.close() } }
@@ -308,7 +340,7 @@ struct A5OtherOAuthTests {
         }
     }
 
-    @Test func codexProviderErrorRedirectDoesNotWaitForPrompt() async throws {
+    @Test(.timeLimit(.minutes(1))) func codexProviderErrorRedirectDoesNotWaitForPrompt() async throws {
         let callbackTask = LockedState<Task<Int, Never>?>(nil)
         let callbacks = OAuthLoginCallbacks(
             onAuth: { info in
@@ -333,7 +365,7 @@ struct A5OtherOAuthTests {
         #expect(await task.value == 400)
     }
 
-    @Test func codexFallsBackToPastedRedirectWhenPortIsInUse() async throws {
+    @Test(.timeLimit(.minutes(1))) func codexFallsBackToPastedRedirectWhenPortIsInUse() async throws {
         try await codexRequestLock.withLock {
             let occupied = try await OAuthCallbackServer<String>.start(providerName: "Occupied", port: 0, path: "/occupied") { _ in "" }
             defer { Task { await occupied.close() } }

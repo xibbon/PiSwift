@@ -114,7 +114,7 @@ private func a1ClassifierModel(id: String = "same") -> ClassifierModel {
     #expect(resolved.promptCache == model.promptCache)
 }
 
-@Test func missingImageProviderReturnsErrorResult() async {
+@Test(.timeLimit(.minutes(1))) func missingImageProviderReturnsErrorResult() async {
     ensureBuiltInImageProviders()
     unregisterImageApiProviders(sourceId: "built-in")
     defer { registerBuiltInImageApiProviders() }

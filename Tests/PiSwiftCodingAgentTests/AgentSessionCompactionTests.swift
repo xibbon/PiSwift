@@ -2,7 +2,7 @@ import Testing
 import PiSwiftAI
 import PiSwiftCodingAgent
 
-@Test func manualCompactionWorks() async throws {
+@Test(.timeLimit(.minutes(1))) func manualCompactionWorks() async throws {
     guard API_KEY != nil else { return }
 
     var overrides = Settings()
@@ -24,7 +24,7 @@ import PiSwiftCodingAgent
     #expect(messages.first?.role == "compactionSummary")
 }
 
-@Test func compactionKeepsSessionUsable() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionKeepsSessionUsable() async throws {
     guard API_KEY != nil else { return }
 
     var overrides = Settings()
@@ -46,7 +46,7 @@ import PiSwiftCodingAgent
     #expect(assistantMessages.count > 0)
 }
 
-@Test func compactionPersistsEntry() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionPersistsEntry() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()
@@ -69,7 +69,7 @@ import PiSwiftCodingAgent
     #expect(compactionEntries[0].tokensBefore > 0)
 }
 
-@Test func compactionWorksInMemory() async throws {
+@Test(.timeLimit(.minutes(1))) func compactionWorksInMemory() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession(options: TestSessionOptions(inMemory: true))
@@ -90,7 +90,7 @@ import PiSwiftCodingAgent
     #expect(compactionEntries.count == 1)
 }
 
-@Test func manualCompactionDoesNotEmitAutoEvents() async throws {
+@Test(.timeLimit(.minutes(1))) func manualCompactionDoesNotEmitAutoEvents() async throws {
     guard API_KEY != nil else { return }
 
     let ctx = createTestSession()

@@ -72,7 +72,7 @@ private actor RetryPortRecord {
     func finish(_ success: Bool, _ attempt: Int, _ error: String?) { finished.append((success, attempt, error)) }
 }
 
-@Test func retrySleepAbortRemovesErrorAndPreservesAssistantData() async throws {
+@Test(.timeLimit(.minutes(1))) func retrySleepAbortRemovesErrorAndPreservesAssistantData() async throws {
     let signal = CancellationToken()
     let record = RetryPortRecord()
     let result = await retryAssistantCall(produce: { await record.produce() },
@@ -92,13 +92,13 @@ private actor RetryPortRecord {
     #expect(finished.first?.1 == 1)
 }
 
-@Test func sharedSleepRejectsAlreadyAbortedSignal() async {
+@Test(.timeLimit(.minutes(1))) func sharedSleepRejectsAlreadyAbortedSignal() async {
     let signal = CancellationToken()
     signal.cancel()
     await #expect(throws: StreamError.self) { try await abortableSleep(ms: 60_000, signal: signal) }
 }
 
-@Test func sharedSleepRespondsToCancellationDuringWait() async throws {
+@Test(.timeLimit(.minutes(1))) func sharedSleepRespondsToCancellationDuringWait() async throws {
     let signal = CancellationToken()
     let sleeper = Task { try await abortableSleep(ms: 60_000, signal: signal) }
     await Task.yield()

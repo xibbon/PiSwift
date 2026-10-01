@@ -25,7 +25,7 @@ private func bedrockHeaderAuditModel() -> Model {
         cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25), contextWindow: 200_000, maxTokens: 4096)
 }
 
-@Test func bedrockForwardsActualResponseHeadersBeforeEmptyStreamFails() async throws {
+@Test(.timeLimit(.minutes(1))) func bedrockForwardsActualResponseHeadersBeforeEmptyStreamFails() async throws {
     try await codexRequestLock.withLock {
         #expect(URLProtocol.registerClass(BedrockHeaderAuditProtocol.self))
         defer { URLProtocol.unregisterClass(BedrockHeaderAuditProtocol.self) }

@@ -79,7 +79,7 @@ private func a4Request(api: Api, provider: String, sessionId: String? = nil,
 
 // Port of opencode-provider-headers.test.ts: direct and simple dispatch share the
 // case-insensitive, non-overwriting session-header rule, even with caching off.
-@Test(arguments: [Api.anthropicMessages, .googleGenerativeAI, .openAICompletions, .openAIResponses], [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [Api.anthropicMessages, .googleGenerativeAI, .openAICompletions, .openAIResponses], [false, true])
 func a4OpenCodeSessionHeaderAcrossAdapters(api: Api, simple: Bool) async throws {
     for provider in ["opencode", "opencode-go"] {
         let request = try await a4Request(api: api, provider: provider, sessionId: "conversation-1",
@@ -88,7 +88,7 @@ func a4OpenCodeSessionHeaderAcrossAdapters(api: Api, simple: Bool) async throws 
     }
 }
 
-@Test(arguments: ["opencode", "opencode-go"])
+@Test(.timeLimit(.minutes(1)), arguments: ["opencode", "opencode-go"])
 func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async throws {
     for header: ProviderHeaders in [["X-OpenCode-Session": "caller-value"], ["X-OpenCode-Session": nil]] {
         let merged = openCodeSessionHeaders(model: a4Model(api: .anthropicMessages, provider: provider),
@@ -101,7 +101,7 @@ func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async thro
 }
 
 // Port of fireworks-models.test.ts OpenRouter and Fireworks affinity cases.
-@Test func a4AnthropicOpenRouterAffinityUsesOnlySessionIdHeader() async throws {
+@Test(.timeLimit(.minutes(1))) func a4AnthropicOpenRouterAffinityUsesOnlySessionIdHeader() async throws {
     let request = try await a4Request(api: .anthropicMessages, provider: "openrouter", sessionId: "route-1")
     #expect(request.value(forHTTPHeaderField: "x-session-id") == "route-1")
     #expect(request.value(forHTTPHeaderField: "x-session-affinity") == nil)
@@ -115,7 +115,7 @@ func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async thro
     #expect(overridden.value(forHTTPHeaderField: "x-session-id") == nil)
 }
 
-@Test func a4AnthropicFireworksAffinityRequiresCompatFlag() async throws {
+@Test(.timeLimit(.minutes(1))) func a4AnthropicFireworksAffinityRequiresCompatFlag() async throws {
     let request = try await a4Request(api: .anthropicMessages, provider: "fireworks", sessionId: "fireworks-1",
         compat: OpenAICompat(sendSessionAffinityHeaders: true))
     #expect(request.value(forHTTPHeaderField: "x-session-affinity") == "fireworks-1")
@@ -125,7 +125,7 @@ func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async thro
 }
 
 // Port of openai-completions-prompt-cache.test.ts Baseten catalog assertion.
-@Test func a4BasetenCatalogAffinityReachesCompletionsRequest() async throws {
+@Test(.timeLimit(.minutes(1))) func a4BasetenCatalogAffinityReachesCompletionsRequest() async throws {
     let model = try #require(getModels(provider: .baseten).first { $0.compat?.sendSessionAffinityHeaders == true })
     let client = A4CaptureHTTP()
     _ = await streamOpenAICompletions(model: model,
@@ -144,7 +144,7 @@ func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async thro
     #expect(uncachedRequest.value(forHTTPHeaderField: "x-session-affinity") == nil)
 }
 
-@Test func a4OpenRouterCompletionsAffinityRespectsCacheRetention() async throws {
+@Test(.timeLimit(.minutes(1))) func a4OpenRouterCompletionsAffinityRespectsCacheRetention() async throws {
     let compat = OpenAICompat(sendSessionAffinityHeaders: true, sessionAffinityFormat: .openrouter)
     let cached = try await a4Request(api: .openAICompletions, provider: "openrouter",
         sessionId: "openrouter-1", compat: compat)
@@ -188,7 +188,7 @@ func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async thro
     #expect(restored.responseModel == "served")
 }
 
-@Test func a4AnthropicOneHourUsageDetailUsesSeparateRate() async {
+@Test(.timeLimit(.minutes(1))) func a4AnthropicOneHourUsageDetailUsesSeparateRate() async {
     let model = a4Model(api: .anthropicMessages, provider: "anthropic")
     let result = await streamAnthropic(model: model,
         context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
@@ -200,7 +200,7 @@ func a4OpenCodeSessionHeaderPreservesCallerOverride(provider: String) async thro
 }
 
 // Upstream anthropic-messages.ts preserves unsigned thinking for compatible relays.
-@Test(arguments: [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
 func a4AnthropicUnsignedThinkingReplayFollowsCompat(allowEmptySignature: Bool) async throws {
     let model = Model(id: "requested-model", name: "Requested", api: .anthropicMessages,
         provider: "vercel-ai-gateway", baseUrl: "https://example.invalid/v1",
@@ -227,7 +227,7 @@ func a4AnthropicUnsignedThinkingReplayFollowsCompat(allowEmptySignature: Bool) a
     if allowEmptySignature { #expect(blocks.first?["signature"] as? String == "") }
 }
 
-@Test func a4AzureResponsesErrorUsesActualProviderName() async {
+@Test(.timeLimit(.minutes(1))) func a4AzureResponsesErrorUsesActualProviderName() async {
     let client = A4CaptureHTTP(body: Data())
     let model = Model(id: "deployment", name: "Azure deployment", api: .azureOpenAIResponses,
         provider: "azure-openai-responses", baseUrl: "https://fixture.openai.azure.com",

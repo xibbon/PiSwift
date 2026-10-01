@@ -105,7 +105,7 @@ private func connectedServer(version: String = LATEST_PROTOCOL_VERSION) async th
         }
     }
 
-    @Test("Negotiates the current and oldest supported versions")
+    @Test("Negotiates the current and oldest supported versions", .timeLimit(.minutes(1)))
     func versions() async throws {
         let (client, server) = try await connectedServer(version: "2024-11-05")
         #expect(await client.negotiatedProtocolVersion() == "2024-11-05")
@@ -125,7 +125,7 @@ private func connectedServer(version: String = LATEST_PROTOCOL_VERSION) async th
         await unsupported.close()
     }
 
-    @Test("Preserves tool metadata and lists resource templates")
+    @Test("Preserves tool metadata and lists resource templates", .timeLimit(.minutes(1)))
     func toolsAndTemplates() async throws {
         let (client, server) = try await connectedServer()
         await server.setHandler("tools/list") { _ in
@@ -142,7 +142,7 @@ private func connectedServer(version: String = LATEST_PROTOCOL_VERSION) async th
         await client.close(); await server.close()
     }
 
-    @Test("Replies to roots/list with a string request ID")
+    @Test("Replies to roots/list with a string request ID", .timeLimit(.minutes(1)))
     func roots() async throws {
         let (clientTransport, serverTransport) = InMemoryTransport.pair()
         let server = TestServer(transport: serverTransport)
@@ -177,7 +177,7 @@ private actor RootStore {
 }
 
 @Suite("MCP progress and content") struct McpProgressContentTests {
-    @Test("Progress renews the request timeout and cancellation notifies the server")
+    @Test("Progress renews the request timeout and cancellation notifies the server", .timeLimit(.minutes(1)))
     func progressAndCancellation() async throws {
         let (client, server) = try await connectedServer()
         await server.setHandler("tools/call") { request in
@@ -243,7 +243,7 @@ private actor EventRecorder {
 }
 
 @Suite("MCP upstream client cases") struct McpUpstreamClientTests {
-    @Test("Requests a supported older version and loads roots for each request")
+    @Test("Requests a supported older version and loads roots for each request", .timeLimit(.minutes(1)))
     func requestedVersionAndDynamicRoots() async throws {
         let (clientTransport, serverTransport) = InMemoryTransport.pair()
         let server = TestServer(transport: serverTransport)
@@ -275,7 +275,7 @@ private actor EventRecorder {
         await client.close(); await server.close()
     }
 
-    @Test("Paginates resources, fills missing names, and validates resource reads")
+    @Test("Paginates resources, fills missing names, and validates resource reads", .timeLimit(.minutes(1)))
     func resources() async throws {
         let (client, server) = try await connectedServer()
         await server.setHandler("resources/list") { request in
@@ -299,7 +299,7 @@ private actor EventRecorder {
         await client.close(); await server.close()
     }
 
-    @Test("Keeps structured-only tool results and rejects malformed content")
+    @Test("Keeps structured-only tool results and rejects malformed content", .timeLimit(.minutes(1)))
     func structuredOnly() async throws {
         let (client, server) = try await connectedServer()
         await server.setHandler("tools/call") { _ in
@@ -316,7 +316,7 @@ private actor EventRecorder {
         await client.close(); await server.close()
     }
 
-    @Test("Times out initialize without sending cancellation")
+    @Test("Times out initialize without sending cancellation", .timeLimit(.minutes(1)))
     func initializeTimeout() async throws {
         let (clientTransport, serverTransport) = InMemoryTransport.pair()
         let server = TestServer(transport: serverTransport)
@@ -332,7 +332,7 @@ private actor EventRecorder {
         await server.close()
     }
 
-    @Test("Closes once and rejects pending requests when transport drops")
+    @Test("Closes once and rejects pending requests when transport drops", .timeLimit(.minutes(1)))
     func closeOnce() async throws {
         let (clientTransport, serverTransport) = InMemoryTransport.pair()
         let server = TestServer(transport: serverTransport)
@@ -355,7 +355,7 @@ private actor EventRecorder {
         #expect(await recorder.count == 1)
     }
 
-    @Test("Dispatches server notifications")
+    @Test("Dispatches server notifications", .timeLimit(.minutes(1)))
     func notifications() async throws {
         let (clientTransport, serverTransport) = InMemoryTransport.pair()
         let server = TestServer(transport: serverTransport)
