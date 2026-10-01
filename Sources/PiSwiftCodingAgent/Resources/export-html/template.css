@@ -9,6 +9,10 @@
 
     :root {
       --line-height: 18px; /* 12px font * 1.5 */
+      --sidebar-width: 400px;
+      --sidebar-min-width: 240px;
+      --sidebar-max-width: 840px;
+      --sidebar-resizer-width: 6px;
     }
 
     body {
@@ -19,6 +23,11 @@
       background: var(--body-bg);
     }
 
+    body.sidebar-resizing {
+      cursor: col-resize;
+      user-select: none;
+    }
+
     #app {
       display: flex;
       min-height: 100vh;
@@ -26,7 +35,9 @@
 
     /* Sidebar */
     #sidebar {
-      width: 400px;
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      max-width: var(--sidebar-width);
       background: var(--container-bg);
       flex-shrink: 0;
       display: flex;
@@ -35,6 +46,24 @@
       top: 0;
       height: 100vh;
       border-right: 1px solid var(--dim);
+    }
+
+    #sidebar-resizer {
+      width: var(--sidebar-resizer-width);
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      cursor: col-resize;
+      touch-action: none;
+      background: transparent;
+      border-right: 1px solid transparent;
+    }
+
+    #sidebar-resizer:hover,
+    body.sidebar-resizing #sidebar-resizer {
+      background: var(--selectedBg);
+      border-right-color: var(--dim);
     }
 
     .sidebar-header {
@@ -144,6 +173,15 @@
     }
 
     .tree-node.in-path {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+
+    .tree-node:not(.in-path) {
+      opacity: 0.5;
+    }
+
+    .tree-node:not(.in-path):hover {
+      opacity: 1;
     }
 
     .tree-prefix {
@@ -164,6 +202,10 @@
 
     .tree-role-user {
       color: var(--accent);
+    }
+
+    .tree-role-skill {
+      color: var(--customMessageLabel);
     }
 
     .tree-role-assistant {
@@ -204,6 +246,7 @@
     /* Main content */
     #content {
       flex: 1;
+      min-width: 0;
       overflow-y: auto;
       padding: var(--line-height) calc(var(--line-height) * 2);
       display: flex;
@@ -218,39 +261,49 @@
 
     /* Help bar */
     .help-bar {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 6px;
       font-size: 11px;
       color: var(--warning);
       margin-bottom: var(--line-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
     }
 
-    .header-toggle {
+    .help-hint {
+      flex: 1 1 240px;
+    }
+
+    .help-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .header-toggle,
+    .download-json-btn {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--container-bg);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--bg);
+      border-radius: 3px;
       color: var(--text);
-      font: inherit;
-      line-height: 1.4;
-      padding: 1px 7px;
       cursor: pointer;
+      font-family: inherit;
     }
 
-    .header-toggle:hover {
+    .header-toggle:hover,
+    .download-json-btn:hover {
+      background: var(--hover);
       border-color: var(--borderAccent);
-      color: var(--borderAccent);
     }
 
     .header-toggle[aria-pressed="true"] {
-      border-color: var(--accent);
-      background: var(--info-bg);
       color: var(--accent);
-    }
-
-    .help-shortcuts {
-      color: var(--dim);
+      border-color: var(--accent);
+      font-weight: bold;
     }
 
     /* Header */
@@ -310,10 +363,66 @@
       color: var(--userMessageText);
       padding: var(--line-height);
       border-radius: 4px;
+      position: relative;
     }
 
     .assistant-message {
       padding: 0;
+      position: relative;
+    }
+
+    /* Copy link button - appears on hover */
+    .copy-link-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      padding: 6px;
+      background: var(--container-bg);
+      border: 1px solid var(--dim);
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.15s, color 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .user-message:hover .copy-link-btn,
+    .assistant-message:hover .copy-link-btn,
+    .skill-user-entry:hover .copy-link-btn {
+      opacity: 1;
+    }
+
+    .copy-link-btn:hover {
+      background: var(--accent);
+      color: var(--body-bg);
+      border-color: var(--accent);
+    }
+
+    .copy-link-btn.copied {
+      background: var(--success, #22c55e);
+      color: white;
+      border-color: var(--success, #22c55e);
+    }
+
+    /* Highlight effect for deep-linked messages */
+    .user-message.highlight,
+    .assistant-message.highlight {
+      animation: highlight-pulse 2s ease-out;
+    }
+
+    @keyframes highlight-pulse {
+      0% {
+        box-shadow: 0 0 0 3px var(--accent);
+      }
+      100% {
+        box-shadow: 0 0 0 0 transparent;
+      }
     }
 
     .assistant-message > .message-timestamp {
@@ -436,40 +545,6 @@
       color: var(--text);
     }
 
-    .path-list-entry,
-    .grep-line {
-      line-height: var(--line-height);
-      white-space: pre-wrap;
-    }
-
-    .path-list-entry.directory {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .grep-path {
-      color: var(--accent);
-    }
-
-    .grep-line-number {
-      color: var(--warning);
-    }
-
-    .grep-line.match .grep-content {
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    .grep-line.context .grep-content {
-      color: var(--toolOutput);
-    }
-
-    .tool-notice {
-      color: var(--dim);
-      line-height: var(--line-height);
-      white-space: pre-wrap;
-    }
-
     .tool-output.expandable {
       cursor: pointer;
     }
@@ -488,6 +563,10 @@
 
     .tool-output.expandable.expanded .output-full {
       display: block;
+    }
+
+    .ansi-line {
+      white-space: pre;
     }
 
     .tool-images {
@@ -567,19 +646,56 @@
       margin-bottom: var(--line-height);
     }
 
+    .system-prompt.expandable {
+      cursor: pointer;
+    }
+
     .system-prompt-header {
       font-weight: bold;
       color: var(--customMessageLabel);
     }
 
-    .system-prompt-content {
+    .system-prompt-preview {
       color: var(--customMessageText);
       white-space: pre-wrap;
       word-wrap: break-word;
       font-size: 11px;
-      max-height: 200px;
-      overflow-y: auto;
       margin-top: var(--line-height);
+    }
+
+    .system-prompt-expand-hint {
+      color: var(--muted);
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    .system-prompt-full {
+      display: none;
+      color: var(--customMessageText);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 11px;
+      margin-top: var(--line-height);
+    }
+
+    .system-prompt.expanded .system-prompt-preview,
+    .system-prompt.expanded .system-prompt-expand-hint {
+      display: none;
+    }
+
+    .system-prompt.expanded .system-prompt-full {
+      display: block;
+    }
+
+    .system-prompt.provider-prompt {
+      border-left: 3px solid var(--warning);
+    }
+
+    .system-prompt-note {
+      font-size: 10px;
+      font-style: italic;
+      color: var(--muted);
+      margin-top: 4px;
     }
 
     /* Tools list */
@@ -592,7 +708,7 @@
 
     .tools-header {
       font-weight: bold;
-      color: var(--warning);
+      color: var(--customMessageLabel);
       margin-bottom: var(--line-height);
     }
 
@@ -609,6 +725,65 @@
       color: var(--dim);
     }
 
+    .tool-params-hint {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .tool-item:has(.tool-params-hint) {
+      cursor: pointer;
+    }
+
+    .tool-params-hint::after {
+      content: '[click to show parameters]';
+    }
+
+    .tool-item.params-expanded .tool-params-hint::after {
+      content: '[hide parameters]';
+    }
+
+    .tool-params-content {
+      display: none;
+      margin-top: 4px;
+      margin-left: 12px;
+      padding-left: 8px;
+      border-left: 1px solid var(--dim);
+    }
+
+    .tool-item.params-expanded .tool-params-content {
+      display: block;
+    }
+
+    .tool-param {
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+
+    .tool-param-name {
+      font-weight: bold;
+      color: var(--text);
+    }
+
+    .tool-param-type {
+      color: var(--dim);
+      font-style: italic;
+    }
+
+    .tool-param-required {
+      color: var(--warning, #e8a838);
+      font-size: 10px;
+    }
+
+    .tool-param-optional {
+      color: var(--dim);
+      font-size: 10px;
+    }
+
+    .tool-param-desc {
+      color: var(--dim);
+      margin-left: 8px;
+    }
+
     /* Hook/custom messages */
     .hook-message {
       background: var(--customMessageBg);
@@ -617,9 +792,52 @@
       border-radius: 4px;
     }
 
+    body:not(.show-hidden-messages) .hook-message-hidden {
+      display: none;
+    }
+
     .hook-type {
       color: var(--customMessageLabel);
       font-weight: bold;
+    }
+
+    /* Skill invocation - matches compaction style (clickable, collapsed by default) */
+    .skill-invocation {
+      background: var(--customMessageBg);
+      border-radius: 4px;
+      padding: var(--line-height);
+      cursor: pointer;
+    }
+
+    .skill-invocation-label {
+      color: var(--customMessageLabel);
+      font-weight: bold;
+    }
+
+    .skill-invocation-collapsed {
+      color: var(--customMessageText);
+    }
+
+    .skill-invocation-content {
+      display: none;
+      color: var(--customMessageText);
+      margin-top: var(--line-height);
+    }
+
+    .skill-invocation.expanded .skill-invocation-collapsed {
+      display: none;
+    }
+
+    .skill-invocation.expanded .skill-invocation-content {
+      display: block;
+    }
+
+    .skill-invocation + .user-message {
+      margin-top: var(--line-height);
+    }
+
+    .skill-user-entry {
+      position: relative;
     }
 
     /* Branch summary */
@@ -638,6 +856,9 @@
     .error-text {
       color: var(--error);
       padding: 0 var(--line-height);
+    }
+    .tool-error {
+      color: var(--error);
     }
 
     /* Images */
@@ -807,17 +1028,24 @@
     @media (max-width: 900px) {
       #sidebar {
         position: fixed;
-        left: -400px;
-        width: 400px;
+        left: 0;
+        width: min(var(--sidebar-width), 100vw);
+        min-width: min(var(--sidebar-width), 100vw);
+        max-width: min(var(--sidebar-width), 100vw);
         top: 0;
         bottom: 0;
         height: 100vh;
         z-index: 99;
-        transition: left 0.3s;
+        transform: translateX(-100%);
+        transition: transform 0.3s;
       }
 
       #sidebar.open {
-        left: 0;
+        transform: translateX(0);
+      }
+
+      #sidebar-resizer {
+        display: none;
       }
 
       #sidebar-overlay.open {
@@ -841,15 +1069,81 @@
       }
     }
 
-    @media (max-width: 500px) {
-      #sidebar {
-        width: 100vw;
-        left: -100vw;
-      }
-    }
-
     @media print {
-      #sidebar, #sidebar-toggle { display: none !important; }
+      #sidebar, #sidebar-resizer, #sidebar-toggle { display: none !important; }
       body { background: white; color: black; }
       #content { max-width: none; }
     }
+
+    .help-shortcuts {
+      color: var(--dim);
+    }
+
+    .path-list-entry,
+    .grep-line {
+      line-height: var(--line-height);
+      white-space: pre-wrap;
+    }
+
+    .path-list-entry.directory {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .grep-path {
+      color: var(--accent);
+    }
+
+    .grep-line-number {
+      color: var(--warning);
+    }
+
+    .grep-line.match .grep-content {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .grep-line.context .grep-content {
+      color: var(--toolOutput);
+    }
+
+    .tool-notice {
+      color: var(--dim);
+      line-height: var(--line-height);
+      white-space: pre-wrap;
+    }
+
+    .tool-output.expandable {
+      cursor: pointer;
+    }
+
+    .tool-output.expandable:hover {
+      opacity: 0.9;
+    }
+
+    .tool-output.expandable .output-full {
+      display: none;
+    }
+
+    .tool-output.expandable.expanded .output-preview {
+      display: none;
+    }
+
+    .tool-output.expandable.expanded .output-full {
+      display: block;
+    }
+
+    .tool-images {
+    }
+
+    .tool-image {
+      max-width: 100%;
+      max-height: 500px;
+      border-radius: 4px;
+      margin: var(--line-height) 0;
+    }
+
+    .expand-hint {
+      color: var(--toolOutput);
+    }
+

@@ -65,9 +65,28 @@ public enum ThemeBg: String, CaseIterable, Sendable {
     case toolErrorBg
 }
 
-private enum ColorMode: String {
-    case truecolor
-    case color256
+private typealias ColorMode = TerminalColorMode
+
+public enum ThemeAppearance: String, Codable, Sendable { case dark, light }
+
+public struct TerminalColors: Sendable, Equatable {
+    public var foreground: RgbColorValue?
+    public var background: RgbColorValue?
+    public var palette: [RgbColorValue]?
+    public init(foreground: RgbColorValue? = nil, background: RgbColorValue? = nil, palette: [RgbColorValue]? = nil) {
+        self.foreground = foreground; self.background = background; self.palette = palette
+    }
+}
+
+public enum ThemeForeground: Sendable { case token(ThemeColor), color(Color) }
+public enum ThemeBackground: Sendable { case token(ThemeBg), color(Color) }
+public struct ThemeStyle: Sendable {
+    public var fg: ThemeForeground?
+    public var bg: ThemeBackground?
+    public var attributes: TextAttributes
+    public init(fg: ThemeForeground? = nil, bg: ThemeBackground? = nil, attributes: TextAttributes = TextAttributes()) {
+        self.fg = fg; self.bg = bg; self.attributes = attributes
+    }
 }
 
 private enum ThemeColorValue: Decodable, Sendable {
@@ -99,6 +118,7 @@ private struct ThemeExportSection: Decodable, Sendable {
 
 private struct ThemeJson: Decodable, Sendable {
     var name: String
+    var appearance: ThemeAppearance?
     var vars: [String: ThemeColorValue]?
     var colors: [String: ThemeColorValue]
     var export: ThemeExportSection?
@@ -120,9 +140,54 @@ private enum ThemeLoadError: Error, CustomStringConvertible {
 
 public struct Theme: Sendable {
     public let name: String
-    private var fgColors: [ThemeColor: String]
-    private var bgColors: [ThemeBg: String]
+    fileprivate var fgColors: [ThemeColor: String]
+    fileprivate var bgColors: [ThemeBg: String]
     private var mode: ColorMode
+    fileprivate var concreteColors: [String: Color] = [:]
+    fileprivate var defaultForegroundTokens: [String] = []
+    fileprivate var defaultBackgroundTokens: [String] = []
+    fileprivate var dimTokens: Set<ThemeColor> = []
+    fileprivate var ownAppearance: ThemeAppearance?
+    private let cache = LockedState(ThemeResolvedCache())
+
+    public var colorMode: TerminalColorMode { mode }
+    public var appearance: ThemeAppearance { ownAppearance ?? getTerminalTheme() }
+    public var colors: [String: Color] {
+        let snapshot = withThemeState { ($0.terminalColors, $0.generation, $0.terminalColorScheme) }
+        return cache.withLock { state in
+            if state.generation == snapshot.1 { return state.colors }
+            let light = (ownAppearance ?? detectTerminalTheme(colors: snapshot.0, reportedScheme: snapshot.2)) == .light
+            let foreground = snapshot.0.foreground.map(Color.rgb) ?? (try! parseColor(light ? "#000000" : "#e5e5e7"))
+            let background = snapshot.0.background.map(Color.rgb) ?? (try! parseColor(light ? "#ffffff" : "#000000"))
+            var values = concreteColors
+            for token in defaultForegroundTokens { values[token] = foreground }
+            for token in defaultBackgroundTokens { values[token] = background }
+            for token in dimTokens {
+                if let color = values[token.rawValue] { values[token.rawValue] = try! mixColors(color, background, amount: 0.4) }
+            }
+            state.generation = snapshot.1; state.colors = values
+            return values
+        }
+    }
+
+    public func style(_ text: String, options: ThemeStyle) -> String {
+        var attributes = options.attributes
+        var foreground: String?
+        var background: String?
+        if let fg = options.fg {
+            switch fg {
+            case .token(let token): foreground = fgColors[token]; if dimTokens.contains(token) { attributes.dim = true }
+            case .color(let color): foreground = foregroundAnsi(color, mode)
+            }
+        }
+        if let bg = options.bg {
+            switch bg {
+            case .token(let token): background = bgColors[token]
+            case .color(let color): background = backgroundAnsi(color, mode)
+            }
+        }
+        return styleTextWithAnsi(text, fgAnsi: foreground, bgAnsi: background, options: attributes)
+    }
 
     fileprivate init(fgColors: [ThemeColor: String], bgColors: [ThemeBg: String], mode: ColorMode, name: String = "dark") {
         self.name = name
@@ -139,6 +204,7 @@ public struct Theme: Sendable {
 
     public func fg(_ color: ThemeColor, _ text: String) -> String {
         guard let ansi = fgColors[color] else { return text }
+        if dimTokens.contains(color) { return "\(ansi)\u{001B}[2m\(text)\u{001B}[22;39m" }
         return "\(ansi)\(text)\u{001B}[39m"
     }
 
@@ -178,7 +244,7 @@ public struct Theme: Sendable {
     }
 
     public func getFgAnsi(_ color: ThemeColor) -> String {
-        fgColors[color] ?? "\u{001B}[39m"
+        (fgColors[color] ?? "\u{001B}[39m") + (dimTokens.contains(color) ? "\u{001B}[2m" : "")
     }
 
     public func getBgAnsi(_ color: ThemeBg) -> String {
@@ -230,146 +296,21 @@ private struct ResolvedColor: Sendable {
     }
 }
 
-private let cubeValues: [Int] = [0, 95, 135, 175, 215, 255]
-private let grayValues: [Int] = (0..<24).map { 8 + $0 * 10 }
+private struct ThemeResolvedCache: Sendable {
+    var generation: UInt64? = nil
+    var colors: [String: Color] = [:]
+}
 
 private func detectColorMode() -> ColorMode {
+    if let mode = withThemeState({ $0.colorMode }) { return mode }
     let env = ProcessInfo.processInfo.environment
-    let term = env["TERM"] ?? ""
-    // GNU Screen sets TERM to "screen" or "screen-256color"; downgrade to 256color
-    if term == "screen" || term.hasPrefix("screen-") {
-        return .color256
-    }
-    if let colorterm = env["COLORTERM"], colorterm == "truecolor" || colorterm == "24bit" {
-        return .truecolor
-    }
-    if env["WT_SESSION"] != nil {
-        return .truecolor
-    }
-    if term.contains("256color") {
-        return .color256
-    }
-    return .color256
+    return ["truecolor", "24bit"].contains(env["COLORTERM"] ?? "") || (env["TERM"] ?? "").hasSuffix("-direct") || env["WT_SESSION"] != nil ? .truecolor : .color256
 }
 
-private func hexToRgb(_ hex: String) throws -> (r: Int, g: Int, b: Int) {
-    let cleaned = hex.replacingOccurrences(of: "#", with: "")
-    guard cleaned.count == 6 else {
-        throw ThemeLoadError.invalidTheme("Invalid hex color: \(hex)")
-    }
-    let r = Int(cleaned.prefix(2), radix: 16)
-    let g = Int(cleaned.dropFirst(2).prefix(2), radix: 16)
-    let b = Int(cleaned.dropFirst(4).prefix(2), radix: 16)
-    guard let r, let g, let b else {
-        throw ThemeLoadError.invalidTheme("Invalid hex color: \(hex)")
-    }
-    return (r, g, b)
-}
-
-private func colorDistance(_ r1: Int, _ g1: Int, _ b1: Int, _ r2: Int, _ g2: Int, _ b2: Int) -> Double {
-    let dr = Double(r1 - r2)
-    let dg = Double(g1 - g2)
-    let db = Double(b1 - b2)
-    return dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114
-}
-
-private func findClosestCubeIndex(_ value: Int) -> Int {
-    var minDist = Int.max
-    var minIdx = 0
-    for (idx, candidate) in cubeValues.enumerated() {
-        let dist = abs(value - candidate)
-        if dist < minDist {
-            minDist = dist
-            minIdx = idx
-        }
-    }
-    return minIdx
-}
-
-private func findClosestGrayIndex(_ value: Int) -> Int {
-    var minDist = Int.max
-    var minIdx = 0
-    for (idx, candidate) in grayValues.enumerated() {
-        let dist = abs(value - candidate)
-        if dist < minDist {
-            minDist = dist
-            minIdx = idx
-        }
-    }
-    return minIdx
-}
-
-private func rgbTo256(_ r: Int, _ g: Int, _ b: Int) -> Int {
-    let rIdx = findClosestCubeIndex(r)
-    let gIdx = findClosestCubeIndex(g)
-    let bIdx = findClosestCubeIndex(b)
-    let cubeR = cubeValues[rIdx]
-    let cubeG = cubeValues[gIdx]
-    let cubeB = cubeValues[bIdx]
-    let cubeIndex = 16 + 36 * rIdx + 6 * gIdx + bIdx
-    let cubeDist = colorDistance(r, g, b, cubeR, cubeG, cubeB)
-
-    let gray = Int((0.299 * Double(r)) + (0.587 * Double(g)) + (0.114 * Double(b)))
-    let grayIdx = findClosestGrayIndex(gray)
-    let grayValue = grayValues[grayIdx]
-    let grayIndex = 232 + grayIdx
-    let grayDist = colorDistance(r, g, b, grayValue, grayValue, grayValue)
-
-    let maxC = max(r, g, b)
-    let minC = min(r, g, b)
-    let spread = maxC - minC
-
-    if spread < 10 && grayDist < cubeDist {
-        return grayIndex
-    }
-    return cubeIndex
-}
-
-private func hexTo256(_ hex: String) throws -> Int {
-    let rgb = try hexToRgb(hex)
-    return rgbTo256(rgb.r, rgb.g, rgb.b)
-}
-
-private func fgAnsi(_ color: ResolvedColor, _ mode: ColorMode) throws -> String {
-    if let number = color.number {
-        return "\u{001B}[38;5;\(number)m"
-    }
-    let value = color.string ?? ""
-    if value.isEmpty {
-        return "\u{001B}[39m"
-    }
-    if value.hasPrefix("#") {
-        switch mode {
-        case .truecolor:
-            let rgb = try hexToRgb(value)
-            return "\u{001B}[38;2;\(rgb.r);\(rgb.g);\(rgb.b)m"
-        case .color256:
-            let index = try hexTo256(value)
-            return "\u{001B}[38;5;\(index)m"
-        }
-    }
-    throw ThemeLoadError.invalidTheme("Invalid color value: \(value)")
-}
-
-private func bgAnsi(_ color: ResolvedColor, _ mode: ColorMode) throws -> String {
-    if let number = color.number {
-        return "\u{001B}[48;5;\(number)m"
-    }
-    let value = color.string ?? ""
-    if value.isEmpty {
-        return "\u{001B}[49m"
-    }
-    if value.hasPrefix("#") {
-        switch mode {
-        case .truecolor:
-            let rgb = try hexToRgb(value)
-            return "\u{001B}[48;2;\(rgb.r);\(rgb.g);\(rgb.b)m"
-        case .color256:
-            let index = try hexTo256(value)
-            return "\u{001B}[48;5;\(index)m"
-        }
-    }
-    throw ThemeLoadError.invalidTheme("Invalid color value: \(value)")
+private func parseResolved(_ value: ResolvedColor) throws -> Color? {
+    if let number = value.number { return try parseColor(number) }
+    let string = value.string ?? ""
+    return string.isEmpty ? nil : try parseColor(string)
 }
 
 private func resolveVarRefs(
@@ -384,7 +325,7 @@ private func resolveVarRefs(
         }
         return ResolvedColor(number: number)
     case .string(let stringValue):
-        if stringValue.isEmpty || stringValue.hasPrefix("#") {
+        if stringValue.isEmpty || stringValue.hasPrefix("#") || stringValue.lowercased().hasPrefix("oklch(") || stringValue.lowercased().hasPrefix("okhsl(") {
             return ResolvedColor(string: stringValue)
         }
         let key = stringValue.hasPrefix("$") ? String(stringValue.dropFirst()) : stringValue
@@ -500,46 +441,85 @@ private func loadThemeJson(_ name: String) throws -> ThemeJson {
     return json
 }
 
-private func createTheme(_ themeJson: ThemeJson, mode: ColorMode?) throws -> Theme {
+private func averageLightness(_ colors: [Color]) -> Double? {
+    let fixed = colors.filter { if case .indexed(let value) = $0 { return value.index >= 16 }; return true }
+    return fixed.isEmpty ? nil : fixed.reduce(0) { $0 + colorToOklch($1).l } / Double(fixed.count)
+}
+private func createTheme(_ themeJson: ThemeJson, mode: ColorMode?, dim: [String] = []) throws -> Theme {
     let colorMode = mode ?? detectColorMode()
-    let vars = themeJson.vars ?? [:]
-    let resolved = try resolveThemeColors(colors: themeJson.colors, vars: vars)
-
-    var fgColors: [ThemeColor: String] = [:]
-    var bgColors: [ThemeBg: String] = [:]
-
+    let resolved = try resolveThemeColors(colors: themeJson.colors, vars: themeJson.vars ?? [:])
+    var result = Theme(fgColors: [:], bgColors: [:], mode: colorMode, name: themeJson.name)
+    var foregrounds: [Color] = [], backgrounds: [Color] = []
     for (key, value) in resolved {
-        if let bgKey = ThemeBg(rawValue: key) {
-            bgColors[bgKey] = try bgAnsi(value, colorMode)
-        } else if let fgKey = ThemeColor(rawValue: key) {
-            fgColors[fgKey] = try fgAnsi(value, colorMode)
+        let color = try parseResolved(value)
+        if let color { result.concreteColors[key] = color }
+        if let token = ThemeBg(rawValue: key) {
+            result.bgColors[token] = color.map { backgroundAnsi($0, colorMode) } ?? "\u{001B}[49m"
+            if let color { backgrounds.append(color) } else { result.defaultBackgroundTokens.append(key) }
+        } else if let token = ThemeColor(rawValue: key) {
+            result.fgColors[token] = color.map { foregroundAnsi($0, colorMode) } ?? "\u{001B}[39m"
+            if let color { foregrounds.append(color) } else { result.defaultForegroundTokens.append(key) }
         }
     }
-
-    return Theme(fgColors: fgColors, bgColors: bgColors, mode: colorMode, name: themeJson.name)
+    let fg = averageLightness(foregrounds), bg = averageLightness(backgrounds)
+    var detected: ThemeAppearance?
+    if let fg, let bg { detected = bg < fg ? .dark : .light }
+    else if let bg { detected = bg < 0.5 ? .dark : .light }
+    else if let fg { detected = fg > 0.5 ? .dark : .light }
+    result.ownAppearance = themeJson.appearance ?? detected
+    result.dimTokens = Set(dim.compactMap(ThemeColor.init(rawValue:)))
+    return result
 }
 
-private func loadTheme(_ name: String, mode: ColorMode? = nil) throws -> Theme {
-    let themeJson = try loadThemeJson(name)
-    return try createTheme(themeJson, mode: mode)
-}
-
-private func detectTerminalBackground() -> String {
-    let env = ProcessInfo.processInfo.environment
-    if let colorfgbg = env["COLORFGBG"] {
-        let parts = colorfgbg.split(separator: ";")
-        if parts.count >= 2, let bg = Int(parts[1]) {
-            return bg < 8 ? "dark" : "light"
+public func loadTheme(_ name: String, mode: TerminalColorMode? = nil) throws -> Theme {
+    if name == "system" {
+        let snapshot = withThemeState { ($0.terminalColors, $0.terminalColorsPending, $0.terminalColorScheme) }
+        let generated = generateSystemThemeColors(SystemThemeInput(foreground: snapshot.0.foreground, background: snapshot.0.background, palette: snapshot.0.palette, saturation: snapshot.1 ? 0 : 1, appearanceHint: detectTerminalTheme(colors: snapshot.0, reportedScheme: snapshot.2)))
+        let colors = generated.colors.mapValues { value -> ThemeColorValue in
+            switch value { case .string(let value): return .string(value); case .number(let value): return .number(value) }
         }
+        return try createTheme(ThemeJson(name: "system", appearance: generated.appearance, colors: colors), mode: mode, dim: generated.dim)
     }
-    return "dark"
+    return try createTheme(loadThemeJson(name), mode: mode)
 }
 
-private func getDefaultTheme() -> String {
-    detectTerminalBackground()
+public func loadThemeFromPath(_ path: String, mode: TerminalColorMode? = nil) throws -> Theme {
+    let data = try Data(contentsOf: URL(fileURLWithPath: path))
+    let json = withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
+    try validateThemeJson(json, name: json.name)
+    return try createTheme(json, mode: mode)
 }
+
+public func detectColorFgBgTheme(env: [String: String] = ProcessInfo.processInfo.environment) -> ThemeAppearance? {
+    guard let field = env["COLORFGBG"]?.components(separatedBy: ";").last?.trimmingCharacters(in: .whitespaces),
+          field.range(of: "^\\d{1,2}$", options: .regularExpression) != nil,
+          let index = Int(field), index <= 15 else { return nil }
+    return index <= 6 || index == 8 ? .dark : .light
+}
+public func detectTerminalTheme(colors: TerminalColors = TerminalColors(), reportedScheme: ThemeAppearance? = nil, env: [String: String] = ProcessInfo.processInfo.environment) -> ThemeAppearance {
+    if let background = colors.background { return terminalAppearance(background, foreground: colors.foreground) }
+    return reportedScheme ?? detectColorFgBgTheme(env: env) ?? .dark
+}
+public func getTerminalTheme() -> ThemeAppearance {
+    let snapshot = withThemeState { ($0.terminalColors, $0.terminalColorScheme) }
+    return detectTerminalTheme(colors: snapshot.0, reportedScheme: snapshot.1)
+}
+public func setTerminalColors(_ colors: TerminalColors) {
+    withThemeState { $0.terminalColors = colors; $0.terminalColorsPending = false; $0.generation &+= 1 }
+}
+public func setTerminalColorScheme(_ scheme: ThemeAppearance?) {
+    withThemeState { $0.terminalColorScheme = scheme; $0.generation &+= 1 }
+}
+public func markTerminalColorsPending() { withThemeState { $0.terminalColorsPending = true; $0.generation &+= 1 } }
+public func setTerminalColorMode(_ mode: TerminalColorMode) { withThemeState { $0.colorMode = mode; $0.generation &+= 1 } }
+private func getDefaultTheme() -> String { "system" }
 
 private struct ThemeState: Sendable {
+    var terminalColors = TerminalColors()
+    var terminalColorsPending = false
+    var terminalColorScheme: ThemeAppearance?
+    var colorMode: TerminalColorMode?
+    var generation: UInt64 = 0
     var theme: Theme = Theme.fallback()
     var builtinThemes: [String: ThemeJson]?
     var currentThemeName: String?
@@ -563,6 +543,7 @@ public var theme: Theme {
 
 public func initTheme(_ name: String? = nil, enableWatcher: Bool = false) {
     let themeName = name ?? getDefaultTheme()
+    if themeName == "system" { stopThemeWatcher() }
     withThemeState { $0.currentThemeName = themeName }
     do {
         theme = try loadTheme(themeName)
@@ -570,12 +551,14 @@ public func initTheme(_ name: String? = nil, enableWatcher: Bool = false) {
             startThemeWatcher()
         }
     } catch {
-        withThemeState { $0.currentThemeName = "dark" }
-        theme = (try? loadTheme("dark")) ?? Theme.fallback()
+        stopThemeWatcher()
+        withThemeState { $0.currentThemeName = "system" }
+        theme = (try? loadTheme("system")) ?? Theme.fallback()
     }
 }
 
 public func setTheme(_ name: String, enableWatcher: Bool = false) -> (success: Bool, error: String?) {
+    if name == "system" { stopThemeWatcher() }
     withThemeState { $0.currentThemeName = name }
     do {
         theme = try loadTheme(name)
@@ -585,8 +568,9 @@ public func setTheme(_ name: String, enableWatcher: Bool = false) -> (success: B
         withThemeState { $0.onThemeChangeCallback?() }
         return (true, nil)
     } catch {
-        withThemeState { $0.currentThemeName = "dark" }
-        theme = (try? loadTheme("dark")) ?? Theme.fallback()
+        stopThemeWatcher()
+        withThemeState { $0.currentThemeName = "system" }
+        theme = (try? loadTheme("system")) ?? Theme.fallback()
         return (false, (error as? ThemeLoadError)?.description ?? error.localizedDescription)
     }
 }
@@ -599,6 +583,7 @@ private func startThemeWatcher() {
     stopThemeWatcher()
 
     guard let themeName = withThemeState({ $0.currentThemeName }),
+          themeName != "system",
           themeName != "dark",
           themeName != "light" else {
         return
@@ -625,8 +610,8 @@ private func startThemeWatcher() {
     source.setEventHandler {
         let flags = source.data
         if flags.contains(.delete) || flags.contains(.rename) {
-            withThemeState { $0.currentThemeName = "dark" }
-            theme = (try? loadTheme("dark")) ?? Theme.fallback()
+            withThemeState { $0.currentThemeName = "system" }
+            theme = (try? loadTheme("system")) ?? Theme.fallback()
             stopThemeWatcher()
             withThemeState { $0.onThemeChangeCallback?() }
             return
@@ -697,7 +682,7 @@ public func getAvailableThemes() -> [String] {
             themes.insert(String(file.dropLast(5)))
         }
     }
-    return themes.sorted()
+    return ["system"] + themes.filter { $0 != "system" }.sorted()
 }
 
 public func getAvailableThemesWithPaths() -> [HookThemeInfo] {
@@ -724,12 +709,12 @@ public func getAvailableThemesWithPaths() -> [HookThemeInfo] {
         results[name] = HookThemeInfo(name: name, path: path)
     }
 
-    return results.values.sorted { $0.name < $1.name }
+    return [HookThemeInfo(name: "system", path: nil)] + results.values.filter { $0.name != "system" }.sorted { $0.name < $1.name }
 }
 
-public func getThemeByName(_ name: String) -> Theme? {
+public func getThemeByName(_ name: String, mode: TerminalColorMode? = nil) -> Theme? {
     do {
-        return try loadTheme(name)
+        return try loadTheme(name, mode: mode)
     } catch {
         return nil
     }
@@ -742,82 +727,28 @@ public func setThemeInstance(_ newTheme: Theme) {
     withThemeState { $0.onThemeChangeCallback?() }
 }
 
-private func ansi256ToHex(_ index: Int) -> String {
-    let basicColors = [
-        "#000000", "#800000", "#008000", "#808000", "#000080", "#800080", "#008080", "#c0c0c0",
-        "#808080", "#ff0000", "#00ff00", "#ffff00", "#0000ff", "#ff00ff", "#00ffff", "#ffffff",
-    ]
-    if index < 16 {
-        return basicColors[index]
-    }
-    if index < 232 {
-        let cubeIndex = index - 16
-        let r = cubeIndex / 36
-        let g = (cubeIndex % 36) / 6
-        let b = cubeIndex % 6
-        let toHex: (Int) -> String = { n in
-            let value = n == 0 ? 0 : 55 + n * 40
-            return String(format: "%02x", value)
-        }
-        return "#\(toHex(r))\(toHex(g))\(toHex(b))"
-    }
-    let gray = 8 + (index - 232) * 10
-    let grayHex = String(format: "%02x", gray)
-    return "#\(grayHex)\(grayHex)\(grayHex)"
-}
-
 public func getResolvedThemeColors(_ themeName: String? = nil) -> [String: String] {
-    let name = themeName ?? getDefaultTheme()
-    let isLight = name == "light"
-    guard let themeJson = try? loadThemeJson(name),
-          let resolved = try? resolveThemeColors(colors: themeJson.colors, vars: themeJson.vars ?? [:]) else {
-        return [:]
-    }
-
-    let defaultText = isLight ? "#000000" : "#e5e5e7"
-    var cssColors: [String: String] = [:]
-
-    for (key, value) in resolved {
-        if let number = value.number {
-            cssColors[key] = ansi256ToHex(number)
-        } else if let string = value.string {
-            cssColors[key] = string.isEmpty ? defaultText : string
-        }
-    }
-    return cssColors
+    guard let loaded = try? loadTheme(themeName ?? withThemeState { $0.currentThemeName } ?? getDefaultTheme(), mode: .truecolor) else { return [:] }
+    return loaded.colors.mapValues(colorToHex)
 }
-
 public func isLightTheme(_ themeName: String? = nil) -> Bool {
-    (themeName ?? getDefaultTheme()) == "light"
+    (try? loadTheme(themeName ?? withThemeState { $0.currentThemeName } ?? getDefaultTheme()).appearance) == .light
 }
-
 public func getThemeExportColors(_ themeName: String? = nil) -> (pageBg: String?, cardBg: String?, infoBg: String?) {
-    let name = themeName ?? getDefaultTheme()
-    guard let themeJson = try? loadThemeJson(name) else {
-        return (nil, nil, nil)
-    }
-
-    let vars = themeJson.vars ?? [:]
-    let exportSection = themeJson.export
-    let page = resolveExportColor(exportSection?.pageBg, vars: vars)
-    let card = resolveExportColor(exportSection?.cardBg, vars: vars)
-    let info = resolveExportColor(exportSection?.infoBg, vars: vars)
-    return (page, card, info)
+    let name = themeName ?? withThemeState { $0.currentThemeName } ?? getDefaultTheme()
+    guard name != "system", let json = try? loadThemeJson(name) else { return (nil, nil, nil) }
+    do {
+        return (try resolveExportColor(json.export?.pageBg, vars: json.vars ?? [:]), try resolveExportColor(json.export?.cardBg, vars: json.vars ?? [:]), try resolveExportColor(json.export?.infoBg, vars: json.vars ?? [:]))
+    } catch { return (nil, nil, nil) }
 }
-
-private func resolveExportColor(_ value: ThemeColorValue?, vars: [String: ThemeColorValue]) -> String? {
+private func resolveExportColor(_ value: ThemeColorValue?, vars: [String: ThemeColorValue]) throws -> String? {
     guard let value else { return nil }
-    switch value {
-    case .number(let number):
-        return ansi256ToHex(number)
-    case .string(let stringValue):
-        if stringValue.hasPrefix("$") {
-            let key = String(stringValue.dropFirst())
-            guard let ref = vars[key] else { return nil }
-            return resolveExportColor(ref, vars: vars)
-        }
-        return stringValue
-    }
+    var visited: Set<String> = []
+    let resolved = try resolveVarRefs(value, vars: vars, visited: &visited)
+    if let number = resolved.number { return try colorToHex(parseColor(number)) }
+    guard let string = resolved.string, !string.isEmpty else { return nil }
+    if string.lowercased().hasPrefix("okhsl(") { return try colorToHex(parseColor(string)) }
+    return string
 }
 
 private func escapeAnsiForDebug(_ text: String) -> String {

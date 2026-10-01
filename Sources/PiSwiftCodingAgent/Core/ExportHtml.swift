@@ -131,15 +131,16 @@ private func generateHtml(_ sessionData: [String: Any], themeName: String?) thro
     let themeVars = generateThemeVars(themeName)
     let colors = getResolvedThemeColors(themeName)
     let exportColors = deriveExportColors(colors["userMessageBg"] ?? "#343541")
+    let themeExport = getThemeExportColors(themeName)
 
     let sessionJson = try JSONSerialization.data(withJSONObject: sessionData, options: [])
     let sessionBase64 = sessionJson.base64EncodedString()
 
     let css = templateCss
         .replacingOccurrences(of: "{{THEME_VARS}}", with: themeVars)
-        .replacingOccurrences(of: "{{BODY_BG}}", with: exportColors.pageBg)
-        .replacingOccurrences(of: "{{CONTAINER_BG}}", with: exportColors.cardBg)
-        .replacingOccurrences(of: "{{INFO_BG}}", with: exportColors.infoBg)
+        .replacingOccurrences(of: "{{BODY_BG}}", with: themeExport.pageBg ?? exportColors.pageBg)
+        .replacingOccurrences(of: "{{CONTAINER_BG}}", with: themeExport.cardBg ?? exportColors.cardBg)
+        .replacingOccurrences(of: "{{INFO_BG}}", with: themeExport.infoBg ?? exportColors.infoBg)
 
     return template
         .replacingOccurrences(of: "{{CSS}}", with: css)
@@ -168,7 +169,7 @@ private func generateThemeVars(_ themeName: String?) -> String {
     return lines.joined(separator: "\n      ")
 }
 
-private func parseColor(_ color: String) -> (r: Double, g: Double, b: Double)? {
+private func parseExportCssColor(_ color: String) -> (r: Double, g: Double, b: Double)? {
     if let match = color.range(of: #"^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$"#, options: .regularExpression) {
         let hex = String(color[match])
         let r = Double(Int(hex.dropFirst().prefix(2), radix: 16) ?? 0)
@@ -198,7 +199,7 @@ private func getLuminance(_ r: Double, _ g: Double, _ b: Double) -> Double {
 }
 
 private func adjustBrightness(_ color: String, _ factor: Double) -> String {
-    guard let parsed = parseColor(color) else { return color }
+    guard let parsed = parseExportCssColor(color) else { return color }
     func adjust(_ c: Double) -> Int {
         Int(min(255, max(0, (c * factor).rounded())))
     }
@@ -206,7 +207,7 @@ private func adjustBrightness(_ color: String, _ factor: Double) -> String {
 }
 
 private func deriveExportColors(_ baseColor: String) -> ExportColors {
-    guard let parsed = parseColor(baseColor) else {
+    guard let parsed = parseExportCssColor(baseColor) else {
         return ExportColors(
             pageBg: "rgb(24, 24, 30)",
             cardBg: "rgb(30, 30, 36)",
@@ -231,7 +232,8 @@ private func deriveExportColors(_ baseColor: String) -> ExportColors {
 }
 
 private func loadTemplateFile(named name: String, ext: String, subdir: String) throws -> String {
-    if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdir) {
+    if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdir)
+        ?? Bundle.module.url(forResource: name, withExtension: ext) {
         return try String(contentsOf: url, encoding: .utf8)
     }
 

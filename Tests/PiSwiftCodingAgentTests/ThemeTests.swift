@@ -6,7 +6,8 @@ import PiSwiftCodingAgent
 struct ThemeTests {
     @Test func themeResolvesThinkingMaxFallbackToXhigh() throws {
         try withRegisteredTheme(name: "legacy-thinking") { dark in
-            dark.replacingOccurrences(of: "\n\t\t\"thinkingMax\": \"#ff5fff\",", with: "")
+            // C6 (TH05): upstream v0.99.1 dark.json writes these colors in OKHSL.
+            dark.replacingOccurrences(of: "\n\t\t\"thinkingMax\": \"okhsl(20 99% 63%)\",", with: "")
         } verify: { name in
             let theme = try #require(getThemeByName(name))
             #expect(theme.getFgAnsi(.thinkingMax) == theme.getFgAnsi(.thinkingXhigh))
@@ -15,7 +16,8 @@ struct ThemeTests {
 
     @Test func themeWithoutScrollbarThumbFallsBackToText() throws {
         try withRegisteredTheme(name: "legacy-scrollbar") { dark in
-            dark.replacingOccurrences(of: "\n\t\t\"scrollbarThumb\": \"text\",", with: "")
+            // C6 (TH05): upstream v0.99.1 dark.json writes these colors in OKHSL.
+            dark.replacingOccurrences(of: "\n\t\t\"scrollbarThumb\": \"okhsl(232 7% 65%)\",", with: "")
         } verify: { name in
             _ = try #require(getThemeByName(name))
             #expect(getResolvedThemeColors(name)["scrollbarThumb"] == getResolvedThemeColors(name)["text"])
@@ -24,8 +26,9 @@ struct ThemeTests {
 
     @Test func explicitScrollbarThumbWinsOverFallback() throws {
         try withRegisteredTheme(name: "explicit-scrollbar") { dark in
+            // C6 (TH05): upstream v0.99.1 dark.json writes these colors in OKHSL.
             dark.replacingOccurrences(
-                of: "\"scrollbarThumb\": \"text\"",
+                of: "\"scrollbarThumb\": \"okhsl(232 7% 65%)\"",
                 with: "\"scrollbarThumb\": \"#123456\""
             )
         } verify: { name in
