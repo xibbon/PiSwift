@@ -9,41 +9,42 @@ public struct CodemodeDescriptionOptions: Sendable {
     public var deferred: Set<String>
     /// Nil includes every non-deferred tool, as in upstream's bare builder.
     public var inlineBudget: Double?
-    /// C5b supplies this only where the runtime enforces the stated limit.
-    public var memoryLimitSentence: String?
     /// Name shown for the script engine. C5b uses JavaScriptCore.
     public var sandboxName: String
 
     public init(models: Bool = false, namespaces: [String: ToolNamespace] = [:],
                 deferred: Set<String> = [], inlineBudget: Double? = defaultCodemodeInlineBudget,
-                memoryLimitSentence: String? = nil, sandboxName: String = "JavaScriptCore") {
+                sandboxName: String = "JavaScriptCore") {
         self.models = models
         self.namespaces = namespaces
         self.deferred = deferred
         self.inlineBudget = inlineBudget
-        self.memoryLimitSentence = memoryLimitSentence
         self.sandboxName = sandboxName
     }
 }
 
-private let upstreamMemorySentence = "- Scripts have a 256 MB memory limit; exceeding it throws `InternalError: out of memory`. Filter or aggregate large data instead of accumulating it."
+/// The installed docs take precedence over the bundled mobile resource.
+public var CODEMODE_DOCS_PATH: String {
+    let installed = URL(fileURLWithPath: getDocsPath()).appendingPathComponent("codemode.md").path
+    if FileManager.default.fileExists(atPath: installed) { return installed }
+    return Bundle.module.url(forResource: "codemode", withExtension: "md")!.path
+}
 
-private let modelGlobals: [CodemodeDeclaration] = [
-    .init(name: "models.getModelsOfType", description: "Every known model of a type, optionally for one provider.",
-          signature: "(type: ModelType, provider?: string): Promise<ModelInfo[]>"),
-    .init(name: "models.getAvailableOfType", description: "Models of a type whose provider has working credentials.",
-          signature: "(type: ModelType, provider?: string): Promise<ModelInfo[]>"),
-    .init(name: "models.getModelOfType", description: "One catalog entry, or undefined.",
-          signature: "(type: ModelType, provider: string, id: string): Promise<ModelInfo | undefined>"),
-    .init(name: "models.classify", description: "Run a classifier model on one state. Only `provider` and `id` of `model` are used. Provider errors do not throw: check `stopReason` and `errorMessage`.",
-          signature: "(model: ModelInfo, context: ClassifierContext): Promise<ClassifierResult>")
-]
+private func describeGlobals(models: Bool) -> String {
+    var lines = [
+        "Globals:",
+        "- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.",
+        "- `store(key, value)` and `load(key)` keep JSON values across codemode calls.",
+        "- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.",
+    ]
+    if models { lines.append("- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first.") }
+    return lines.joined(separator: "\n")
+}
 
 private struct CatalogEntry {
     let name: String
     let section: String
     let cost: Int
-    let deferred: Bool
     let order: Int
 }
 
@@ -59,7 +60,7 @@ private func section(_ tool: CodemodeDeclaration) -> String {
 }
 
 private func selected(_ groups: [CatalogGroup], budget: Double?) -> Set<String> {
-    let listable = groups.map { $0.entries.filter { !$0.deferred } }
+    let listable = groups.map(\.entries)
     guard let budget else { return Set(listable.flatMap { $0.map(\.name) }) }
     var queues = listable.map { $0.sorted { $0.cost == $1.cost ? $0.order < $1.order : $0.cost < $1.cost } }
     var active = queues.indices.filter { !queues[$0].isEmpty }
@@ -79,7 +80,7 @@ private func selected(_ groups: [CatalogGroup], budget: Double?) -> Set<String> 
 }
 
 public func createCodemodeDescription(_ tools: [AgentTool], options: CodemodeDescriptionOptions = .init()) -> String {
-    let declarations = tools.filter { $0.name != "codemode" }.map(CodemodeDeclaration.init(tool:))
+    let declarations = tools.filter { $0.name != "codemode" && !options.deferred.contains($0.name) }.map(CodemodeDeclaration.init(tool:))
     var groups: [String: CatalogGroup] = ["": CatalogGroup(namespace: nil, entries: [])]
     for (order, declaration) in declarations.enumerated() {
         let namespace = options.namespaces[declaration.name]
@@ -88,7 +89,7 @@ public func createCodemodeDescription(_ tools: [AgentTool], options: CodemodeDes
         if groups[key] == nil { groups[key] = CatalogGroup(namespace: namespace, entries: []) }
         groups[key]!.entries.append(CatalogEntry(name: declaration.name, section: rendered,
                                                   cost: (rendered.utf16.count + 3) / 4,
-                                                  deferred: options.deferred.contains(declaration.name), order: order))
+                                                  order: order))
     }
     let ordered = groups.values.sorted {
         switch ($0.namespace, $1.namespace) {
@@ -99,30 +100,20 @@ public func createCodemodeDescription(_ tools: [AgentTool], options: CodemodeDes
         }
     }
     let shown = selected(ordered, budget: options.inlineBudget)
-    let complete = shown.count == declarations.count
-    var intro = codemodeDescriptionIntro
-    intro = intro.replacingOccurrences(of: "fresh QuickJS sandbox", with: "fresh \(options.sandboxName) sandbox")
-    intro = intro.replacingOccurrences(of: upstreamMemorySentence + "\n",
-                                        with: options.memoryLimitSentence.map { "- " + $0 + "\n" } ?? "")
-    var sections = [intro]
-    if !complete { sections.append(codemodeDeferredGuidance) }
-    if declarations.contains(where: { mcpStructuredContentSchema($0.outputSchema) != nil }) {
+    let intro = codemodeDescriptionIntro.replacingOccurrences(of: "JavaScriptCore sandbox", with: "\(options.sandboxName) sandbox")
+    var sections = [intro, describeGlobals(models: options.models)]
+    if declarations.contains(where: { shown.contains($0.name) && mcpStructuredContentSchema($0.outputSchema) != nil }) {
         sections.append("Shared MCP Types:\n```ts\n\(mcpTypescriptPreamble)\n```")
     }
-    if options.models {
-        sections.append("Model API:\n```ts\n\(codemodeModelTypes)\n\n\(renderDeclarations(globals: modelGlobals))\n```")
-    }
     if declarations.isEmpty { return sections.joined(separator: "\n\n") }
-    var toolSections = [complete
-        ? "Nested tools: COMPLETE list (\(declarations.count) tool\(declarations.count == 1 ? "" : "s"))."
-        : "Nested tools: PARTIAL - \(shown.count) of \(declarations.count) shown."]
+    var toolSections = ["Nested tools:"]
     for group in ordered {
         let visible = group.entries.filter { shown.contains($0.name) }
         if let namespace = group.namespace {
             let count = group.entries.count
-            let suffix = visible.count == count ? "" : visible.isEmpty ? ", none shown" : ", \(visible.count) shown"
+            let suffix = visible.count == count ? "" : visible.isEmpty ? " (tools not listed)" : " (some tools not listed)"
             let description = namespace.description?.trimmingCharacters(in: .whitespacesAndNewlines)
-            toolSections.append("## \(namespace.name) (\(count) tool\(count == 1 ? "" : "s")\(suffix))" +
+            toolSections.append("## \(namespace.name)\(suffix)" +
                                 ((description?.isEmpty == false) ? "\n\(description!)" : ""))
         }
         toolSections += visible.map(\.section)

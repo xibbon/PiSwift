@@ -31,11 +31,12 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
 }
 
 @Test(.timeLimit(.minutes(1))) func codemodeRunsScriptOutputExitAndErrors() async throws {
-    let output = try await codemodeRun("console.log('hello', 1); text({a: 2}); image('data:image/png;base64,AAAA'); return 42")
+    // Upstream #10215: image() validates the image signature.
+    let output = try await codemodeRun("console.log('hello', 1); text({a: 2}); image('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII='); return 42")
     #expect(output.isError != true)
     #expect(codemodeBlocks(output).first?.hasPrefix("Script completed\nWall time ") == true)
     #expect(codemodeBlocks(output).dropFirst() == ["hello 1", "{\"a\":2}", "42"])
-    #expect(output.content.contains { if case .image(let item) = $0 { return item.data == "AAAA" }; return false })
+    #expect(output.content.contains { if case .image(let item) = $0 { return item.data == "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII=" }; return false })
 
     let exited = try await codemodeRun("text('before'); try { exit(); } catch {} text('after')")
     #expect(codemodeValue(exited) == "before")
@@ -210,7 +211,8 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
         }
     }, getNamespace: { _ in nil })
     let on = prepareCodemodeLoadout(loadout, options: .init(getMode: { .on }))
-    #expect(on.descriptions?["direct"]?.contains("codemode tool declaration:") == true)
+    // Upstream CM7: declared tools use a one-line script call note.
+    #expect(on.descriptions?["direct"]?.contains("Codemode: `tools.direct(args)` resolves to") == true)
     #expect(on.descriptions?[CODEMODE_TOOL_NAME]?.contains("### `code`") == true)
     #expect(on.descriptions?[CODEMODE_TOOL_NAME]?.contains("### `direct`") == false)
     #expect(on.hiddenDeclarations?.isEmpty == true)

@@ -164,31 +164,31 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
     for tool in github { namespaces[tool.name] = ToolNamespace(name: "mcp__github", description: "GitHub server") }
     for tool in docs { namespaces[tool.name] = ToolNamespace(name: "mcp__docs") }
     let complete = createCodemodeDescription(all, options: .init(namespaces: namespaces, inlineBudget: nil))
-    #expect(complete.contains("Nested tools: COMPLETE list (6 tools)."))
-    #expect(complete.contains("## mcp__github (3 tools)\nGitHub server"))
+    // Upstream CM6: lean catalog, no counts, no deferred namespace sections.
+    #expect(complete.contains("Nested tools:"))
+    #expect(complete.contains("## mcp__github\nGitHub server"))
     let partial = createCodemodeDescription(all, options: .init(namespaces: namespaces, inlineBudget: 170))
-    #expect(partial.contains("Nested tools: PARTIAL - 4 of 6 shown."))
-    #expect(partial.contains("## mcp__docs (2 tools, 1 shown)"))
-    #expect(partial.contains("## mcp__github (3 tools, 2 shown)"))
+    #expect(partial.contains("Nested tools:"))
+    #expect(partial.contains("## mcp__docs (some tools not listed)"))
+    #expect(partial.contains("## mcp__github (some tools not listed)"))
     #expect(!partial.contains("### `mcp__docs__long`"))
     let deferred = createCodemodeDescription(all, options: .init(namespaces: namespaces,
         deferred: Set(github.map(\.name)), inlineBudget: nil))
-    #expect(deferred.contains("Nested tools: PARTIAL - 3 of 6 shown."))
-    #expect(deferred.contains("## mcp__github (3 tools, none shown)\nGitHub server"))
+    #expect(deferred.contains("Nested tools:"))
+    #expect(!deferred.contains("## mcp__github"))
     let zero = createCodemodeDescription(all, options: .init(namespaces: namespaces, inlineBudget: 0))
-    #expect(zero.contains("Nested tools: PARTIAL - 0 of 6 shown."))
+    #expect(zero.contains("Nested tools:"))
     #expect(!zero.contains("codemode tool declaration:"))
     #expect(!complete.contains("256 MB memory limit"))
-    #expect(createCodemodeDescription([], options: .init(memoryLimitSentence: "256 MB memory limit"))
-            .contains("- 256 MB memory limit"))
+    #expect(createCodemodeDescription([]).contains("JavaScriptCore sandbox"))
     let mcp = codemodeTestTool("mcp__x__call", "Call MCP.", outputSchema: [
         "type": AnyCodable("object"), "properties": AnyCodable([
             "content": ["type": "array", "items": ["type": "object"]],
             "isError": ["type": "boolean"], "_meta": ["type": "object"]] as [String: Any])])
     let withAPIs = createCodemodeDescription([mcp], options: .init(models: true))
     #expect(withAPIs.contains("Shared MCP Types:\n```ts\n\(mcpTypescriptPreamble)\n```"))
-    #expect(withAPIs.contains("Model API:\n```ts\n\(codemodeModelTypes)"))
-    #expect(withAPIs.contains("declare const models: {"))
+    #expect(withAPIs.contains("- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first."))
+    #expect(!withAPIs.contains("declare const models: {"))
 }
 
 @Test func codemodeSettingsAndResultsMatchUpstream() throws {

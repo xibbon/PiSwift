@@ -718,7 +718,7 @@ public final class AgentSession: Sendable {
                 snippets[name] = contribution
             }
         }
-        options.toolSnippets = snippets
+        options.toolSnippets = snippets.filter { !hiddenDeclarations.contains($0.key) }
         let builtInGuidelines: [String: [String]] = [
             "read": ["Use read to examine files instead of cat or sed."],
             "bash": ["You can inspect PI_* environment variables for current model and session details."],

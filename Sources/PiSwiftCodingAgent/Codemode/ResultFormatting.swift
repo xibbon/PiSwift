@@ -115,13 +115,14 @@ private func truncateOutput(_ items: [ContentBlock], maxTokens: Int) -> (items: 
 
 public func formatCodemodeResult(_ execution: CodemodeExecutionResult,
                                  calls: [CodemodeNestedCall] = [], wallTimeSeconds: Double,
-                                 maxOutputTokens: Int = 10_000, usage: Usage? = nil) -> AgentToolResult {
+                                 maxOutputTokens: Int = 10_000, usage: Usage? = nil, outputNote: String? = nil) -> AgentToolResult {
     var items = execution.output
     if let failure = execution.failure {
         items.append(.text(TextContent(text: failureText(failure, calls: calls))))
     } else if let value = execution.returnedValue {
         items.append(.text(TextContent(text: valueText(value))))
     }
+    if let outputNote { items.append(.text(TextContent(text: outputNote))) }
     let truncated = truncateOutput(items, maxTokens: maxOutputTokens)
     let header = "Script \(execution.failure == nil ? "completed" : "failed")\nWall time \(String(format: "%.1f", wallTimeSeconds)) seconds\nOutput:\n"
     var details: [String: Any] = ["calls": calls.map { call -> [String: Any] in

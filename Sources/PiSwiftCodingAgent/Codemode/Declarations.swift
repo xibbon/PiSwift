@@ -183,7 +183,7 @@ public func mcpStructuredContentSchema(_ schema: AnyCodable?) -> AnyCodable? {
     return AnyCodable(true)
 }
 
-private func outputType(_ schema: AnyCodable?) -> String {
+public func renderToolOutputType(_ schema: AnyCodable?) -> String {
     if let structured = mcpStructuredContentSchema(schema) {
         let type = schemaToType(structured)
         return type == "unknown" ? "CallToolResult" : "CallToolResult<\(type)>"
@@ -193,7 +193,7 @@ private func outputType(_ schema: AnyCodable?) -> String {
 
 public func renderToolSignature(_ tool: CodemodeDeclaration, inputMaxChars: Int = defaultCodemodeInputSchemaMaxChars) -> String {
     let input = tool.inputSchema.map { schemaToType($0, maxChars: inputMaxChars) } ?? "unknown"
-    return "\(toCodemodeIdentifier(tool.name))(args: \(input)): Promise<\(outputType(tool.outputSchema))>;"
+    return "\(toCodemodeIdentifier(tool.name))(args: \(input)): Promise<\(renderToolOutputType(tool.outputSchema))>;"
 }
 
 public func renderToolSample(_ tool: CodemodeDeclaration, inputMaxChars: Int = defaultCodemodeInputSchemaMaxChars) -> String {

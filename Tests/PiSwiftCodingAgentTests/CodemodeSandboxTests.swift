@@ -44,10 +44,11 @@ private func sandboxRun(_ code: String, tools: [CodemodeRuntimeTool] = [],
 }
 
 @Test(.timeLimit(.minutes(1))) func sandboxTextImageExitAndPartialFailure() async {
-    let output = await sandboxRun("console.log('hello', 1); text({a:1}); text(undefined); image('data:image/png;base64,AAAA'); return null")
+    // Upstream #10215: image() validates the image signature.
+    let output = await sandboxRun("console.log('hello', 1); text({a:1}); text(undefined); image('data:image/png;base64,iVBORw0KGgo='); return null")
     #expect(output.execution.failure == nil)
     #expect(sandboxOutput(output) == ["hello 1", #"{"a":1}"#, "undefined"])
-    #expect(output.execution.output.contains { if case .image(let image) = $0 { return image.data == "AAAA" }; return false })
+    #expect(output.execution.output.contains { if case .image(let image) = $0 { return image.data == "iVBORw0KGgo=" && image.mimeType == "image/png" }; return false })
 
     let exited = await sandboxRun("text('before'); try { exit() } catch {} text('after')")
     #expect(exited.execution.failure == nil)

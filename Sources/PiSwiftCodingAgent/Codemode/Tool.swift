@@ -54,8 +54,21 @@ private func codemodeDescriptionOptions(_ options: CodemodeToolOptions,
         models: options.models,
         namespaces: namespaces,
         deferred: deferred,
-        inlineBudget: options.getInlineBudget?() ?? defaultCodemodeInlineBudget,
-        memoryLimitSentence: nil)
+        inlineBudget: options.getInlineBudget?() ?? defaultCodemodeInlineBudget)
+}
+
+private func describeScriptCall(_ tool: AgentTool) -> String {
+    let schema = CodemodeDeclaration(tool: tool).outputSchema
+    let type = renderToolOutputType(schema)
+    let output: String
+    if type == "string" { output = "a string" }
+    else if let fields = schema?.value as? [String: Any], fields["type"] as? String == "object",
+            let properties = fields["properties"] as? [String: Any], mcpStructuredContentSchema(schema) == nil {
+        let required = Set(fields["required"] as? [String] ?? [])
+        let names = properties.keys.sorted().map { required.contains($0) ? $0 : $0 + "?" }
+        output = "`{ \(names.joined(separator: ", ")) }`"
+    } else { output = "`\(type.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression))`" }
+    return tool.description.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\nCodemode: `tools.\(toCodemodeIdentifier(tool.name))(args)` resolves to \(output)."
 }
 
 public func prepareCodemodeLoadout(_ loadout: ToolLoadout,
@@ -66,7 +79,7 @@ public func prepareCodemodeLoadout(_ loadout: ToolLoadout,
     var descriptions: [String: String] = [:]
     if mode == .on {
         for tool in loadout.declared where callableNames.contains(tool.name) {
-            descriptions[tool.name] = renderToolSample(CodemodeDeclaration(tool: tool))
+            descriptions[tool.name] = describeScriptCall(tool)
         }
     }
     let listed = mode == .only ? callable : callable.filter { loadout.getExposure($0.name) != .direct }
@@ -92,7 +105,7 @@ public func createCodemodeToolDefinition(options: CodemodeToolOptions = .init())
             "type": AnyCodable("object"),
             "properties": AnyCodable(["code": [
                 "type": "string",
-                "description": "Raw JavaScript source. Top-level await and return work. May start with a `// @options: {\"max_output_tokens\": 1000}` line."
+                "description": "Raw JavaScript source."
             ]]),
             "required": AnyCodable(["code"])
         ],
@@ -100,8 +113,8 @@ public func createCodemodeToolDefinition(options: CodemodeToolOptions = .init())
             try await executeCodemode(toolCallId: toolCallId, params: params, signal: signal,
                                       onUpdate: onUpdate, context: context, options: options)
         },
-        promptGuidelines: ["Use codemode to batch or chain several tool calls, or to filter large tool output down to what you need, instead of issuing many individual tool calls. Batch independent calls in one codemode call using await Promise.allSettled([...])."],
-        promptSnippet: "Run JavaScript that calls other tools (chains, loops, Promise.all, filtering large results)",
+        promptGuidelines: ["Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls."],
+        promptSnippet: "Run JavaScript that calls other tools",
         constrainedSampling: codemodeConstrainedSampling,
         exposure: .modelOnly,
         defaultActive: false,
