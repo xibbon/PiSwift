@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import PiSwiftAI
 import PiSwiftAgent
 
@@ -292,7 +293,7 @@ public struct Settings: Sendable {
     public var cacheWarming: CacheWarmingMode?
     public var shellPath: String?
     public var shellCommandPrefix: String?
-    public var quietStartup: Bool?
+    public var quietStartup: QuietStartup?
     public var collapseChangelog: Bool?
     public var packages: [PackageSource]?
     public var extensions: [String]?
@@ -347,6 +348,34 @@ public struct Settings: Sendable {
     public init() {}
 }
 
+/// Select which startup messages are shown.
+public enum QuietStartup: Sendable, Equatable, Codable {
+    case off, on, header
+
+    public init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let flag = try? value.decode(Bool.self) { self = flag ? .on : .off }
+        else if (try? value.decode(String.self)) == "header" { self = .header }
+        else { self = .off }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .off: try value.encode(false)
+        case .on: try value.encode(true)
+        case .header: try value.encode("header")
+        }
+    }
+
+    public func showsStartupHeader(verbose: Bool = false) -> Bool { verbose || self != .on }
+    public func showsStartupDetails(verbose: Bool = false) -> Bool { verbose || self == .off }
+
+    fileprivate var jsonValue: Any {
+        switch self { case .off: false; case .on: true; case .header: "header" }
+    }
+}
+
 public struct SettingsError: Sendable {
     public var path: String?
     public var scope: String
@@ -389,6 +418,7 @@ public final class SettingsManager: Sendable {
 
     private let state: LockedState<State>
     private let persist: Bool
+    private let projectTrusted: Bool
     private let writeQueue = DispatchQueue(label: "pi.settings.write.queue")
 
     private var settingsPath: String? {
@@ -464,9 +494,11 @@ public final class SettingsManager: Sendable {
         persist: Bool,
         loadError: String? = nil,
         projectLoadError: String? = nil,
-        initialErrors: [SettingsError] = []
+        initialErrors: [SettingsError] = [],
+        projectTrusted: Bool = true
     ) {
         self.persist = persist
+        self.projectTrusted = projectTrusted
         self.state = LockedState(State(
             settingsPath: settingsPath,
             projectSettingsPath: projectSettingsPath,
@@ -523,12 +555,49 @@ public final class SettingsManager: Sendable {
             persist: true,
             loadError: loadError,
             projectLoadError: projectLoadError,
-            initialErrors: errors
+            initialErrors: errors,
+            projectTrusted: projectTrusted
         )
     }
 
     public static func inMemory(_ settings: Settings = Settings()) -> SettingsManager {
         SettingsManager(settingsPath: nil, projectSettingsPath: nil, initial: settings, initialProject: Settings(), persist: false)
+    }
+
+    /// Wait for settings writes, then read global and trusted project settings again.
+    /// A failed read keeps the last settings for that scope and records an error.
+    public func reload() async {
+        await flush()
+        writeQueue.sync {
+            if let path = settingsPath {
+                do {
+                    globalSettings = try Self.loadFromFile(path)
+                    globalSettingsLoadError = nil
+                } catch {
+                    globalSettingsLoadError = error.localizedDescription
+                    errors.append(SettingsError(scope: "global", message: error.localizedDescription, path: path))
+                }
+            }
+            if !projectTrusted {
+                projectSettings = Settings()
+                projectSettingsLoadError = nil
+            } else if let path = projectSettingsPath {
+                do {
+                    projectSettings = try Self.loadFromFile(path)
+                    projectSettingsLoadError = nil
+                } catch {
+                    projectSettingsLoadError = error.localizedDescription
+                    errors.append(SettingsError(scope: "project", message: error.localizedDescription, path: path))
+                }
+            }
+            state.withLock { state in
+                state.modifiedFields.removeAll()
+                state.modifiedNestedFields.removeAll()
+                state.modifiedProjectFields.removeAll()
+                state.modifiedProjectNestedFields.removeAll()
+                state.settings = mergeSettings(state.globalSettings, state.projectSettings)
+            }
+        }
     }
 
     public func applyOverrides(_ overrides: Settings) {
@@ -917,14 +986,19 @@ public final class SettingsManager: Sendable {
         save()
     }
 
-    public func getQuietStartup() -> Bool {
-        settings.quietStartup ?? false
+    public func getQuietStartup() -> QuietStartup {
+        settings.quietStartup ?? .off
     }
 
-    public func setQuietStartup(_ quiet: Bool) {
+    public func setQuietStartup(_ quiet: QuietStartup) {
         globalSettings.quietStartup = quiet
         markModified("quietStartup")
         save()
+    }
+
+    /// Use the enum overload to select header-only output.
+    public func setQuietStartup(_ quiet: Bool) {
+        setQuietStartup(quiet ? .on : .off)
     }
 
     public func getCollapseChangelog() -> Bool {
@@ -1130,7 +1204,7 @@ public final class SettingsManager: Sendable {
     }
 
     public func getTuiMode() -> String {
-        settings.tuiMode == "fullscreen" ? "fullscreen" : "regular"
+        settings.tuiMode == "regular" ? "regular" : "fullscreen"
     }
 
     public func setTuiMode(_ mode: String) {
@@ -1604,7 +1678,13 @@ public final class SettingsManager: Sendable {
         settings.cacheWarming = (json["cacheWarming"] as? String).flatMap(CacheWarmingMode.init(rawValue:))
         settings.shellPath = json["shellPath"] as? String
         settings.shellCommandPrefix = json["shellCommandPrefix"] as? String
-        settings.quietStartup = json["quietStartup"] as? Bool
+        if let value = json["quietStartup"] {
+            if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() {
+                settings.quietStartup = number.boolValue ? .on : .off
+            } else {
+                settings.quietStartup = (value as? String) == "header" ? .header : .off
+            }
+        }
         settings.collapseChangelog = json["collapseChangelog"] as? Bool
         if let packages = json["packages"] as? [Any] {
             settings.packages = decodePackageSources(packages)
@@ -1912,7 +1992,7 @@ public final class SettingsManager: Sendable {
         json["cacheWarming"] = settings.cacheWarming?.rawValue
         json["shellPath"] = settings.shellPath
         json["shellCommandPrefix"] = settings.shellCommandPrefix
-        json["quietStartup"] = settings.quietStartup
+        json["quietStartup"] = settings.quietStartup?.jsonValue
         json["collapseChangelog"] = settings.collapseChangelog
         if let packages = settings.packages {
             json["packages"] = encodePackageSources(packages)

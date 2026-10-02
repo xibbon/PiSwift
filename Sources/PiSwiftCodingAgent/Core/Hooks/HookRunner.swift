@@ -502,6 +502,13 @@ public final class HookRunner: Sendable {
         return droppedHooks.map { $0.path }
     }
 
+    /// Remove registrations before reload so a new normalized name can replace an old name.
+    public func unregisterExtensionMcpServers() {
+        for hook in hooks where hook.isExtension {
+            mcpServers.unregisterAll(extensionPath: hook.resolvedPath)
+        }
+    }
+
     public func unregisterExtensionProviders() {
         let extensionHooks = hooks.filter { $0.isExtension }
         for hook in extensionHooks {

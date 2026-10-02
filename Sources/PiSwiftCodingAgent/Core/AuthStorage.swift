@@ -59,6 +59,18 @@ public enum AuthCredential: Sendable {
     case oauth(OAuthCredential)
 }
 
+/// A stored credential type. This value does not contain credential secrets.
+public struct CredentialInfo: Sendable, Equatable {
+    public enum CredentialType: String, Sendable { case apiKey = "api_key", oauth }
+    public let providerId: String
+    public let type: CredentialType
+
+    public init(providerId: String, type: CredentialType) {
+        self.providerId = providerId
+        self.type = type
+    }
+}
+
 struct AuthLockOptions: Sendable {
     var maxAttempts: Int
     var initialDelayMs: Int
@@ -624,11 +636,22 @@ public final class AuthStorage: Sendable {
         state.withLock { Array($0.data.keys) }
     }
 
+    /// Return stored credential types in provider id order, without secrets.
+    public func listCredentials() -> [CredentialInfo] {
+        state.withLock { state in
+            state.data.keys.sorted().map { provider in
+                let type: CredentialInfo.CredentialType
+                if case .oauth = state.data[provider] { type = .oauth } else { type = .apiKey }
+                return CredentialInfo(providerId: provider, type: type)
+            }
+        }
+    }
+
     public func has(_ provider: String) -> Bool {
         state.withLock { $0.data[provider] != nil }
     }
 
-    public func hasAuth(_ provider: String) -> Bool {
+    public func hasAuth(_ provider: String, env: [String: String]? = nil) -> Bool {
         let snapshot = state.withLock { state in
             let runtime = state.runtimeOverrides[provider]
             let credential = state.data[provider]
@@ -640,12 +663,17 @@ public final class AuthStorage: Sendable {
         if let credential = snapshot.credential {
             switch credential {
             case .apiKey(let key):
-                if let value = key.key { return isConfigValueConfigured(value, env: key.env) }
-                return getEnvApiKey(provider: provider, env: key.env) != nil
+                if let value = key.key, provider != "anthropic" || !value.isEmpty {
+                    return isConfigValueConfigured(value, env: key.env)
+                }
+                let scopedEnv = mergeConfigEnvironment(key.env, env)
+                return getEnvApiKey(provider: provider, env: scopedEnv) != nil ||
+                    (provider == "anthropic" && anthropicFederationEnv(env: providerEnvironment(scopedEnv)) != nil)
             case .oauth: return true
             }
         }
-        if getEnvApiKey(provider: provider) != nil {
+        if getEnvApiKey(provider: provider, env: env) != nil ||
+            (provider == "anthropic" && anthropicFederationEnv(env: providerEnvironment(env)) != nil) {
             return true
         }
         if let configured = snapshot.configured { return configured(provider) }
@@ -683,7 +711,7 @@ public final class AuthStorage: Sendable {
         let credentials: OAuthCredentials
         switch provider {
         case .anthropic:
-            credentials = try await loginAnthropic(callbacks)
+            credentials = try await loginAnthropicOAuth(callbacks)
         case .openAICodex:
             credentials = try await loginOpenAICodex(callbacks)
         case .openAI:

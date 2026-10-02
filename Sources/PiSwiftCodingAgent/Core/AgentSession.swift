@@ -59,6 +59,10 @@ public struct AgentSessionConfig: Sendable {
     public var cacheWarmer: CacheWarmer?
     public var skillsSettings: SkillsSettings?
     public var eventBus: EventBus?
+    /// Activate new defaultTools names on reload when the initial selection uses settings.
+    public var usesDefaultTools: Bool
+    public var excludedToolNames: Set<String>
+    public var allowedToolNames: Set<String>?
     public var toolRegistry: [String: AgentTool]?
     public var toolRegistryOrder: [String]?
     public var toolDefinitions: [String: CustomTool]?
@@ -89,6 +93,9 @@ public struct AgentSessionConfig: Sendable {
         cacheWarmer: CacheWarmer? = nil,
         skillsSettings: SkillsSettings? = nil,
         eventBus: EventBus? = nil,
+        usesDefaultTools: Bool = false,
+        excludedToolNames: Set<String> = [],
+        allowedToolNames: Set<String>? = nil,
         toolRegistry: [String: AgentTool]? = nil,
         toolRegistryOrder: [String]? = nil,
         toolDefinitions: [String: CustomTool]? = nil,
@@ -111,6 +118,9 @@ public struct AgentSessionConfig: Sendable {
         self.cacheWarmer = cacheWarmer
         self.skillsSettings = skillsSettings
         self.eventBus = eventBus
+        self.usesDefaultTools = usesDefaultTools
+        self.excludedToolNames = excludedToolNames
+        self.allowedToolNames = allowedToolNames
         self.toolRegistry = toolRegistry
         self.toolRegistryOrder = toolRegistryOrder
         self.toolDefinitions = toolDefinitions
@@ -461,6 +471,11 @@ public final class AgentSession: Sendable {
         var forcedRequestPrompt: String?
         var runSystemPromptAppend: String?
         var systemPromptOptions: BuildSystemPromptOptions
+        var pendingToolNames: Set<String> = []
+        var addedDefaultToolNames: [String] = []
+        var usesDefaultTools: Bool
+        var excludedToolNames: Set<String>
+        var allowedToolNames: Set<String>?
         var toolRegistry: [String: AgentTool]
         var toolRegistryOrder: [String]
         var toolDefinitions: [String: CustomTool]
@@ -861,6 +876,9 @@ public final class AgentSession: Sendable {
             forcedRequestPrompt: nil,
             runSystemPromptAppend: nil,
             systemPromptOptions: config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()),
+            usesDefaultTools: config.usesDefaultTools,
+            excludedToolNames: config.excludedToolNames,
+            allowedToolNames: config.allowedToolNames,
             toolRegistry: initialRegistry,
             toolRegistryOrder: initialRegistryOrder,
             toolDefinitions: config.toolDefinitions ?? [:],
@@ -1130,7 +1148,7 @@ public final class AgentSession: Sendable {
         refreshContext()
         if let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
             let names = (current.toolsAdded ?? []).map(\.name)
-            setActiveToolsByName(names)
+            restoreActiveTools(names)
             state.withLock { $0.systemPromptOptions.selectedToolNames = names }
         } else {
             setActiveToolsByName(agent.tools.map(\.name))
@@ -2086,15 +2104,35 @@ public final class AgentSession: Sendable {
     }
 
     public func setActiveToolsByName(_ toolNames: [String]) {
+        let previous = getActiveToolNames()
+        setActiveTools(toolNames)
+        let active = Set(getActiveToolNames())
+        if previous.contains(where: { !active.contains($0) }) {
+            state.withLock { $0.pendingToolNames.removeAll() }
+        }
+    }
+
+    private func isAllowedTool(_ name: String) -> Bool {
+        state.withLock { !$0.excludedToolNames.contains(name) && ($0.allowedToolNames?.contains(name) ?? true) }
+    }
+
+    private func restoreActiveTools(_ names: [String]) {
+        let pending = Set(names.filter(isAllowedTool))
+        state.withLock { $0.pendingToolNames = pending }
+        setActiveTools(names)
+    }
+
+    private func setActiveTools(_ toolNames: [String]) {
         var tools: [AgentTool] = []
         var seen: Set<String> = []
         for name in toolNames {
-            if seen.insert(name).inserted, exposure(of: name) != .hidden,
+            if seen.insert(name).inserted, isAllowedTool(name), exposure(of: name) != .hidden,
                let tool = toolRegistry[name] {
                 tools.append(tool)
             }
         }
         let active = Set(tools.map(\.name))
+        state.withLock { $0.pendingToolNames.subtract(active) }
         let callable = registeredTools().filter { tool in
             let value = exposure(of: tool.name)
             return value == .codemode || value == .deferred || (value == .direct && active.contains(tool.name))
@@ -2133,7 +2171,7 @@ public final class AgentSession: Sendable {
     /// metadata refreshes and gives inline extensions the same live tool
     /// surface as reloaded extensions.
     private func registerLiveExtensionTool(_ tool: CustomTool) {
-        guard let wrapped = wrapExtensionToolsInternal?([tool]).first else { return }
+        guard isAllowedTool(tool.name), let wrapped = wrapExtensionToolsInternal?([tool]).first else { return }
         var registry = toolRegistry
         registry[wrapped.name] = wrapped
         toolRegistry = registry
@@ -2144,10 +2182,10 @@ public final class AgentSession: Sendable {
         state.withLock { $0.toolPromptGuidelines[tool.name] = tool.promptGuidelines }
 
         var activeNames = getActiveToolNames()
-        if !activeNames.contains(wrapped.name) && isActivatedOnRegistration(wrapped.name) {
+        if !activeNames.contains(wrapped.name) && (isActivatedOnRegistration(wrapped.name) || state.withLock { $0.pendingToolNames.contains(wrapped.name) }) {
             activeNames.append(wrapped.name)
         }
-        setActiveToolsByName(activeNames)
+        setActiveTools(activeNames)
         refreshSystemPromptForActiveTools()
     }
 
@@ -2160,7 +2198,7 @@ public final class AgentSession: Sendable {
         definitions.removeValue(forKey: name)
         toolDefinitions = definitions
         state.withLock { $0.toolPromptGuidelines[name] = nil }
-        setActiveToolsByName(getActiveToolNames().filter { $0 != name })
+        setActiveTools(getActiveToolNames().filter { $0 != name })
         refreshSystemPromptForActiveTools()
     }
 
@@ -2169,7 +2207,18 @@ public final class AgentSession: Sendable {
         state.withLock { $0.systemPromptOptions.selectedTools = activeNames.compactMap(ToolName.init(rawValue:)) }
     }
 
+    /// Reload settings and resources first. Then call `reloadExtensions()` to rebuild tools
+    /// and activate names newly added to defaultTools.
     public func reload() async {
+        let usesDefaults = state.withLock { $0.usesDefaultTools }
+        let previousDefaults = Set(usesDefaults ? (settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES) : [])
+        await settingsManager.reload()
+        let added = usesDefaults ? (settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES).filter { !previousDefaults.contains($0) } : []
+        state.withLock { current in
+            current.addedDefaultToolNames.append(contentsOf: added)
+        }
+        agent.steeringMode = AgentSteeringMode(rawValue: settingsManager.getSteeringMode()) ?? .oneAtATime
+        agent.followUpMode = AgentFollowUpMode(rawValue: settingsManager.getFollowUpMode()) ?? .oneAtATime
         await resourceLoader.reload()
         promptTemplatesInternal = resourceLoader.getPrompts().prompts
         refreshPromptResources()
@@ -2212,7 +2261,10 @@ public final class AgentSession: Sendable {
     /// detached from the runner so they no longer receive events.
     @discardableResult
     public func reloadExtensions() async -> ReloadExtensionsResult {
+        let activeBeforeReload = getActiveToolNames()
+        state.withLock { $0.pendingToolNames.formUnion(activeBeforeReload) }
         guard let hookRunner = _hookRunner, let reloadHook = reloadExtensionsHookInternal else {
+            applyReloadToolNames()
             return ReloadExtensionsResult(droppedPaths: [], loadedPaths: [], errors: [])
         }
 
@@ -2222,6 +2274,9 @@ public final class AgentSession: Sendable {
         // 2. Snapshot the current extension-tool roster so we can diff after the swap.
         let oldExtensionToolNames = hookRunner.getExtensionToolNames()
 
+        // Remove old MCP registrations before loading replacements with normalized names.
+        hookRunner.unregisterExtensionMcpServers()
+
         // 3. Re-discover and re-compile.
         let result = await reloadHook()
 
@@ -2230,7 +2285,7 @@ public final class AgentSession: Sendable {
 
         // 5. Refresh extension tools on the agent: drop the old, add the new.
         if let wrap = wrapExtensionToolsInternal {
-            let newExtensionTools = hookRunner.getExtensionTools()
+            let newExtensionTools = hookRunner.getExtensionTools().filter { isAllowedTool($0.name) }
             let newExtensionToolNames = Set(newExtensionTools.map { $0.name })
             let removedToolNames = oldExtensionToolNames.subtracting(newExtensionToolNames)
 
@@ -2261,9 +2316,11 @@ public final class AgentSession: Sendable {
                 for tool in wrappedNew where !activeNames.contains(tool.name) && isActivatedOnRegistration(tool.name) {
                     activeNames.append(tool.name)
                 }
-                setActiveToolsByName(activeNames)
+                setActiveTools(activeNames)
             }
         }
+
+        applyReloadToolNames()
 
         // 6. Notify the freshly-loaded extensions.
         await hookRunner.emitToExtensions(SessionStartEvent(reason: .reload))
@@ -2274,6 +2331,15 @@ public final class AgentSession: Sendable {
             loadedPaths: result.hooks.map { $0.path },
             errors: result.errors
         )
+    }
+
+    private func applyReloadToolNames() {
+        let names = state.withLock { current in
+            let names = current.addedDefaultToolNames + current.pendingToolNames.sorted()
+            current.addedDefaultToolNames.removeAll()
+            return names
+        }
+        setActiveTools(getActiveToolNames() + names)
     }
 
     private func extendResourcesFromExtensions(reason: ResourcesDiscoverReason) async {
@@ -2424,6 +2490,7 @@ public final class AgentSession: Sendable {
         let messages = try await preparePromptMessages(input.text, options: processedOptions)
         failedResponse = nil
         recordSelection()
+        state.withLock { $0.pendingToolNames.removeAll() }
         options?.preflightResult?(.started)
         state.withLock { $0.agentRunAbortRequested = false }
         await idleWaiter.beginRun()
@@ -2545,6 +2612,7 @@ public final class AgentSession: Sendable {
         if deferred { return }
         failedResponse = nil
         recordSelection()
+        state.withLock { $0.pendingToolNames.removeAll() }
         try await runUntilSettled { [agent] in try await agent.prompt(prompt) }
         let events = _agentEventQueue.withLock { $0 }
         await events?.value
@@ -3556,9 +3624,11 @@ public final class AgentSession: Sendable {
         let context = sessionManager.buildSessionProjection()
         let previousModel = agent.state.model
         refreshContext(context)
+        // A branch without a system message has no restored pending tools.
+        state.withLock { $0.pendingToolNames.removeAll() }
         if let current = getCurrentSystemMessage(context.messages) {
             let names = (current.toolsAdded ?? []).map(\.name)
-            setActiveToolsByName(names)
+            restoreActiveTools(names)
             state.withLock { $0.systemPromptOptions.selectedTools = names.compactMap(ToolName.init(rawValue:)) }
         }
         if let modelInfo = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find) {

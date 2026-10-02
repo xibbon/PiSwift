@@ -1,6 +1,6 @@
 import Foundation
 
-// Port of pi-mono v0.99.1 system-theme.ts. Curves and solve order match upstream.
+// Port of pi-mono v1.0.0 system-theme.ts. Curves and solve order match upstream.
 let systemThemeName = "system"
 enum SystemThemeColor: Sendable, Equatable { case string(String), number(Int) }
 struct SystemThemeInput: Sendable {
@@ -244,10 +244,23 @@ private func systemPaint(_ h: Double, _ s: Double, _ l: Double) -> RgbColorValue
     // The recipe bounds saturation and lightness before this call.
     colorToRgb(try! okhslColor(h, s, l))
 }
-private func systemAnchored(_ source: OkhslChannels, _ family: SystemFamily, _ l: Double, _ saturation: Double) -> RgbColorValue {
+private struct SystemSourceColor: Sendable {
+    let channels: OkhslChannels
+    let chroma: Double
+    var h: Double { channels.h }
+    var s: Double { channels.s }
+    var l: Double { channels.l }
+}
+private func systemSource(_ color: RgbColorValue) -> SystemSourceColor {
+    .init(channels: colorToOkhsl(.rgb(color)), chroma: colorToOklch(.rgb(color)).c)
+}
+private func systemAnchored(_ source: SystemSourceColor, _ family: SystemFamily, _ l: Double, _ saturation: Double) -> RgbColorValue {
     let anchor = systemSaturationCurve(family, source.l)
     let falloff = anchor > 0 ? min(1, systemSaturationCurve(family, l) / anchor) : 1
-    return systemPaint(source.h, source.s * falloff * saturation, l)
+    let color = systemPaint(source.h, source.s * falloff * saturation, l)
+    let cap = source.chroma * falloff * saturation
+    let channels = colorToOklch(.rgb(color))
+    return channels.c <= cap ? color : colorToRgb(try! oklchColor(channels.l, cap, source.h))
 }
 private func systemTextContrast(_ color: RgbColorValue, _ surfaces: [RgbColorValue], _ lighter: Bool) -> RgbColorValue {
     func meets(_ candidate: RgbColorValue) -> Bool { surfaces.allSatisfy { wcagContrast(candidate, $0) >= 4.5 } }
@@ -275,7 +288,7 @@ func generateSystemThemeColors(_ input: SystemThemeInput) -> SystemThemeColors {
         }
         return .init(colors: colors, dim: dim, appearance: input.appearanceHint)
     }
-    let palette = input.palette?.count == 16 ? input.palette!.map { colorToOkhsl(.rgb($0)) } : nil
+    let palette = input.palette?.count == 16 ? input.palette!.map(systemSource) : nil
     let appearance = terminalAppearance(background, foreground: input.foreground)
     let lighter = appearance == .dark, extreme = appearance == .dark ? 1.0 : 0.0
     let backgroundL = systemLabLightness(background)
@@ -346,7 +359,7 @@ func generateSystemThemeColors(_ input: SystemThemeInput) -> SystemThemeColors {
                 let needed = lighter ? targets.map { $0! }.max()! : targets.map { $0! }.min()!
                 let foregroundL = systemLabLightness(foreground)
                 if lighter ? foregroundL >= needed : foregroundL <= needed { result[token] = .string(""); continue }
-                text = systemAnchored(colorToOkhsl(.rgb(foreground)), systemFamilies["neutral"]!, oklabToOkhslLightness(needed), saturation)
+                text = systemAnchored(systemSource(foreground), systemFamilies["neutral"]!, oklabToOkhslLightness(needed), saturation)
             }
         }
         if let text { result[token] = .string(colorToHex(.rgb(systemTextContrast(text, surfaces, lighter)))) }

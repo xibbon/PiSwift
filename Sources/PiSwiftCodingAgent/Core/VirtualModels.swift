@@ -122,23 +122,35 @@ public func findLatestResponse(_ messages: [AgentMessage]) -> AssistantMessage? 
     return nil
 }
 
+/// Return the branch model selection with at most one catalog lookup.
 public func getBranchSelection(_ branch: [SessionEntry], getModel: (String, String) -> Model?)
     -> (provider: String, modelId: String)? {
-    var selection: (provider: String, modelId: String)?
-    for entry in branch {
-        switch entry {
+    for index in branch.indices.reversed() {
+        switch branch[index] {
         case .modelChange(let change):
-            selection = (change.provider, change.modelId)
+            return (change.provider, change.modelId)
         case .message(let entry):
             guard case .assistant(let response) = entry.message,
                   response.api != VIRTUAL_MODEL_API else { continue }
-            if let current = selection,
-               let model = getModel(current.provider, current.modelId), isVirtualModel(model) { continue }
-            selection = (response.provider, response.model)
+            if let change = findLastModelChange(branch, before: index),
+               let model = getModel(change.provider, change.modelId), isVirtualModel(model) {
+                return change
+            }
+            return (response.provider, response.model)
         default: break
         }
     }
-    return selection
+    return nil
+}
+
+private func findLastModelChange(_ branch: [SessionEntry], before: Int)
+    -> (provider: String, modelId: String)? {
+    for index in branch.indices.prefix(before).reversed() {
+        if case .modelChange(let change) = branch[index] {
+            return (change.provider, change.modelId)
+        }
+    }
+    return nil
 }
 
 public func getVirtualModelState(_ branch: [SessionEntry], provider: String, modelId: String) -> AnyCodable? {

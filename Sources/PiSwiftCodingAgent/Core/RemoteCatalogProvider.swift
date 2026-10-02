@@ -267,27 +267,11 @@ public struct RemoteCatalogProvider: Sendable {
     }
 
     public func mergeModels(baseline: [Model], dynamic: [Model]) -> [Model] {
-        var merged = baseline
-        for model in dynamic {
-            if let index = merged.firstIndex(where: { $0.id == model.id }) {
-                merged[index] = model
-            } else {
-                merged.append(model)
-            }
-        }
-        return merged
+        orderedCatalogMerge(baseline, dynamic, key: { "chat\0" + $0.id })
     }
 
     public func mergeModels(baseline: [AnyModel], dynamic: [AnyModel]) -> [AnyModel] {
-        var merged = baseline
-        for model in dynamic {
-            if let index = merged.firstIndex(where: { $0.type == model.type && $0.provider == model.provider && $0.id == model.id }) {
-                merged[index] = model
-            } else {
-                merged.append(model)
-            }
-        }
-        return merged
+        orderedCatalogMerge(baseline, dynamic, key: { $0.type.rawValue + "\0" + $0.id })
     }
 
     private func remoteModels(_ entry: ModelsStoreEntry?) -> [AnyModel] {
@@ -314,7 +298,7 @@ public struct RemoteCatalogProvider: Sendable {
 
         let decoded = decodeCatalogModels(entries, provider: providerId)
         // Scalars (metadata beside an id-keyed map) are not catalog entries.
-        return (mergeCatalogModels([], decoded.models), decoded.skipped,
+        return (mergeModels(baseline: [AnyModel](), dynamic: decoded.models), decoded.skipped,
                 entries.filter { $0 is [String: Any] || $0 is [Any] }.count)
     }
 }
@@ -371,4 +355,21 @@ private func piUserAgent(version: String) -> String {
     let architecture = "unknown"
     #endif
     return "pi/\(version) (\(platform); swift; \(architecture))"
+}
+
+/// Match the upstream Map: the last value wins and its first position stays fixed.
+private func orderedCatalogMerge<Model>(_ baseline: [Model], _ dynamic: [Model], key: (Model) -> String) -> [Model] {
+    var indices: [String: Int] = [:]
+    var merged: [Model] = []
+    merged.reserveCapacity(baseline.count + dynamic.count)
+    for model in baseline + dynamic {
+        let identifier = key(model)
+        if let index = indices[identifier] {
+            merged[index] = model
+        } else {
+            indices[identifier] = merged.count
+            merged.append(model)
+        }
+    }
+    return merged
 }

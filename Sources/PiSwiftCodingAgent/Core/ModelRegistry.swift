@@ -65,6 +65,33 @@ public struct CredentialSynchronizationError: Error, LocalizedError, Sendable {
     }
 }
 
+/// A provider and its authentication methods for a login interface.
+public struct LoginProviderInfo: Sendable {
+    public let id: String
+    public let name: String
+    public let apiKey: ApiKeyAuthMethod?
+    public let oauth: OAuthProviderInfo?
+
+    public init(id: String, name: String, apiKey: ApiKeyAuthMethod? = nil, oauth: OAuthProviderInfo? = nil) {
+        self.id = id
+        self.name = name
+        self.apiKey = apiKey
+        self.oauth = oauth
+    }
+}
+
+public enum ProviderLoginError: Error, LocalizedError, Sendable {
+    case unknownProvider(String)
+    case apiKeyLoginUnsupported(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unknownProvider(let id): "Unknown provider: \(id)"
+        case .apiKeyLoginUnsupported(let name): "\(name) does not support api_key login"
+        }
+    }
+}
+
 /// Provider authentication status. This check does not execute configured commands.
 public struct ProviderAuthStatus: Sendable, Equatable {
     public let configured: Bool
@@ -333,6 +360,7 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
 }
 
 private struct ProviderOverride: Sendable {
+    var name: String?
     var baseUrl: String?
     var headers: ProviderHeaders?
     var apiKey: String?
@@ -726,6 +754,66 @@ public final class ModelRegistry: Sendable {
         return await coordinator.refresh(effectiveOptions)
     }
 
+    /// Compose built-in, models.json, and extension login methods in provider id order.
+    public func getLoginProviders() -> [LoginProviderInfo] {
+        let builtins = Dictionary(uniqueKeysWithValues: getBuiltinProviderAuth().map { ($0.id, $0) })
+        return state.withLock { state in
+            var extensions: [String: HookProviderConfig] = [:]
+            for source in state.dynamicSourceOrder {
+                for (id, config) in state.dynamicProviderConfigsBySource[source] ?? [:] {
+                    extensions[id] = config
+                }
+            }
+            let ids = Set(builtins.keys).union(state.configuredProviderOverrides.keys).union(extensions.keys)
+            return ids.sorted().map { id in
+                let builtin = builtins[id]
+                let config = state.configuredProviderOverrides[id]
+                let extensionConfig = extensions[id]
+                let oauth = builtin?.oauth
+                var apiKey = builtin?.apiKey
+                // Upstream fabricates a method for a custom provider, or for an
+                // OAuth-only provider with a configured API key.
+                if apiKey == nil && (oauth == nil || extensionConfig?.apiKey != nil || config?.apiKey != nil) {
+                    apiKey = ApiKeyAuthMethod(name: "API key", envVars: [], login: envApiKeyLogin(name: "API key"))
+                }
+                return LoginProviderInfo(id: id,
+                    name: extensionConfig?.name ?? config?.name ?? builtin?.name ?? id,
+                    apiKey: apiKey, oauth: oauth)
+            }
+        }
+    }
+
+    public func getLoginProvider(_ id: String) -> LoginProviderInfo? {
+        getLoginProviders().first { $0.id == id }
+    }
+
+    public func getProviderDisplayName(_ id: String) -> String {
+        getLoginProvider(id)?.name ?? id
+    }
+
+    public func isUsingOAuth(_ provider: String) -> Bool {
+        if case .oauth = authStorage.get(provider) { return true }
+        return false
+    }
+
+    /// Store the login result, then refresh local state without network requests.
+    @discardableResult
+    public func loginApiKey(_ provider: String, interaction: ProviderAuthInteraction) async throws -> AuthCredential {
+        guard let info = getLoginProvider(provider) else { throw ProviderLoginError.unknownProvider(provider) }
+        guard let login = info.apiKey?.login else { throw ProviderLoginError.apiKeyLoginUnsupported(info.name) }
+        let result = try await login(interaction)
+        let credential = AuthCredential.apiKey(ApiKeyCredential(key: result.key, env: result.env))
+        authStorage.set(provider, credential: credential)
+        _ = await refresh(ModelsRefreshOptions(allowNetwork: false))
+        return credential
+    }
+
+    /// Remove a stored API-key or OAuth credential, then refresh local state.
+    public func logout(_ provider: String) async {
+        authStorage.remove(provider)
+        _ = await refresh(ModelsRefreshOptions(allowNetwork: false))
+    }
+
     public func registerProvider(_ config: HookProviderConfig, sourceId: String) {
         let configuredOverrides = state.withLock { $0.configuredModelOverrides[config.provider] ?? [:] }
         let allModels: [AnyModel] = config.models.map { definition in
@@ -964,7 +1052,7 @@ public final class ModelRegistry: Sendable {
         return hasProviderConfiguredAuth(model.provider) || !(model.headers?.isEmpty ?? true)
     }
 
-    public func getProviderAuthStatus(_ provider: String) -> ProviderAuthStatus {
+    public func getProviderAuthStatus(_ provider: String, env: [String: String]? = nil) -> ProviderAuthStatus {
         if authStorage.getRuntimeApiKey(provider) != nil { return ProviderAuthStatus(configured: true, source: "runtime") }
         if authStorage.has(provider) { return ProviderAuthStatus(configured: true, source: "stored") }
         let configuration = requestConfiguration(provider: provider)
@@ -978,8 +1066,9 @@ public final class ModelRegistry: Sendable {
             }
             return ProviderAuthStatus(configured: true, source: configuration.extensionKey ? "fallback" : "models_json_key")
         }
-        return getEnvApiKey(provider: provider) != nil
-            ? ProviderAuthStatus(configured: true, source: "environment", label: findEnvKeys(provider: provider)?.joined(separator: ", "))
+        let label = findEnvKeys(provider: provider, env: env)?.joined(separator: ", ") ?? ambientAuthSource(provider: provider, env: env)
+        return getEnvApiKey(provider: provider, env: env) != nil || label != nil
+            ? ProviderAuthStatus(configured: true, source: "environment", label: label)
             : ProviderAuthStatus(configured: false)
     }
 
@@ -1151,6 +1240,9 @@ public final class ModelRegistry: Sendable {
             let apiKey: String?
             if !hasCredential, let rawKey = configuration.key {
                 apiKey = try resolveConfigValueOrThrow(rawKey, description: "API key for provider \"\(provider)\"", env: scopedEnv)
+            } else if provider == "anthropic", case .apiKey(let value) = credential, value.key?.isEmpty == true {
+                // The upstream resolver treats an empty stored key as absent.
+                apiKey = getEnvApiKey(provider: provider, env: scopedEnv)
             } else { apiKey = storedKey }
             var requestApiKey = apiKey
             var inheritedHeaders: ProviderHeaders?
@@ -1159,6 +1251,22 @@ public final class ModelRegistry: Sendable {
             // standard keys do not return an environment bag.
             var resultEnv = hasCredential && !isOAuth ? scopedEnv : nil
             var hasResolution = apiKey != nil
+            let hasStoredApiKey: Bool
+            if case .apiKey(let value) = credential { hasStoredApiKey = value.key?.isEmpty == false }
+            else { hasStoredApiKey = false }
+            if provider == "anthropic", runtimeKey == nil, !isOAuth, !hasStoredApiKey,
+               hasCredential || configuration.key == nil,
+               let token = getProviderEnvValue("ANTHROPIC_AUTH_TOKEN", env: scopedEnv), !token.isEmpty {
+                // Auth tokens use Bearer transport. OAuth tokens and API keys
+                // continue through the API-key path.
+                inheritedHeaders = ["Authorization": "Bearer \(token)"]
+                requestApiKey = nil
+            }
+            if provider == "anthropic", apiKey == nil,
+               let federation = anthropicFederationEnv(env: providerEnvironment(scopedEnv)) {
+                resultEnv = federation
+                hasResolution = true
+            }
             if provider == "amazon-bedrock" || provider == "google-vertex" {
                 let hasStoredKey: Bool
                 if case .apiKey(let value) = credential { hasStoredKey = value.key != nil }
@@ -1759,6 +1867,11 @@ public final class ModelRegistry: Sendable {
         for (providerName, value) in providers {
             guard let providerConfig = value as? [String: Any] else { continue }
             let models = providerConfig["models"] as? [[String: Any]] ?? []
+            if let name = providerConfig["name"], (name as? String)?.isEmpty != false {
+                return CustomModelsResult(models: [], overrides: [:], modelOverrides: [:],
+                    errorMessage: "Provider \(providerName): name must be a nonempty string")
+            }
+            let name = providerConfig["name"] as? String
             let baseUrl = providerConfig["baseUrl"] as? String
             let apiKey = providerConfig["apiKey"] as? String
             let apiOverride = providerConfig["api"] as? String
@@ -1767,12 +1880,11 @@ public final class ModelRegistry: Sendable {
             let overridesDict = providerConfig["modelOverrides"] as? [String: Any]
             let providerCompat = parseCompat(providerConfig["compat"])
 
-            if baseUrl != nil || headers != nil || apiKey != nil || providerCompat != nil || authHeader || !models.isEmpty {
-                overrides[providerName] = ProviderOverride(baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat, authHeader: authHeader, modelHeaders: Dictionary(models.compactMap { definition in
+            // Keep even a provider with only a name or modelOverrides in the login list.
+            overrides[providerName] = ProviderOverride(name: name, baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat, authHeader: authHeader, modelHeaders: Dictionary(models.compactMap { definition in
                     guard let id = definition["id"] as? String, let values = parseProviderHeaders(definition["headers"]) else { return nil }
                     return (id, values)
                 }, uniquingKeysWith: { _, last in last }))
-            }
 
             if let apiKey {
                 customProviderApiKeys.withLock { $0[providerName] = apiKey }

@@ -67,7 +67,8 @@ import PiSwiftAI
     #expect(json?["quietStartup"] as? Bool == true)
 
     let reloaded = SettingsManager.create(tempDir, tempDir)
-    #expect(reloaded.getQuietStartup() == true)
+    // Upstream settings-manager.test.ts: quietStartup now has a header-only value.
+    #expect(reloaded.getQuietStartup() == .on)
 }
 
 @Test func settingsCacheMissNoticesDefaultAndRoundTrip() throws {
@@ -193,7 +194,8 @@ import PiSwiftAI
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
 
     let manager = SettingsManager.create(tempDir, tempDir)
-    #expect(manager.getTuiMode() == "regular")
+    // Upstream settings-manager.test.ts: fullscreen is the default and invalid-value fallback.
+    #expect(manager.getTuiMode() == "fullscreen")
     #expect(manager.getFullscreenScrollbar() == "auto")
     #expect(manager.getMouseWheelStep() == 1)
     #expect(manager.getMermaidEnabled() == true)
@@ -201,7 +203,8 @@ import PiSwiftAI
     #expect(manager.getLatexEnabled() == false)
     #expect(manager.getOutputPad() == 1)
 
-    manager.setTuiMode("fullscreen")
+    // Upstream settings-manager.test.ts: round trip uses the non-default regular mode.
+    manager.setTuiMode("regular")
     manager.setFullscreenScrollbar("hidden")
     manager.setMouseWheelStep(4)
     manager.setMermaidEnabled(false)
@@ -213,7 +216,7 @@ import PiSwiftAI
     let data = try Data(contentsOf: settingsPath)
     let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     let markdown = try #require(json["markdown"] as? [String: Any])
-    #expect(json["tuiMode"] as? String == "fullscreen")
+    #expect(json["tuiMode"] as? String == "regular")
     #expect(json["fullscreenScrollbar"] as? String == "hidden")
     // C19: the compatibility setter now writes only fullscreenWheelScrollLines.
     #expect(json["fullscreenWheelScrollLines"] as? Int == 4)
@@ -224,7 +227,7 @@ import PiSwiftAI
     #expect(markdown["latexEnabled"] as? Bool == true)
 
     let reloaded = SettingsManager.create(tempDir, tempDir)
-    #expect(reloaded.getTuiMode() == "fullscreen")
+    #expect(reloaded.getTuiMode() == "regular")
     #expect(reloaded.getFullscreenScrollbar() == "hidden")
     #expect(reloaded.getMouseWheelStep() == 4)
     #expect(reloaded.getMermaidEnabled() == false)
@@ -243,7 +246,8 @@ import PiSwiftAI
 
     #expect(manager.getOutputPad() == 1)
     #expect(manager.getMouseWheelStep() == 1)
-    #expect(manager.getTuiMode() == "regular")
+    // Upstream settings-manager.test.ts: fullscreen is the default and invalid-value fallback.
+    #expect(manager.getTuiMode() == "fullscreen")
     #expect(manager.getFullscreenScrollbar() == "auto")
 }
 
