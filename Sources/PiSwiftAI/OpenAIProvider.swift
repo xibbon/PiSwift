@@ -7,6 +7,7 @@ public func streamOpenAI(
     options: OpenAIOptions
 ) -> AssistantMessageEventStream {
     let streamOptions = StreamOptions(
+        env: options.env,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         signal: options.signal,

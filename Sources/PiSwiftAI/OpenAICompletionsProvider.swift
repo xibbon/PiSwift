@@ -7,7 +7,7 @@ public func streamOpenAICompletions(
     context: TranscriptContext,
     options: OpenAICompletionsOptions
 ) -> AssistantMessageEventStream {
-    let model = resolveCloudflareModel(model)
+    let model = resolveCloudflareModel(model, env: providerEnvironment(options.env))
     let supportsSystem = model.compat?.supportsMidConvoSystemMessages == true
     let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: supportsSystem)
     let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: supportsSystem && model.compat?.supportsMidConvoToolAdditions == true)
@@ -830,7 +830,7 @@ private func streamZaiCompletions(
 
     request = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
-        sessionId: resolveCacheRetention(options.cacheRetention) == .none ? nil : options.sessionId,
+        sessionId: resolveCacheRetention(options.cacheRetention, env: options.env) == .none ? nil : options.sessionId,
         sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
         sessionAffinityFormat: compat.sessionAffinityFormat
     )
@@ -847,12 +847,12 @@ private func streamZaiCompletions(
         data: body,
         baseUrl: model.baseUrl,
         sessionId: options.sessionId,
-        cacheRetention: resolveCacheRetention(options.cacheRetention),
+        cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env),
         supportsLongCacheRetention: compat.supportsLongCacheRetention
     ) {
         body = updated
     }
-    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)),
+    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env)),
        let updated = applyOpenAICompatCacheControl(
         data: body,
         cacheControl: cacheControl,
@@ -986,17 +986,17 @@ private func buildCompletionsMiddlewares(
     var middlewares: [OpenAIMiddleware] = [
         OpenAICompletionsMaxTokensMiddleware(field: compat.maxTokensField),
     ]
-    if compat.sendSessionAffinityHeaders || shouldSendOpenAICompletionsPromptCache(baseUrl: model.baseUrl, cacheRetention: resolveCacheRetention(options.cacheRetention), compat: compat) {
+    if compat.sendSessionAffinityHeaders || shouldSendOpenAICompletionsPromptCache(baseUrl: model.baseUrl, cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env), compat: compat) {
         middlewares.append(OpenAICompletionsSessionMiddleware(
             baseUrl: model.baseUrl,
-            sessionId: resolveCacheRetention(options.cacheRetention) == .none ? nil : options.sessionId,
-            cacheRetention: resolveCacheRetention(options.cacheRetention),
+            sessionId: resolveCacheRetention(options.cacheRetention, env: options.env) == .none ? nil : options.sessionId,
+            cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env),
             sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
             sessionAffinityFormat: compat.sessionAffinityFormat,
             supportsLongCacheRetention: compat.supportsLongCacheRetention
         ))
     }
-    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention)) {
+    if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env)) {
         middlewares.append(OpenAICompletionsCacheControlMiddleware(
             cacheControl: cacheControl.mapValues(AnyCodable.init),
             supportsCacheControlOnTools: compat.supportsCacheControlOnTools
@@ -1772,7 +1772,7 @@ private func streamChatCompletions(
     model: Model,
     options: OpenAICompletionsOptions
 ) async throws -> AsyncThrowingStream<OpenAICompletionsStreamChunk, Error> {
-    let client = options.httpClient ?? DefaultProviderHTTPClient()
+    let client = options.httpClient ?? DefaultProviderHTTPClient(env: options.env)
     let response = try await retryProviderRequest(
         maxRetries: options.maxRetries,
         maxRetryDelayMs: options.maxRetryDelayMs,

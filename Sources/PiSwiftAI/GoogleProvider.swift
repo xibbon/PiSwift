@@ -47,7 +47,7 @@ public func streamGoogle(
 
             let response = try await retryGoogleRequest(
                 request,
-                httpClient: options.httpClient,
+                httpClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
                 maxRetries: options.maxRetries,
                 maxRetryDelayMs: options.maxRetryDelayMs,
                 signal: options.signal

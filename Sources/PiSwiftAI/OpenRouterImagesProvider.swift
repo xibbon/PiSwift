@@ -1,13 +1,13 @@
 import Foundation
 
-private let openRouterImagesSessionFactory = LockedState<@Sendable (URL?) -> URLSession>(proxySession(for:))
+private let openRouterImagesSessionFactory = LockedState<(@Sendable (URL?) -> URLSession)?>(nil)
 
 func setOpenRouterImagesURLSessionFactory(_ factory: @escaping @Sendable (URL?) -> URLSession) {
     openRouterImagesSessionFactory.withLock { $0 = factory }
 }
 
 func resetOpenRouterImagesURLSessionFactory() {
-    openRouterImagesSessionFactory.withLock { $0 = proxySession(for:) }
+    openRouterImagesSessionFactory.withLock { $0 = nil }
 }
 
 private enum OpenRouterImagesError: Error, LocalizedError {
@@ -140,7 +140,7 @@ private func performOpenRouterImagesRequest(
     _ request: URLRequest,
     options: ImagesOptions
 ) async throws -> (Data, ProviderHTTPResponse) {
-    let client = options.httpClient ?? OpenRouterImagesDefaultHTTPClient()
+    let client = options.httpClient ?? OpenRouterImagesDefaultHTTPClient(env: options.env)
     return try await retryProviderRequest(
         maxRetries: options.maxRetries,
         maxRetryDelayMs: options.maxRetryDelayMs,
@@ -161,8 +161,9 @@ private func performOpenRouterImagesRequest(
 }
 
 private struct OpenRouterImagesDefaultHTTPClient: ProviderHTTPClient {
+    let env: [String: String]?
     func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
-        let session = openRouterImagesSessionFactory.withLock { $0 }(request.url)
+        let session = openRouterImagesSessionFactory.withLock { $0 }?(request.url) ?? proxySession(for: request.url, env: env)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw StreamError.invalidHTTPResponse

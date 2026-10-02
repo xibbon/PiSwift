@@ -139,9 +139,11 @@ public func runAgentLoopContinue(
 public enum AgentLoopError: Error, LocalizedError {
     case emptyContext
     case lastMessageAssistant
+    case authentication(String)
 
     public var errorDescription: String? {
         switch self {
+        case .authentication(let message): return message
         case .emptyContext:
             return "Cannot continue: no messages in context"
         case .lastMessageAssistant:
@@ -402,7 +404,8 @@ private func streamAssistantResponse(
     }
 
     let modelAuth = await config.getModelAuth?(config.model)
-    let providerApiKey = await config.getApiKey?(config.model.provider)
+    if let error = modelAuth?.error { throw AgentLoopError.authentication(error) }
+    let providerApiKey = modelAuth == nil ? await config.getApiKey?(config.model.provider) : nil
     let resolvedApiKey = modelAuth?.apiKey ?? providerApiKey ?? config.apiKey
     let resolvedHeaders = mergeHeaders(config.headers, modelAuth?.headers)
     let resolvedModel = applyBaseUrlOverride(config.model, modelAuth?.baseUrl)
@@ -411,6 +414,7 @@ private func streamAssistantResponse(
         resolvedModel,
         llmContext,
         SimpleStreamOptions(
+            env: modelAuth?.env,
             temperature: config.temperature,
             maxTokens: config.maxTokens,
             signal: signal,

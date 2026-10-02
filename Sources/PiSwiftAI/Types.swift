@@ -179,6 +179,7 @@ public enum Transport: String, Sendable {
 public typealias ProviderStreamEventHandler = @Sendable (AnyCodable, Model) async throws -> Void
 
 public struct StreamOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     /// Arbitrary sampling parameters merged into the request body as-is, after the named request
     /// fields, so keys here override them. Lets custom OpenAI-compatible servers (llama.cpp, vLLM,
@@ -211,6 +212,7 @@ public struct StreamOptions: Sendable {
     public var maxRetries: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
@@ -230,6 +232,7 @@ public struct StreamOptions: Sendable {
         websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
@@ -252,6 +255,7 @@ public struct StreamOptions: Sendable {
 }
 
 public struct SimpleStreamOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
@@ -281,6 +285,7 @@ public struct SimpleStreamOptions: Sendable {
     public var toolChoice: ToolChoice?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
@@ -303,6 +308,7 @@ public struct SimpleStreamOptions: Sendable {
         maxRetries: Int? = nil,
         toolChoice: ToolChoice? = nil
     ) {
+        self.env = env
         self.toolChoice = toolChoice
 
         self.temperature = temperature
@@ -1206,6 +1212,7 @@ public enum AnyModel: Sendable, Codable {
 }
 
 public struct ImagesOptions: Sendable {
+    public var env: [String: String]?
     public var signal: CancellationToken?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
@@ -1218,6 +1225,7 @@ public struct ImagesOptions: Sendable {
     public var metadata: [String: AnyCodable]?
 
     public init(
+        env: [String: String]? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
@@ -1229,6 +1237,7 @@ public struct ImagesOptions: Sendable {
         maxRetryDelayMs: Int? = nil,
         metadata: [String: AnyCodable]? = nil
     ) {
+        self.env = env
         self.signal = signal
         self.apiKey = apiKey
         self.httpClient = httpClient
@@ -1749,6 +1758,7 @@ public enum OpenAIToolChoice: Sendable {
 }
 
 public struct OpenAICompletionsOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
@@ -1769,6 +1779,7 @@ public struct OpenAICompletionsOptions: Sendable {
     public var maxRetryDelayMs: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
@@ -1788,6 +1799,7 @@ public struct OpenAICompletionsOptions: Sendable {
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.samplingParams = samplingParams
         self.maxTokens = maxTokens
@@ -1839,6 +1851,7 @@ public enum OpenAICodexTextVerbosity: String, Sendable {
 }
 
 public struct OpenAIResponsesOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
@@ -1863,6 +1876,7 @@ public struct OpenAIResponsesOptions: Sendable {
     public var toolChoice: OpenAIToolChoice?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
@@ -1885,6 +1899,7 @@ public struct OpenAIResponsesOptions: Sendable {
         websocketConnectTimeoutMs: Int? = nil,
         toolChoice: OpenAIToolChoice? = nil
     ) {
+        self.env = env
         self.toolChoice = toolChoice
 
         self.temperature = temperature
@@ -1911,6 +1926,7 @@ public struct OpenAIResponsesOptions: Sendable {
 }
 
 public struct AzureOpenAIResponsesOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var samplingParams: [String: AnyCodable]?
     public var maxTokens: Int?
@@ -1935,6 +1951,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var toolChoice: OpenAIToolChoice?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         samplingParams: [String: AnyCodable]? = nil,
         maxTokens: Int? = nil,
@@ -1957,6 +1974,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         maxRetryDelayMs: Int? = nil,
         toolChoice: OpenAIToolChoice? = nil
     ) {
+        self.env = env
         self.toolChoice = toolChoice
 
         self.temperature = temperature
@@ -1983,6 +2001,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
 }
 
 public struct OpenAICodexResponsesOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var maxTokens: Int?
     public var signal: CancellationToken?
@@ -2011,6 +2030,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
     public var toolChoice: OpenAIToolChoice?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2034,6 +2054,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         websocketConnectTimeoutMs: Int? = nil,
         toolChoice: OpenAIToolChoice? = nil
     ) {
+        self.env = env
         self.toolChoice = toolChoice
 
         self.temperature = temperature
@@ -2069,6 +2090,7 @@ public enum GoogleApiThinkingLevel: String, Sendable {
 }
 
 public struct GoogleOptions: Sendable {
+    public var env: [String: String]?
     public struct ThinkingConfig: Sendable {
         public var enabled: Bool
         public var budgetTokens: Int?
@@ -2098,6 +2120,7 @@ public struct GoogleOptions: Sendable {
     public var maxRetryDelayMs: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2114,6 +2137,7 @@ public struct GoogleOptions: Sendable {
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -2133,6 +2157,7 @@ public struct GoogleOptions: Sendable {
 }
 
 public struct GoogleGeminiCliOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var maxTokens: Int?
     public var signal: CancellationToken?
@@ -2150,6 +2175,7 @@ public struct GoogleGeminiCliOptions: Sendable {
     public var maxRetries: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2166,6 +2192,7 @@ public struct GoogleGeminiCliOptions: Sendable {
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -2185,6 +2212,7 @@ public struct GoogleGeminiCliOptions: Sendable {
 }
 
 public struct GoogleVertexOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var maxTokens: Int?
     public var signal: CancellationToken?
@@ -2204,6 +2232,7 @@ public struct GoogleVertexOptions: Sendable {
     public var maxRetryDelayMs: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2222,6 +2251,7 @@ public struct GoogleVertexOptions: Sendable {
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -2250,6 +2280,7 @@ public enum AnthropicToolChoice: Sendable {
 }
 
 public struct AnthropicOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var maxTokens: Int?
     public var signal: CancellationToken?
@@ -2282,6 +2313,7 @@ public struct AnthropicOptions: Sendable {
     public var maxRetryDelayMs: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2304,6 +2336,7 @@ public struct AnthropicOptions: Sendable {
         maxRetries: Int? = nil,
         maxRetryDelayMs: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -2336,6 +2369,7 @@ public enum BedrockToolChoice: Sendable {
 }
 
 public struct BedrockOptions: Sendable {
+    public var env: [String: String]?
     public var temperature: Double?
     public var maxTokens: Int?
     public var signal: CancellationToken?
@@ -2365,6 +2399,7 @@ public struct BedrockOptions: Sendable {
     public var maxRetries: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2385,6 +2420,7 @@ public struct BedrockOptions: Sendable {
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil
     ) {
+        self.env = env
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.signal = signal
@@ -2408,6 +2444,7 @@ public struct BedrockOptions: Sendable {
 }
 
 public struct MistralOptions: Sendable {
+    public var env: [String: String]?
     public var cacheRetention: CacheRetention?
     public var temperature: Double?
     public var maxTokens: Int?
@@ -2430,6 +2467,7 @@ public struct MistralOptions: Sendable {
     public var maxRetryDelayMs: Int?
 
     public init(
+        env: [String: String]? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
@@ -2448,6 +2486,7 @@ public struct MistralOptions: Sendable {
         maxRetryDelayMs: Int? = nil,
         cacheRetention: CacheRetention? = nil
     ) {
+        self.env = env
         self.cacheRetention = cacheRetention
         self.temperature = temperature
         self.maxTokens = maxTokens

@@ -274,7 +274,7 @@ public func streamBedrock(
             var responseRequestId: String?
             while true {
                 do {
-                    let session = proxySession(for: signedRequest.url)
+                    let session = proxySession(for: signedRequest.url, env: options.env)
                     let (bytes, response) = try await session.bytes(for: signedRequest)
                     guard let httpResponse = response as? HTTPURLResponse else {
                         throw BedrockStreamError.invalidResponse
@@ -686,9 +686,9 @@ private func buildBedrockRequest(
         throw BedrockStreamError.invalidUrl
     }
 
-    let cacheRetention = resolveBedrockCacheRetention(options.cacheRetention)
-    let messages = convertMessages(context: context, model: model, cacheRetention: cacheRetention)
-    let system = buildSystemPrompt(context.systemPrompt, model: model, cacheRetention: cacheRetention)
+    let cacheRetention = resolveBedrockCacheRetention(options.cacheRetention, env: options.env)
+    let messages = convertMessages(context: context, model: model, cacheRetention: cacheRetention, env: options.env)
+    let system = buildSystemPrompt(context.systemPrompt, model: model, cacheRetention: cacheRetention, env: options.env)
     let inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : nil)
     let inferenceConfig = BedrockInferenceConfig(maxTokens: inferenceMaxTokens, temperature: options.temperature)
     let toolConfig = try convertToolConfig(
@@ -723,10 +723,10 @@ private func buildBedrockRequest(
     return (request, body)
 }
 
-private func buildSystemPrompt(_ systemPrompt: String?, model: Model, cacheRetention: CacheRetention) -> [BedrockSystemBlock]? {
+private func buildSystemPrompt(_ systemPrompt: String?, model: Model, cacheRetention: CacheRetention, env: [String: String]? = nil) -> [BedrockSystemBlock]? {
     guard let systemPrompt, !systemPrompt.isEmpty else { return nil }
     var blocks = [BedrockSystemBlock(payload: AnyCodable(["text": sanitizeSurrogates(systemPrompt)]))]
-    if cacheRetention != .none, supportsPromptCaching(model: model) {
+    if cacheRetention != .none, supportsPromptCaching(model: model, env: env) {
         blocks.append(BedrockSystemBlock(payload: AnyCodable(["cachePoint": cachePointPayload(cacheRetention: cacheRetention)])))
     }
     return blocks
@@ -743,10 +743,10 @@ private func bedrockCapabilityIdentifier(_ model: Model) -> String {
     return id
 }
 
-private func supportsPromptCaching(model: Model) -> Bool {
+private func supportsPromptCaching(model: Model, env: [String: String]? = nil) -> Bool {
     // Force cache for all models via env var (useful for application inference profiles
     // that don't have "claude" in the ARN)
-    if ProcessInfo.processInfo.environment["AWS_BEDROCK_FORCE_CACHE"] == "1" {
+    if getProviderEnvValue("AWS_BEDROCK_FORCE_CACHE", env: env) == "1" {
         return true
     }
     if model.cost.cacheRead > 0 || model.cost.cacheWrite > 0 {
@@ -821,11 +821,11 @@ private func mapThinkingLevelToEffort(model: Model, level: ThinkingLevel) -> Str
     }
 }
 
-private func resolveBedrockCacheRetention(_ cacheRetention: CacheRetention?) -> CacheRetention {
+private func resolveBedrockCacheRetention(_ cacheRetention: CacheRetention?, env: [String: String]? = nil) -> CacheRetention {
     if let cacheRetention {
         return cacheRetention
     }
-    let flag = getenv("PI_CACHE_RETENTION").map { String(cString: $0) }?.lowercased()
+    let flag = getProviderEnvValue("PI_CACHE_RETENTION", env: env)?.lowercased()
     if flag == "long" {
         return .long
     }
@@ -840,7 +840,7 @@ private func cachePointPayload(cacheRetention: CacheRetention) -> [String: Any] 
     return payload
 }
 
-private func convertMessages(context: Context, model: Model, cacheRetention: CacheRetention) -> [BedrockMessage] {
+private func convertMessages(context: Context, model: Model, cacheRetention: CacheRetention, env: [String: String]? = nil) -> [BedrockMessage] {
     let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, _, _ in
         let sanitized = id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
         return sanitized.count > 64 ? String(sanitized.prefix(64)) : sanitized
@@ -886,7 +886,7 @@ private func convertMessages(context: Context, model: Model, cacheRetention: Cac
         index += 1
     }
 
-    if cacheRetention != .none, supportsPromptCaching(model: model),
+    if cacheRetention != .none, supportsPromptCaching(model: model, env: env),
        let lastIndex = result.indices.last,
        result[lastIndex].role == "user" {
         var last = result[lastIndex]
@@ -1100,7 +1100,7 @@ private func isAnthropicClaudeModel(_ model: Model) -> Bool {
 }
 
 private func configuredBedrockRegion(options: BedrockOptions) -> String? {
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     if let region = options.region {
         return region
     }
@@ -1111,7 +1111,7 @@ private func configuredBedrockRegion(options: BedrockOptions) -> String? {
 }
 
 private func hasConfiguredBedrockProfile(options: BedrockOptions) -> Bool {
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     if let profile = options.profile, !profile.isEmpty {
         return true
     }
@@ -1162,9 +1162,9 @@ private func resolveBedrockRegion(model: Model, options: BedrockOptions) -> Stri
        shouldUseExplicitBedrockEndpoint(baseUrl: model.baseUrl, configuredRegion: nil, hasConfiguredProfile: hasProfile) {
         return endpointRegion
     }
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     if let profile = options.profile ?? env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"],
-       let region = loadAwsProfileRegion(profile: profile) {
+       let region = loadAwsProfileRegion(profile: profile, env: options.env) {
         return region
     }
     return "us-east-1"
@@ -1203,7 +1203,7 @@ private func isReservedBedrockHeader(_ key: String) -> Bool {
 }
 
 private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     if env["AWS_BEDROCK_SKIP_AUTH"] != "1",
        let bearer = options.bearerToken ?? env["AWS_BEARER_TOKEN_BEDROCK"],
        !bearer.isEmpty {
@@ -1213,8 +1213,12 @@ private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
         return .sigV4(AwsCredentials(accessKeyId: "dummy-access-key", secretAccessKey: "dummy-secret-key", sessionToken: nil))
     }
 
-    if let profile = options.profile, !profile.isEmpty {
-        guard let credentials = loadAwsProfileCredentials(profile: profile) else {
+    // v0.99.1 (#6957): a profile from the credential's scoped env has the
+    // same priority as an explicit profile option, before ambient AWS keys.
+    let explicitProfile = [options.profile, options.env?["AWS_PROFILE"]]
+        .compactMap { $0 }.first { !$0.isEmpty }
+    if let profile = explicitProfile {
+        guard let credentials = loadAwsProfileCredentials(profile: profile, env: options.env) else {
             throw BedrockStreamError.missingCredentials
         }
         return .sigV4(credentials)
@@ -1229,7 +1233,7 @@ private func resolveBedrockAuth(options: BedrockOptions) throws -> BedrockAuth {
     }
 
     let selectedProfile = options.profile ?? env["AWS_PROFILE"] ?? env["AWS_DEFAULT_PROFILE"] ?? "default"
-    if let credentials = loadAwsProfileCredentials(profile: selectedProfile) {
+    if let credentials = loadAwsProfileCredentials(profile: selectedProfile, env: options.env) {
         return .sigV4(credentials)
     }
 
@@ -1298,8 +1302,8 @@ private func formatBedrockHTTPError(statusCode: Int, body: String) -> String {
     return message
 }
 
-private func loadAwsProfileCredentials(profile: String) -> AwsCredentials? {
-    let env = ProcessInfo.processInfo.environment
+private func loadAwsProfileCredentials(profile: String, env: [String: String]? = nil) -> AwsCredentials? {
+    let env = providerEnvironment(env)
     let credentialsPath = env["AWS_SHARED_CREDENTIALS_FILE"] ?? "~/.aws/credentials"
     guard let sections = parseIniFile(path: credentialsPath),
           let values = sections[profile] else {
@@ -1313,8 +1317,8 @@ private func loadAwsProfileCredentials(profile: String) -> AwsCredentials? {
     return AwsCredentials(accessKeyId: accessKey, secretAccessKey: secretKey, sessionToken: token)
 }
 
-func loadAwsProfileRegion(profile: String) -> String? {
-    let env = ProcessInfo.processInfo.environment
+func loadAwsProfileRegion(profile: String, env: [String: String]? = nil) -> String? {
+    let env = providerEnvironment(env)
     let configPath = env["AWS_CONFIG_FILE"] ?? "~/.aws/config"
     guard let sections = parseIniFile(path: configPath) else {
         return nil

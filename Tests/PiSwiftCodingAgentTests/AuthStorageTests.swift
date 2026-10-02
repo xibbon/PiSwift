@@ -388,7 +388,8 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
-    writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": envName]])
+    // Upstream v0.99.1 requires an explicit $ reference; bare names are literals.
+    writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "$" + envName]])
 
     let storage = AuthStorage(authPath)
     let apiKey = await storage.getApiKey("anthropic")
@@ -429,10 +430,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(apiKey == "hello-world")
 }
 
-/// v0.63.0: shell-command auth resolves at request time. The previous in-process cache
-/// was removed because it caused expiring tokens (OAuth, AWS STS) to be returned stale.
-/// Each call to `getApiKey` re-executes the underlying command. Caching policy is the
-/// responsibility of the user-provided wrapper command.
+/// Upstream v0.99.1 resolveConfigValue caches stored command keys for the process lifetime.
 @Test(.timeLimit(.minutes(1))) func authStorageCommandExecutesEveryCall() async {
     let tempDir = makeTempDir("auth-storage-cache")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
@@ -450,8 +448,8 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     _ = await storage.getApiKey("anthropic")
 
     let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
-    // v0.63.0: 3 calls → 3 executions (no caching).
-    #expect(count == 3)
+    // Upstream v0.99.1 caches stored command results.
+    #expect(count == 1)
 }
 
 @Test(.timeLimit(.minutes(1))) func authStorageCommandExecutesPerInstance() async {
@@ -472,8 +470,8 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     _ = await storage2.getApiKey("anthropic")
 
     let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
-    // v0.63.0: each call re-executes (no persistent cache across calls or instances).
-    #expect(count == 2)
+    // Upstream v0.99.1 shares the command cache across storage instances.
+    #expect(count == 1)
 }
 
 @Test(.timeLimit(.minutes(1))) func authStorageCachesDifferentCommandsSeparately() async {
@@ -494,8 +492,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(keyB == "key-openai")
 }
 
-/// v0.63.0: failures are no longer cached either — each call re-executes, giving the
-/// wrapper command a fresh chance to recover.
+/// Upstream v0.99.1 caches failed stored-key commands too.
 @Test(.timeLimit(.minutes(1))) func authStorageFailedCommandsRetry() async {
     let tempDir = makeTempDir("auth-storage-cache-fail")
     defer { try? FileManager.default.removeItem(atPath: tempDir) }
@@ -515,8 +512,8 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(key2 == nil)
 
     let count = Int((try? String(contentsOfFile: counterFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? "0") ?? 0
-    // Each call re-executes; both attempts ran the failing command.
-    #expect(count == 2)
+    // Upstream v0.99.1 caches failure for the process lifetime.
+    #expect(count == 1)
 }
 
 @Test(.processEnvironment, .timeLimit(.minutes(1))) func authStorageEnvVarsNotCached() async {
@@ -534,7 +531,8 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     }
 
     let authPath = URL(fileURLWithPath: tempDir).appendingPathComponent("auth.json").path
-    writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": envVarName]])
+    // Upstream v0.99.1 requires an explicit $ reference; bare names are literals.
+    writeAuthJson(authPath, data: ["anthropic": ["type": "api_key", "key": "$" + envVarName]])
 
     setenv(envVarName, "first-value", 1)
     let storage = AuthStorage(authPath)

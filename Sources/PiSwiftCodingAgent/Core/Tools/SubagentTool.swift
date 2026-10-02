@@ -426,7 +426,7 @@ private func runSingleAgent(
         },
         getModelAuth: { model in
             let auth = await dependencies.modelRegistry.getApiKeyAndHeaders(model)
-            return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl)
+            return AgentModelAuth(apiKey: auth.apiKey, headers: auth.headers, baseUrl: auth.baseUrl, env: auth.env, error: auth.error)
         },
         timeoutMs: providerRetrySettings.timeoutMs ?? dependencies.settingsManager.getHttpIdleTimeoutMs(),
         websocketConnectTimeoutMs: dependencies.settingsManager.getWebSocketConnectTimeoutMs(),

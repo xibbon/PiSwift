@@ -524,6 +524,7 @@ public struct HookProviderClassifierModel: Sendable {
 }
 
 public struct HookProviderConfig: Sendable {
+    public var authHeader: Bool?
     public var provider: String
     public var api: Api
     public var baseUrl: String
@@ -541,6 +542,7 @@ public struct HookProviderConfig: Sendable {
         api: Api,
         baseUrl: String,
         apiKey: String? = nil,
+        authHeader: Bool? = nil,
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         streamSimple: ApiStreamSimpleFunction? = nil,
@@ -548,6 +550,7 @@ public struct HookProviderConfig: Sendable {
         classifiers: [ClassifierApi: ClassifierFunction] = [:],
         models: [HookProviderModelConfig]
     ) {
+        self.authHeader = authHeader
         self.provider = provider
         self.api = api
         self.baseUrl = baseUrl
@@ -561,13 +564,13 @@ public struct HookProviderConfig: Sendable {
     }
 
     /// Source-compatible chat-only registration used by older extensions.
-    public init(provider: String, api: Api, baseUrl: String, apiKey: String? = nil,
+    public init(provider: String, api: Api, baseUrl: String, apiKey: String? = nil, authHeader: Bool? = nil,
                 headers: ProviderHeaders? = nil, compat: OpenAICompat? = nil,
                 streamSimple: ApiStreamSimpleFunction? = nil,
                 images: [ImageApi: ImageApiFunction] = [:],
                 classifiers: [ClassifierApi: ClassifierFunction] = [:],
                 models: [HookProviderModel]) {
-        self.init(provider: provider, api: api, baseUrl: baseUrl, apiKey: apiKey,
+        self.init(provider: provider, api: api, baseUrl: baseUrl, apiKey: apiKey, authHeader: authHeader,
                   headers: headers, compat: compat, streamSimple: streamSimple,
                   images: images, classifiers: classifiers, models: models.map(HookProviderModelConfig.chat))
     }

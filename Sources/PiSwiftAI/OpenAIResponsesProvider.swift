@@ -15,11 +15,11 @@ func chatGPTUsageLimitMessage(_ message: String) -> String {
         ? "\(message)\nCheck your ChatGPT usage: \(chatGPTUsageURL)" : message
 }
 
-func resolveCacheRetention(_ cacheRetention: CacheRetention?) -> CacheRetention {
+func resolveCacheRetention(_ cacheRetention: CacheRetention?, env: [String: String]? = nil) -> CacheRetention {
     if let cacheRetention {
         return cacheRetention
     }
-    let flag = getenv("PI_CACHE_RETENTION").map { String(cString: $0) }?.lowercased()
+    let flag = getProviderEnvValue("PI_CACHE_RETENTION", env: env)?.lowercased()
     if flag == "long" {
         return .long
     }
@@ -155,11 +155,13 @@ public func streamOpenAIResponses(
     context: TranscriptContext,
     options: OpenAIResponsesOptions
 ) -> AssistantMessageEventStream {
+    let model = resolveCloudflareModel(model, env: providerEnvironment(options.env))
     let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
     let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
     let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     if model.provider.lowercased() == "openai-codex" {
         let codexOptions = OpenAICodexResponsesOptions(
+            env: options.env,
             temperature: options.temperature,
             maxTokens: options.maxTokens,
             signal: options.signal,
@@ -206,7 +208,7 @@ public func streamOpenAIResponses(
         var query: CreateModelResponseQuery? = nil
 
         do {
-            let cacheRetention = resolveCacheRetention(options.cacheRetention)
+            let cacheRetention = resolveCacheRetention(options.cacheRetention, env: options.env)
             let promptCacheRetention = getPromptCacheRetention(baseUrl: model.baseUrl, cacheRetention: cacheRetention, compat: model.compat)
             let isOpenRouter = model.provider == "openrouter" || model.baseUrl.contains("openrouter.ai")
             let middleware = OpenAIResponsesCacheMiddleware(
@@ -270,6 +272,7 @@ public func streamOpenAIResponses(
                 || isChatGPTSignIn(model: model, apiKey: options.apiKey)
                 || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
+                || options.env != nil
                 || options.onProviderStreamEvent != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
@@ -284,7 +287,7 @@ public func streamOpenAIResponses(
                 try await processRawOpenAIResponsesStream(
                     request: request,
                     model: model,
-                    httpClient: options.httpClient,
+                    httpClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
                     signal: options.signal,
                     maxRetries: options.maxRetries,
                     maxRetryDelayMs: options.maxRetryDelayMs,

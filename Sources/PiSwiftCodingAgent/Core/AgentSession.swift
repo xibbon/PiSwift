@@ -2176,12 +2176,13 @@ public final class AgentSession: Sendable {
     }
 
     private func hasAuthForModel(_ model: Model) async -> Bool {
-        if isVirtualModel(model) { return await modelRegistry.isAvailable(model) }
-        let auth = await modelRegistry.getApiKeyAndHeaders(model)
-        if auth.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            return true
-        }
-        return !(auth.headers?.isEmpty ?? true)
+        // Upstream session checks configured auth without resolving request keys
+        // or headers. Commands run only when the provider request starts.
+        await modelRegistry.isAvailable(model)
+    }
+
+    private func hasRequestAuth(_ auth: ModelAuth) -> Bool {
+        auth.ok && (auth.hasResolvedAuth || auth.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || !(auth.headers?.isEmpty ?? true))
     }
 
     /// Result of a `/reload`-triggered extension swap.
@@ -3232,12 +3233,12 @@ public final class AgentSession: Sendable {
             }
             let request = summary.request
             let apiKey = request.auth.apiKey
-            let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
-            if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || hasHeaders {
+            if hasRequestAuth(request.auth) {
                 let options = GenerateBranchSummaryOptions(
                     model: request.model,
                     apiKey: apiKey ?? "",
                     headers: request.auth.headers,
+                    env: request.auth.env,
                     thinkingLevel: summary.thinkingLevel,
                     signal: branchSummaryAbort,
                     customInstructions: customInstructions,
@@ -3408,8 +3409,7 @@ public final class AgentSession: Sendable {
             let request = summary.request
             if compactionToken.isCancelled { throw AgentSessionError.compactionCancelled }
             let apiKey = request.auth.apiKey
-            let hasHeaders = !(request.auth.headers?.isEmpty ?? true)
-            if apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false && !hasHeaders {
+            if !hasRequestAuth(request.auth) {
                 throw AgentSessionError.missingApiKey(provider: request.model.provider)
             }
             result = try await PiSwiftCodingAgent.compact(
@@ -3417,6 +3417,7 @@ public final class AgentSession: Sendable {
                 request.model,
                 apiKey ?? "",
                 headers: request.auth.headers,
+                env: request.auth.env,
                 customInstructions: customInstructions,
                 signal: compactionToken,
                 thinkingLevel: summary.thinkingLevel,
@@ -3496,7 +3497,9 @@ public final class AgentSession: Sendable {
                 apiKey: request.auth.apiKey,
                 headers: headers,
                 baseUrl: request.auth.baseUrl,
-                error: request.auth.error
+                error: request.auth.error,
+                env: request.auth.env,
+                hasResolvedAuth: request.auth.hasResolvedAuth
             )
         )
     }

@@ -53,10 +53,11 @@ func emitProviderStreamEvent(
 
 /// Default request executor. It preserves the existing environment-proxy behavior.
 public struct DefaultProviderHTTPClient: ProviderHTTPClient {
-    public init() {}
+    public let env: [String: String]?
+    public init(env: [String: String]? = nil) { self.env = env }
 
     public func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
-        let session = proxySession(for: request.url)
+        let session = proxySession(for: request.url, env: env)
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw StreamError.invalidHTTPResponse

@@ -88,7 +88,7 @@ public func registerBuiltInImageApiProviders() {
     registerImageApiProvider(ImageApiProvider(
         api: .openrouterImages,
         generateImages: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             var providerOptions = options ?? ImagesOptions()
             providerOptions.apiKey = apiKey
             return await generateImagesOpenRouter(model: model, context: context, options: providerOptions)
@@ -107,7 +107,15 @@ func ensureBuiltInImageProviders() {
 
 public func generateImages(model: ImageModel, context: ImagesContext, options: ImagesOptions? = nil) async -> AssistantImages {
     ensureBuiltInImageProviders()
-    guard let provider = getImageApiProvider(model.api) else {
+    return await generateImages(model: model, context: context, options: options, provider: getImageApiProvider)
+}
+
+/// Dispatch with an explicit provider lookup, so tests need not change the shared registry.
+func generateImages(
+    model: ImageModel, context: ImagesContext, options: ImagesOptions?,
+    provider lookup: (ImageApi) -> ImageApiProvider?
+) async -> AssistantImages {
+    guard let provider = lookup(model.api) else {
         return AssistantImages(
             api: model.api,
             provider: model.provider,

@@ -676,7 +676,7 @@ private func fetchMistralStream(
     request: URLRequest,
     options: MistralOptions
 ) async throws -> MistralHTTPStream {
-    let client = options.httpClient ?? DefaultProviderHTTPClient()
+    let client = options.httpClient ?? DefaultProviderHTTPClient(env: options.env)
     let signal = CancellationToken()
     let timedOut = LockedState(false)
     let externalHandler = options.signal?.addCancellationHandler { signal.cancel() }
@@ -746,6 +746,7 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
     }()
 
     return MistralOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: options?.maxTokens ?? model.maxTokens,
         signal: options?.signal,

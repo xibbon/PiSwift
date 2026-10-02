@@ -21,7 +21,7 @@ private func withEnvValue(_ key: String, value: String?, _ work: () throws -> Vo
     try work()
 }
 
-@Test(.processEnvironment, .timeLimit(.minutes(1))) func modelRegistryResolvesProviderHeadersFromEnvAndCommand() throws {
+@Test(.processEnvironment, .timeLimit(.minutes(1))) func modelRegistryResolvesProviderHeadersFromEnvAndCommand() async throws {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("pi-models-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     let modelsPath = tempDir.appendingPathComponent("models.json")
@@ -32,7 +32,7 @@ private func withEnvValue(_ key: String, value: String?, _ work: () throws -> Vo
         "openai": {
           "baseUrl": "https://api.openai.com/v1",
           "headers": {
-            "X-Env": "PI_TEST_HEADER_ENV",
+            "X-Env": "$PI_TEST_HEADER_ENV",
             "X-Command": "!printf cmd-value"
           }
         }
@@ -41,14 +41,14 @@ private func withEnvValue(_ key: String, value: String?, _ work: () throws -> Vo
     """
     try json.data(using: .utf8)?.write(to: modelsPath)
 
-    withEnvValue("PI_TEST_HEADER_ENV", value: "env-value") {
-        let authStorage = AuthStorage(":memory:")
-        let registry = ModelRegistry(authStorage, tempDir.path)
-        guard let model = registry.find("openai", "gpt-4o-mini") else {
-            #expect(Bool(false), "Expected openai model to be available")
-            return
-        }
-        #expect(model.headers?["X-Env"] == "env-value")
-        #expect(model.headers?["X-Command"] == "cmd-value")
-    }
+    // Upstream provider-composer resolves configured headers at request time,
+    // uncached. Bare environment names are literals; references require `$`.
+    let authStorage = AuthStorage(":memory:")
+    authStorage.set("openai", credential: .apiKey(ApiKeyCredential(key: "test-key", env: ["PI_TEST_HEADER_ENV": "env-value"])))
+    let registry = ModelRegistry(authStorage, tempDir.path)
+    let model = try #require(registry.find("openai", "gpt-4o-mini"))
+    let auth = await registry.getApiKeyAndHeaders(model)
+    #expect(auth.ok)
+    #expect(auth.headers?["X-Env"] == "env-value")
+    #expect(auth.headers?["X-Command"] == "cmd-value")
 }

@@ -18,6 +18,7 @@ public struct OAuthCredentials: Sendable, Codable {
     public var availableModelIds: [String]?
     public var clientId: String?
     public var scopes: [String]?
+    public var env: [String: String]?
 
     public init(
         refresh: String,
@@ -29,7 +30,8 @@ public struct OAuthCredentials: Sendable, Codable {
         accountId: String? = nil,
         availableModelIds: [String]? = nil,
         clientId: String? = nil,
-        scopes: [String]? = nil
+        scopes: [String]? = nil,
+        env: [String: String]? = nil
     ) {
         self.refresh = refresh
         self.access = access
@@ -41,6 +43,7 @@ public struct OAuthCredentials: Sendable, Codable {
         self.availableModelIds = availableModelIds
         self.clientId = clientId
         self.scopes = scopes
+        self.env = env
     }
 }
 
@@ -183,34 +186,39 @@ public func refreshOAuthToken(
     signal: CancellationToken? = nil
 ) async throws -> OAuthCredentials {
     try throwIfOAuthCancelled(signal)
-    switch provider {
-    case .anthropic:
-        return try await refreshAnthropicToken(credentials.refresh, signal: signal)
-    case .githubCopilot:
-        return try await refreshGitHubCopilotToken(credentials.refresh, enterpriseDomain: credentials.enterpriseUrl, signal: signal)
-    case .googleGeminiCli:
-        guard let projectId = credentials.projectId else {
-            throw OAuthError.missingProjectId(provider.rawValue)
+    func refresh() async throws -> OAuthCredentials {
+        switch provider {
+        case .anthropic:
+            return try await refreshAnthropicToken(credentials.refresh, signal: signal)
+        case .githubCopilot:
+            return try await refreshGitHubCopilotToken(credentials.refresh, enterpriseDomain: credentials.enterpriseUrl, signal: signal)
+        case .googleGeminiCli:
+            guard let projectId = credentials.projectId else {
+                throw OAuthError.missingProjectId(provider.rawValue)
+            }
+            return try await refreshGoogleGeminiCliToken(credentials.refresh, projectId: projectId, signal: signal)
+        case .googleAntigravity:
+            guard let projectId = credentials.projectId else {
+                throw OAuthError.missingProjectId(provider.rawValue)
+            }
+            return try await refreshAntigravityToken(credentials.refresh, projectId: projectId, signal: signal)
+        case .openAICodex:
+            return try await refreshOpenAICodexToken(credentials.refresh, signal: signal)
+        case .openAI:
+            return try await refreshOpenAIChatGPTToken(credentials, signal: signal)
+        case .openRouter:
+            return credentials
+        case .kimiCoding:
+            return try await refreshKimiCodingToken(credentials.refresh, signal: signal)
+        case .xai:
+            return try await refreshXaiToken(credentials.refresh, signal: signal)
+        case .meta:
+            return try await refreshMetaToken(credentials.refresh, signal: signal)
         }
-        return try await refreshGoogleGeminiCliToken(credentials.refresh, projectId: projectId, signal: signal)
-    case .googleAntigravity:
-        guard let projectId = credentials.projectId else {
-            throw OAuthError.missingProjectId(provider.rawValue)
-        }
-        return try await refreshAntigravityToken(credentials.refresh, projectId: projectId, signal: signal)
-    case .openAICodex:
-        return try await refreshOpenAICodexToken(credentials.refresh, signal: signal)
-    case .openAI:
-        return try await refreshOpenAIChatGPTToken(credentials, signal: signal)
-    case .openRouter:
-        return credentials
-    case .kimiCoding:
-        return try await refreshKimiCodingToken(credentials.refresh, signal: signal)
-    case .xai:
-        return try await refreshXaiToken(credentials.refresh, signal: signal)
-    case .meta:
-        return try await refreshMetaToken(credentials.refresh, signal: signal)
     }
+    var result = try await refresh()
+    result.env = result.env ?? credentials.env
+    return result
 }
 
 public func getOAuthApiKey(

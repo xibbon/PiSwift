@@ -65,21 +65,42 @@ public struct CredentialSynchronizationError: Error, LocalizedError, Sendable {
     }
 }
 
-/// v0.63.0: result of model-aware auth lookup. Carries the API key plus any per-model headers
-/// (re-resolved on each call, so `!cmd` values pick up fresh tokens).
+/// Provider authentication status. This check does not execute configured commands.
+public struct ProviderAuthStatus: Sendable, Equatable {
+    public let configured: Bool
+    public let source: String?
+    public let label: String?
+    public init(configured: Bool, source: String? = nil, label: String? = nil) {
+        self.configured = configured
+        self.source = source
+        self.label = label
+    }
+}
+
+func mergeConfigEnvironment(_ base: [String: String]?, _ override: [String: String]?) -> [String: String]? {
+    let merged = (base ?? [:]).merging(override ?? [:]) { _, value in value }
+    return merged.isEmpty ? nil : merged
+}
+
+/// Authentication and scoped environment resolved for one model request.
 public struct ModelAuth: Sendable {
     public let ok: Bool
     public let apiKey: String?
     public let headers: ProviderHeaders?
     public let baseUrl: String?
     public let error: String?
+    public let env: [String: String]?
+    /// A provider resolver returned auth, including ambient cloud auth without a key.
+    public let hasResolvedAuth: Bool
 
-    public init(ok: Bool, apiKey: String?, headers: ProviderHeaders?, baseUrl: String? = nil, error: String?) {
+    public init(ok: Bool, apiKey: String?, headers: ProviderHeaders?, baseUrl: String? = nil, error: String?, env: [String: String]? = nil, hasResolvedAuth: Bool = false) {
         self.ok = ok
         self.apiKey = apiKey
         self.headers = headers
         self.baseUrl = baseUrl
         self.error = error
+        self.env = env
+        self.hasResolvedAuth = hasResolvedAuth
     }
 }
 
@@ -316,6 +337,8 @@ private struct ProviderOverride: Sendable {
     var headers: ProviderHeaders?
     var apiKey: String?
     var compat: OpenAICompat?
+    var authHeader: Bool = false
+    var modelHeaders: [String: ProviderHeaders] = [:]
 }
 
 private struct ModelOverride: Sendable {
@@ -527,7 +550,7 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
         updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: mergedCost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
 
-    if let headers = resolveHeaders(override.headers) {
+    if let headers = override.headers {
         let mergedHeaders = mergeProviderHeaders(updated.headers, headers)
         updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: mergedHeaders, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
     }
@@ -614,6 +637,7 @@ public final class ModelRegistry: Sendable {
         var dynamicModelsBySource: [String: [String: [Model]]] = [:]
         var dynamicNonChatModelsBySource: [String: [String: [AnyModel]]] = [:]
         var remoteModelsByProvider: [String: [AnyModel]] = [:]
+        var dynamicProviderConfigsBySource: [String: [String: HookProviderConfig]] = [:]
         var dynamicProviderApiKeysBySource: [String: [String: String]] = [:]
         var dynamicProviderStreamsBySource: [String: [String: ApiStreamSimpleFunction]] = [:]
         var dynamicProviderImagesBySource: [String: [String: [ImageApi: ImageApiFunction]]] = [:]
@@ -647,25 +671,13 @@ public final class ModelRegistry: Sendable {
         self.authStorage = authStorage
         self.modelsDir = modelsDir
         self.networkEnabled = networkEnabled
-        self.authStorage.setFallbackResolver { [weak self] provider in
-            guard let self else { return nil }
-            let dynamicKeyConfig = self.state.withLock { state -> String? in
-                for sourceId in state.dynamicSourceOrder.reversed() {
-                    if let keyConfig = state.dynamicProviderApiKeysBySource[sourceId]?[provider] {
-                        return keyConfig
-                    }
-                }
-                return nil
-            }
-            if let dynamicKeyConfig {
-                return resolveConfigValue(dynamicKeyConfig)
-            }
-            let keyConfig = self.customProviderApiKeys.withLock { $0[provider] }
-            if let keyConfig {
-                return resolveConfigValue(keyConfig)
-            }
-            return nil
-        }
+        self.authStorage.setFallbackResolver({ [weak self] provider in
+            guard let self, let value = self.requestConfiguration(provider: provider).key else { return nil }
+            return try? resolveConfigValueOrThrow(value, description: "API key for provider \"\(provider)\"")
+        }, configured: { [weak self] provider in
+            guard let self, let value = self.requestConfiguration(provider: provider).key else { return false }
+            return isConfigValueConfigured(value)
+        })
         loadModels()
 
         let sources = getProviders().map { provider -> ModelsRefreshSource in
@@ -760,6 +772,7 @@ public final class ModelRegistry: Sendable {
             if !state.dynamicSourceOrder.contains(sourceId) {
                 state.dynamicSourceOrder.append(sourceId)
             }
+            state.dynamicProviderConfigsBySource[sourceId, default: [:]][config.provider] = config
             var sourceModels = state.dynamicModelsBySource[sourceId] ?? [:]
             sourceModels[config.provider] = allModels.compactMap { if case .chat(let model) = $0 { return model }; return nil }
             state.dynamicModelsBySource[sourceId] = sourceModels
@@ -789,6 +802,7 @@ public final class ModelRegistry: Sendable {
 
     public func unregisterProvider(_ provider: String, sourceId: String) {
         state.withLock { state in
+            state.dynamicProviderConfigsBySource[sourceId]?[provider] = nil
             state.dynamicModelsBySource[sourceId]?[provider] = nil
             state.dynamicNonChatModelsBySource[sourceId]?[provider] = nil
             if state.dynamicModelsBySource[sourceId]?.isEmpty == true {
@@ -817,6 +831,7 @@ public final class ModelRegistry: Sendable {
 
     public func unregisterProviders(sourceId: String) {
         state.withLock { state in
+            state.dynamicProviderConfigsBySource[sourceId] = nil
             state.dynamicModelsBySource[sourceId] = nil
             state.dynamicNonChatModelsBySource[sourceId] = nil
             state.dynamicProviderApiKeysBySource[sourceId] = nil
@@ -931,15 +946,41 @@ public final class ModelRegistry: Sendable {
 
     /// Whether a model has usable provider authentication or request headers configured.
     /// Header-only local and extension providers are valid even when they do not use an API key.
+    private func hasProviderConfiguredAuth(_ provider: String) -> Bool {
+        if authStorage.has(provider) || authStorage.getRuntimeApiKey(provider) != nil { return authStorage.hasAuth(provider) }
+        if let key = requestConfiguration(provider: provider).key { return isConfigValueConfigured(key) }
+        return authStorage.hasAuth(provider)
+    }
+
     public func hasConfiguredAuth(_ model: Model) -> Bool {
         if isVirtualModel(model) {
             let physical = state.withLock { state in
                 state.physicalModels.filter { $0.provider == model.provider }
             }
-            return physical.isEmpty || authStorage.hasAuth(model.provider) ||
+            return physical.isEmpty || hasProviderConfiguredAuth(model.provider) ||
                 physical.contains { !($0.headers?.isEmpty ?? true) }
         }
-        return authStorage.hasAuth(model.provider) || !(model.headers?.isEmpty ?? true)
+        if requestConfiguration(provider: model.provider).key != nil { return hasProviderConfiguredAuth(model.provider) }
+        return hasProviderConfiguredAuth(model.provider) || !(model.headers?.isEmpty ?? true)
+    }
+
+    public func getProviderAuthStatus(_ provider: String) -> ProviderAuthStatus {
+        if authStorage.getRuntimeApiKey(provider) != nil { return ProviderAuthStatus(configured: true, source: "runtime") }
+        if authStorage.has(provider) { return ProviderAuthStatus(configured: true, source: "stored") }
+        let configuration = requestConfiguration(provider: provider)
+        if let value = configuration.key {
+            if isCommandConfigValue(value) { return ProviderAuthStatus(configured: true, source: "models_json_command") }
+            let names = getConfigValueEnvVarNames(value)
+            if !names.isEmpty {
+                return isConfigValueConfigured(value)
+                    ? ProviderAuthStatus(configured: true, source: "environment", label: names.joined(separator: ", "))
+                    : ProviderAuthStatus(configured: false)
+            }
+            return ProviderAuthStatus(configured: true, source: configuration.extensionKey ? "fallback" : "models_json_key")
+        }
+        return getEnvApiKey(provider: provider) != nil
+            ? ProviderAuthStatus(configured: true, source: "environment", label: findEnvKeys(provider: provider)?.joined(separator: ", "))
+            : ProviderAuthStatus(configured: false)
     }
 
     public func getAll() -> [Model] {
@@ -978,11 +1019,12 @@ public final class ModelRegistry: Sendable {
 
     private func isAvailable(_ model: AnyModel) async -> Bool {
         if case .chat(let chat) = model { return await isAvailable(chat) }
-        return authStorage.hasAuth(model.provider) || !(model.catalog.headers?.isEmpty ?? true)
+        if requestConfiguration(provider: model.provider).key != nil { return hasProviderConfiguredAuth(model.provider) }
+        return hasProviderConfiguredAuth(model.provider) || !(model.catalog.headers?.isEmpty ?? true)
     }
 
     public func generateImages(_ model: ImageModel, context: ImagesContext, options: ImagesOptions? = nil) async -> AssistantImages {
-        let resolved = await resolveModelRequest(model, signal: options?.signal)
+        let resolved = await resolveModelRequest(model, signal: options?.signal, env: options?.env)
         let auth = resolved.auth
         guard auth.ok || options?.apiKey != nil || options?.headers?.isEmpty == false else {
             return AssistantImages(api: model.api, provider: model.provider, model: model.id,
@@ -990,6 +1032,7 @@ public final class ModelRegistry: Sendable {
                                    errorMessage: auth.error)
         }
         var request = options ?? ImagesOptions()
+        request.env = mergeConfigEnvironment(auth.env, request.env)
         request.apiKey = request.apiKey ?? auth.apiKey
         request.headers = mergeProviderHeaders(auth.headers, request.headers)
         if let implementation = extensionImages(for: resolved.model) {
@@ -999,7 +1042,7 @@ public final class ModelRegistry: Sendable {
     }
 
     public func classify(_ model: ClassifierModel, context: ClassifierContext, options: ClassifierOptions? = nil) async -> ClassifierResult {
-        let resolved = await resolveModelRequest(model, signal: options?.signal)
+        let resolved = await resolveModelRequest(model, signal: options?.signal, env: options?.env)
         let auth = resolved.auth
         guard auth.ok || options?.apiKey != nil || options?.headers?.isEmpty == false else {
             return ClassifierResult(api: model.api, provider: model.provider, model: model.id,
@@ -1007,6 +1050,7 @@ public final class ModelRegistry: Sendable {
                                     errorMessage: auth.error)
         }
         var request = options ?? ClassifierOptions()
+        request.env = mergeConfigEnvironment(auth.env, request.env)
         request.apiKey = request.apiKey ?? auth.apiKey
         request.headers = mergeProviderHeaders(auth.headers, request.headers)
         if let implementation = extensionClassifier(for: resolved.model) {
@@ -1037,77 +1081,164 @@ public final class ModelRegistry: Sendable {
         }
     }
 
-    public func resolveModelRequest(_ model: ImageModel, signal: CancellationToken? = nil) async -> ResolvedImageModelRequest {
-        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, signal: signal)
+    public func resolveModelRequest(_ model: ImageModel, signal: CancellationToken? = nil, env: [String: String]? = nil) async -> ResolvedImageModelRequest {
+        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, modelId: model.id, type: .image, signal: signal, env: env)
         return ResolvedImageModelRequest(model: model, auth: auth)
     }
 
-    public func resolveModelRequest(_ model: ClassifierModel, signal: CancellationToken? = nil) async -> ResolvedClassifierModelRequest {
-        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, signal: signal)
+    public func resolveModelRequest(_ model: ClassifierModel, signal: CancellationToken? = nil, env: [String: String]? = nil) async -> ResolvedClassifierModelRequest {
+        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, modelId: model.id, type: .classifier, signal: signal, env: env)
         return ResolvedClassifierModelRequest(model: model, auth: auth)
     }
 
-    private func getApiKeyAndHeaders(provider: String, headers: ProviderHeaders?, signal: CancellationToken?) async -> ModelAuth {
-        let apiKey = await authStorage.getApiKey(provider, signal: signal)
-        if signal?.isCancelled == true {
-            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "Authentication cancelled")
-        }
-        var resolved = resolveHeaders(headers)
-        if provider == OAuthProvider.kimiCoding.rawValue,
-           case .oauth(let credential) = authStorage.get(provider) {
-            var values = resolved ?? [:]
-            values.updateValue("Bearer \(credential.access)", forKey: "Authorization")
-            resolved = values
-        }
-        if apiKey == nil && (resolved?.isEmpty ?? true) {
-            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "No API key or headers configured for provider \"\(provider)\"")
-        }
-        return ModelAuth(ok: true, apiKey: apiKey, headers: resolved, error: nil)
+    private struct RequestConfiguration {
+        var key: String?
+        var headers: ProviderHeaders?
+        var modelHeaders: ProviderHeaders?
+        var authHeader: Bool
+        var extensionKey: Bool
     }
 
-    /// v0.63.0: provider-only API-key lookup. Use this only when you explicitly want
-    /// provider-level lookup without model headers or `authHeader` handling.
-    /// For model-aware auth (which includes per-model `headers` and `compat.authHeader`
-    /// resolution), call `getApiKeyAndHeaders(_ model:)` instead.
-    public func getApiKeyForProvider(_ provider: String) async -> String? {
-        await authStorage.getApiKey(provider)
-    }
-
-    /// v0.63.0: model-aware auth lookup. Resolves the API key from the auth store AND
-    /// the model's headers (which may include per-request shell-command resolution).
-    ///
-    /// Header resolution runs through `resolveHeaders` on each call so values like
-    /// `"Authorization": "!my-token-cmd"` re-execute their underlying command instead
-    /// of returning a long-lived stale token. Pi leaves caching/TTL/recovery to the
-    /// user-provided wrapper command.
-    public func getApiKeyAndHeaders(_ model: Model, signal: CancellationToken? = nil) async -> ModelAuth {
-        let apiKey = await authStorage.getApiKey(model.provider, signal: signal)
-        if signal?.isCancelled == true {
-            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "Authentication cancelled")
-        }
-        // Re-resolve model.headers each time so `!cmd` values pick up fresh tokens.
-        var resolvedHeaders = resolveHeaders(model.headers)
-        if model.provider == OAuthProvider.kimiCoding.rawValue,
-           case .oauth(let credential) = authStorage.get(model.provider) {
-            var headers = resolvedHeaders ?? [:]
-            headers.updateValue("Bearer \(credential.access)", forKey: "Authorization")
-            resolvedHeaders = headers
-        }
-        if apiKey == nil && (resolvedHeaders?.isEmpty ?? true) {
-            return ModelAuth(
-                ok: false,
-                apiKey: nil,
-                headers: nil,
-                baseUrl: nil,
-                error: "No API key or headers configured for provider \"\(model.provider)\""
+    private func requestConfiguration(provider: String, modelId: String? = nil, type: ModelType = .chat) -> RequestConfiguration {
+        state.withLock { state in
+            let config = state.configuredProviderOverrides[provider]
+            let extensionConfig = state.dynamicSourceOrder.reversed().compactMap {
+                state.dynamicProviderConfigsBySource[$0]?[provider]
+            }.first
+            var modelHeaders: ProviderHeaders?
+            if let modelId {
+                if type == .chat {
+                    modelHeaders = mergeProviderHeaders(state.configuredModelOverrides[provider]?[modelId]?.headers, config?.modelHeaders[modelId])
+                }
+                let definitionHeaders = extensionConfig?.models.compactMap { definition -> ProviderHeaders? in
+                    switch definition {
+                    case .chat(let value): return type == .chat && value.id == modelId ? value.headers : nil
+                    case .image(let value): return type == .image && value.id == modelId ? value.headers : nil
+                    case .classifier(let value): return type == .classifier && value.id == modelId ? value.headers : nil
+                    }
+                }.first
+                modelHeaders = mergeProviderHeaders(modelHeaders, definitionHeaders)
+            }
+            return RequestConfiguration(
+                key: extensionConfig?.apiKey ?? config?.apiKey,
+                headers: mergeProviderHeaders(config?.headers, extensionConfig?.headers),
+                modelHeaders: modelHeaders,
+                authHeader: extensionConfig?.authHeader ?? config?.authHeader ?? false,
+                extensionKey: extensionConfig?.apiKey != nil
             )
         }
-        let baseUrl = dynamicBaseUrl(for: model, apiKey: apiKey)
-        return ModelAuth(ok: true, apiKey: apiKey, headers: resolvedHeaders, baseUrl: baseUrl, error: nil)
     }
 
-    public func resolveModelRequest(_ model: Model, signal: CancellationToken? = nil) async -> ResolvedModelRequest {
-        let auth = await getApiKeyAndHeaders(model, signal: signal)
+    private func getApiKeyAndHeaders(provider: String, headers: ProviderHeaders?, modelId: String, type: ModelType,
+                                    signal: CancellationToken?, env: [String: String]? = nil) async -> ModelAuth {
+        let configuration = requestConfiguration(provider: provider, modelId: modelId, type: type)
+        // Reload before deciding credential precedence. Scoped values belong to the
+        // credential; request overrides apply to provider configuration and model headers.
+        let storedKey = await authStorage.getApiKey(provider, signal: signal, includeFallback: false, env: env)
+        let runtimeKey = authStorage.getRuntimeApiKey(provider)
+        let credential = runtimeKey == nil ? authStorage.get(provider) : nil
+        let credentialEnv = runtimeKey == nil ? authStorage.getProviderEnv(provider) : nil
+        // auth/resolve overlays request env on API-key credentials. Stored OAuth
+        // toAuth receives the credential unchanged; only model headers use overrides.
+        let isOAuth: Bool
+        if case .oauth = credential { isOAuth = true } else { isOAuth = false }
+        let scopedEnv = isOAuth ? credentialEnv : mergeConfigEnvironment(credentialEnv, env)
+        if signal?.isCancelled == true {
+            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "Authentication cancelled")
+        }
+        do {
+            let hasCredential = credential != nil || runtimeKey != nil
+            let apiKey: String?
+            if !hasCredential, let rawKey = configuration.key {
+                apiKey = try resolveConfigValueOrThrow(rawKey, description: "API key for provider \"\(provider)\"", env: scopedEnv)
+            } else { apiKey = storedKey }
+            var requestApiKey = apiKey
+            var inheritedHeaders: ProviderHeaders?
+            // AuthResult.env is the provider resolver's result. OAuth uses the
+            // credential bag for provider headers only; configured and ambient
+            // standard keys do not return an environment bag.
+            var resultEnv = hasCredential && !isOAuth ? scopedEnv : nil
+            var hasResolution = apiKey != nil
+            if provider == "amazon-bedrock" || provider == "google-vertex" {
+                let hasStoredKey: Bool
+                if case .apiKey(let value) = credential { hasStoredKey = value.key != nil }
+                else { hasStoredKey = false }
+                let hasExplicitKey = runtimeKey != nil || hasStoredKey || (!hasCredential && configuration.key != nil)
+                // The AI compatibility API uses this marker for ambient cloud
+                // auth. The canonical request auth has no API key in that case.
+                if apiKey == "<authenticated>" && !hasExplicitKey { requestApiKey = nil }
+                if provider == "google-vertex", requestApiKey != nil { resultEnv = nil }
+            }
+            if provider == "cloudflare-workers-ai" || provider == "cloudflare-ai-gateway" {
+                let account = (hasCredential ? scopedEnv?["CLOUDFLARE_ACCOUNT_ID"] : nil) ?? getProviderEnvValue("CLOUDFLARE_ACCOUNT_ID", env: env)
+                let gateway = (hasCredential ? scopedEnv?["CLOUDFLARE_GATEWAY_ID"] : nil) ?? getProviderEnvValue("CLOUDFLARE_GATEWAY_ID", env: env)
+                if let apiKey, !apiKey.isEmpty, let account, !account.isEmpty,
+                   provider != "cloudflare-ai-gateway" || gateway?.isEmpty == false {
+                    resultEnv = ["CLOUDFLARE_ACCOUNT_ID": account]
+                    if provider == "cloudflare-ai-gateway", let gateway {
+                        resultEnv?["CLOUDFLARE_GATEWAY_ID"] = gateway
+                        inheritedHeaders = ["cf-aig-authorization": "Bearer \(apiKey)", "Authorization": nil, "x-api-key": nil]
+                        requestApiKey = nil
+                    }
+                } else {
+                    hasResolution = false
+                    requestApiKey = nil
+                    resultEnv = nil
+                }
+            }
+            let headerEnv = mergeConfigEnvironment(scopedEnv, resultEnv)
+            // Upstream uses provider descriptions with auth, and model descriptions
+            // for the compatibility fallback when provider auth is unconfigured.
+            let providerHeaders = hasResolution
+                ? try resolveHeadersOrThrow(configuration.headers, description: "provider \"\(provider)\"", env: headerEnv)
+                : nil
+            let configuredHeaders: ProviderHeaders?
+            if hasResolution {
+                configuredHeaders = try resolveHeadersOrThrow(configuration.modelHeaders, description: "model \"\(provider)/\(modelId)\"", env: mergeConfigEnvironment(resultEnv, env))
+            } else {
+                configuredHeaders = try resolveHeadersOrThrow(
+                    mergeProviderHeaders(configuration.headers, configuration.modelHeaders),
+                    description: "model \"\(provider)/\(modelId)\"")
+            }
+            var resolved = mergeProviderHeaders(mergeProviderHeaders(headers, inheritedHeaders), providerHeaders)
+            if configuration.authHeader {
+                guard let apiKey = requestApiKey, !apiKey.isEmpty else {
+                    return ModelAuth(ok: false, apiKey: nil, headers: nil, error: "No API key found for \"\(provider)\"")
+                }
+                resolved = mergeProviderHeaders(resolved, ["Authorization": "Bearer \(apiKey)"])
+            }
+            // Model headers have the final priority, as model-runtime.getAuth does.
+            resolved = mergeProviderHeaders(resolved, configuredHeaders)
+            if provider == OAuthProvider.kimiCoding.rawValue, case .oauth(let credential) = authStorage.get(provider) {
+                resolved = mergeProviderHeaders(resolved, ["Authorization": "Bearer \(credential.access)"])
+            }
+            return ModelAuth(ok: true, apiKey: requestApiKey, headers: resolved, error: nil, env: hasResolution ? resultEnv : nil, hasResolvedAuth: hasResolution)
+        } catch {
+            return ModelAuth(ok: false, apiKey: nil, headers: nil, error: error.localizedDescription)
+        }
+    }
+
+    public func getApiKeyForProvider(_ provider: String) async -> String? {
+        let stored = await authStorage.getApiKey(provider, includeFallback: false)
+        if authStorage.has(provider) || authStorage.getRuntimeApiKey(provider) != nil { return stored }
+        if let key = requestConfiguration(provider: provider).key {
+            return try? resolveConfigValueOrThrow(key, description: "API key for provider \"\(provider)\"")
+        }
+        return stored
+    }
+
+    /// Configured keys and headers resolve for each request, uncached, as in
+    /// upstream provider-composer. Stored command keys retain the auth-storage cache.
+    public func getApiKeyAndHeaders(_ model: Model, signal: CancellationToken? = nil, env: [String: String]? = nil) async -> ModelAuth {
+        let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, modelId: model.id,
+                                            type: .chat, signal: signal, env: env)
+        guard auth.ok else { return auth }
+        return ModelAuth(ok: true, apiKey: auth.apiKey, headers: auth.headers,
+                         baseUrl: dynamicBaseUrl(for: model, apiKey: auth.apiKey), error: nil, env: auth.env, hasResolvedAuth: auth.hasResolvedAuth)
+    }
+
+    public func resolveModelRequest(_ model: Model, signal: CancellationToken? = nil, env: [String: String]? = nil) async -> ResolvedModelRequest {
+        let auth = await getApiKeyAndHeaders(model, signal: signal, env: env)
         return ResolvedModelRequest(model: applyBaseUrlOverride(model, auth.baseUrl), auth: auth)
     }
 
@@ -1188,7 +1319,7 @@ public final class ModelRegistry: Sendable {
                 return
             }
             let signal = fullOptions?.signal ?? simpleOptions?.signal
-            let resolved = await resolveModelRequest(model, signal: signal)
+            let resolved = await resolveModelRequest(model, signal: signal, env: simpleOptions?.env ?? fullOptions?.env)
             let suppliedKey = fullOptions?.apiKey ?? simpleOptions?.apiKey
             let suppliedHeaders = fullOptions?.headers ?? simpleOptions?.headers
             guard signal?.isCancelled != true else { throw ModelRegistryStreamError.cancelled }
@@ -1199,6 +1330,7 @@ public final class ModelRegistry: Sendable {
             let input: AssistantMessageEventStream
             if let customStream = extensionStream(for: model) {
                 var options = simpleOptions ?? SimpleStreamOptions(
+                    env: fullOptions?.env,
                     temperature: fullOptions?.temperature,
                     samplingParams: fullOptions?.samplingParams,
                     maxTokens: fullOptions?.maxTokens,
@@ -1218,15 +1350,18 @@ public final class ModelRegistry: Sendable {
                     websocketConnectTimeoutMs: fullOptions?.websocketConnectTimeoutMs,
                     maxRetries: fullOptions?.maxRetries
                 )
+                options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
                 options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
                 input = customStream(resolved.model, normalizeContext(context), options)
             } else if var options = simpleOptions {
+                options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
                 options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
                 input = try PiSwiftAI.streamSimple(model: resolved.model, context: context, options: options)
             } else {
                 var options = fullOptions ?? StreamOptions()
+                options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
                 options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
                 input = try PiSwiftAI.stream(model: resolved.model, context: context, options: options)
@@ -1406,7 +1541,7 @@ public final class ModelRegistry: Sendable {
 
     private func applyConfiguredNonChatModel(_ model: AnyModel, state: State) -> AnyModel {
         guard let providerOverride = state.configuredProviderOverrides[model.provider] else { return model }
-        let headers = mergeProviderHeaders(model.catalog.headers, resolveHeaders(providerOverride.headers))
+        let headers = mergeProviderHeaders(model.catalog.headers, providerOverride.headers)
         switch model {
         case .chat: return model
         case .image(let value):
@@ -1436,7 +1571,7 @@ public final class ModelRegistry: Sendable {
 
     private func applyConfiguredRemoteModel(_ model: Model, state: State) -> Model {
         let providerOverride = state.configuredProviderOverrides[model.provider]
-        let resolvedHeaders = resolveHeaders(providerOverride?.headers)
+        let resolvedHeaders = providerOverride?.headers
         let headers = mergeProviderHeaders(model.headers, resolvedHeaders)
         var configured = Model(
             id: model.id,
@@ -1475,7 +1610,7 @@ public final class ModelRegistry: Sendable {
             let providerId = provider.rawValue
             let builtIns = getModels(provider: provider)
             let override = overrides[providerId]
-            let resolvedHeaders = resolveHeaders(override?.headers)
+            let resolvedHeaders = override?.headers
             let perModelOverrides = modelOverrides[providerId] ?? [:]
 
             for model in builtIns {
@@ -1632,8 +1767,11 @@ public final class ModelRegistry: Sendable {
             let overridesDict = providerConfig["modelOverrides"] as? [String: Any]
             let providerCompat = parseCompat(providerConfig["compat"])
 
-            if baseUrl != nil || headers != nil || apiKey != nil || providerCompat != nil {
-                overrides[providerName] = ProviderOverride(baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat)
+            if baseUrl != nil || headers != nil || apiKey != nil || providerCompat != nil || authHeader || !models.isEmpty {
+                overrides[providerName] = ProviderOverride(baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat, authHeader: authHeader, modelHeaders: Dictionary(models.compactMap { definition in
+                    guard let id = definition["id"] as? String, let values = parseProviderHeaders(definition["headers"]) else { return nil }
+                    return (id, values)
+                }, uniquingKeysWith: { _, last in last }))
             }
 
             if let apiKey {
@@ -1697,15 +1835,7 @@ public final class ModelRegistry: Sendable {
                 let api = requestedAPI ?? builtInDefaults?.api
                 guard let api else { continue }
 
-                var resolvedHeaders = resolveHeaders(headers)
-                let modelHeaders = resolveHeaders(parseProviderHeaders(modelDef["headers"]))
-                resolvedHeaders = mergeProviderHeaders(resolvedHeaders, modelHeaders)
-
-                if authHeader, let apiKey, let resolvedKey = resolveConfigValue(apiKey) {
-                    var headers = resolvedHeaders ?? [:]
-                    headers.updateValue("Bearer \(resolvedKey)", forKey: "Authorization")
-                    resolvedHeaders = headers
-                }
+                let resolvedHeaders = mergeProviderHeaders(headers, parseProviderHeaders(modelDef["headers"]))
 
                 let costModel = ModelCost(
                     input: cost["input"] as? Double ?? 0,

@@ -199,12 +199,14 @@ public func modelsAreEqual(_ a: Model?, _ b: Model?) -> Bool {
 }
 
 public struct OpenAIOptions: Sendable {
+    public var env: [String: String]?
     public var apiKey: String?
     public var maxTokens: Int?
     public var temperature: Double?
     public var signal: CancellationToken?
 
-    public init(apiKey: String? = nil, maxTokens: Int? = nil, temperature: Double? = nil, signal: CancellationToken? = nil) {
+    public init(env: [String: String]? = nil, apiKey: String? = nil, maxTokens: Int? = nil, temperature: Double? = nil, signal: CancellationToken? = nil) {
+        self.env = env
         self.apiKey = apiKey
         self.maxTokens = maxTokens
         self.temperature = temperature

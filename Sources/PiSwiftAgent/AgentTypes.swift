@@ -696,11 +696,15 @@ public struct AgentLoopConfig: Sendable {
 }
 
 public struct AgentModelAuth: Sendable {
+    public var error: String?
+    public var env: [String: String]?
     public var apiKey: String?
     public var headers: ProviderHeaders?
     public var baseUrl: String?
 
-    public init(apiKey: String? = nil, headers: ProviderHeaders? = nil, baseUrl: String? = nil) {
+    public init(apiKey: String? = nil, headers: ProviderHeaders? = nil, baseUrl: String? = nil, env: [String: String]? = nil, error: String? = nil) {
+        self.error = error
+        self.env = env
         self.apiKey = apiKey
         self.headers = headers
         self.baseUrl = baseUrl

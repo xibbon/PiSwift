@@ -4,9 +4,11 @@ import PiSwiftAI
 
 public struct ApiKeyCredential: Sendable {
     public var type: String = "api_key"
-    public var key: String
+    public var key: String?
+    public var env: [String: String]?
 
-    public init(key: String) {
+    public init(key: String? = nil, env: [String: String]? = nil) {
+        self.env = env
         self.key = key
     }
 }
@@ -23,6 +25,7 @@ public struct OAuthCredential: Sendable {
     public var availableModelIds: [String]?
     public var clientId: String?
     public var scopes: [String]?
+    public var env: [String: String]?
 
     public init(
         access: String,
@@ -34,7 +37,8 @@ public struct OAuthCredential: Sendable {
         accountId: String? = nil,
         availableModelIds: [String]? = nil,
         clientId: String? = nil,
-        scopes: [String]? = nil
+        scopes: [String]? = nil,
+        env: [String: String]? = nil
     ) {
         self.access = access
         self.refresh = refresh
@@ -46,6 +50,7 @@ public struct OAuthCredential: Sendable {
         self.availableModelIds = availableModelIds
         self.clientId = clientId
         self.scopes = scopes
+        self.env = env
     }
 }
 
@@ -514,6 +519,7 @@ public final class AuthStorage: Sendable {
         var fileRevision: String?
         var runtimeOverrides: [String: String] = [:]
         var fallbackResolver: (@Sendable (String) -> String?)?
+        var fallbackConfigured: (@Sendable (String) -> Bool)?
         var oauthOverrides: OAuthOverrides?
         var loadError: String?
         var errors: [String] = []
@@ -576,8 +582,8 @@ public final class AuthStorage: Sendable {
         state.withLock { $0.runtimeOverrides.removeValue(forKey: provider) }
     }
 
-    public func setFallbackResolver(_ resolver: @escaping @Sendable (String) -> String?) {
-        state.withLock { $0.fallbackResolver = resolver }
+    public func setFallbackResolver(_ resolver: @escaping @Sendable (String) -> String?, configured: (@Sendable (String) -> Bool)? = nil) {
+        state.withLock { $0.fallbackResolver = resolver; $0.fallbackConfigured = configured }
     }
 
     func setAuthLockOptionsForTesting(_ options: AuthLockOptions?) {
@@ -626,21 +632,39 @@ public final class AuthStorage: Sendable {
         let snapshot = state.withLock { state in
             let runtime = state.runtimeOverrides[provider]
             let credential = state.data[provider]
-            return (runtime: runtime, credential: credential, fallback: state.fallbackResolver)
+            return (runtime: runtime, credential: credential, fallback: state.fallbackResolver, configured: state.fallbackConfigured)
         }
         if snapshot.runtime != nil {
             return true
         }
-        if snapshot.credential != nil {
-            return true
+        if let credential = snapshot.credential {
+            switch credential {
+            case .apiKey(let key):
+                if let value = key.key { return isConfigValueConfigured(value, env: key.env) }
+                return getEnvApiKey(provider: provider, env: key.env) != nil
+            case .oauth: return true
+            }
         }
         if getEnvApiKey(provider: provider) != nil {
             return true
         }
+        if let configured = snapshot.configured { return configured(provider) }
         if snapshot.fallback?(provider) != nil {
             return true
         }
         return false
+    }
+
+    func getRuntimeApiKey(_ provider: String) -> String? {
+        state.withLock { $0.runtimeOverrides[provider] }
+    }
+
+    public func getProviderEnv(_ provider: String) -> [String: String]? {
+        switch get(provider) {
+        case .apiKey(let key): return key.env
+        case .oauth(let oauth): return oauth.env
+        case nil: return nil
+        }
     }
 
     public func getAll() -> [String: AuthCredential] {
@@ -691,7 +715,9 @@ public final class AuthStorage: Sendable {
     public func getApiKey(
         _ provider: String,
         minimumOAuthValidityMs: Double? = nil,
-        signal: CancellationToken? = nil
+        signal: CancellationToken? = nil,
+        includeFallback: Bool = true,
+        env: [String: String]? = nil
     ) async -> String? {
         if signal?.isCancelled == true { return nil }
         let runtime = state.withLock { $0.runtimeOverrides[provider] }
@@ -708,7 +734,8 @@ public final class AuthStorage: Sendable {
         if let credential = snapshot.credential {
             switch credential {
             case .apiKey(let apiKey):
-                return resolveConfigValue(apiKey.key)
+                if let key = apiKey.key { return resolveConfigValue(key, env: apiKey.env) }
+                return getEnvApiKey(provider: provider, env: mergeConfigEnvironment(apiKey.env, env))
             case .oauth(let oauth):
                 let oauthProviderId = OAuthProvider(rawValue: provider)
                 let now = Date().timeIntervalSince1970 * 1000
@@ -748,17 +775,17 @@ public final class AuthStorage: Sendable {
             }
         }
 
-        if let envKey = getEnvApiKey(provider: provider) {
+        if let envKey = getEnvApiKey(provider: provider, env: env) {
             return envKey
         }
 
         if let envName = envKeyName(for: provider),
-           let value = ProcessInfo.processInfo.environment[envName],
+           let value = getProviderEnvValue(envName, env: env),
            !value.isEmpty {
             return value
         }
 
-        return snapshot.fallback?(provider)
+        return includeFallback ? snapshot.fallback?(provider) : nil
     }
 
     private func reloadLatestData(signal: CancellationToken?) async {
@@ -817,8 +844,8 @@ public final class AuthStorage: Sendable {
         for (provider, value) in json {
             guard let dict = value as? [String: Any],
                   let type = dict["type"] as? String else { continue }
-            if type == "api_key", let key = dict["key"] as? String {
-                loaded[provider] = .apiKey(ApiKeyCredential(key: key))
+            if type == "api_key" {
+                loaded[provider] = .apiKey(ApiKeyCredential(key: dict["key"] as? String, env: dict["env"] as? [String: String]))
             } else if type == "oauth" {
                 let access = (dict["access"] as? String) ?? (dict["accessToken"] as? String)
                 guard let access else { continue }
@@ -841,7 +868,8 @@ public final class AuthStorage: Sendable {
                     accountId: accountId,
                     availableModelIds: availableModelIds,
                     clientId: clientId,
-                    scopes: scopes
+                    scopes: scopes,
+                    env: dict["env"] as? [String: String]
                 ))
             }
         }
@@ -853,7 +881,10 @@ public final class AuthStorage: Sendable {
         for (provider, credential) in credentials {
             switch credential {
             case .apiKey(let apiKey):
-                json[provider] = ["type": "api_key", "key": apiKey.key]
+                var entry: [String: Any] = ["type": "api_key"]
+                if let key = apiKey.key { entry["key"] = key }
+                if let env = apiKey.env { entry["env"] = env }
+                json[provider] = entry
             case .oauth(let oauth):
                 var entry: [String: Any] = ["type": "oauth", "access": oauth.access]
                 if let refresh = oauth.refresh { entry["refresh"] = refresh }
@@ -865,6 +896,7 @@ public final class AuthStorage: Sendable {
                 if let availableModelIds = oauth.availableModelIds { entry["availableModelIds"] = availableModelIds }
                 if let clientId = oauth.clientId { entry["clientId"] = clientId }
                 if let scopes = oauth.scopes { entry["scopes"] = scopes }
+                if let env = oauth.env { entry["env"] = env }
                 json[provider] = entry
             }
         }
@@ -930,7 +962,8 @@ public final class AuthStorage: Sendable {
                         accountId: oauth.accountId,
                         availableModelIds: oauth.availableModelIds,
                         clientId: oauth.clientId,
-                        scopes: oauth.scopes
+                        scopes: oauth.scopes,
+                        env: oauth.env
                     ))
                 ), onCommit: self.cacheCommit(currentData))
             }
@@ -953,10 +986,12 @@ public final class AuthStorage: Sendable {
             if signal?.isCancelled == true { throw OAuthError.cancelled }
             if let result {
                 var updatedData = currentData
-                updatedData[provider.rawValue] = .oauth(OAuthCredential(result.newCredentials))
+                var refreshed = result.newCredentials
+                refreshed.env = refreshed.env ?? oauth.env
+                updatedData[provider.rawValue] = .oauth(OAuthCredential(refreshed))
                 return AuthStorageLockResult(
                     result: OAuthRefreshLockedResult(
-                        value: (apiKey: result.apiKey, newCredentials: result.newCredentials)
+                        value: (apiKey: result.apiKey, newCredentials: refreshed)
                     ),
                     next: try self.serializeAuthData(updatedData),
                     onCommit: self.cacheCommit(updatedData)
@@ -987,7 +1022,8 @@ public final class AuthStorage: Sendable {
                 accountId: oauth.accountId,
                 availableModelIds: oauth.availableModelIds,
                 clientId: oauth.clientId,
-                scopes: oauth.scopes
+                scopes: oauth.scopes,
+                env: oauth.env
             )
         }
         return creds
@@ -1039,7 +1075,8 @@ private extension OAuthCredential {
             accountId: credentials.accountId,
             availableModelIds: credentials.availableModelIds,
             clientId: credentials.clientId,
-            scopes: credentials.scopes
+            scopes: credentials.scopes,
+            env: credentials.env
         )
     }
 
@@ -1056,7 +1093,8 @@ private extension OAuthCredential {
             accountId: accountId,
             availableModelIds: availableModelIds,
             clientId: clientId,
-            scopes: scopes
+            scopes: scopes,
+            env: env
         )
     }
 }

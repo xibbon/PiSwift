@@ -24,7 +24,7 @@ private func resolveDeploymentName(model: Model, options: AzureOpenAIResponsesOp
     if let override = options?.azureDeploymentName, !override.isEmpty {
         return override
     }
-    let envMap = parseDeploymentNameMap(ProcessInfo.processInfo.environment["AZURE_OPENAI_DEPLOYMENT_NAME_MAP"])
+    let envMap = parseDeploymentNameMap(getProviderEnvValue("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", env: options?.env))
     if let mapped = envMap[model.id] {
         return mapped
     }
@@ -72,7 +72,7 @@ private func buildDefaultAzureBaseUrl(resourceName: String) -> String {
 }
 
 private func resolveAzureConfig(model: Model, options: AzureOpenAIResponsesOptions?) throws -> (baseUrl: String, apiVersion: String) {
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options?.env)
     let apiVersion = options?.azureApiVersion ?? env["AZURE_OPENAI_API_VERSION"] ?? defaultAzureApiVersion
 
     let baseUrlOption = options?.azureBaseUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -224,6 +224,7 @@ public func streamAzureOpenAIResponses(
             if model.api == .azureOpenAIResponses
                 || !constrainedSamplingMiddleware.grammarToolInputProperties.isEmpty
                 || options.httpClient != nil
+                || options.env != nil
                 || options.onProviderStreamEvent != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
@@ -236,7 +237,7 @@ public func streamAzureOpenAIResponses(
                 try await processRawOpenAIResponsesStream(
                     request: request,
                     model: model,
-                    httpClient: options.httpClient,
+                    httpClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
                     signal: options.signal,
                     maxRetries: options.maxRetries,
                     maxRetryDelayMs: options.maxRetryDelayMs,
@@ -493,12 +494,13 @@ public func streamSimpleAzureOpenAIResponses(
     context: TranscriptContext,
     options: SimpleStreamOptions?
 ) -> AssistantMessageEventStream {
-    let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider)
+    let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env)
 
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
 
     let providerOptions = AzureOpenAIResponsesOptions(
+        env: options?.env,
         temperature: options?.temperature,
         samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,

@@ -56,12 +56,12 @@ public func clearClassifierApiProviders() { ClassifierApiProviderRegistry.shared
 public func registerBuiltInClassifierApiProviders() {
     registerClassifierApiProvider(ClassifierApiProvider(api: .typesafeSystemOne, classify: { model, context, options in
         var requestOptions = options ?? ClassifierOptions()
-        requestOptions.apiKey = requestOptions.apiKey ?? getEnvApiKey(provider: model.provider)
+        requestOptions.apiKey = requestOptions.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env)
         return await classifyTypeSafeSystemOne(model: model, context: context, options: requestOptions)
     }), sourceId: "built-in")
     registerClassifierApiProvider(ClassifierApiProvider(api: .cloudflareWorkersAISystemOne, classify: { model, context, options in
         var requestOptions = options ?? ClassifierOptions()
-        requestOptions.apiKey = requestOptions.apiKey ?? getEnvApiKey(provider: model.provider)
+        requestOptions.apiKey = requestOptions.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env)
         return await classifyCloudflareWorkersAISystemOne(model: model, context: context, options: requestOptions)
     }), sourceId: "built-in")
 }

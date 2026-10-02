@@ -117,8 +117,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .anthropicMessages,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = AnthropicOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
@@ -138,7 +139,7 @@ public func registerBuiltInProviders() {
             return streamAnthropic(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = mapAnthropicSimpleOptions(model: model, context: context, options: options, apiKey: apiKey)
             return streamAnthropic(model: model, context: context, options: providerOptions)
         }
@@ -147,8 +148,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .openAICompletions,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = OpenAICompletionsOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
                 maxTokens: options?.maxTokens,
@@ -168,7 +170,7 @@ public func registerBuiltInProviders() {
             return streamOpenAICompletions(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: apiKey)
             return streamOpenAICompletions(model: model, context: context, options: providerOptions)
         }
@@ -177,8 +179,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .openAIResponses,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = OpenAIResponsesOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
                 maxTokens: options?.maxTokens,
@@ -200,7 +203,7 @@ public func registerBuiltInProviders() {
             return streamOpenAIResponses(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = mapOpenAIResponsesSimpleOptions(model: model, options: options, apiKey: apiKey)
             return streamOpenAIResponses(model: model, context: context, options: providerOptions)
         }
@@ -209,8 +212,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .openAICodexResponses,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = OpenAICodexResponsesOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
@@ -231,7 +235,7 @@ public func registerBuiltInProviders() {
             return streamOpenAICodexResponses(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = mapOpenAICodexResponsesSimpleOptions(model: model, options: options, apiKey: apiKey)
             return streamOpenAICodexResponses(model: model, context: context, options: providerOptions)
         }
@@ -240,8 +244,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .azureOpenAIResponses,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = AzureOpenAIResponsesOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
                 maxTokens: options?.maxTokens,
@@ -260,7 +265,7 @@ public func registerBuiltInProviders() {
             return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = mapAzureOpenAIResponsesSimpleOptions(model: model, options: options, apiKey: apiKey)
             return streamAzureOpenAIResponses(model: model, context: context, options: providerOptions)
         }
@@ -269,8 +274,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .googleGenerativeAI,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = GoogleOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
@@ -288,7 +294,7 @@ public func registerBuiltInProviders() {
             return streamGoogle(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             do {
                 let providerOptions = try mapGoogleSimpleOptionsValidated(model: model, options: options, apiKey: apiKey)
                 return streamGoogle(model: model, context: context, options: providerOptions)
@@ -307,8 +313,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .googleVertex,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = GoogleVertexOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
@@ -326,7 +333,7 @@ public func registerBuiltInProviders() {
             return streamGoogleVertex(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             do {
                 let providerOptions = try mapGoogleVertexSimpleOptionsValidated(model: model, options: options, apiKey: apiKey)
                 return streamGoogleVertex(model: model, context: context, options: providerOptions)
@@ -345,8 +352,9 @@ public func registerBuiltInProviders() {
     registerApiProvider(ApiProvider(
         api: .mistralConversations,
         stream: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = MistralOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
@@ -364,7 +372,7 @@ public func registerBuiltInProviders() {
             return streamMistral(model: model, context: context, options: providerOptions)
         },
         streamSimple: { model, context, options in
-            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider) ?? ""
+            let apiKey = options?.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env) ?? ""
             let providerOptions = mapMistralSimpleOptions(model: model, options: options, apiKey: apiKey)
             return streamMistral(model: model, context: context, options: providerOptions)
         }
@@ -374,6 +382,7 @@ public func registerBuiltInProviders() {
         api: .bedrockConverseStream,
         stream: { model, context, options in
             let providerOptions = BedrockOptions(
+                env: options?.env,
                 temperature: options?.temperature,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,

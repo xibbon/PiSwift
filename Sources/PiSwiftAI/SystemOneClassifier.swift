@@ -178,7 +178,7 @@ private func systemOneOutput(_ body: Any, transport: SystemOneTransport) throws 
 
 private func sendSystemOne(_ request: URLRequest, options: ClassifierOptions,
                            label: String) async throws -> (Data, ProviderHTTPResponse) {
-    let client = options.httpClient ?? DefaultProviderHTTPClient()
+    let client = options.httpClient ?? DefaultProviderHTTPClient(env: options.env)
     return try await retryProviderRequest(maxRetries: options.maxRetries ?? 2,
                                           maxRetryDelayMs: options.maxRetryDelayMs,
                                           signal: options.signal) {
@@ -215,7 +215,7 @@ func classifySystemOne(model: ClassifierModel, context: ClassifierContext,
         guard let apiKey = options.apiKey, !apiKey.isEmpty else {
             throw SystemOneError(message: "No API key for provider: \(model.provider)")
         }
-        let resolved = resolveCloudflareModel(model, env: options.env ?? ProcessInfo.processInfo.environment)
+        let resolved = resolveCloudflareModel(model, env: providerEnvironment(options.env))
         var payload = systemOnePayload(model: resolved, context: context, transport: transport)
         if let transformed = try await options.onPayload?(payload, resolved) { payload = transformed }
         var request = URLRequest(url: try systemOneURL(model: resolved, transport: transport))

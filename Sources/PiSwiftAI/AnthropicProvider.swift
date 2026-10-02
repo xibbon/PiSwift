@@ -45,11 +45,11 @@ private func isAnthropicOAuthToken(_ apiKey: String) -> Bool {
     apiKey.contains("sk-ant-oat")
 }
 
-func usesAnthropicBearerTransport(_ apiKey: String) -> Bool {
+func usesAnthropicBearerTransport(_ apiKey: String, env: [String: String]? = nil) -> Bool {
     if isAnthropicOAuthToken(apiKey) {
         return true
     }
-    return ProcessInfo.processInfo.environment["ANTHROPIC_AUTH_TOKEN"] == apiKey
+    return getProviderEnvValue("ANTHROPIC_AUTH_TOKEN", env: env) == apiKey
 }
 
 func anthropicAuthenticationHeaders(apiKey: String, usesBearerTransport: Bool) -> [String: String] {
@@ -140,7 +140,7 @@ public func streamAnthropic(
     context: TranscriptContext,
     options: AnthropicOptions
 ) -> AssistantMessageEventStream {
-    let model = resolveCloudflareModel(model)
+    let model = resolveCloudflareModel(model, env: providerEnvironment(options.env))
     let compat = resolveAnthropicCompat(model: model)
     let context = resolveTranscript(context, supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages)
     let currentTools = getCurrentTools(context.messages)
@@ -225,7 +225,7 @@ public func streamAnthropic(
             let constrainedBody = injectAnthropicRequestBody(
                 body: encodedBody,
                 ttl: anthropicCacheTtl(baseUrl: model.baseUrl, supportsLongCacheRetention: compat.supportsLongCacheRetention,
-                    cacheRetention: options.cacheRetention),
+                    cacheRetention: options.cacheRetention, env: options.env),
                 metadataUserId: extractAnthropicMetadataUserId(options.metadata),
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
@@ -242,13 +242,14 @@ public func streamAnthropic(
             )
             emitPayload(options.onPayload, data: rawRequestBody)
             let httpClient = buildAnthropicHttpClient(
-                providerHTTPClient: options.httpClient,
+                providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
                 isOAuthToken: isOAuthToken,
                 extraHeaders: mergedHeaders ?? [:],
                 baseUrl: model.baseUrl,
                 metadataUserId: extractAnthropicMetadataUserId(options.metadata),
                 supportsLongCacheRetention: compat.supportsLongCacheRetention,
                 cacheRetention: options.cacheRetention,
+                env: options.env,
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
@@ -267,7 +268,7 @@ public func streamAnthropic(
             debugParameters = parameters
             let toolCount = currentTools.count
             logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
-            let usesBearerTransport = usesAnthropicBearerTransport(apiKey)
+            let usesBearerTransport = usesAnthropicBearerTransport(apiKey, env: options.env)
                 || providerHeaderValue(mergedHeaders, name: "Authorization")?
                     .lowercased().hasPrefix("bearer ") == true
             let anthropicStream = try await retryProviderRequest(
@@ -1226,12 +1227,12 @@ private func convertAnthropicToolChoice(_ choice: AnthropicToolChoice, isOAuthTo
 }
 
 func anthropicCacheTtl(baseUrl: String, supportsLongCacheRetention: Bool = true,
-                       cacheRetention: CacheRetention? = nil) -> String? {
+                       cacheRetention: CacheRetention? = nil, env: [String: String]? = nil) -> String? {
     let isLong: Bool
     if let cacheRetention {
         isLong = cacheRetention == .long
     } else {
-        isLong = getenv("PI_CACHE_RETENTION").map { String(cString: $0) }?.lowercased() == "long"
+        isLong = getProviderEnvValue("PI_CACHE_RETENTION", env: env)?.lowercased() == "long"
     }
     guard isLong else { return nil }
     guard supportsLongCacheRetention else { return nil }
@@ -1247,6 +1248,7 @@ private func buildAnthropicHttpClient(
     metadataUserId: String?,
     supportsLongCacheRetention: Bool,
     cacheRetention: CacheRetention?,
+    env: [String: String]?,
     supportsEagerToolInputStreaming: Bool,
     supportsCacheControlOnTools: Bool,
     thinkingDisabled: Bool,
@@ -1266,7 +1268,7 @@ private func buildAnthropicHttpClient(
         }
     }
     let cacheTtl = anthropicCacheTtl(baseUrl: baseUrl, supportsLongCacheRetention: supportsLongCacheRetention,
-        cacheRetention: cacheRetention)
+        cacheRetention: cacheRetention, env: env)
     let base: any HTTPClient = if let providerHTTPClient {
         ProviderAnthropicHTTPClient(base: providerHTTPClient)
     } else {

@@ -115,11 +115,10 @@ private func a1ClassifierModel(id: String = "same") -> ClassifierModel {
 }
 
 @Test(.timeLimit(.minutes(1))) func missingImageProviderReturnsErrorResult() async {
-    ensureBuiltInImageProviders()
-    unregisterImageApiProviders(sourceId: "built-in")
-    defer { registerBuiltInImageApiProviders() }
+    // Use a lookup with no provider instead of unregistering the shared built-in provider,
+    // which raced with image tests running in parallel.
     let result = await generateImages(model: a1ImageModel(), context: ImagesContext(input: []),
-                                      options: ImagesOptions(apiKey: "explicit"))
+                                      options: ImagesOptions(apiKey: "explicit"), provider: { _ in nil })
     #expect(result.stopReason == .error)
     #expect(result.output.isEmpty)
     #expect(result.provider == "openrouter")

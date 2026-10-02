@@ -30,20 +30,20 @@ private func logApiKeyDebug(_ message: String) {
     }
 }
 
-public func getEnvApiKey(provider: KnownProvider) -> String? {
-    getEnvApiKey(provider: provider.rawValue)
+public func getEnvApiKey(provider: KnownProvider, env: [String: String]? = nil) -> String? {
+    getEnvApiKey(provider: provider.rawValue, env: env)
 }
 
-public func findEnvKeys(provider: KnownProvider) -> [String]? {
-    findEnvKeys(provider: provider.rawValue)
+public func findEnvKeys(provider: KnownProvider, env: [String: String]? = nil) -> [String]? {
+    findEnvKeys(provider: provider.rawValue, env: env)
 }
 
 /// Return configured API-key environment variable names for a provider without exposing values.
 ///
 /// This intentionally reports only explicit key/token variables and excludes ambient credential
 /// sources such as AWS profiles, IAM credentials, and Google Vertex ADC files.
-public func findEnvKeys(provider: String) -> [String]? {
-    let env = ProcessInfo.processInfo.environment
+public func findEnvKeys(provider: String, env: [String: String]? = nil) -> [String]? {
+    let env = providerEnvironment(env)
     guard let envVars = apiKeyEnvVars(provider: provider) else { return nil }
     let found = envVars.filter { key in
         guard let value = env[key] else { return false }
@@ -52,8 +52,8 @@ public func findEnvKeys(provider: String) -> [String]? {
     return found.isEmpty ? nil : found
 }
 
-public func getEnvApiKey(provider: String) -> String? {
-    let env = ProcessInfo.processInfo.environment
+public func getEnvApiKey(provider: String, env: [String: String]? = nil) -> String? {
+    let env = providerEnvironment(env)
 
     if provider == "github-copilot" {
         return env["COPILOT_GITHUB_TOKEN"] ?? env["GH_TOKEN"] ?? env["GITHUB_TOKEN"]
@@ -133,6 +133,7 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "openrouter": "OPENROUTER_API_KEY",
         "typesafe": "TYPESAFE_API_KEY",
         "cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
+        "cloudflare-ai-gateway": "CLOUDFLARE_API_KEY",
         "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
         "zai": "ZAI_API_KEY",
         "mistral": "MISTRAL_API_KEY",
@@ -308,6 +309,7 @@ func mapAnthropicSimpleOptions(model: Model, context: TranscriptContext, options
 
     if options?.reasoning == nil {
         return AnthropicOptions(
+            env: options?.env,
             temperature: options?.temperature,
             maxTokens: baseMaxTokens,
             signal: options?.signal,
@@ -343,6 +345,7 @@ func mapAnthropicSimpleOptions(model: Model, context: TranscriptContext, options
     let clampedThinkingBudget = min(adjusted.thinkingBudget, max(0, clampedMaxTokens - minimumAnswerTokens))
 
     return AnthropicOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: clampedMaxTokens,
         signal: options?.signal,
@@ -408,6 +411,7 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICompletionsOptions(
+        env: options?.env,
         temperature: options?.temperature,
         samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
@@ -433,6 +437,7 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAIResponsesOptions(
+        env: options?.env,
         temperature: options?.temperature,
         samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
@@ -459,6 +464,7 @@ func mapOpenAICodexResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return OpenAICodexResponsesOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: maxTokens,
         signal: options?.signal,
@@ -484,6 +490,7 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let reasoningEffort = clampThinkingLevel(model: model, requested: options?.reasoning)
     return AzureOpenAIResponsesOptions(
+        env: options?.env,
         temperature: options?.temperature,
         samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
         maxTokens: maxTokens,
@@ -507,6 +514,7 @@ func mapGoogleSimpleOptions(model: Model, options: SimpleStreamOptions?, apiKey:
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = buildGoogleThinkingConfig(model: model, options: options)
     return GoogleOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: maxTokens,
         signal: options?.signal,
@@ -528,6 +536,7 @@ func mapGoogleSimpleOptionsValidated(model: Model, options: SimpleStreamOptions?
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = try buildGoogleThinkingConfigValidated(model: model, options: options)
     return GoogleOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: maxTokens,
         signal: options?.signal,
@@ -550,6 +559,7 @@ func mapGoogleVertexSimpleOptions(model: Model, options: SimpleStreamOptions?, a
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = buildGoogleThinkingConfig(model: model, options: options)
     return GoogleVertexOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: maxTokens,
         signal: options?.signal,
@@ -571,6 +581,7 @@ func mapGoogleVertexSimpleOptionsValidated(model: Model, options: SimpleStreamOp
     let maxTokens = options?.maxTokens ?? model.maxTokens
     let thinking = try buildGoogleThinkingConfigValidated(model: model, options: options)
     return GoogleVertexOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: maxTokens,
         signal: options?.signal,
@@ -658,6 +669,7 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
             customBudgets: options?.thinkingBudgets
         )
         return BedrockOptions(
+            env: options?.env,
             temperature: options?.temperature,
             maxTokens: adjusted.maxTokens,
             signal: options?.signal,
@@ -675,6 +687,7 @@ func mapBedrockSimpleOptions(model: Model, options: SimpleStreamOptions?) -> Bed
     }
 
     return BedrockOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: baseMaxTokens,
         signal: options?.signal,

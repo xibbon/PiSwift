@@ -41,11 +41,11 @@ func setGoogleGeminiCliSessionOverrideForTesting(_ session: URLSession?) {
     googleGeminiCliSessionOverride.withLock { $0 = session }
 }
 
-private func googleGeminiCliSession(for url: URL?) -> URLSession {
+private func googleGeminiCliSession(for url: URL?, env: [String: String]? = nil) -> URLSession {
     if let override = googleGeminiCliSessionOverride.withLock({ $0 }) {
         return override
     }
-    return proxySession(for: url)
+    return proxySession(for: url, env: env)
 }
 
 public func streamGoogleGeminiCli(
@@ -129,7 +129,7 @@ public func streamGoogleGeminiCli(
                     }
                     applyProviderHeaders(requestHeaders, to: &request)
 
-                    let session = googleGeminiCliSession(for: request.url)
+                    let session = googleGeminiCliSession(for: request.url, env: options.env)
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let http = response as? HTTPURLResponse else {
                         throw GoogleGeminiCliError.invalidResponse
@@ -364,7 +364,7 @@ public func streamGoogleGeminiCli(
                     }
                     applyProviderHeaders(requestHeaders, to: &request)
 
-                    let session = googleGeminiCliSession(for: request.url)
+                    let session = googleGeminiCliSession(for: request.url, env: options.env)
                     let (retryBytes, retryResponse) = try await session.bytes(for: request)
                     guard let retryHttp = retryResponse as? HTTPURLResponse, retryHttp.statusCode >= 200 && retryHttp.statusCode < 300 else {
                         let body = try await collectSseStreamData(from: retryBytes)
@@ -423,6 +423,7 @@ public func streamSimpleGoogleGeminiCli(
 ) -> AssistantMessageEventStream {
     let baseMaxTokens = options?.maxTokens ?? model.maxTokens
     let base = GoogleGeminiCliOptions(
+        env: options?.env,
         temperature: options?.temperature,
         maxTokens: baseMaxTokens,
         signal: options?.signal,
@@ -442,6 +443,7 @@ public func streamSimpleGoogleGeminiCli(
 
     guard let reasoning = options?.reasoning else {
         let updated = GoogleGeminiCliOptions(
+            env: options?.env,
             temperature: base.temperature,
             maxTokens: base.maxTokens,
             signal: base.signal,
@@ -464,6 +466,7 @@ public func streamSimpleGoogleGeminiCli(
     let effort = clampGeminiThinkingLevel(reasoning)
     if model.id.contains("3-pro") || model.id.contains("3-flash") || model.id.contains("3.1-pro") || model.id.contains("3.1-flash") {
         let updated = GoogleGeminiCliOptions(
+            env: options?.env,
             temperature: base.temperature,
             maxTokens: base.maxTokens,
             signal: base.signal,
@@ -502,6 +505,7 @@ public func streamSimpleGoogleGeminiCli(
     }
 
     let updated = GoogleGeminiCliOptions(
+        env: options?.env,
         temperature: base.temperature,
         maxTokens: maxTokens,
         signal: base.signal,

@@ -48,7 +48,7 @@ public func streamGoogleVertex(
 
             let response = try await retryGoogleRequest(
                 request,
-                httpClient: options.httpClient,
+                httpClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
                 maxRetries: options.maxRetries,
                 maxRetryDelayMs: options.maxRetryDelayMs,
                 signal: options.signal
@@ -275,7 +275,7 @@ private func buildVertexRequestBody(
 }
 
 private func resolveVertexProject(options: GoogleVertexOptions) throws -> String {
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     if let project = options.project ?? env["GOOGLE_CLOUD_PROJECT"] ?? env["GCLOUD_PROJECT"], !project.isEmpty {
         return project
     }
@@ -283,7 +283,7 @@ private func resolveVertexProject(options: GoogleVertexOptions) throws -> String
 }
 
 private func resolveVertexLocation(options: GoogleVertexOptions) throws -> String {
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     if let location = options.location ?? env["GOOGLE_CLOUD_LOCATION"], !location.isEmpty {
         return location
     }
@@ -313,39 +313,36 @@ private func isAdcMarker(_ key: String) -> Bool {
 /// SAFETY: token and timestamp mutation are serialized by `lock`; callers only
 /// receive copied `String` values.
 #if os(macOS) || os(Linux)
-private final class VertexTokenCache: @unchecked Sendable {
+private final class VertexTokenCache: Sendable {
     static let shared = VertexTokenCache()
-    private let lock = NSLock()
-    private var cachedToken: String?
-    private var cacheTime: Date?
-    private let ttl: TimeInterval = 50 * 60 // 50 minutes (OAuth tokens expire at 60m)
+    private struct Key: Hashable, Sendable { let env: [String: String] }
+    private struct Entry: Sendable { let token: String; let time: Date }
+    private let state = LockedState<[Key: Entry]>([:])
+    private let ttl: TimeInterval = 50 * 60
 
-    func get() -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let token = cachedToken, let time = cacheTime else { return nil }
-        if Date().timeIntervalSince(time) > ttl {
-            cachedToken = nil
-            cacheTime = nil
-            return nil
+    func get(env: [String: String]) -> String? {
+        state.withLock { cache in
+            let key = Key(env: env)
+            guard let entry = cache[key], Date().timeIntervalSince(entry.time) <= ttl else {
+                cache[key] = nil
+                return nil
+            }
+            return entry.token
         }
-        return token
     }
 
-    func set(_ token: String) {
-        lock.lock()
-        cachedToken = token
-        cacheTime = Date()
-        lock.unlock()
+    func set(_ token: String, env: [String: String]) {
+        state.withLock { $0[Key(env: env)] = Entry(token: token, time: Date()) }
     }
 }
+
 #endif
 
 private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> String {
     if let apiKey = options.apiKey, !apiKey.isEmpty, apiKey != "<authenticated>", !isPlaceholderApiKey(apiKey), !isAdcMarker(apiKey) {
         return apiKey
     }
-    let env = ProcessInfo.processInfo.environment
+    let env = providerEnvironment(options.env)
     // Support GOOGLE_CLOUD_API_KEY for API key auth
     if let apiKey = env["GOOGLE_CLOUD_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
        !apiKey.isEmpty, !isPlaceholderApiKey(apiKey), !isAdcMarker(apiKey) {
@@ -359,11 +356,11 @@ private func resolveVertexAccessToken(options: GoogleVertexOptions) throws -> St
     #if os(macOS) || os(Linux)
     // The gcloud CLI is only available on desktop/server platforms. Mobile callers must provide
     // a token directly through options or one of the token environment keys.
-    if let cached = VertexTokenCache.shared.get() {
+    if let cached = VertexTokenCache.shared.get(env: env) {
         return cached
     }
-    if let token = runCommandCapture("gcloud", ["auth", "application-default", "print-access-token"]) {
-        VertexTokenCache.shared.set(token)
+    if let token = runCommandCapture("gcloud", ["auth", "application-default", "print-access-token"], env: env) {
+        VertexTokenCache.shared.set(token, env: env)
         return token
     }
     #endif
@@ -388,10 +385,11 @@ private func vertexStreamUrl(model: Model, project: String, location: String) th
 }
 
 #if os(macOS) || os(Linux)
-private func runCommandCapture(_ command: String, _ args: [String]) -> String? {
+private func runCommandCapture(_ command: String, _ args: [String], env: [String: String]) -> String? {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = [command] + args
+    process.environment = env
     process.standardInput = FileHandle.nullDevice
     let pipe = Pipe()
     process.standardOutput = pipe

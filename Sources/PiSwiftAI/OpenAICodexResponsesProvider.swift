@@ -418,6 +418,7 @@ public func streamOpenAICodexResponses(
                             sessionId: cacheSessionId,
                             accountId: accountId,
                             signal: options.signal,
+                            env: options.env,
                             websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
                             onStart: {
                                 websocketStarted = true
@@ -483,7 +484,7 @@ public func streamOpenAICodexResponses(
             }
             let retryRequest = request
 
-            let client = options.httpClient ?? DefaultProviderHTTPClient()
+            let client = options.httpClient ?? DefaultProviderHTTPClient(env: options.env)
             let response = try await retryProviderRequest(
                 maxRetries: options.maxRetries,
                 maxRetryDelayMs: options.maxRetryDelayMs,
@@ -661,10 +662,11 @@ private actor CodexWebSocketCache {
         headers: [String: String],
         sessionId: String?,
         accountId: String,
-        connectTimeoutMs: Int?
+        connectTimeoutMs: Int?,
+        env: [String: String]?
     ) -> CodexWebSocketLease {
         guard let sessionId, !sessionId.isEmpty else {
-            let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
+            let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
             return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
         }
         let cacheKey = codexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
@@ -683,13 +685,13 @@ private actor CodexWebSocketCache {
             } else {
                 entries[cacheKey] = existing
                 if existing.busy {
-                    let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
+                    let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
                     return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
                 }
             }
         }
 
-        let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs)
+        let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
         entries[cacheKey] = Entry(task: task, busy: true, idleTask: nil, createdAt: Date())
         return CodexWebSocketLease(task: task, cacheKey: cacheKey, cached: true)
     }
@@ -729,13 +731,13 @@ private actor CodexWebSocketCache {
         closeSilently(entry.task, reason: "idle_timeout")
     }
 
-    private func connect(url: URL, headers: [String: String], connectTimeoutMs: Int?) -> URLSessionWebSocketTask {
+    private func connect(url: URL, headers: [String: String], connectTimeoutMs: Int?, env: [String: String]?) -> URLSessionWebSocketTask {
         var request = URLRequest(url: url)
         request.timeoutInterval = Double(connectTimeoutMs ?? 60_000) / 1000.0
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        let session = proxySession(for: url)
+        let session = proxySession(for: url, env: env)
         let task = session.webSocketTask(with: request)
         task.resume()
         return task
@@ -887,6 +889,7 @@ private func processCodexWebSocketStream(
     sessionId: String?,
     accountId: String,
     signal: CancellationToken?,
+    env: [String: String]?,
     websocketConnectTimeoutMs: Int?,
     onStart: () -> Void,
     onEvent: (CodexRawEvent) async throws -> Void
@@ -899,7 +902,8 @@ private func processCodexWebSocketStream(
         headers: wsHeaders,
         sessionId: sessionId,
         accountId: accountId,
-        connectTimeoutMs: websocketConnectTimeoutMs
+        connectTimeoutMs: websocketConnectTimeoutMs,
+        env: env
     )
     var keepConnection = true
     do {

@@ -449,7 +449,7 @@ public func compact(
     _ preparation: CompactionPreparation,
     _ model: Model,
     _ apiKey: String,
-    headers: ProviderHeaders? = nil,
+    headers: ProviderHeaders? = nil, env: [String: String]? = nil,
     customInstructions: String? = nil,
     signal: CancellationToken? = nil,
     thinkingLevel: PiSwiftAI.ThinkingLevel? = nil,
@@ -465,7 +465,7 @@ public func compact(
         history = try await generateSummaryWithUsage(
             currentMessages: preparation.messagesToSummarize, model: model,
             reserveTokens: preparation.settings.reserveTokens, apiKey: apiKey,
-            headers: headers, signal: signal, customInstructions: customInstructions,
+            headers: headers, env: env, signal: signal, customInstructions: customInstructions,
             previousSummary: preparation.previousSummary, thinkingLevel: thinkingLevel,
             streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
         )
@@ -476,7 +476,7 @@ public func compact(
         let prefix = try await generateTurnPrefixSummary(
             messages: preparation.turnPrefixMessages, model: model,
             reserveTokens: preparation.settings.reserveTokens, apiKey: apiKey,
-            headers: headers, signal: signal, thinkingLevel: thinkingLevel,
+            headers: headers, env: env, signal: signal, thinkingLevel: thinkingLevel,
             streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
         )
         summary += "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix.text
@@ -649,21 +649,21 @@ private func summaryText(_ response: AssistantMessage, label: String) throws -> 
 
 public func generateSummary(
     currentMessages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
-    headers: ProviderHeaders? = nil, signal: CancellationToken? = nil,
+    headers: ProviderHeaders? = nil, env: [String: String]? = nil, signal: CancellationToken? = nil,
     customInstructions: String? = nil, previousSummary: String? = nil,
     thinkingLevel: PiSwiftAI.ThinkingLevel? = nil, streamFn: StreamFn? = nil,
     retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil, sessionId: String? = nil
 ) async throws -> String {
     try await generateSummaryWithUsage(
         currentMessages: currentMessages, model: model, reserveTokens: reserveTokens, apiKey: apiKey,
-        headers: headers, signal: signal, customInstructions: customInstructions, previousSummary: previousSummary,
+        headers: headers, env: env, signal: signal, customInstructions: customInstructions, previousSummary: previousSummary,
         thinkingLevel: thinkingLevel, streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
     ).text
 }
 
 public func generateSummaryWithUsage(
     currentMessages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
-    headers: ProviderHeaders? = nil, signal: CancellationToken? = nil,
+    headers: ProviderHeaders? = nil, env: [String: String]? = nil, signal: CancellationToken? = nil,
     customInstructions: String? = nil, previousSummary: String? = nil,
     thinkingLevel: PiSwiftAI.ThinkingLevel? = nil, streamFn: StreamFn? = nil,
     retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil, sessionId: String? = nil
@@ -682,7 +682,7 @@ public func generateSummaryWithUsage(
     let response = try await completeSummarization(
         model: model, context: buildSummarizationContext(promptText),
         options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
-            headers: headers, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
+            headers: headers, env: env, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
         streamFn: streamFn, retry: retry, callbacks: callbacks
     )
     return SummaryWithUsage(text: try summaryText(response, label: "Summarization"), usage: response.usage)
@@ -694,10 +694,10 @@ private func buildSummarizationContext(_ prompt: String) -> Context {
 }
 
 private func createSummarizationOptions(
-    model: Model, maxTokens: Int, apiKey: String, headers: ProviderHeaders?,
+    model: Model, maxTokens: Int, apiKey: String, headers: ProviderHeaders?, env: [String: String]?,
     signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?, sessionId: String?
 ) -> SimpleStreamOptions {
-    SimpleStreamOptions(maxTokens: maxTokens, signal: signal, apiKey: apiKey,
+    SimpleStreamOptions(env: env, maxTokens: maxTokens, signal: signal, apiKey: apiKey,
         reasoning: model.reasoning ? thinkingLevel : nil,
         sessionId: sessionId, headers: headers)
 }
@@ -721,7 +721,7 @@ Only summarize information explicitly present above. Do not infer or recreate la
 
 private func generateTurnPrefixSummary(
     messages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
-    headers: ProviderHeaders?, signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?,
+    headers: ProviderHeaders?, env: [String: String]?, signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?,
     streamFn: StreamFn?, retry: RetryPolicy?, callbacks: RetryCallbacks?, sessionId: String?
 ) async throws -> SummaryWithUsage {
     let maxTokens = min(Int(Double(reserveTokens) * 0.5), model.maxTokens > 0 ? model.maxTokens : Int.max)
@@ -730,7 +730,7 @@ private func generateTurnPrefixSummary(
     let response = try await completeSummarization(
         model: model, context: buildSummarizationContext(promptText),
         options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
-            headers: headers, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
+            headers: headers, env: env, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
         streamFn: streamFn, retry: retry, callbacks: callbacks
     )
     return SummaryWithUsage(text: try summaryText(response, label: "Turn prefix summarization"), usage: response.usage)

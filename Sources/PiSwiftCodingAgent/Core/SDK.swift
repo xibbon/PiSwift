@@ -1029,7 +1029,9 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             return AgentModelAuth(
                 apiKey: auth.apiKey,
                 headers: headers.isEmpty ? nil : headers,
-                baseUrl: auth.baseUrl
+                baseUrl: auth.baseUrl,
+                env: auth.env,
+                error: auth.error
             )
         },
         onPayload: onPayloadHook,

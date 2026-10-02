@@ -6,10 +6,24 @@ import Network
 
 private let proxySessionState = LockedState<[String: URLSession]>([:])
 
-func proxySession(for url: URL?) -> URLSession {
-    let env = ProcessInfo.processInfo.environment
+// Upstream checks both scoped aliases before either process alias. A plain
+// dictionary merge can let an ambient alias mask a scoped value.
+func providerProxyEnvironment(_ scoped: [String: String]?, processEnvironment: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+    var resolved: [String: String] = [:]
+    for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"] {
+        let lower = name.lowercased()
+        let values = [scoped?[lower], scoped?[name], processEnvironment[lower], processEnvironment[name]]
+        if let value = values.compactMap({ $0 }).first(where: { !$0.isEmpty }) {
+            resolved[name] = value
+        }
+    }
+    return resolved
+}
+
+func proxySession(for url: URL?, env: [String: String]? = nil) -> URLSession {
+    let env = providerProxyEnvironment(env)
     let noProxy = parseNoProxy(env: env)
-    if shouldBypassProxy(host: url?.host, port: url?.port ?? (url?.scheme == "https" ? 443 : 80), noProxy: noProxy) {
+    if shouldBypassProxy(host: url?.host, port: url?.port ?? (["https", "wss"].contains(url?.scheme?.lowercased() ?? "") ? 443 : 80), noProxy: noProxy) {
         return URLSession.shared
     }
     #if os(macOS)
@@ -31,8 +45,8 @@ func proxySession(for url: URL?) -> URLSession {
 func selectedProxyURL(for destination: URL?, env: [String: String]) -> URL? {
     let allProxy = env["ALL_PROXY"] ?? env["all_proxy"]
     let httpProxy = env["HTTP_PROXY"] ?? env["http_proxy"] ?? allProxy
-    let httpsProxy = env["HTTPS_PROXY"] ?? env["https_proxy"] ?? httpProxy ?? allProxy
-    guard var value = destination?.scheme?.lowercased() == "https" ? httpsProxy : httpProxy else { return nil }
+    let httpsProxy = env["HTTPS_PROXY"] ?? env["https_proxy"] ?? allProxy
+    guard var value = ["https", "wss"].contains(destination?.scheme?.lowercased() ?? "") ? httpsProxy : httpProxy else { return nil }
     value = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty else { return nil }
     if !value.contains("://") { value = "http://" + value }

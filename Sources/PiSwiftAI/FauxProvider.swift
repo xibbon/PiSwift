@@ -212,6 +212,7 @@ public func registerFauxProvider(_ options: FauxRegistrationOptions = FauxRegist
 
 private func toSimpleOptions(_ options: StreamOptions) -> SimpleStreamOptions {
     SimpleStreamOptions(
+        env: options.env,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         signal: options.signal,
