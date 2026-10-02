@@ -3,16 +3,6 @@ import Foundation
 public let MAX_SKILL_NAME_LENGTH = 64
 public let MAX_SKILL_DESCRIPTION_LENGTH = 1024
 
-private let allowedFrontmatterFields: Set<String> = [
-    "name",
-    "description",
-    "license",
-    "compatibility",
-    "metadata",
-    "allowed-tools",
-    "disable-model-invocation",
-]
-
 public struct Skill: Sendable {
     public var name: String
     public var description: String
@@ -138,13 +128,10 @@ public struct LoadSkillsOptions: Sendable {
     }
 }
 
-private func validateName(_ name: String, parentDirName: String) -> [String] {
+private func validateName(_ name: String) -> [String] {
     var errors: [String] = []
-    if name != parentDirName {
-        errors.append("name \"\(name)\" does not match parent directory \"\(parentDirName)\"")
-    }
-    if name.count > MAX_SKILL_NAME_LENGTH {
-        errors.append("name exceeds \(MAX_SKILL_NAME_LENGTH) characters (\(name.count))")
+    if name.utf16.count > MAX_SKILL_NAME_LENGTH {
+        errors.append("name exceeds \(MAX_SKILL_NAME_LENGTH) characters (\(name.utf16.count))")
     }
     let validChars = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
     if name.rangeOfCharacter(from: validChars.inverted) != nil {
@@ -164,16 +151,10 @@ private func validateDescription(_ description: String?) -> [String] {
     if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return ["description is required"]
     }
-    if description.count > MAX_SKILL_DESCRIPTION_LENGTH {
-        return ["description exceeds \(MAX_SKILL_DESCRIPTION_LENGTH) characters (\(description.count))"]
+    if description.utf16.count > MAX_SKILL_DESCRIPTION_LENGTH {
+        return ["description exceeds \(MAX_SKILL_DESCRIPTION_LENGTH) characters (\(description.utf16.count))"]
     }
     return []
-}
-
-private func validateFrontmatterFields(_ keys: [String]) -> [String] {
-    keys.compactMap { key in
-        allowedFrontmatterFields.contains(key) ? nil : "unknown frontmatter field \"\(key)\""
-    }
 }
 
 func loadSkillFromFile(_ filePath: String, source: String) -> (skill: Skill?, warnings: [SkillWarning]) {
@@ -200,13 +181,10 @@ func loadSkillFromFile(_ filePath: String, source: String) -> (skill: Skill?, wa
     }
     let disableModelInvocation = parsed.frontmatter["disable-model-invocation"]?.lowercased() == "true"
 
-    for error in validateFrontmatterFields(parsed.keys) {
-        warnings.append(SkillWarning(skillPath: filePath, message: error))
-    }
     for error in validateDescription(description) {
         warnings.append(SkillWarning(skillPath: filePath, message: error))
     }
-    for error in validateName(name, parentDirName: parentDirName) {
+    for error in validateName(name) {
         warnings.append(SkillWarning(skillPath: filePath, message: error))
     }
 

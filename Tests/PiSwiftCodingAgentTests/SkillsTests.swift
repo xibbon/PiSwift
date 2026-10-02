@@ -25,7 +25,7 @@ private func fixturesRoot() -> String {
     let result = loadSkillsFromDir(options: LoadSkillsFromDirOptions(dir: dir, source: "test"))
     #expect(result.skills.count == 1)
     #expect(result.skills.first?.name == "different-name")
-    #expect(result.warnings.contains { $0.message.contains("does not match parent directory") })
+    #expect(result.warnings.isEmpty)
 }
 
 @Test func loadSkillsFromDirInvalidChars() {
@@ -53,8 +53,7 @@ private func fixturesRoot() -> String {
     let dir = URL(fileURLWithPath: fixturesRoot()).appendingPathComponent("skills/unknown-field").path
     let result = loadSkillsFromDir(options: LoadSkillsFromDirOptions(dir: dir, source: "test"))
     #expect(result.skills.count == 1)
-    #expect(result.warnings.contains { $0.message.contains("unknown frontmatter field \"author\"") })
-    #expect(result.warnings.contains { $0.message.contains("unknown frontmatter field \"version\"") })
+    #expect(result.warnings.isEmpty)
 }
 
 @Test func loadSkillsFromDirNested() {

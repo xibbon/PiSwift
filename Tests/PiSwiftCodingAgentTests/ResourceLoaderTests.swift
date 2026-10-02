@@ -498,3 +498,66 @@ private final class ResourceLoaderTestFixture {
     // No errors for valid skill
     #expect(diagnostics.filter { $0.type == "error" }.isEmpty)
 }
+
+@Test func resourceLoaderKeepsFirstSkillAndReportsCollisionWithLoserWarnings() async throws {
+    let fixture = try ResourceLoaderTestFixture()
+    try fixture.writeAgentFile("skills/xogot/SKILL.md", content: "---\nname: xogot\ndescription: First skill\nx-xogot-version: 1\n---")
+    try fixture.writeFile("other/xogot/SKILL.md", content: "---\nname: xogot\ndescription: \(String(repeating: "a", count: 1093))\nx-xogot-version: 2\n---")
+    let winnerPath = URL(fileURLWithPath: fixture.agentDir + "/skills/xogot/SKILL.md").resolvingSymlinksInPath().path
+    let loserPath = URL(fileURLWithPath: fixture.tempDir + "/other/xogot/SKILL.md").resolvingSymlinksInPath().path
+    let loader = fixture.createLoader(noSkills: true, additionalSkillPaths: [winnerPath, loserPath])
+    await loader.reload()
+
+    let result = loader.getSkills()
+    #expect(result.skills.filter { $0.name == "xogot" }.map(\.filePath) == [winnerPath])
+    let warning = try #require(result.diagnostics.first { $0.type == "warning" && $0.path == loserPath })
+    #expect(warning.message == "description exceeds 1024 characters (1093)")
+    #expect(!result.diagnostics.contains { $0.message.contains("unknown frontmatter") })
+    let collision = try #require(result.diagnostics.first { $0.type == "collision" }?.collision)
+    #expect(collision.resourceType == "skill")
+    #expect(collision.name == "xogot")
+    #expect(collision.winnerPath == winnerPath)
+    #expect(collision.loserPath == loserPath)
+}
+
+@Test func resourceLoaderSkipsSameSkillFileThroughSymlink() async throws {
+    let fixture = try ResourceLoaderTestFixture()
+    try fixture.writeAgentFile("skills/xogot/SKILL.md", content: "---\nname: xogot\ndescription: Skill\n---")
+    let alias = fixture.tempDir + "/alias"
+    try FileManager.default.createSymbolicLink(atPath: alias, withDestinationPath: fixture.agentDir + "/skills/xogot")
+    let loader = fixture.createLoader(noSkills: true, additionalSkillPaths: [fixture.agentDir + "/skills/xogot", alias])
+    await loader.reload()
+    #expect(loader.getSkills().skills.filter { $0.name == "xogot" }.count == 1)
+    #expect(loader.getSkills().diagnostics.isEmpty)
+}
+
+@Test func resourceLoaderChecksCollisionsForExtensionSkills() async throws {
+    let fixture = try ResourceLoaderTestFixture()
+    try fixture.writeAgentFile("skills/xogot/SKILL.md", content: "---\nname: xogot\ndescription: First\n---")
+    try fixture.writeFile("extension/xogot/SKILL.md", content: "---\nname: xogot\ndescription: Second\n---")
+    let loader = fixture.createLoader(noSkills: true, additionalSkillPaths: [fixture.agentDir + "/skills/xogot"])
+    await loader.reload()
+    loader.extendResources(ResourceExtensionPaths(skillPaths: [ResourceExtensionPath(
+        path: fixture.tempDir + "/extension/xogot",
+        metadata: PathMetadata(source: "extension:test", scope: "temporary", origin: "top-level")
+    )]))
+    #expect(loader.getSkills().skills.filter { $0.name == "xogot" }.count == 1)
+    #expect(loader.getSkills().diagnostics.contains { $0.type == "collision" })
+    loader.extendResources(ResourceExtensionPaths())
+    #expect(loader.getSkills().diagnostics.isEmpty)
+}
+
+@Test func resourceLoaderCountsDecodedDescriptionLikeJavaScript() async throws {
+    let fixture = try ResourceLoaderTestFixture()
+    // Three YAML escape characters must be removed before measuring the string.
+    let raw = String(repeating: "a", count: 1020) + #"\"X\"\\"#
+    try fixture.writeAgentFile("skills/escaped/SKILL.md", content: "---\nname: escaped\ndescription: \"\(raw)\"\n---")
+    // JavaScript String.length counts UTF-16 units, including surrogate pairs.
+    try fixture.writeAgentFile("skills/unicode/SKILL.md", content: "---\nname: unicode\ndescription: \(String(repeating: "a", count: 1023))😀\n---")
+    let loader = fixture.createLoader()
+    await loader.reload()
+    let result = loader.getSkills()
+    #expect(result.skills.first { $0.name == "escaped" }?.description == String(repeating: "a", count: 1020) + #""X"\"#)
+    #expect(!result.diagnostics.contains { $0.path?.contains("/escaped/") == true })
+    #expect(result.diagnostics.contains { $0.message == "description exceeds 1024 characters (1025)" })
+}

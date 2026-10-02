@@ -131,7 +131,15 @@ public func parseFrontmatter(_ content: String) -> FrontmatterResult {
 
         // Handle quoted values
         if (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
-            value = String(value.dropFirst().dropLast())
+            if value.hasPrefix("'") {
+                value = String(value.dropFirst().dropLast()).replacingOccurrences(of: "''", with: "'")
+            } else {
+                do {
+                    value = try decodeDoubleQuotedScalar(String(value.dropFirst().dropLast()))
+                } catch {
+                    parseError = "Invalid quoted frontmatter value for \(key): \(error.localizedDescription)"
+                }
+            }
         }
 
         keys.append(key)
@@ -140,4 +148,43 @@ public func parseFrontmatter(_ content: String) -> FrontmatterResult {
     }
 
     return FrontmatterResult(frontmatter: frontmatter, keys: keys, body: body, nonStringKeys: nonStringKeys, parseError: parseError)
+}
+
+private func decodeDoubleQuotedScalar(_ value: String) throws -> String {
+    let escapes: [Character: String] = [
+        "0": "\0", "a": "\u{07}", "b": "\u{08}", "t": "\t", "n": "\n",
+        "v": "\u{0B}", "f": "\u{0C}", "r": "\r", "e": "\u{1B}",
+        " ": " ", "\"": "\"", "/": "/", "\\": "\\", "N": "\u{85}",
+        "_": "\u{A0}", "L": "\u{2028}", "P": "\u{2029}",
+    ]
+    let characters = Array(value)
+    var decoded = ""
+    var index = 0
+    while index < characters.count {
+        let character = characters[index]
+        index += 1
+        guard character == "\\" else {
+            decoded.append(character)
+            continue
+        }
+        guard index < characters.count else { throw scalarEscapeError() }
+        let escape = characters[index]
+        index += 1
+        if let replacement = escapes[escape] {
+            decoded += replacement
+        } else if let width = [Character("x"): 2, "u": 4, "U": 8][escape] {
+            guard index + width <= characters.count,
+                  let code = UInt32(String(characters[index..<(index + width)]), radix: 16),
+                  let scalar = UnicodeScalar(code) else { throw scalarEscapeError() }
+            decoded.unicodeScalars.append(scalar)
+            index += width
+        } else {
+            throw scalarEscapeError()
+        }
+    }
+    return decoded
+}
+
+private func scalarEscapeError() -> NSError {
+    NSError(domain: "Frontmatter", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid YAML escape"])
 }
