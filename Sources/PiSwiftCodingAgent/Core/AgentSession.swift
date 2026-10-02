@@ -1956,13 +1956,13 @@ public final class AgentSession: Sendable {
                     return await runToolCall(toolCall, options: RunToolCallOptions(
                         tools: tools, assistantMessage: assistant, context: context,
                         signal: signal, onUpdate: onUpdate,
-                        beforeToolCall: { [weak self] context, _ in
+                        beforeToolCall: { [weak self] context, signal in
                             guard let self, let runner = self._hookRunner,
                                   runner.hasHandlers("tool_call") else { return nil }
                             let event = ToolCallEvent(toolName: context.toolCall.name,
                                 toolCallId: context.toolCall.id, input: context.args,
                                 parentToolCallId: parentId)
-                            guard let result = await runner.emitToolCall(event), result.block else { return nil }
+                            guard let result = await runner.emitToolCall(event, signal: signal), result.block else { return nil }
                             return BeforeToolCallResult(block: true, reason: result.reason,
                                                         terminate: result.terminate)
                         },
@@ -2340,6 +2340,16 @@ public final class AgentSession: Sendable {
                 }
                 systemPromptAppend = result.systemPromptAppend
                 forcedRequestPrompt = result.systemPrompt
+                if !result.sections.isEmpty {
+                    state.withLock { state in
+                        var sections = state.systemPromptOptions.sections ?? SystemPromptSections([])
+                        for name in result.sections.keys.sorted() {
+                            if let value = result.sections[name] ?? nil { sections[name] = value }
+                            else { sections.remove(name) }
+                        }
+                        state.systemPromptOptions.sections = sections
+                    }
+                }
             }
         }
         if let systemPromptAppend, !systemPromptAppend.isEmpty {

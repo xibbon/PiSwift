@@ -22,7 +22,7 @@ public func wrapToolWithHooks(_ tool: AgentTool, _ hookRunner: HookRunner) -> Ag
         execute: { toolCallId, params, signal, onUpdate in
             if hookRunner.hasHandlers("tool_call") {
                 let callEvent = ToolCallEvent(toolName: tool.name, toolCallId: toolCallId, input: params)
-                if let callResult = await hookRunner.emitToolCall(callEvent), callResult.block {
+                if let callResult = await hookRunner.emitToolCall(callEvent, signal: signal), callResult.block {
                     let reason = callResult.reason ?? "Tool execution was blocked by a hook"
                     return AgentToolResult(
                         content: [.text(TextContent(text: reason))],

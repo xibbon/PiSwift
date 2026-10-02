@@ -806,8 +806,9 @@ public struct HookContext: Sendable {
     public var cwd: String
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
-    /// The selected level and cancellation token for a virtual route.
+    /// The selected level for a virtual route.
     public var thinkingLevel: ModelThinkingLevel?
+    /// The cancellation token for the current tool call or virtual route.
     public var signal: CancellationToken?
     private var getModelHandler: @Sendable () -> Model?
     private var getScopedModelsHandler: @Sendable () -> [ScopedModel]
@@ -1795,11 +1796,14 @@ public struct BeforeAgentStartEventResult: Sendable {
     public var message: HookMessageInput?
     public var systemPromptAppend: String?
     public var systemPrompt: String?
+    /// A nil value removes the named section.
+    public var sections: [String: String?]
 
-    public init(message: HookMessageInput? = nil, systemPromptAppend: String? = nil, systemPrompt: String? = nil) {
+    public init(message: HookMessageInput? = nil, systemPromptAppend: String? = nil, systemPrompt: String? = nil, sections: [String: String?] = [:]) {
         self.message = message
         self.systemPromptAppend = systemPromptAppend
         self.systemPrompt = systemPrompt
+        self.sections = sections
     }
 }
 
@@ -1807,11 +1811,14 @@ public struct BeforeAgentStartCombinedResult: Sendable {
     public var messages: [HookMessageInput]?
     public var systemPromptAppend: String?
     public var systemPrompt: String?
+    /// A nil value removes the named section.
+    public var sections: [String: String?]
 
-    public init(messages: [HookMessageInput]? = nil, systemPromptAppend: String? = nil, systemPrompt: String? = nil) {
+    public init(messages: [HookMessageInput]? = nil, systemPromptAppend: String? = nil, systemPrompt: String? = nil, sections: [String: String?] = [:]) {
         self.messages = messages
         self.systemPromptAppend = systemPromptAppend
         self.systemPrompt = systemPrompt
+        self.sections = sections
     }
 }
 
@@ -2049,19 +2056,25 @@ public struct TreePreparation: Sendable {
 public enum HookAPIError: LocalizedError, Sendable {
     case inactive(String)
     case invalidFlagDefault(String)
+    case emptyCommandName(path: String)
     case missingToolParameters(name: String, path: String)
     case invalidMcpServer(extensionPath: String, detail: String)
     case mcpServerAlreadyRegistered(name: String, owner: String)
+    case mcpServerNameConflict(name: String, registeredName: String)
     public var errorDescription: String? {
         switch self {
         case .inactive(let path): return "Extension \"\(path)\" failed to load and its API is no longer active."
         case .invalidFlagDefault(let name): return "Flag \"\(name)\" default must match its declared type."
+        case .emptyCommandName(let path):
+            return "Command registered by extension \"\(path)\" must have a non-empty string name. Use pi.registerCommand(\"name\", { description, handler })."
         case .missingToolParameters(let name, let path):
             return "Tool \"\(name)\" registered by extension \"\(path)\" must define an object parameter schema."
         case .invalidMcpServer(let path, let detail):
             return "Invalid MCP server registered by extension \"\(path)\": \(detail)"
         case .mcpServerAlreadyRegistered(let name, let owner):
             return "MCP server \"\(name)\" is already registered by extension \"\(owner)\""
+        case .mcpServerNameConflict(let name, let registeredName):
+            return "MCP server \"\(name)\" conflicts with registered server \"\(registeredName)\""
         }
     }
 }
@@ -2622,6 +2635,10 @@ public final class HookAPI: Sendable {
     public func registerCommand(_ name: String, description: String? = nil, sourceInfo: SourceInfo? = nil,
                                 handler: @escaping @Sendable (_ args: String, _ context: HookCommandContext) async throws -> Void) {
         guard loadFailure.withLock({ $0 == nil }) else { return }
+        guard !name.isEmpty else {
+            loadFailure.withLock { $0 = .emptyCommandName(path: hookPath) }
+            return
+        }
         commands[name] = RegisteredCommand(name: name, description: description, sourceInfo: sourceInfo, handler: handler)
     }
 
@@ -2676,10 +2693,7 @@ public final class HookAPI: Sendable {
             throw HookAPIError.invalidMcpServer(extensionPath: hookPath, detail: detail)
         }
         if let mcpServerRegistry {
-            if let owner = mcpServerRegistry.get(name)?.extensionPath, owner != hookPath {
-                throw HookAPIError.mcpServerAlreadyRegistered(name: name, owner: owner)
-            }
-            mcpServerRegistry.register(RegisteredMcpServer(name: name, config: config, extensionPath: hookPath))
+            try mcpServerRegistry.checkedRegister(RegisteredMcpServer(name: name, config: config, extensionPath: hookPath))
         } else {
             try registerMcpServerHandler(name, config)
         }

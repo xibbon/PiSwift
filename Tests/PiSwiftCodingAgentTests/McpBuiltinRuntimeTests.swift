@@ -81,13 +81,15 @@ private actor RetryResourceTransport: McpTransport {
 @Test(.timeLimit(.minutes(1))) func mcpToolNamesExposureAndOutputGuard() async throws {
     #expect(createMcpToolName(server: "alpha", tool: "search") == "mcp__alpha__search")
     #expect(createMcpToolName(server: "alpha", tool: "a.b") == "mcp__alpha__a_b")
+    // Upstream mcp-extension.test.ts #10239 normalizes dashed server and tool names.
+    #expect(createMcpToolName(server: "my-server", tool: "get.item/v2") == "mcp__my_server__get_item_v2")
     #expect(createMcpToolName(server: "alpha", tool: "😀") == "mcp__alpha____")
     #expect(createMcpToolName(server: "alpha", tool: "search", isTaken: { _ in true }) == "mcp__alpha__search_0ab588c2")
     let long = createMcpToolName(server: "alpha", tool: String(repeating: "x", count: 80))
     #expect(long.count == 64)
     #expect(long.hasPrefix("mcp__alpha__"))
-    #expect(mcpToolExposure(.codemodeDeferred) == .deferred)
-    #expect(mcpToolExposure(.codemode) == .codemode)
+    // Upstream v1.0.0 maps codemode exposure to deferred.
+    #expect(mcpToolExposure(.codemode) == .deferred)
     let saved = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-output-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: saved) }
     let content: [ContentBlock] = [.text(TextContent(text: String(repeating: "x", count: MCP_OUTPUT_MAX_BYTES + 100)))]
@@ -218,9 +220,11 @@ private actor RetryResourceTransport: McpTransport {
     let context = HookContext(sessionManager: .inMemory(),
         modelRegistry: ModelRegistry(AuthStorage(":memory:")), model: nil, hasUI: false)
     await runtime.start(context: context)
-    await runtime.waitForFirstPrompt(context: context)
+    // Upstream agent-session-mcp.test.ts waits explicitly for non-direct servers.
+    try await runtime.waitForServers()
     #expect(Set(active.withLock { $0 }) == [CODEMODE_TOOL_NAME, TOOL_SEARCH_TOOL_NAME])
-    #expect(api.tools["mcp__docs__read"]?.exposure == .codemode)
+    // Upstream v1.0.0 registers tools of a default `codemode` server as `deferred` (mcp-extension.test.ts).
+    #expect(api.tools["mcp__docs__read"]?.exposure == .deferred)
     #expect(api.tools["mcp__docs__search"]?.exposure == .deferred)
     #expect(api.tools["mcp__docs__read"]?.namespace?.name == "mcp__docs")
     try await fixture.setTools(["search"])

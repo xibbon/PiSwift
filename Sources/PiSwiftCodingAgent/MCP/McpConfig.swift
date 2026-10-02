@@ -5,10 +5,31 @@ import PiSwiftAI
 /// How MCP tools are made available to the model.
 public enum McpExposure: String, Codable, Sendable, CaseIterable {
     case codemode
-    case codemodeDeferred = "codemode-deferred"
     case deferred
     case direct
     case hidden
+
+    /// Compatibility spelling. Config files also accept this alias.
+    public static var codemodeDeferred: Self { .codemode }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        guard let exposure = Self(rawValue: value == "codemode-deferred" ? "codemode" : value) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid MCP exposure")
+        }
+        self = exposure
+    }
+}
+
+/// Namespace shared by the server's tools and credential key.
+public func mcpNamespace(_ server: String) -> String {
+    "mcp__" + server.replacingOccurrences(of: "-", with: "_")
+}
+
+public struct McpServerAuthConfig: Codable, Sendable, Equatable {
+    public var provider: String
+    public init(provider: String) { self.provider = provider }
 }
 
 public struct McpOAuthConfig: Codable, Sendable, Equatable {
@@ -17,14 +38,19 @@ public struct McpOAuthConfig: Codable, Sendable, Equatable {
     public var callbackPort: Int?
     public var callbackUrl: String?
     public var scope: String?
+    public var clientName: String?
+    public var authServerMetadataUrl: String?
 
     public init(clientId: String? = nil, clientSecret: String? = nil,
-                callbackPort: Int? = nil, callbackUrl: String? = nil, scope: String? = nil) {
+                callbackPort: Int? = nil, callbackUrl: String? = nil, scope: String? = nil,
+                clientName: String? = nil, authServerMetadataUrl: String? = nil) {
         self.clientId = clientId
         self.clientSecret = clientSecret
         self.callbackPort = callbackPort
         self.callbackUrl = callbackUrl
         self.scope = scope
+        self.clientName = clientName
+        self.authServerMetadataUrl = authServerMetadataUrl
     }
 }
 
@@ -38,6 +64,8 @@ public struct McpServerConfig: Codable, Sendable, Equatable {
     public var url: String?
     public var headers: [String: String]?
     public var oauth: McpOAuthConfig?
+    public var auth: McpServerAuthConfig?
+    public var description: String?
     public var exposure: McpExposure?
     public var toolExposure: [String: McpExposure]?
     public var enabled: Bool?
@@ -46,12 +74,13 @@ public struct McpServerConfig: Codable, Sendable, Equatable {
     public var toolExposureOrder: [String] = []
 
     private enum CodingKeys: String, CodingKey {
-        case type, command, args, env, cwd, url, headers, oauth, exposure, toolExposure, enabled, timeout
+        case type, command, args, env, cwd, url, headers, oauth, auth, description, exposure, toolExposure, enabled, timeout
     }
 
     public init(type: String? = nil, command: String? = nil, args: [String]? = nil,
                 env: [String: String]? = nil, cwd: String? = nil, url: String? = nil,
                 headers: [String: String]? = nil, oauth: McpOAuthConfig? = nil,
+                auth: McpServerAuthConfig? = nil, description: String? = nil,
                 exposure: McpExposure? = nil, toolExposure: [String: McpExposure]? = nil,
                 enabled: Bool? = nil, timeout: Double? = nil,
                 toolExposureOrder: [String] = []) {
@@ -63,6 +92,8 @@ public struct McpServerConfig: Codable, Sendable, Equatable {
         self.url = url
         self.headers = headers
         self.oauth = oauth
+        self.auth = auth
+        self.description = description
         self.exposure = exposure
         self.toolExposure = toolExposure
         self.enabled = enabled
@@ -172,19 +203,20 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
     guard let object = value as? [String: Any] else { return "server \"\(name)\" must be an object" }
     let prefix = "server \"\(name)\": "
     if let exposure = object["exposure"] {
-        guard let raw = exposure as? String, McpExposure(rawValue: raw) != nil else {
+        guard let raw = exposure as? String, (raw == "codemode-deferred" || McpExposure(rawValue: raw) != nil) else {
             return prefix + "exposure must be one of \(mcpExposureDescription)"
         }
     }
     if let overrides = object["toolExposure"] {
         guard let map = overrides as? [String: Any] else { return prefix + "toolExposure must map tool names to exposures" }
         for (tool, value) in map {
-            guard let raw = value as? String, McpExposure(rawValue: raw) != nil else {
+            guard let raw = value as? String, (raw == "codemode-deferred" || McpExposure(rawValue: raw) != nil) else {
                 return prefix + "toolExposure \"\(tool)\" must be one of \(mcpExposureDescription)"
             }
         }
     }
     if let enabled = object["enabled"], !mcpIsBool(enabled) { return prefix + "enabled must be a boolean" }
+    if let description = object["description"], !(description is String) { return prefix + "description must be a string" }
     if let timeout = object["timeout"], (!mcpIsNumber(timeout) || (timeout as? NSNumber)?.doubleValue ?? 0 <= 0) {
         return prefix + "timeout must be a positive number of seconds"
     }
@@ -197,7 +229,7 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
         if let headers = object["headers"], !mcpStringMap(headers) { return prefix + "headers must map names to strings" }
         if let oauth = object["oauth"] {
             guard let oauth = oauth as? [String: Any] else { return prefix + "oauth must be an object" }
-            for key in ["clientId", "clientSecret", "scope"] {
+            for key in ["clientId", "clientSecret"] {
                 if let value = oauth[key], !(value is String) { return prefix + "oauth.\(key) must be a string" }
             }
             if let port = oauth["callbackPort"] {
@@ -215,6 +247,24 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
                     return prefix + "oauth.callbackUrl and oauth.callbackPort name different ports"
                 }
             }
+            if let scope = oauth["scope"], !(scope is String) { return prefix + "oauth.scope must be a string" }
+            if let value = oauth["clientName"],
+               !(value is String) || (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                return prefix + "oauth.clientName must be a non-empty string"
+            }
+            if let value = oauth["authServerMetadataUrl"] {
+                guard let text = value as? String, mcpIsSecureOrLoopbackURL(text) else {
+                    return prefix + "oauth.authServerMetadataUrl must be an https URL, or http on localhost, 127.0.0.1, or [::1]"
+                }
+            }
+        }
+        if let value = object["auth"] {
+            guard let auth = value as? [String: Any], let provider = auth["provider"] as? String, !provider.isEmpty else {
+                return prefix + "auth.provider must be a provider name"
+            }
+            guard mcpIsSecureOrLoopbackURL(url) else {
+                return prefix + "auth requires an https URL, or http on localhost, 127.0.0.1, or [::1]"
+            }
         }
         return nil
     }
@@ -229,6 +279,12 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
         #endif
     }
     return "server \"\(name)\" needs either \"command\" (stdio) or \"url\" (streamable HTTP)"
+}
+
+private func mcpIsSecureOrLoopbackURL(_ text: String) -> Bool {
+    guard let url = URLComponents(string: text), let host = url.host?.lowercased(), !host.isEmpty else { return false }
+    return url.scheme?.lowercased() == "https" ||
+        (url.scheme?.lowercased() == "http" && ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host))
 }
 
 public func loadMcpConfig(agentDir: URL, cwd: URL, projectTrusted: Bool) -> LoadedMcpConfig {
@@ -275,6 +331,14 @@ private func readMcpConfigFile(_ path: URL, scope: McpServerEntry.Scope, into re
             let raw = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
             if let error = validateMcpServerConfig(name: name, value: raw) {
                 result.errors.append("\(path.path): \(error)")
+                continue
+            }
+            if let clash = result.servers.first(where: { $0.name != name && mcpNamespace($0.name) == mcpNamespace(name) }) {
+                result.errors.append("\(path.path): server \"\(name)\" conflicts with \"\(clash.name)\"")
+                continue
+            }
+            if scope == .project, let raw = raw as? [String: Any], raw["url"] != nil, raw["auth"] != nil {
+                result.errors.append("\(path.path): server \"\(name)\": auth is only allowed in the global mcp.json")
                 continue
             }
             var config = try JSONDecoder().decode(McpServerConfig.self, from: data)
@@ -364,7 +428,7 @@ private func mcpJSONText(_ value: OrderedJSON, indent: String = "  ", depth: Int
 /// Typed new entries use the transport fields first, as in upstream's add command.
 private func mcpConfigJSON(_ config: McpServerConfig) throws -> OrderedJSON {
     let parsed = try OrderedJSON.parse(String(decoding: JSONEncoder().encode(config), as: UTF8.self))
-    let keys = ["type", "command", "args", "env", "cwd", "url", "headers", "oauth",
+    let keys = ["type", "command", "args", "env", "cwd", "url", "headers", "oauth", "auth", "description",
                 "exposure", "toolExposure", "enabled", "timeout"]
     var entries: [(String, OrderedJSON)] = []
     for key in keys {
@@ -373,7 +437,7 @@ private func mcpConfigJSON(_ config: McpServerConfig) throws -> OrderedJSON {
             let order = config.toolExposureOrder + overrides.map { $0.0 }.filter { !config.toolExposureOrder.contains($0) }.sorted()
             value = .object(order.compactMap { name in value[name].map { (name, $0) } })
         } else if key == "oauth" {
-            value = .object(["clientId", "clientSecret", "callbackPort", "callbackUrl", "scope"]
+            value = .object(["clientId", "clientSecret", "callbackPort", "callbackUrl", "scope", "clientName", "authServerMetadataUrl"]
                 .compactMap { name in value[name].map { (name, $0) } })
         } else if let members = value.objectEntries {
             // Swift maps have no insertion order. Existing file objects retain their source order.

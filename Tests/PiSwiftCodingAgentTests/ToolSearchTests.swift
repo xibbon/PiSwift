@@ -45,14 +45,7 @@ private func searchTestTool(_ name: String, _ description: String,
                                             ToolSearchDocument(name: "b", text: "same")], limit: 8).map(\.name) == ["a", "b"])
 }
 
-@Test func toolSearchDescriptionPortsUpstreamText() {
-    let description = createToolSearchDescription([
-        ToolNamespace(name: "mcp__docs", description: "Docs server\nmore"),
-        ToolNamespace(name: "mcp__x")
-    ])
-    #expect(description == "# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nYou have access to tools from the following sources:\n- mcp__docs: Docs server\n- mcp__x\n\nSome of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search`.")
-    #expect(createToolSearchDescription().contains("None currently enabled."))
-}
+// Upstream v1.0.0 removed the createToolSearchDescription test.
 
 private func toolSearchSession(settings: Settings = Settings(), noExtensions: Bool = false,
                                additionalPaths: [String] = [],
@@ -106,7 +99,8 @@ private func deferredSearchTool(_ name: String, _ description: String,
     #expect(session.getAllTools().first { $0.name == TOOL_SEARCH_TOOL_NAME }?.exposure == .modelOnly)
     session.setActiveToolsByName([TOOL_SEARCH_TOOL_NAME])
     let search = try #require(session.agent.tools.first { $0.name == TOOL_SEARCH_TOOL_NAME })
-    #expect(search.description.contains("- mcp__docs: Docs server\n- mcp__linear"))
+    // Upstream v1.0.0 agent-session-mcp.test.ts: the description is the constant, with no server list.
+    #expect(search.description == TOOL_SEARCH_DESCRIPTION)
     let result = try await search.execute("search-1", ["query": AnyCodable("documentation")], nil, nil)
     #expect(result.content.compactMap { if case .text(let text) = $0 { text.text } else { nil } } ==
         ["Loaded 1 tool. They are available from your next call:\n- mcp__docs__search: Search documentation."])

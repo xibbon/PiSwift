@@ -51,7 +51,8 @@ private func f2McpKeys(_ value: OrderedJSON?) -> [String] { value?.objectEntries
     try #"{"autoEnableCodemode":"yes","mcpServers":{}}"#.write(to: path, atomically: true, encoding: .utf8)
     let trusted = loadMcpConfig(agentDir: agent, cwd: project, projectTrusted: true)
     #expect(trusted.servers.map(\.name) == ["later", "scripts", "off"])
-    #expect(trusted.servers.map { $0.config.exposure } == [.deferred, .codemodeDeferred, .hidden])
+    // mcp-extension.test.ts: codemode-deferred is an alias for codemode.
+    #expect(trusted.servers.map { $0.config.exposure } == [.deferred, .codemode, .hidden])
     #expect(trusted.autoEnableCodemode == false)
     #expect(trusted.errors.count == 2)
     #expect(trusted.errors[0].contains("server \"wrong\": exposure must be one of"))

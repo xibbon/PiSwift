@@ -70,8 +70,8 @@ private func f2McpTransport(tools: [String] = [], resources: Int = 0,
 }
 
 private let f2McpExposureDescriptions = [
-    "called from codemode scripts, listed in the codemode description",
-    "called from codemode scripts, not listed; scripts find them with searchTools()",
+    // Upstream v1.0.0 exposure text removes the codemode-deferred alias.
+    "called from codemode scripts, which find them with searchTools()",
     "not declared until tool_search loads them, then called directly; no codemode needed",
     "declared to the model like built-in tools",
 ]
@@ -105,7 +105,8 @@ func f2McpManagerUsesUpstreamCountRules(_ count: Int) async throws {
         loadConfig: { _ in .init(servers: [entry]) }, createTransport: { _, _, _ in f2McpTransport() }))
     let context = f2McpContext()
     await runtime.start(context: context)
-    await runtime.waitForFirstPrompt(context: context)
+    // Upstream agent-session-mcp.test.ts waits explicitly for server readiness.
+    try await runtime.waitForServers()
     let ui = F2McpUi(["docs", nil, nil])
     await runtime.runManager(ui)
     let menu = try #require(ui.menus.first { $0.title == "MCP server docs" })
@@ -116,7 +117,7 @@ func f2McpManagerUsesUpstreamCountRules(_ count: Int) async throws {
     await runtime.shutdown()
 }
 
-@Test(.timeLimit(.minutes(1)), arguments: [McpExposure.codemode, .codemodeDeferred, .deferred, .direct, .hidden], [false, true])
+@Test(.timeLimit(.minutes(1)), arguments: [McpExposure.codemode, .deferred, .direct, .hidden], [false, true])
 @MainActor func f2McpManagerDescribesToolsAndExposure(_ exposure: McpExposure, _ overrides: Bool) async throws {
     let root = try f2McpDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -126,11 +127,12 @@ func f2McpManagerUsesUpstreamCountRules(_ count: Int) async throws {
         loadConfig: { _ in .init(servers: [entry]) }, createTransport: { _, _, _ in f2McpTransport(tools: ["zebra", "alpha"]) }))
     let context = f2McpContext()
     await runtime.start(context: context)
-    await runtime.waitForFirstPrompt(context: context)
+    // Upstream agent-session-mcp.test.ts waits explicitly for server readiness.
+    try await runtime.waitForServers()
     let ui = F2McpUi(["docs", "tools", nil, "exposure", nil, nil, nil])
     await runtime.runManager(ui)
     let tools = try #require(ui.menus.first { $0.title == "Tools of docs" })
-    let exposures: [McpExposure] = [.codemode, .codemodeDeferred, .deferred, .direct]
+    let exposures: [McpExposure] = [.codemode, .deferred, .direct]
     let description = exposures.firstIndex(of: exposure).map { f2McpExposureDescriptions[$0] } ?? "unreachable"
     #expect(tools.details == "Exposure \(exposure.rawValue): \(description)\(overrides ? "\nSome tools override it with toolExposure." : "")")
     #expect(tools.items.map(\.value) == ["zebra", "alpha"])
@@ -157,7 +159,8 @@ func f2McpManagerReconnectShowsCurrentErrorOnce() async throws {
         }))
     let context = f2McpContext()
     await runtime.start(context: context)
-    await runtime.waitForFirstPrompt(context: context)
+    // Upstream agent-session-mcp.test.ts waits explicitly for server readiness.
+    try await runtime.waitForServers()
     let ui = F2McpUi(["docs", "reconnect", nil, nil])
     await runtime.runManager(ui)
     let menu = try #require(ui.menus.last { $0.title == "MCP server docs" })
@@ -279,18 +282,20 @@ private struct F2McpSignInPresenter: McpSignInPresenter {
             authorizationEndpoint: origin.appendingPathComponent("authorize").absoluteString,
             tokenEndpoint: origin.appendingPathComponent("token").absoluteString,
             tokenEndpointAuthMethodsSupported: ["none"], codeChallengeMethodsSupported: ["S256"]))
-    try await credentials.forServer(serverURL).save(state)
+    // Upstream mcp-oauth-store.test.ts keys credentials by server name and URL.
+    try await credentials.forServer(name: "docs", url: serverURL).save(state)
     let entry = McpServerEntry(name: "docs", config: .init(url: serverURL.absoluteString,
         oauth: .init(clientId: "fixture-client"), exposure: .direct, timeout: 1), source: "fixture", scope: .extension)
     let runtime = McpBuiltinRuntime(api: HookAPI(), options: .init(agentDir: root,
         loadConfig: { _ in .init(servers: [entry]) }, createTransport: { _, _, _ in
-            guard try credentials.tokens(for: serverURL) != nil else { throw McpOAuthError.authorizationRequired }
+            guard try credentials.tokens(name: "docs", url: serverURL) != nil else { throw McpOAuthError.authorizationRequired }
             if result == "reconnect" { throw McpRuntimeError.connectionFailed("reconnect rejected") }
             return f2McpTransport(tools: ["read"])
         }, credentials: credentials, presenter: F2McpSignInPresenter(cancelSignIn: result == "cancel")))
     let context = f2McpContext()
     await runtime.start(context: context)
-    await runtime.waitForFirstPrompt(context: context)
+    // Upstream agent-session-mcp.test.ts waits explicitly for server readiness.
+    try await runtime.waitForServers()
     let ui = F2McpUi(["docs", "signin", nil, nil])
     await runtime.runManager(ui)
     #expect(ui.statuses == ["Sign in to docs: Contacting the authorization server…", "Sign in to docs: Connecting…"])
@@ -299,15 +304,15 @@ private struct F2McpSignInPresenter: McpSignInPresenter {
     case "success":
         #expect(menu.error == nil)
         #expect(menu.details?.hasSuffix("State: connected · 1 tool") == true)
-        #expect(try credentials.tokens(for: serverURL)?.accessToken == "fixture-token")
+        #expect(try credentials.tokens(name: "docs", url: serverURL)?.accessToken == "fixture-token")
     case "reconnect":
         #expect(menu.error == "Signed in, but MCP server \"docs\" failed to connect: reconnect rejected\nreconnect rejected")
         #expect(menu.details?.hasSuffix("State: failed") == true)
-        #expect(try credentials.tokens(for: serverURL)?.accessToken == "fixture-token")
+        #expect(try credentials.tokens(name: "docs", url: serverURL)?.accessToken == "fixture-token")
     case "cancel": #expect(menu.error == "Sign-in cancelled.")
     default:
         #expect(menu.error == "Sign-in failed: token rejected")
-        #expect(try credentials.tokens(for: serverURL) == nil)
+        #expect(try credentials.tokens(name: "docs", url: serverURL) == nil)
     }
     #expect(await http.requests == (result == "cancel" ? 0 : 1))
     await runtime.shutdown()

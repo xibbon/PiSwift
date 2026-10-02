@@ -133,12 +133,25 @@ private func appendSchemaText(_ schema: Any?, to parts: inout [String]) {
     }
 }
 
+/// Match a namespace by its name, script identifier, or suffix after the last `__`.
+/// Codemode discovery uses this rule for namespace filters and lookups.
+public func matchesToolNamespace(name: String, namespace: String) -> Bool {
+    let identifier = toCodemodeIdentifier(namespace)
+    let queryIdentifier = toCodemodeIdentifier(name)
+    func suffix(_ value: String) -> String? {
+        guard let range = value.range(of: "__", options: .backwards) else { return nil }
+        return String(value[range.upperBound...])
+    }
+    return namespace == name || identifier == queryIdentifier ||
+        suffix(namespace) == name || suffix(identifier) == queryIdentifier
+}
+
 public func createToolSearchDocument(_ tool: ToolInfo, namespace: ToolNamespace? = nil) -> ToolSearchDocument {
     var parts = [tool.name, tool.name.replacingOccurrences(of: "_", with: " "), tool.description]
     if let parameters = tool.parameters {
         appendSchemaText(parameters.mapValues(\.value), to: &parts)
     }
-    if let namespace = namespace ?? tool.namespace { parts += [namespace.name, namespace.description ?? ""] }
+    if let namespace = namespace ?? tool.namespace { parts += [namespace.name, namespace.description ?? "", namespace.instructions ?? ""] }
     return ToolSearchDocument(name: tool.name, text: parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " "))
 }
 
@@ -186,14 +199,8 @@ public func isToolSearchTool(_ tool: ToolInfo) -> Bool {
     tool.name == TOOL_SEARCH_TOOL_NAME && tool.sourceInfo?.path == "builtin:tool-search"
 }
 
-public func createToolSearchDescription(_ sources: [ToolNamespace] = []) -> String {
-    let listed = sources.isEmpty ? "None currently enabled." : sources.map { source in
-        let firstLine = source.description?.trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: .newlines).first ?? ""
-        return firstLine.isEmpty ? "- \(source.name)" : "- \(source.name): \(firstLine)"
-    }.joined(separator: "\n")
-    return "# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nYou have access to tools from the following sources:\n\(listed)\n\nSome of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search`."
-}
+/// This description stays the same when servers register tools.
+public let TOOL_SEARCH_DESCRIPTION = "# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nSome of the tools, such as tools of MCP servers, may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search`."
 
 public enum ToolSearchError: Error, LocalizedError, Sendable, Equatable {
     case emptyQuery
@@ -212,7 +219,7 @@ private func searchable(_ exposure: ToolExposure) -> Bool { exposure == .codemod
 /// Create the model-only discovery tool. The API is supplied by the extension factory.
 public func createToolSearchToolDefinition(options: ToolSearchToolOptions = ToolSearchToolOptions()) -> CustomTool {
     CustomTool(name: TOOL_SEARCH_TOOL_NAME, label: TOOL_SEARCH_TOOL_NAME,
-        description: createToolSearchDescription(),
+        description: TOOL_SEARCH_DESCRIPTION,
         parameters: [
             "type": AnyCodable("object"),
             "properties": AnyCodable([
@@ -254,17 +261,7 @@ public func createToolSearchToolDefinition(options: ToolSearchToolOptions = Tool
         },
         promptGuidelines: nil,
         promptSnippet: "Search for tools that are not loaded yet and load the matches",
-        exposure: .modelOnly, defaultActive: false,
-        prepareLoadout: { loadout in
-            var sources: [ToolNamespace] = []
-            var seen: Set<String> = []
-            for tool in loadout.registered where searchable(loadout.getExposure(tool.name)) {
-                if let namespace = loadout.getNamespace(tool.name), seen.insert(namespace.name).inserted {
-                    sources.append(namespace)
-                }
-            }
-            return ToolLoadoutChanges(descriptions: [TOOL_SEARCH_TOOL_NAME: createToolSearchDescription(sources)])
-        })
+        exposure: .modelOnly, defaultActive: false)
 }
 
 /// SDK users can pass this factory to `inlineExtensions`.

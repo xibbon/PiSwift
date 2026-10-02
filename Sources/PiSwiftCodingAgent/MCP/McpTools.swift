@@ -8,7 +8,7 @@ public let MCP_OUTPUT_MAX_BYTES = 20 * 1024
 public let READ_MCP_RESOURCE_TOOL = "read_mcp_resource"
 
 public func mcpToolExposure(_ exposure: McpExposure) -> ToolExposure {
-    exposure == .codemodeDeferred ? .deferred : ToolExposure(rawValue: exposure.rawValue) ?? .hidden
+    exposure == .codemode ? .deferred : ToolExposure(rawValue: exposure.rawValue) ?? .hidden
 }
 
 /// Names follow upstream's ASCII replacement and eight digit SHA-256 suffix rule.
@@ -18,7 +18,7 @@ public func createMcpToolName(server: String, tool: String, isTaken: (String) ->
     // pair therefore becomes two underscores, which affects the 64 character cut.
     let name = String(source.utf16.map { unit -> Character in
         if (65...90).contains(unit) || (97...122).contains(unit) || (48...57).contains(unit)
-            || unit == 95 || unit == 45 {
+            || unit == 95 {
             return Character(UnicodeScalar(unit)!)
         }
         return "_"

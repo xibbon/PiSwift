@@ -2,14 +2,14 @@ import PiSwiftAI
 import PiSwiftAgent
 
 public func makeHookRunnerBeforeToolCallHook(_ hookRunner: HookRunner) -> BeforeToolCallFn {
-    { context, _ in
+    { context, signal in
         guard hookRunner.hasHandlers("tool_call") else { return nil }
         let event = ToolCallEvent(
             toolName: context.toolCall.name,
             toolCallId: context.toolCall.id,
             input: context.args
         )
-        if let result = await hookRunner.emitToolCall(event), result.block {
+        if let result = await hookRunner.emitToolCall(event, signal: signal), result.block {
             return BeforeToolCallResult(
                 block: true,
                 reason: result.reason,

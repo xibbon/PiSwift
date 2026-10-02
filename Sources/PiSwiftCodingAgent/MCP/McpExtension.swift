@@ -28,8 +28,7 @@ public struct McpExtensionOptions: Sendable {
 }
 
 private let mcpExposureDescriptions: [(McpExposure, String)] = [
-    (.codemode, "called from codemode scripts, listed in the codemode description"),
-    (.codemodeDeferred, "called from codemode scripts, not listed; scripts find them with searchTools()"),
+    (.codemode, "called from codemode scripts, which find them with searchTools()"),
     (.deferred, "not declared until tool_search loads them, then called directly; no codemode needed"),
     (.direct, "declared to the model like built-in tools"),
 ]
@@ -59,6 +58,7 @@ private struct BuiltinMcpServer: Sendable {
     var entry: McpServerEntry
     var connection: McpServerConnection?
     var registeredConfig: McpServerConfig?
+    var readyComplete = false
 }
 
 /// The built-in's per-session state. Dynamic tool registration stays on the hook pipeline.
@@ -79,6 +79,7 @@ public actor McpBuiltinRuntime {
     private var sessionActive = false
     private var generation = 0
     private var sessionCwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    private var modelRegistry: ModelRegistry?
     private var autoEnableCodemode = true
     private var warnedUnreachable = false
     private var serverTools: [String: Set<String>] = [:]
@@ -95,7 +96,8 @@ public actor McpBuiltinRuntime {
         self.log = McpServerLog(path: options.logPath ?? options.agentDir.appendingPathComponent("mcp.log"))
     }
 
-    public func start(context: HookContext) {
+    public func start(context: HookContext) async {
+        modelRegistry = context.modelRegistry
         let loaded = options.loadConfig?(context) ?? loadMcpConfig(
             agentDir: options.agentDir, cwd: URL(fileURLWithPath: context.cwd, isDirectory: true),
             projectTrusted: context.isProjectTrusted())
@@ -123,6 +125,8 @@ public actor McpBuiltinRuntime {
         }
         changed()
         let current = generation
+        await ensureDiscoveryActive(context)
+        guard generation == current, sessionActive else { return }
         startup = Task { [weak self] in
             guard let self else { return }
             await Task.yield()
@@ -134,8 +138,8 @@ public actor McpBuiltinRuntime {
         var result: [BuiltinMcpServer] = []
         var notices: [String] = []
         for registered in api.getMcpServers() {
-            if let configured = configuredEntries.first(where: { $0.name == registered.name }) {
-                notices.append("\"\(registered.name)\" registered by \(registered.extensionPath) is overridden by \(configured.source)")
+            if let configured = configuredEntries.first(where: { mcpNamespace($0.name) == mcpNamespace(registered.name) }) {
+                notices.append("\"\(registered.name)\" registered by \(registered.extensionPath) is overridden by \"\(configured.name)\" in \(configured.source)")
             } else {
                 result.append(BuiltinMcpServer(entry: McpServerEntry(name: registered.name, config: registered.config,
                     source: registered.extensionPath, scope: .extension), registeredConfig: registered.config))
@@ -146,7 +150,9 @@ public actor McpBuiltinRuntime {
 
     private func makeConnection(_ entry: McpServerEntry) -> McpServerConnection {
         McpServerConnection(entry: entry, cwd: sessionCwd, createTransport: options.createTransport,
-            credentials: credentials, log: log, onTools: { [weak self] connection in
+            credentials: credentials, log: log, providerToken: { [registry = modelRegistry] provider in
+                await registry?.getApiKeyForProvider(provider)
+            }, onTools: { [weak self] connection in
                 await self?.registerTools(connection)
             }, onChange: { [weak self] connection in
                 await self?.connectionChanged(connection)
@@ -174,6 +180,7 @@ public actor McpBuiltinRuntime {
     }
 
     private func connectEnabled(context: HookContext, generation current: Int) async {
+        guard generation == current, sessionActive else { return }
         let names = orderedServers.filter { $0.entry.config.isEnabled }.map { $0.entry.name }
         let connections = names.compactMap { name -> McpServerConnection? in
             guard let server = servers[name] else { return nil }
@@ -184,7 +191,10 @@ public actor McpBuiltinRuntime {
         }
         await withTaskGroup(of: Void.self) { group in
             for connection in connections {
-                group.addTask { _ = try? await connection.connect() }
+                group.addTask {
+                    _ = try? await connection.connect()
+                    await self.connectionReady(connection, generation: current)
+                }
             }
         }
         guard generation == current else { return }
@@ -193,20 +203,25 @@ public actor McpBuiltinRuntime {
         await reportProblems(context)
     }
 
+    private func connectionReady(_ connection: McpServerConnection, generation current: Int) {
+        guard generation == current, servers[connection.name]?.connection === connection else { return }
+        servers[connection.name]?.readyComplete = true
+    }
+
     private func connectionChanged(_ connection: McpServerConnection) async {
         let name = connection.name
         guard let current = servers[name]?.connection, current === connection else { return }
         if await connection.state == .needsAuth, let url = await connection.oauthURL,
            tokensAtSignIn[name] == nil {
-            tokensAtSignIn[name] = storedTokens(url)
+            tokensAtSignIn[name] = storedTokens(name: name, url: url)
         } else if await connection.state != .needsAuth {
             tokensAtSignIn.removeValue(forKey: name)
         }
         changed()
     }
 
-    private func storedTokens(_ url: URL) -> String {
-        guard let token = try? credentials.tokens(for: url),
+    private func storedTokens(name: String, url: URL) -> String {
+        guard let token = try? credentials.tokens(name: name, url: url),
               let data = try? JSONEncoder().encode(token) else { return "null" }
         return String(decoding: data, as: UTF8.self)
     }
@@ -216,15 +231,17 @@ public actor McpBuiltinRuntime {
         guard let server = servers[name], server.connection === connection else { return }
         let tools = await connection.tools
         let instructions = await connection.instructions
-        let namespaceName = "mcp__\(name)"
-        let namespace = ToolNamespace(name: namespaceName,
-            description: instructions ?? "Tools in the \(namespaceName) namespace.")
+        let description = server.entry.config.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let namespace = ToolNamespace(name: mcpNamespace(name),
+            description: description?.isEmpty == false ? description : nil, instructions: instructions)
+        let plain = Set(tools.map(\.name)).map { createMcpToolName(server: name, tool: $0) }
+        let collisions = Dictionary(grouping: plain, by: { $0 }).filter { $0.value.count > 1 }
         let previous = serverTools[name] ?? []
         var current: Set<String> = []
         for tool in tools {
             let owner = "\(name)\u{0}\(tool.name)"
             let toolName = createMcpToolName(server: name, tool: tool.name) { candidate in
-                (toolOwners[candidate] != nil && toolOwners[candidate] != owner) || current.contains(candidate)
+                (toolOwners[candidate] != nil && toolOwners[candidate] != owner) || current.contains(candidate) || collisions[candidate] != nil
             }
             toolOwners[toolName] = owner
             current.insert(toolName)
@@ -277,7 +294,7 @@ public actor McpBuiltinRuntime {
         for server in orderedServers where await hasVisibleResources(server.entry.name) {
             exposures.insert(server.entry.config.effectiveExposure)
         }
-        let next = [McpExposure.direct, .codemode, .codemodeDeferred, .deferred].first(where: exposures.contains) ?? .hidden
+        let next = [McpExposure.direct, .codemode, .deferred].first(where: exposures.contains) ?? .hidden
         if next == resourceExposure || (resourceExposure == nil && next == .hidden) { return }
         let wasDirect = resourceExposure == .direct
         resourceExposure = next
@@ -294,15 +311,9 @@ public actor McpBuiltinRuntime {
     private func ensureDiscoveryActive(_ context: HookContext? = nil) async {
         var exposure: Set<McpExposure> = []
         for server in orderedServers where server.entry.config.isEnabled {
-            guard let connection = server.connection, await connection.state == .connected else { continue }
-            for toolName in serverTools[server.entry.name] ?? [] {
-                if let owner = toolOwners[toolName], let rawName = owner.split(separator: "\u{0}").last {
-                    exposure.insert(getMcpToolExposure(server.entry.config, toolName: String(rawName)))
-                }
-            }
-            if await connection.hasResources { exposure.insert(server.entry.config.effectiveExposure) }
+            exposure.formUnion(configuredMcpExposures(server.entry))
         }
-        let needsCodemode = exposure.contains(.codemode) || exposure.contains(.codemodeDeferred)
+        let needsCodemode = exposure.contains(.codemode)
         let needsSearch = exposure.contains(.deferred)
         guard needsCodemode || needsSearch else { return }
         let all = api.getAllTools()
@@ -316,29 +327,71 @@ public actor McpBuiltinRuntime {
             active.append(TOOL_SEARCH_TOOL_NAME)
         }
         api.setActiveTools(active)
-        if !active.contains(CODEMODE_TOOL_NAME) && !active.contains(TOOL_SEARCH_TOOL_NAME) && !warnedUnreachable {
+        if !(hasCodemode && active.contains(CODEMODE_TOOL_NAME)) && !(hasSearch && active.contains(TOOL_SEARCH_TOOL_NAME)) && !warnedUnreachable {
             warnedUnreachable = true
             if let context { await context.ui.notify(
-                "MCP tools are only reachable from the codemode or tool_search tool, but neither is active; they cannot be called.", .warning) }
+                "MCP tools are only reachable from the codemode or tool_search tool, but neither is active\(needsCodemode && hasCodemode && !autoEnableCodemode ? " (autoEnableCodemode is false)" : ""); they cannot be called.", .warning) }
+        }
+    }
+
+    private func hasPendingServers(names: Set<String>?) -> Bool {
+        orderedServers.contains {
+            $0.entry.config.isEnabled && !$0.readyComplete && (names == nil || names!.contains($0.entry.name))
+        }
+    }
+
+    /// Wait until the selected servers finish connection and tool registration.
+    /// A failed connection also completes readiness. Cancellation ends only this wait.
+    public func waitForServers(names: [String]? = nil, signal: CancellationToken? = nil) async throws {
+        let selected = names.map(Set.init)
+        let current = generation
+        while current == generation && hasPendingServers(names: selected) {
+            if signal?.isCancelled == true { return }
+            try await Task.sleep(for: .milliseconds(10))
         }
     }
 
     public func waitForFirstPrompt(context: HookContext) async {
         guard startup != nil, !waitedForStartup else { return }
         waitedForStartup = true
+        let direct = Set(orderedServers.filter {
+            $0.entry.config.isEnabled && configuredMcpExposures($0.entry).contains(.direct)
+        }.map { $0.entry.name })
+        guard !direct.isEmpty else { return }
         let deadline = ContinuousClock.now + .milliseconds(max(0, options.startupWaitMs))
-        while !startupComplete && ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(25))
+        while hasPendingServers(names: direct) && ContinuousClock.now < deadline {
+            if context.signal?.isCancelled == true || Task.isCancelled { return }
+            do { try await Task.sleep(for: .milliseconds(10)) } catch { return }
         }
-        if !startupComplete {
+        if hasPendingServers(names: direct) {
             await context.ui.notify("MCP servers are still connecting; their tools become available once connected.", .info)
         }
+    }
+
+    public func serversSection() async -> String? {
+        var listings: [McpServerListing] = []
+        for server in orderedServers {
+            listings.append(McpServerListing(entry: server.entry, instructions: await server.connection?.instructions))
+        }
+        return renderServersSection(listings)
+    }
+
+    public func toolCall(event: ToolCallEvent, context: HookContext) async throws {
+        guard let tool = api.getAllTools().first(where: { $0.name == event.toolName }) else { return }
+        let names: [String]
+        if isCodemodeTool(tool) {
+            let source = event.input["code"]?.value as? String ?? ""
+            names = orderedServers.filter { mcpScriptNeedsServer(source, server: $0.entry.name) }.map { $0.entry.name }
+        } else if isToolSearchTool(tool) || [LIST_MCP_RESOURCES_TOOL, LIST_MCP_RESOURCE_TEMPLATES_TOOL, READ_MCP_RESOURCE_TOOL].contains(tool.name) {
+            names = serverNames
+        } else { return }
+        try await waitForServers(names: names, signal: context.signal)
     }
 
     public func turnStart(context: HookContext) async {
         for (name, oldToken) in tokensAtSignIn {
             guard let connection = servers[name]?.connection, let url = await connection.oauthURL,
-                  storedTokens(url) != oldToken else { continue }
+                  storedTokens(name: name, url: url) != oldToken else { continue }
             tokensAtSignIn.removeValue(forKey: name)
             _ = try? await connection.reconnect()
         }
@@ -360,6 +413,7 @@ public actor McpBuiltinRuntime {
             await hideTools(server.entry.name)
             await server.connection?.close()
         }
+        let current = generation
         var added: [McpServerConnection] = []
         for server in registered.servers where servers[server.entry.name] == nil {
             serverNames.append(server.entry.name)
@@ -371,8 +425,12 @@ public actor McpBuiltinRuntime {
             }
         }
         changed()
+        await ensureDiscoveryActive(context)
         await withTaskGroup(of: Void.self) { group in
-            for connection in added { group.addTask { _ = try? await connection.connect() } }
+            for connection in added { group.addTask {
+                _ = try? await connection.connect()
+                await self.connectionReady(connection, generation: current)
+            } }
         }
         await ensureDiscoveryActive(context)
         await reportProblems(context, only: Set(added.map(\.name)))
@@ -496,7 +554,7 @@ public actor McpBuiltinRuntime {
     }
 
     private func usesOAuth(_ server: BuiltinMcpServer) -> Bool {
-        server.connection != nil && server.entry.config.isHTTP &&
+        server.connection != nil && server.entry.config.isHTTP && server.entry.config.auth == nil &&
             !(server.entry.config.headers ?? [:]).keys.contains {
                 $0.caseInsensitiveCompare("authorization") == .orderedSame
             }
@@ -537,7 +595,7 @@ public actor McpBuiltinRuntime {
                 #else
                 guard let presenter = options.presenter else { throw McpRuntimeError.invalidConfig("MCP sign-in needs a host presenter on iOS") }
                 #endif
-                try await signInMcpServer(serverURL: url, credentials: credentials,
+                try await signInMcpServer(name: server.entry.name, serverURL: url, credentials: credentials,
                     settings: try connection.oauthSettings(),
                     challenge: await connection.challenge, presenter: presenter)
                 await connection.clearOAuthChallenge()
@@ -554,7 +612,7 @@ public actor McpBuiltinRuntime {
             guard let server = await choose(name, context: context, eligible: usesOAuth,
                 preferred: { await $0.connection?.state == .needsAuth }, none: "No enabled MCP server uses OAuth."),
                 let connection = server.connection, let url = await connection.oauthURL else { return }
-            let removed = (try? credentials.remove(url)) ?? false
+            let removed = (try? credentials.remove(name: server.entry.name, url: url)) ?? false
             await connection.signOut()
             await context.ui.notify(removed ? "Signed out of MCP server \"\(server.entry.name)\"." :
                 "No stored credentials for MCP server \"\(server.entry.name)\".", .info)
@@ -593,7 +651,7 @@ public actor McpBuiltinRuntime {
                     }
                 case "signout":
                     if let connection = server.connection, let url = await connection.oauthURL {
-                        do { _ = try credentials.remove(url); await connection.signOut() }
+                        do { _ = try credentials.remove(name: server.entry.name, url: url); await connection.signOut() }
                         catch { message = error.localizedDescription }
                     }
                 case "signin":
@@ -640,7 +698,7 @@ public actor McpBuiltinRuntime {
             guard let host = options.presenter else { return "MCP sign-in needs a host presenter on iOS." }
             let presenter = McpManagerPresenter(base: host, ui: ui, title: title)
             #endif
-            try await signInMcpServer(serverURL: url, credentials: credentials,
+            try await signInMcpServer(name: server.entry.name, serverURL: url, credentials: credentials,
                 settings: try connection.oauthSettings(),
                 challenge: await connection.challenge, presenter: presenter)
             await connection.clearOAuthChallenge()
@@ -718,9 +776,11 @@ public actor McpBuiltinRuntime {
         if enabled {
             let connection = makeConnection(server.entry)
             server.connection = connection
+            server.readyComplete = false
             servers[name] = server
             changed()
             _ = try? await connection.connect()
+            connectionReady(connection, generation: generation)
         } else {
             servers[name] = server
             await hideTools(name)
@@ -759,6 +819,10 @@ public func createMcpExtension(options: McpExtensionOptions = .init()) -> Inline
         }
         api.on("before_agent_start") { (_: BeforeAgentStartEvent, context) in
             await runtime.waitForFirstPrompt(context: context)
+            return BeforeAgentStartEventResult(sections: [MCP_SERVERS_SECTION: await runtime.serversSection()])
+        }
+        api.on("tool_call") { (event: ToolCallEvent, context) in
+            try await runtime.toolCall(event: event, context: context)
             return nil
         }
         api.on("turn_start") { (_: TurnStartEvent, context) in

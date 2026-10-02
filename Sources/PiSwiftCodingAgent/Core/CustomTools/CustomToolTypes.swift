@@ -22,10 +22,13 @@ public enum ToolExposure: String, Sendable, Codable {
 public struct ToolNamespace: Sendable, Codable {
     public var name: String
     public var description: String?
+    /// Usage instructions returned when a tool describes this namespace.
+    public var instructions: String?
 
-    public init(name: String, description: String? = nil) {
+    public init(name: String, description: String? = nil, instructions: String? = nil) {
         self.name = name
         self.description = description
+        self.instructions = instructions
     }
 }
 

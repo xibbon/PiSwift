@@ -8,9 +8,27 @@ import AppKit
 import FoundationNetworking
 #endif
 
+// Upstream stores the complete registration response, including its redirect URIs.
+// PiSwiftMCP's wire client-information value keeps metadata outside its CodingKeys.
+private struct StoredMcpOAuthClientInformation: Codable, Sendable {
+    var information: McpOAuthClientInformation
+
+    init(_ information: McpOAuthClientInformation) { self.information = information }
+
+    init(from decoder: any Decoder) throws {
+        information = try McpOAuthClientInformation(from: decoder)
+        information.metadata = try? McpOAuthClientMetadata(from: decoder)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        try information.encode(to: encoder)
+        try information.metadata?.encode(to: encoder)
+    }
+}
+
 private struct StoredMcpOAuthState: Codable, Sendable {
     var serverUrl: String
-    var clientInformation: McpOAuthClientInformation?
+    var clientInformation: StoredMcpOAuthClientInformation?
     var tokens: McpOAuthTokens?
     var tokensExpireAt: Date?
     var codeVerifier: String?
@@ -19,7 +37,7 @@ private struct StoredMcpOAuthState: Codable, Sendable {
 
     init(_ state: McpOAuthState) {
         serverUrl = state.serverURL
-        clientInformation = state.clientInformation
+        clientInformation = state.clientInformation.map(StoredMcpOAuthClientInformation.init)
         tokens = state.tokens
         tokensExpireAt = state.tokensExpireAt
         codeVerifier = state.codeVerifier
@@ -28,7 +46,7 @@ private struct StoredMcpOAuthState: Codable, Sendable {
     }
 
     var state: McpOAuthState {
-        McpOAuthState(serverURL: serverUrl, clientInformation: clientInformation,
+        McpOAuthState(serverURL: serverUrl, clientInformation: clientInformation?.information,
             tokens: tokens, tokensExpireAt: tokensExpireAt, codeVerifier: codeVerifier,
             oauthState: oauthState, discovery: discovery)
     }
@@ -64,36 +82,49 @@ public final class McpOAuthCredentialStore: Sendable {
         self.lockDirectory = lockDirectory
     }
 
-    public func forServer(_ serverURL: URL) -> any McpOAuthStateStore {
-        ServerStore(owner: self, key: Self.key(serverURL))
+    public func forServer(name: String, url: URL) -> any McpOAuthStateStore {
+        ServerStore(owner: self, key: Self.key(name: name, url: url), legacyKey: Self.key(url))
     }
 
-    public func state(for serverURL: URL) throws -> McpOAuthState? {
-        let key = Self.key(serverURL)
+    /// Load state and take over a legacy URL-only entry, if present.
+    public func state(name: String, url: URL) throws -> McpOAuthState? {
+        try load(key: Self.key(name: name, url: url), legacyKey: Self.key(url))
+    }
+
+    /// Read tokens without taking over a legacy entry.
+    public func tokens(name: String, url: URL) throws -> McpOAuthTokens? {
+        let key = Self.key(name: name, url: url)
+        let legacyKey = Self.key(url)
         return try backend.withLock { current in
             let states = try Self.parse(current)
-            return AuthStorageLockResult(result: states[key]?.state)
+            return AuthStorageLockResult(result: (states[key] ?? states[legacyKey])?.tokens)
         }
     }
 
-    public func tokens(for serverURL: URL) throws -> McpOAuthTokens? {
-        try state(for: serverURL)?.tokens
-    }
-
+    /// Remove named state, or the legacy state this server would take over.
     @discardableResult
-    public func remove(_ serverURL: URL) throws -> Bool {
-        let key = Self.key(serverURL)
+    public func remove(name: String, url: URL) throws -> Bool {
+        let key = Self.key(name: name, url: url)
+        let legacyKey = Self.key(url)
         return try backend.withLock { current in
             var states = try Self.parse(current)
-            let removed = states.removeValue(forKey: key) != nil
+            let stored = states[key] != nil ? key : legacyKey
+            let removed = states.removeValue(forKey: stored) != nil
             return AuthStorageLockResult(result: removed, next: removed ? try Self.encode(states) : nil)
         }
     }
 
+    // Compatibility for hosts built against the URL-only API. New callers must supply the name.
+    public func forServer(_ serverURL: URL) -> any McpOAuthStateStore { forServer(name: "", url: serverURL) }
+    public func state(for serverURL: URL) throws -> McpOAuthState? { try state(name: "", url: serverURL) }
+    public func tokens(for serverURL: URL) throws -> McpOAuthTokens? { try tokens(name: "", url: serverURL) }
+    @discardableResult
+    public func remove(_ serverURL: URL) throws -> Bool { try remove(name: "", url: serverURL) }
+
     public func withRefreshLock<Result: Sendable>(
-        for serverURL: URL, _ operation: @escaping @Sendable () async throws -> Result
+        name: String, url: URL, _ operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
-        let key = Self.key(serverURL)
+        let key = Self.key(name: name, url: url)
         try await Self.refreshGate.acquire(key)
         do {
             let value: Result
@@ -113,6 +144,28 @@ public final class McpOAuthCredentialStore: Sendable {
             await Self.refreshGate.release(key)
             throw error
         }
+    }
+
+    public func withRefreshLock<Result: Sendable>(
+        for serverURL: URL, _ operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        try await withRefreshLock(name: "", url: serverURL, operation)
+    }
+
+    private func load(key: String, legacyKey: String) throws -> McpOAuthState? {
+        try backend.withLock { current in
+            var states = try Self.parse(current)
+            if let stored = states[key] { return AuthStorageLockResult(result: stored.state) }
+            guard let legacy = states.removeValue(forKey: legacyKey) else {
+                return AuthStorageLockResult(result: nil)
+            }
+            states[key] = legacy
+            return AuthStorageLockResult(result: legacy.state, next: try Self.encode(states))
+        }
+    }
+
+    private static func key(name: String, url: URL) -> String {
+        name.isEmpty ? key(url) : mcpNamespace(name) + "|" + key(url)
     }
 
     private func save(_ state: McpOAuthState, key: String) throws {
@@ -148,12 +201,10 @@ public final class McpOAuthCredentialStore: Sendable {
     private struct ServerStore: McpOAuthStateStore {
         let owner: McpOAuthCredentialStore
         let key: String
+        let legacyKey: String
 
         func load() async throws -> McpOAuthState? {
-            try owner.backend.withLock { current in
-                let states = try McpOAuthCredentialStore.parse(current)
-                return AuthStorageLockResult(result: states[key]?.state)
-            }
+            try owner.load(key: key, legacyKey: legacyKey)
         }
 
         func save(_ state: McpOAuthState) async throws {
@@ -175,25 +226,28 @@ private struct TimedMcpOAuthHTTPClient: McpOAuthHTTPClient {
 /// Sends stored tokens and refreshes them before expiry or after HTTP 401.
 public actor McpServerAuthProvider: McpAuthProvider {
     private let serverURL: URL
+    private let name: String
     private let credentials: McpOAuthCredentialStore
     private let settingsResolver: @Sendable () throws -> McpOAuthConfig
     private let http: any McpOAuthHTTPClient
     private var refreshTask: Task<Void, Error>?
     public private(set) var challenge: McpOAuthChallenge?
 
-    public init(serverURL: URL, credentials: McpOAuthCredentialStore,
+    public init(name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore,
                 settings: McpOAuthConfig = .init(),
                 http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()) {
         self.serverURL = serverURL
+        self.name = name
         self.credentials = credentials
         self.settingsResolver = { settings }
         self.http = TimedMcpOAuthHTTPClient(base: http)
     }
 
-    public init(serverURL: URL, credentials: McpOAuthCredentialStore,
+    public init(name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore,
                 settings: @escaping @Sendable () throws -> McpOAuthConfig,
                 http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()) {
         self.serverURL = serverURL
+        self.name = name
         self.credentials = credentials
         self.settingsResolver = settings
         self.http = TimedMcpOAuthHTTPClient(base: http)
@@ -201,13 +255,13 @@ public actor McpServerAuthProvider: McpAuthProvider {
 
     public func token() async throws -> String? {
         _ = try? await refreshTask?.value
-        let state = try credentials.state(for: serverURL)
+        let state = try credentials.state(name: name, url: serverURL)
         let token = state?.tokens?.accessToken
         if let expiry = state?.tokensExpireAt,
            expiry.timeIntervalSinceNow <= 30,
            state?.tokens?.refreshToken != nil {
             try? await refresh(staleToken: token, challenge: nil)
-            return try credentials.tokens(for: serverURL)?.accessToken
+            return try credentials.tokens(name: name, url: serverURL)?.accessToken
         }
         return token
     }
@@ -225,11 +279,12 @@ public actor McpServerAuthProvider: McpAuthProvider {
         if refreshTask == nil {
             let credentials = self.credentials
             let serverURL = self.serverURL
+            let name = self.name
             let settingsResolver = self.settingsResolver
             let http = self.http
             refreshTask = Task {
-                try await credentials.withRefreshLock(for: serverURL) {
-                    let stored = try credentials.state(for: serverURL)
+                try await credentials.withRefreshLock(name: name, url: serverURL) {
+                    let stored = try credentials.state(name: name, url: serverURL)
                     if stored?.tokens?.accessToken != staleToken { return }
                     guard stored?.tokens?.refreshToken != nil else { throw McpOAuthError.authorizationRequired }
                     let settings = try settingsResolver()
@@ -237,12 +292,13 @@ public actor McpServerAuthProvider: McpAuthProvider {
                     let redirect = settings.callbackUrl ?? registered ?? "http://127.0.0.1/callback"
                     guard let redirectURL = URL(string: redirect) else { throw McpOAuthError.invalidRedirect }
                     let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
-                        clientMetadata: McpOAuthClientMetadata(clientName: "pi"),
+                        clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
                         clientID: settings.clientId, clientSecret: settings.clientSecret,
-                        store: credentials.forServer(serverURL), onRedirect: { _ in })
+                        store: credentials.forServer(name: name, url: serverURL), onRedirect: { _ in })
                     let result = try await McpOAuthFlow.authorize(provider: provider,
                         options: McpOAuthFlowOptions(serverURL: serverURL,
-                            scope: challenge?.scope, resourceMetadataURL: challenge?.resourceMetadataURL),
+                            scope: challenge?.scope, resourceMetadataURL: challenge?.resourceMetadataURL,
+                            authorizationServerMetadataURL: settings.authServerMetadataUrl.flatMap(URL.init(string:))),
                         http: http)
                     if result == .redirect { throw McpOAuthError.authorizationRequired }
                 }
@@ -255,17 +311,14 @@ public actor McpServerAuthProvider: McpAuthProvider {
 
 /// Run interactive OAuth for one server. The presenter supplies macOS loopback or an iOS host flow.
 public func signInMcpServer(
-    serverURL: URL, credentials: McpOAuthCredentialStore, settings: McpOAuthConfig = .init(),
+    name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore, settings: McpOAuthConfig = .init(),
     challenge: McpOAuthChallenge? = nil, presenter: any McpSignInPresenter,
     http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
 ) async throws {
-    let store = credentials.forServer(serverURL)
-    if var stored = try await store.load() {
+    let store = credentials.forServer(name: name, url: serverURL)
+    let previous = try await store.load()
+    if var stored = previous {
         stored.oauthState = nil
-        if challenge?.error == "insufficient_scope" {
-            stored.tokens = nil
-            stored.tokensExpireAt = nil
-        }
         try await store.save(stored)
     }
     var generator = SystemRandomNumberGenerator()
@@ -290,30 +343,35 @@ public func signInMcpServer(
         stored.tokensExpireAt = nil
         try await store.save(stored)
     }
-    let combinedScope = [settings.scope, challenge?.scope].compactMap { $0 }
+    let stepUp = challenge?.error == "insufficient_scope"
+    let challengedScope = stepUp
+        ? McpOAuthFlow.stepUpScope(granted: previous?.tokens?.scope, challenged: challenge?.scope)
+        : challenge?.scope
+    let combinedScope = [settings.scope, challengedScope].compactMap { $0 }
         .flatMap { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
     var seen: Set<String> = []
     let scope = combinedScope.filter { seen.insert($0).inserted }.joined(separator: " ")
     let capture = McpSignInCapture()
     let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
-        clientMetadata: McpOAuthClientMetadata(clientName: "pi"),
+        clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
         clientID: settings.clientId, clientSecret: settings.clientSecret,
         initialState: state, store: store,
         onRedirect: { url in
             let callback = try await presenter.present(authorizationURL: url, state: state)
             await capture.save(callback)
         })
+    let options = McpOAuthFlowOptions(serverURL: serverURL,
+        scope: scope.isEmpty ? nil : scope,
+        resourceMetadataURL: challenge?.resourceMetadataURL,
+        authorizationServerMetadataURL: settings.authServerMetadataUrl.flatMap(URL.init(string:)),
+        skipRefresh: stepUp)
     do {
         let result = try await McpOAuthFlow.authorize(provider: provider,
-            options: McpOAuthFlowOptions(serverURL: serverURL,
-                scope: scope.isEmpty ? nil : scope,
-                resourceMetadataURL: challenge?.resourceMetadataURL,
-                skipRefresh: challenge?.error == "insufficient_scope"),
-            http: TimedMcpOAuthHTTPClient(base: http))
+            options: options, http: TimedMcpOAuthHTTPClient(base: http))
         if result == .redirect {
             guard let callback = await capture.url else { throw McpOAuthError.invalidRedirect }
             _ = try await McpOAuthFlow.completeRedirect(provider: provider,
-                callbackURL: callback, serverURL: serverURL,
+                callbackURL: callback, options: options,
                 http: TimedMcpOAuthHTTPClient(base: http))
         }
         await presenter.cancel()

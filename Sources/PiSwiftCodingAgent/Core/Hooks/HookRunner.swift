@@ -274,10 +274,7 @@ public final class HookRunner: Sendable {
             modelRegistry.unregisterProvider(provider, sourceId: sourceId)
         }
         hook.setRegisterMcpServerHandler { [mcpServers] name, config in
-            if let owner = mcpServers.get(name)?.extensionPath, owner != sourceId {
-                throw HookAPIError.mcpServerAlreadyRegistered(name: name, owner: owner)
-            }
-            mcpServers.register(RegisteredMcpServer(name: name, config: config, extensionPath: sourceId))
+            try mcpServers.checkedRegister(RegisteredMcpServer(name: name, config: config, extensionPath: sourceId))
         }
         hook.setUnregisterMcpServerHandler { [mcpServers] name in
             mcpServers.unregister(name: name, extensionPath: sourceId)
@@ -299,11 +296,10 @@ public final class HookRunner: Sendable {
         }
         for (name, config) in hook.mcpServerRegistrations {
             if hook.mcpServerRegistry === mcpServers { continue }
-            if let owner = mcpServers.get(name)?.extensionPath, owner != sourceId {
-                emitError(HookError(hookPath: hook.path, event: "register_mcp_server",
-                                    error: HookAPIError.mcpServerAlreadyRegistered(name: name, owner: owner).localizedDescription))
-            } else {
-                mcpServers.register(RegisteredMcpServer(name: name, config: config, extensionPath: sourceId))
+            do {
+                try mcpServers.checkedRegister(RegisteredMcpServer(name: name, config: config, extensionPath: sourceId))
+            } catch {
+                emitError(HookError(hookPath: hook.path, event: "register_mcp_server", error: error.localizedDescription))
             }
         }
         for models in hook.virtualModelRegistrations.values {
@@ -848,12 +844,13 @@ public final class HookRunner: Sendable {
         _ event: any HookEvent,
         extensionsOnly: Bool = false,
         eventForHandler: (() -> any HookEvent)? = nil,
+        contextOverride: HookContext? = nil,
         consume: (Any, LoadedHook) -> Bool = { _, _ in false }
     ) async {
         let handlersSnapshot = snapshotHandlers(event.type, extensionsOnly: extensionsOnly)
         let observers = eventObservers.withLock { Array($0.values) }
         for observer in observers { observer(event) }
-        let context = createContext()
+        let context = contextOverride ?? createContext()
         for (hook, handlers) in handlersSnapshot {
             for handler in handlers {
                 do {
@@ -959,9 +956,11 @@ public final class HookRunner: Sendable {
         return decision
     }
 
-    public func emitToolCall(_ event: ToolCallEvent) async -> ToolCallEventResult? {
+    public func emitToolCall(_ event: ToolCallEvent, signal: CancellationToken? = nil) async -> ToolCallEventResult? {
         var lastResult: ToolCallEventResult?
-        await dispatchEvent(event, consume: { result, _ in
+        var context = createContext()
+        context.signal = signal
+        await dispatchEvent(event, contextOverride: context, consume: { result, _ in
             guard let result = result as? ToolCallEventResult else { return false }
             lastResult = result
             return result.block
@@ -1118,19 +1117,22 @@ public final class HookRunner: Sendable {
         var messages: [HookMessageInput] = []
         var systemPromptAppends: [String] = []
         var forcedSystemPrompt: String?
+        var sections: [String: String?] = [:]
         await dispatchEvent(BeforeAgentStartEvent(prompt: prompt, images: images), consume: { result, _ in
             if let result = result as? BeforeAgentStartEventResult {
                 if let message = result.message { messages.append(message) }
                 if let append = result.systemPromptAppend, !append.isEmpty { systemPromptAppends.append(append) }
                 if let prompt = result.systemPrompt { forcedSystemPrompt = prompt }
+                for (name, value) in result.sections { sections.updateValue(value, forKey: name) }
             }
             return false
         })
-        if messages.isEmpty && systemPromptAppends.isEmpty && forcedSystemPrompt == nil { return nil }
+        if messages.isEmpty && systemPromptAppends.isEmpty && forcedSystemPrompt == nil && sections.isEmpty { return nil }
         return BeforeAgentStartCombinedResult(
             messages: messages.isEmpty ? nil : messages,
             systemPromptAppend: systemPromptAppends.isEmpty ? nil : systemPromptAppends.joined(separator: "\n\n"),
-            systemPrompt: forcedSystemPrompt
+            systemPrompt: forcedSystemPrompt,
+            sections: sections
         )
     }
 

@@ -67,6 +67,17 @@ public func createDefaultMcpTransport(entry: McpServerEntry, cwd: URL,
     #endif
 }
 
+private struct McpProviderAuth: McpAuthProvider {
+    let provider: String
+    let providerToken: (@Sendable (String) async -> String?)?
+
+    func token() async throws -> String? { await providerToken?(provider) }
+    func onUnauthorized(challenge: String?, serverURL: URL, rejectedToken: String?) async throws {
+        // The bearer provider has no MCP refresh flow. End the request on the challenge.
+        throw McpOAuthError.authorizationRequired
+    }
+}
+
 public actor McpServerConnection {
     public nonisolated let entry: McpServerEntry
     public nonisolated let cwd: URL
@@ -82,7 +93,8 @@ public actor McpServerConnection {
     private var opening: Task<McpClient, any Error>?
     private var closed = false
     private var stderrTail: String?
-    private var authProvider: McpServerAuthProvider?
+    private var authProvider: (any McpAuthProvider)?
+    private let providerToken: (@Sendable (String) async -> String?)?
 
     public private(set) var state: McpConnectionState = .connecting
     public private(set) var error: String?
@@ -95,6 +107,7 @@ public actor McpServerConnection {
 
     public init(entry: McpServerEntry, cwd: URL, createTransport: @escaping McpTransportFactory = createDefaultMcpTransport,
                 credentials: McpOAuthCredentialStore, log: McpServerLog? = nil,
+                providerToken: (@Sendable (String) async -> String?)? = nil,
                 onTools: (@Sendable (McpServerConnection) async -> Void)? = nil,
                 onChange: (@Sendable (McpServerConnection) async -> Void)? = nil) {
         self.entry = entry
@@ -102,13 +115,14 @@ public actor McpServerConnection {
         self.timeoutMs = Int(entry.config.timeoutSeconds * 1000)
         self.transportFactory = createTransport
         self.credentials = credentials
+        self.providerToken = providerToken
         self.log = log
         self.onTools = onTools
         self.onChange = onChange
     }
 
     public var oauthURL: URL? {
-        guard let raw = entry.config.url,
+        guard entry.config.auth == nil, let raw = entry.config.url,
               !(entry.config.headers ?? [:]).keys.contains(where: { $0.caseInsensitiveCompare("authorization") == .orderedSame }) else { return nil }
         return URL(string: raw)
     }
@@ -122,6 +136,16 @@ public actor McpServerConnection {
     public func clearOAuthChallenge() async {
         challenge = nil
         await changed()
+    }
+
+    private var signInRequiredMessage: String {
+        let command = entry.config.auth.map { "/login \($0.provider)" } ?? "/mcp"
+        return "MCP server \"\(entry.name)\" requires sign-in. Run \(command) to sign in."
+    }
+
+    private func needsSignIn(_ error: any Error) -> Bool {
+        if case McpOAuthError.authorizationRequired = error { return true }
+        return authProvider != nil && error is McpAuthRequiredError
     }
 
     private func changed() async { await onChange?(self) }
@@ -150,11 +174,11 @@ public actor McpServerConnection {
         for attempt in 0...delays.count {
             do { return try await connectOnce() }
             catch {
-                if isAuthError(error), oauthURL != nil {
+                if needsSignIn(error) {
                     state = .needsAuth
                     self.error = nil
                     await changed()
-                    throw McpRuntimeError.connectionFailed("MCP server \"\(entry.name)\" requires sign-in. Run /mcp to sign in.")
+                    throw McpRuntimeError.connectionFailed(signInRequiredMessage)
                 }
                 if attempt == delays.count || !isTransient(error) || closed {
                     state = closed ? .closed : .failed
@@ -182,10 +206,12 @@ public actor McpServerConnection {
             }, roots: [root])
         var newTransport: (any McpTransport)?
         do {
-            let auth: McpServerAuthProvider?
+            let auth: (any McpAuthProvider)?
             if let url = oauthURL {
-                auth = McpServerAuthProvider(serverURL: url, credentials: credentials,
+                auth = McpServerAuthProvider(name: entry.name, serverURL: url, credentials: credentials,
                     settings: { [entry] in try resolvedMcpOAuthSettings(entry) })
+            } else if let provider = entry.config.auth?.provider {
+                auth = McpProviderAuth(provider: provider, providerToken: providerToken)
             } else { auth = nil }
             authProvider = auth
             newTransport = try transportFactory(entry, cwd, auth)
@@ -209,7 +235,7 @@ public actor McpServerConnection {
             await changed()
             return newClient
         } catch {
-            if let authProvider { challenge = await authProvider.challenge }
+            if let oauth = authProvider as? McpServerAuthProvider { challenge = await oauth.challenge }
             await newClient.close()
             #if os(macOS)
             if let stdio = newTransport as? StdioTransport {
@@ -288,11 +314,12 @@ public actor McpServerConnection {
                     try await Task.sleep(nanoseconds: 250_000_000)
                     continue
                 }
-                if isAuthError(error), oauthURL != nil {
+                if needsSignIn(error) {
                     if client?.connectionID == current.connectionID { client = nil; await current.close() }
                     state = .needsAuth
+                    self.error = nil
                     await changed()
-                    throw McpRuntimeError.connectionFailed("MCP server \"\(entry.name)\" requires sign-in. Run /mcp to sign in.")
+                    throw McpRuntimeError.connectionFailed(signInRequiredMessage)
                 }
                 throw error
             }
@@ -340,7 +367,7 @@ public actor McpServerConnection {
         await changed()
         opening?.cancel()
         if let client { self.client = nil; await client.close() }
-        await authProvider?.settled()
+        await (authProvider as? McpServerAuthProvider)?.settled()
     }
 }
 
@@ -349,10 +376,4 @@ private func isTransient(_ error: any Error) -> Bool {
         return http.status == 408 || http.status == 429 || (http.status >= 500 && http.status != 501)
     }
     return error is URLError
-}
-
-private func isAuthError(_ error: any Error) -> Bool {
-    if error is McpAuthRequiredError { return true }
-    if case McpOAuthError.authorizationRequired = error { return true }
-    return false
 }

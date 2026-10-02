@@ -34,6 +34,24 @@ public final class McpServerRegistry: Sendable {
         listener?()
     }
 
+    /// Check extension ownership and namespace collisions in the same lock as the write.
+    /// This preserves upstream's registration checks when Swift hosts call concurrently.
+    func checkedRegister(_ server: RegisteredMcpServer) throws {
+        let listener = try state.withLock { state -> (@Sendable () -> Void)? in
+            if let owner = state.servers[server.name]?.extensionPath, owner != server.extensionPath {
+                throw HookAPIError.mcpServerAlreadyRegistered(name: server.name, owner: owner)
+            }
+            let namespace = mcpNamespace(server.name)
+            if let clash = state.order.first(where: { $0 != server.name && mcpNamespace($0) == namespace }) {
+                throw HookAPIError.mcpServerNameConflict(name: server.name, registeredName: clash)
+            }
+            if state.servers[server.name] == nil { state.order.append(server.name) }
+            state.servers[server.name] = server
+            return state.changeListener
+        }
+        listener?()
+    }
+
     public func unregister(name: String, extensionPath: String) {
         let listener = state.withLock { state -> (@Sendable () -> Void)? in
             guard state.servers[name]?.extensionPath == extensionPath else { return nil }

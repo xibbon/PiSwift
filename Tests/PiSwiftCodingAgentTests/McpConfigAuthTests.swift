@@ -6,10 +6,16 @@ import PiSwiftMCP
 import FoundationNetworking
 #endif
 
-private actor McpAuthFixture: McpOAuthHTTPClient {
+// mcp-oauth-server.ts: record registrations and support issuer response metadata.
+actor McpAuthFixture: McpOAuthHTTPClient {
     let base = URL(string: "http://127.0.0.1:45454")!
     var paths: [String] = []
     var refreshes = 0
+    var registrations: [String] = []
+    var registrationRequests: [Data] = []
+    let issSupported: Bool
+
+    init(issSupported: Bool = false) { self.issSupported = issSupported }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let path = request.url?.path ?? ""
@@ -28,10 +34,13 @@ private actor McpAuthFixture: McpOAuthHTTPClient {
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_methods_supported": ["none"],
-                "code_challenge_methods_supported": ["S256"]]
+                "code_challenge_methods_supported": ["S256"],
+                "authorization_response_iss_parameter_supported": issSupported]
             status = 200
         case "/register":
             var body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] ?? [:]
+            registrationRequests.append(request.httpBody ?? Data())
+            registrations.append(body["client_name"] as? String ?? "")
             body["client_id"] = "client"
             value = body
             status = 201
@@ -56,14 +65,26 @@ private actor McpAuthFixture: McpOAuthHTTPClient {
 
     func observedPaths() -> [String] { paths }
     func refreshCount() -> Int { refreshes }
+    func registeredClientNames() -> [String] { registrations }
+    func recordedRegistrations() -> [Data] { registrationRequests }
 }
 
-private actor McpAuthPresenterFixture: McpSignInPresenter {
+// mcp-oauth-refresh.test.ts: return iss and record authorization scopes.
+actor McpAuthPresenterFixture: McpSignInPresenter {
     let callback = URL(string: "http://127.0.0.1:6000/callback")!
+    let iss: String?
+    var opened: [URL] = []
+
+    init(iss: String? = nil) { self.iss = iss }
+    func authorizationURLs() -> [URL] { opened }
 
     func redirectURL(for state: String) -> URL { callback }
     func present(authorizationURL: URL, state: String) -> URL {
-        URL(string: "\(callback)?code=test-code&state=\(state)")!
+        opened.append(authorizationURL)
+        var parts = URLComponents(url: callback, resolvingAgainstBaseURL: false)!
+        parts.queryItems = [.init(name: "code", value: "test-code"), .init(name: "state", value: state)]
+        if let iss { parts.queryItems?.append(.init(name: "iss", value: iss)) }
+        return parts.url!
     }
 }
 
@@ -156,24 +177,25 @@ private func mcpTestDirectory() throws -> URL {
 func mcpCredentialStoreKeysByServerAndPersistsMilliseconds() async throws {
     let root = try mcpTestDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
+    // mcp-oauth-store.test.ts #10252: credentials use the server name and URL.
     let store = McpOAuthCredentialStore(agentDir: root)
     let one = URL(string: "https://one.example/mcp")!
     let two = URL(string: "https://two.example/mcp")!
     let expires = Date(timeIntervalSince1970: 1_900_000_000)
-    try await store.forServer(one).save(McpOAuthState(serverURL: one.absoluteString,
+    try await store.forServer(name: "one", url: one).save(McpOAuthState(serverURL: one.absoluteString,
         tokens: McpOAuthTokens(accessToken: "one-token", tokenType: "Bearer", refreshToken: "one-refresh"),
         tokensExpireAt: expires))
-    try await store.forServer(two).save(McpOAuthState(serverURL: two.absoluteString,
+    try await store.forServer(name: "two", url: two).save(McpOAuthState(serverURL: two.absoluteString,
         tokens: McpOAuthTokens(accessToken: "two-token", tokenType: "Bearer")))
     let reopened = McpOAuthCredentialStore(agentDir: root)
-    #expect(try reopened.tokens(for: one)?.accessToken == "one-token")
-    #expect(try reopened.tokens(for: two)?.accessToken == "two-token")
-    #expect(try reopened.state(for: one)?.tokensExpireAt == expires)
+    #expect(try reopened.tokens(name: "one", url: one)?.accessToken == "one-token")
+    #expect(try reopened.tokens(name: "two", url: two)?.accessToken == "two-token")
+    #expect(try reopened.state(name: "one", url: one)?.tokensExpireAt == expires)
     let raw = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("mcp-auth.json"))) as? [String: [String: Any]])
-    #expect((raw[one.absoluteString]?["tokensExpireAt"] as? NSNumber)?.doubleValue == 1_900_000_000_000)
-    #expect(try reopened.remove(one))
-    #expect(try reopened.tokens(for: one) == nil)
-    #expect(try reopened.tokens(for: two)?.accessToken == "two-token")
+    #expect((raw["mcp__one|" + one.absoluteString]?["tokensExpireAt"] as? NSNumber)?.doubleValue == 1_900_000_000_000)
+    #expect(try reopened.remove(name: "one", url: one))
+    #expect(try reopened.tokens(name: "one", url: one) == nil)
+    #expect(try reopened.tokens(name: "two", url: two)?.accessToken == "two-token")
 }
 
 @Test(.timeLimit(.minutes(1)))
@@ -235,12 +257,13 @@ func mcpSignInUsesChallengeResourceAndRefreshesWithinThirtySeconds() async throw
     try await signInMcpServer(serverURL: server, credentials: credentials,
         challenge: McpOAuthChallenge(resourceMetadataURL: URL(string: "http://127.0.0.1:45454/custom-resource")),
         presenter: McpAuthPresenterFixture(), http: fixture)
-    #expect(try credentials.tokens(for: server)?.accessToken == "initial")
+    // mcp-oauth-refresh.test.ts #10252: token reads include the server name.
+    #expect(try credentials.tokens(name: "test", url: server)?.accessToken == "initial")
     #expect(await fixture.observedPaths().contains("/custom-resource"))
     let provider = McpServerAuthProvider(serverURL: server, credentials: credentials, http: fixture)
     #expect(try await provider.token() == "refreshed")
     #expect(await fixture.refreshCount() == 1)
-    #expect(try credentials.tokens(for: server)?.refreshToken == "rotated")
+    #expect(try credentials.tokens(name: "test", url: server)?.refreshToken == "rotated")
 }
 
 #if os(macOS)
