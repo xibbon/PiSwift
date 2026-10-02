@@ -1,5 +1,5 @@
 {
-  "originHash" : "4738ab9bcbd30b4ab1cc54dd21e1161893699456aa20ec484c9819553bdba652",
+  "originHash" : "7cff3899de7d14a70fe3582d2668c6ba734563871c3164b13f6d2ad0c65c6756",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,7 +15,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/MacPaw/OpenAI.git",
       "state" : {
-        "branch" : "main",
         "revision" : "4ed3ea99ff9dfd2a760509ddb31020f4b153ef93"
       }
     },
@@ -222,7 +221,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/jamesrochabrun/SwiftAnthropic.git",
       "state" : {
-        "branch" : "main",
         "revision" : "4f9e21b94e491138003903ff6c14ab4f04b6ba6c"
       }
     }
