@@ -389,3 +389,43 @@ private actor EventRecorder {
     #expect(McpTransportError.messageTooLarge(limit: 16).localizedDescription == "MCP message exceeds 16 bytes")
     #expect(McpHTTPError(status: 404, body: "", message: "MCP session expired").localizedDescription == "MCP session expired")
 }
+
+
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+func mcpPaginationEndsWithEmptyOrNullCursor(_ nullCursor: Bool) async throws {
+    let (client, server) = try await connectedServer()
+    await server.setHandler("tools/list") { request in
+        let cursor = (request.params?.value as? [String: Any])?["cursor"] as? String
+        if cursor == nil {
+            return AnyCodable(["tools": [["name": "first", "inputSchema": ["type": "object"]]], "nextCursor": "page2"] as [String: Any])
+        }
+        return AnyCodable(["tools": [["name": "last", "inputSchema": ["type": "object"]]], "nextCursor": nullCursor ? NSNull() : ""] as [String: Any])
+    }
+    #expect(try await client.listAllTools().map(\.name) == ["first", "last"])
+    #expect(await server.receivedMethods().filter { $0 == "tools/list" }.count == 2)
+    await client.close()
+    await server.close()
+}
+
+@Test(.timeLimit(.minutes(1)))
+func mcpOtherListsEndWithEmptyCursorAndRejectInvalidCursor() async throws {
+    let (client, server) = try await connectedServer()
+    await server.setHandler("resources/list") { _ in
+        AnyCodable(["resources": [["uri": "file:///a"]], "nextCursor": ""] as [String: Any])
+    }
+    await server.setHandler("resources/templates/list") { _ in
+        AnyCodable(["resourceTemplates": [["uriTemplate": "repo://{owner}"]], "nextCursor": ""] as [String: Any])
+    }
+    await server.setHandler("prompts/list") { _ in
+        AnyCodable(["prompts": [["name": "prompt"]], "nextCursor": ""] as [String: Any])
+    }
+    #expect(try await client.listAllResources().count == 1)
+    #expect(try await client.listAllResourceTemplates().count == 1)
+    #expect(try await client.listAllPrompts().count == 1)
+    await server.setHandler("tools/list") { _ in
+        AnyCodable(["tools": [], "nextCursor": false] as [String: Any])
+    }
+    await #expect(throws: McpError.self) { _ = try await client.listTools() }
+    await client.close()
+    await server.close()
+}

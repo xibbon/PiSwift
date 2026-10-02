@@ -7,7 +7,7 @@ import FoundationNetworking
 public enum McpOAuthError: Error, LocalizedError, Sendable {
     case invalidMetadata(String)
     case httpStatus(Int, String)
-    case issuerMismatch(expected: String, received: String)
+    case issuerMismatch(expected: String, received: String?)
     case insecureEndpoint(String)
     case registration(status: Int, body: String)
     case authorization(code: String, message: String, uri: String?)
@@ -20,7 +20,7 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
         switch self {
         case .invalidMetadata(let field): "Invalid OAuth metadata: \(field)"
         case .httpStatus(let status, let body): "OAuth HTTP \(status): \(body)"
-        case .issuerMismatch(let expected, let received): "OAuth issuer mismatch: expected \(expected), received \(received)"
+        case .issuerMismatch(let expected, let received): "OAuth issuer mismatch: expected \(expected), received \(received ?? "none")"
         case .insecureEndpoint(let url): "Refusing to send OAuth credentials to non-HTTPS endpoint \(url)"
         case .registration(let status, let body): "OAuth dynamic client registration failed with status \(status): \(body)"
         case .authorization(_, let message, _): message
@@ -62,6 +62,16 @@ public struct McpOAuthProtectedResourceMetadata: Codable, Sendable, Equatable {
         self.authorizationServers = authorizationServers
         self.scopesSupported = scopesSupported
     }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        resource = try values.decodeRequiredOAuthURL(forKey: .resource)
+        authorizationServers = try values.decodeIfPresent([String].self, forKey: .authorizationServers)
+        for url in authorizationServers ?? [] {
+            try McpOAuthDiscovery.validateURL(url, field: "authorization_servers")
+        }
+        scopesSupported = try values.decodeIfPresent([String].self, forKey: .scopesSupported)
+    }
 }
 
 public struct McpOAuthAuthorizationServerMetadata: Codable, Sendable, Equatable {
@@ -75,6 +85,7 @@ public struct McpOAuthAuthorizationServerMetadata: Codable, Sendable, Equatable 
     public var tokenEndpointAuthMethodsSupported: [String]?
     public var codeChallengeMethodsSupported: [String]?
     public var clientIDMetadataDocumentSupported: Bool?
+    public var authorizationResponseIssParameterSupported: Bool?
 
     enum CodingKeys: String, CodingKey {
         case issuer
@@ -87,13 +98,14 @@ public struct McpOAuthAuthorizationServerMetadata: Codable, Sendable, Equatable 
         case tokenEndpointAuthMethodsSupported = "token_endpoint_auth_methods_supported"
         case codeChallengeMethodsSupported = "code_challenge_methods_supported"
         case clientIDMetadataDocumentSupported = "client_id_metadata_document_supported"
+        case authorizationResponseIssParameterSupported = "authorization_response_iss_parameter_supported"
     }
 
     public init(issuer: String, authorizationEndpoint: String, tokenEndpoint: String,
                 registrationEndpoint: String? = nil, scopesSupported: [String]? = nil,
                 responseTypesSupported: [String] = ["code"], grantTypesSupported: [String]? = nil,
                 tokenEndpointAuthMethodsSupported: [String]? = nil, codeChallengeMethodsSupported: [String]? = nil,
-                clientIDMetadataDocumentSupported: Bool? = nil) {
+                clientIDMetadataDocumentSupported: Bool? = nil, authorizationResponseIssParameterSupported: Bool? = nil) {
         self.issuer = issuer
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
@@ -104,6 +116,22 @@ public struct McpOAuthAuthorizationServerMetadata: Codable, Sendable, Equatable 
         self.tokenEndpointAuthMethodsSupported = tokenEndpointAuthMethodsSupported
         self.codeChallengeMethodsSupported = codeChallengeMethodsSupported
         self.clientIDMetadataDocumentSupported = clientIDMetadataDocumentSupported
+        self.authorizationResponseIssParameterSupported = authorizationResponseIssParameterSupported
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        issuer = try values.decodeRequiredOAuthURL(forKey: .issuer)
+        authorizationEndpoint = try values.decodeRequiredOAuthURL(forKey: .authorizationEndpoint)
+        tokenEndpoint = try values.decodeRequiredOAuthURL(forKey: .tokenEndpoint)
+        registrationEndpoint = try values.decodeOptionalOAuthURL(forKey: .registrationEndpoint)
+        scopesSupported = try values.decodeIfPresent([String].self, forKey: .scopesSupported)
+        responseTypesSupported = try values.decode([String].self, forKey: .responseTypesSupported)
+        grantTypesSupported = try values.decodeIfPresent([String].self, forKey: .grantTypesSupported)
+        tokenEndpointAuthMethodsSupported = try values.decodeIfPresent([String].self, forKey: .tokenEndpointAuthMethodsSupported)
+        codeChallengeMethodsSupported = try values.decodeIfPresent([String].self, forKey: .codeChallengeMethodsSupported)
+        clientIDMetadataDocumentSupported = try? values.decode(Bool.self, forKey: .clientIDMetadataDocumentSupported)
+        authorizationResponseIssParameterSupported = try? values.decode(Bool.self, forKey: .authorizationResponseIssParameterSupported)
     }
 }
 
@@ -136,20 +164,12 @@ public struct McpOAuthTokens: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        accessToken = try values.decode(String.self, forKey: .accessToken)
-        tokenType = try values.decode(String.self, forKey: .tokenType)
-        if let number = try? values.decode(Double.self, forKey: .expiresIn) {
-            expiresIn = number
-        } else if let text = try? values.decode(String.self, forKey: .expiresIn), let number = Double(text) {
-            expiresIn = number
-        } else if values.contains(.expiresIn) {
-            throw DecodingError.dataCorruptedError(forKey: .expiresIn, in: values, debugDescription: "Invalid expires_in")
-        } else {
-            expiresIn = nil
-        }
-        scope = try values.decodeIfPresent(String.self, forKey: .scope)
-        refreshToken = try values.decodeIfPresent(String.self, forKey: .refreshToken)
-        idToken = try values.decodeIfPresent(String.self, forKey: .idToken)
+        accessToken = try values.decodeRequiredOAuthString(forKey: .accessToken)
+        tokenType = try values.decodeRequiredOAuthString(forKey: .tokenType)
+        expiresIn = try values.decodeOptionalOAuthNumber(forKey: .expiresIn)
+        scope = try values.decodeOptionalOAuthString(forKey: .scope)
+        refreshToken = try values.decodeOptionalOAuthString(forKey: .refreshToken)
+        idToken = try values.decodeOptionalOAuthString(forKey: .idToken)
     }
 }
 
@@ -237,6 +257,15 @@ public struct McpOAuthClientInformation: Codable, Sendable, Equatable {
         self.clientSecretExpiresAt = clientSecretExpiresAt
         self.metadata = metadata
     }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        clientID = try values.decodeRequiredOAuthString(forKey: .clientID)
+        clientSecret = try values.decodeOptionalOAuthString(forKey: .clientSecret)
+        clientIDIssuedAt = try? values.decode(Double.self, forKey: .clientIDIssuedAt)
+        clientSecretExpiresAt = try? values.decode(Double.self, forKey: .clientSecretExpiresAt)
+        metadata = nil
+    }
 }
 
 public struct McpOAuthDiscoveryState: Codable, Sendable, Equatable {
@@ -273,5 +302,52 @@ public struct McpURLSessionOAuthHTTPClient: McpOAuthHTTPClient {
             throw McpOAuthError.invalidMetadata("HTTP response")
         }
         return (data, response)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeRequiredOAuthString(forKey key: Key) throws -> String {
+        let value = try decode(String.self, forKey: key)
+        guard !value.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Invalid \(key.stringValue)")
+        }
+        return value
+    }
+
+    func decodeOptionalOAuthString(forKey key: Key) throws -> String? {
+        guard let value = try decodeIfPresent(String.self, forKey: key), !value.isEmpty else { return nil }
+        return value
+    }
+
+    func decodeRequiredOAuthURL(forKey key: Key) throws -> String {
+        let value = try decodeRequiredOAuthString(forKey: key)
+        try McpOAuthDiscovery.validateURL(value, field: key.stringValue)
+        return value
+    }
+
+    func decodeOptionalOAuthURL(forKey key: Key) throws -> String? {
+        guard let value = try decodeOptionalOAuthString(forKey: key) else { return nil }
+        try McpOAuthDiscovery.validateURL(value, field: key.stringValue)
+        return value
+    }
+
+    func decodeOptionalOAuthNumber(forKey key: Key) throws -> Double? {
+        guard contains(key), try !decodeNil(forKey: key) else { return nil }
+        let number: Double
+        if let value = try? decode(Double.self, forKey: key) {
+            number = value
+        } else if let text = try? decode(String.self, forKey: key) {
+            if text.isEmpty { return nil }
+            guard let value = Double(text) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Invalid \(key.stringValue)")
+            }
+            number = value
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Invalid \(key.stringValue)")
+        }
+        guard number.isFinite else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Invalid \(key.stringValue)")
+        }
+        return number
     }
 }

@@ -17,7 +17,8 @@ public enum McpOAuthSignIn {
         clientSecret: String? = nil, clientMetadataURL: URL? = nil,
         store: any McpOAuthStateStore = McpMemoryOAuthStateStore(),
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient(),
-        scope: String? = nil
+        scope: String? = nil, resourceMetadataURL: URL? = nil,
+        authorizationServerMetadataURL: URL? = nil
     ) async throws -> McpOAuthProvider {
         let stored = try await store.load()
         let state: String
@@ -40,12 +41,13 @@ public enum McpOAuthSignIn {
                 await capture.save(callback)
             })
         do {
-            let result = try await McpOAuthFlow.authorize(provider: provider,
-                options: McpOAuthFlowOptions(serverURL: serverURL, scope: scope), http: http)
+            let options = McpOAuthFlowOptions(serverURL: serverURL, scope: scope,
+                resourceMetadataURL: resourceMetadataURL, authorizationServerMetadataURL: authorizationServerMetadataURL)
+            let result = try await McpOAuthFlow.authorize(provider: provider, options: options, http: http)
             if result == .redirect {
                 guard let callback = await capture.url else { throw McpOAuthError.invalidRedirect }
                 _ = try await McpOAuthFlow.completeRedirect(provider: provider,
-                    callbackURL: callback, serverURL: serverURL, http: http)
+                    callbackURL: callback, options: options, http: http)
             }
             await capture.deactivate()
             await presenter.cancel()

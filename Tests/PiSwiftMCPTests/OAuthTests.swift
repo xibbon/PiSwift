@@ -9,6 +9,12 @@ import CryptoKit
 #endif
 
 private actor OAuthFixture: McpOAuthHTTPClient {
+    enum Mode: Sendable {
+        case standard, emptyOptionalFields, invalidProtectedURL, emptyScopes, configuredMetadata, responseScope
+    }
+    let mode: Mode
+    init(mode: Mode = .standard) { self.mode = mode }
+
     nonisolated let origin = URL(string: "http://127.0.0.1:45454")!
     var requests: [URLRequest] = []
     var refreshCount = 0
@@ -25,7 +31,9 @@ private actor OAuthFixture: McpOAuthHTTPClient {
         switch path {
         case "/.well-known/oauth-protected-resource/mcp":
             if protectedResource {
-                body = ["resource": "\(origin)/mcp", "authorization_servers": [origin.absoluteString], "scopes_supported": ["org:read"]]
+                body = ["resource": "\(origin)/mcp",
+                        "authorization_servers": [mode == .invalidProtectedURL ? "not a url" : origin.absoluteString],
+                        "scopes_supported": mode == .emptyScopes ? [] : ["org:read"]]
                 status = 200
             } else { body = [:]; status = 404 }
         case "/.well-known/oauth-authorization-server":
@@ -35,21 +43,40 @@ private actor OAuthFixture: McpOAuthHTTPClient {
                     "grant_types_supported": ["authorization_code", "refresh_token"],
                     "token_endpoint_auth_methods_supported": ["none"], "code_challenge_methods_supported": ["S256"]]
             status = 200
+        case "/idp/metadata.json", "/other/metadata.json":
+            let prefix = path == "/idp/metadata.json" ? "idp" : "other"
+            body = ["issuer": "https://\(prefix).example",
+                    "authorization_endpoint": "\(origin)/\(prefix)/authorize",
+                    "token_endpoint": "\(origin)/\(prefix)/token", "response_types_supported": ["code"]]
+            status = mode == .configuredMetadata ? 200 : 404
         case "/register":
             var registration = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] ?? [:]
             registration["client_id"] = "test-client"
+            if mode == .emptyOptionalFields { registration["client_secret"] = "" }
             body = registration
             status = 201
-        case "/token":
+        case "/token", "/idp/token", "/other/token":
             let parameters = URLComponents(string: "?" + String(decoding: request.httpBody ?? Data(), as: UTF8.self))?.queryItems ?? []
             let parameter: (String) -> String? = { name in parameters.first { $0.name == name }?.value }
             tokenGrants.append(parameter("grant_type") ?? "")
             if parameter("grant_type") == "refresh_token" {
                 refreshCount += 1
-                body = ["access_token": "refreshed-token", "refresh_token": "next-refresh", "token_type": "Bearer", "expires_in": 3600]
+                if mode == .emptyOptionalFields {
+                    body = ["access_token": "refreshed-token", "refresh_token": "", "token_type": "Bearer", "expires_in": NSNull()]
+                } else if mode == .responseScope {
+                    body = ["access_token": "refreshed-token", "token_type": "Bearer", "scope": "server:refresh"]
+                } else {
+                    body = ["access_token": "refreshed-token", "refresh_token": "next-refresh", "token_type": "Bearer", "expires_in": 3600]
+                }
                 status = 200
             } else if parameter("code") == "test-code" {
-                body = ["access_token": accessToken, "refresh_token": "refresh-token", "token_type": "Bearer"]
+                if mode == .emptyOptionalFields {
+                    body = ["access_token": accessToken, "refresh_token": "refresh-token", "token_type": "Bearer", "scope": ""]
+                } else if mode == .responseScope {
+                    body = ["access_token": accessToken, "refresh_token": "refresh-token", "token_type": "Bearer", "scope": "server:code"]
+                } else {
+                    body = ["access_token": accessToken, "refresh_token": "refresh-token", "token_type": "Bearer"]
+                }
                 status = 200
             } else {
                 body = ["error": "invalid_grant"]
@@ -196,7 +223,8 @@ func oauthInsufficientScopeSkipsRefreshAndKeepsGrant() async throws {
     await fixture.setProtectedResource(false)
     let recorder = RedirectRecorder()
     let oauth = provider(fixture, clientID: "client", recorder: recorder)
-    try await oauth.saveTokens(McpOAuthTokens(accessToken: "a1", tokenType: "Bearer", refreshToken: "r1"))
+    // Upstream v1.0.0 oauth.test.ts keeps the granted scopes during step-up.
+    try await oauth.saveTokens(McpOAuthTokens(accessToken: "a1", tokenType: "Bearer", scope: "repo read:org", refreshToken: "r1"))
     let auth = McpOAuthAuthAdapter(provider: oauth, http: fixture)
     let serverURL = URL(string: "http://127.0.0.1:45454/mcp")!
     await #expect(throws: McpOAuthError.self) {
@@ -204,7 +232,7 @@ func oauthInsufficientScopeSkipsRefreshAndKeepsGrant() async throws {
                                       serverURL: serverURL, rejectedToken: "a1")
     }
     let query = URLComponents(url: try #require(await recorder.read()), resolvingAgainstBaseURL: false)?.queryItems ?? []
-    #expect(query.first { $0.name == "scope" }?.value == "repo admin")
+    #expect(query.first { $0.name == "scope" }?.value == "repo read:org admin")
     #expect(try await oauth.tokens()?.accessToken == "a1")
     let (_, refreshes, _) = await fixture.snapshot()
     #expect(refreshes == 0)
@@ -267,3 +295,211 @@ func macOSOAuthPresenterUsesSharedCallbackServer() async throws {
         .queryItems?.first { $0.name == "code" }?.value == "ok")
 }
 #endif
+
+
+@Test(.timeLimit(.minutes(1)))
+func oauthEmptyFieldsKeepRequestedScopeAndRefreshToken() async throws {
+    let fixture = OAuthFixture(mode: .emptyOptionalFields)
+    let recorder = RedirectRecorder()
+    let store = McpMemoryOAuthStateStore()
+    let oauth = provider(fixture, store: store, recorder: recorder)
+    let serverURL = URL(string: "http://127.0.0.1:45454/mcp")!
+    let adapter = McpOAuthAuthAdapter(provider: oauth, http: fixture)
+    let challenge = "Bearer resource_metadata=\"\(fixture.origin)/.well-known/oauth-protected-resource/mcp\", scope=\"\""
+    await #expect(throws: McpOAuthError.self) {
+        try await adapter.onUnauthorized(challenge: challenge, serverURL: serverURL, rejectedToken: "stale")
+    }
+    let authorization = try #require(await recorder.read())
+    let query = URLComponents(url: authorization, resolvingAgainstBaseURL: false)?.queryItems
+    #expect(query?.first { $0.name == "scope" }?.value == "org:read")
+    #expect(query?.first { $0.name == "resource" }?.value == serverURL.absoluteString)
+    #expect(try await oauth.clientInformation()?.clientSecret == nil)
+    let state = try #require(await oauth.state())
+    let callback = URL(string: "http://127.0.0.1:6789/callback?code=test-code&state=\(state)")!
+    let tokens = try await McpOAuthFlow.completeRedirect(provider: oauth, callbackURL: callback,
+        options: McpOAuthFlowOptions(serverURL: serverURL), http: fixture)
+    #expect(tokens.scope == "org:read")
+    try await adapter.onUnauthorized(challenge: challenge, serverURL: serverURL, rejectedToken: tokens.accessToken)
+    #expect(try await oauth.tokens() == McpOAuthTokens(accessToken: "refreshed-token", tokenType: "Bearer",
+        scope: "org:read", refreshToken: "refresh-token"))
+    #expect(await store.load()?.tokensExpireAt == nil)
+    #expect(await fixture.snapshot().1 == 1)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthBadProtectedURLFallsBackDuringConcurrentRefresh() async throws {
+    let fixture = OAuthFixture(mode: .invalidProtectedURL)
+    let oauth = provider(fixture, clientID: "client", recorder: RedirectRecorder())
+    let serverURL = URL(string: "http://127.0.0.1:45454/mcp")!
+    try await oauth.saveTokens(McpOAuthTokens(accessToken: "a1", tokenType: "Bearer", scope: "old:scope", refreshToken: "r1"))
+    let adapter = McpOAuthAuthAdapter(provider: oauth, http: fixture)
+    async let first: Void = adapter.onUnauthorized(challenge: "Bearer", serverURL: serverURL, rejectedToken: "a1")
+    async let second: Void = adapter.onUnauthorized(challenge: "Bearer", serverURL: serverURL, rejectedToken: "a1")
+    try await first
+    try await second
+    try await adapter.onUnauthorized(challenge: "Bearer", serverURL: serverURL, rejectedToken: "a1")
+    #expect(await fixture.snapshot().1 == 1)
+    #expect(try await oauth.tokens()?.scope == "old:scope")
+    let discovery = try #require(await oauth.discoveryState())
+    #expect(discovery.authorizationServerURL == fixture.origin.absoluteString)
+    #expect(discovery.resourceMetadata == nil)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthConfiguredDocumentSkipsCacheAndKeepsCallbackOptions() async throws {
+    let fixture = OAuthFixture(mode: .configuredMetadata)
+    let recorder = RedirectRecorder()
+    let oauth = provider(fixture, clientID: "client", recorder: recorder)
+    let serverURL = URL(string: "http://127.0.0.1:45454/mcp")!
+    let cached = McpOAuthDiscoveryState(authorizationServerURL: "https://cached.example",
+        authorizationServerMetadata: McpOAuthAuthorizationServerMetadata(issuer: "https://cached.example",
+            authorizationEndpoint: "https://cached.example/authorize", tokenEndpoint: "https://cached.example/token"))
+    try await oauth.saveDiscoveryState(cached)
+    var options = McpOAuthFlowOptions(serverURL: serverURL, scope: "custom:scope",
+        resourceMetadataURL: URL(string: "\(fixture.origin)/.well-known/oauth-protected-resource/mcp"),
+        authorizationServerMetadataURL: URL(string: "\(fixture.origin)/idp/metadata.json"))
+    #expect(try await McpOAuthFlow.authorize(provider: oauth, options: options, http: fixture) == .redirect)
+    let authorization = try #require(await recorder.read())
+    #expect(authorization.path == "/idp/authorize")
+    #expect(URLComponents(url: authorization, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "resource" }?.value == serverURL.absoluteString)
+    #expect(try await oauth.discoveryState() == cached)
+    let state = try #require(await oauth.state())
+    let callback = URL(string: "http://127.0.0.1:6789/callback?code=test-code&state=\(state)&iss=https://idp.example")!
+    let tokens = try await McpOAuthFlow.completeRedirect(provider: oauth, callbackURL: callback, options: options, http: fixture)
+    #expect(tokens.scope == "custom:scope")
+    #expect(await fixture.snapshot().0.contains { $0.url?.path == "/idp/token" })
+    options.authorizationServerMetadataURL = URL(string: "\(fixture.origin)/other/metadata.json")
+    options.skipRefresh = true
+    #expect(try await McpOAuthFlow.authorize(provider: oauth, options: options, http: fixture) == .redirect)
+    #expect(await recorder.read()?.path == "/other/authorize")
+    #expect(try await oauth.discoveryState() == cached)
+    let requests = await fixture.snapshot().0
+    #expect(requests.filter { $0.url?.path == "/idp/metadata.json" }.count == 2)
+    #expect(!requests.contains { $0.url?.host == "cached.example" || $0.url?.path == "/.well-known/oauth-authorization-server" })
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthConfiguredDocumentRejectsInsecureURLBeforeFetch() async throws {
+    let fixture = OAuthFixture(mode: .configuredMetadata)
+    let oauth = provider(fixture, clientID: "client", recorder: RedirectRecorder())
+    do {
+        _ = try await McpOAuthFlow.authorize(provider: oauth,
+            options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!,
+                authorizationServerMetadataURL: URL(string: "http://idp.example/metadata.json")), http: fixture)
+        Issue.record("Expected insecure endpoint error")
+    } catch McpOAuthError.insecureEndpoint(let url) {
+        #expect(url == "http://idp.example/metadata.json")
+    }
+    #expect(await fixture.snapshot().0.isEmpty)
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [0, 1, 2, 3])
+func oauthAuthorizationResponseIssuerCases(_ index: Int) async throws {
+    let fixture = OAuthFixture()
+    let oauth = provider(fixture, clientID: "client", recorder: RedirectRecorder())
+    let iss = index == 0 ? "https://attacker.example" : (index == 2 ? fixture.origin.absoluteString : nil)
+    let supported = index == 1 || index == 2
+    try await oauth.saveCodeVerifier("verifier")
+    try await oauth.saveDiscoveryState(McpOAuthDiscoveryState(authorizationServerURL: fixture.origin.absoluteString,
+        authorizationServerMetadata: McpOAuthAuthorizationServerMetadata(issuer: fixture.origin.absoluteString,
+            authorizationEndpoint: "\(fixture.origin)/authorize", tokenEndpoint: "\(fixture.origin)/token",
+            authorizationResponseIssParameterSupported: supported)))
+    let options = McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!,
+        authorizationCode: "test-code", iss: iss, skipIssuerValidation: true)
+    if index < 2 {
+        do {
+            _ = try await McpOAuthFlow.authorize(provider: oauth, options: options, http: fixture)
+            Issue.record("Expected issuer mismatch")
+        } catch McpOAuthError.issuerMismatch(let expected, let received) {
+            #expect(expected == fixture.origin.absoluteString)
+            #expect(received == iss)
+        }
+        #expect(await fixture.snapshot().2.isEmpty)
+        #expect(try await oauth.tokens() == nil)
+    } else {
+        #expect(try await McpOAuthFlow.authorize(provider: oauth, options: options, http: fixture) == .authorized)
+        #expect(await fixture.snapshot().2 == ["authorization_code"])
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthSignInStoresExplicitRequestScope() async throws {
+    let fixture = OAuthFixture()
+    let oauth = try await McpOAuthSignIn.signIn(serverURL: URL(string: "\(fixture.origin)/mcp")!,
+        presenter: TestSignInPresenter(), clientMetadata: McpOAuthClientMetadata(clientName: "test"),
+        http: fixture, scope: "custom:scope")
+    #expect(try await oauth.tokens()?.scope == "custom:scope")
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthEmptyScopesFallThroughToClientMetadata() async throws {
+    let fixture = OAuthFixture(mode: .emptyScopes)
+    let recorder = RedirectRecorder()
+    let serverURL = URL(string: "\(fixture.origin)/mcp")!
+    let oauth = McpOAuthProvider(serverURL: serverURL, redirectURL: URL(string: "http://127.0.0.1:6789/callback")!,
+        clientMetadata: McpOAuthClientMetadata(scope: "client:scope"), clientID: "client",
+        onRedirect: { await recorder.save($0) })
+    #expect(try await McpOAuthFlow.authorize(provider: oauth,
+        options: McpOAuthFlowOptions(serverURL: serverURL, scope: ""), http: fixture) == .redirect)
+    let url = try #require(await recorder.read())
+    #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "scope" }?.value == "client:scope")
+    #expect(McpOAuthDiscovery.parseWWWAuthenticate("Bearer scope=\"\"").scope == nil)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthResponseScopeTakesPrecedenceOverFallback() async throws {
+    let fixture = OAuthFixture(mode: .responseScope)
+    let oauth = provider(fixture, clientID: "client", recorder: RedirectRecorder())
+    let serverURL = URL(string: "\(fixture.origin)/mcp")!
+    try await oauth.saveCodeVerifier("verifier")
+    #expect(try await McpOAuthFlow.authorize(provider: oauth,
+        options: McpOAuthFlowOptions(serverURL: serverURL, authorizationCode: "test-code", scope: "requested"), http: fixture) == .authorized)
+    #expect(try await oauth.tokens()?.scope == "server:code")
+    #expect(try await McpOAuthFlow.authorize(provider: oauth,
+        options: McpOAuthFlowOptions(serverURL: serverURL), http: fixture) == .authorized)
+    #expect(try await oauth.tokens()?.scope == "server:refresh")
+}
+
+@Test func oauthStepUpScopeKeepsUpstreamOrder() {
+    #expect(McpOAuthFlow.stepUpScope(granted: "repo read:org", challenged: nil) == nil)
+    #expect(McpOAuthFlow.stepUpScope(granted: "repo read:org", challenged: "") == nil)
+    #expect(McpOAuthFlow.stepUpScope(granted: " repo  read:org\t", challenged: "repo\nadmin admin") == "repo read:org admin")
+    #expect(McpOAuthFlow.stepUpScope(granted: nil, challenged: " admin ") == "admin")
+}
+
+@Test(arguments: ["null", "\"\""])
+func oauthOptionalFieldsDecodeAsAbsent(_ absent: String) throws {
+    let decoder = JSONDecoder()
+    let tokens = try decoder.decode(McpOAuthTokens.self,
+        from: Data("{\"access_token\":\"token\",\"token_type\":\"Bearer\",\"scope\":\(absent),\"refresh_token\":\(absent),\"id_token\":\(absent),\"expires_in\":\(absent)}".utf8))
+    #expect(tokens == McpOAuthTokens(accessToken: "token", tokenType: "Bearer"))
+    let client = try decoder.decode(McpOAuthClientInformation.self,
+        from: Data("{\"client_id\":\"client\",\"client_secret\":\(absent),\"client_id_issued_at\":\(absent),\"client_secret_expires_at\":\(absent)}".utf8))
+    #expect(client == McpOAuthClientInformation(clientID: "client"))
+    let metadata = try decoder.decode(McpOAuthAuthorizationServerMetadata.self,
+        from: Data("{\"issuer\":\"https://idp.example\",\"authorization_endpoint\":\"https://idp.example/authorize\",\"token_endpoint\":\"https://idp.example/token\",\"registration_endpoint\":\(absent),\"response_types_supported\":[\"code\"],\"scopes_supported\":null,\"authorization_response_iss_parameter_supported\":null}".utf8))
+    #expect(metadata.registrationEndpoint == nil)
+    #expect(metadata.scopesSupported == nil)
+    #expect(metadata.authorizationResponseIssParameterSupported == nil)
+    let resource = try decoder.decode(McpOAuthProtectedResourceMetadata.self,
+        from: Data("{\"resource\":\"https://mcp.example/mcp\",\"authorization_servers\":null,\"scopes_supported\":null}".utf8))
+    #expect(resource.authorizationServers == nil)
+    #expect(resource.scopesSupported == nil)
+}
+
+@Test func oauthRequiredAndInvalidOptionalFieldsStillFail() {
+    let decoder = JSONDecoder()
+    #expect(throws: (any Error).self) {
+        _ = try decoder.decode(McpOAuthTokens.self, from: Data(#"{"access_token":"","token_type":"Bearer"}"#.utf8))
+    }
+    #expect(throws: (any Error).self) {
+        _ = try decoder.decode(McpOAuthTokens.self, from: Data(#"{"access_token":"token","token_type":"Bearer","scope":42}"#.utf8))
+    }
+    #expect(throws: (any Error).self) {
+        _ = try decoder.decode(McpOAuthProtectedResourceMetadata.self, from: Data(#"{"resource":"https://mcp.example","authorization_servers":""}"#.utf8))
+    }
+    #expect(throws: (any Error).self) {
+        _ = try decoder.decode(McpOAuthAuthorizationServerMetadata.self,
+            from: Data(#"{"issuer":"https://idp.example","authorization_endpoint":"https://idp.example/authorize","token_endpoint":"https://idp.example/token","response_types_supported":["code"],"registration_endpoint":"not a url"}"#.utf8))
+    }
+}

@@ -49,17 +49,21 @@ public enum McpOAuthCredentialKind: String, Sendable {
 public struct McpOAuthFlowOptions: Sendable {
     public var serverURL: URL
     public var authorizationCode: String?
+    public var iss: String?
     public var scope: String?
     public var resourceMetadataURL: URL?
+    public var authorizationServerMetadataURL: URL?
     public var skipIssuerValidation: Bool
     public var skipRefresh: Bool
 
-    public init(serverURL: URL, authorizationCode: String? = nil, scope: String? = nil,
-                resourceMetadataURL: URL? = nil, skipIssuerValidation: Bool = false, skipRefresh: Bool = false) {
+    public init(serverURL: URL, authorizationCode: String? = nil, iss: String? = nil, scope: String? = nil,
+                resourceMetadataURL: URL? = nil, authorizationServerMetadataURL: URL? = nil, skipIssuerValidation: Bool = false, skipRefresh: Bool = false) {
         self.serverURL = serverURL
         self.authorizationCode = authorizationCode
+        self.iss = iss
         self.scope = scope
         self.resourceMetadataURL = resourceMetadataURL
+        self.authorizationServerMetadataURL = authorizationServerMetadataURL
         self.skipIssuerValidation = skipIssuerValidation
         self.skipRefresh = skipRefresh
     }
@@ -75,6 +79,15 @@ public enum McpOAuthFlow {
     public static func completeRedirect(
         provider: any McpOAuthClientProvider, callbackURL: URL,
         serverURL: URL, http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
+    ) async throws -> McpOAuthTokens {
+        try await completeRedirect(provider: provider, callbackURL: callbackURL,
+            options: McpOAuthFlowOptions(serverURL: serverURL), http: http)
+    }
+
+    /// Keep the request options when the callback supplies the code and issuer.
+    public static func completeRedirect(
+        provider: any McpOAuthClientProvider, callbackURL: URL,
+        options: McpOAuthFlowOptions, http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
     ) async throws -> McpOAuthTokens {
         let expected = provider.redirectURL
         guard callbackURL.scheme == expected.scheme, callbackURL.host == expected.host,
@@ -93,8 +106,10 @@ public enum McpOAuthFlow {
             throw McpOAuthError.invalidState
         }
         guard let code = parameter("code"), !code.isEmpty else { throw McpOAuthError.invalidRedirect }
-        let result = try await authorize(provider: provider,
-            options: McpOAuthFlowOptions(serverURL: serverURL, authorizationCode: code), http: http)
+        var exchangeOptions = options
+        exchangeOptions.authorizationCode = code
+        exchangeOptions.iss = parameter("iss")
+        let result = try await authorize(provider: provider, options: exchangeOptions, http: http)
         guard result == .authorized, let tokens = try await provider.tokens() else {
             throw McpOAuthError.authorizationRequired
         }
@@ -221,7 +236,8 @@ public enum McpOAuthFlow {
     private static func runFlow(
         provider: any McpOAuthClientProvider, options: McpOAuthFlowOptions, http: any McpOAuthHTTPClient
     ) async throws -> McpOAuthFlowResult {
-        let cached = try await provider.discoveryState()
+        if let url = options.authorizationServerMetadataURL { try secureEndpoint(url) }
+        let cached = options.authorizationServerMetadataURL == nil ? try await provider.discoveryState() : nil
         let info: McpOAuthServerInfo
         if let cached, let url = URL(string: cached.authorizationServerURL) {
             let serverMetadata: McpOAuthAuthorizationServerMetadata?
@@ -237,16 +253,19 @@ public enum McpOAuthFlow {
                 resourceMetadata: cached.resourceMetadata)
         } else {
             info = try await McpOAuthDiscovery.serverInfo(serverURL: options.serverURL,
-                resourceMetadataURL: options.resourceMetadataURL, http: http,
+                resourceMetadataURL: options.resourceMetadataURL,
+                authorizationServerMetadataURL: options.authorizationServerMetadataURL, http: http,
                 skipIssuerValidation: options.skipIssuerValidation)
         }
-        try await provider.saveDiscoveryState(McpOAuthDiscoveryState(
-            authorizationServerURL: info.authorizationServerURL.absoluteString,
-            authorizationServerMetadata: info.authorizationServerMetadata,
-            resourceMetadata: info.resourceMetadata,
-            resourceMetadataURL: options.resourceMetadataURL?.absoluteString))
+        if options.authorizationServerMetadataURL == nil {
+            try await provider.saveDiscoveryState(McpOAuthDiscoveryState(
+                authorizationServerURL: info.authorizationServerURL.absoluteString,
+                authorizationServerMetadata: info.authorizationServerMetadata,
+                resourceMetadata: info.resourceMetadata,
+                resourceMetadataURL: options.resourceMetadataURL?.absoluteString))
+        }
         let resource = try McpOAuthDiscovery.selectResource(serverURL: options.serverURL, metadata: info.resourceMetadata)
-        let scope = options.scope ?? info.resourceMetadata?.scopesSupported?.joined(separator: " ") ?? provider.clientMetadata.scope
+        let scope = nonempty(options.scope) ?? nonempty(info.resourceMetadata?.scopesSupported?.joined(separator: " ")) ?? provider.clientMetadata.scope
         var client = try await provider.clientInformation()
         if client == nil {
             if options.authorizationCode != nil { throw McpOAuthError.invalidMetadata("client information missing during code exchange") }
@@ -265,21 +284,27 @@ public enum McpOAuthFlow {
         }
         guard let client else { throw McpOAuthError.invalidMetadata("client information") }
         if let code = options.authorizationCode {
+            if let metadata = info.authorizationServerMetadata,
+               options.iss != nil || metadata.authorizationResponseIssParameterSupported == true,
+               options.iss != metadata.issuer {
+                throw McpOAuthError.issuerMismatch(expected: metadata.issuer, received: options.iss)
+            }
             let tokens = try await exchangeAuthorizationCode(authorizationServerURL: info.authorizationServerURL,
                 metadata: info.authorizationServerMetadata, clientInformation: client,
                 code: code, codeVerifier: try await provider.codeVerifier(),
                 redirectURL: provider.redirectURL, resource: resource,
                 clientAuthentication: provider, http: http)
-            try await provider.saveTokens(tokens)
+            try await provider.saveTokens(withScope(tokens, scope: scope))
             return .authorized
         }
-        if !options.skipRefresh, let refresh = try await provider.tokens()?.refreshToken {
+        let existing = options.skipRefresh ? nil : try await provider.tokens()
+        if let refresh = existing?.refreshToken {
             do {
                 let tokens = try await refreshAuthorization(authorizationServerURL: info.authorizationServerURL,
                     metadata: info.authorizationServerMetadata, clientInformation: client,
                     refreshToken: refresh, resource: resource,
                     clientAuthentication: provider, http: http)
-                try await provider.saveTokens(tokens)
+                try await provider.saveTokens(withScope(tokens, scope: existing?.scope))
                 return .authorized
             } catch let error as McpOAuthError {
                 if case .insecureEndpoint = error { throw error }
@@ -294,6 +319,31 @@ public enum McpOAuthFlow {
         return .redirect
     }
 
+    /// Keep granted scopes when a challenge names only the missing scopes.
+    public static func stepUpScope(granted: String?, challenged: String?) -> String? {
+        guard let challenged, !challenged.isEmpty else { return nil }
+        var seen = Set<String>()
+        return [granted, challenged].compactMap { $0 }
+            .flatMap { $0.split(whereSeparator: { $0.isWhitespace }).map(String.init) }
+            .filter { seen.insert($0).inserted }.joined(separator: " ")
+    }
+
+    private static func nonempty(_ value: String?) -> String? {
+        value.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func withScope(_ tokens: McpOAuthTokens, scope: String?) -> McpOAuthTokens {
+        var result = tokens
+        if result.scope == nil, let scope = nonempty(scope) { result.scope = scope }
+        return result
+    }
+
+    private static func secureEndpoint(_ url: URL) throws {
+        guard url.scheme == "https" || ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "") else {
+            throw McpOAuthError.insecureEndpoint(url.absoluteString)
+        }
+    }
+
     private static func tokenRequest(
         authorizationServerURL: URL, metadata: McpOAuthAuthorizationServerMetadata?,
         clientInformation: McpOAuthClientInformation, parameters: [String: String],
@@ -303,9 +353,7 @@ public enum McpOAuthFlow {
         guard let url = URL(string: metadata?.tokenEndpoint ?? "/token", relativeTo: authorizationServerURL)?.absoluteURL else {
             throw McpOAuthError.invalidMetadata("token endpoint")
         }
-        guard url.scheme == "https" || ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "") else {
-            throw McpOAuthError.insecureEndpoint(url.absoluteString)
-        }
+        try secureEndpoint(url)
         var values = parameters
         if let resource { values["resource"] = resource }
         var request = URLRequest(url: url)
@@ -380,9 +428,12 @@ public actor McpOAuthAuthAdapter: McpAuthProvider {
             let provider = self.provider
             let http = self.http
             refreshTask = Task {
+                let granted = insufficientScope ? try await provider.tokens() : nil
+                let scope = insufficientScope
+                    ? McpOAuthFlow.stepUpScope(granted: granted?.scope, challenged: parsed.scope) : parsed.scope
                 let result = try await McpOAuthFlow.authorize(provider: provider,
                     options: McpOAuthFlowOptions(serverURL: serverURL,
-                        scope: parsed.scope, resourceMetadataURL: parsed.resourceMetadataURL,
+                        scope: scope, resourceMetadataURL: parsed.resourceMetadataURL,
                         skipRefresh: insufficientScope), http: http)
                 if result == .redirect { throw McpOAuthError.authorizationRequired }
             }

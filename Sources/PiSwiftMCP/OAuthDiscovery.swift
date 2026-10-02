@@ -13,7 +13,7 @@ public enum McpOAuthDiscovery {
             guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
                   let match = expression.firstMatch(in: header, range: NSRange(header.startIndex..., in: header)) else { return nil }
             for index in [1, 2] where match.range(at: index).location != NSNotFound {
-                if let range = Range(match.range(at: index), in: header) { return String(header[range]) }
+                if let range = Range(match.range(at: index), in: header), !header[range].isEmpty { return String(header[range]) }
             }
             return nil
         }
@@ -38,10 +38,7 @@ public enum McpOAuthDiscovery {
         guard (200..<300).contains(response.statusCode) else {
             throw McpOAuthError.httpStatus(response.statusCode, String(decoding: data, as: UTF8.self))
         }
-        let metadata = try decode(McpOAuthProtectedResourceMetadata.self, from: data, name: "protected resource metadata")
-        try validateURL(metadata.resource, field: "resource")
-        for value in metadata.authorizationServers ?? [] { try validateURL(value, field: "authorization_servers") }
-        return metadata
+        return try decode(McpOAuthProtectedResourceMetadata.self, from: data, name: "protected resource metadata")
     }
 
     public static func authorizationServerDiscoveryURLs(_ issuer: URL) throws -> [URL] {
@@ -66,10 +63,6 @@ public enum McpOAuthDiscovery {
                 throw McpOAuthError.httpStatus(response.statusCode, "loading authorization server metadata from \(url)")
             }
             let metadata = try decode(McpOAuthAuthorizationServerMetadata.self, from: data, name: "authorization server metadata")
-            try validateURL(metadata.issuer, field: "issuer")
-            try validateURL(metadata.authorizationEndpoint, field: "authorization_endpoint")
-            try validateURL(metadata.tokenEndpoint, field: "token_endpoint")
-            if let endpoint = metadata.registrationEndpoint { try validateURL(endpoint, field: "registration_endpoint") }
             if !skipIssuerValidation && metadata.issuer.trimmingCharacters(in: CharacterSet(charactersIn: "/")) != issuer.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) {
                 throw McpOAuthError.issuerMismatch(expected: issuer.absoluteString, received: metadata.issuer)
             }
@@ -79,7 +72,7 @@ public enum McpOAuthDiscovery {
     }
 
     public static func serverInfo(
-        serverURL: URL, resourceMetadataURL: URL? = nil,
+        serverURL: URL, resourceMetadataURL: URL? = nil, authorizationServerMetadataURL: URL? = nil,
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient(),
         skipIssuerValidation: Bool = false
     ) async throws -> McpOAuthServerInfo {
@@ -89,6 +82,16 @@ public enum McpOAuthDiscovery {
         } catch is McpOAuthError {
             // Upstream treats failed protected-resource discovery as absence, then tries the server origin.
             resource = nil
+        }
+        if let url = authorizationServerMetadataURL {
+            let (data, response) = try await get(url, http: http, protocolVersion: LATEST_PROTOCOL_VERSION)
+            guard (200..<300).contains(response.statusCode) else {
+                throw McpOAuthError.httpStatus(response.statusCode, "loading authorization server metadata from \(url)")
+            }
+            let metadata = try decode(McpOAuthAuthorizationServerMetadata.self, from: data, name: "authorization server metadata")
+            guard let issuer = URL(string: metadata.issuer) else { throw McpOAuthError.invalidMetadata("issuer") }
+            return McpOAuthServerInfo(authorizationServerURL: issuer,
+                authorizationServerMetadata: metadata, resourceMetadata: resource)
         }
         let authorizationServerURL = try resource?.authorizationServers?.first.flatMap(URL.init(string:)) ?? originURL(serverURL)
         return McpOAuthServerInfo(
@@ -135,7 +138,7 @@ public enum McpOAuthDiscovery {
         return origin
     }
 
-    private static func validateURL(_ value: String, field: String) throws {
+    static func validateURL(_ value: String, field: String) throws {
         guard let url = URL(string: value), let scheme = url.scheme?.lowercased(),
               !["javascript", "data", "vbscript"].contains(scheme), url.host != nil else {
             throw McpOAuthError.invalidMetadata(field)

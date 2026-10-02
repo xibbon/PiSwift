@@ -163,8 +163,14 @@ public actor McpClient {
             return try decodeObject(McpTool.self, from: toolDict)
         }
 
-        let nextCursor = dict["nextCursor"] as? String
+        let nextCursor = try listCursor(dict["nextCursor"])
         return (tools, nextCursor)
+    }
+
+    private func listCursor(_ value: Any?) throws -> String? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let cursor = value as? String else { throw McpError.protocolError("Invalid MCP list cursor") }
+        return cursor.isEmpty ? nil : cursor
     }
 
     public func listAllTools() async throws -> [McpTool] {
@@ -246,7 +252,7 @@ public actor McpClient {
             return try decodeObject(McpResource.self, from: item)
         }
 
-        let nextCursor = dict["nextCursor"] as? String
+        let nextCursor = try listCursor(dict["nextCursor"])
         return (resources, nextCursor)
     }
 
@@ -281,7 +287,7 @@ public actor McpClient {
             item["name"] = item["name"] ?? uri
             return try decodeObject(McpResourceTemplate.self, from: item)
         }
-        return (templates, dict["nextCursor"] as? String)
+        return (templates, try listCursor(dict["nextCursor"]))
     }
 
     public func listAllResourceTemplates() async throws -> [McpResourceTemplate] {
@@ -323,7 +329,7 @@ public actor McpClient {
                 arguments: arguments
             )
         }
-        return (prompts, dictionary["nextCursor"] as? String)
+        return (prompts, try listCursor(dictionary["nextCursor"]))
     }
 
     public func listAllPrompts() async throws -> [McpPrompt] {
