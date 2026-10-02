@@ -54,6 +54,9 @@ struct OpenAIResponsesConstrainedSamplingMiddleware: OpenAIMiddleware {
                         grammarCallIds.insert(callId)
                     }
                     input[index]["type"] = "custom_tool_call"
+                    if (input[index]["id"] as? String)?.hasPrefix("ctc_") != true {
+                        input[index].removeValue(forKey: "id")
+                    }
                     input[index]["input"] = sanitizeSurrogates(grammarInput)
                     input[index].removeValue(forKey: "arguments")
                     input[index].removeValue(forKey: "status")

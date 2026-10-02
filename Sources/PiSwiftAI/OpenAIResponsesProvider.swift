@@ -562,7 +562,12 @@ func buildResponsesQuery(
     context: Context,
     options: OpenAIResponsesOptions
 ) throws -> CreateModelResponseQuery {
-    let inputItems = convertResponsesMessages(model: model, context: context, allowedToolCallProviders: openAIToolCallProviders)
+    let inputItems = convertResponsesMessages(
+        model: model, context: context, allowedToolCallProviders: openAIToolCallProviders,
+        grammarToolInputProperties: try createGrammarToolInputProperties(
+            tools: context.tools, supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
+        )
+    )
 
     var reasoning: Components.Schemas.Reasoning? = nil
     var include: [Components.Schemas.Includable]? = nil
@@ -751,7 +756,10 @@ func normalizeIdPart(_ raw: String) -> String {
     return truncated.replacingOccurrences(of: "_+$", with: "", options: .regularExpression)
 }
 
-func convertResponsesMessages(model: Model, context: Context, allowedToolCallProviders: Set<String>) -> [InputItem] {
+func convertResponsesMessages(
+    model: Model, context: Context, allowedToolCallProviders: Set<String>,
+    grammarToolInputProperties: [String: String] = [:]
+) -> [InputItem] {
     var messages: [InputItem] = []
 
     let normalizeToolCallId: @Sendable (String, Model, AssistantMessage) -> String = { id, model, source in
@@ -843,7 +851,8 @@ func convertResponsesMessages(model: Model, context: Context, allowedToolCallPro
                     let callId = parts.first.map(String.init) ?? toolCall.id
                     let rawItemId = parts.count > 1 ? String(parts[1]) : nil
                     var itemId = normalizeOptionalResponseItemId(rawItemId)
-                    if isDifferentModel, itemId?.hasPrefix("fc") == true {
+                    let itemIdPrefix = grammarToolInputProperties[toolCall.name] == nil ? "fc_" : "ctc_"
+                    if isDifferentModel || itemId?.hasPrefix(itemIdPrefix) != true {
                         itemId = nil
                     }
                     let toolItem = Components.Schemas.FunctionToolCall(

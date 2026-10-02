@@ -527,7 +527,12 @@ func buildAzureResponsesQuery(
     options: AzureOpenAIResponsesOptions,
     deploymentName: String
 ) throws -> CreateModelResponseQuery {
-    let inputItems = convertResponsesMessages(model: model, context: context, allowedToolCallProviders: azureToolCallProviders)
+    let inputItems = convertResponsesMessages(
+        model: model, context: context, allowedToolCallProviders: azureToolCallProviders,
+        grammarToolInputProperties: try createGrammarToolInputProperties(
+            tools: context.tools, supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
+        )
+    )
 
     var reasoning: Components.Schemas.Reasoning? = nil
     var include: [Components.Schemas.Includable]? = nil

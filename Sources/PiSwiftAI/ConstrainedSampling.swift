@@ -1,5 +1,8 @@
 import Foundation
 
+/// Return true if a provider's strict mode rejects the schema keyword and value.
+public typealias UnsupportedStrictSchemaKeywordCheck = @Sendable (String, AnyCodable) -> Bool
+
 public struct GrammarConstrainedSampling: Sendable, Equatable {
     public enum Format: String, Sendable, Equatable {
         case lark
@@ -99,7 +102,8 @@ public func inferGrammarInputProperty(tool: AITool) throws -> String {
 
 public func resolveJsonSchemaStrictSampling(
     tool: AITool,
-    supportsStrictMode: Bool
+    supportsStrictMode: Bool,
+    isUnsupportedKeyword: UnsupportedStrictSchemaKeywordCheck? = nil
 ) throws -> Bool? {
     guard case .jsonSchema(let strictness) = tool.constrainedSampling else {
         return nil
@@ -107,7 +111,7 @@ public func resolveJsonSchemaStrictSampling(
 
     if supportsStrictMode {
         do {
-            _ = try makeStrictJsonSchema(tool.parameters)
+            _ = try makeStrictJsonSchema(tool.parameters, isUnsupportedKeyword: isUnsupportedKeyword)
             return true
         } catch ValidationError.unsupportedStrictSchema(let reason) {
             if strictness == .require {
@@ -193,8 +197,11 @@ func schemaAllowsNull(_ value: Any) -> Bool {
     return (schema["anyOf"] as? [Any])?.contains(where: schemaAllowsNull) == true
 }
 
-public func makeStrictJsonSchema(_ schema: [String: AnyCodable]) throws -> [String: AnyCodable] {
-    let result = try makeStrictSchemaNode(schema.mapValues { $0.value })
+public func makeStrictJsonSchema(
+    _ schema: [String: AnyCodable],
+    isUnsupportedKeyword: UnsupportedStrictSchemaKeywordCheck? = nil
+) throws -> [String: AnyCodable] {
+    let result = try makeStrictSchemaNode(schema.mapValues { $0.value }, isUnsupportedKeyword: isUnsupportedKeyword)
     guard result["type"] as? String == "object" else {
         throw ValidationError.unsupportedStrictSchema("root schema must have type object")
     }
@@ -205,12 +212,25 @@ public func getJsonSchemaToolParameters(_ tool: AITool, strict: Bool) throws -> 
     try strict ? makeStrictJsonSchema(tool.parameters) : tool.parameters
 }
 
-private func makeStrictSchemaNode(_ value: Any) throws -> [String: Any] {
+private func makeStrictSchemaNode(
+    _ value: Any,
+    isUnsupportedKeyword: UnsupportedStrictSchemaKeywordCheck?
+) throws -> [String: Any] {
     guard var schema = value as? [String: Any] else {
         throw ValidationError.unsupportedStrictSchema("boolean schemas are unsupported")
     }
     for key in ["$ref", "$defs", "definitions", "allOf", "oneOf", "patternProperties", "dependentSchemas", "dependencies", "unevaluatedProperties", "propertyNames", "contains", "prefixItems", "not", "if", "then", "else"] {
         if schema[key] != nil { throw ValidationError.unsupportedStrictSchema("\(key) schemas are unsupported") }
+    }
+    if let isUnsupportedKeyword {
+        for (key, value) in schema {
+            let wrappedValue = AnyCodable(value)
+            if isUnsupportedKeyword(key, wrappedValue) {
+                let data = try JSONEncoder().encode(wrappedValue)
+                let json = String(decoding: data, as: UTF8.self)
+                throw ValidationError.unsupportedStrictSchema("\(key): \(json) is unsupported")
+            }
+        }
     }
     if let value = schema["anyOf"] {
         guard let variants = value as? [Any], !variants.isEmpty else {
@@ -223,12 +243,12 @@ private func makeStrictSchemaNode(_ value: Any) throws -> [String: Any] {
                     throw ValidationError.unsupportedStrictSchema("object and array unions are unsupported")
                 }
             }
-            return try makeStrictSchemaNode(variant)
+            return try makeStrictSchemaNode(variant, isUnsupportedKeyword: isUnsupportedKeyword)
         }
     }
     if let items = schema["items"] {
         if items is [Any] { throw ValidationError.unsupportedStrictSchema("tuple schemas are unsupported") }
-        schema["items"] = try makeStrictSchemaNode(items)
+        schema["items"] = try makeStrictSchemaNode(items, isUnsupportedKeyword: isUnsupportedKeyword)
     }
     let isObject = schema["type"] as? String == "object"
     if schema["properties"] != nil && !isObject {
@@ -251,7 +271,7 @@ private func makeStrictSchemaNode(_ value: Any) throws -> [String: Any] {
         throw ValidationError.unsupportedStrictSchema("required contains an unknown property")
     }
     for name in names {
-        let property = try makeStrictSchemaNode(properties[name]!)
+        let property = try makeStrictSchemaNode(properties[name]!, isUnsupportedKeyword: isUnsupportedKeyword)
         properties[name] = !required.contains(name) && !schemaAllowsNull(property)
             ? ["anyOf": [property, ["type": "null"]]] : property
     }

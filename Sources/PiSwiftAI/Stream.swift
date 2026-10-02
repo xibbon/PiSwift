@@ -56,7 +56,7 @@ public func getEnvApiKey(provider: String, env: [String: String]? = nil) -> Stri
     let env = providerEnvironment(env)
 
     if provider == "github-copilot" {
-        return env["COPILOT_GITHUB_TOKEN"] ?? env["GH_TOKEN"] ?? env["GITHUB_TOKEN"]
+        return env["COPILOT_GITHUB_TOKEN"]
     }
 
     if provider == "amazon-bedrock" {
@@ -109,7 +109,7 @@ public func getEnvApiKey(provider: String, env: [String: String]? = nil) -> Stri
 
 private func apiKeyEnvVars(provider: String) -> [String]? {
     if provider == "github-copilot" {
-        return ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]
+        return ["COPILOT_GITHUB_TOKEN"]
     }
 
     if provider == "anthropic" {
@@ -117,8 +117,17 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
     }
 
     let envMap: [String: String] = [
+        "ant-ling": "ANT_LING_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
+        "zai-coding-cn": "ZAI_CODING_CN_API_KEY",
+        "moonshotai": "MOONSHOT_API_KEY",
+        "moonshotai-cn": "MOONSHOT_API_KEY",
+        "together": "TOGETHER_API_KEY",
+        "xiaomi": "XIAOMI_API_KEY",
+        "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+        "xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+        "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
         "openai": "OPENAI_API_KEY",
-        "openai-codex": "OPENAI_API_KEY",
         "azure-openai-responses": "AZURE_OPENAI_API_KEY",
         "google": "GEMINI_API_KEY",
         "google-vertex": "GOOGLE_CLOUD_API_KEY",

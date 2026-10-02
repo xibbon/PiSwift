@@ -75,6 +75,28 @@ public struct OAuthPrompt: Sendable {
     }
 }
 
+public struct OAuthSelectOption: Sendable, Equatable {
+    public var id: String
+    public var label: String
+    public var description: String?
+
+    public init(id: String, label: String, description: String? = nil) {
+        self.id = id
+        self.label = label
+        self.description = description
+    }
+}
+
+public struct OAuthSelectPrompt: Sendable, Equatable {
+    public var message: String
+    public var options: [OAuthSelectOption]
+
+    public init(message: String, options: [OAuthSelectOption]) {
+        self.message = message
+        self.options = options
+    }
+}
+
 public struct OAuthAuthInfo: Sendable {
     public var url: String
     public var instructions: String?
@@ -90,12 +112,14 @@ public struct OAuthProviderInfo: Sendable {
     public var name: String
     public var available: Bool
     public var loginLabel: String?
+    public var isSubscription: Bool
 
-    public init(id: OAuthProvider, name: String, available: Bool, loginLabel: String? = nil) {
+    public init(id: OAuthProvider, name: String, available: Bool, loginLabel: String? = nil, isSubscription: Bool = false) {
         self.id = id
         self.name = name
         self.available = available
         self.loginLabel = loginLabel
+        self.isSubscription = isSubscription
     }
 }
 
@@ -106,6 +130,7 @@ public struct OAuthLoginCallbacks: Sendable {
     public var onManualCodeInput: (@MainActor @Sendable () async throws -> String?)?
     public var signal: CancellationToken?
     public var getDeviceId: (@Sendable () -> String)?
+    public var onSelect: (@MainActor @Sendable (OAuthSelectPrompt) async throws -> String)?
 
     public init(
         onAuth: @escaping @MainActor @Sendable (OAuthAuthInfo) -> Void,
@@ -113,7 +138,8 @@ public struct OAuthLoginCallbacks: Sendable {
         onProgress: (@MainActor @Sendable (String) -> Void)? = nil,
         onManualCodeInput: (@MainActor @Sendable () async throws -> String?)? = nil,
         signal: CancellationToken? = nil,
-        getDeviceId: (@Sendable () -> String)? = nil
+        getDeviceId: (@Sendable () -> String)? = nil,
+        onSelect: (@MainActor @Sendable (OAuthSelectPrompt) async throws -> String)? = nil
     ) {
         self.onAuth = onAuth
         self.onPrompt = onPrompt
@@ -121,6 +147,7 @@ public struct OAuthLoginCallbacks: Sendable {
         self.onManualCodeInput = onManualCodeInput
         self.signal = signal
         self.getDeviceId = getDeviceId
+        self.onSelect = onSelect
     }
 }
 
@@ -135,6 +162,8 @@ public enum OAuthError: Error, LocalizedError {
     case unsupportedPlatform(String)
     case notImplemented(String)
     case cancelled
+    case unknownAnthropicLoginMethod(String)
+    case anthropicCopyCodeStateMismatch
 
     public var errorDescription: String? {
         switch self {
@@ -158,6 +187,10 @@ public enum OAuthError: Error, LocalizedError {
             return "OAuth provider not implemented: \(provider)"
         case .cancelled:
             return "Login cancelled"
+        case .unknownAnthropicLoginMethod(let id):
+            return "Unknown Anthropic login method: \(id)"
+        case .anthropicCopyCodeStateMismatch:
+            return "OAuth state mismatch"
         }
     }
 }
@@ -169,14 +202,14 @@ public func getOAuthProviders() -> [OAuthProviderInfo] {
     let networkAvailable = false
     #endif
     return [
-        OAuthProviderInfo(id: .anthropic, name: "Anthropic (Claude Pro/Max)", available: true),
-        OAuthProviderInfo(id: .openAICodex, name: "OpenAI (ChatGPT Plus/Pro)", available: networkAvailable),
-        OAuthProviderInfo(id: .openAI, name: "OpenAI (ChatGPT subscription)", available: networkAvailable, loginLabel: "Sign in with ChatGPT"),
-        OAuthProviderInfo(id: .githubCopilot, name: "GitHub Copilot", available: true),
-        OAuthProviderInfo(id: .openRouter, name: "OpenRouter OAuth", available: true),
-        OAuthProviderInfo(id: .kimiCoding, name: "Kimi Code (subscription)", available: true),
-        OAuthProviderInfo(id: .xai, name: "xAI (Grok/X subscription)", available: true),
-        OAuthProviderInfo(id: .meta, name: "Meta (Muse subscription)", available: true),
+        OAuthProviderInfo(id: .anthropic, name: "Anthropic (Claude Pro/Max)", available: true, isSubscription: true),
+        OAuthProviderInfo(id: .openAICodex, name: "OpenAI (ChatGPT Plus/Pro)", available: networkAvailable, isSubscription: true),
+        OAuthProviderInfo(id: .openAI, name: "OpenAI (ChatGPT subscription)", available: networkAvailable, loginLabel: "Sign in with ChatGPT", isSubscription: true),
+        OAuthProviderInfo(id: .githubCopilot, name: "GitHub Copilot", available: true, isSubscription: true),
+        OAuthProviderInfo(id: .openRouter, name: "OpenRouter OAuth", available: true, loginLabel: "Sign in with OpenRouter", isSubscription: false),
+        OAuthProviderInfo(id: .kimiCoding, name: "Kimi Code (subscription)", available: true, loginLabel: "Sign in with Kimi Code", isSubscription: true),
+        OAuthProviderInfo(id: .xai, name: "xAI (Grok/X subscription)", available: true, loginLabel: "Sign in with SuperGrok or X Premium", isSubscription: true),
+        OAuthProviderInfo(id: .meta, name: "Meta (Muse subscription)", available: true, loginLabel: "Sign in with Meta", isSubscription: true),
     ]
 }
 
@@ -309,6 +342,50 @@ public func loginAnthropic(_ callbacks: OAuthLoginCallbacks, callbackPort: UInt1
     guard !code.isEmpty else { throw OAuthError.missingAuthorizationCode }
     if let onProgress = callbacks.onProgress { await onProgress("Exchanging authorization code for tokens...") }
     return try await exchangeAnthropicCode(code: code, state: state, verifier: pkce.verifier, redirectUri: redirectUri, signal: callbacks.signal)
+}
+
+/// Select the Anthropic login method. Without a select callback, use browser login.
+public func loginAnthropicOAuth(_ callbacks: OAuthLoginCallbacks, callbackPort: UInt16 = 53692) async throws -> OAuthCredentials {
+    try throwIfOAuthCancelled(callbacks.signal)
+    guard let onSelect = callbacks.onSelect else {
+        return try await loginAnthropic(callbacks, callbackPort: callbackPort)
+    }
+    let method = try await onSelect(OAuthSelectPrompt(
+        message: "Select Anthropic login method:",
+        options: [
+            OAuthSelectOption(id: "browser", label: "Browser login (default)"),
+            OAuthSelectOption(id: "copy_code", label: "Copy code login (headless)"),
+        ]
+    ))
+    try throwIfOAuthCancelled(callbacks.signal)
+    switch method {
+    case "browser": return try await loginAnthropic(callbacks, callbackPort: callbackPort)
+    case "copy_code": return try await loginAnthropicCopyCode(callbacks)
+    default: throw OAuthError.unknownAnthropicLoginMethod(method)
+    }
+}
+
+/// Log in with the code shown by Anthropic. This flow does not start a callback server.
+public func loginAnthropicCopyCode(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
+    try throwIfOAuthCancelled(callbacks.signal)
+    let pkce = try generatePKCE()
+    let redirectUri = "https://platform.claude.com/oauth/code/callback"
+    await callbacks.onAuth(OAuthAuthInfo(
+        url: anthropicAuthorizeUrl(verifier: pkce.verifier, challenge: pkce.challenge, redirectUri: redirectUri),
+        instructions: "Complete login in your browser, then copy the code Anthropic shows and paste it here."
+    ))
+    let input = try await callbacks.onPrompt(OAuthPrompt(
+        message: "Paste the code Anthropic shows after you sign in:", placeholder: "code#state"
+    ))
+    try throwIfOAuthCancelled(callbacks.signal)
+    let parsed = parseAuthorizationInput(input)
+    if let state = parsed.state, state != pkce.verifier { throw OAuthError.anthropicCopyCodeStateMismatch }
+    guard let code = parsed.code, !code.isEmpty else { throw OAuthError.missingAuthorizationCode }
+    if let onProgress = callbacks.onProgress { await onProgress("Exchanging authorization code for tokens...") }
+    return try await exchangeAnthropicCode(
+        code: code, state: parsed.state ?? pkce.verifier, verifier: pkce.verifier,
+        redirectUri: redirectUri, signal: callbacks.signal
+    )
 }
 
 public func refreshAnthropicToken(_ refreshToken: String, signal: CancellationToken? = nil) async throws -> OAuthCredentials {

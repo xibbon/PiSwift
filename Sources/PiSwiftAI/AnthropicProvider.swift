@@ -53,6 +53,7 @@ func usesAnthropicBearerTransport(_ apiKey: String, env: [String: String]? = nil
 }
 
 func anthropicAuthenticationHeaders(apiKey: String, usesBearerTransport: Bool) -> [String: String] {
+    guard !apiKey.isEmpty else { return [:] }
     if usesBearerTransport {
         return ["Authorization": "Bearer \(apiKey)"]
     }
@@ -163,7 +164,10 @@ public func streamAnthropic(
 
         do {
             let apiKey = options.apiKey ?? ""
-            if apiKey.isEmpty {
+            let authHeaders = mergeProviderHeaders(model.headers, options.headers)
+            let federation = model.provider == "anthropic" && !hasRequestAuth(apiKey: apiKey, headers: authHeaders)
+                ? AnthropicFederationConfig(env: providerEnvironment(options.env)) : nil
+            if federation == nil && !hasRequestAuth(apiKey: apiKey, headers: authHeaders) {
                 throw StreamError.missingApiKey(model.provider)
             }
             let isOAuthToken = isAnthropicOAuthToken(apiKey)
@@ -244,6 +248,7 @@ public func streamAnthropic(
             let httpClient = buildAnthropicHttpClient(
                 providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
                 isOAuthToken: isOAuthToken,
+                isFederated: federation != nil,
                 extraHeaders: mergedHeaders ?? [:],
                 baseUrl: model.baseUrl,
                 metadataUserId: extractAnthropicMetadataUserId(options.metadata),
@@ -276,7 +281,9 @@ public func streamAnthropic(
                 maxRetryDelayMs: options.maxRetryDelayMs,
                 signal: options.signal
             ) {
-                try await streamAnthropicMessagesTolerant(
+                try await streamAnthropicMessagesWithFederation(
+                    federation: federation,
+                    federationClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
                     apiKey: apiKey,
                     usesBearerTransport: usesBearerTransport,
                     baseUrl: model.baseUrl,
@@ -786,6 +793,46 @@ private func repairedAnthropicJSON(_ json: String) -> String {
     return repaired
 }
 
+private func streamAnthropicMessagesWithFederation(
+    federation: AnthropicFederationConfig?,
+    federationClient: any ProviderHTTPClient,
+    apiKey: String,
+    usesBearerTransport: Bool,
+    baseUrl: String,
+    betaHeaders: [String]?,
+    httpClient: HTTPClient,
+    parameters: MessageParameter,
+    onResponse: ResponseHandler?,
+    model: Model,
+    onProviderStreamEvent: ProviderStreamEventHandler?
+) async throws -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> {
+    var token = apiKey
+    var betas = betaHeaders
+    if let federation {
+        token = try await anthropicFederationToken(config: federation, baseUrl: baseUrl, client: federationClient)
+        var features = betas ?? []
+        if !features.contains("oauth-2025-04-20") { features.append("oauth-2025-04-20") }
+        betas = features
+    }
+    do {
+        return try await streamAnthropicMessagesTolerant(
+            apiKey: token, usesBearerTransport: federation != nil || usesBearerTransport,
+            baseUrl: baseUrl, betaHeaders: betas, httpClient: httpClient, parameters: parameters,
+            onResponse: onResponse, model: model, onProviderStreamEvent: onProviderStreamEvent
+        )
+    } catch StreamError.providerRequest(let status, _, _) where status == 401 && federation != nil {
+        guard let federation else { throw StreamError.missingApiKey(model.provider) }
+        token = try await anthropicFederationToken(
+            config: federation, baseUrl: baseUrl, client: federationClient, forceRefresh: true
+        )
+        return try await streamAnthropicMessagesTolerant(
+            apiKey: token, usesBearerTransport: true, baseUrl: baseUrl, betaHeaders: betas,
+            httpClient: httpClient, parameters: parameters, onResponse: onResponse,
+            model: model, onProviderStreamEvent: onProviderStreamEvent
+        )
+    }
+}
+
 private func streamAnthropicMessagesTolerant(
     apiKey: String,
     usesBearerTransport: Bool,
@@ -1243,6 +1290,7 @@ func anthropicCacheTtl(baseUrl: String, supportsLongCacheRetention: Bool = true,
 private func buildAnthropicHttpClient(
     providerHTTPClient: (any ProviderHTTPClient)?,
     isOAuthToken: Bool,
+    isFederated: Bool,
     extraHeaders: ProviderHeaders,
     baseUrl: String,
     metadataUserId: String?,
@@ -1284,6 +1332,7 @@ private func buildAnthropicHttpClient(
         thinkingDisabled: thinkingDisabled,
         strictToolSchemas: strictToolSchemas,
         isOAuthToken: isOAuthToken,
+        isFederated: isFederated,
         rawRequestBody: rawRequestBody
     )
 }
@@ -1412,6 +1461,7 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
     let thinkingDisabled: Bool
     let strictToolSchemas: [String: [String: AnyCodable]]
     let isOAuthToken: Bool
+    let isFederated: Bool
     let rawRequestBody: Data?
 
     func data(for request: HTTPRequest) async throws -> (Data, HTTPResponse) {
@@ -1452,9 +1502,16 @@ private struct AnthropicHeaderInjectingHTTPClient: HTTPClient {
         }
 
         guard let url, let method, let headers else { return request }
-        let mergedHeaders = providerHeadersToRecord(
+        var mergedHeaders = providerHeadersToRecord(
             mergeProviderHeaders(headers, extraHeaders)
         ) ?? [:]
+        // A federation token needs this beta after all request header overrides.
+        if isFederated {
+            let betaName = mergedHeaders.keys.first { $0.lowercased() == "anthropic-beta" } ?? "anthropic-beta"
+            var betas = (mergedHeaders[betaName] ?? "").split(separator: ",").map(String.init)
+            if !betas.contains("oauth-2025-04-20") { betas.append("oauth-2025-04-20") }
+            mergedHeaders[betaName] = betas.joined(separator: ",")
+        }
         let updatedBody = injectAnthropicRequestBody(
             body: body,
             ttl: cacheTtl,
@@ -1613,6 +1670,29 @@ func injectAnthropicRequestBody(
     return try? JSONSerialization.data(withJSONObject: payload)
 }
 
+private let anthropicStrictUnsupportedKeywords: Set<String> = [
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "maxItems", "uniqueItems", "minContains", "maxContains", "minProperties", "maxProperties",
+]
+
+private let anthropicStrictStringFormats: Set<String> = [
+    "date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid",
+]
+
+private let isAnthropicStrictUnsupportedKeyword: UnsupportedStrictSchemaKeywordCheck = { key, value in
+    if anthropicStrictUnsupportedKeywords.contains(key) { return true }
+    if key == "minItems" {
+        // JSON booleans and strings must not compare equal to numeric 0 or 1.
+        return value != AnyCodable(0) && value != AnyCodable(1)
+            && value != AnyCodable(0.0) && value != AnyCodable(1.0)
+    }
+    if key == "format" {
+        guard let format = value.value as? String else { return true }
+        return !anthropicStrictStringFormats.contains(format)
+    }
+    return false
+}
+
 private func resolveAnthropicStrictToolSchemas(
     tools: [AITool],
     isOAuthToken: Bool,
@@ -1620,7 +1700,11 @@ private func resolveAnthropicStrictToolSchemas(
 ) throws -> [String: [String: AnyCodable]] {
     var result: [String: [String: AnyCodable]] = [:]
     for tool in tools {
-        if try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictTools) == true {
+        if try resolveJsonSchemaStrictSampling(
+            tool: tool,
+            supportsStrictMode: supportsStrictTools,
+            isUnsupportedKeyword: isAnthropicStrictUnsupportedKeyword
+        ) == true {
             result[isOAuthToken ? toClaudeCodeName(tool.name) : tool.name] = try getJsonSchemaToolParameters(tool, strict: true)
         }
     }
