@@ -149,6 +149,18 @@ public func convertToPng(_ base64Data: String, _ mimeType: String) -> ImageConte
     return nil
 }
 
+/// Convert image data to base64 PNG data and apply EXIF orientation.
+/// Returns nil for invalid image data or on platforms without AppKit.
+public func transcodeToPng(_ base64Data: String, _ mimeType: String) -> String? {
+    #if canImport(AppKit)
+    guard let rawData = Data(base64Encoded: base64Data),
+          let converted = convertImageToPng(rawData) else { return nil }
+    return converted.base64EncodedString()
+    #else
+    return nil
+    #endif
+}
+
 private func getPngDimensions(_ base64Data: String) -> ImageDimensions? {
     guard let data = Data(base64Encoded: base64Data), data.count >= 24 else {
         return nil
@@ -468,10 +480,11 @@ private func encodeBestFormat(rep: NSBitmapImageRep, jpegQuality: Int) -> (Data,
 }
 
 private func convertImageToPng(_ rawData: Data) -> Data? {
-    if let rep = NSBitmapImageRep(data: rawData) {
+    let orientedData = applyExifOrientation(rawData)
+    if let rep = NSBitmapImageRep(data: orientedData) {
         return rep.representation(using: .png, properties: [:])
     }
-    guard let image = NSImage(data: rawData),
+    guard let image = NSImage(data: orientedData),
           let tiff = image.tiffRepresentation,
           let rep = NSBitmapImageRep(data: tiff) else {
         return nil

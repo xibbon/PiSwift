@@ -84,6 +84,7 @@ public actor McpServerConnection {
     public nonisolated let timeoutMs: Int
     public nonisolated var name: String { entry.name }
     private let transportFactory: McpTransportFactory
+    private let clientMetadataDocumentURL: URL?
     private let credentials: McpOAuthCredentialStore
     private let log: McpServerLog?
     private let onTools: (@Sendable (McpServerConnection) async -> Void)?
@@ -107,6 +108,7 @@ public actor McpServerConnection {
 
     public init(entry: McpServerEntry, cwd: URL, createTransport: @escaping McpTransportFactory = createDefaultMcpTransport,
                 credentials: McpOAuthCredentialStore, log: McpServerLog? = nil,
+                clientMetadataDocumentURL: URL? = nil,
                 providerToken: (@Sendable (String) async -> String?)? = nil,
                 onTools: (@Sendable (McpServerConnection) async -> Void)? = nil,
                 onChange: (@Sendable (McpServerConnection) async -> Void)? = nil) {
@@ -114,6 +116,7 @@ public actor McpServerConnection {
         self.cwd = cwd
         self.timeoutMs = Int(entry.config.timeoutSeconds * 1000)
         self.transportFactory = createTransport
+        self.clientMetadataDocumentURL = clientMetadataDocumentURL
         self.credentials = credentials
         self.providerToken = providerToken
         self.log = log
@@ -209,7 +212,8 @@ public actor McpServerConnection {
             let auth: (any McpAuthProvider)?
             if let url = oauthURL {
                 auth = McpServerAuthProvider(name: entry.name, serverURL: url, credentials: credentials,
-                    settings: { [entry] in try resolvedMcpOAuthSettings(entry) })
+                    settings: { [entry] in try resolvedMcpOAuthSettings(entry) },
+                    clientMetadataDocumentURL: clientMetadataDocumentURL)
             } else if let provider = entry.config.auth?.provider {
                 auth = McpProviderAuth(provider: provider, providerToken: providerToken)
             } else { auth = nil }

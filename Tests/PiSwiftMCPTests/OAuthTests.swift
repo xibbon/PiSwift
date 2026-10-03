@@ -669,7 +669,7 @@ func oauthStaticClientDocumentRejectsUnsupportedPublicClientsFirst(_ index: Int)
 func oauthStaticClientDocumentRequiresIssuerSupport(_ iss: Bool?) async throws {
     let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: iss, metadataAvailable: true))
     let metadata = try #require(try await McpOAuthDiscovery.authorizationServerMetadata(issuer: fixture.origin, http: fixture))
-    let message = "The authorization server does not send the RFC 9207 iss parameter, which the Swift client ID metadata document requires; use dynamic client registration or set oauth.clientId"
+    let message = "The authorization server does not send the iss parameter in authorization responses (RFC 9207), which oauth.clientRegistration \"cimd\" requires; remove oauth.clientRegistration to use dynamic client registration, or set oauth.clientId"
     do {
         _ = try McpOAuthClientMetadataDocument.staticDocument(url: clientDocumentURL, redirectURL: clientDocumentRedirectURL, metadata: metadata)
         Issue.record("Expected RFC 9207 support error")
@@ -737,7 +737,7 @@ func oauthClientDocumentHookErrorStopsFlow() async throws {
             options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture)
         Issue.record("Expected document hook error")
     } catch McpOAuthError.clientMetadataDocumentUnsupported(let message) {
-        #expect(message.contains("RFC 9207 iss parameter"))
+        #expect(message.contains("iss parameter in authorization responses (RFC 9207)"))
     }
     #expect(await fixture.snapshot().0.allSatisfy { $0.httpMethod != "POST" })
 }

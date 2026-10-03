@@ -573,6 +573,17 @@ public final class HookRunner: Sendable {
         await dispatchEvent(event, extensionsOnly: true)
     }
 
+    /// Resolve display settings in hook load order, then use the base tool.
+    public func resolveToolRenderers(_ toolName: String,
+                                     base: () -> CustomToolRenderers?) -> CustomToolRenderers? {
+        let resolvers = hooks.flatMap { $0.currentToolRenderers() }
+        func resolve(_ index: Int) -> CustomToolRenderers? {
+            guard index < resolvers.count else { return base() }
+            return resolvers[index](toolName, { resolve(index + 1) })
+        }
+        return resolve(0)
+    }
+
     public func getMessageRenderer(_ customType: String) -> HookMessageRenderer? {
         for hook in hooks {
             if let renderer = hook.messageRenderers[customType] {

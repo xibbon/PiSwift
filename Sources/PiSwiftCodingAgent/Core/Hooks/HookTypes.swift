@@ -1908,6 +1908,8 @@ public struct LoadedHook: Sendable {
     /// Returns the extension's current tools. This keeps tools registered after
     /// session start visible to reload bookkeeping.
     public var currentTools: @Sendable () -> [String: CustomTool]
+    public var toolRenderers: [ToolRendererResolver]
+    public var currentToolRenderers: @Sendable () -> [ToolRendererResolver]
     public var providerRegistrations: [String: HookProviderConfig]
     public var mcpServerRegistrations: [String: McpServerConfig]
     public var mcpServerRegistry: McpServerRegistry?
@@ -1959,6 +1961,8 @@ public struct LoadedHook: Sendable {
         shortcuts: [KeyId: HookShortcut] = [:],
         tools: [String: CustomTool] = [:],
         currentTools: (@Sendable () -> [String: CustomTool])? = nil,
+        toolRenderers: [ToolRendererResolver] = [],
+        currentToolRenderers: (@Sendable () -> [ToolRendererResolver])? = nil,
         providerRegistrations: [String: HookProviderConfig] = [:],
         mcpServerRegistrations: [String: McpServerConfig] = [:],
         mcpServerRegistry: McpServerRegistry? = nil,
@@ -2005,6 +2009,8 @@ public struct LoadedHook: Sendable {
         self.shortcuts = shortcuts
         self.tools = tools
         self.currentTools = currentTools ?? { tools }
+        self.toolRenderers = toolRenderers
+        self.currentToolRenderers = currentToolRenderers ?? { toolRenderers }
         self.providerRegistrations = providerRegistrations
         self.mcpServerRegistrations = mcpServerRegistrations
         self.mcpServerRegistry = mcpServerRegistry
@@ -2102,6 +2108,7 @@ public final class HookAPI: Sendable {
             state.virtualModelRegistrations.removeAll()
             state.handlers.removeAll()
             state.tools.removeAll()
+            state.toolRenderers.removeAll()
             state.commands.removeAll()
         }
     }
@@ -2122,6 +2129,7 @@ public final class HookAPI: Sendable {
         /// Custom tools registered by the extension via `pi.registerTool(_:)`.
         /// Keyed by tool name; collisions overwrite (last write wins).
         var tools: [String: CustomTool]
+        var toolRenderers: [ToolRendererResolver]
         var providerRegistrations: [String: HookProviderConfig]
         var mcpServerRegistrations: [String: McpServerConfig]
         var virtualModelRegistrations: [String: [String: HookVirtualModelDefinition]]
@@ -2186,6 +2194,18 @@ public final class HookAPI: Sendable {
     public private(set) var shortcuts: [KeyId: HookShortcut] {
         get { state.withLock { $0.shortcuts } }
         set { state.withLock { $0.shortcuts = newValue } }
+    }
+
+    public var toolRenderers: [ToolRendererResolver] {
+        state.withLock { $0.toolRenderers }
+    }
+
+    /// Add a resolver in registration order while this API is active.
+    public func registerToolRenderer(_ resolver: @escaping ToolRendererResolver) {
+        loadFailure.withLock { failure in
+            guard failure == nil else { return }
+            state.withLock { $0.toolRenderers.append(resolver) }
+        }
     }
 
     public private(set) var tools: [String: CustomTool] {
@@ -2343,6 +2363,7 @@ public final class HookAPI: Sendable {
             flags: [:],
             shortcuts: [:],
             tools: [:],
+            toolRenderers: [],
             providerRegistrations: [:],
             mcpServerRegistrations: [:],
             virtualModelRegistrations: [:],

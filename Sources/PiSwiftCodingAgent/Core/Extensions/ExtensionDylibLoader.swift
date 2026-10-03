@@ -70,6 +70,8 @@ public struct ExtensionDylibLoader {
             shortcuts: api.shortcuts,
             tools: api.tools,
             currentTools: { api.tools },
+            toolRenderers: api.toolRenderers,
+            currentToolRenderers: { api.toolRenderers },
             providerRegistrations: api.providerRegistrations,
             mcpServerRegistrations: api.mcpServerRegistrations,
             mcpServerRegistry: api.mcpServerRegistry,

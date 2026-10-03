@@ -223,6 +223,20 @@ private struct TimedMcpOAuthHTTPClient: McpOAuthHTTPClient {
     }
 }
 
+private let mcpMissingClientMetadataDocument = "oauth.clientRegistration \"cimd\" needs a Client ID Metadata Document URL from the host application"
+
+/// The host document must list the presenter's redirect URI. The library cannot check its contents.
+private func mcpClientMetadataDocumentProvider(
+    settings: McpOAuthConfig, url: URL?, redirectURL: URL
+) -> McpOAuthClientMetadataDocumentProvider? {
+    guard settings.clientRegistration == .cimd else { return nil }
+    return { metadata in
+        guard let url else { throw McpRuntimeError.invalidConfig(mcpMissingClientMetadataDocument) }
+        return try McpOAuthClientMetadataDocument.staticDocument(
+            url: url, redirectURL: redirectURL, metadata: metadata)
+    }
+}
+
 /// Sends stored tokens and refreshes them before expiry or after HTTP 401.
 public actor McpServerAuthProvider: McpAuthProvider {
     private let serverURL: URL
@@ -230,25 +244,30 @@ public actor McpServerAuthProvider: McpAuthProvider {
     private let credentials: McpOAuthCredentialStore
     private let settingsResolver: @Sendable () throws -> McpOAuthConfig
     private let http: any McpOAuthHTTPClient
+    private let clientMetadataDocumentURL: URL?
     private var refreshTask: Task<Void, Error>?
     public private(set) var challenge: McpOAuthChallenge?
 
     public init(name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore,
                 settings: McpOAuthConfig = .init(),
+                clientMetadataDocumentURL: URL? = nil,
                 http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()) {
         self.serverURL = serverURL
         self.name = name
         self.credentials = credentials
+        self.clientMetadataDocumentURL = clientMetadataDocumentURL
         self.settingsResolver = { settings }
         self.http = TimedMcpOAuthHTTPClient(base: http)
     }
 
     public init(name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore,
                 settings: @escaping @Sendable () throws -> McpOAuthConfig,
+                clientMetadataDocumentURL: URL? = nil,
                 http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()) {
         self.serverURL = serverURL
         self.name = name
         self.credentials = credentials
+        self.clientMetadataDocumentURL = clientMetadataDocumentURL
         self.settingsResolver = settings
         self.http = TimedMcpOAuthHTTPClient(base: http)
     }
@@ -282,6 +301,7 @@ public actor McpServerAuthProvider: McpAuthProvider {
             let name = self.name
             let settingsResolver = self.settingsResolver
             let http = self.http
+            let clientMetadataDocumentURL = self.clientMetadataDocumentURL
             refreshTask = Task {
                 try await credentials.withRefreshLock(name: name, url: serverURL) {
                     let stored = try credentials.state(name: name, url: serverURL)
@@ -294,6 +314,8 @@ public actor McpServerAuthProvider: McpAuthProvider {
                     let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
                         clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
                         clientID: settings.clientId, clientSecret: settings.clientSecret,
+                        clientMetadataDocument: mcpClientMetadataDocumentProvider(
+                            settings: settings, url: clientMetadataDocumentURL, redirectURL: redirectURL),
                         store: credentials.forServer(name: name, url: serverURL), onRedirect: { _ in })
                     let result = try await McpOAuthFlow.authorize(provider: provider,
                         options: McpOAuthFlowOptions(serverURL: serverURL,
@@ -313,8 +335,12 @@ public actor McpServerAuthProvider: McpAuthProvider {
 public func signInMcpServer(
     name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore, settings: McpOAuthConfig = .init(),
     challenge: McpOAuthChallenge? = nil, presenter: any McpSignInPresenter,
+    clientMetadataDocumentURL: URL? = nil,
     http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
 ) async throws {
+    if settings.clientRegistration == .cimd, clientMetadataDocumentURL == nil {
+        throw McpRuntimeError.invalidConfig(mcpMissingClientMetadataDocument)
+    }
     let store = credentials.forServer(name: name, url: serverURL)
     let previous = try await store.load()
     if var stored = previous {
@@ -336,12 +362,16 @@ public func signInMcpServer(
     if let expectedPort = settings.callbackPort, redirectURL.port != expectedPort {
         throw McpOAuthError.invalidRedirect
     }
-    if var stored = try await store.load(), settings.clientId == nil,
-       !(stored.clientInformation?.metadata?.redirectURIs.contains(redirectURL.absoluteString) ?? false) {
-        stored.clientInformation = nil
-        stored.tokens = nil
-        stored.tokensExpireAt = nil
-        try await store.save(stored)
+    if var stored = try await store.load() {
+        let keepClient = settings.clientId != nil || (settings.clientRegistration == .cimd
+            ? stored.clientInformation == nil
+            : stored.clientInformation?.metadata?.redirectURIs.contains(redirectURL.absoluteString) == true)
+        if !keepClient {
+            stored.clientInformation = nil
+            stored.tokens = nil
+            stored.tokensExpireAt = nil
+            try await store.save(stored)
+        }
     }
     let stepUp = challenge?.error == "insufficient_scope"
     let challengedScope = stepUp
@@ -355,6 +385,8 @@ public func signInMcpServer(
     let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
         clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
         clientID: settings.clientId, clientSecret: settings.clientSecret,
+        clientMetadataDocument: mcpClientMetadataDocumentProvider(
+            settings: settings, url: clientMetadataDocumentURL, redirectURL: redirectURL),
         initialState: state, store: store,
         onRedirect: { url in
             let callback = try await presenter.present(authorizationURL: url, state: state)

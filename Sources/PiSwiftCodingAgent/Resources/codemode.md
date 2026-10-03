@@ -12,7 +12,7 @@ A script may start with an options line:
 // @options: {"max_output_tokens": 2000, "timeout_ms": 60000}
 ```
 
-- `max_output_tokens` (default 10000) limits the output. Longer output keeps its start and end, and the full text is written to a temp file whose path is included in the result.
+- `max_output_tokens` (default 10000) limits the output. Longer output keeps its start and end, and the full text is written to a temp file whose path is included in the result. A script fails when its output passes 16777216 characters of text and base64 image data or 100000 `text()`, `image()`, and `console` calls; write large data to a file with a tool instead.
 - `timeout_ms` limits the time for the whole script. On iOS, a timed-out script is abandoned; JavaScriptCore can continue to run it on its sandbox thread. It is unset by default. Image generation can take minutes, so do not set a short deadline for scripts that generate images.
 
 The result starts with `Script completed` or `Script failed`, the wall time, and the output. A failed script keeps its partial output, followed by `Script error:` and the error. Tool calls are real: calls made before a failure are not undone. Calls still running when the script ends are cancelled, and unawaited promises are discarded.

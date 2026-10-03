@@ -13,14 +13,19 @@ actor McpAuthFixture: McpOAuthHTTPClient {
     var refreshes = 0
     var registrations: [String] = []
     var registrationRequests: [Data] = []
+    var tokenRequests: [String] = []
     let issSupported: Bool
+    let cimd: Bool
 
-    init(issSupported: Bool = false) { self.issSupported = issSupported }
+    init(issSupported: Bool = false, cimd: Bool = false) {
+        self.issSupported = issSupported
+        self.cimd = cimd
+    }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let path = request.url?.path ?? ""
         paths.append(path)
-        let value: [String: Any]
+        var value: [String: Any]
         let status: Int
         switch path {
         case "/custom-resource":
@@ -36,6 +41,7 @@ actor McpAuthFixture: McpOAuthHTTPClient {
                 "token_endpoint_auth_methods_supported": ["none"],
                 "code_challenge_methods_supported": ["S256"],
                 "authorization_response_iss_parameter_supported": issSupported]
+            if cimd { value["client_id_metadata_document_supported"] = true }
             status = 200
         case "/register":
             var body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] ?? [:]
@@ -46,6 +52,7 @@ actor McpAuthFixture: McpOAuthHTTPClient {
             status = 201
         case "/token":
             let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            tokenRequests.append(body)
             if body.contains("grant_type=refresh_token") {
                 refreshes += 1
                 value = ["access_token": "refreshed", "refresh_token": "rotated", "token_type": "Bearer", "expires_in": 3600]
@@ -67,6 +74,7 @@ actor McpAuthFixture: McpOAuthHTTPClient {
     func refreshCount() -> Int { refreshes }
     func registeredClientNames() -> [String] { registrations }
     func recordedRegistrations() -> [Data] { registrationRequests }
+    func recordedTokenRequests() -> [String] { tokenRequests }
 }
 
 // mcp-oauth-refresh.test.ts: return iss and record authorization scopes.

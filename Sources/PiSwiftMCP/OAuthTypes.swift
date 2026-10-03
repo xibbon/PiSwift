@@ -58,7 +58,7 @@ public struct McpOAuthClientMetadataDocument: Sendable, Equatable {
         }
         guard metadata.authorizationResponseIssParameterSupported == true else {
             throw McpOAuthError.clientMetadataDocumentUnsupported(
-                "The authorization server does not send the RFC 9207 iss parameter, which the Swift client ID metadata document requires; use dynamic client registration or set oauth.clientId")
+                "The authorization server does not send the iss parameter in authorization responses (RFC 9207), which oauth.clientRegistration \"cimd\" requires; remove oauth.clientRegistration to use dynamic client registration, or set oauth.clientId")
         }
         return McpOAuthClientMetadataDocument(url: url, redirectURL: redirectURL)
     }

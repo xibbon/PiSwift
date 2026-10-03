@@ -32,6 +32,10 @@ public struct McpServerAuthConfig: Codable, Sendable, Equatable {
     public init(provider: String) { self.provider = provider }
 }
 
+public enum McpOAuthClientRegistration: String, Codable, Sendable {
+    case dcr, cimd
+}
+
 public struct McpOAuthConfig: Codable, Sendable, Equatable {
     public var clientId: String?
     public var clientSecret: String?
@@ -39,17 +43,19 @@ public struct McpOAuthConfig: Codable, Sendable, Equatable {
     public var callbackUrl: String?
     public var scope: String?
     public var clientName: String?
+    public var clientRegistration: McpOAuthClientRegistration?
     public var authServerMetadataUrl: String?
 
     public init(clientId: String? = nil, clientSecret: String? = nil,
                 callbackPort: Int? = nil, callbackUrl: String? = nil, scope: String? = nil,
-                clientName: String? = nil, authServerMetadataUrl: String? = nil) {
+                clientName: String? = nil, clientRegistration: McpOAuthClientRegistration? = nil, authServerMetadataUrl: String? = nil) {
         self.clientId = clientId
         self.clientSecret = clientSecret
         self.callbackPort = callbackPort
         self.callbackUrl = callbackUrl
         self.scope = scope
         self.clientName = clientName
+        self.clientRegistration = clientRegistration
         self.authServerMetadataUrl = authServerMetadataUrl
     }
 }
@@ -114,12 +120,14 @@ public struct McpServerEntry: Sendable, Equatable {
     public var config: McpServerConfig
     public var source: String
     public var scope: Scope
+    public var override: String?
 
-    public init(name: String, config: McpServerConfig, source: String, scope: Scope) {
+    public init(name: String, config: McpServerConfig, source: String, scope: Scope, override: String? = nil) {
         self.name = name
         self.config = config
         self.source = source
         self.scope = scope
+        self.override = override
     }
 }
 
@@ -127,11 +135,13 @@ public struct LoadedMcpConfig: Sendable {
     public var servers: [McpServerEntry]
     public var autoEnableCodemode: Bool?
     public var errors: [String]
+    public var projectConfig: String?
 
-    public init(servers: [McpServerEntry] = [], autoEnableCodemode: Bool? = nil, errors: [String] = []) {
+    public init(servers: [McpServerEntry] = [], autoEnableCodemode: Bool? = nil, errors: [String] = [], projectConfig: String? = nil) {
         self.servers = servers
         self.autoEnableCodemode = autoEnableCodemode
         self.errors = errors
+        self.projectConfig = projectConfig
     }
 }
 
@@ -252,6 +262,18 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
                !(value is String) || (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
                 return prefix + "oauth.clientName must be a non-empty string"
             }
+            if let registration = oauth["clientRegistration"], (registration as? String) != "dcr" {
+                guard (registration as? String) == "cimd" else {
+                    return prefix + "oauth.clientRegistration must be \"dcr\" or \"cimd\""
+                }
+                if oauth["clientId"] != nil || oauth["clientName"] != nil {
+                    return prefix + "oauth.clientRegistration \"cimd\" cannot be combined with oauth.clientId or oauth.clientName"
+                }
+                if let callback = (oauth["callbackUrl"] as? String).flatMap(URLComponents.init(string:)),
+                   ["::1", "[::1]"].contains(callback.host ?? "") || callback.path != "/callback" {
+                    return prefix + "oauth.clientRegistration \"cimd\" requires oauth.callbackUrl on localhost or 127.0.0.1 with path /callback"
+                }
+            }
             if let value = oauth["authServerMetadataUrl"] {
                 guard let text = value as? String, mcpIsSecureOrLoopbackURL(text) else {
                     return prefix + "oauth.authServerMetadataUrl must be an https URL, or http on localhost, 127.0.0.1, or [::1]"
@@ -292,7 +314,9 @@ public func loadMcpConfig(agentDir: URL, cwd: URL, projectTrusted: Bool) -> Load
     let global = agentDir.appendingPathComponent("mcp.json")
     readMcpConfigFile(global, scope: .global, into: &result)
     if projectTrusted {
-        readMcpConfigFile(cwd.appendingPathComponent(".pi/mcp.json"), scope: .project, into: &result)
+        let project = cwd.appendingPathComponent(".pi/mcp.json")
+        result.projectConfig = project.path
+        readMcpConfigFile(project, scope: .project, into: &result)
     }
     return result
 }
@@ -329,6 +353,32 @@ private func readMcpConfigFile(_ path: URL, scope: McpServerEntry.Scope, into re
         do {
             let data = Data(value.serialized(escapeSlashes: false).utf8)
             let raw = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+            if scope == .project, let object = raw as? [String: Any],
+               object["command"] == nil, object["url"] == nil, object["type"] == nil {
+                guard let index = result.servers.firstIndex(where: { $0.name == name }) else {
+                    result.errors.append("\(path.path): server \"\(name)\" needs \"command\" or \"url\", or a global server to override")
+                    continue
+                }
+                guard object.keys.allSatisfy({ ["enabled", "exposure", "toolExposure"].contains($0) }) else {
+                    result.errors.append("\(path.path): server \"\(name)\": an override can only set enabled, exposure, toolExposure")
+                    continue
+                }
+                let base = result.servers[index].config
+                guard var merged = try JSONSerialization.jsonObject(with: JSONEncoder().encode(base)) as? [String: Any] else {
+                    throw McpConfigError.invalid("server \"\(name)\": expected a config object")
+                }
+                for (key, value) in object { merged[key] = value }
+                if let error = validateMcpServerConfig(name: name, value: merged) {
+                    result.errors.append("\(path.path): \(error)")
+                    continue
+                }
+                var config = try JSONDecoder().decode(McpServerConfig.self, from: JSONSerialization.data(withJSONObject: merged))
+                config.toolExposureOrder = object["toolExposure"] != nil
+                    ? mcpObjectEntries(value["toolExposure"]).map { $0.0 } : base.toolExposureOrder
+                result.servers[index].config = config
+                result.servers[index].override = path.path
+                continue
+            }
             if let error = validateMcpServerConfig(name: name, value: raw) {
                 result.errors.append("\(path.path): \(error)")
                 continue
@@ -437,7 +487,7 @@ private func mcpConfigJSON(_ config: McpServerConfig) throws -> OrderedJSON {
             let order = config.toolExposureOrder + overrides.map { $0.0 }.filter { !config.toolExposureOrder.contains($0) }.sorted()
             value = .object(order.compactMap { name in value[name].map { (name, $0) } })
         } else if key == "oauth" {
-            value = .object(["clientId", "clientSecret", "callbackPort", "callbackUrl", "scope", "clientName", "authServerMetadataUrl"]
+            value = .object(["clientId", "clientSecret", "callbackPort", "callbackUrl", "scope", "clientName", "clientRegistration", "authServerMetadataUrl"]
                 .compactMap { name in value[name].map { (name, $0) } })
         } else if let members = value.objectEntries {
             // Swift maps have no insertion order. Existing file objects retain their source order.
@@ -457,14 +507,16 @@ public struct McpServerConfigPatch: Sendable {
     }
 }
 
-public func updateMcpServerConfig(path: URL, name: String, patch: McpServerConfigPatch) throws {
+public func updateMcpServerConfig(path: URL, name: String, patch: McpServerConfigPatch, override: Bool = false) throws {
     try editMcpServers(path: path) { servers in
-        guard var server = servers[name], server.objectEntries != nil else {
+        var server = servers[name] ?? (override ? .object([]) : .null)
+        guard server.objectEntries != nil else {
             throw McpConfigError.missingServer("\(path.path) does not define MCP server \"\(name)\"")
         }
-        if let enabled = patch.enabled { mcpSetMember("enabled", enabled ? nil : .bool(false), in: &server) }
+        let keepDefaults = server["command"] == nil && server["url"] == nil && server["type"] == nil
+        if let enabled = patch.enabled { mcpSetMember("enabled", enabled && !keepDefaults ? nil : .bool(enabled), in: &server) }
         if let exposure = patch.exposure {
-            mcpSetMember("exposure", exposure == .codemode ? nil : .string(exposure.rawValue), in: &server)
+            mcpSetMember("exposure", exposure == .codemode && !keepDefaults ? nil : .string(exposure.rawValue), in: &server)
         }
         mcpSetMember(name, server, in: &servers)
         return true
@@ -520,6 +572,7 @@ private func editMcpServers(path: URL, edit: (inout OrderedJSON) throws -> Bool)
 public struct McpServerListReport: Codable, Sendable, Equatable {
     public var name: String
     public var source: String
+    public var override: String?
     public var scope: McpServerEntry.Scope
     public var enabled: Bool
     public var exposure: McpExposure
@@ -534,6 +587,7 @@ public struct McpServerListReport: Codable, Sendable, Equatable {
     public init(entry: McpServerEntry) {
         name = entry.name
         source = entry.source
+        override = entry.override
         scope = entry.scope
         enabled = entry.config.isEnabled
         exposure = entry.config.effectiveExposure
@@ -551,6 +605,7 @@ private extension McpServerListReport {
             ("transport", .string(transport)), ("state", .string(state)),
             ("tools", .array(tools.map(OrderedJSON.string)))
         ]
+        if let override { entries.insert(("override", .string(override)), at: 3) }
         if let overrides = toolExposure {
             let names = tools.filter { overrides[$0] != nil } + overrides.keys.filter { !tools.contains($0) }.sorted()
             entries.append(("toolExposure", .object(names.compactMap { name in
@@ -587,14 +642,14 @@ public struct McpListReport: Sendable {
 
 public func inspectMcpServers(
     _ loaded: LoadedMcpConfig, cwd: URL, credentials: McpOAuthCredentialStore,
-    note: String? = nil, log: McpServerLog? = nil,
+    note: String? = nil, log: McpServerLog? = nil, clientMetadataDocumentURL: URL? = nil,
     createTransport: @escaping McpTransportFactory = createDefaultMcpTransport
 ) async -> McpListReport {
     let reports = await withTaskGroup(of: (Int, McpServerListReport).self) { group in
         for (index, entry) in loaded.servers.enumerated() {
             group.addTask {
                 let report = await inspectMcpServer(entry, cwd: cwd, credentials: credentials,
-                    log: log, createTransport: createTransport)
+                    log: log, clientMetadataDocumentURL: clientMetadataDocumentURL, createTransport: createTransport)
                 return (index, report)
             }
         }
@@ -608,13 +663,14 @@ public func inspectMcpServers(
 
 private func inspectMcpServer(
     _ entry: McpServerEntry, cwd: URL, credentials: McpOAuthCredentialStore,
-    log: McpServerLog?,
+    log: McpServerLog?, clientMetadataDocumentURL: URL?,
     createTransport: @escaping McpTransportFactory
 ) async -> McpServerListReport {
     var report = McpServerListReport(entry: entry)
     guard report.enabled else { return report }
     let connection = McpServerConnection(entry: entry, cwd: cwd,
-        createTransport: createTransport, credentials: credentials, log: log)
+        createTransport: createTransport, credentials: credentials, log: log,
+        clientMetadataDocumentURL: clientMetadataDocumentURL)
     try? await connection.connect()
     report.state = await connection.state.rawValue
     let tools = await connection.tools

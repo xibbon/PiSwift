@@ -250,7 +250,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.openai, "gpt-5.5"),
     (.azureOpenAIResponses, "gpt-5.4"),
     (.openaiCodex, "gpt-6.1-sol"),
-    (.nvidia, "nvidia/nemotron-3-super-120b-a12b"),
+    (.nvidia, "nvidia/nemotron-3-ultra-550b-a55b"),
     (.deepseek, "deepseek-v4-pro"),
     (.google, "gemini-3.1-pro-preview"),
     (.googleVertex, "gemini-3.1-pro-preview"),
@@ -442,6 +442,8 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             shortcuts: api.shortcuts,
             tools: api.tools,
             currentTools: { api.tools },
+            toolRenderers: api.toolRenderers,
+            currentToolRenderers: { api.toolRenderers },
             providerRegistrations: api.providerRegistrations,
             virtualModelRegistrations: api.virtualModelRegistrations,
             setSendMessageHandler: api.setSendMessageHandler,
@@ -479,6 +481,9 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
         }
         for (customType, renderer) in loaded.messageRenderers {
             api.registerMessageRenderer(customType, renderer)
+        }
+        for resolver in loaded.currentToolRenderers() {
+            api.registerToolRenderer(resolver)
         }
         for transformer in loaded.markdownTransformers {
             api.registerMarkdownTransformer(transformer)

@@ -104,6 +104,8 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             shortcuts: api.shortcuts,
             tools: api.tools,
             currentTools: { api.tools },
+            toolRenderers: api.toolRenderers,
+            currentToolRenderers: { api.toolRenderers },
             providerRegistrations: api.providerRegistrations,
             mcpServerRegistrations: api.mcpServerRegistrations,
             mcpServerRegistry: api.mcpServerRegistry,

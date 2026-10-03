@@ -202,6 +202,37 @@ public typealias CustomToolSessionHandler = @Sendable (_ event: CustomToolSessio
 public typealias CustomToolRenderCall = @Sendable (_ args: [String: AnyCodable], _ theme: Theme) throws -> HookComponent?
 public typealias CustomToolRenderResult = @Sendable (_ result: CustomToolResult, _ options: RenderResultOptions, _ theme: Theme) throws -> HookComponent?
 
+/// A renderer family drawn by the host.
+public enum BuiltInToolRenderer: Sendable, Equatable {
+    case mcp(label: String)
+}
+
+/// Display settings for a tool call. These settings do not register a tool.
+public struct CustomToolRenderers: Sendable {
+    public var renderShell: ToolRenderShell?
+    public var renderCall: CustomToolRenderCall?
+    public var renderResult: CustomToolRenderResult?
+    public var builtIn: BuiltInToolRenderer?
+
+    public init(renderShell: ToolRenderShell? = nil,
+                renderCall: CustomToolRenderCall? = nil,
+                renderResult: CustomToolRenderResult? = nil,
+                builtIn: BuiltInToolRenderer? = nil) {
+        self.renderShell = renderShell
+        self.renderCall = renderCall
+        self.renderResult = renderResult
+        self.builtIn = builtIn
+    }
+
+    public init(tool: CustomTool) {
+        self.init(renderShell: tool.renderShell, renderCall: tool.renderCall,
+                  renderResult: tool.renderResult)
+    }
+}
+
+/// Calls `next` to get settings from the remaining resolvers and the base tool.
+public typealias ToolRendererResolver = @Sendable (_ toolName: String, _ next: () -> CustomToolRenderers?) -> CustomToolRenderers?
+
 public struct CustomTool: Sendable {
     public var name: String
     public var label: String

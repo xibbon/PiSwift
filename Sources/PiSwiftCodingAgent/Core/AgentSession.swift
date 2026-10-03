@@ -1182,6 +1182,22 @@ public final class AgentSession: Sendable {
         customToolsInternal
     }
 
+    /// Get tool display settings, including settings for tools that are not registered.
+    public func toolRenderers(for name: String) -> CustomToolRenderers? {
+        let runner = hookRunner
+        let base: () -> CustomToolRenderers? = {
+            if let tool = runner?.getExtensionTools().first(where: { $0.name == name }) {
+                return CustomToolRenderers(tool: tool)
+            }
+            if let tool = self.customTools.first(where: { $0.tool.name == name })?.tool {
+                return CustomToolRenderers(tool: tool)
+            }
+            return nil
+        }
+        if let runner { return runner.resolveToolRenderers(name, base: base) }
+        return base()
+    }
+
     public func emitCustomToolSessionEvent(
         _ reason: CustomToolSessionEvent.Reason,
         previousSessionFile: String? = nil
