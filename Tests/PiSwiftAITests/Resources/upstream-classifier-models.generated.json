@@ -1,5 +1,41 @@
 {
   "cloudflare-workers-ai": {
+    "@cf/cloudflare/clef": {
+      "api": "cloudflare-workers-ai-system-one",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.24,
+        "output": 0
+      },
+      "id": "@cf/cloudflare/clef",
+      "input": [
+        "text"
+      ],
+      "name": "Clef",
+      "provider": "cloudflare-workers-ai",
+      "type": "classifier"
+    },
+    "@cf/cloudflare/clef-flash": {
+      "api": "cloudflare-workers-ai-system-one",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.09,
+        "output": 0
+      },
+      "id": "@cf/cloudflare/clef-flash",
+      "input": [
+        "text"
+      ],
+      "name": "Clef Flash",
+      "provider": "cloudflare-workers-ai",
+      "type": "classifier"
+    },
     "typesafe/jev": {
       "api": "cloudflare-workers-ai-system-one",
       "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
@@ -76,6 +112,24 @@
       "provider": "openrouter",
       "type": "classifier"
     },
+    "inception/mercury-decide:free": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 32768,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "inception/mercury-decide:free",
+      "input": [
+        "text"
+      ],
+      "name": "Inception: Mercury Decide (free)",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
     "jaredpalmer/kev-4b": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -91,6 +145,24 @@
         "text"
       ],
       "name": "Jared Palmer: Kev 4B",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "liquid/d1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0.04,
+        "cacheWrite": 0,
+        "input": 0.04,
+        "output": 0
+      },
+      "id": "liquid/d1",
+      "input": [
+        "text"
+      ],
+      "name": "LiquidAI: D1",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -145,6 +217,24 @@
         "text"
       ],
       "name": "Respan: Span-01 Lite (free)",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "togethercomputer/tev1-4b-experimental": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 32768,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "togethercomputer/tev1-4b-experimental",
+      "input": [
+        "text"
+      ],
+      "name": "Together: Tev1 4B Experimental",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -206,14 +296,50 @@
     }
   },
   "vercel-ai-gateway": {
-    "liquid/d1": {
+    "convaiinnovations/laya": {
       "api": "typesafe-system-one",
       "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
-      "contextWindow": 32000,
+      "contextWindow": 8192,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
         "input": 0,
+        "output": 0
+      },
+      "id": "convaiinnovations/laya",
+      "input": [
+        "text"
+      ],
+      "name": "Laya",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "convaiinnovations/laya-free": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 8192,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "convaiinnovations/laya-free",
+      "input": [
+        "text"
+      ],
+      "name": "Laya (Free)",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "liquid/d1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.04,
         "output": 0
       },
       "id": "liquid/d1",

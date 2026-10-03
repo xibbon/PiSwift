@@ -1,5 +1,36 @@
 {
   "openrouter": {
+    "black-forest-labs/flux-3-image": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "black-forest-labs/flux-3-image",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Black Forest Labs: FLUX.3 Image",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
     "black-forest-labs/flux.2-flex": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -149,6 +180,37 @@
         }
       },
       "name": "ByteDance Seed: Seedream 4.5",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "bytedance-seed/seedream-5-0-flash": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "bytedance-seed/seedream-5-0-flash",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "ByteDance Seed: Seedream 5.0 Flash",
       "output": [
         "image"
       ],

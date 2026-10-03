@@ -12,6 +12,26 @@ internal let ClassifierModelsData: [String: [String: ClassifierModel]] = [
 ]
 
 private let providerModels_classifier_cloudflare_workers_ai: [String: ClassifierModel] = [
+    "@cf/cloudflare/clef": ClassifierModel(
+        id: "@cf/cloudflare/clef",
+        name: "Clef",
+        api: .cloudflareWorkersAISystemOne,
+        provider: "cloudflare-workers-ai",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+        input: [.text],
+        cost: ModelCost(input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
+    "@cf/cloudflare/clef-flash": ClassifierModel(
+        id: "@cf/cloudflare/clef-flash",
+        name: "Clef Flash",
+        api: .cloudflareWorkersAISystemOne,
+        provider: "cloudflare-workers-ai",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+        input: [.text],
+        cost: ModelCost(input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
     "typesafe/jev": ClassifierModel(
         id: "typesafe/jev",
         name: "Jev",
@@ -48,6 +68,16 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
 ]
 
 private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
+    "inception/mercury-decide:free": ClassifierModel(
+        id: "inception/mercury-decide:free",
+        name: "Inception: Mercury Decide (free)",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768
+    ),
     "jaredpalmer/kev-4b": ClassifierModel(
         id: "jaredpalmer/kev-4b",
         name: "Jared Palmer: Kev 4B",
@@ -57,6 +87,16 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 8192
+    ),
+    "liquid/d1": ClassifierModel(
+        id: "liquid/d1",
+        name: "LiquidAI: D1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0.04, cacheWrite: 0),
+        contextWindow: 65536
     ),
     "respan/span-01": ClassifierModel(
         id: "respan/span-01",
@@ -87,6 +127,16 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 4096
+    ),
+    "togethercomputer/tev1-4b-experimental": ClassifierModel(
+        id: "togethercomputer/tev1-4b-experimental",
+        name: "Together: Tev1 4B Experimental",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768
     ),
     "typesafe/jev-1.13": ClassifierModel(
         id: "typesafe/jev-1.13",
@@ -134,6 +184,26 @@ private let providerModels_classifier_typesafe: [String: ClassifierModel] = [
 ]
 
 private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierModel] = [
+    "convaiinnovations/laya": ClassifierModel(
+        id: "convaiinnovations/laya",
+        name: "Laya",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 8192
+    ),
+    "convaiinnovations/laya-free": ClassifierModel(
+        id: "convaiinnovations/laya-free",
+        name: "Laya (Free)",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 8192
+    ),
     "liquid/d1": ClassifierModel(
         id: "liquid/d1",
         name: "Liquid d1",
@@ -141,8 +211,8 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32000
+        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
     ),
     "typesafe-ai/jev": ClassifierModel(
         id: "typesafe-ai/jev",

@@ -8,6 +8,17 @@ internal let ImageModelsData: [String: [String: ImageModel]] = [
 ]
 
 private let providerModels_image_openrouter: [String: ImageModel] = [
+    "black-forest-labs/flux-3-image": ImageModel(
+        id: "black-forest-labs/flux-3-image",
+        name: "Black Forest Labs: FLUX.3 Image",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "black-forest-labs/flux.2-flex": ImageModel(
         id: "black-forest-labs/flux.2-flex",
         name: "Black Forest Labs: FLUX.2 Flex",
@@ -59,6 +70,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.image, .text],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "bytedance-seed/seedream-5-0-flash": ImageModel(
+        id: "bytedance-seed/seedream-5-0-flash",
+        name: "ByteDance Seed: Seedream 5.0 Flash",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))

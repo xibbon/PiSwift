@@ -3071,7 +3071,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     )
     #expect(supportsXhigh(model: opus))
 
-    let togetherDeepSeek = getModel(provider: .together, modelId: "deepseek-ai/DeepSeek-V4-Pro")
+    let togetherDeepSeek = getModel(provider: .together, modelId: "deepseek-ai/DeepSeek-V4-Pro-0813") // v1.0.1 catalog
     #expect(supportsXhigh(model: togetherDeepSeek))
     #expect(mappedThinkingLevel(model: togetherDeepSeek, level: .xhigh) == "max")
 
@@ -6449,8 +6449,8 @@ struct ApiRegistryTests {
     #expect(getProviders().count == 40)
     #expect(!getProviders().contains(.typesafe))
     #expect(getBuiltinProviders().contains(.typesafe))
-    #expect(allModels.count == 1498)
-    #expect(compared == 1498)
+    #expect(allModels.count == 1509) // v1.0.1 catalog
+    #expect(compared == 1509) // v1.0.1 catalog
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6506,8 +6506,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 57)
-    #expect(compared == 57)
+    #expect(models.count == 59) // v1.0.1 catalog
+    #expect(compared == 59) // v1.0.1 catalog
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)
@@ -6540,7 +6540,7 @@ struct ApiRegistryTests {
             compared += 1
         }
     }
-    #expect(compared == 13)
+    #expect(compared == 20) // v1.0.1 catalog
     #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }
