@@ -175,24 +175,18 @@ public func streamAnthropic(
             let nativeToolChanges = compat.supportsMidConvoSystemMessages
                 && compat.supportsMidConvoToolChanges
                 && !initialTools.isEmpty
-                && !hasToolRedefinitions(context.messages)
-            let initialNames = Set(initialTools.map(\.name))
-            let laterTools = getDeclaredTools(context.messages).filter { !initialNames.contains($0.name) }
-            let orderedTools = nativeToolChanges ? initialTools + laterTools : currentTools
-            let deferredToolNames = nativeToolChanges
-                ? Set(laterTools.map { isOAuthToken ? toClaudeCodeName($0.name) : $0.name })
-                : Set<String>()
+            let orderedTools = nativeToolChanges ? initialTools : currentTools
             let initialToolNames = nativeToolChanges
                 ? Set(initialTools.map { isOAuthToken ? toClaudeCodeName($0.name) : $0.name })
                 : Set<String>()
-            let strictToolSchemas = try resolveAnthropicStrictToolSchemas(
-                tools: orderedTools,
-                isOAuthToken: isOAuthToken,
-                supportsStrictTools: compat.supportsStrictTools
-            )
+            let toolDefinitions = try orderedTools.map {
+                try anthropicToolDefinitionJSON($0, isOAuthToken: isOAuthToken,
+                    supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                    supportsStrictTools: compat.supportsStrictTools)
+            }
             let betaHeaders = anthropicBetaFeatures(
                 model: model,
-                context: Context(messages: context.messages, tools: orderedTools),
+                context: Context(messages: context.messages, tools: currentTools),
                 options: options,
                 nativeToolChanges: nativeToolChanges
             )
@@ -217,7 +211,7 @@ public func streamAnthropic(
             mergedHeaders = openCodeSessionHeaders(model: model, sessionId: options.sessionId, headers: mergedHeaders)
             // Apply the resolved beta list after user overrides, including explicit deletion.
             mergedHeaders = mergeProviderHeaders(mergedHeaders, ["anthropic-beta": betaHeaders?.joined(separator: ",")])
-            let (parameters, systemInsertions) = buildAnthropicParameters(
+            let (parameters, pendingInsertions) = buildAnthropicParameters(
                 model: model,
                 context: context,
                 options: options,
@@ -225,6 +219,15 @@ public func streamAnthropic(
                 compat: compat,
                 orderedTools: orderedTools
             )
+            let systemInsertions = try pendingInsertions.map { insertion in
+                let definitions = nativeToolChanges ? try (insertion.message.toolsAdded ?? []).map {
+                    try anthropicToolDefinitionJSON($0, isOAuthToken: isOAuthToken,
+                        supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                        supportsStrictTools: compat.supportsStrictTools)
+                } : []
+                return AnthropicSystemInsertion(index: insertion.index, message: insertion.message,
+                    toolDefinitions: definitions)
+            }
             let encodedBody = try anthropicJSONBody(parameters)
             let constrainedBody = injectAnthropicRequestBody(
                 body: encodedBody,
@@ -234,12 +237,11 @@ public func streamAnthropic(
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
-                deferredToolNames: deferredToolNames,
                 initialToolNames: initialToolNames,
                 nativeToolChanges: nativeToolChanges,
                 systemInsertions: systemInsertions,
                 isOAuthToken: isOAuthToken,
-                strictToolSchemas: strictToolSchemas
+                toolDefinitions: toolDefinitions
             ) ?? encodedBody
             let rawRequestBody = try prepareAnthropicRawPayload(
                 constrainedBody, model: model, context: Context(messages: context.messages), options: options
@@ -258,7 +260,6 @@ public func streamAnthropic(
                 supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                 supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                 thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
-                strictToolSchemas: strictToolSchemas,
                 rawRequestBody: rawRequestBody
             )
             let service = AnthropicServiceFactory.service(
@@ -1079,6 +1080,7 @@ func buildAnthropicBetaHeaders(
 struct AnthropicSystemInsertion: Sendable {
     let index: Int
     let message: SystemMessage
+    var toolDefinitions: [[String: AnyCodable]] = []
 }
 
 private func convertAnthropicMessages(
@@ -1544,7 +1546,8 @@ func injectAnthropicRequestBody(
     nativeToolChanges: Bool = false,
     systemInsertions: [AnthropicSystemInsertion] = [],
     isOAuthToken: Bool = false,
-    strictToolSchemas: [String: [String: AnyCodable]] = [:]
+    strictToolSchemas: [String: [String: AnyCodable]] = [:],
+    toolDefinitions: [[String: AnyCodable]]? = nil
 ) -> Data? {
     guard let body,
           var payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
@@ -1581,13 +1584,14 @@ func injectAnthropicRequestBody(
             let text = renderSystemMessageUpdate(insertion.message)
             if !text.isEmpty { blocks.append(["type": "text", "text": sanitizeSurrogates(text)]) }
             if nativeToolChanges {
-                for tool in insertion.message.toolsRemoved ?? [] {
+                let addedNames = Set((insertion.message.toolsAdded ?? []).map(\.name))
+                for tool in insertion.message.toolsRemoved ?? [] where !addedNames.contains(tool.name) {
                     let name = isOAuthToken ? toClaudeCodeName(tool.name) : tool.name
                     blocks.append(["type": "tool_removal", "tool": ["type": "tool_reference", "name": name]])
                 }
-                for tool in insertion.message.toolsAdded ?? [] {
-                    let name = isOAuthToken ? toClaudeCodeName(tool.name) : tool.name
-                    blocks.append(["type": "tool_addition", "tool": ["type": "tool_reference", "name": name]])
+                for definition in insertion.toolDefinitions {
+                    blocks.append(["type": "tool_addition", "tool": ["type": "tool_definition",
+                        "definition": definition.mapValues(\.value)]])
                 }
             }
             guard !blocks.isEmpty else { continue }
@@ -1615,6 +1619,10 @@ func injectAnthropicRequestBody(
             messages[lastIndex] = last
             payload["messages"] = messages
         }
+    }
+
+    if let toolDefinitions, !toolDefinitions.isEmpty {
+        payload["tools"] = toolDefinitions.map { $0.mapValues(\.value) }
     }
 
     // v0.67.4: add a cache_control breakpoint on the last tool definition so tool schemas
@@ -1693,22 +1701,27 @@ private let isAnthropicStrictUnsupportedKeyword: UnsupportedStrictSchemaKeywordC
     return false
 }
 
-private func resolveAnthropicStrictToolSchemas(
-    tools: [AITool],
+private func anthropicToolDefinitionJSON(
+    _ tool: AITool,
     isOAuthToken: Bool,
+    supportsEagerToolInputStreaming: Bool,
     supportsStrictTools: Bool
-) throws -> [String: [String: AnyCodable]] {
-    var result: [String: [String: AnyCodable]] = [:]
-    for tool in tools {
-        if try resolveJsonSchemaStrictSampling(
-            tool: tool,
-            supportsStrictMode: supportsStrictTools,
-            isUnsupportedKeyword: isAnthropicStrictUnsupportedKeyword
-        ) == true {
-            result[isOAuthToken ? toClaudeCodeName(tool.name) : tool.name] = try getJsonSchemaToolParameters(tool, strict: true)
-        }
-    }
-    return result
+) throws -> [String: AnyCodable] {
+    let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictTools,
+        isUnsupportedKeyword: isAnthropicStrictUnsupportedKeyword) == true
+    let parameters = try getJsonSchemaToolParameters(tool, strict: strict)
+    var schema: [String: AnyCodable] = strict ? parameters : [:]
+    schema["type"] = AnyCodable("object")
+    schema["properties"] = parameters["properties"] ?? AnyCodable([String: Any]())
+    schema["required"] = parameters["required"] ?? AnyCodable([String]())
+    var definition: [String: AnyCodable] = [
+        "name": AnyCodable(isOAuthToken ? toClaudeCodeName(tool.name) : tool.name),
+        "description": AnyCodable(tool.description),
+        "input_schema": AnyCodable(schema.mapValues(\.value)),
+    ]
+    if supportsEagerToolInputStreaming { definition["eager_input_streaming"] = AnyCodable(true) }
+    if strict { definition["strict"] = AnyCodable(true) }
+    return definition
 }
 
 func injectCacheControl(body: Data?, ttl: String?) -> Data? {
@@ -1898,7 +1911,7 @@ func anthropicBetaFeatures(
         features += ["mid-conversation-output-config-2026-07-01", "thinking-binding-controls-2026-08-01"]
     }
     if nativeToolChanges {
-        features.append("mid-conversation-tool-changes-2026-07-01")
+        features.append("inline-tools-2026-09-15")
     }
     return features.isEmpty ? nil : features
 }

@@ -166,6 +166,7 @@ private func systemOneOutput(_ body: Any, transport: SystemOneTransport) throws 
     guard let run = root["result"] as? [String: Any] else {
         throw SystemOneError(message: "Cloudflare Workers AI returned an unexpected response")
     }
+    if run["answers"] != nil { return run }
     guard run["state"] as? String == "Completed" else {
         let state = (run["state"] as? String) ?? "undefined"
         throw SystemOneError(message: "Cloudflare Workers AI run did not complete (state: \(state))")

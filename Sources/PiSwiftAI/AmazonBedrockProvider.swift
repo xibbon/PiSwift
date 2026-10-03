@@ -788,6 +788,8 @@ private func supportsAdaptiveThinking(model: Model) -> Bool {
         candidate.contains("opus-4.8") ||
         candidate.contains("sonnet-4-6") ||
         candidate.contains("sonnet-4.6") ||
+        candidate.contains("opus-5") ||
+        candidate.contains("sonnet-5") ||
         candidate.contains("fable-5")
     }
 }
@@ -798,7 +800,15 @@ private func supportsNativeXhighEffort(model: Model) -> Bool {
         candidate.contains("opus-4.7") ||
         candidate.contains("opus-4-8") ||
         candidate.contains("opus-4.8") ||
+        candidate.contains("opus-5") ||
+        candidate.contains("sonnet-5") ||
         candidate.contains("fable-5")
+    }
+}
+
+private func supportsThinkingBlockBinding(model: Model) -> Bool {
+    bedrockModelMatchCandidates(model).contains { candidate in
+        ["opus-4-7", "opus-4-8", "opus-5", "sonnet-5", "fable-5"].contains { candidate.contains($0) }
     }
 }
 
@@ -1050,12 +1060,17 @@ func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) ->
     guard isAnthropicClaudeModel(model) || capabilityId.contains("claude") else { return nil }
 
     var result: [String: Any] = [:]
-    let display = isGovCloudBedrockTarget(model: model, options: options) ? nil : (options.thinkingDisplay ?? .summarized).rawValue
+    let isGovCloud = isGovCloudBedrockTarget(model: model, options: options)
+    let display = isGovCloud ? nil : (options.thinkingDisplay ?? .summarized).rawValue
 
     if supportsAdaptiveThinking(model: model) {
         var thinking: [String: Any] = ["type": "adaptive"]
         if let display {
             thinking["display"] = display
+        }
+        if !isGovCloud && supportsThinkingBlockBinding(model: model) {
+            thinking["block_binding"] = ["prefix_mismatch_behavior": "drop_block"]
+            result["anthropic_beta"] = ["thinking-binding-controls-2026-08-01"]
         }
         result["thinking"] = thinking
         result["output_config"] = ["effort": mapThinkingLevelToEffort(model: model, level: reasoning)]

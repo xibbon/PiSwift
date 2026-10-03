@@ -718,8 +718,9 @@ public struct OpenAICompat: Sendable, Codable {
     /// Whether system messages can add tools in place. Requires mid-conversation
     /// system messages. Defaults to false.
     public var supportsMidConvoToolAdditions: Bool?
-    /// Whether Anthropic accepts tool addition and removal blocks in place.
-    /// Requires mid-conversation system messages. Defaults to false.
+    /// Whether the exact model accepts mid-conversation `tool_addition` blocks with
+    /// inline tool definitions (`inline-tools-2026-09-15`) and `tool_removal` blocks.
+    /// Requires `supportsMidConvoSystemMessages`. Defaults to false.
     public var supportsMidConvoToolChanges: Bool?
     public var supportsStrictMode: Bool?
     /// Maps thinking levels to provider-specific reasoning effort values.

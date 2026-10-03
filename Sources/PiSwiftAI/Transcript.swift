@@ -137,6 +137,7 @@ public func getDeclaredTools<T: TranscriptMessageLike>(_ messages: [T]) -> [AITo
     }
     return result
 }
+@available(*, deprecated, message: "No built-in transport needs this anymore: Anthropic expresses redefinitions with inline tool_definition blocks.")
 public func hasToolRedefinitions<T: TranscriptMessageLike>(_ messages: [T]) -> Bool {
     var declared: [String: AITool] = [:]
     for message in messages {

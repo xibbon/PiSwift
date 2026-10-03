@@ -137,9 +137,9 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     ])
     let body = try await captureMidBody(.anthropicMessages, compat: compat, context: context)
     let tools = try #require(body["tools"] as? [[String: Any]])
-    #expect(tools.map { $0["name"] as? String } == ["read", "__pi_deferred_placeholder__", "search"])
+    // b271b0a52: Later tools use inline definitions.
+    #expect(tools.map { $0["name"] as? String } == ["read", "__pi_deferred_placeholder__"])
     #expect(tools[1]["defer_loading"] as? Bool == true)
-    #expect(tools[2]["defer_loading"] as? Bool == true)
     let messages = try #require(body["messages"] as? [[String: Any]])
     let update = try #require(messages.last)
     #expect(update["role"] as? String == "system")
@@ -148,7 +148,18 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect(blocks[0]["text"] as? String == "Later")
     #expect((blocks[1]["tool"] as? [String: Any])?["type"] as? String == "tool_reference")
     #expect((blocks[1]["tool"] as? [String: Any])?["name"] as? String == "read")
-    #expect((blocks[2]["tool"] as? [String: Any])?["name"] as? String == "search")
+    let addition = try #require(blocks[2]["tool"] as? [String: Any])
+    let definition = try #require(addition["definition"] as? [String: Any])
+    // b271b0a52: Add the definition by value.
+    #expect(addition["type"] as? String == "tool_definition")
+    // b271b0a52: The inline definition identifies the new tool.
+    #expect(definition["name"] as? String == "search")
+    // b271b0a52: Cache control belongs to the addition block.
+    #expect(blocks[2]["cache_control"] != nil)
+    // b271b0a52: Inline definitions have no cache control.
+    #expect(definition["cache_control"] == nil)
+    // b271b0a52: Inline definitions are not deferred.
+    #expect(definition["defer_loading"] == nil)
 
     let flagOff = try await captureMidBody(.anthropicMessages, compat: nil, context: context)
     let explicitOff = try await captureMidBody(.anthropicMessages,
@@ -160,9 +171,19 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect((flagOff["tools"] as? [[String: Any]])?.map { $0["name"] as? String } == ["search"])
 
     let redefined = try await captureMidBody(.anthropicMessages, compat: compat,
-        context: midContext([midSystem("", added: [midTool("read", description: "new")])]))
-    #expect((redefined["tools"] as? [[String: Any]])?.count == 1)
-    #expect((redefined["messages"] as? [[String: Any]])?.count == 1)
+        // b271b0a52: Replace the same name in one system message.
+        context: midContext([midSystem("", added: [midTool("read", description: "new")], removed: [ToolReference(name: "read")])]))
+    let redefinedTools = try #require(redefined["tools"] as? [[String: Any]])
+    // b271b0a52: Keep the initial definition and placeholder.
+    #expect(redefinedTools.map { $0["name"] as? String } == ["read", "__pi_deferred_placeholder__"])
+    // b271b0a52: Preserve the cached initial description.
+    #expect(redefinedTools[0]["description"] as? String == "read")
+    let redefinedBlocks = try #require((redefined["messages"] as? [[String: Any]])?.last?["content"] as? [[String: Any]])
+    // b271b0a52: A redefinition needs one addition and no removal.
+    #expect(redefinedBlocks.map { $0["type"] as? String } == ["tool_addition"])
+    let replacement = try #require((redefinedBlocks[0]["tool"] as? [String: Any])?["definition"] as? [String: Any])
+    // b271b0a52: Send the replacement description inline.
+    #expect(replacement["description"] as? String == "new")
 }
 
 @Test(.timeLimit(.minutes(1))) func midConversationSystemWaitsForToolResultsOnWire() async throws {

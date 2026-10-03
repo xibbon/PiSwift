@@ -164,6 +164,7 @@ public enum OAuthError: Error, LocalizedError {
     case cancelled
     case unknownAnthropicLoginMethod(String)
     case anthropicCopyCodeStateMismatch
+    case callbackPortInUse(UInt16)
 
     public var errorDescription: String? {
         switch self {
@@ -191,6 +192,8 @@ public enum OAuthError: Error, LocalizedError {
             return "Unknown Anthropic login method: \(id)"
         case .anthropicCopyCodeStateMismatch:
             return "OAuth state mismatch"
+        case .callbackPortInUse(let port):
+            return "Port \(port) is in use, probably by an unfinished login in another pi session or by the Codex CLI. Cancel that login and try again."
         }
     }
 }

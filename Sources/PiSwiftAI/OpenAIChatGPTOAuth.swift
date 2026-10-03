@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Network)
+import Network
+#endif
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
@@ -59,7 +62,7 @@ func chatGPTManualResult(_ input: String, expectedState: String, redirectUri: St
 /// ChatGPT parses pasted URLs before racing them with the browser callback.
 /// This differs from the shared helper, which hands off raw pasted input.
 private func waitForChatGPTAuthorization(
-    callbacks: OAuthLoginCallbacks, callback: OAuthCallbackServer<ChatGPTAuthorizationResult>?,
+    callbacks: OAuthLoginCallbacks, callback: OAuthCallbackServer<ChatGPTAuthorizationResult>,
     state: String, redirectUri: String
 ) async throws -> ChatGPTAuthorizationResult {
     try Task.checkCancellation()
@@ -67,10 +70,6 @@ private func waitForChatGPTAuthorization(
         message: "Complete login in your browser, or paste the final redirect URL here:",
         placeholder: redirectUri
     )
-    guard let callback else {
-        let input = try await callbacks.onPrompt(prompt)
-        return try chatGPTManualResult(input, expectedState: state, redirectUri: redirectUri)
-    }
     let race = OAuthCallbackRace<ChatGPTAuthorizationResult>()
     return try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { continuation in
@@ -211,9 +210,8 @@ func loginOpenAIChatGPT(
     #endif
     let state = chatGPTRandomValue()
     let nonce = chatGPTRandomValue()
-    let fallbackRedirectUri = "http://127.0.0.1:\(callbackPort)/auth/callback"
     #if canImport(Network)
-    let callback: OAuthCallbackServer<ChatGPTAuthorizationResult>?
+    let callback: OAuthCallbackServer<ChatGPTAuthorizationResult>
     do {
         callback = try await OAuthCallbackServer.start(
             providerName: "ChatGPT", host: oauthCallbackHost(), port: callbackPort,
@@ -223,15 +221,15 @@ func loginOpenAIChatGPT(
             try chatGPTAuthorizationResult(components, expectedState: state)
         }
     } catch {
-        callback = nil
-        if let onProgress = callbacks.onProgress {
-            await onProgress("Could not listen on \(fallbackRedirectUri); paste the final redirect URL to continue. \(error.localizedDescription)")
+        if let networkError = error as? NWError, networkError == .posix(.EADDRINUSE) {
+            throw OAuthError.callbackPortInUse(callbackPort)
         }
+        throw error
     }
-    let redirectUri = await callback?.redirectUri() ?? fallbackRedirectUri
-    defer { if let callback { Task { await callback.close() } } }
+    let redirectUri = await callback.redirectUri()
+    defer { Task { await callback.close() } }
     #else
-    let redirectUri = fallbackRedirectUri
+    let redirectUri = "http://127.0.0.1:\(callbackPort)/auth/callback"
     #endif
     var authorize = URLComponents(string: "https://auth.openai.com/api/accounts/authorize")!
     authorize.queryItems = [
