@@ -12,7 +12,10 @@ public enum McpOAuthFlowResult: Sendable, Equatable {
 public protocol McpOAuthClientProvider: Sendable {
     var redirectURL: URL { get }
     var clientMetadata: McpOAuthClientMetadata { get }
-    var clientMetadataURL: URL? { get }
+    /// Called only when client information is absent, including when metadata is nil.
+    /// The document is not saved. The host must ensure that it lists the presenter redirect URI;
+    /// the library cannot verify the document contents.
+    func clientMetadataDocument(for metadata: McpOAuthAuthorizationServerMetadata?) throws -> McpOAuthClientMetadataDocument?
     func state() async throws -> String?
     func clientInformation() async throws -> McpOAuthClientInformation?
     func saveClientInformation(_ information: McpOAuthClientInformation) async throws
@@ -28,7 +31,7 @@ public protocol McpOAuthClientProvider: Sendable {
 }
 
 public extension McpOAuthClientProvider {
-    var clientMetadataURL: URL? { nil }
+    func clientMetadataDocument(for metadata: McpOAuthAuthorizationServerMetadata?) throws -> McpOAuthClientMetadataDocument? { nil }
     func addClientAuthentication(tokenURL: URL, metadata: McpOAuthAuthorizationServerMetadata?) async throws -> McpOAuthClientAuthentication? { nil }
 }
 
@@ -266,23 +269,26 @@ public enum McpOAuthFlow {
         }
         let resource = try McpOAuthDiscovery.selectResource(serverURL: options.serverURL, metadata: info.resourceMetadata)
         let scope = nonempty(options.scope) ?? nonempty(info.resourceMetadata?.scopesSupported?.joined(separator: " ")) ?? provider.clientMetadata.scope
-        var client = try await provider.clientInformation()
+        let stored = try await provider.clientInformation()
+        let document = stored == nil ? try provider.clientMetadataDocument(for: info.authorizationServerMetadata) : nil
+        if let document {
+            guard document.url.scheme == "https", document.url.path != "/", !document.url.path.isEmpty else {
+                throw McpOAuthError.invalidMetadata("client metadata URL")
+            }
+            guard document.redirectURL == provider.redirectURL else {
+                throw McpOAuthError.invalidMetadata("client metadata redirect URL")
+            }
+        }
+        var client = stored ?? document.map { McpOAuthClientInformation(clientID: $0.url.absoluteString) }
         if client == nil {
             if options.authorizationCode != nil { throw McpOAuthError.invalidMetadata("client information missing during code exchange") }
-            if info.authorizationServerMetadata?.clientIDMetadataDocumentSupported == true,
-               let url = provider.clientMetadataURL {
-                guard url.scheme == "https", url.path != "/", !url.path.isEmpty else {
-                    throw McpOAuthError.invalidMetadata("client metadata URL")
-                }
-                client = McpOAuthClientInformation(clientID: url.absoluteString)
-            } else {
-                client = try await registerClient(authorizationServerURL: info.authorizationServerURL,
-                    metadata: info.authorizationServerMetadata, clientMetadata: provider.clientMetadata,
-                    scope: scope, http: http)
-            }
+            client = try await registerClient(authorizationServerURL: info.authorizationServerURL,
+                metadata: info.authorizationServerMetadata, clientMetadata: provider.clientMetadata,
+                scope: scope, http: http)
             if let client { try await provider.saveClientInformation(client) }
         }
         guard let client else { throw McpOAuthError.invalidMetadata("client information") }
+        let redirectURL = document?.redirectURL ?? provider.redirectURL
         if let code = options.authorizationCode {
             if let metadata = info.authorizationServerMetadata,
                options.iss != nil || metadata.authorizationResponseIssParameterSupported == true,
@@ -292,7 +298,7 @@ public enum McpOAuthFlow {
             let tokens = try await exchangeAuthorizationCode(authorizationServerURL: info.authorizationServerURL,
                 metadata: info.authorizationServerMetadata, clientInformation: client,
                 code: code, codeVerifier: try await provider.codeVerifier(),
-                redirectURL: provider.redirectURL, resource: resource,
+                redirectURL: redirectURL, resource: resource,
                 clientAuthentication: provider, http: http)
             try await provider.saveTokens(withScope(tokens, scope: scope))
             return .authorized
@@ -313,7 +319,7 @@ public enum McpOAuthFlow {
         }
         let authorization = try startAuthorization(authorizationServerURL: info.authorizationServerURL,
             metadata: info.authorizationServerMetadata, clientInformation: client,
-            redirectURL: provider.redirectURL, scope: scope, state: try await provider.state(), resource: resource)
+            redirectURL: redirectURL, scope: scope, state: try await provider.state(), resource: resource)
         try await provider.saveCodeVerifier(authorization.codeVerifier)
         try await provider.redirectToAuthorization(authorization.authorizationURL)
         return .redirect

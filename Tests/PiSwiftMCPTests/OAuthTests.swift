@@ -3,14 +3,16 @@ import Foundation
 import FoundationNetworking
 #endif
 import Testing
+import Synchronization
 @testable import PiSwiftMCP
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
 
 private actor OAuthFixture: McpOAuthHTTPClient {
-    enum Mode: Sendable {
+    enum Mode: Sendable, Equatable {
         case standard, emptyOptionalFields, invalidProtectedURL, emptyScopes, configuredMetadata, responseScope
+        case clientMetadataDocument(iss: Bool?, metadataAvailable: Bool)
     }
     let mode: Mode
     init(mode: Mode = .standard) { self.mode = mode }
@@ -26,8 +28,8 @@ private actor OAuthFixture: McpOAuthHTTPClient {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         requests.append(request)
         let path = request.url?.path ?? ""
-        let body: [String: Any]
-        let status: Int
+        var body: [String: Any]
+        var status: Int
         switch path {
         case "/.well-known/oauth-protected-resource/mcp":
             if protectedResource {
@@ -85,6 +87,16 @@ private actor OAuthFixture: McpOAuthHTTPClient {
         default:
             body = [:]
             status = 404
+        }
+        if path == "/.well-known/oauth-authorization-server",
+           case .clientMetadataDocument(let iss, let metadataAvailable) = mode {
+            if metadataAvailable {
+                body["client_id_metadata_document_supported"] = true
+                if let iss { body["authorization_response_iss_parameter_supported"] = iss }
+            } else {
+                body = [:]
+                status = 404
+            }
         }
         let data = try JSONSerialization.data(withJSONObject: body)
         let response = HTTPURLResponse(url: request.url ?? origin, statusCode: status,
@@ -485,6 +497,249 @@ func oauthOptionalFieldsDecodeAsAbsent(_ absent: String) throws {
         from: Data("{\"resource\":\"https://mcp.example/mcp\",\"authorization_servers\":null,\"scopes_supported\":null}".utf8))
     #expect(resource.authorizationServers == nil)
     #expect(resource.scopesSupported == nil)
+}
+
+private final class ClientDocumentHookRecorder: Sendable {
+    private let values = Mutex<[McpOAuthAuthorizationServerMetadata?]>([])
+    func record(_ metadata: McpOAuthAuthorizationServerMetadata?) { values.withLock { $0.append(metadata) } }
+    func read() -> [McpOAuthAuthorizationServerMetadata?] { values.withLock { $0 } }
+}
+
+private let clientDocumentURL = URL(string: "https://host.example/oauth/client.json")!
+private let clientDocumentRedirectURL = URL(string: "http://127.0.0.1:6789/callback")!
+
+private func documentProvider(
+    _ fixture: OAuthFixture, store: McpMemoryOAuthStateStore = McpMemoryOAuthStateStore(),
+    recorder: RedirectRecorder = RedirectRecorder(), hook: @escaping McpOAuthClientMetadataDocumentProvider
+) -> McpOAuthProvider {
+    McpOAuthProvider(serverURL: URL(string: "\(fixture.origin)/mcp")!, redirectURL: clientDocumentRedirectURL,
+        clientMetadata: McpOAuthClientMetadata(clientName: "document-test"), clientMetadataDocument: hook,
+        store: store, onRedirect: { await recorder.save($0) })
+}
+
+private func oauthQuery(_ url: URL, _ name: String) -> String? {
+    URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == name }?.value
+}
+
+private func oauthTokenParameter(_ request: URLRequest, _ name: String) -> String? {
+    URLComponents(string: "?" + String(decoding: request.httpBody ?? Data(), as: UTF8.self))?
+        .queryItems?.first { $0.name == name }?.value
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthClientDocumentSignInUsesDocumentWithoutSavingClient() async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let store = McpMemoryOAuthStateStore()
+    let recorder = RedirectRecorder()
+    let calls = ClientDocumentHookRecorder()
+    let issuer = fixture.origin.absoluteString
+    let presenter = McpPasteRedirectPresenter(callbackURL: clientDocumentRedirectURL,
+        openAuthorizationURL: { await recorder.save($0) }, pasteRedirectURL: {
+            let url = try #require(await recorder.read())
+            let state = try #require(oauthQuery(url, "state"))
+            return "\(clientDocumentRedirectURL)?code=test-code&state=\(state)&iss=\(issuer)"
+        })
+    let oauth = try await McpOAuthSignIn.signIn(serverURL: URL(string: "\(fixture.origin)/mcp")!,
+        presenter: presenter, clientMetadata: McpOAuthClientMetadata(clientName: "document-test"),
+        clientMetadataDocument: { metadata, redirectURL in
+            calls.record(metadata)
+            #expect(redirectURL == clientDocumentRedirectURL)
+            return try .staticDocument(url: clientDocumentURL, redirectURL: redirectURL, metadata: metadata)
+        }, store: store, http: fixture)
+    let authorization = try #require(await recorder.read())
+    #expect(oauthQuery(authorization, "client_id") == clientDocumentURL.absoluteString)
+    #expect(oauthQuery(authorization, "redirect_uri") == clientDocumentRedirectURL.absoluteString)
+    #expect(try await oauth.clientInformation() == nil)
+    #expect(await store.load()?.clientInformation == nil)
+    #expect(try await oauth.tokens()?.accessToken == "first-token")
+    #expect(calls.read().count == 2)
+    #expect(calls.read().allSatisfy { $0?.authorizationResponseIssParameterSupported == true })
+    let requests = await fixture.snapshot().0
+    #expect(!requests.contains { $0.url?.path == "/register" || $0.url?.host == "host.example" })
+    let token = try #require(requests.first { $0.url?.path == "/token" })
+    #expect(oauthTokenParameter(token, "client_id") == clientDocumentURL.absoluteString)
+    #expect(oauthTokenParameter(token, "redirect_uri") == clientDocumentRedirectURL.absoluteString)
+    #expect(oauthTokenParameter(token, "client_secret") == nil)
+    #expect(token.value(forHTTPHeaderField: "Authorization") == nil)
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthClientDocumentRefreshCallsHookAgainWithoutStoredClient() async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let store = McpMemoryOAuthStateStore()
+    let calls = ClientDocumentHookRecorder()
+    let hook: McpOAuthClientMetadataDocumentProvider = { metadata in
+        calls.record(metadata)
+        return try .staticDocument(url: clientDocumentURL, redirectURL: clientDocumentRedirectURL, metadata: metadata)
+    }
+    let options = McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!)
+    let initial = documentProvider(fixture, store: store, hook: hook)
+    #expect(try await McpOAuthFlow.authorize(provider: initial, options: options, http: fixture) == .redirect)
+    #expect(calls.read().count == 1)
+    try await initial.saveTokens(McpOAuthTokens(accessToken: "old", tokenType: "Bearer", refreshToken: "refresh-token"))
+    let refresh = documentProvider(fixture, store: store, hook: hook)
+    #expect(try await McpOAuthFlow.authorize(provider: refresh, options: options, http: fixture) == .authorized)
+    #expect(calls.read().count == 2)
+    #expect(await store.load()?.clientInformation == nil)
+    #expect(try await refresh.tokens()?.accessToken == "refreshed-token")
+    let (requests, refreshes, _) = await fixture.snapshot()
+    #expect(refreshes == 1)
+    #expect(!requests.contains { $0.url?.path == "/register" })
+    let token = try #require(requests.first { $0.url?.path == "/token" })
+    #expect(oauthTokenParameter(token, "client_id") == clientDocumentURL.absoluteString)
+    #expect(oauthTokenParameter(token, "grant_type") == "refresh_token")
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [true, false])
+func oauthClientDocumentHookRunsWithNilOrUnadvertisedMetadata(_ metadataAvailable: Bool) async throws {
+    let fixture = metadataAvailable ? OAuthFixture() : OAuthFixture(mode: .clientMetadataDocument(iss: nil, metadataAvailable: false))
+    let recorder = RedirectRecorder()
+    let calls = ClientDocumentHookRecorder()
+    let oauth = documentProvider(fixture, recorder: recorder) { metadata in
+        calls.record(metadata)
+        return McpOAuthClientMetadataDocument(url: clientDocumentURL, redirectURL: clientDocumentRedirectURL)
+    }
+    #expect(try await McpOAuthFlow.authorize(provider: oauth,
+        options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture) == .redirect)
+    let values = calls.read()
+    try #require(values.count == 1)
+    #expect((values[0] != nil) == metadataAvailable)
+    #expect(values[0]?.clientIDMetadataDocumentSupported == nil)
+    let authorization = try #require(await recorder.read())
+    #expect(oauthQuery(authorization, "client_id") == clientDocumentURL.absoluteString)
+    #expect(try await oauth.clientInformation() == nil)
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: ["http://host.example/client.json", "https://host.example/", "https://host.example"])
+func oauthClientDocumentRejectsInvalidURL(_ value: String) async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let url = try #require(URL(string: value))
+    let oauth = documentProvider(fixture) { _ in McpOAuthClientMetadataDocument(url: url, redirectURL: clientDocumentRedirectURL) }
+    do {
+        _ = try await McpOAuthFlow.authorize(provider: oauth,
+            options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture)
+        Issue.record("Expected invalid client metadata URL")
+    } catch McpOAuthError.invalidMetadata(let field) {
+        #expect(field == "client metadata URL")
+    }
+    #expect(try await oauth.clientInformation() == nil)
+    #expect(await fixture.snapshot().0.allSatisfy { $0.httpMethod != "POST" })
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthClientDocumentRejectsRedirectMismatch() async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let oauth = documentProvider(fixture) { _ in
+        McpOAuthClientMetadataDocument(url: clientDocumentURL, redirectURL: URL(string: "http://127.0.0.1:6789/other")!)
+    }
+    do {
+        _ = try await McpOAuthFlow.authorize(provider: oauth,
+            options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture)
+        Issue.record("Expected client metadata redirect mismatch")
+    } catch McpOAuthError.invalidMetadata(let field) {
+        #expect(field == "client metadata redirect URL")
+    }
+    #expect(await fixture.snapshot().0.allSatisfy { $0.httpMethod != "POST" })
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [0, 1, 2, 3, 4, 5])
+func oauthStaticClientDocumentRejectsUnsupportedPublicClientsFirst(_ index: Int) async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: false, metadataAvailable: true))
+    var metadata = try #require(try await McpOAuthDiscovery.authorizationServerMetadata(issuer: fixture.origin, http: fixture))
+    switch index {
+    case 1: metadata.clientIDMetadataDocumentSupported = nil
+    case 2: metadata.clientIDMetadataDocumentSupported = false
+    case 3: metadata.tokenEndpointAuthMethodsSupported = nil
+    case 4: metadata.tokenEndpointAuthMethodsSupported = []
+    case 5: metadata.tokenEndpointAuthMethodsSupported = ["client_secret_post"]
+    default: break
+    }
+    let message = "The authorization server does not support Client ID Metadata Documents for public clients; remove oauth.clientRegistration \"cimd\""
+    do {
+        _ = try McpOAuthClientMetadataDocument.staticDocument(url: clientDocumentURL,
+            redirectURL: clientDocumentRedirectURL, metadata: index == 0 ? nil : metadata)
+        Issue.record("Expected public client support error")
+    } catch McpOAuthError.clientMetadataDocumentUnsupported(let received) {
+        #expect(received == message)
+        #expect(McpOAuthError.clientMetadataDocumentUnsupported(received).errorDescription == message)
+    }
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [Optional<Bool>.none, false])
+func oauthStaticClientDocumentRequiresIssuerSupport(_ iss: Bool?) async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: iss, metadataAvailable: true))
+    let metadata = try #require(try await McpOAuthDiscovery.authorizationServerMetadata(issuer: fixture.origin, http: fixture))
+    let message = "The authorization server does not send the RFC 9207 iss parameter, which the Swift client ID metadata document requires; use dynamic client registration or set oauth.clientId"
+    do {
+        _ = try McpOAuthClientMetadataDocument.staticDocument(url: clientDocumentURL, redirectURL: clientDocumentRedirectURL, metadata: metadata)
+        Issue.record("Expected RFC 9207 support error")
+    } catch McpOAuthError.clientMetadataDocumentUnsupported(let received) {
+        #expect(received == message)
+        #expect(McpOAuthError.clientMetadataDocumentUnsupported(received).errorDescription == message)
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthClientDocumentCodeExchangeWithoutClientFailsAfterHook() async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let calls = ClientDocumentHookRecorder()
+    let oauth = documentProvider(fixture) { metadata in calls.record(metadata); return nil }
+    do {
+        _ = try await McpOAuthFlow.authorize(provider: oauth,
+            options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!,
+                authorizationCode: "test-code", iss: fixture.origin.absoluteString), http: fixture)
+        Issue.record("Expected missing client information")
+    } catch McpOAuthError.invalidMetadata(let field) {
+        #expect(field == "client information missing during code exchange")
+    }
+    #expect(calls.read().count == 1)
+    #expect(await fixture.snapshot().0.allSatisfy { $0.httpMethod != "POST" })
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [true, false])
+func oauthClientDocumentStoredOrConfiguredClientSkipsHook(_ configured: Bool) async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let recorder = RedirectRecorder()
+    let oauth = McpOAuthProvider(serverURL: URL(string: "\(fixture.origin)/mcp")!,
+        redirectURL: clientDocumentRedirectURL, clientMetadata: McpOAuthClientMetadata(),
+        clientID: configured ? "existing-client" : nil, clientMetadataDocument: { _ in
+            Issue.record("The document hook must not run when client information is present")
+            throw McpOAuthError.invalidMetadata("unexpected hook call")
+        }, onRedirect: { await recorder.save($0) })
+    if !configured { try await oauth.saveClientInformation(McpOAuthClientInformation(clientID: "existing-client")) }
+    #expect(try await McpOAuthFlow.authorize(provider: oauth,
+        options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture) == .redirect)
+    let url = try #require(await recorder.read())
+    #expect(oauthQuery(url, "client_id") == "existing-client")
+    #expect(await fixture.snapshot().0.allSatisfy { $0.httpMethod != "POST" })
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthClientDocumentNilHookRegistersAndSavesClient() async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: true, metadataAvailable: true))
+    let calls = ClientDocumentHookRecorder()
+    let oauth = documentProvider(fixture) { metadata in calls.record(metadata); return nil }
+    #expect(try await McpOAuthFlow.authorize(provider: oauth,
+        options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture) == .redirect)
+    #expect(calls.read().count == 1)
+    #expect(try await oauth.clientInformation()?.clientID == "test-client")
+    #expect(await fixture.snapshot().0.contains { $0.url?.path == "/register" })
+}
+
+@Test(.timeLimit(.minutes(1)))
+func oauthClientDocumentHookErrorStopsFlow() async throws {
+    let fixture = OAuthFixture(mode: .clientMetadataDocument(iss: false, metadataAvailable: true))
+    let oauth = documentProvider(fixture) { metadata in
+        try .staticDocument(url: clientDocumentURL, redirectURL: clientDocumentRedirectURL, metadata: metadata)
+    }
+    do {
+        _ = try await McpOAuthFlow.authorize(provider: oauth,
+            options: McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!), http: fixture)
+        Issue.record("Expected document hook error")
+    } catch McpOAuthError.clientMetadataDocumentUnsupported(let message) {
+        #expect(message.contains("RFC 9207 iss parameter"))
+    }
+    #expect(await fixture.snapshot().0.allSatisfy { $0.httpMethod != "POST" })
 }
 
 @Test func oauthRequiredAndInvalidOptionalFieldsStillFail() {

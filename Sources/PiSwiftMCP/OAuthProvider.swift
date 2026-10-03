@@ -40,7 +40,7 @@ public actor McpMemoryOAuthStateStore: McpOAuthStateStore {
 public actor McpOAuthProvider: McpOAuthClientProvider {
     public nonisolated let redirectURL: URL
     public nonisolated let clientMetadata: McpOAuthClientMetadata
-    public nonisolated let clientMetadataURL: URL?
+    private nonisolated let documentProvider: McpOAuthClientMetadataDocumentProvider?
 
     private let serverURL: URL
     private let configuredClient: McpOAuthClientInformation?
@@ -51,13 +51,13 @@ public actor McpOAuthProvider: McpOAuthClientProvider {
     public init(
         serverURL: URL, redirectURL: URL, clientMetadata: McpOAuthClientMetadata,
         clientID: String? = nil, clientSecret: String? = nil,
-        clientMetadataURL: URL? = nil, initialState: String? = nil,
+        clientMetadataDocument: McpOAuthClientMetadataDocumentProvider? = nil, initialState: String? = nil,
         store: any McpOAuthStateStore = McpMemoryOAuthStateStore(),
         onRedirect: @escaping @Sendable (URL) async throws -> Void
     ) {
         self.serverURL = serverURL
         self.redirectURL = redirectURL
-        self.clientMetadataURL = clientMetadataURL
+        self.documentProvider = clientMetadataDocument
         self.initialState = initialState
         var metadata = clientMetadata
         if metadata.redirectURIs.isEmpty { metadata.redirectURIs = [redirectURL.absoluteString] }
@@ -72,6 +72,12 @@ public actor McpOAuthProvider: McpOAuthClientProvider {
         }
         self.store = store
         self.onRedirect = onRedirect
+    }
+
+    public nonisolated func clientMetadataDocument(
+        for metadata: McpOAuthAuthorizationServerMetadata?
+    ) throws -> McpOAuthClientMetadataDocument? {
+        try documentProvider?(metadata)
     }
 
     public func state() async throws -> String? {

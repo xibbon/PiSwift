@@ -6,6 +6,7 @@ import FoundationNetworking
 
 public enum McpOAuthError: Error, LocalizedError, Sendable {
     case invalidMetadata(String)
+    case clientMetadataDocumentUnsupported(String)
     case httpStatus(Int, String)
     case issuerMismatch(expected: String, received: String?)
     case insecureEndpoint(String)
@@ -19,6 +20,7 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidMetadata(let field): "Invalid OAuth metadata: \(field)"
+        case .clientMetadataDocumentUnsupported(let message): message
         case .httpStatus(let status, let body): "OAuth HTTP \(status): \(body)"
         case .issuerMismatch(let expected, let received): "OAuth issuer mismatch: expected \(expected), received \(received ?? "none")"
         case .insecureEndpoint(let url): "Refusing to send OAuth credentials to non-HTTPS endpoint \(url)"
@@ -31,6 +33,42 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
         }
     }
 }
+
+/// A host document URL used as `client_id`, and a redirect URI that the document lists.
+/// The library cannot verify that the document lists the host presenter's redirect URI.
+public struct McpOAuthClientMetadataDocument: Sendable, Equatable {
+    public var url: URL
+    public var redirectURL: URL
+
+    public init(url: URL, redirectURL: URL) {
+        self.url = url
+        self.redirectURL = redirectURL
+    }
+
+    /// Use a static host document only with public-client CIMD and RFC 9207 `iss` support.
+    /// The host must ensure that the document lists the presenter's redirect URI.
+    /// The flow checks the document URL and requires the provider's redirect URL.
+    public static func staticDocument(
+        url: URL, redirectURL: URL, metadata: McpOAuthAuthorizationServerMetadata?
+    ) throws -> McpOAuthClientMetadataDocument {
+        guard let metadata, metadata.clientIDMetadataDocumentSupported == true,
+              metadata.tokenEndpointAuthMethodsSupported?.contains("none") == true else {
+            throw McpOAuthError.clientMetadataDocumentUnsupported(
+                "The authorization server does not support Client ID Metadata Documents for public clients; remove oauth.clientRegistration \"cimd\"")
+        }
+        guard metadata.authorizationResponseIssParameterSupported == true else {
+            throw McpOAuthError.clientMetadataDocumentUnsupported(
+                "The authorization server does not send the RFC 9207 iss parameter, which the Swift client ID metadata document requires; use dynamic client registration or set oauth.clientId")
+        }
+        return McpOAuthClientMetadataDocument(url: url, redirectURL: redirectURL)
+    }
+}
+
+/// Return a host document, or nil to use dynamic client registration.
+/// Called with nil metadata when discovery finds no authorization server metadata.
+/// The host must return the same document for code exchange and refresh.
+public typealias McpOAuthClientMetadataDocumentProvider =
+    @Sendable (McpOAuthAuthorizationServerMetadata?) throws -> McpOAuthClientMetadataDocument?
 
 public struct McpOAuthChallenge: Sendable, Equatable {
     public var resourceMetadataURL: URL?

@@ -10,11 +10,14 @@ private actor McpOAuthRedirectCapture {
 
 /// Connects a host presenter to the OAuth flow, including the pasted redirect path.
 public enum McpOAuthSignIn {
+    /// The document hook receives the presenter's redirect URL.
+    /// The host must ensure that its document lists this URI; the library cannot verify it.
     @discardableResult
     public static func signIn(
         serverURL: URL, presenter: any McpSignInPresenter,
         clientMetadata: McpOAuthClientMetadata, clientID: String? = nil,
-        clientSecret: String? = nil, clientMetadataURL: URL? = nil,
+        clientSecret: String? = nil,
+        clientMetadataDocument: (@Sendable (McpOAuthAuthorizationServerMetadata?, URL) throws -> McpOAuthClientMetadataDocument?)? = nil,
         store: any McpOAuthStateStore = McpMemoryOAuthStateStore(),
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient(),
         scope: String? = nil, resourceMetadataURL: URL? = nil,
@@ -31,10 +34,16 @@ public enum McpOAuthSignIn {
             }.joined()
         }
         let redirectURL = try await presenter.redirectURL(for: state)
+        let documentProvider: McpOAuthClientMetadataDocumentProvider?
+        if let clientMetadataDocument {
+            documentProvider = { metadata in try clientMetadataDocument(metadata, redirectURL) }
+        } else {
+            documentProvider = nil
+        }
         let capture = McpOAuthRedirectCapture()
         let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
             clientMetadata: clientMetadata, clientID: clientID, clientSecret: clientSecret,
-            clientMetadataURL: clientMetadataURL, initialState: state, store: store,
+            clientMetadataDocument: documentProvider, initialState: state, store: store,
             onRedirect: { url in
                 guard await capture.isActive() else { throw McpOAuthError.authorizationRequired }
                 let callback = try await presenter.present(authorizationURL: url, state: state)
