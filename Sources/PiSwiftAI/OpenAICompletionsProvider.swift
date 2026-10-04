@@ -13,7 +13,11 @@ public func streamOpenAICompletions(
     let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: supportsSystem && model.compat?.supportsMidConvoToolAdditions == true)
     let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     var options = options
-    options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
+    options.samplingParams = resolveSamplingParams(
+        model: model,
+        thinkingLevel: options.reasoningEffort.map { ModelThinkingLevel($0) } ?? .off,
+        request: options.samplingParams
+    )
     options.headers = openCodeSessionHeaders(
         model: model,
         sessionId: options.sessionId,

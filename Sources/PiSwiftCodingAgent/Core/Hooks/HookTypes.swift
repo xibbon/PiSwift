@@ -418,7 +418,8 @@ public struct HookProviderModel: Sendable {
     public var cost: ModelCost
     public var contextWindow: Int
     public var maxTokens: Int
-    public var samplingParams: [String: AnyCodable]?
+    public var samplingParams: SamplingParams?
+    public var samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel?
     public var headers: ProviderHeaders?
     public var compat: OpenAICompat?
     public var thinkingLevelMap: ThinkingLevelMap?
@@ -435,12 +436,13 @@ public struct HookProviderModel: Sendable {
         cost: ModelCost = ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: Int = 128_000,
         maxTokens: Int = 16_384,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         thinkingLevelMap: ThinkingLevelMap? = nil,
         inputLimits: ModelInputLimits? = nil,
-        promptCache: ModelPromptCache? = nil
+        promptCache: ModelPromptCache? = nil,
+        samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel? = nil
     ) {
         self.id = id
         self.name = name
@@ -457,6 +459,7 @@ public struct HookProviderModel: Sendable {
         self.thinkingLevelMap = thinkingLevelMap
         self.inputLimits = inputLimits
         self.promptCache = promptCache
+        self.samplingParamsByThinkingLevel = samplingParamsByThinkingLevel
     }
 }
 

@@ -84,6 +84,9 @@ public enum KnownProvider: String, Sendable {
 
 public typealias Provider = String
 
+public typealias SamplingParams = [String: AnyCodable]
+public typealias SamplingParamsByThinkingLevel = [ModelThinkingLevel: SamplingParams]
+
 public enum ThinkingLevel: String, Sendable, Codable, CodingKeyRepresentable {
     case minimal
     case low
@@ -186,7 +189,7 @@ public struct StreamOptions: Sendable {
     /// SGLang, ...) receive parameters pi does not model, e.g. `top_p`, `top_k`, `min_p`,
     /// `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
     /// OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
-    public var samplingParams: [String: AnyCodable]?
+    public var samplingParams: SamplingParams?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -214,7 +217,7 @@ public struct StreamOptions: Sendable {
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -257,7 +260,7 @@ public struct StreamOptions: Sendable {
 public struct SimpleStreamOptions: Sendable {
     public var env: [String: String]?
     public var temperature: Double?
-    public var samplingParams: [String: AnyCodable]?
+    public var samplingParams: SamplingParams?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -287,7 +290,7 @@ public struct SimpleStreamOptions: Sendable {
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -1006,7 +1009,9 @@ public struct Model: CatalogModel, Sendable, Codable {
     /// SGLang, ...) receive parameters pi does not model, e.g. `top_p`, `top_k`, `min_p`,
     /// `repetition_penalty`. Merged over `Model.samplingParams` per key. Only applied by
     /// OpenAI-compatible adapters (completions, responses, Azure responses); other APIs ignore it.
-    public let samplingParams: [String: AnyCodable]?
+    public let samplingParams: SamplingParams?
+    /// Sampling parameter overrides selected by the effective pi thinking level.
+    public let samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel?
     public let headers: ProviderHeaders?
     public let compat: OpenAICompat?
     public let thinkingLevelMap: ThinkingLevelMap?
@@ -1030,12 +1035,13 @@ public struct Model: CatalogModel, Sendable, Codable {
         cost: ModelCost,
         contextWindow: Int,
         maxTokens: Int,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         headers: ProviderHeaders? = nil,
         compat: OpenAICompat? = nil,
         thinkingLevelMap: ThinkingLevelMap? = nil,
         inputLimits: ModelInputLimits? = nil,
-        promptCache: ModelPromptCache? = nil
+        promptCache: ModelPromptCache? = nil,
+        samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel? = nil
     ) {
         self.id = id
         self.name = name
@@ -1050,6 +1056,7 @@ public struct Model: CatalogModel, Sendable, Codable {
         self.contextWindow = contextWindow
         self.maxTokens = maxTokens
         self.samplingParams = samplingParams
+        self.samplingParamsByThinkingLevel = samplingParamsByThinkingLevel
         self.headers = headers
         self.compat = compat
         self.thinkingLevelMap = thinkingLevelMap
@@ -1061,7 +1068,8 @@ public struct Model: CatalogModel, Sendable, Codable {
             reasoning: reasoning, input: input, cost: cost, contextWindow: contextWindow,
             maxTokens: maxTokens, samplingParams: samplingParams, headers: headers,
             compat: compat, thinkingLevelMap: thinkingLevelMap,
-            inputLimits: inputLimits, promptCache: promptCache
+            inputLimits: inputLimits, promptCache: promptCache,
+            samplingParamsByThinkingLevel: samplingParamsByThinkingLevel
         )
     }
 
@@ -1076,19 +1084,21 @@ public struct Model: CatalogModel, Sendable, Codable {
         cost: ModelCost,
         contextWindow: Int,
         maxTokens: Int,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         headers: ProviderHeaders? = nil,
         compat: MistralConversationsCompat,
         thinkingLevelMap: ThinkingLevelMap? = nil,
         inputLimits: ModelInputLimits? = nil,
-        promptCache: ModelPromptCache? = nil
+        promptCache: ModelPromptCache? = nil,
+        samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel? = nil
     ) {
         self.init(
             id: id, name: name, api: api, provider: provider, baseUrl: baseUrl,
             reasoning: reasoning, input: input, cost: cost, contextWindow: contextWindow,
             maxTokens: maxTokens, samplingParams: samplingParams, headers: headers,
             compat: OpenAICompat(supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages),
-            thinkingLevelMap: thinkingLevelMap, inputLimits: inputLimits, promptCache: promptCache
+            thinkingLevelMap: thinkingLevelMap, inputLimits: inputLimits, promptCache: promptCache,
+            samplingParamsByThinkingLevel: samplingParamsByThinkingLevel
         )
     }
 }
@@ -1183,8 +1193,12 @@ public enum AnyModel: Sendable, Codable {
     public var id: String { catalog.id }
     public var name: String { catalog.name }
     public var provider: Provider { catalog.provider }
-    public var samplingParams: [String: AnyCodable]? {
+    public var samplingParams: SamplingParams? {
         if case .chat(let model) = self { return model.samplingParams }
+        return nil
+    }
+    public var samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel? {
+        if case .chat(let model) = self { return model.samplingParamsByThinkingLevel }
         return nil
     }
     public var thinkingLevelMap: ThinkingLevelMap? {
@@ -1761,7 +1775,7 @@ public enum OpenAIToolChoice: Sendable {
 public struct OpenAICompletionsOptions: Sendable {
     public var env: [String: String]?
     public var temperature: Double?
-    public var samplingParams: [String: AnyCodable]?
+    public var samplingParams: SamplingParams?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -1782,7 +1796,7 @@ public struct OpenAICompletionsOptions: Sendable {
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -1854,7 +1868,7 @@ public enum OpenAICodexTextVerbosity: String, Sendable {
 public struct OpenAIResponsesOptions: Sendable {
     public var env: [String: String]?
     public var temperature: Double?
-    public var samplingParams: [String: AnyCodable]?
+    public var samplingParams: SamplingParams?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -1879,7 +1893,7 @@ public struct OpenAIResponsesOptions: Sendable {
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,
@@ -1929,7 +1943,7 @@ public struct OpenAIResponsesOptions: Sendable {
 public struct AzureOpenAIResponsesOptions: Sendable {
     public var env: [String: String]?
     public var temperature: Double?
-    public var samplingParams: [String: AnyCodable]?
+    public var samplingParams: SamplingParams?
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var apiKey: String?
@@ -1954,7 +1968,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
-        samplingParams: [String: AnyCodable]? = nil,
+        samplingParams: SamplingParams? = nil,
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         apiKey: String? = nil,

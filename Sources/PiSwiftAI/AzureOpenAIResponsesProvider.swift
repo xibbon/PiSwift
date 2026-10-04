@@ -129,7 +129,11 @@ public func streamAzureOpenAIResponses(
     let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
     let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     var options = options
-    options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
+    options.samplingParams = resolveSamplingParams(
+        model: model,
+        thinkingLevel: options.reasoningEffort.map { ModelThinkingLevel($0) } ?? (options.reasoningSummary != nil ? .medium : .off),
+        request: options.samplingParams
+    )
     let stream = AssistantMessageEventStream()
 
     Task {
@@ -201,7 +205,8 @@ public func streamAzureOpenAIResponses(
                 maxTokens: model.maxTokens,
                 samplingParams: model.samplingParams,
                 headers: model.headers,
-                compat: model.compat
+                compat: model.compat,
+                samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel
             )
 
             let builtClient = try makeOpenAIClient(
@@ -502,7 +507,11 @@ public func streamSimpleAzureOpenAIResponses(
     let providerOptions = AzureOpenAIResponsesOptions(
         env: options?.env,
         temperature: options?.temperature,
-        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+        samplingParams: resolveSamplingParams(
+            model: model,
+            thinkingLevel: options?.reasoning.map { ModelThinkingLevel($0) } ?? .off,
+            request: options?.samplingParams
+        ),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,

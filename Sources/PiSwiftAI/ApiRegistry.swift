@@ -152,7 +152,7 @@ public func registerBuiltInProviders() {
             let providerOptions = OpenAICompletionsOptions(
                 env: options?.env,
                 temperature: options?.temperature,
-                samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+                samplingParams: options?.samplingParams,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
@@ -183,7 +183,7 @@ public func registerBuiltInProviders() {
             let providerOptions = OpenAIResponsesOptions(
                 env: options?.env,
                 temperature: options?.temperature,
-                samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+                samplingParams: options?.samplingParams,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,
@@ -248,7 +248,7 @@ public func registerBuiltInProviders() {
             let providerOptions = AzureOpenAIResponsesOptions(
                 env: options?.env,
                 temperature: options?.temperature,
-                samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+                samplingParams: options?.samplingParams,
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 apiKey: apiKey,

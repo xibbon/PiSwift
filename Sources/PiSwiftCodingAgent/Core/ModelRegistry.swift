@@ -377,7 +377,8 @@ private struct ModelOverride: Sendable {
     var cost: ModelCostOverride?
     var contextWindow: Int?
     var maxTokens: Int?
-    var samplingParams: [String: AnyCodable]?
+    var samplingParams: SamplingParams?
+    var samplingParamsByThinkingLevel: SamplingParamsByThinkingLevel?
     var headers: ProviderHeaders?
     var compat: OpenAICompat?
     var thinkingLevelMap: ThinkingLevelMap?
@@ -406,9 +407,20 @@ private func parseProviderHeaders(_ value: Any?) -> ProviderHeaders? {
     return headers
 }
 
-private func parseSamplingParams(_ value: Any?) -> [String: AnyCodable]? {
+private func parseSamplingParams(_ value: Any?) -> SamplingParams? {
     guard let values = value as? [String: Any] else { return nil }
     return values.mapValues(AnyCodable.init)
+}
+
+private func parseSamplingParamsByThinkingLevel(_ value: Any?) -> SamplingParamsByThinkingLevel? {
+    guard let values = value as? [String: Any] else { return nil }
+    var result: SamplingParamsByThinkingLevel = [:]
+    for (name, value) in values {
+        guard let level = ModelThinkingLevel(rawValue: name),
+              let params = parseSamplingParams(value) else { continue }
+        result[level] = params
+    }
+    return result
 }
 
 private func parseModelMetadata<T: Decodable>(_ value: Any?, as type: T.Type) -> T? {
@@ -541,30 +553,37 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
 
 private func applyModelOverride(model: Model, override: ModelOverride) -> Model {
     var updated = model
-    if let name = override.name { updated = Model(id: updated.id, name: name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache) }
+    if let name = override.name { updated = Model(id: updated.id, name: name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel) }
     if let baseUrl = override.baseUrl {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
     if let reasoning = override.reasoning {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
     if let input = override.input {
         let mapped = input.compactMap { ModelInput(rawValue: $0) }
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: mapped, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: mapped, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
     if let contextWindow = override.contextWindow {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
     if let maxTokens = override.maxTokens {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
     if let samplingParams = override.samplingParams {
         let mergedSamplingParams = (updated.samplingParams ?? [:]).merging(samplingParams) { _, value in value }
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: mergedSamplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: mergedSamplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
+    }
+    if let samplingParamsByThinkingLevel = override.samplingParamsByThinkingLevel {
+        var merged = updated.samplingParamsByThinkingLevel ?? [:]
+        for (level, params) in samplingParamsByThinkingLevel {
+            merged[level] = (merged[level] ?? [:]).merging(params) { _, value in value }
+        }
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: merged)
     }
     if let thinkingLevelMap = override.thinkingLevelMap {
         let mergedThinkingLevelMap = (updated.thinkingLevelMap ?? [:]).merging(thinkingLevelMap) { _, value in value }
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: mergedThinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: mergedThinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
 
     if let cost = override.cost {
@@ -575,17 +594,17 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
             cacheWrite: cost.cacheWrite ?? updated.cost.cacheWrite,
             tiers: cost.tiers ?? updated.cost.tiers
         )
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: mergedCost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: mergedCost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
 
     if let headers = override.headers {
         let mergedHeaders = mergeProviderHeaders(updated.headers, headers)
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: mergedHeaders, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: mergedHeaders, compat: updated.compat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
 
     let mergedCompat = mergeCompat(updated.compat, override.compat)
     if mergedCompat != nil {
-        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: mergedCompat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache)
+        updated = Model(id: updated.id, name: updated.name, api: updated.api, provider: updated.provider, baseUrl: updated.baseUrl, reasoning: updated.reasoning, input: updated.input, cost: updated.cost, contextWindow: updated.contextWindow, maxTokens: updated.maxTokens, samplingParams: updated.samplingParams, headers: updated.headers, compat: mergedCompat, thinkingLevelMap: updated.thinkingLevelMap, inputLimits: updated.inputLimits, promptCache: updated.promptCache, samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel)
     }
 
     if override.inputLimits != nil || override.promptCache != nil {
@@ -596,7 +615,8 @@ private func applyModelOverride(model: Model, override: ModelOverride) -> Model 
             samplingParams: updated.samplingParams, headers: updated.headers, compat: updated.compat,
             thinkingLevelMap: updated.thinkingLevelMap,
             inputLimits: override.inputLimits ?? updated.inputLimits,
-            promptCache: override.promptCache ?? updated.promptCache
+            promptCache: override.promptCache ?? updated.promptCache,
+            samplingParamsByThinkingLevel: updated.samplingParamsByThinkingLevel
         )
     }
 
@@ -642,7 +662,8 @@ private func normalizeProviderModel(_ model: Model) -> Model {
         compat: copilotCompat,
         thinkingLevelMap: model.thinkingLevelMap,
         inputLimits: model.inputLimits,
-        promptCache: model.promptCache
+        promptCache: model.promptCache,
+        samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel
     )
 }
 
@@ -835,7 +856,8 @@ public final class ModelRegistry: Sendable {
                 compat: mergeCompat(config.compat, model.compat),
                 thinkingLevelMap: model.thinkingLevelMap,
                 inputLimits: model.inputLimits,
-                promptCache: model.promptCache
+                promptCache: model.promptCache,
+                samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel
             )
             let overridden = configuredOverrides[model.id].map { applyModelOverride(model: registered, override: $0) } ?? registered
             return .chat(normalizeProviderModel(overridden))
@@ -1518,7 +1540,8 @@ public final class ModelRegistry: Sendable {
             compat: model.compat,
             thinkingLevelMap: model.thinkingLevelMap,
             inputLimits: model.inputLimits,
-            promptCache: model.promptCache
+            promptCache: model.promptCache,
+            samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel
         )
     }
 
@@ -1600,7 +1623,12 @@ public final class ModelRegistry: Sendable {
         }
 
         // Explicit models.json entries are applied after pi.dev, so user configuration wins.
-        combined = mergeCustomModels(builtInModels: combined, customModels: state.userModels)
+        let configuredUserModels = state.userModels.map { model in
+            state.configuredModelOverrides[model.provider]?[model.id].map {
+                applyModelOverride(model: model, override: $0)
+            } ?? model
+        }
+        combined = mergeCustomModels(builtInModels: combined, customModels: configuredUserModels)
 
         for sourceId in state.dynamicSourceOrder where sourceId != remoteCatalogSourceId {
             guard let providers = state.dynamicModelsBySource[sourceId] else { continue }
@@ -1697,7 +1725,8 @@ public final class ModelRegistry: Sendable {
             compat: mergeCompat(model.compat, providerOverride?.compat),
             thinkingLevelMap: model.thinkingLevelMap,
             inputLimits: model.inputLimits,
-            promptCache: model.promptCache
+            promptCache: model.promptCache,
+            samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel
         )
         if let override = state.configuredModelOverrides[model.provider]?[model.id] {
             configured = applyModelOverride(model: configured, override: override)
@@ -1741,7 +1770,8 @@ public final class ModelRegistry: Sendable {
                     compat: mergedCompat,
                     thinkingLevelMap: model.thinkingLevelMap,
                     inputLimits: model.inputLimits,
-                    promptCache: model.promptCache
+                    promptCache: model.promptCache,
+                    samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel
                 )
 
                 if let override = perModelOverrides[model.id] {
@@ -1781,7 +1811,8 @@ public final class ModelRegistry: Sendable {
                     compat: mergedCompat,
                     thinkingLevelMap: custom.thinkingLevelMap,
                     inputLimits: custom.inputLimits,
-                    promptCache: custom.promptCache
+                    promptCache: custom.promptCache,
+                    samplingParamsByThinkingLevel: custom.samplingParamsByThinkingLevel
                 )
                 merged[index] = normalizeProviderModel(withCompat)
             } else {
@@ -1852,7 +1883,8 @@ public final class ModelRegistry: Sendable {
                 compat: parseCompat(entry["compat"]),
                 thinkingLevelMap: parseThinkingLevelMap(entry["thinkingLevelMap"]),
                 inputLimits: parseModelMetadata(entry["inputLimits"], as: ModelInputLimits.self),
-                promptCache: parseModelMetadata(entry["promptCache"], as: ModelPromptCache.self)
+                promptCache: parseModelMetadata(entry["promptCache"], as: ModelPromptCache.self),
+                samplingParamsByThinkingLevel: parseSamplingParamsByThinkingLevel(entry["samplingParamsByThinkingLevel"])
             )
             custom.append(model)
         }
@@ -1915,6 +1947,7 @@ public final class ModelRegistry: Sendable {
                         contextWindow: dict["contextWindow"] as? Int,
                         maxTokens: dict["maxTokens"] as? Int,
                         samplingParams: parseSamplingParams(dict["samplingParams"]),
+                        samplingParamsByThinkingLevel: parseSamplingParamsByThinkingLevel(dict["samplingParamsByThinkingLevel"]),
                         headers: parseProviderHeaders(dict["headers"]),
                         compat: parseCompat(dict["compat"]),
                         thinkingLevelMap: parseThinkingLevelMap(dict["thinkingLevelMap"]),
@@ -1976,7 +2009,8 @@ public final class ModelRegistry: Sendable {
                     compat: compat,
                     thinkingLevelMap: parseThinkingLevelMap(modelDef["thinkingLevelMap"]),
                     inputLimits: parseModelMetadata(modelDef["inputLimits"], as: ModelInputLimits.self),
-                    promptCache: parseModelMetadata(modelDef["promptCache"], as: ModelPromptCache.self)
+                    promptCache: parseModelMetadata(modelDef["promptCache"], as: ModelPromptCache.self),
+                    samplingParamsByThinkingLevel: parseSamplingParamsByThinkingLevel(modelDef["samplingParamsByThinkingLevel"])
                 )
                 custom.append(model)
             }

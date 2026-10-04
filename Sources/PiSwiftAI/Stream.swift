@@ -397,12 +397,17 @@ func clampThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel? {
 
 let minimumAnswerTokens = 1_024
 
-func mergeSamplingParams(
+func resolveSamplingParams(
     model: Model,
-    request: [String: AnyCodable]?
-) -> [String: AnyCodable]? {
-    guard model.samplingParams != nil || request != nil else { return nil }
-    return (model.samplingParams ?? [:]).merging(request ?? [:]) { _, requestValue in requestValue }
+    thinkingLevel: ModelThinkingLevel,
+    request: SamplingParams?
+) -> SamplingParams? {
+    let effectiveThinkingLevel = clampThinkingLevel(model: model, requested: thinkingLevel)
+    let thinkingLevelParams = model.samplingParamsByThinkingLevel?[effectiveThinkingLevel]
+    guard model.samplingParams != nil || thinkingLevelParams != nil || request != nil else { return nil }
+    return (model.samplingParams ?? [:])
+        .merging(thinkingLevelParams ?? [:]) { _, levelValue in levelValue }
+        .merging(request ?? [:]) { _, requestValue in requestValue }
 }
 
 /// v0.70.0: GPT-5.5 Codex doesn't support `.minimal` reasoning effort — the API rejects it.
@@ -422,7 +427,11 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
     return OpenAICompletionsOptions(
         env: options?.env,
         temperature: options?.temperature,
-        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+        samplingParams: resolveSamplingParams(
+            model: model,
+            thinkingLevel: options?.reasoning.map { ModelThinkingLevel($0) } ?? .off,
+            request: options?.samplingParams
+        ),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
@@ -448,7 +457,11 @@ func mapOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOptions?
     return OpenAIResponsesOptions(
         env: options?.env,
         temperature: options?.temperature,
-        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+        samplingParams: resolveSamplingParams(
+            model: model,
+            thinkingLevel: options?.reasoning.map { ModelThinkingLevel($0) } ?? .off,
+            request: options?.samplingParams
+        ),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,
@@ -501,7 +514,11 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
     return AzureOpenAIResponsesOptions(
         env: options?.env,
         temperature: options?.temperature,
-        samplingParams: mergeSamplingParams(model: model, request: options?.samplingParams),
+        samplingParams: resolveSamplingParams(
+            model: model,
+            thinkingLevel: options?.reasoning.map { ModelThinkingLevel($0) } ?? .off,
+            request: options?.samplingParams
+        ),
         maxTokens: maxTokens,
         signal: options?.signal,
         apiKey: apiKey,

@@ -1979,5 +1979,6 @@ func anthropicUsageModel(_ model: Model, servingModel: String) -> Model {
         baseUrl: model.baseUrl, reasoning: model.reasoning, input: model.input, cost: fallback.cost,
         contextWindow: model.contextWindow, maxTokens: model.maxTokens,
         samplingParams: model.samplingParams, headers: model.headers, compat: model.compat,
-        thinkingLevelMap: model.thinkingLevelMap)
+        thinkingLevelMap: model.thinkingLevelMap,
+        samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel)
 }

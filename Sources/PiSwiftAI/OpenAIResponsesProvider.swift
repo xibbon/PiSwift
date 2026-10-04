@@ -187,7 +187,11 @@ public func streamOpenAIResponses(
     }
 
     var options = options
-    options.samplingParams = mergeSamplingParams(model: model, request: options.samplingParams)
+    options.samplingParams = resolveSamplingParams(
+        model: model,
+        thinkingLevel: options.reasoningEffort.map { ModelThinkingLevel($0) } ?? (options.reasoningSummary != nil ? .medium : .off),
+        request: options.samplingParams
+    )
     options.headers = openCodeSessionHeaders(
         model: model,
         sessionId: options.sessionId,
