@@ -1,4 +1,4 @@
-// Ported from pi-mono v1.0.1 packages/codemode/src/runtime/prelude-source.ts.
+// Ported from pi-mono v1.0.4 packages/codemode/src/runtime/prelude-source.ts.
 /// Maximum UTF-16 code units in text and base64 image output from one script.
 public let codemodeMaxOutputChars = 16_777_216
 /// Maximum number of text(), image(), and console calls from one script.
@@ -7,6 +7,96 @@ public let codemodeMaxOutputItems = 100_000
 let codemodePreludeSource = #"""
 (function (bridge, toolsJson, globalsJson, storeJson) {
 	"use strict";
+
+	// Freeze every object reachable from the built-in globals, plus the intrinsics that are only
+	// reachable from instances (iterator and generator prototypes, %TypedArray%).
+	//
+	// Freezing alone breaks ordinary code through the "override mistake": a data property that is
+	// read-only on a prototype cannot be assigned on an instance either, so
+	// this.name = "MyError" in an Error subclass would throw. Commonly overridden properties
+	// become accessors whose setter defines an own property on the instance instead.
+	(function lockdown() {
+		const OVERRIDABLE = new Set(["constructor", "name", "message", "toString", "toLocaleString", "valueOf", "toJSON"]);
+		const seen = new Set([globalThis]);
+		const queue = [];
+		const add = (value) => {
+			if ((typeof value === "object" && value !== null) || typeof value === "function") {
+				if (!seen.has(value)) {
+					seen.add(value);
+					queue.push(value);
+				}
+			}
+		};
+
+		// Accessors from an object literal have no own prototype object, unlike function expressions,
+		// whose prototype.constructor would be converted again without end.
+		function allowOverride(object, key, value, enumerable) {
+			const { get, set } = Object.getOwnPropertyDescriptor(
+				{
+					get accessor() {
+						return value;
+					},
+					set accessor(next) {
+						if (this === object) {
+							throw new TypeError("Cannot assign to read only property '" + String(key) + "' of a built-in");
+						}
+						if ((typeof this !== "object" || this === null) && typeof this !== "function") return;
+						Object.defineProperty(this, key, { value: next, writable: true, enumerable: true, configurable: true });
+					},
+				},
+				"accessor",
+			);
+			Object.defineProperty(object, key, { get, set, enumerable, configurable: false });
+			add(get);
+			add(set);
+		}
+
+		for (const key of Reflect.ownKeys(globalThis)) {
+			const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+			add(descriptor.value);
+			add(descriptor.get);
+			add(descriptor.set);
+			if ("value" in descriptor && descriptor.configurable) {
+				Object.defineProperty(globalThis, key, { writable: false, configurable: false });
+			}
+		}
+		add(Object.getPrototypeOf(function* () {}));
+		add(Object.getPrototypeOf(async function () {}));
+		add(Object.getPrototypeOf(async function* () {}));
+		add(Object.getPrototypeOf(Int8Array));
+		add(Object.getPrototypeOf([][Symbol.iterator]()));
+		add(Object.getPrototypeOf(new Map()[Symbol.iterator]()));
+		add(Object.getPrototypeOf(new Set()[Symbol.iterator]()));
+		add(Object.getPrototypeOf(""[Symbol.iterator]()));
+		add(Object.getPrototypeOf(/a/[Symbol.matchAll]("")));
+		if (typeof Iterator === "function") {
+			if (typeof Iterator.prototype.map === "function") add(Object.getPrototypeOf([].values().map((x) => x)));
+			if (typeof Iterator.from === "function") add(Object.getPrototypeOf(Iterator.from({ next() {} })));
+		}
+
+		while (queue.length > 0) {
+			const object = queue.pop();
+			add(Object.getPrototypeOf(object));
+			const descriptors = Object.getOwnPropertyDescriptors(object);
+			for (const key of Reflect.ownKeys(descriptors)) {
+				const descriptor = descriptors[key];
+				if ("value" in descriptor) {
+					add(descriptor.value);
+					if (
+						descriptor.writable &&
+						descriptor.configurable &&
+						(object === Object.prototype || OVERRIDABLE.has(key))
+					) {
+						allowOverride(object, key, descriptor.value, descriptor.enumerable);
+					}
+				} else {
+					add(descriptor.get);
+					add(descriptor.set);
+				}
+			}
+			Object.freeze(object);
+		}
+	})();
 	const stringify = JSON.stringify;
 	const parse = JSON.parse;
 	const promiseThen = Promise.prototype.then;
@@ -51,11 +141,17 @@ let codemodePreludeSource = #"""
 		}
 	}
 
+	// The host requires string fields. A script can set an error's name or message to anything, so
+	// they are coerced, and a value whose coercion throws gets a placeholder.
 	function describeError(error) {
-		if (error instanceof ErrorCtor) {
-			return stringify({ name: error.name, message: error.message, stack: errorText(error) });
+		try {
+			if (error instanceof ErrorCtor) {
+				return stringify({ name: String(error.name), message: String(error.message), stack: errorText(error) });
+			}
+			return stringify({ message: String(format(error)) });
+		} catch {
+			return stringify({ message: "The script threw a value that cannot be described" });
 		}
-		return stringify({ message: format(error) });
 	}
 
 	function caller(kind, name, spread) {

@@ -84,6 +84,7 @@ private enum RuntimeEvent: Sendable {
     case callResult(id: Int, CodemodeRuntimeReply)
     case done(ok: Bool, payload: String?, writes: String?)
     case crash(String)
+    case bridgeBroken(String)
     case timeout(Int)
     case aborted
     case stopped
@@ -119,6 +120,7 @@ private final class RuntimeStopFlag: Sendable {
 
 private struct RuntimeInput: Sendable {
     var code: String
+    var preludeSource: String
     var toolsJSON: String
     var globalsJSON: String
     var storeJSON: String
@@ -145,6 +147,23 @@ public enum CodemodeSandbox {
         forceWatchdog: Bool = false,
         onCall: @escaping @Sendable (CodemodeRuntimeCall) async -> CodemodeRuntimeReply
     ) async -> CodemodeRuntimeResult {
+        await execute(code: code, tools: tools, globals: globals, store: store, timeoutMs: timeoutMs,
+                      signal: signal, forceWatchdog: forceWatchdog, preludeSource: codemodePreludeSource,
+                      onCall: onCall)
+    }
+
+    // Upstream #10444: tests can supply the equivalent of the raw-worker fixture.
+    static func execute(
+        code: String,
+        tools: [CodemodeRuntimeTool],
+        globals: [CodemodeRuntimeGlobal] = [],
+        store: [String: AnyCodable] = [:],
+        timeoutMs: Int? = nil,
+        signal: CancellationToken? = nil,
+        forceWatchdog: Bool = false,
+        preludeSource: String = codemodePreludeSource,
+        onCall: @escaping @Sendable (CodemodeRuntimeCall) async -> CodemodeRuntimeReply
+    ) async -> CodemodeRuntimeResult {
         if signal?.isCancelled == true {
             return CodemodeRuntimeResult(execution: .init(output: [],
                 failure: .init(kind: .aborted, message: "Execution aborted")),
@@ -161,7 +180,7 @@ public enum CodemodeSandbox {
             if let json = try? jsonString(value) { serializedStore[key] = json }
         }
         let storeJSON = (try? jsonString(serializedStore)) ?? "{}"
-        let input = RuntimeInput(code: code, toolsJSON: toolsJSON, globalsJSON: globalsJSON,
+        let input = RuntimeInput(code: code, preludeSource: preludeSource, toolsJSON: toolsJSON, globalsJSON: globalsJSON,
                                  storeJSON: storeJSON, useTimeLimit: usesTimeLimit(forceWatchdog: forceWatchdog))
         let watchdog = !input.useTimeLimit
         let mailbox = RuntimeMailbox()
@@ -207,6 +226,10 @@ public enum CodemodeSandbox {
             case .output(let block):
                 output.append(block)
             case .call(let id, let target, let name, let argsJSON):
+                guard pending[id] == nil else {
+                    result = brokenBridgeResult("duplicate call id \(id)", output: output, watchdog: watchdog)
+                    break
+                }
                 let callSignal = CancellationToken()
                 pending[id] = callSignal
                 let call = CodemodeRuntimeCall(id: id, target: target, name: name,
@@ -219,15 +242,27 @@ public enum CodemodeSandbox {
                 guard pending.removeValue(forKey: id) != nil else { continue }
                 mailbox.send(.settle(id, reply))
             case .done(let ok, let payload, let writes):
-                if ok {
-                    let value = payload.flatMap(decodeAnyCodable)
-                    let parsedWrites = writes.flatMap(parseWrites) ?? .init()
-                    result = CodemodeRuntimeResult(execution: .init(output: output, returnedValue: value),
-                                                   storeWrites: parsedWrites, usedWatchdog: watchdog)
-                } else {
-                    result = CodemodeRuntimeResult(execution: .init(output: output, failure: parseFailure(payload)),
-                                                   usedWatchdog: watchdog)
+                do {
+                    // Decode all fields before the run has a result, as in upstream host.ts.
+                    if ok {
+                        let value = try payload.map { try decodeAnyCodable($0, what: "return value") }
+                        let parsedWrites = try writes.map(parseWrites) ?? .init()
+                        result = CodemodeRuntimeResult(execution: .init(output: output, returnedValue: value),
+                                                       storeWrites: parsedWrites, usedWatchdog: watchdog)
+                    } else {
+                        let failure = try parseFailure(payload)
+                        result = CodemodeRuntimeResult(execution: .init(output: output, failure: failure),
+                                                       usedWatchdog: watchdog)
+                    }
+                } catch let error as RuntimeBridgeError {
+                    result = brokenBridgeResult(error.reason, output: output, watchdog: watchdog)
+                } catch {
+                    result = CodemodeRuntimeResult(execution: .init(output: output,
+                        failure: .init(kind: .sandbox, message: "Sandbox host failed: \(error)")),
+                        usedWatchdog: watchdog)
                 }
+            case .bridgeBroken(let reason):
+                result = brokenBridgeResult(reason, output: output, watchdog: watchdog)
             case .crash(let message):
                 result = CodemodeRuntimeResult(execution: .init(output: output,
                     failure: .init(kind: .sandbox, message: message)), usedWatchdog: watchdog)
@@ -278,30 +313,64 @@ private func jsonString<T: Encodable>(_ value: T) throws -> String {
     return String(decoding: try encoder.encode(value), as: UTF8.self)
 }
 
-private func decodeAnyCodable(_ json: String) -> AnyCodable? {
-    try? JSONDecoder().decode(AnyCodable.self, from: Data(json.utf8))
+// The prelude and script share built-ins. Do not trust the prelude's serialized fields.
+private struct RuntimeBridgeError: Error {
+    var reason: String
 }
 
-private func parseWrites(_ json: String) -> CodemodeStoreWrites? {
-    guard let entries = try? JSONDecoder().decode([[String?]].self, from: Data(json.utf8)) else { return nil }
+private func brokenBridgeResult(_ reason: String, output: [ContentBlock], watchdog: Bool) -> CodemodeRuntimeResult {
+    .init(execution: .init(output: output, failure: .init(kind: .sandbox,
+        message: "Sandbox bridge broken: \(reason). The script may have modified built-ins such as a prototype's toJSON.")),
+        usedWatchdog: watchdog)
+}
+
+private func decodeAnyCodable(_ json: String, what: String) throws -> AnyCodable {
+    do {
+        return try JSONDecoder().decode(AnyCodable.self, from: Data(json.utf8))
+    } catch {
+        throw RuntimeBridgeError(reason: "\(what) is not valid JSON")
+    }
+}
+
+private func parseBridgeJSON(_ json: String, what: String) throws -> Any {
+    do {
+        return try JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])
+    } catch {
+        throw RuntimeBridgeError(reason: "\(what) is not valid JSON")
+    }
+}
+
+private func parseWrites(_ json: String) throws -> CodemodeStoreWrites {
+    guard let entries = try parseBridgeJSON(json, what: "store writes") as? [Any] else {
+        throw RuntimeBridgeError(reason: "store writes are not an array")
+    }
     var writes = CodemodeStoreWrites()
-    for entry in entries {
-        guard let key = entry.first ?? nil else { continue }
-        if entry.count < 2 {
+    for value in entries {
+        guard let entry = value as? [Any], let key = entry.first as? String,
+              entry.count == 1 || (entry.count == 2 && entry[1] is String) else {
+            throw RuntimeBridgeError(reason: "store writes contain a malformed entry")
+        }
+        if entry.count == 1 {
             writes.delete.append(key)
-        } else if let value = entry[1], let decoded = decodeAnyCodable(value) {
-            writes.set[key] = decoded
+        } else if let value = entry[1] as? String {
+            let encodedKey = try jsonString(key)
+            writes.set[key] = try decodeAnyCodable(value, what: "store value for \(encodedKey)")
         }
     }
     return writes
 }
 
-private func parseFailure(_ json: String?) -> CodemodeFailure {
-    guard let json, let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
-        return .init(kind: .script, message: json ?? "Script failed")
+private func parseFailure(_ json: String?) throws -> CodemodeFailure {
+    let parsed = try parseBridgeJSON(json ?? "", what: "script error")
+    guard parsed is [String: Any] || parsed is [Any] else {
+        throw RuntimeBridgeError(reason: "script error is not an object")
     }
-    return .init(kind: .script, message: object["message"] as? String ?? "Script failed",
-                 name: object["name"] as? String, stack: object["stack"] as? String)
+    guard let object = parsed as? [String: Any], let message = object["message"] as? String,
+          object["name"] == nil || object["name"] is String,
+          object["stack"] == nil || object["stack"] is String else {
+        throw RuntimeBridgeError(reason: "script error is malformed")
+    }
+    return .init(kind: .script, message: message, name: object["name"] as? String, stack: object["stack"] as? String)
 }
 
 private func validateGlobals(_ globals: [CodemodeRuntimeGlobal]) -> String? {
@@ -342,26 +411,39 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
     defer { withExtendedLifetime(interruptState) {} }
     #endif
 
-    let bridge: @convention(block) (String, String?, String?, String?) -> Void = { kind, a, b, c in
+    // String conversion would turn JavaScript undefined into the literal "undefined".
+    // Read JSValue on this thread first; events still carry only Sendable string values.
+    let bridge: @convention(block) (String, JSValue, JSValue, JSValue) -> Void = { kind, aValue, bValue, cValue in
+        let a = aValue.isUndefined ? nil : aValue.toString()
+        let b = bValue.isUndefined ? nil : bValue.toString()
+        let c = cValue.isUndefined ? nil : cValue.toString()
         switch kind {
         case "call", "global":
-            guard let a, let id = Int(a), let name = b else { return }
+            guard let a, let id = Int(a), bValue.isString, let name = b else {
+                emit.yield(.bridgeBroken("unknown message from the worker"))
+                return
+            }
             emit.yield(.call(id: id, target: kind == "call" ? .tool : .global, name: name, argsJSON: c))
         case "output":
-            if a == "image", let data = b {
+            if a == "image", bValue.isString, let data = b {
                 emit.yield(.output(.image(ImageContent(data: data, mimeType: c ?? "application/octet-stream"))))
-            } else if let text = b {
+            } else if a == "text", bValue.isString, let text = b {
                 emit.yield(.output(.text(TextContent(text: text))))
+            } else {
+                emit.yield(.bridgeBroken("unknown message from the worker"))
             }
         case "done":
             emit.yield(.done(ok: a == "true", payload: b, writes: c))
         default:
-            break
+            emit.yield(.bridgeBroken("unknown message from the worker"))
         }
     }
+    // JavaScriptCore supplies a configurable console; upstream QuickJS does not.
+    // Remove it before lockdown so the prelude can define its own console afterwards.
+    context.evaluateScript("delete globalThis.console")
     let preludeURL = URL(fileURLWithPath: "codemode-prelude.js")
     context.exception = nil
-    guard let prelude = context.evaluateScript(codemodePreludeSource, withSourceURL: preludeURL),
+    guard let prelude = context.evaluateScript(input.preludeSource, withSourceURL: preludeURL),
           context.exception == nil,
           let api = prelude.call(withArguments: [bridge, input.toolsJSON, input.globalsJSON, input.storeJSON]),
           context.exception == nil else {

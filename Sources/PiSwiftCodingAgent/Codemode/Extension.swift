@@ -25,6 +25,11 @@ public func createCodemodeExtension(options: CodemodeExtensionOptions = .init())
             getInlineBudget: {
                 let value = options.inlineBudget ?? api.getSettings().codemode?.inlineBudget
                 return value.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            },
+            getToolGuidelines: {
+                // Upstream builds a Map, so a later entry with the same name wins.
+                Dictionary(api.getAllTools().map { ($0.name, $0.promptGuidelines ?? []) },
+                           uniquingKeysWith: { _, last in last })
             })
         _ = api.registerTool(createCodemodeToolDefinition(options: toolOptions))
     }

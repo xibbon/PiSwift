@@ -187,6 +187,8 @@ public struct BuildSystemPromptOptions: Sendable {
     public var agentDir: String?
     public var contextFiles: [ContextFile]?
     public var skills: [Skill]?
+    /// Selected tools whose declarations, rules, and named skills hint are hidden.
+    public var hiddenTools: [String]?
 
     public init(
         customPrompt: String? = nil,
@@ -202,7 +204,8 @@ public struct BuildSystemPromptOptions: Sendable {
         toolSnippets: [String: String]? = nil,
         toolGuidelines: [String: [String]]? = nil,
         promptGuidelines: [String]? = nil,
-        sections: SystemPromptSections? = nil
+        sections: SystemPromptSections? = nil,
+        hiddenTools: [String]? = nil
     ) {
         self.customPrompt = customPrompt
         self.forceSystemPrompt = forceSystemPrompt
@@ -218,6 +221,7 @@ public struct BuildSystemPromptOptions: Sendable {
         self.agentDir = agentDir
         self.contextFiles = contextFiles
         self.skills = skills
+        self.hiddenTools = hiddenTools?.sorted()
     }
 }
 
@@ -263,6 +267,8 @@ public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = Buil
     }
     let cwd = options.cwd ?? FileManager.default.currentDirectoryPath
     let tools = options.selectedToolNames ?? (options.selectedTools ?? [.read, .bash, .edit, .write]).map(\.rawValue)
+    let hidden = Set(options.hiddenTools ?? [])
+    let declared = tools.filter { !hidden.contains($0) }
     let snippets = options.toolSnippets ?? [:]
     let custom = resolvePromptInput(options.customPrompt, "system prompt")
     var entries: [(name: String, value: String?)] = []
@@ -271,10 +277,10 @@ public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = Buil
         add("preamble", custom)
     } else {
         add("preamble", "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.")
-        let visible = tools.filter { !(snippets[$0] ?? "").isEmpty }
+        let visible = declared.filter { !(snippets[$0] ?? "").isEmpty }
         let list = visible.isEmpty ? "(none)" : visible.map { "- \($0): \(snippets[$0]!)" }.joined(separator: "\n")
         add("tools", "\(list)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.")
-        add("rules", systemPromptRules(tools, options))
+        add("rules", systemPromptRules(declared, options))
         add("docs", """
         Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
         - Main documentation: \(getReadmePath())
@@ -297,7 +303,9 @@ public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = Buil
     if let supplied = options.skills { skills = supplied }
     else if options.skillsSettings?.enabled == false { skills = [] }
     else { skills = loadSkills(LoadSkillsOptions(cwd: cwd, agentDir: options.agentDir)).skills }
-    if let reader: SkillFileReadTool = tools.contains("read") ? .read : (tools.contains("bash") ? .bash : nil), !skills.isEmpty {
+    let reader: SkillFileReadTool? = declared.contains("read") ? .read :
+        (declared.contains("bash") ? .bash : (tools.contains("read") || tools.contains("bash") ? .indirect : nil))
+    if let reader, !skills.isEmpty {
         let value = formatSkillsForPrompt(skills, fileReadTool: reader).trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty { add("skills", value) }
     }

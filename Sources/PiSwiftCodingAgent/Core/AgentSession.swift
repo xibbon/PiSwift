@@ -2,6 +2,19 @@ import Foundation
 import PiSwiftAI
 import PiSwiftAgent
 
+// v1.0.4 #10343: all prompt paths use the same built-in contributions.
+private let builtInToolPrompt: [String: (snippet: String, guidelines: [String])] = [
+    "read": ("Read file contents", ["Use read to examine files instead of cat or sed."]),
+    "bash": ("Execute bash commands (ls, grep, find, etc.)", ["You can inspect PI_* environment variables for current model and session details."]),
+    "edit": ("Make precise file edits with exact text replacement, including multiple disjoint edits in one call", [
+        "Use edit for precise changes (edits[].oldText must match exactly)",
+        "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
+        "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
+        "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+    ]),
+    "write": ("Create or overwrite files", ["Use write only for new files or complete rewrites."]),
+]
+
 public enum AutoCompactionReason: String, Sendable {
     case threshold
     case overflow
@@ -728,30 +741,14 @@ public final class AgentSession: Sendable {
         options.selectedTools = names.compactMap(ToolName.init(rawValue:))
         options.selectedToolNames = names
         var snippets = options.toolSnippets ?? [:]
-        let builtInSnippets = [
-            "read": "Read file contents",
-            "bash": "Execute bash commands (ls, grep, find, etc.)",
-            "edit": "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
-            "write": "Create or overwrite files",
-        ]
         for name in names {
-            if let contribution = toolPromptSnippets[name] ?? toolDefinitions[name]?.promptSnippet ?? builtInSnippets[name] {
+            if let contribution = toolPromptSnippets[name] ?? toolDefinitions[name]?.promptSnippet ?? builtInToolPrompt[name]?.snippet {
                 snippets[name] = contribution
             }
         }
-        options.toolSnippets = snippets.filter { !hiddenDeclarations.contains($0.key) }
-        let builtInGuidelines: [String: [String]] = [
-            "read": ["Use read to examine files instead of cat or sed."],
-            "bash": ["You can inspect PI_* environment variables for current model and session details."],
-            "edit": [
-                "Use edit for precise changes (edits[].oldText must match exactly)",
-                "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
-                "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
-                "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
-            ],
-            "write": ["Use write only for new files or complete rewrites."],
-        ]
-        var guidelines = builtInGuidelines.merging(options.toolGuidelines ?? [:]) { _, supplied in supplied }
+        options.toolSnippets = snippets
+        options.hiddenTools = hiddenDeclarations.sorted()
+        var guidelines = builtInToolPrompt.mapValues(\.guidelines).merging(options.toolGuidelines ?? [:]) { _, supplied in supplied }
         guidelines.merge(state.withLock { $0.toolPromptGuidelines }) { _, extensionRules in extensionRules }
         options.toolGuidelines = guidelines
         let prior = getCurrentSystemMessage(messages ?? sessionManager.buildSessionProjection().messages)
@@ -1182,6 +1179,7 @@ public final class AgentSession: Sendable {
     public func getCurrentSystemPromptOptions() -> BuildSystemPromptOptions {
         var options = state.withLock { $0.systemPromptOptions }
         options.selectedTools = getActiveToolNames().compactMap { ToolName(rawValue: $0) }
+        options.hiddenTools = hiddenDeclarations.sorted()
         return options
     }
 
@@ -2081,7 +2079,7 @@ public final class AgentSession: Sendable {
                                  scope: "user", origin: "top-level")))
             return ToolInfo(name: tool.name, description: definition?.description ?? tool.description,
                             sourceInfo: source, parameters: definition?.parameters ?? tool.parameters,
-                            promptGuidelines: definition?.promptGuidelines,
+                            promptGuidelines: definition?.promptGuidelines ?? builtInToolPrompt[tool.name]?.guidelines,
                             exposure: definition?.exposure ?? .direct,
                             namespace: definition?.namespace, annotations: definition?.annotations)
         }
@@ -2161,10 +2159,23 @@ public final class AgentSession: Sendable {
             return value == .codemode || value == .deferred || (value == .direct && active.contains(tool.name))
         }
         let definitions = toolDefinitions
+        var guidelines = builtInToolPrompt.mapValues(\.guidelines)
+        let promptSnapshot = state.withLock { ($0.systemPromptOptions.toolGuidelines ?? [:], $0.toolPromptGuidelines) }
+        guidelines.merge(promptSnapshot.0) { _, supplied in supplied }
+        for (name, definition) in definitions { guidelines[name] = definition.promptGuidelines }
+        guidelines.merge(promptSnapshot.1) { _, extensionRules in extensionRules }
+        let guidelineSnapshot = guidelines.mapValues { values in
+            var seen = Set<String>()
+            return values.compactMap { guideline in
+                let trimmed = guideline.trimmingCharacters(in: .whitespacesAndNewlines)
+                return !trimmed.isEmpty && seen.insert(trimmed).inserted ? trimmed : nil
+            }
+        }
         let loadout = ToolLoadout(
             declared: tools, callable: callable, registered: registeredTools(),
             getExposure: { definitions[$0]?.exposure ?? .direct },
-            getNamespace: { definitions[$0]?.namespace }
+            getNamespace: { definitions[$0]?.namespace },
+            getPromptGuidelines: { guidelineSnapshot[$0] ?? [] }
         )
         var descriptions: [String: String] = [:]
         var hidden: Set<String> = []

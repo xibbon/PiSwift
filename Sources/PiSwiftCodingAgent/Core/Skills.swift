@@ -277,6 +277,8 @@ private func loadSkillsFromDirInternal(dir: String, source: String, includeRootF
 public enum SkillFileReadTool: String, Sendable {
     case read
     case bash
+    /// The reader is available through another tool.
+    case indirect
 }
 
 public func formatSkillsForPrompt(_ skills: [Skill], fileReadTool: SkillFileReadTool = .read) -> String {
@@ -286,7 +288,9 @@ public func formatSkillsForPrompt(_ skills: [Skill], fileReadTool: SkillFileRead
     lines.append("\n\nThe following skills provide specialized instructions for specific tasks.")
     lines.append(fileReadTool == .read
         ? "Use the read tool to load a skill's file when the task matches its description."
-        : "Use bash to load a skill's file when the task matches its description.")
+        : fileReadTool == .bash
+            ? "Use bash to load a skill's file when the task matches its description."
+            : "Load a skill's file when the task matches its description.")
     lines.append("When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.")
     lines.append("")
     lines.append("<available_skills>")

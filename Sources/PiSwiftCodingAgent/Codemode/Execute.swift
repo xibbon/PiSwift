@@ -504,8 +504,9 @@ public func executeCodemode(toolCallId: String, params: [String: AnyCodable],
     }
     let parsed = try parseCodemodeSource(code)
     let callable = context.map { getCodemodeCallableTools($0.tools) } ?? []
+    let guidelines = options.getToolGuidelines?() ?? [:]
     let samples = Dictionary(uniqueKeysWithValues: callable.map {
-        ($0.name, renderToolSample(CodemodeDeclaration(tool: $0)))
+        ($0.name, renderToolSample(CodemodeDeclaration(tool: $0, guidelines: guidelines[$0.name] ?? [])))
     })
     let runtimeTools = callable.map { CodemodeRuntimeTool(name: $0.name, description: samples[$0.name] ?? "") }
     let modelRuntime = options.modelRuntime ?? context?.modelRegistry

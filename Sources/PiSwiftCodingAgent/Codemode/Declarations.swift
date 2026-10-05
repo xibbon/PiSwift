@@ -22,8 +22,14 @@ public struct CodemodeDeclaration: Sendable {
         self.signature = signature
     }
 
-    public init(tool: AgentTool) {
-        self.init(name: tool.name, description: tool.description,
+    public init(tool: AgentTool, guidelines: [String] = []) {
+        let bullets = guidelines.compactMap { guideline -> String? in
+            let trimmed = guideline.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : "- \(trimmed)"
+        }
+        let description = bullets.isEmpty ? tool.description :
+            tool.description.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + bullets.joined(separator: "\n")
+        self.init(name: tool.name, description: description,
                   inputSchema: AnyCodable(tool.parameters.mapValues(\.value)),
                   outputSchema: tool.outputSchema.map { AnyCodable($0.mapValues(\.value)) } ?? AnyCodable(["type": "string"]))
     }

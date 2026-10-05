@@ -33,6 +33,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let result = try await runTool(createReadTool(cwd: dir), "test-call-1", ["path": AnyCodable(testFile)])
         #expect(textOutput(result) == content)
         #expect(result.details == nil)
+        // Upstream v1.0.4 #10251, tools.test.ts:92: read text has structured output.
+        #expect(result.structuredContent == AnyCodable(content))
     }
 }
 
@@ -343,6 +345,12 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
             return false
         }
         #expect(imageBlock != nil)
+        // Upstream v1.0.4 #10251, tools.test.ts:222–227: the image carries its text note.
+        if let imageBlock, case .image(let image) = imageBlock {
+            #expect(result.structuredContent == AnyCodable([
+                "type": "image", "data": image.data, "mimeType": "image/png", "note": textOutput(result),
+            ]))
+        }
     }
 }
 

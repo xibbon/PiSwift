@@ -45,6 +45,22 @@ public struct ReadToolOptions: Sendable {
     }
 }
 
+// Upstream v1.0.4 #10251: programmatic callers receive text or the image with its note.
+private func readToolResult(content: [ContentBlock], details: AnyCodable? = nil) -> AgentToolResult {
+    let text = content.compactMap { block -> String? in
+        if case .text(let item) = block { return item.text }
+        return nil
+    }.first ?? ""
+    let image = content.compactMap { block -> ImageContent? in
+        if case .image(let item) = block { return item }
+        return nil
+    }.first
+    let output = image.map {
+        AnyCodable(["type": "image", "data": $0.data, "mimeType": $0.mimeType, "note": text])
+    } ?? AnyCodable(text)
+    return AgentToolResult(content: content, details: details, structuredContent: output)
+}
+
 public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> AgentTool {
     let autoResizeImages = options?.autoResizeImages ?? true
     let blockImages = options?.blockImages ?? false
@@ -79,7 +95,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
         if let mimeType = detectSupportedImageMimeType(fromFile: absolutePath) {
             if blockImages {
                 let warning = "[Image file detected: \(absolutePath)]\nImage reading is disabled. The 'blockImages' setting is enabled."
-                return AgentToolResult(content: [.text(TextContent(text: warning))])
+                return readToolResult(content: [.text(TextContent(text: warning))])
             }
             let data = try Data(contentsOf: URL(fileURLWithPath: absolutePath))
             let base64 = data.base64EncodedString()
@@ -89,7 +105,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
                 let limits = ImageResizeOptions(modelProfile: profile)
                 let resized = resizeImage(ImageContent(data: base64, mimeType: mimeType), options: limits)
                 guard imageFitsResizeLimits(resized, options: limits) else {
-                    return AgentToolResult(content: [.text(TextContent(text: "Read image file [\(mimeType)]\n[Image omitted: could not be resized below the inline image size limit.]"))])
+                    return readToolResult(content: [.text(TextContent(text: "Read image file [\(mimeType)]\n[Image omitted: could not be resized below the inline image size limit.]"))])
                 }
                 let dimensionNote = formatDimensionNote(resized)
                 var textNote = "Read image file [\(resized.mimeType)]"
@@ -100,14 +116,14 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
                     .text(TextContent(text: textNote)),
                     .image(ImageContent(data: resized.data, mimeType: resized.mimeType)),
                 ]
-                return AgentToolResult(content: content)
+                return readToolResult(content: content)
             }
 
             let content: [ContentBlock] = [
                 .text(TextContent(text: "Read image file [\(mimeType)]")),
                 .image(ImageContent(data: base64, mimeType: mimeType)),
             ]
-            return AgentToolResult(content: content)
+            return readToolResult(content: content)
         }
 
         let textContent = try String(contentsOfFile: absolutePath, encoding: .utf8)
@@ -160,7 +176,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
             outputText = truncation.content
         }
 
-        return AgentToolResult(content: [.text(TextContent(text: outputText))], details: details)
+        return readToolResult(content: [.text(TextContent(text: outputText))], details: details)
     }
     tool.executeWithContext = { id, params, signal, onUpdate, context in
         var executionOptions = options ?? ReadToolOptions()
@@ -168,6 +184,16 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
         if context.model != nil { executionOptions.modelProvider = nil }
         return try await createReadTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: executionOptions).execute(id, params, signal, onUpdate)
     }
+    // No property descriptions: the codemode output type stays on one line (#10251).
+    tool.outputSchema = ["anyOf": AnyCodable([
+        ["type": "string"],
+        ["type": "object", "properties": [
+            "type": ["type": "string", "const": "image"],
+            "data": ["type": "string"],
+            "mimeType": ["type": "string"],
+            "note": ["type": "string"],
+        ], "required": ["type", "data", "mimeType", "note"]],
+    ])]
     tool.constrainedSampling = .jsonSchema(strict: .prefer)
     return tool
 }

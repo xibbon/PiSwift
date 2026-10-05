@@ -334,6 +334,9 @@ private func v100Response(_ model: Model, script: String? = nil) -> AssistantMes
         #expect(!prompt.contains("\n- \(name): "))
         #expect(!getCurrentTools(last.messages).contains { $0.name == name })
     }
+    // v1.0.4 #10343: hidden tool rules move to the codemode declaration.
+    #expect(!prompt.contains("Use read to examine files"))
+    #expect(session.agent.tools.first { $0.name == "codemode" }?.description.contains("- Use read to examine files instead of cat or sed.") == true)
     #expect(prompt.contains("\n- codemode: "))
     #expect(prompt.contains("codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)"))
     #expect(prompt.contains("Codemode script reference: \(CODEMODE_DOCS_PATH)"))

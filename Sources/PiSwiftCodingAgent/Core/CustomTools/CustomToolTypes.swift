@@ -53,15 +53,19 @@ public struct ToolLoadout: Sendable {
     public var registered: [AgentTool]
     public var getExposure: @Sendable (String) -> ToolExposure
     public var getNamespace: @Sendable (String) -> ToolNamespace?
+    /// Normalized tool rules. Hidden declarations leave these out of the system prompt.
+    public var getPromptGuidelines: @Sendable (String) -> [String]
 
     public init(declared: [AgentTool], callable: [AgentTool], registered: [AgentTool],
                 getExposure: @escaping @Sendable (String) -> ToolExposure,
-                getNamespace: @escaping @Sendable (String) -> ToolNamespace?) {
+                getNamespace: @escaping @Sendable (String) -> ToolNamespace?,
+                getPromptGuidelines: @escaping @Sendable (String) -> [String] = { _ in [] }) {
         self.declared = declared
         self.callable = callable
         self.registered = registered
         self.getExposure = getExposure
         self.getNamespace = getNamespace
+        self.getPromptGuidelines = getPromptGuidelines
     }
 }
 

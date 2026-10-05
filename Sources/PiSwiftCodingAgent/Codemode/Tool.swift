@@ -18,6 +18,8 @@ public struct CodemodeStoreEntryData: Sendable {
 public struct CodemodeToolOptions: Sendable {
     public var models: Bool
     public var getToolNamespace: (@Sendable (String) -> ToolNamespace?)?
+    /// Tool rules shown by describeTool(), searchTools(), and ALL_TOOLS.
+    public var getToolGuidelines: (@Sendable () -> [String: [String]])?
     public var appendEntry: (@Sendable (String, CodemodeStoreEntryData) -> Void)?
     public var getMode: (@Sendable () -> CodemodeMode)?
     public var getInlineBudget: (@Sendable () -> Double?)?
@@ -29,9 +31,11 @@ public struct CodemodeToolOptions: Sendable {
                 appendEntry: (@Sendable (String, CodemodeStoreEntryData) -> Void)? = nil,
                 getMode: (@Sendable () -> CodemodeMode)? = nil,
                 getInlineBudget: (@Sendable () -> Double?)? = nil,
-                modelRuntime: (any CodemodeModelRuntime)? = nil) {
+                modelRuntime: (any CodemodeModelRuntime)? = nil,
+                getToolGuidelines: (@Sendable () -> [String: [String]])? = nil) {
         self.models = models
         self.getToolNamespace = getToolNamespace
+        self.getToolGuidelines = getToolGuidelines
         self.appendEntry = appendEntry
         self.getMode = getMode
         self.getInlineBudget = getInlineBudget
@@ -49,12 +53,14 @@ public func isCodemodeTool(_ tool: ToolInfo) -> Bool {
 
 private func codemodeDescriptionOptions(_ options: CodemodeToolOptions,
                                         namespaces: [String: ToolNamespace] = [:],
-                                        deferred: Set<String> = []) -> CodemodeDescriptionOptions {
+                                        deferred: Set<String> = [],
+                                        guidelines: [String: [String]] = [:]) -> CodemodeDescriptionOptions {
     CodemodeDescriptionOptions(
         models: options.models,
         namespaces: namespaces,
         deferred: deferred,
-        inlineBudget: options.getInlineBudget?() ?? defaultCodemodeInlineBudget)
+        inlineBudget: options.getInlineBudget?() ?? defaultCodemodeInlineBudget,
+        guidelines: guidelines)
 }
 
 private func describeScriptCall(_ tool: AgentTool) -> String {
@@ -87,8 +93,9 @@ public func prepareCodemodeLoadout(_ loadout: ToolLoadout,
         loadout.getNamespace(tool.name).map { (tool.name, $0) }
     })
     let deferred = Set(listed.filter { loadout.getExposure($0.name) == .deferred }.map(\.name))
+    let guidelines = Dictionary(uniqueKeysWithValues: listed.map { ($0.name, loadout.getPromptGuidelines($0.name)) })
     descriptions[CODEMODE_TOOL_NAME] = createCodemodeDescription(
-        listed, options: codemodeDescriptionOptions(options, namespaces: namespaces, deferred: deferred))
+        listed, options: codemodeDescriptionOptions(options, namespaces: namespaces, deferred: deferred, guidelines: guidelines))
     let declaredNames = Set(loadout.declared.map(\.name))
     let hidden = mode == .only ? callable.filter {
         loadout.getExposure($0.name) == .direct && declaredNames.contains($0.name)

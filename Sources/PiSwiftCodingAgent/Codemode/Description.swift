@@ -7,6 +7,7 @@ public struct CodemodeDescriptionOptions: Sendable {
     public var models: Bool
     public var namespaces: [String: ToolNamespace]
     public var deferred: Set<String>
+    public var guidelines: [String: [String]]
     /// Nil includes every non-deferred tool, as in upstream's bare builder.
     public var inlineBudget: Double?
     /// Name shown for the script engine. C5b uses JavaScriptCore.
@@ -14,10 +15,11 @@ public struct CodemodeDescriptionOptions: Sendable {
 
     public init(models: Bool = false, namespaces: [String: ToolNamespace] = [:],
                 deferred: Set<String> = [], inlineBudget: Double? = defaultCodemodeInlineBudget,
-                sandboxName: String = "JavaScriptCore") {
+                sandboxName: String = "JavaScriptCore", guidelines: [String: [String]] = [:]) {
         self.models = models
         self.namespaces = namespaces
         self.deferred = deferred
+        self.guidelines = guidelines
         self.inlineBudget = inlineBudget
         self.sandboxName = sandboxName
     }
@@ -80,7 +82,7 @@ private func selected(_ groups: [CatalogGroup], budget: Double?) -> Set<String> 
 }
 
 public func createCodemodeDescription(_ tools: [AgentTool], options: CodemodeDescriptionOptions = .init()) -> String {
-    let declarations = tools.filter { $0.name != "codemode" && !options.deferred.contains($0.name) }.map(CodemodeDeclaration.init(tool:))
+    let declarations = tools.filter { $0.name != "codemode" && !options.deferred.contains($0.name) }.map { CodemodeDeclaration(tool: $0, guidelines: options.guidelines[$0.name] ?? []) }
     var groups: [String: CatalogGroup] = ["": CatalogGroup(namespace: nil, entries: [])]
     for (order, declaration) in declarations.enumerated() {
         let namespace = options.namespaces[declaration.name]
