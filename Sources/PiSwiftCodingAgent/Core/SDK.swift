@@ -67,6 +67,10 @@ public struct CreateAgentSessionOptions: Sendable {
     public var promptTemplates: [PromptTemplate]?
     public var sessionManager: SessionManager?
     public var settingsManager: SettingsManager?
+    /// Runs this session's bash: the bash tool, subagent bash tools, and user `!` commands.
+    /// When nil, they use `BashExecutorRegistry`, which is shared by every session in the
+    /// process.
+    public var bashOperations: BashOperations?
 
     public init(
         cwd: String? = nil,
@@ -96,7 +100,8 @@ public struct CreateAgentSessionOptions: Sendable {
         slashCommands: [FileSlashCommand]? = nil,
         promptTemplates: [PromptTemplate]? = nil,
         sessionManager: SessionManager? = nil,
-        settingsManager: SettingsManager? = nil
+        settingsManager: SettingsManager? = nil,
+        bashOperations: BashOperations? = nil
     ) {
         self.cwd = cwd
         self.agentDir = agentDir
@@ -126,6 +131,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.promptTemplates = promptTemplates
         self.sessionManager = sessionManager
         self.settingsManager = settingsManager
+        self.bashOperations = bashOperations
     }
 }
 
@@ -708,7 +714,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         modelRegistry: modelRegistry,
         settingsManager: settingsManager,
         defaultModel: resolvedModel,
-        defaultThinkingLevel: resolvedThinkingLevel
+        defaultThinkingLevel: resolvedThinkingLevel,
+        bashOperations: options.bashOperations
     ))
 
     let loaderSkills = resolvedResourceLoader.getSkills().skills
@@ -726,7 +733,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             blockImages: blockImages,
             modelProvider: { agentBox.withLock { $0?.state.model } }
         ),
-        bash: BashToolOptions(sessionEnvironment: { [agentBox, sessionManager] in
+        bash: BashToolOptions(operations: options.bashOperations, sessionEnvironment: { [agentBox, sessionManager] in
             let current = agentBox.withLock { $0?.state }
             return makePiSessionEnvironment(
                 sessionId: sessionManager.getSessionId(),
@@ -1040,7 +1047,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             let wrapped = wrapCustomTools(definitions, getCustomToolContext)
                 .filter { !excludedToolNames.contains($0.name) }
             return wrapped
-        }
+        },
+        bashOperations: options.bashOperations
     ))
     time("createAgentSession")
     sessionBox.withLock { $0 = createdSession }

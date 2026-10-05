@@ -101,6 +101,16 @@ private let defaultBashProvider: BashExecutorProvider = {
 }()
 
 #if !canImport(UIKit)
+/// Runs commands in the system shell, never through `BashExecutorRegistry`. Embedders that
+/// bind bash to one session use it, so a provider another session registers cannot take over.
+public struct SystemBashOperations: BashOperations {
+    public init() {}
+
+    public func execute(_ command: String, options: BashExecutorOptions?) async throws -> BashResult {
+        try await executeSystemBash(command, options: options)
+    }
+}
+
 private func executeSystemBash(_ command: String, options: BashExecutorOptions? = nil) async throws -> BashResult {
     let timeoutSeconds = try validatedShellTimeout(options?.timeoutSeconds)
     let process = Process()

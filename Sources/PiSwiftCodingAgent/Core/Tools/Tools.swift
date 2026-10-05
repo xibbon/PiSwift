@@ -18,7 +18,12 @@ public enum ToolName: String, CaseIterable, Sendable {
 /// etc.) and the global `codingTools` / `allTools` / `readOnlyTools` accessors were removed.
 /// Use the factory exports — `createReadTool(cwd:)`, `createCodingTools(cwd:)`,
 /// `createAllTools(cwd:)`, `createReadOnlyTools(cwd:)` — and pass an explicit cwd.
-internal func shouldIncludeBashTool() -> Bool {
+/// Operations supplied for the tool run commands on their own, so the global registry only
+/// decides when the tool would fall back to it.
+internal func shouldIncludeBashTool(_ options: BashToolOptions?) -> Bool {
+    if options?.operations != nil {
+        return true
+    }
     #if canImport(UIKit)
     return BashExecutorRegistry.isAvailable()
     #else
@@ -42,7 +47,7 @@ public func createCodingTools(cwd: String) -> [Tool] {
 
 public func createCodingTools(cwd: String, options: ToolsOptions?, subagentContext: SubagentToolContext?) -> [Tool] {
     var tools: [Tool] = [createReadTool(cwd: cwd, options: options?.read)]
-    if shouldIncludeBashTool() {
+    if shouldIncludeBashTool(options?.bash) {
         tools.append(createBashTool(cwd: cwd, options: options?.bash))
     }
     tools.append(contentsOf: [
@@ -78,7 +83,7 @@ public func createAllTools(cwd: String, options: ToolsOptions?, subagentContext:
         .find: createFindTool(cwd: cwd),
         .ls: createLsTool(cwd: cwd),
     ]
-    if shouldIncludeBashTool() {
+    if shouldIncludeBashTool(options?.bash) {
         tools[.bash] = createBashTool(cwd: cwd, options: options?.bash)
     }
     if let subagentContext {
