@@ -28,7 +28,7 @@ import Testing
     ) throws {
         let model = Model(
             id: "gpt-test", name: "Test", api: azure ? .azureOpenAIResponses : .openAIResponses,
-            provider: azure ? "azure-openai-responses" : "openai", baseUrl: "https://example.test/v1",
+            provider: azure ? "azure" : "openai", baseUrl: "https://example.test/v1", // v1.0.3: provider renamed to azure (#9714)
             reasoning: false, input: [.text], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
             contextWindow: 8192, maxTokens: 1024, compat: OpenAICompat(supportsOpenAIGrammarTools: true)
         )

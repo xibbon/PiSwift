@@ -1,62 +1,7 @@
 import Foundation
 import OpenAI
 
-private let defaultAzureApiVersion = "v1"
-private let azureToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode", "azure-openai-responses"]
-
-private func parseDeploymentNameMap(_ value: String?) -> [String: String] {
-    guard let value, !value.isEmpty else { return [:] }
-    var result: [String: String] = [:]
-    for entry in value.split(separator: ",") {
-        let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { continue }
-        let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2 else { continue }
-        let modelId = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-        let deployment = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !modelId.isEmpty, !deployment.isEmpty else { continue }
-        result[modelId] = deployment
-    }
-    return result
-}
-
-private func resolveDeploymentName(model: Model, options: AzureOpenAIResponsesOptions?) -> String {
-    if let override = options?.azureDeploymentName, !override.isEmpty {
-        return override
-    }
-    let envMap = parseDeploymentNameMap(getProviderEnvValue("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", env: options?.env))
-    if let mapped = envMap[model.id] {
-        return mapped
-    }
-    return model.id
-}
-
-internal func normalizeAzureBaseUrl(_ baseUrl: String) throws -> String {
-    var trimmed = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-    while trimmed.hasSuffix("/") {
-        trimmed.removeLast()
-    }
-    guard var components = URLComponents(string: trimmed), let host = components.host else {
-        throw AzureOpenAIResponsesError.invalidBaseUrl(baseUrl)
-    }
-
-    // v0.70.3: also recognize Azure Cognitive Services endpoints. Both `.openai.azure.com`
-    // and `.cognitiveservices.azure.com` are Azure-hosted OpenAI deployments and need the
-    // SDK base path normalized to `/openai/v1` so deployment routes (`/deployments/<model>/...`)
-    // and `?api-version=v1` query strings hang off the right prefix.
-    let isAzureHost = host.hasSuffix(".openai.azure.com") || host.hasSuffix(".cognitiveservices.azure.com")
-    var path = components.path
-    while path.hasSuffix("/") { path.removeLast() }
-
-    if isAzureHost && (path.isEmpty || path == "/" || path == "/openai") {
-        components.path = "/openai/v1"
-        components.query = nil
-    }
-
-    var result = components.string ?? trimmed
-    while result.hasSuffix("/") { result.removeLast() }
-    return result
-}
+internal let azureToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode", "azure"]
 
 public enum AzureOpenAIResponsesError: Error, LocalizedError, Sendable {
     case invalidBaseUrl(String)
@@ -65,33 +10,6 @@ public enum AzureOpenAIResponsesError: Error, LocalizedError, Sendable {
         case .invalidBaseUrl(let url): return "Invalid Azure OpenAI base URL: \(url)"
         }
     }
-}
-
-private func buildDefaultAzureBaseUrl(resourceName: String) -> String {
-    "https://\(resourceName).openai.azure.com/openai/v1"
-}
-
-private func resolveAzureConfig(model: Model, options: AzureOpenAIResponsesOptions?) throws -> (baseUrl: String, apiVersion: String) {
-    let env = providerEnvironment(options?.env)
-    let apiVersion = options?.azureApiVersion ?? env["AZURE_OPENAI_API_VERSION"] ?? defaultAzureApiVersion
-
-    let baseUrlOption = options?.azureBaseUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let envBaseUrl = env["AZURE_OPENAI_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let resourceName = options?.azureResourceName ?? env["AZURE_OPENAI_RESOURCE_NAME"]
-
-    var resolvedBaseUrl = baseUrlOption?.isEmpty == false ? baseUrlOption : envBaseUrl?.isEmpty == false ? envBaseUrl : nil
-    if resolvedBaseUrl == nil, let resourceName, !resourceName.isEmpty {
-        resolvedBaseUrl = buildDefaultAzureBaseUrl(resourceName: resourceName)
-    }
-    if resolvedBaseUrl == nil, !model.baseUrl.isEmpty {
-        resolvedBaseUrl = model.baseUrl
-    }
-
-    guard let baseUrl = resolvedBaseUrl, !baseUrl.isEmpty else {
-        throw AzureOpenAIResponsesConfigError.missingBaseUrl
-    }
-
-    return (try normalizeAzureBaseUrl(baseUrl), apiVersion)
 }
 
 private struct AzureOpenAIResponsesMiddleware: OpenAIMiddleware {
@@ -520,6 +438,10 @@ public func streamSimpleAzureOpenAIResponses(
         reasoningSummary: nil,
         sessionId: options?.sessionId,
         headers: options?.headers,
+        azureApiVersion: options?.azureApiVersion,
+        azureResourceName: options?.azureResourceName,
+        azureBaseUrl: options?.azureBaseUrl,
+        azureDeploymentName: options?.azureDeploymentName,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         onProviderStreamEvent: options?.onProviderStreamEvent,
@@ -605,15 +527,4 @@ private func clampAzureThinkingLevel(_ effort: ThinkingLevel?) -> ThinkingLevel?
         return .high
     }
     return effort
-}
-
-private enum AzureOpenAIResponsesConfigError: LocalizedError {
-    case missingBaseUrl
-
-    var errorDescription: String? {
-        switch self {
-        case .missingBaseUrl:
-            return "Azure OpenAI base URL is required. Set AZURE_OPENAI_BASE_URL or AZURE_OPENAI_RESOURCE_NAME, or pass azureBaseUrl, azureResourceName, or model.baseUrl."
-        }
-    }
 }

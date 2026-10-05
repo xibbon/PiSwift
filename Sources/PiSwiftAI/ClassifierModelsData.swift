@@ -68,6 +68,26 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
 ]
 
 private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
+    "cloudflare/clef": ClassifierModel(
+        id: "cloudflare/clef",
+        name: "Cloudflare: Clef",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
+    "cloudflare/clef-flash": ClassifierModel(
+        id: "cloudflare/clef-flash",
+        name: "Cloudflare: Clef Flash",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
     "inception/mercury-decide:free": ClassifierModel(
         id: "inception/mercury-decide:free",
         name: "Inception: Mercury Decide (free)",
@@ -97,6 +117,16 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         input: [.text],
         cost: ModelCost(input: 0.04, output: 0, cacheRead: 0.04, cacheWrite: 0),
         contextWindow: 65536
+    ),
+    "perplexity/pplx-decider-v1-27b": ClassifierModel(
+        id: "perplexity/pplx-decider-v1-27b",
+        name: "Perplexity: Decider V1 27B",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
     ),
     "respan/span-01": ClassifierModel(
         id: "respan/span-01",

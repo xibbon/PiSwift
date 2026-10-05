@@ -165,7 +165,11 @@ public func registerBuiltInProviders() {
                 onProviderStreamEvent: options?.onProviderStreamEvent,
                 timeoutMs: options?.timeoutMs,
                 maxRetries: options?.maxRetries,
-                maxRetryDelayMs: options?.maxRetryDelayMs
+                maxRetryDelayMs: options?.maxRetryDelayMs,
+                azureApiVersion: options?.azureApiVersion,
+                azureResourceName: options?.azureResourceName,
+                azureBaseUrl: options?.azureBaseUrl,
+                azureDeploymentName: options?.azureDeploymentName
             )
             return streamOpenAICompletions(model: model, context: context, options: providerOptions)
         },
@@ -255,6 +259,10 @@ public func registerBuiltInProviders() {
                 httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
                 headers: options?.headers,
+                azureApiVersion: options?.azureApiVersion,
+                azureResourceName: options?.azureResourceName,
+                azureBaseUrl: options?.azureBaseUrl,
+                azureDeploymentName: options?.azureDeploymentName,
                 onPayload: options?.onPayload,
                 onResponse: options?.onResponse,
                 onProviderStreamEvent: options?.onProviderStreamEvent,

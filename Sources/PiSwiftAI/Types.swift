@@ -39,7 +39,7 @@ public enum ClassifierApi: String, Sendable, Codable {
 public enum KnownProvider: String, Sendable {
     case openai
     case openaiCodex = "openai-codex"
-    case azureOpenAIResponses = "azure-openai-responses"
+    case azure = "azure"
     case antLing = "ant-ling"
     case anthropic
     case meta
@@ -214,6 +214,11 @@ public struct StreamOptions: Sendable {
     /// v0.70.1: provider SDK max retries. Forwarded to provider SDK retry config.
     public var maxRetries: Int?
 
+    public var azureApiVersion: String?
+    public var azureResourceName: String?
+    public var azureBaseUrl: String?
+    public var azureDeploymentName: String?
+
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
@@ -233,7 +238,11 @@ public struct StreamOptions: Sendable {
         onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
-        maxRetries: Int? = nil
+        maxRetries: Int? = nil,
+        azureApiVersion: String? = nil,
+        azureResourceName: String? = nil,
+        azureBaseUrl: String? = nil,
+        azureDeploymentName: String? = nil
     ) {
         self.env = env
         self.temperature = temperature
@@ -254,6 +263,10 @@ public struct StreamOptions: Sendable {
         self.timeoutMs = timeoutMs
         self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
+        self.azureApiVersion = azureApiVersion
+        self.azureResourceName = azureResourceName
+        self.azureBaseUrl = azureBaseUrl
+        self.azureDeploymentName = azureDeploymentName
     }
 }
 
@@ -287,6 +300,11 @@ public struct SimpleStreamOptions: Sendable {
 
     public var toolChoice: ToolChoice?
 
+    public var azureApiVersion: String?
+    public var azureResourceName: String?
+    public var azureBaseUrl: String?
+    public var azureDeploymentName: String?
+
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
@@ -309,7 +327,11 @@ public struct SimpleStreamOptions: Sendable {
         timeoutMs: Int? = nil,
         websocketConnectTimeoutMs: Int? = nil,
         maxRetries: Int? = nil,
-        toolChoice: ToolChoice? = nil
+        toolChoice: ToolChoice? = nil,
+        azureApiVersion: String? = nil,
+        azureResourceName: String? = nil,
+        azureBaseUrl: String? = nil,
+        azureDeploymentName: String? = nil
     ) {
         self.env = env
         self.toolChoice = toolChoice
@@ -334,6 +356,10 @@ public struct SimpleStreamOptions: Sendable {
         self.timeoutMs = timeoutMs
         self.websocketConnectTimeoutMs = websocketConnectTimeoutMs
         self.maxRetries = maxRetries
+        self.azureApiVersion = azureApiVersion
+        self.azureResourceName = azureResourceName
+        self.azureBaseUrl = azureBaseUrl
+        self.azureDeploymentName = azureDeploymentName
     }
 }
 
@@ -1793,6 +1819,11 @@ public struct OpenAICompletionsOptions: Sendable {
     public var maxRetries: Int?
     public var maxRetryDelayMs: Int?
 
+    public var azureApiVersion: String?
+    public var azureResourceName: String?
+    public var azureBaseUrl: String?
+    public var azureDeploymentName: String?
+
     public init(
         env: [String: String]? = nil,
         temperature: Double? = nil,
@@ -1812,7 +1843,11 @@ public struct OpenAICompletionsOptions: Sendable {
         onProviderStreamEvent: ProviderStreamEventHandler? = nil,
         timeoutMs: Int? = nil,
         maxRetries: Int? = nil,
-        maxRetryDelayMs: Int? = nil
+        maxRetryDelayMs: Int? = nil,
+        azureApiVersion: String? = nil,
+        azureResourceName: String? = nil,
+        azureBaseUrl: String? = nil,
+        azureDeploymentName: String? = nil
     ) {
         self.env = env
         self.temperature = temperature
@@ -1833,6 +1868,10 @@ public struct OpenAICompletionsOptions: Sendable {
         self.timeoutMs = timeoutMs
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
+        self.azureApiVersion = azureApiVersion
+        self.azureResourceName = azureResourceName
+        self.azureBaseUrl = azureBaseUrl
+        self.azureDeploymentName = azureDeploymentName
     }
 }
 

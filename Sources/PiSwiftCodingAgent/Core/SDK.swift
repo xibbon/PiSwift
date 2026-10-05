@@ -248,7 +248,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.antLing, "Ring-2.6-1T"),
     (.anthropic, "claude-opus-4-8"),
     (.openai, "gpt-5.5"),
-    (.azureOpenAIResponses, "gpt-5.4"),
+    (.azure, "gpt-5.4"),
     (.openaiCodex, "gpt-6.1-sol"),
     (.nvidia, "nvidia/nemotron-3-ultra-550b-a55b"),
     (.deepseek, "deepseek-v4-pro"),

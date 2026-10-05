@@ -56,6 +56,9 @@ public func streamOpenAICompletions(
         }
 
         do {
+            let model = model.provider == "azure"
+                ? model.with(baseUrl: try resolveAzureBaseUrl(model: model, options: options))
+                : model
             let compat = resolveCompat(model: model)
             let grammarToolInputProperties = try createGrammarToolInputProperties(
                 tools: getDeclaredTools(context.messages),
@@ -824,7 +827,7 @@ private func streamZaiCompletions(
         throw StreamError.missingApiKey(model.provider)
     }
 
-    var request = URLRequest(url: chatCompletionsUrl(baseUrl: model.baseUrl))
+    var request = URLRequest(url: try completionsRequestUrl(model: model))
     request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
     request.httpMethod = "POST"
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -871,7 +874,8 @@ private func streamZaiCompletions(
     // Keep this last so custom keys override all named request fields.
     body = applyOpenAISamplingParams(data: body, samplingParams: options.samplingParams)
     request.httpBody = body
-    emitPayload(options.onPayload, data: body)
+    request = applyingAzureDeploymentName(request, model: model, options: options)
+    emitPayload(options.onPayload, data: requestBodyData(request))
     return try await streamChatCompletions(request: request, model: model, options: options)
 }
 
@@ -1423,7 +1427,7 @@ private func streamManualOpenAICompletions(
         throw StreamError.missingApiKey(model.provider)
     }
 
-    var request = URLRequest(url: chatCompletionsUrl(baseUrl: model.baseUrl))
+    var request = URLRequest(url: try completionsRequestUrl(model: model))
     request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
     request.httpMethod = "POST"
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -1439,6 +1443,7 @@ private func streamManualOpenAICompletions(
         mergeProviderHeaders(model.headers, options.headers),
         to: &request
     )
+    request = applyingAzureDeploymentName(request, model: model, options: options)
     emitPayload(options.onPayload, data: requestBodyData(request))
     return try await streamChatCompletions(request: request, model: model, options: options)
 }
@@ -1755,6 +1760,31 @@ private struct OpenAICompletionsRoutingMiddleware: OpenAIMiddleware {
             return true
         }
     }
+}
+
+private func applyingAzureDeploymentName(_ request: URLRequest, model: Model, options: OpenAICompletionsOptions) -> URLRequest {
+    guard model.provider == "azure" else { return request }
+    let deploymentName = resolveDeploymentName(model: model, options: options)
+    guard deploymentName != model.id else { return request }
+    return rewritingOpenAIRequestBody(request) { payload in
+        payload["model"] = deploymentName
+        return true
+    }
+}
+
+private func completionsRequestUrl(model: Model) throws -> URL {
+    guard model.provider == "azure" else { return chatCompletionsUrl(baseUrl: model.baseUrl) }
+    guard var components = URLComponents(string: model.baseUrl) else {
+        throw AzureOpenAIResponsesError.invalidBaseUrl(model.baseUrl)
+    }
+    // Append the route to the path so a preserved Azure query stays a query.
+    var path = components.path
+    while path.hasSuffix("/") { path.removeLast() }
+    components.path = path + "/chat/completions"
+    guard let url = components.url else {
+        throw AzureOpenAIResponsesError.invalidBaseUrl(model.baseUrl)
+    }
+    return url
 }
 
 private func chatCompletionsUrl(baseUrl: String) -> URL {

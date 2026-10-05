@@ -208,7 +208,7 @@ public func getBuiltinProviderAuth() -> [ProviderAuthDescriptor] {
     let rows: [(id: String, name: String, method: String?, envVars: [String])] = [
         ("ant-ling", "Ant Ling", "Ant Ling API key", ["ANT_LING_API_KEY"]),
         ("anthropic", "Anthropic", "Anthropic API key", ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]),
-        ("azure-openai-responses", "Azure OpenAI", "Azure OpenAI API key", ["AZURE_OPENAI_API_KEY"]),
+        ("azure", "Azure", "Azure OpenAI API key", ["AZURE_OPENAI_API_KEY"]),
         ("baseten", "Baseten", "Baseten API key", ["BASETEN_API_KEY"]),
         ("cerebras", "Cerebras", "Cerebras API key", ["CEREBRAS_API_KEY"]),
         ("deepseek", "DeepSeek", "DeepSeek API key", ["DEEPSEEK_API_KEY"]),

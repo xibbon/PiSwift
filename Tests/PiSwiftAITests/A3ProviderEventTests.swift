@@ -144,7 +144,7 @@ func a3GoogleObserversSeeRawProviderJSON(vertex: Bool) async throws {
 
 // Port of azure-openai-base-url.test.ts observer case: Azure exposes raw Responses fields.
 @Test(.timeLimit(.minutes(1))) func a3AzureResponsesObserverSeesUnknownFields() async throws {
-    let model = a3ProviderEventModel(api: .azureOpenAIResponses, provider: "azure-openai-responses")
+    let model = a3ProviderEventModel(api: .azureOpenAIResponses, provider: "azure") // v1.0.3: provider renamed to azure (#9714)
     let events: [[String: Any]] = [
         ["type": "response.created", "provider_extra": "azure-field", "response": ["id": "resp_1"]],
         ["type": "response.completed", "response": ["id": "resp_1", "status": "completed"]],

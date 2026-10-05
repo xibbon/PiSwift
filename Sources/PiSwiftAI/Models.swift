@@ -88,7 +88,7 @@ private func inferredThinkingLevelMap(model: Model) -> ThinkingLevelMap? {
     if id.contains("gpt-5.5") {
         return [.minimal: "low", .xhigh: "xhigh"]
     }
-    if isDeepSeekV4Pro(model) {
+    if model.provider != "azure" && isDeepSeekV4Pro(model) {
         return [.xhigh: "max"]
     }
     if model.api == .anthropicMessages || model.api == .bedrockConverseStream {
@@ -111,7 +111,7 @@ private func effectiveThinkingLevelMap(model: Model) -> ThinkingLevelMap? {
     guard var map = model.thinkingLevelMap else {
         return inferredThinkingLevelMap(model: model)
     }
-    if isDeepSeekV4Pro(model) {
+    if model.provider != "azure" && isDeepSeekV4Pro(model) {
         map[.xhigh] = "max"
     }
     return map

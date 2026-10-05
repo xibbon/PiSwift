@@ -230,7 +230,7 @@ func a4AnthropicUnsignedThinkingReplayFollowsCompat(allowEmptySignature: Bool) a
 @Test(.timeLimit(.minutes(1))) func a4AzureResponsesErrorUsesActualProviderName() async {
     let client = A4CaptureHTTP(body: Data())
     let model = Model(id: "deployment", name: "Azure deployment", api: .azureOpenAIResponses,
-        provider: "azure-openai-responses", baseUrl: "https://fixture.openai.azure.com",
+        provider: "azure", baseUrl: "https://fixture.openai.azure.com", // v1.0.3: provider renamed to azure (#9714)
         reasoning: false, input: [.text], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 16_000, maxTokens: 1024)
     let result = await streamAzureOpenAIResponses(model: model,

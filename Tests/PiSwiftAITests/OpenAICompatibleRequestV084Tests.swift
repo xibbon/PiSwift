@@ -261,7 +261,7 @@ private func captureAzureResponsesPayload(
             id: "azure-sampling-test",
             name: "Azure Sampling Test",
             api: .azureOpenAIResponses,
-            provider: "azure-openai-responses",
+            provider: "azure", // v1.0.3: provider renamed to azure (#9714)
             baseUrl: "https://unused.example/openai/v1",
             reasoning: false,
             input: [.text],

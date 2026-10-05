@@ -112,6 +112,44 @@
       "provider": "openrouter",
       "type": "classifier"
     },
+    "cloudflare/clef": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.24,
+        "output": 0
+      },
+      "id": "cloudflare/clef",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Cloudflare: Clef",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "cloudflare/clef-flash": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.09,
+        "output": 0
+      },
+      "id": "cloudflare/clef-flash",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Cloudflare: Clef Flash",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
     "inception/mercury-decide:free": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -163,6 +201,25 @@
         "text"
       ],
       "name": "LiquidAI: D1",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "perplexity/pplx-decider-v1-27b": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 262144,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.04,
+        "output": 0
+      },
+      "id": "perplexity/pplx-decider-v1-27b",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Perplexity: Decider V1 27B",
       "provider": "openrouter",
       "type": "classifier"
     },

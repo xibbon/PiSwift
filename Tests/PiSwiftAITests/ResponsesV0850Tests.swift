@@ -77,7 +77,7 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
         .toolCall(ToolCall(id: "call_function|fc_test", name: "lookup", arguments: ["value": AnyCodable("hello")], namespace: "dynamic_tools")),
         .toolCall(ToolCall(id: "call_custom|ctc_test", name: "query", arguments: ["input": AnyCodable("hello")], namespace: "dynamic_tools")),
     ])
-    for target in [responses085Model(id: "gpt-5.2"), responses085Model(provider: "azure-openai-responses"),
+    for target in [responses085Model(id: "gpt-5.2"), responses085Model(provider: "azure"), // v1.0.3: provider renamed to azure (#9714)
                    responses085Model(api: .openAICodexResponses, provider: "openai-codex", id: "gpt-5.3-codex-spark")] {
         let replay = try convertCodexMessages(model: target, context: Context(messages: [.assistant(assistant)]),
             grammarToolInputProperties: ["query": "input"]).compactMap { $0 as? [String: Any] }
@@ -117,7 +117,7 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
 
 // Port of azure-openai-tool-choice.test.ts (both cases).
 @Test func responses085AzureProviderToolChoice() throws {
-    let model = responses085Model(api: .azureOpenAIResponses, provider: "azure-openai-responses")
+    let model = responses085Model(api: .azureOpenAIResponses, provider: "azure") // v1.0.3: provider renamed to azure (#9714)
     let query = try buildAzureResponsesQuery(model: model, context: Context(messages: [], tools: [responses085Tool("read")]),
         options: AzureOpenAIResponsesOptions(toolChoice: .required), deploymentName: "test-deployment")
     let payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(query)) as? [String: Any])
@@ -131,7 +131,7 @@ private func responses085Payload(model: Model, context: Context) throws -> [Stri
         capture.withLock { $0 = request.httpBody }
         return ProviderHTTPResponse(statusCode: 200, body: Data("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n".utf8))
     }
-    let model = responses085Model(api: .azureOpenAIResponses, provider: "azure-openai-responses")
+    let model = responses085Model(api: .azureOpenAIResponses, provider: "azure") // v1.0.3: provider renamed to azure (#9714)
     var options = SimpleStreamOptions(apiKey: "test-key", httpClient: client)
     options.toolChoice = ToolChoice.none
     _ = await streamSimpleAzureOpenAIResponses(model: model, context: normalizeContext(Context(messages: [], tools: [responses085Tool("read")])), options: options).result()

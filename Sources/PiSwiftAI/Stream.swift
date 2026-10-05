@@ -128,7 +128,7 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
         "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
         "openai": "OPENAI_API_KEY",
-        "azure-openai-responses": "AZURE_OPENAI_API_KEY",
+        "azure": "AZURE_OPENAI_API_KEY",
         "google": "GEMINI_API_KEY",
         "google-vertex": "GOOGLE_CLOUD_API_KEY",
         "groq": "GROQ_API_KEY",
@@ -447,7 +447,11 @@ func mapOpenAICompletionsSimpleOptions(model: Model, options: SimpleStreamOption
         onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,
-        maxRetryDelayMs: options?.maxRetryDelayMs
+        maxRetryDelayMs: options?.maxRetryDelayMs,
+        azureApiVersion: options?.azureApiVersion,
+        azureResourceName: options?.azureResourceName,
+        azureBaseUrl: options?.azureBaseUrl,
+        azureDeploymentName: options?.azureDeploymentName
     )
 }
 
@@ -526,6 +530,10 @@ func mapAzureOpenAIResponsesSimpleOptions(model: Model, options: SimpleStreamOpt
         reasoningEffort: reasoningEffort,
         sessionId: options?.sessionId,
         headers: options?.headers,
+        azureApiVersion: options?.azureApiVersion,
+        azureResourceName: options?.azureResourceName,
+        azureBaseUrl: options?.azureBaseUrl,
+        azureDeploymentName: options?.azureDeploymentName,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
         onProviderStreamEvent: options?.onProviderStreamEvent,

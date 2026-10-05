@@ -2122,7 +2122,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         id: "gpt-5-azure",
         name: "GPT-5 Azure",
         api: .azureOpenAIResponses,
-        provider: "azure-openai-responses",
+        provider: "azure", // v1.0.3: provider renamed to azure (#9714)
         baseUrl: "https://example.openai.azure.com/openai/v1",
         reasoning: true,
         input: [.text],
@@ -6449,8 +6449,8 @@ struct ApiRegistryTests {
     #expect(getProviders().count == 40)
     #expect(!getProviders().contains(.typesafe))
     #expect(getBuiltinProviders().contains(.typesafe))
-    #expect(allModels.count == 1509) // v1.0.1 catalog
-    #expect(compared == 1509) // v1.0.1 catalog
+    #expect(allModels.count == 1511) // v1.0.3 catalog
+    #expect(compared == 1511) // v1.0.3 catalog
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6540,7 +6540,7 @@ struct ApiRegistryTests {
             compared += 1
         }
     }
-    #expect(compared == 20) // v1.0.1 catalog
+    #expect(compared == 23) // v1.0.3 catalog
     #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }

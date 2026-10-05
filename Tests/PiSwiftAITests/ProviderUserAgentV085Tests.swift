@@ -24,7 +24,7 @@ private enum UserAgent085Adapter: String, CaseIterable, Sendable {
         case .copilot: "github-copilot"
         case .kimiCoding: "kimi-coding"
         case .completions, .responses: "openai"
-        case .azure: "azure-openai-responses"
+        case .azure: "azure" // v1.0.3: provider renamed to azure (#9714)
         case .google: "google"
         case .vertex: "google-vertex"
         case .codex: "openai-codex"
