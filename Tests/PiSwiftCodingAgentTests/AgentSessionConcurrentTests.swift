@@ -200,6 +200,42 @@ private func waitForStreaming(_ session: AgentSession, timeoutNanoseconds: UInt6
     })
 }
 
+@Test(arguments: [false, true]) func steerQueuesImagesUsingImageSettings(blockImages: Bool) throws {
+    let agent = Agent()
+    let settingsManager = SettingsManager.inMemory()
+    settingsManager.setBlockImages(blockImages)
+    let session = AgentSession(config: AgentSessionConfig(
+        agent: agent,
+        sessionManager: SessionManager.inMemory(),
+        settingsManager: settingsManager,
+        resourceLoader: TestResourceLoader(),
+        modelRegistry: ModelRegistry(AuthStorage(":memory:"))
+    ))
+    defer { session.dispose() }
+
+    let images = [
+        ImageContent(data: "cG5n", mimeType: "image/png"),
+        ImageContent(data: "anBlZw==", mimeType: "image/jpeg"),
+    ]
+    session.steer("Inspect these images", images: images)
+
+    let queued = agent.peekQueuedMessages()
+    #expect(queued.count == 1)
+    guard case .user(let user) = try #require(queued.first),
+          case .blocks(let blocks) = user.content else {
+        Issue.record("Expected a user message with content blocks")
+        return
+    }
+    let queuedImages = blocks.compactMap { block -> ImageContent? in
+        if case .image(let image) = block { return image }
+        return nil
+    }
+    let expectedImages = blockImages ? [] : images
+    #expect(queuedImages.map(\.data) == expectedImages.map(\.data))
+    #expect(queuedImages.map(\.mimeType) == expectedImages.map(\.mimeType))
+    #expect(session.clearQueue().steering == ["Inspect these images"])
+}
+
 @Test(.timeLimit(.minutes(1))) func steerWhileStreaming() async throws {
     let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let agent = Agent(AgentOptions(

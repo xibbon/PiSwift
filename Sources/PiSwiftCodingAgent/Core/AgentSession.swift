@@ -2581,10 +2581,10 @@ public final class AgentSession: Sendable {
     }
 
     /// Compatibility entry point for callers that queue synchronously.
-    public func steer(_ text: String) {
+    public func steer(_ text: String, images: [ImageContent]? = nil) {
         let expandedText = expandPromptText(text)
         steeringMessages.append(expandedText)
-        agent.steer(buildUserMessage(text: expandedText, images: nil))
+        agent.steer(buildUserMessage(text: expandedText, images: images))
     }
 
     public func followUp(_ text: String) {
