@@ -61,12 +61,13 @@ private struct LanguageSpec: Sendable {
     let lineComments: [String]
     let blockComments: [BlockComment]
     let stringDelimiters: [Character]
+    let multilineStringDelimiters: [String]
     let caseSensitive: Bool
 }
 
 private struct ScanState: Sendable {
     var blockComment: BlockComment?
-    var stringDelimiter: Character?
+    var stringDelimiter: String?
 }
 
 private let defaultKeywords: Set<String> = [
@@ -105,6 +106,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: ["//", "#"],
         blockComments: [BlockComment(start: "/*", end: "*/")],
         stringDelimiters: ["\"", "'", "`"],
+        multilineStringDelimiters: ["`"],
         caseSensitive: true
     )
 
@@ -114,6 +116,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: ["//"],
         blockComments: [BlockComment(start: "/*", end: "*/")],
         stringDelimiters: ["\"", "'"],
+        multilineStringDelimiters: ["\"\"\""],
         caseSensitive: true
     )
 
@@ -123,6 +126,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: ["//"],
         blockComments: [BlockComment(start: "/*", end: "*/")],
         stringDelimiters: ["\"", "'", "`"],
+        multilineStringDelimiters: ["`"],
         caseSensitive: true
     )
 
@@ -132,6 +136,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: ["#"],
         blockComments: [],
         stringDelimiters: ["\"", "'"],
+        multilineStringDelimiters: ["\"\"\"", "'''"],
         caseSensitive: true
     )
 
@@ -141,6 +146,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: ["#"],
         blockComments: [],
         stringDelimiters: ["\"", "'"],
+        multilineStringDelimiters: [],
         caseSensitive: true
     )
 
@@ -150,6 +156,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: [],
         blockComments: [],
         stringDelimiters: ["\""],
+        multilineStringDelimiters: [],
         caseSensitive: true
     )
 
@@ -162,6 +169,7 @@ private let languageSpecs: [String: LanguageSpec] = {
         lineComments: ["--"],
         blockComments: [BlockComment(start: "/*", end: "*/")],
         stringDelimiters: ["\"", "'"],
+        multilineStringDelimiters: [],
         caseSensitive: false
     )
 
@@ -189,6 +197,7 @@ private func languageSpec(for lang: String?) -> LanguageSpec {
         lineComments: ["//", "#", "--"],
         blockComments: [BlockComment(start: "/*", end: "*/")],
         stringDelimiters: ["\"", "'", "`"],
+        multilineStringDelimiters: ["`"],
         caseSensitive: true
     )
 }
@@ -242,31 +251,12 @@ private func highlightLine(
         }
 
         if let delimiter = state.stringDelimiter {
-            var current = ""
-            var escaped = false
-            var idx = index
-            while idx < line.endIndex {
-                let ch = line[idx]
-                current.append(ch)
-                if escaped {
-                    escaped = false
-                    idx = line.index(after: idx)
-                    continue
-                }
-                if ch == "\\" {
-                    escaped = true
-                    idx = line.index(after: idx)
-                    continue
-                }
-                if ch == delimiter {
-                    state.stringDelimiter = nil
-                    idx = line.index(after: idx)
-                    break
-                }
-                idx = line.index(after: idx)
+            let (next, closed) = consumeString(line, from: index, delimiter: delimiter)
+            result += theme.string(String(line[index..<next]))
+            index = next
+            if closed {
+                state.stringDelimiter = nil
             }
-            result += theme.string(current)
-            index = idx
             continue
         }
 
@@ -290,8 +280,17 @@ private func highlightLine(
         }
 
         let ch = line[index]
-        if spec.stringDelimiters.contains(ch) {
-            state.stringDelimiter = ch
+        // Match multi-character delimiters before their single-quote forms.
+        let delimiter = firstPrefixMatch(line, spec.multilineStringDelimiters, at: index)
+            ?? (spec.stringDelimiters.contains(ch) ? String(ch) : nil)
+        if let delimiter {
+            let contentStart = line.index(index, offsetBy: delimiter.count)
+            let (next, closed) = consumeString(line, from: contentStart, delimiter: delimiter)
+            result += theme.string(String(line[index..<next]))
+            index = next
+            if !closed && spec.multilineStringDelimiters.contains(delimiter) {
+                state.stringDelimiter = delimiter
+            }
             continue
         }
 
@@ -336,6 +335,27 @@ private func highlightLine(
     }
 
     return result
+}
+
+private func consumeString(
+    _ line: String,
+    from index: String.Index,
+    delimiter: String
+) -> (String.Index, Bool) {
+    var idx = index
+    var escaped = false
+    while idx < line.endIndex {
+        let ch = line[idx]
+        if escaped {
+            escaped = false
+        } else if ch == "\\" {
+            escaped = true
+        } else if line[idx...].hasPrefix(delimiter) {
+            return (line.index(idx, offsetBy: delimiter.count), true)
+        }
+        idx = line.index(after: idx)
+    }
+    return (idx, false)
 }
 
 private func firstPrefixMatch(_ line: String, _ prefixes: [String], at index: String.Index) -> String? {

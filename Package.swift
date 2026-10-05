@@ -153,6 +153,11 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
+            name: "PiSwiftSyntaxHighlightTests",
+            dependencies: ["PiSwiftSyntaxHighlight"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
             name: "PiSwiftCodingAgentTests",
             dependencies: [
                 "PiSwiftCodingAgent",
