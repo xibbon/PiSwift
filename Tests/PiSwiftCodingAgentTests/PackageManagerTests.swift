@@ -155,6 +155,19 @@ private final class CommandRecorder: @unchecked Sendable {
     #expect(result.themes.isEmpty)
 }
 
+@Test(.processEnvironment, .timeLimit(.minutes(1)), arguments: ["/", "/..", "/../..", "/./", "///"])
+func resolveTerminatesAtFilesystemRoot(cwd: String) async throws {
+    let fixture = try PackageManagerTestFixture()
+    let extPath = try fixture.writeAgentFile("extensions/root-test.ts", content: "export default function() {}")
+    let expectedPath = URL(fileURLWithPath: extPath).resolvingSymlinksInPath().path
+    let manager = DefaultPackageManager(cwd: cwd, agentDir: fixture.agentDir, settingsManager: fixture.settingsManager)
+
+    let result = try await manager.resolve()
+    #expect(result.extensions.contains {
+        URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == expectedPath && $0.enabled
+    })
+}
+
 @Test(.processEnvironment, .timeLimit(.minutes(1))) func resolveLocalExtensionPathsFromSettings() async throws {
     let fixture = try PackageManagerTestFixture()
     let extPath = try fixture.writeAgentFile("extensions/my-extension.ts", content: "export default function() {}")

@@ -1884,14 +1884,19 @@ private func collectAutoSkillEntries(dir: String, mode: SkillDiscoveryMode = .pi
     collectSkillEntries(dir: dir, mode: mode)
 }
 
+private func parentDirectoryPath(of path: String) -> String? {
+    let url = URL(fileURLWithPath: path).standardizedFileURL
+    guard url.pathComponents.count > 1 else { return nil }
+    return url.deletingLastPathComponent().path
+}
+
 private func findGitRepoRoot(startDir: String) -> String? {
     var dir = URL(fileURLWithPath: startDir).resolvingSymlinksInPath().path
     while true {
         if FileManager.default.fileExists(atPath: URL(fileURLWithPath: dir).appendingPathComponent(".git").path) {
             return dir
         }
-        let parent = URL(fileURLWithPath: dir).deletingLastPathComponent().path
-        if parent == dir {
+        guard let parent = parentDirectoryPath(of: dir) else {
             return nil
         }
         dir = parent
@@ -1907,8 +1912,7 @@ private func collectAncestorAgentsSkillDirs(startDir: String) -> [String] {
         if let gitRoot, dir == gitRoot {
             break
         }
-        let parent = URL(fileURLWithPath: dir).deletingLastPathComponent().path
-        if parent == dir {
+        guard let parent = parentDirectoryPath(of: dir) else {
             break
         }
         dir = parent
