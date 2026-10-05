@@ -547,7 +547,7 @@ public func executeCodemode(toolCallId: String, params: [String: AnyCodable],
     let hasImage = execution.output.contains { if case .image = $0 { return true }; return false }
     let note = final.generatedImages > 0 && !hasImage
         ? "Note: models.generateImages() returned \(final.generatedImages) image\(final.generatedImages == 1 ? "" : "s") that the script did not show. Show each image block of result.output with image(block)." : nil
-    return formatCodemodeResult(execution, calls: final.calls,
+    return try formatCodemodeResultForExecution(execution, calls: final.calls,
                                 wallTimeSeconds: Date().timeIntervalSince(started),
                                 maxOutputTokens: parsed.options.maxOutputTokens ?? 10_000,
                                 usage: final.usage, outputNote: note)

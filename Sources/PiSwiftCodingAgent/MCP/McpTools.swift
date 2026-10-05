@@ -48,12 +48,8 @@ public struct McpToolDetails: Sendable {
 public typealias McpOutputSaver = @Sendable (Data, String) async throws -> URL
 
 public func saveMcpOutput(_ data: Data, extension fileExtension: String) async throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("pi-mcp-\(UUID().uuidString)\(fileExtension)")
-    try data.write(to: url, options: .atomic)
-    #if os(macOS)
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-    #endif
-    return url
+    let path = try writeOutputFile(prefix: "pi-mcp", extension: fileExtension, data: data)
+    return URL(fileURLWithPath: path)
 }
 
 public func limitMcpContent(_ content: [ContentBlock], saveOutput: McpOutputSaver = saveMcpOutput) async -> (content: [ContentBlock], fullOutputPath: String?) {

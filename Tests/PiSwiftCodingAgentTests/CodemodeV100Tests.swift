@@ -128,7 +128,8 @@ private func v100Tool(_ name: String, schema: [String: AnyCodable]? = nil) -> Ag
     #expect(renderToolOutputType(AnyCodable(["type": "string"])) == "string")
     #expect(renderToolOutputType(nil) == "unknown")
     let description = createCodemodeDescription([], options: .init(models: true))
-    #expect(description == codemodeDescriptionIntro + "\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first.")
+    // Upstream v1.0.3 #10310: the globals description names the saved image path.
+    #expect(description == codemodeDescriptionIntro + "\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script. `image()` also saves the image to a temp file and the result names its path.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first.")
     #expect(!createCodemodeDescription([]).contains("- `models`"))
     let text = try String(contentsOfFile: CODEMODE_DOCS_PATH, encoding: .utf8)
     #expect(text.contains("JavaScriptCore"))

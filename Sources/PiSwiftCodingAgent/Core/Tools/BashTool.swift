@@ -33,27 +33,16 @@ public struct BashToolDetails: Sendable {
     public var fullOutputPath: String?
 }
 
-/// Generate a unique temp file path for bash output
-private func getTempFilePath() -> String {
-    let uuid = UUID().uuidString.prefix(16)
-    return URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("pi-bash-\(uuid).log")
-        .path
-}
-
 private let structuredOutputMaxBytes = 1024 * 1024
 
 /// Read the complete output when it fits. Otherwise, keep the first and last 512 KiB.
 /// The temp file is the source when output is large, as in the upstream accumulator.
-private func structuredBashOutput(_ output: String, tempFilePath: String?) throws -> (content: String, truncated: Bool) {
+func structuredBashOutput(_ output: String, tempFilePath: String?) throws -> (content: String, truncated: Bool) {
     let bytes = Data(output.utf8)
     guard bytes.count > structuredOutputMaxBytes else {
         return (output, false)
     }
-    let path = tempFilePath ?? getTempFilePath()
-    if tempFilePath == nil {
-        try bytes.write(to: URL(fileURLWithPath: path))
-    }
+    let path = try tempFilePath ?? writeOutputFile(prefix: "pi-bash", extension: ".log", data: bytes)
     let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
     defer { try? file.close() }
     let size = try file.seekToEnd()
@@ -201,14 +190,12 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
 
                 // Start writing to temp file once we exceed the threshold
                 if bytes > DEFAULT_MAX_BYTES && s.tempFilePath == nil {
-                    let path = getTempFilePath()
-                    FileManager.default.createFile(atPath: path, contents: nil)
-                    if let handle = FileHandle(forWritingAtPath: path) {
-                        s.tempFilePath = path
-                        s.tempFileHandle = handle
+                    if let file = try? createOutputFileStream(prefix: "pi-bash", extension: ".log") {
+                        s.tempFilePath = file.path
+                        s.tempFileHandle = file.stream
                         // Write buffered content to file
                         if let data = s.output.data(using: .utf8) {
-                            try? handle.write(contentsOf: data)
+                            try? file.stream.write(contentsOf: data)
                         }
                     }
                 } else if let handle = s.tempFileHandle {
@@ -261,9 +248,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
         let truncation = truncateTail(fullOutput)
         var tempFilePath = initialTempFilePath
         if truncation.truncated && tempFilePath == nil {
-            let path = getTempFilePath()
-            try Data(fullOutput.utf8).write(to: URL(fileURLWithPath: path))
-            tempFilePath = path
+            tempFilePath = try writeOutputFile(prefix: "pi-bash", extension: ".log", data: Data(fullOutput.utf8))
         }
         var outputText = truncation.content.isEmpty ? "(no output)" : truncation.content
 

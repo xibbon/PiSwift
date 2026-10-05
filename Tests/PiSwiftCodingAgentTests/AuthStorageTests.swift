@@ -229,7 +229,8 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     #expect(forcedCount.withLock { $0 } == 1)
 }
 
-@Test(.timeLimit(.minutes(1))) func authStorageCancelledRefreshDoesNotCommit() async {
+@Test(.timeLimit(.minutes(1))) func authStorageCancelledRefreshPersistsRotatedCredentials() async {
+    // Upstream bde882c74: a started refresh persists after caller cancellation.
     let now = Date().timeIntervalSince1970 * 1000
     let storage = AuthStorage.inMemory([
         "xai": .oauth(OAuthCredential(
@@ -244,7 +245,7 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
             refreshStarted.withLock { $0 = true }
             try await Task.sleep(nanoseconds: 50_000_000)
             let credentials = OAuthCredentials(
-                refresh: "refresh-token",
+                refresh: "rotated-refresh-token",
                 access: "new-access",
                 expires: now + 60 * 60_000
             )
@@ -260,11 +261,16 @@ private final class OutOfOrderReturnBackend: AuthStorageBackend {
     }
     signal.cancel()
     #expect(await request.value == nil)
+    for _ in 0..<100 {
+        if case .oauth(let stored) = storage.get("xai"), stored.access == "new-access" { break }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
     guard case .oauth(let stored) = storage.get("xai") else {
         Issue.record("Missing stored OAuth credential")
         return
     }
-    #expect(stored.access == "old-access")
+    #expect(stored.access == "new-access")
+    #expect(stored.refresh == "rotated-refresh-token")
 }
 
 @Test(.timeLimit(.minutes(1))) func authStorageCacheFollowsTransactionCommitOrder() async {

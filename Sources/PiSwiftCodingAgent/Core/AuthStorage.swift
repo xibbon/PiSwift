@@ -120,29 +120,81 @@ private enum AuthStorageDataError: Error, LocalizedError, Sendable {
     }
 }
 
-private func boundedOAuthRefreshSignal(parent: CancellationToken?) -> (CancellationToken, Task<Void, Never>) {
+private func boundedOAuthRefreshSignal() -> (CancellationToken, Task<Void, Never>) {
     let signal = CancellationToken()
     let monitor = Task {
-        var remaining = oauthRefreshTimeoutMs
-        while remaining > 0 && !Task.isCancelled {
-            if parent?.isCancelled == true {
-                signal.cancel()
-                return
-            }
-            let slice = min(remaining, 25)
-            try? await Task.sleep(nanoseconds: UInt64(slice) * 1_000_000)
-            remaining -= slice
-        }
-        if !Task.isCancelled {
-            signal.cancel()
+        do {
+            try await Task.sleep(for: .milliseconds(oauthRefreshTimeoutMs))
+            if !Task.isCancelled { signal.cancel() }
+        } catch {
+            // The transaction cancels this timer when the refresh ends.
         }
     }
     return (signal, monitor)
 }
 
+// The caller can stop waiting while the detached transaction keeps the lock.
+private final class OAuthRefreshWaiter<Value: Sendable>: Sendable {
+    private struct State: Sendable {
+        var outcome: Result<Value, any Error>?
+        var continuation: CheckedContinuation<Result<Value, any Error>, Never>?
+    }
+    private let state = LockedState(State())
+
+    func finish(_ outcome: Result<Value, any Error>) {
+        let continuation: CheckedContinuation<Result<Value, any Error>, Never>? = state.withLock { state in
+            guard state.outcome == nil else { return nil }
+            state.outcome = outcome
+            let continuation = state.continuation
+            state.continuation = nil
+            return continuation
+        }
+        continuation?.resume(returning: outcome)
+    }
+
+    func wait() async throws -> Value {
+        let outcome: Result<Value, any Error> = await withCheckedContinuation { continuation in
+            let outcome: Result<Value, any Error>? = state.withLock { state in
+                if let outcome = state.outcome { return outcome }
+                state.continuation = continuation
+                return nil
+            }
+            if let outcome { continuation.resume(returning: outcome) }
+        }
+        return try outcome.get()
+    }
+}
+
+// Serializes cancellation with callback entry. A late cancellation handler must
+// not cancel the backend token after the protected transaction has started.
+private final class OAuthRefreshBoundary: Sendable {
+    private struct State: Sendable {
+        var started = false
+        var cancelled = false
+    }
+    private let state = LockedState(State())
+    let lockWait = CancellationToken()
+
+    func cancelWait() {
+        let cancelLockWait = state.withLock { state in
+            state.cancelled = true
+            return !state.started
+        }
+        if cancelLockWait { lockWait.cancel() }
+    }
+
+    func start() throws {
+        try state.withLock { state in
+            if state.cancelled { throw OAuthError.cancelled }
+            state.started = true
+        }
+    }
+}
+
 struct OAuthOverrides: Sendable {
     var getOAuthApiKey: (@Sendable (OAuthProvider, [String: OAuthCredentials]) async throws -> (newCredentials: OAuthCredentials, apiKey: String)?)?
     var oauthApiKey: (@Sendable (OAuthProvider, String, String?) throws -> String)?
+    var getOAuthApiKeyWithSignal: (@Sendable (OAuthProvider, [String: OAuthCredentials], CancellationToken) async throws -> (newCredentials: OAuthCredentials, apiKey: String)?)? = nil
 }
 
 /// The result of an atomic auth-storage transaction.
@@ -174,6 +226,8 @@ public struct AuthStorageLockResult<Result: Sendable>: Sendable {
 /// value and may replace it by returning a non-`nil` `next` value. Invoke the
 /// returned transaction's `onCommit` callback only after a replacement has
 /// been persisted successfully, before releasing the transaction.
+/// OAuth refresh passes a separate signal for the lock wait. After callback
+/// entry, caller cancellation does not cancel that signal or the transaction task.
 public protocol AuthStorageBackend: Sendable {
     func withLock<Result: Sendable>(
         _ body: @Sendable (String?) throws -> AuthStorageLockResult<Result>
@@ -747,13 +801,14 @@ public final class AuthStorage: Sendable {
         includeFallback: Bool = true,
         env: [String: String]? = nil
     ) async -> String? {
-        if signal?.isCancelled == true { return nil }
+        if signal?.isCancelled == true || Task.isCancelled { return nil }
         let runtime = state.withLock { $0.runtimeOverrides[provider] }
         if let runtime {
             return runtime
         }
 
         await reloadLatestData(signal: signal)
+        if signal?.isCancelled == true || Task.isCancelled { return nil }
         let snapshot = state.withLock { state in
             let credential = state.data[provider]
             return (credential: credential, fallback: state.fallbackResolver)
@@ -778,9 +833,12 @@ public final class AuthStorage: Sendable {
                             minimumOAuthValidityMs: minimumValidity,
                             signal: signal
                         ) {
+                            if signal?.isCancelled == true || Task.isCancelled { return nil }
                             return result.apiKey
                         }
+                        if signal?.isCancelled == true || Task.isCancelled { return nil }
                     } catch {
+                        if signal?.isCancelled == true || Task.isCancelled { return nil }
                         let message = error.localizedDescription
                         fputs("OAuth token refresh failed for \(provider): \(message)\n", stderr)
                         if let expires = oauth.expires, now >= expires {
@@ -960,8 +1018,41 @@ public final class AuthStorage: Sendable {
         minimumOAuthValidityMs: Double,
         signal: CancellationToken?
     ) async throws -> (apiKey: String, newCredentials: OAuthCredentials)? {
-        let lockedResult = try await storage.withLockAsync(signal: signal) { current in
-            if signal?.isCancelled == true { throw OAuthError.cancelled }
+        let boundary = OAuthRefreshBoundary()
+        let waiter = OAuthRefreshWaiter<OAuthRefreshLockedResult>()
+        let callerCancellation = CancellationToken()
+        let removeCaller = signal?.onCancel { callerCancellation.cancel() }
+        defer { removeCaller?() }
+        let removeWaitCancellation = callerCancellation.onCancel {
+            boundary.cancelWait()
+            waiter.finish(.failure(OAuthError.cancelled))
+        }
+        defer { removeWaitCancellation() }
+        return try await withTaskCancellationHandler {
+            Task.detached {
+                do {
+                    let result = try await self.refreshOAuthTransaction(
+                        provider, minimumOAuthValidityMs: minimumOAuthValidityMs, boundary: boundary
+                    )
+                    waiter.finish(.success(result))
+                } catch {
+                    waiter.finish(.failure(error))
+                }
+            }
+            return try await waiter.wait().value
+        } onCancel: {
+            callerCancellation.cancel()
+        }
+    }
+
+    private func refreshOAuthTransaction(
+        _ provider: OAuthProvider,
+        minimumOAuthValidityMs: Double,
+        boundary: OAuthRefreshBoundary
+    ) async throws -> OAuthRefreshLockedResult {
+        try await storage.withLockAsync(signal: boundary.lockWait) { current in
+            // Upstream bde882c74: caller cancellation ends at callback entry.
+            try boundary.start()
             let currentData = try self.parseAuthData(current)
             let credential = currentData[provider.rawValue]
             guard case .oauth(let oauth) = credential else {
@@ -999,9 +1090,11 @@ public final class AuthStorage: Sendable {
             let oauthCreds = self.oauthCredentialsMap(from: currentData)
             let override = self.state.withLock { $0.oauthOverrides }
             let result: (newCredentials: OAuthCredentials, apiKey: String)?
-            let (refreshSignal, refreshMonitor) = boundedOAuthRefreshSignal(parent: signal)
+            let (refreshSignal, refreshMonitor) = boundedOAuthRefreshSignal()
             defer { refreshMonitor.cancel() }
-            if let overrideFn = override?.getOAuthApiKey {
+            if let overrideFn = override?.getOAuthApiKeyWithSignal {
+                result = try await overrideFn(provider, oauthCreds, refreshSignal)
+            } else if let overrideFn = override?.getOAuthApiKey {
                 result = try await overrideFn(provider, oauthCreds)
             } else {
                 result = try await getOAuthApiKey(
@@ -1011,7 +1104,6 @@ public final class AuthStorage: Sendable {
                     signal: refreshSignal
                 )
             }
-            if signal?.isCancelled == true { throw OAuthError.cancelled }
             if let result {
                 var updatedData = currentData
                 var refreshed = result.newCredentials
@@ -1031,7 +1123,6 @@ public final class AuthStorage: Sendable {
                 onCommit: self.cacheCommit(currentData)
             )
         }
-        return lockedResult.value
     }
 
     private func oauthCredentialsMap(from credentials: [String: AuthCredential]) -> [String: OAuthCredentials] {

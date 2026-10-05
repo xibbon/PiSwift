@@ -99,11 +99,9 @@ private func truncateOutput(_ items: [ContentBlock], maxTokens: Int) -> (items: 
     let removed = length - budget
     let lineCount = combined.components(separatedBy: "\n").count
     var text = "Warning: truncated output (original token count: \((length + 3) / 4))\nTotal output lines: \(lineCount)\n\n\(head)…\((removed + 3) / 4) tokens truncated…\(tail)"
-    let hex = (0..<8).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }.joined()
-    let path = FileManager.default.temporaryDirectory.appendingPathComponent("pi-codemode-\(hex).txt").path
     var savedPath: String?
     do {
-        try combined.write(toFile: path, atomically: true, encoding: .utf8)
+        let path = try writeOutputFile(prefix: "pi-codemode", extension: ".txt", data: Data(combined.utf8))
         savedPath = path
         text += "\n\n[Full output: \(path) (read with offset/limit)]"
     } catch {
@@ -113,9 +111,84 @@ private func truncateOutput(_ items: [ContentBlock], maxTokens: Int) -> (items: 
     return ([.text(TextContent(text: text))] + images, savedPath)
 }
 
+private let codemodeImageExtensions = [
+    "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+]
+
+enum CodemodeImageError: Error, Sendable, LocalizedError, Equatable {
+    case unsupportedMIME(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedMIME(let mime): return "No file extension for image type \(mime)"
+        }
+    }
+}
+
+typealias CodemodeImageWriter = (Data, String) throws -> String
+
+private func saveCodemodeImage(_ data: Data, _ fileExtension: String) throws -> String {
+    try writeOutputFile(prefix: "pi-codemode", extension: fileExtension, data: data)
+}
+
+private func saveCodemodeImages(_ items: [ContentBlock], writer: CodemodeImageWriter,
+                                rejectUnsupportedMIME: Bool) throws -> [ContentBlock] {
+    var labels: [String: String] = [:]
+    var result: [ContentBlock] = []
+    for item in items {
+        if case .image(let image) = item {
+            let label: String
+            if let saved = labels[image.data] {
+                label = saved
+            } else {
+                guard let fileExtension = codemodeImageExtensions[image.mimeType] else {
+                    if rejectUnsupportedMIME { throw CodemodeImageError.unsupportedMIME(image.mimeType) }
+                    result.append(item)
+                    continue
+                }
+                let bytes = Data(base64Encoded: image.data, options: .ignoreUnknownCharacters) ?? Data()
+                let kind = "\(image.mimeType), \(formatSize(bytes.count))"
+                do {
+                    let path = try writer(bytes, fileExtension)
+                    label = "[Image saved to \(path) (\(kind))]"
+                } catch {
+                    label = "[Image (\(kind)) could not be saved: \(error.localizedDescription)]"
+                }
+                labels[image.data] = label
+            }
+            result.append(.text(TextContent(text: label)))
+        }
+        result.append(item)
+    }
+    return result
+}
+
+/// Keep the nonthrowing API. Unsupported MIME types retain their original image block without a file label.
 public func formatCodemodeResult(_ execution: CodemodeExecutionResult,
                                  calls: [CodemodeNestedCall] = [], wallTimeSeconds: Double,
                                  maxOutputTokens: Int = 10_000, usage: Usage? = nil, outputNote: String? = nil) -> AgentToolResult {
+    var result = formatCodemodeResultBody(execution, calls: calls, wallTimeSeconds: wallTimeSeconds,
+                                         maxOutputTokens: maxOutputTokens, usage: usage, outputNote: outputNote)
+    // This policy preserves unknown types, so MIME validation cannot throw here.
+    result.content = (try? saveCodemodeImages(result.content, writer: saveCodemodeImage,
+                                            rejectUnsupportedMIME: false)) ?? result.content
+    return result
+}
+
+/// The execution path rejects an unsupported MIME type before the file-write error handler.
+func formatCodemodeResultForExecution(_ execution: CodemodeExecutionResult,
+                                      calls: [CodemodeNestedCall] = [], wallTimeSeconds: Double,
+                                      maxOutputTokens: Int = 10_000, usage: Usage? = nil, outputNote: String? = nil,
+                                      imageWriter: CodemodeImageWriter = saveCodemodeImage) throws -> AgentToolResult {
+    var result = formatCodemodeResultBody(execution, calls: calls, wallTimeSeconds: wallTimeSeconds,
+                                         maxOutputTokens: maxOutputTokens, usage: usage, outputNote: outputNote)
+    result.content = try saveCodemodeImages(result.content, writer: imageWriter, rejectUnsupportedMIME: true)
+    return result
+}
+
+private func formatCodemodeResultBody(_ execution: CodemodeExecutionResult,
+                                      calls: [CodemodeNestedCall], wallTimeSeconds: Double,
+                                      maxOutputTokens: Int, usage: Usage?, outputNote: String?) -> AgentToolResult {
     var items = execution.output
     if let failure = execution.failure {
         items.append(.text(TextContent(text: failureText(failure, calls: calls))))

@@ -35,7 +35,17 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
     let output = try await codemodeRun("console.log('hello', 1); text({a: 2}); image('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII='); return 42")
     #expect(output.isError != true)
     #expect(codemodeBlocks(output).first?.hasPrefix("Script completed\nWall time ") == true)
-    #expect(codemodeBlocks(output).dropFirst() == ["hello 1", "{\"a\":2}", "42"])
+    // Upstream v1.0.3 #10310: each image follows a saved-path text block.
+    let label = try #require(codemodeBlocks(output).dropFirst().dropFirst(2).first)
+    #expect(codemodeBlocks(output).dropFirst() == ["hello 1", "{\"a\":2}", label, "42"])
+    #expect(label.hasPrefix("[Image saved to "))
+    let pathEnd = try #require(label.range(of: " (", options: .backwards))
+    let path = String(label.dropFirst("[Image saved to ".count).prefix(upTo: pathEnd.lowerBound))
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII="))
+    if case .text(let item) = output.content[3] { #expect(item.text == label) }
+    else { Issue.record("Missing saved path before image") }
+    if case .image = output.content[4] {} else { Issue.record("Missing image after saved path") }
     #expect(output.content.contains { if case .image(let item) = $0 { return item.data == "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII=" }; return false })
 
     let exited = try await codemodeRun("text('before'); try { exit(); } catch {} text('after')")

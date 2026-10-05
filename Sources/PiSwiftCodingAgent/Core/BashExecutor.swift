@@ -197,9 +197,7 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
 
             if combinedData.count > DEFAULT_MAX_BYTES {
                 truncated = true
-                let tempPath = FileManager.default.temporaryDirectory.appendingPathComponent("pi-bash-\(UUID().uuidString).log")
-                try? combinedData.write(to: tempPath)
-                fullOutputPath = tempPath.path
+                fullOutputPath = try? writeOutputFile(prefix: "pi-bash", extension: ".log", data: combinedData)
                 let truncation = truncateTail(output)
                 output = truncation.content
             }
