@@ -216,6 +216,8 @@ public struct McpOAuthClientMetadata: Codable, Sendable, Equatable {
     public var tokenEndpointAuthMethod: String?
     public var grantTypes: [String]?
     public var responseTypes: [String]?
+    /// OpenID Connect client type. Registration derives it from redirect URIs when nil (MCP SEP-837, #10493).
+    public var applicationType: String?
     public var clientName: String?
     public var clientURI: String?
     public var logoURI: String?
@@ -234,6 +236,7 @@ public struct McpOAuthClientMetadata: Codable, Sendable, Equatable {
         case tokenEndpointAuthMethod = "token_endpoint_auth_method"
         case grantTypes = "grant_types"
         case responseTypes = "response_types"
+        case applicationType = "application_type"
         case clientName = "client_name"
         case clientURI = "client_uri"
         case logoURI = "logo_uri"
@@ -248,7 +251,8 @@ public struct McpOAuthClientMetadata: Codable, Sendable, Equatable {
     }
 
     public init(redirectURIs: [String] = [], tokenEndpointAuthMethod: String? = nil,
-                grantTypes: [String]? = nil, responseTypes: [String]? = nil, clientName: String? = nil,
+                grantTypes: [String]? = nil, responseTypes: [String]? = nil, applicationType: String? = nil,
+                clientName: String? = nil,
                 clientURI: String? = nil, logoURI: String? = nil, scope: String? = nil,
                 contacts: [String]? = nil, tosURI: String? = nil, policyURI: String? = nil,
                 jwksURI: String? = nil, jwks: AnyCodable? = nil,
@@ -258,6 +262,7 @@ public struct McpOAuthClientMetadata: Codable, Sendable, Equatable {
         self.tokenEndpointAuthMethod = tokenEndpointAuthMethod
         self.grantTypes = grantTypes
         self.responseTypes = responseTypes
+        self.applicationType = applicationType
         self.clientName = clientName
         self.clientURI = clientURI
         self.logoURI = logoURI

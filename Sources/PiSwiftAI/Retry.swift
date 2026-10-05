@@ -72,6 +72,9 @@ private let retryableProviderErrorPatterns = [
     "stream ended before message_stop",
     "stream ended before a terminal response event",
     "http2 request did not get a response",
+    // Node ERR_HTTP2_STREAM_CANCEL: the HTTP/2 session died before the request was
+    // sent, e.g. after the Bedrock SDK's 5-minute session timeout (#10379).
+    "pending stream has been canceled",
     "http/2 request did not get a response",
 
     // Provider-requested retry delay cap failures should flow through the outer

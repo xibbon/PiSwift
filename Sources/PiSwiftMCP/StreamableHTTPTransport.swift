@@ -31,6 +31,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     private var waiters: [CheckedContinuation<Data, any Error>] = []
     private var getTask: Task<Void, Never>?
     private var responseTasks: [UUID: Task<Void, Never>] = [:]
+    private var sendTasks: [UUID: Task<Void, any Error>] = [:]
 
     public init(
         url: URL,
@@ -59,9 +60,46 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     public func send(_ data: Data) async throws {
         guard !closed else { throw McpError.transportClosed }
         guard data.count <= maxMessageBytes else { throw McpTransportError.messageTooLarge(limit: maxMessageBytes) }
+        // Z4 / #10249: match upstream's shared abort controller for each POST,
+        // including the wait for headers and the JSON response body.
+        let taskID = UUID()
+        let task = Task { try await self.performSend(data) }
+        sendTasks[taskID] = task
+        defer { sendTasks[taskID] = nil }
+        do {
+            try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            guard !closed else { throw McpError.transportClosed }
+        } catch {
+            if closed { throw McpError.transportClosed }
+            throw error
+        }
+    }
+
+    private func performSend(_ data: Data) async throws {
+        try checkOpen()
         let info = try Self.messageInfo(data)
         let (bytes, response) = try await authorizedRequest(method: "POST", accept: "application/json, text/event-stream", body: data)
+        try await withTaskCancellationHandler {
+            try await handleSendResponse(bytes, response: response, info: info)
+        } onCancel: {
+            bytes.task.cancel()
+        }
+    }
+
+    private func handleSendResponse(
+        _ bytes: URLSession.AsyncBytes,
+        response: HTTPURLResponse,
+        info: (id: String?, method: String?)
+    ) async throws {
+        var streamOwnsResponse = false
+        defer { if !streamOwnsResponse { bytes.task.cancel() } }
+        try checkOpen()
         try await check(response: response, bytes: bytes)
+        try checkOpen()
         captureSession(response)
 
         if info.id == nil {
@@ -76,6 +114,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         let type = Self.contentType(response)
         if type == "application/json" {
             let body = try await readBody(bytes)
+            try checkOpen()
             try enqueueJSON(body)
             return
         }
@@ -86,6 +125,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
                 await self?.consumeResponseStream(bytes, requestID: requestID)
                 await self?.removeResponseTask(taskID)
             }
+            streamOwnsResponse = true
             return
         }
         throw McpTransportError.invalidResponse("Unsupported MCP response content type: \(type ?? "missing")")
@@ -100,6 +140,8 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     public func close() async {
         guard !closed else { return }
         closed = true
+        for task in sendTasks.values { task.cancel() }
+        sendTasks.removeAll()
         getTask?.cancel()
         for task in responseTasks.values { task.cancel() }
         responseTasks.removeAll()
@@ -118,6 +160,11 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     }
 
     private func removeResponseTask(_ id: UUID) { responseTasks[id] = nil }
+
+    private func checkOpen() throws {
+        guard !closed else { throw McpError.transportClosed }
+        try Task.checkCancellation()
+    }
 
     private func enqueue(_ data: Data) {
         if waiters.isEmpty { messages.append(data) }
@@ -150,17 +197,30 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
 
     private func authorizedRequest(method: String, accept: String, body: Data? = nil, lastEventID: String? = nil) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         for attempt in 0...1 {
+            try checkOpen()
             var request = URLRequest(url: url)
             request.httpMethod = method
             request.httpBody = body
             if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
             let token = try await applyHeaders(to: &request, accept: accept, lastEventID: lastEventID)
+            try checkOpen()
             let (bytes, response) = try await session.bytes(for: request)
-            guard let response = response as? HTTPURLResponse else { throw McpTransportError.invalidResponse("Non-HTTP response") }
+            do { try checkOpen() }
+            catch { bytes.task.cancel(); throw error }
+            guard let response = response as? HTTPURLResponse else {
+                bytes.task.cancel()
+                throw McpTransportError.invalidResponse("Non-HTTP response")
+            }
             let challenge = response.value(forHTTPHeaderField: "WWW-Authenticate")
             let needsAuth = response.statusCode == 401 || (response.statusCode == 403 && challenge?.range(of: "insufficient_scope", options: .caseInsensitive) != nil)
             if attempt == 0, needsAuth, let authProvider {
-                try await authProvider.onUnauthorized(challenge: challenge, serverURL: url, rejectedToken: token)
+                // Upstream discards the rejected response before the next fetch.
+                defer { bytes.task.cancel() }
+                try await withTaskCancellationHandler {
+                    try await authProvider.onUnauthorized(challenge: challenge, serverURL: url, rejectedToken: token)
+                } onCancel: {
+                    bytes.task.cancel()
+                }
                 continue
             }
             return (bytes, response)
@@ -171,6 +231,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     private func check(response: HTTPURLResponse, bytes: URLSession.AsyncBytes) async throws {
         guard !(200..<300).contains(response.statusCode) else { return }
         let data = (try? await readErrorBody(bytes)) ?? Data()
+        try checkOpen()
         let body = String(decoding: data, as: UTF8.self)
         if response.statusCode == 401 {
             throw McpAuthRequiredError(status: 401, body: body, wwwAuthenticate: response.value(forHTTPHeaderField: "WWW-Authenticate"))
@@ -198,12 +259,16 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     }
 
     private func readErrorBody(_ bytes: URLSession.AsyncBytes) async throws -> Data {
-        var body = Data()
-        for try await byte in bytes {
-            if body.count == 8 * 1024 { break }
-            body.append(byte)
+        try await withTaskCancellationHandler {
+            var body = Data()
+            for try await byte in bytes {
+                if body.count == 8 * 1024 { break }
+                body.append(byte)
+            }
+            return body
+        } onCancel: {
+            bytes.task.cancel()
         }
-        return body
     }
 
     private func startGetStreamIfNeeded() {
@@ -217,8 +282,10 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         while !closed, !Task.isCancelled {
             do {
                 let (bytes, response) = try await authorizedRequest(method: "GET", accept: "text/event-stream", lastEventID: cursor.lastEventID)
+                defer { bytes.task.cancel() }
                 if response.statusCode == 405 { return }
                 try await check(response: response, bytes: bytes)
+                try checkOpen()
                 guard Self.contentType(response) == "text/event-stream" else {
                     throw McpTransportError.invalidResponse("Unsupported MCP GET response content type")
                 }
@@ -239,12 +306,14 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     }
 
     private func consumeResponseStream(_ initialBytes: URLSession.AsyncBytes, requestID: String?) async {
+        defer { initialBytes.task.cancel() }
         var cursor = SSECursor()
         var bytes: URLSession.AsyncBytes? = initialBytes
         var attempts = 0
         var failure: (any Error)?
         while !closed, !Task.isCancelled {
             if let current = bytes {
+                defer { current.task.cancel() }
                 do {
                     let answered = try await consumeSSE(current, cursor: &cursor, responseID: requestID)
                     if answered { return }
@@ -262,8 +331,12 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
             do {
                 try await Task.sleep(for: delay)
                 let (next, response) = try await authorizedRequest(method: "GET", accept: "text/event-stream", lastEventID: lastID)
-                if response.statusCode == 405 { break }
-                try await check(response: response, bytes: next)
+                if response.statusCode == 405 { next.task.cancel(); break }
+                do {
+                    try await check(response: response, bytes: next)
+                    try checkOpen()
+                }
+                catch { next.task.cancel(); throw error }
                 bytes = next
             } catch {
                 failure = error
@@ -281,6 +354,15 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     }
 
     private func consumeSSE(_ bytes: URLSession.AsyncBytes, cursor: inout SSECursor, responseID: String?) async throws -> Bool {
+        try await withTaskCancellationHandler {
+            try checkOpen()
+            return try await consumeSSEBytes(bytes, cursor: &cursor, responseID: responseID)
+        } onCancel: {
+            bytes.task.cancel()
+        }
+    }
+
+    private func consumeSSEBytes(_ bytes: URLSession.AsyncBytes, cursor: inout SSECursor, responseID: String?) async throws -> Bool {
         var event = SSEEvent()
         var eventBytes = 0
         var rawLine = Data()

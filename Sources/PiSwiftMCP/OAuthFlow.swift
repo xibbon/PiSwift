@@ -172,6 +172,7 @@ public enum McpOAuthFlow {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(clientMetadata)) as? [String: Any] ?? [:]
+        body["application_type"] = clientMetadata.applicationType ?? applicationType(clientMetadata.redirectURIs)
         if let scope { body["scope"] = scope }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await http.send(request)
@@ -344,8 +345,23 @@ public enum McpOAuthFlow {
         return result
     }
 
+    private static func loopback(_ hostname: String) -> Bool {
+        ["localhost", "127.0.0.1", "::1", "[::1]"].contains(hostname)
+    }
+
+    // MCP SEP-837 (#10493): OpenID Connect servers default to web, which rejects
+    // HTTP loopback redirect URIs. Loopback hosts and custom schemes are native (RFC 8252).
+    private static func applicationType(_ redirectURIs: [String]) -> String {
+        let native = redirectURIs.contains { uri in
+            // Foundation accepts relative URLs; upstream URL.canParse requires an absolute URI here.
+            guard let url = URL(string: uri), let scheme = url.scheme?.lowercased() else { return false }
+            return (scheme != "http" && scheme != "https") || loopback(url.host?.lowercased() ?? "")
+        }
+        return native ? "native" : "web"
+    }
+
     private static func secureEndpoint(_ url: URL) throws {
-        guard url.scheme == "https" || ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "") else {
+        guard url.scheme == "https" || loopback(url.host ?? "") else {
             throw McpOAuthError.insecureEndpoint(url.absoluteString)
         }
     }

@@ -12,6 +12,8 @@ actor McpAuthFixture: McpOAuthHTTPClient {
     var paths: [String] = []
     var refreshes = 0
     var registrations: [String] = []
+    // #10493: record the OpenID Connect client type sent at registration.
+    var registrationApplicationTypes: [String] = []
     var registrationRequests: [Data] = []
     var tokenRequests: [String] = []
     let issSupported: Bool
@@ -47,6 +49,7 @@ actor McpAuthFixture: McpOAuthHTTPClient {
             var body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any] ?? [:]
             registrationRequests.append(request.httpBody ?? Data())
             registrations.append(body["client_name"] as? String ?? "")
+            registrationApplicationTypes.append(body["application_type"] as? String ?? "")
             body["client_id"] = "client"
             value = body
             status = 201
@@ -73,6 +76,7 @@ actor McpAuthFixture: McpOAuthHTTPClient {
     func observedPaths() -> [String] { paths }
     func refreshCount() -> Int { refreshes }
     func registeredClientNames() -> [String] { registrations }
+    func registeredApplicationTypes() -> [String] { registrationApplicationTypes }
     func recordedRegistrations() -> [Data] { registrationRequests }
     func recordedTokenRequests() -> [String] { tokenRequests }
 }

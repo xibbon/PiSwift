@@ -70,6 +70,8 @@ struct C1CimdOAuthTests {
         try await signInMcpServer(name: "test", serverURL: c1CimdServerURL, credentials: credentials,
             presenter: presenter, clientMetadataDocumentURL: c1CimdDocumentURL, http: fixture)
         #expect(await fixture.registeredClientNames() == ["pi"])
+        // #10493: OpenID Connect servers reject a web client's loopback redirect URI.
+        #expect(await fixture.registeredApplicationTypes() == ["native"])
         let authorization = try #require(await presenter.authorizationURLs().first)
         #expect(c1CimdQuery(authorization)["client_id"] == "client")
         #expect(try credentials.state(name: "test", url: c1CimdServerURL)?.clientInformation?.clientID == "client")
