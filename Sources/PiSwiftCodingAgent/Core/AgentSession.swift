@@ -76,6 +76,9 @@ public struct AgentSessionConfig: Sendable {
     /// by `createAgentSession()`. Invoked by `reloadExtensions()` to add freshly-loaded
     /// extension tools to the agent's roster.
     public var wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])?
+    /// Runs user `!` commands when `executeBash` gets no operations. When nil, they use
+    /// `BashExecutorRegistry`. Wired by `createAgentSession()` from its `bashOperations`.
+    public var bashOperations: BashOperations?
 
     public init(
         agent: Agent,
@@ -101,7 +104,8 @@ public struct AgentSessionConfig: Sendable {
         toolDefinitions: [String: CustomTool]? = nil,
         rebuildSystemPrompt: (@Sendable ([String]) -> String)? = nil,
         reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)? = nil,
-        wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])? = nil
+        wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])? = nil,
+        bashOperations: BashOperations? = nil
     ) {
         self.agent = agent
         self.sessionManager = sessionManager
@@ -127,6 +131,7 @@ public struct AgentSessionConfig: Sendable {
         self.rebuildSystemPrompt = rebuildSystemPrompt
         self.reloadExtensionsHook = reloadExtensionsHook
         self.wrapExtensionTools = wrapExtensionTools
+        self.bashOperations = bashOperations
     }
 }
 
@@ -363,6 +368,7 @@ public final class AgentSession: Sendable {
         set { defaultToolHtmlRenderer.withLock { $0 = newValue } }
     }
 
+    private let bashOperations: BashOperations?
     private let state: LockedState<State>
 
     /// Serial queue for agent event processing.
@@ -843,6 +849,7 @@ public final class AgentSession: Sendable {
         self.cacheWarmer = config.cacheWarmer
         self.eventBus = config.eventBus ?? createEventBus()
         self.projectTrusted = config.projectTrusted
+        self.bashOperations = config.bashOperations
         self.agent.sessionId = config.sessionManager.getSessionId()
         self.state = LockedState(State(
             hookRunner: config.hookRunner,
@@ -2720,6 +2727,8 @@ public final class AgentSession: Sendable {
         state.withLock { !$0.bashAbortTokens.isEmpty }
     }
 
+    /// Runs a user command. Explicit `operations` win, then the session's own, then the
+    /// process-wide `BashExecutorRegistry`.
     public func executeBash(
         _ command: String,
         excludeFromContext: Bool = false,
@@ -2737,7 +2746,7 @@ public final class AgentSession: Sendable {
             environment: bashSessionEnvironment(),
             cwd: sessionManager.getCwd()
         )
-        let result = if let operations {
+        let result = if let operations = operations ?? bashOperations {
             try await executeBashWithOperations(command, operations: operations, options: options)
         } else {
             try await PiSwiftCodingAgent.executeBash(command, options: options)

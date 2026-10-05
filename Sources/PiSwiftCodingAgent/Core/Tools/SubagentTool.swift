@@ -12,6 +12,9 @@ public struct SubagentToolDependencies: Sendable {
     public var settingsManager: SettingsManager
     public var defaultModel: Model
     public var defaultThinkingLevel: ThinkingLevel
+    /// The parent session's bash operations. Subagent bash tools run through them, so a
+    /// subagent executes where its parent does.
+    public var bashOperations: BashOperations?
 
     public init(
         cwd: String,
@@ -19,7 +22,8 @@ public struct SubagentToolDependencies: Sendable {
         modelRegistry: ModelRegistry,
         settingsManager: SettingsManager,
         defaultModel: Model,
-        defaultThinkingLevel: ThinkingLevel
+        defaultThinkingLevel: ThinkingLevel,
+        bashOperations: BashOperations? = nil
     ) {
         self.cwd = cwd
         self.agentDir = agentDir
@@ -27,6 +31,7 @@ public struct SubagentToolDependencies: Sendable {
         self.settingsManager = settingsManager
         self.defaultModel = defaultModel
         self.defaultThinkingLevel = defaultThinkingLevel
+        self.bashOperations = bashOperations
     }
 
 }
@@ -189,15 +194,18 @@ private func agentAuthPath(_ agentDir: String) -> String {
     URL(fileURLWithPath: agentDir).appendingPathComponent("auth.json").path
 }
 
-private func resolveTools(
+func resolveTools(
     agent: SubagentConfig,
     cwd: String,
     dependencies: SubagentToolDependencies
 ) -> (tools: [AgentTool], selected: [ToolName], unknown: [String]) {
-    let toolsOptions = ToolsOptions(read: ReadToolOptions(
-        autoResizeImages: dependencies.settingsManager.getAutoResizeImages(),
-        blockImages: dependencies.settingsManager.getBlockImages()
-    ))
+    let toolsOptions = ToolsOptions(
+        read: ReadToolOptions(
+            autoResizeImages: dependencies.settingsManager.getAutoResizeImages(),
+            blockImages: dependencies.settingsManager.getBlockImages()
+        ),
+        bash: dependencies.bashOperations.map { BashToolOptions(operations: $0) }
+    )
     var allTools = createAllTools(cwd: cwd, options: toolsOptions)
     if let _ = allTools[.subagent] {
         allTools[.subagent] = nil
