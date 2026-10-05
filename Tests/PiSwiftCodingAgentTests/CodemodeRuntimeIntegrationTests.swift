@@ -179,11 +179,18 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
 
     var settings = Settings()
     settings.defaultTools = ["+codemode"]
+    // v1.0.4 C2 (upstream sdk.ts:274-276, unchanged since v0.99.1): `noTools` ignores `defaultTools`,
+    // and codemode is not default-active, so only the default selection activates it.
     let enabled = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
-        offline: true, noTools: .builtin, resourceLoader: TestResourceLoader(),
+        offline: true, resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
     defer { enabled.session.dispose() }
     #expect(enabled.session.getActiveToolNames().contains(CODEMODE_TOOL_NAME))
+    let noBuiltins = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+        offline: true, noTools: .builtin, resourceLoader: TestResourceLoader(),
+        inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
+    defer { noBuiltins.session.dispose() }
+    #expect(!noBuiltins.session.getActiveToolNames().contains(CODEMODE_TOOL_NAME))
 
     settings.extensions = ["-builtin:codemode"]
     let disabled = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,

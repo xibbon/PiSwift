@@ -77,6 +77,8 @@ public struct DefaultResourceLoaderOptions: Sendable {
     public var additionalThemePaths: [String]?
     public var noExtensions: Bool?
     public var builtinExtensions: [String]?
+    /// Built-in extension names to disable, including paths enabled by settings or explicit input.
+    public var disabledBuiltinExtensions: [String]
     public var noSkills: Bool?
     public var noPromptTemplates: Bool?
     public var noThemes: Bool?
@@ -97,6 +99,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         additionalThemePaths: [String]? = nil,
         noExtensions: Bool? = nil,
         builtinExtensions: [String]? = nil,
+        disabledBuiltinExtensions: [String] = [],
         noSkills: Bool? = nil,
         noPromptTemplates: Bool? = nil,
         noThemes: Bool? = nil,
@@ -115,6 +118,7 @@ public struct DefaultResourceLoaderOptions: Sendable {
         self.additionalThemePaths = additionalThemePaths
         self.noExtensions = noExtensions
         self.builtinExtensions = builtinExtensions
+        self.disabledBuiltinExtensions = disabledBuiltinExtensions
         self.noSkills = noSkills
         self.noPromptTemplates = noPromptTemplates
         self.noThemes = noThemes
@@ -137,6 +141,7 @@ public final class DefaultResourceLoader: ResourceLoader {
     private let additionalPromptTemplatePaths: [String]
     private let additionalThemePaths: [String]
     private let noExtensions: Bool
+    private let disabledBuiltinExtensions: Set<String>
     private let noSkills: Bool
     private let noPromptTemplates: Bool
     private let noThemes: Bool
@@ -245,6 +250,7 @@ public final class DefaultResourceLoader: ResourceLoader {
         self.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? []
         self.additionalThemePaths = options.additionalThemePaths ?? []
         self.noExtensions = options.noExtensions ?? false
+        self.disabledBuiltinExtensions = Set(options.disabledBuiltinExtensions)
         self.noSkills = options.noSkills ?? false
         self.noPromptTemplates = options.noPromptTemplates ?? false
         self.noThemes = options.noThemes ?? false
@@ -404,7 +410,10 @@ public final class DefaultResourceLoader: ResourceLoader {
         let cliEnabledThemes = getEnabledPaths(cliExtensionPaths.themes)
 
         let extensionPaths = noExtensions ? cliEnabledExtensions : mergePaths(enabledExtensions, additionalExtensionPaths, cliEnabledExtensions)
-        extensionsResult = ExtensionsResult(paths: extensionPaths, diagnostics: [])
+        extensionsResult = ExtensionsResult(paths: extensionPaths.filter { path in
+            !path.hasPrefix(BUILTIN_PATH_PREFIX) ||
+                !disabledBuiltinExtensions.contains(String(path.dropFirst(BUILTIN_PATH_PREFIX.count)))
+        }, diagnostics: [])
 
         let skillPaths = noSkills
             ? mergePaths(cliEnabledSkills, additionalSkillPaths)

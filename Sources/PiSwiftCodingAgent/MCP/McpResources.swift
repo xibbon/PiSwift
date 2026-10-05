@@ -3,9 +3,6 @@ import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftMCP
 
-public let LIST_MCP_RESOURCES_TOOL = "list_mcp_resources"
-public let LIST_MCP_RESOURCE_TEMPLATES_TOOL = "list_mcp_resource_templates"
-
 /// MCP App resources require a host that renders their UI.
 public func isMcpAppResource(uri: String, mimeType: String?) -> Bool {
     if uri.hasPrefix("ui://") { return true }

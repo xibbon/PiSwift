@@ -461,7 +461,9 @@ public actor McpBuiltinRuntime {
         serverNames = []
         serverMessages = [:]
         changed()
-        for connection in connections { await connection.close() }
+        await withTaskGroup(of: Void.self) { group in
+            for connection in connections { group.addTask { await connection.close() } }
+        }
     }
 
     private func reportProblems(_ context: HookContext, only: Set<String>? = nil) async {

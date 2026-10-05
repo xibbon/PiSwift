@@ -92,6 +92,8 @@ public actor McpServerConnection {
     private var client: McpClient?
     private var transport: (any McpTransport)?
     private var opening: Task<McpClient, any Error>?
+    private var connectingClient: McpClient?
+    private var closingConnectingClient: Task<Void, Never>?
     private var closed = false
     private var stderrTail: String?
     private var authProvider: (any McpAuthProvider)?
@@ -160,7 +162,9 @@ public actor McpServerConnection {
     private func getClient() async throws -> McpClient {
         if closed { throw McpRuntimeError.connectionFailed("MCP server \"\(entry.name)\" is shut down") }
         if let client {
-            if await client.isConnected() { return client }
+            let connected = await client.isConnected()
+            if closed { throw McpRuntimeError.connectionFailed("MCP server \"\(entry.name)\" is shut down") }
+            if connected { return client }
             self.client = nil
         }
         if let opening { return try await opening.value }
@@ -171,32 +175,53 @@ public actor McpServerConnection {
     }
 
     private func open() async throws -> McpClient {
+        guard !closed else { throw await connectFailed(McpRuntimeError.connectionFailed("shut down while connecting")) }
         state = .connecting
         await changed()
         let delays: [UInt64] = entry.config.isHTTP ? [250_000_000, 1_000_000_000] : []
         for attempt in 0...delays.count {
             do { return try await connectOnce() }
             catch {
-                if needsSignIn(error) {
-                    state = .needsAuth
-                    self.error = nil
-                    await changed()
-                    throw McpRuntimeError.connectionFailed(signInRequiredMessage)
-                }
                 if attempt == delays.count || !isTransient(error) || closed {
-                    state = closed ? .closed : .failed
-                    let tail = stderrTail.map { "\n\($0)" } ?? ""
-                    self.error = error.localizedDescription + tail
-                    await changed()
-                    throw McpRuntimeError.connectionFailed("MCP server \"\(entry.name)\" failed to connect: \(self.error ?? "unknown error")")
+                    throw await connectFailed(error)
                 }
-                try await Task.sleep(nanoseconds: delays[attempt])
+                // Closing wakes the retry wait. Keep the error from the last attempt.
+                try? await Task.sleep(nanoseconds: delays[attempt])
+                if closed { throw await connectFailed(error) }
             }
         }
         throw McpRuntimeError.connectionFailed("MCP server \"\(entry.name)\" failed to connect")
     }
 
+    private func connectFailed(_ error: any Error) async -> McpRuntimeError {
+        if needsSignIn(error), !closed {
+            state = .needsAuth
+            self.error = nil
+            await changed()
+            return .connectionFailed(signInRequiredMessage)
+        }
+        state = closed ? .closed : .failed
+        let message = (error as? McpHTTPError)?.message ?? error.localizedDescription
+        let tail = stderrTail.map { "\n\($0)" } ?? ""
+        let detail = message + tail
+        self.error = detail
+        await changed()
+        return .connectionFailed("MCP server \"\(entry.name)\" failed to connect: \(detail)")
+    }
+
+    private func closeConnectingClient() async {
+        guard let connectingClient else { return }
+        let closing: Task<Void, Never>
+        if let current = closingConnectingClient { closing = current }
+        else {
+            closing = Task { await connectingClient.close() }
+            closingConnectingClient = closing
+        }
+        await closing.value
+    }
+
     private func connectOnce() async throws -> McpClient {
+        guard !closed else { throw McpRuntimeError.connectionFailed("shut down while connecting") }
         let identifier = UUID()
         let root = McpRoot(uri: cwd.absoluteString, name: cwd.lastPathComponent)
         let newClient = McpClient(connectionID: identifier, requestTimeoutMs: timeoutMs,
@@ -207,6 +232,11 @@ public actor McpServerConnection {
                 guard let self else { return }
                 await self.didClose(clientID: identifier)
             }, roots: [root])
+        connectingClient = newClient
+        defer {
+            connectingClient = nil
+            closingConnectingClient = nil
+        }
         var newTransport: (any McpTransport)?
         do {
             let auth: (any McpAuthProvider)?
@@ -224,15 +254,18 @@ public actor McpServerConnection {
             let resourceCapability = await newClient.supportsServerCapability("resources")
             let listedTools = hasTools ? try await newClient.listAllTools() : []
             let fetched = resourceCapability ? await fetchResources(newClient) : (resources: [McpResource](), templates: [McpResourceTemplate]())
+            let connected = await newClient.isConnected()
+            let serverInstructions = await newClient.serverInstructions()?.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Do not suspend between this check, client publication, and the state change.
             if closed { throw McpRuntimeError.connectionFailed("shut down while connecting") }
-            if !(await newClient.isConnected()) { throw McpRuntimeError.connectionFailed("connection closed during setup") }
+            if !connected { throw McpRuntimeError.connectionFailed("connection closed during setup") }
             client = newClient
             transport = newTransport
             tools = listedTools
             hasResources = resourceCapability
             resources = fetched.resources
             resourceTemplates = fetched.templates
-            instructions = await newClient.serverInstructions()?.trimmingCharacters(in: .whitespacesAndNewlines)
+            instructions = serverInstructions
             state = .connected
             self.error = nil
             await onTools?(self)
@@ -240,7 +273,7 @@ public actor McpServerConnection {
             return newClient
         } catch {
             if let oauth = authProvider as? McpServerAuthProvider { challenge = await oauth.challenge }
-            await newClient.close()
+            await closeConnectingClient()
             #if os(macOS)
             if let stdio = newTransport as? StdioTransport {
                 let value = await stdio.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -365,11 +398,16 @@ public actor McpServerConnection {
         if !closed { state = .needsAuth; await changed() }
     }
 
+    /// Return after all server transports close, including a client that is still connecting.
     public func close() async {
         closed = true
         state = .closed
+        let opening = self.opening
         await changed()
+        // Close from a separate task before cancellation. Transport shutdown can await sleeps.
+        await closeConnectingClient()
         opening?.cancel()
+        if let opening { _ = await opening.result }
         if let client { self.client = nil; await client.close() }
         await (authProvider as? McpServerAuthProvider)?.settled()
     }

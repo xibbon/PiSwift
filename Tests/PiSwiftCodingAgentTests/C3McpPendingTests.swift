@@ -173,7 +173,7 @@ struct C3McpPendingTests {
 
     @Test(.timeLimit(.minutes(1)))
     func explicitInitialToolNamesPermitDiscoveryAndRestoreLoadedTool() async throws {
-        // Swift toolNames selects the initial loadout. It does not block later tool_search activation.
+        // The non-empty allowlist keeps unnamed MCP tools. tool_search can activate deferred MCP tools.
         let firstPool = try C3PendingMcpPool()
         let first = try await c3PendingSession(firstPool, toolNames: [TOOL_SEARCH_TOOL_NAME])
         defer { first.dispose() }

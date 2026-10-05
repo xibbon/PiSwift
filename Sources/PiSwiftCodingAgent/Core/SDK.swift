@@ -40,13 +40,16 @@ public struct CreateAgentSessionOptions: Sendable {
     public var projectTrusted: Bool?
     public var offline: Bool?
     public var systemPrompt: SystemPromptInput?
-    /// v0.68.0: tool-name allowlist for built-in tools. When set, only the named tools are
-    /// activated. Names match `ToolName.rawValue` (e.g., "read", "bash", "edit", "write",
-    /// "grep", "find", "ls", "subagent").
+    /// Optional allowlist of tool names or patterns. `*` matches any characters.
+    /// When omitted, the resolved `defaultTools` setting selects the first tools,
+    /// or the standard built-ins are used. Extension and custom tools use their
+    /// defaults unless `noTools` changes them. An explicit list activates only
+    /// matching tools. MCP tools stay registered for codemode and tool search
+    /// unless an entry starts with `mcp__`; then only matching MCP tools remain.
+    /// An empty list, like `noTools: .all`, disables MCP tools too.
     public var toolNames: [String]?
-    /// v0.79.4: tool-name denylist applied after built-in, custom, and extension tools
-    /// are resolved. Names match the final tool names, so custom/extension tools can be
-    /// excluded as well as built-ins.
+    /// Optional denylist of tool names or patterns. Applies after `toolNames`,
+    /// including to MCP tools. `*` matches any characters.
     public var excludeTools: [String]?
     /// v0.68.0 / v0.70.0: disable tools in batch.
     /// `.all`: disable everything (no built-ins, no extensions, no custom tools).
@@ -61,6 +64,8 @@ public struct CreateAgentSessionOptions: Sendable {
     /// Named in-process extensions that use the same API as dylib extensions.
     public var inlineExtensions: [InlineExtension]?
     public var noExtensions: Bool?
+    /// Built-in extension names to disable, even when settings or explicit paths enable them.
+    public var disabledBuiltinExtensions: [String]
     public var eventBus: EventBus?
     public var skills: [Skill]?
     public var contextFiles: [ContextFile]?
@@ -96,6 +101,7 @@ public struct CreateAgentSessionOptions: Sendable {
         additionalExtensionPaths: [String]? = nil,
         inlineExtensions: [InlineExtension]? = nil,
         noExtensions: Bool? = nil,
+        disabledBuiltinExtensions: [String] = [],
         eventBus: EventBus? = nil,
         skills: [Skill]? = nil,
         contextFiles: [ContextFile]? = nil,
@@ -127,6 +133,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.additionalExtensionPaths = additionalExtensionPaths
         self.inlineExtensions = inlineExtensions
         self.noExtensions = noExtensions
+        self.disabledBuiltinExtensions = disabledBuiltinExtensions
         self.eventBus = eventBus
         self.skills = skills
         self.contextFiles = contextFiles
@@ -545,6 +552,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             settingsManager: settingsManager,
             noExtensions: options.noExtensions,
             builtinExtensions: (options.inlineExtensions ?? []).filter(\.builtin).map(\.name),
+            disabledBuiltinExtensions: options.disabledBuiltinExtensions,
             projectTrusted: projectTrusted,
             offline: options.offline ?? false
         ))
@@ -582,10 +590,15 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let globalExtensionEntries = settingsManager.getGlobalSettings().extensions ?? []
     let projectExtensionEntries = projectTrusted ? settingsManager.getProjectSettings().extensions ?? [] : []
     let projectExtensionBaseDir = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).path
-    let explicitBuiltinPaths = Set(explicitExtensionPaths.filter { $0.hasPrefix(BUILTIN_PATH_PREFIX) })
+    let disabledBuiltinExtensions = Set(options.disabledBuiltinExtensions)
+    let explicitBuiltinPaths = Set(explicitExtensionPaths.filter {
+        $0.hasPrefix(BUILTIN_PATH_PREFIX) &&
+            !disabledBuiltinExtensions.contains(String($0.dropFirst(BUILTIN_PATH_PREFIX.count)))
+    })
     let knownBuiltinPaths = Set(inlineExtensions.filter(\.builtin).map { BUILTIN_PATH_PREFIX + $0.name })
     let selectedInlineExtensions = inlineExtensions.filter { item in
         if !item.builtin { return !noExtensions }
+        if disabledBuiltinExtensions.contains(item.name) { return false }
         let path = BUILTIN_PATH_PREFIX + item.name
         return explicitBuiltinPaths.contains(path) || (!noExtensions && resolveBuiltinExtension(path: path,
             globalEntries: globalExtensionEntries, projectEntries: projectExtensionEntries,
@@ -784,24 +797,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         })
     )
     let excludedToolNames = Set(options.excludeTools ?? [])
-    // v0.68.0 / v0.70.0: tool selection layered logic.
-    //   noTools == .all       → no built-ins, no extension/custom tools.
-    //   noTools == .builtin   → no built-ins, BUT keep extension/custom tools.
-    //   toolNames non-nil     → allowlist by name (intersected with built-ins).
-    //   default               → all built-ins (createCodingTools).
-    let builtInTools: [Tool] = {
-        if options.toolNames == nil, options.noTools != nil { return [] }
-        if let names = options.toolNames ?? settingsManager.getDefaultTools() {
-            let allByName = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
-            return names.compactMap { name -> Tool? in
-                guard !excludedToolNames.contains(name) else { return nil }
-                guard let toolName = ToolName(rawValue: name) else { return nil }
-                return allByName[toolName]
-            }
-        }
-        return createCodingTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
-            .filter { !excludedToolNames.contains($0.name) }
-    }()
+    let excludedTools = ToolNameMatcher(options.excludeTools ?? [])
+    let allBuiltInToolsMap = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
     time("createCodingTools")
 
     var customToolsResult: CustomToolsLoadResult
@@ -856,7 +853,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         )
     }
     let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, contextFactory: getCustomToolContext)
-        .filter { !excludedToolNames.contains($0.name) }
+        .filter { !excludedTools.matches($0.name) }
 
     // Tools registered by extensions via `pi.registerTool(_:)`. Wrapped through the same
     // CustomTool→AgentTool bridge as settings-defined custom tools.
@@ -865,49 +862,39 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
     }
     let wrappedExtensionTools = wrapCustomTools(extensionToolDefinitions, contextFactory: getCustomToolContext)
-        .filter { !excludedToolNames.contains($0.name) }
+        .filter { !excludedTools.matches($0.name) }
 
-    let allBuiltInToolsMap = createAllTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext)
     var toolRegistry: [String: AgentTool] = [:]
     for (name, tool) in allBuiltInToolsMap {
         toolRegistry[name.rawValue] = tool
     }
-    for tool in wrappedCustomTools {
+    for tool in wrappedCustomTools + wrappedExtensionTools {
         toolRegistry[tool.name] = tool
     }
-    for tool in wrappedExtensionTools {
-        toolRegistry[tool.name] = tool
-    }
-    for name in excludedToolNames {
-        toolRegistry.removeValue(forKey: name)
-    }
-
-    let allowedNames = options.toolNames.map(Set.init)
-    let configuredDefaultNames = Set(settingsManager.getDefaultTools() ?? [])
-    if let allowedNames {
-        // An explicit initial loadout must still leave extension/custom tools
-        // registered so discovery can activate a deferred match later.
-        let externalNames = Set((wrappedCustomTools + wrappedExtensionTools).map(\.name))
-        toolRegistry = toolRegistry.filter { allowedNames.contains($0.key) || externalNames.contains($0.key) }
-    } else if options.noTools == .all {
-        toolRegistry.removeAll()
-    }
-    let toolDefinitions = Dictionary(
+    let allToolDefinitions = Dictionary(
         (customToolsResult.tools + extensionToolDefinitions).map { ($0.tool.name, $0.tool) },
         uniquingKeysWith: { _, newer in newer }
-    ).filter { toolRegistry[$0.key] != nil }
-    var seenRegistryNames: Set<String> = []
-    let toolRegistryOrder = (ToolName.allCases.map(\.rawValue) +
-        (wrappedCustomTools + wrappedExtensionTools).map(\.name))
-        .filter { toolRegistry[$0] != nil && seenRegistryNames.insert($0).inserted }
-    let allTools = (builtInTools + wrappedCustomTools + wrappedExtensionTools).filter { tool in
-        if let allowedNames { return allowedNames.contains(tool.name) && toolDefinitions[tool.name]?.exposure != .hidden }
-        guard options.noTools != .all else { return false }
-        guard let definition = toolDefinitions[tool.name] else { return true }
-        let exposure = definition.exposure ?? .direct
-        if configuredDefaultNames.contains(tool.name) { return exposure != .hidden }
-        return (exposure == .direct || exposure == .modelOnly) && definition.defaultActive != false
-    }
+    )
+    let builtinNames = Set(ToolName.allCases.map(\.rawValue))
+    let registryOrder = ToolName.allCases.map(\.rawValue) + (wrappedCustomTools + wrappedExtensionTools).map(\.name)
+    let selection = selectInitialTools(
+        registeredTools: registryOrder.compactMap { name in
+            guard toolRegistry[name] != nil else { return nil }
+            let definition = allToolDefinitions[name]
+            return InitialToolRegistration(name: name, isBuiltin: builtinNames.contains(name) && definition == nil,
+                exposure: definition?.exposure ?? .direct, defaultActive: definition?.defaultActive ?? true)
+        },
+        toolNames: options.toolNames,
+        excludeTools: options.excludeTools ?? [],
+        noTools: options.noTools,
+        defaultToolNames: settingsManager.getDefaultTools() ??
+            createCodingTools(cwd: cwd, options: toolsOptions, subagentContext: subagentContext).map(\.name)
+    )
+    let registeredNames = Set(selection.registeredToolNames)
+    toolRegistry = toolRegistry.filter { registeredNames.contains($0.key) }
+    let toolDefinitions = allToolDefinitions.filter { registeredNames.contains($0.key) }
+    let toolRegistryOrder = selection.registeredToolNames
+    let allTools = selection.activeToolNames.compactMap { toolRegistry[$0] }
     time("combineTools")
 
     let makeSystemPromptOptions: @Sendable ([String]) -> BuildSystemPromptOptions = { toolNames in
@@ -1119,7 +1106,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         eventBus: eventBus,
         usesDefaultTools: options.toolNames == nil && options.noTools == nil,
         excludedToolNames: excludedToolNames,
-        allowedToolNames: options.noTools == .all && options.toolNames == nil ? [] : nil,
+        allowedToolNames: options.toolNames.map(Set.init) ?? (options.noTools == .all ? [] : nil),
         toolRegistry: toolRegistry,
         toolRegistryOrder: toolRegistryOrder,
         toolDefinitions: toolDefinitions,
@@ -1130,7 +1117,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
                 LoadedCustomTool(path: "<extension>", resolvedPath: "<extension>", tool: tool)
             }
             let wrapped = wrapCustomTools(definitions, contextFactory: getCustomToolContext)
-                .filter { !excludedToolNames.contains($0.name) }
+                .filter { !excludedTools.matches($0.name) }
             return wrapped
         },
         bashOperations: options.bashOperations

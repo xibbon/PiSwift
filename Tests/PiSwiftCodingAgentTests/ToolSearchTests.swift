@@ -63,6 +63,7 @@ private func toolSearchSession(settings: Settings = Settings(), noExtensions: Bo
 }
 
 @Test func toolSearchExplicitInitialLoadoutCanStillDiscoverDeferredTools() async throws {
+    // The mcp__ name keeps this deferred tool registered under the tool_search allowlist.
     let created = await toolSearchSession(toolNames: [TOOL_SEARCH_TOOL_NAME], customTools: [
         deferredSearchTool("mcp__docs__search", "Search documentation.")
     ])

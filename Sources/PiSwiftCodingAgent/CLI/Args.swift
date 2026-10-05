@@ -31,7 +31,7 @@ public struct Args: Sendable {
     public var sessionId: String?
     public var sessionDir: String?
     public var models: [String]?
-    public var tools: [ToolName]?
+    public var tools: [String]?
     public var excludeTools: [String]?
     public var hooks: [String]?
     public var customTools: [String]?
@@ -40,6 +40,7 @@ public struct Args: Sendable {
     /// active. Distinct from `noTools` (which disables everything).
     public var noBuiltinTools: Bool?
     public var noExtensions: Bool?
+    public var noMcp: Bool = false
     public var print: Bool?
     public var export: String?
     public var noSkills: Bool?

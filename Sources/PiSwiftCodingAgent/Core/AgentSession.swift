@@ -74,7 +74,11 @@ public struct AgentSessionConfig: Sendable {
     public var eventBus: EventBus?
     /// Activate new defaultTools names on reload when the initial selection uses settings.
     public var usesDefaultTools: Bool
+    /// Tool names or patterns to remove. `*` matches any characters.
     public var excludedToolNames: Set<String>
+    /// Tool names or patterns to permit. A non-empty set without an `mcp__` entry
+    /// also keeps MCP tools registered for codemode and tool_search. Only tool_search
+    /// can declare those unnamed MCP tools. An empty set permits no tools.
     public var allowedToolNames: Set<String>?
     public var toolRegistry: [String: AgentTool]?
     public var toolRegistryOrder: [String]?
@@ -493,8 +497,9 @@ public final class AgentSession: Sendable {
         var pendingToolNames: Set<String> = []
         var addedDefaultToolNames: [String] = []
         var usesDefaultTools: Bool
-        var excludedToolNames: Set<String>
-        var allowedToolNames: Set<String>?
+        var excludedTools: ToolNameMatcher
+        var allowedTools: ToolNameMatcher?
+        var allowlistFiltersMcp: Bool
         var toolRegistry: [String: AgentTool]
         var toolRegistryOrder: [String]
         var toolDefinitions: [String: CustomTool]
@@ -881,8 +886,11 @@ public final class AgentSession: Sendable {
             runSystemPromptAppend: nil,
             systemPromptOptions: config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()),
             usesDefaultTools: config.usesDefaultTools,
-            excludedToolNames: config.excludedToolNames,
-            allowedToolNames: config.allowedToolNames,
+            excludedTools: ToolNameMatcher(Array(config.excludedToolNames)),
+            allowedTools: config.allowedToolNames.map { ToolNameMatcher(Array($0)) },
+            allowlistFiltersMcp: config.allowedToolNames.map {
+                $0.isEmpty || $0.contains { $0.hasPrefix("mcp__") }
+            } ?? false,
             toolRegistry: initialRegistry,
             toolRegistryOrder: initialRegistryOrder,
             toolDefinitions: config.toolDefinitions ?? [:],
@@ -1153,7 +1161,8 @@ public final class AgentSession: Sendable {
         if let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
             let names = (current.toolsAdded ?? []).map(\.name)
             restoreActiveTools(names)
-            state.withLock { $0.systemPromptOptions.selectedToolNames = names }
+            let activeNames = getActiveToolNames()
+            state.withLock { $0.systemPromptOptions.selectedToolNames = activeNames }
         } else {
             setActiveToolsByName(agent.tools.map(\.name))
         }
@@ -1964,7 +1973,23 @@ public final class AgentSession: Sendable {
     }
 
     private func isActivatedOnRegistration(_ name: String) -> Bool {
-        isDeclarable(name) && toolDefinitions[name]?.defaultActive != false
+        state.withLock { current in
+            let definition = current.toolDefinitions[name]
+            let exposure = definition?.exposure ?? .direct
+            guard exposure == .direct || exposure == .modelOnly else { return false }
+            if let allowed = current.allowedTools { return allowed.matches(name) }
+            return definition?.defaultActive != false
+        }
+    }
+
+    /// Check if a kept tool can be declared, including a restored tool loadout.
+    private func isActivatable(_ name: String) -> Bool {
+        state.withLock { current in
+            guard let allowed = current.allowedTools,
+                  !allowed.matches(name), isMcpToolName(name) else { return true }
+            return (current.toolDefinitions[name]?.exposure ?? .direct) != .direct &&
+                current.toolRegistry[TOOL_SEARCH_TOOL_NAME] != nil
+        }
     }
 
     /// The tools reachable through a tool's context. Model-only and hidden tools never run here.
@@ -2134,7 +2159,11 @@ public final class AgentSession: Sendable {
     }
 
     private func isAllowedTool(_ name: String) -> Bool {
-        state.withLock { !$0.excludedToolNames.contains(name) && ($0.allowedToolNames?.contains(name) ?? true) }
+        state.withLock { current in
+            if current.excludedTools.matches(name) { return false }
+            if current.allowedTools?.matches(name) ?? true { return true }
+            return !current.allowlistFiltersMcp && isMcpToolName(name)
+        }
     }
 
     private func restoreActiveTools(_ names: [String]) {
@@ -2147,7 +2176,7 @@ public final class AgentSession: Sendable {
         var tools: [AgentTool] = []
         var seen: Set<String> = []
         for name in toolNames {
-            if seen.insert(name).inserted, isAllowedTool(name), exposure(of: name) != .hidden,
+            if seen.insert(name).inserted, isAllowedTool(name), isActivatable(name), exposure(of: name) != .hidden,
                let tool = toolRegistry[name] {
                 tools.append(tool)
             }
@@ -2216,6 +2245,9 @@ public final class AgentSession: Sendable {
         state.withLock { $0.toolPromptGuidelines[tool.name] = tool.promptGuidelines }
 
         var activeNames = getActiveToolNames()
+        if state.withLock({ $0.allowedTools != nil }) {
+            activeNames += toolRegistryOrder.filter(isActivatedOnRegistration)
+        }
         if !activeNames.contains(wrapped.name) && (isActivatedOnRegistration(wrapped.name) || state.withLock { $0.pendingToolNames.contains(wrapped.name) }) {
             activeNames.append(wrapped.name)
         }
@@ -2373,7 +2405,9 @@ public final class AgentSession: Sendable {
             current.addedDefaultToolNames.removeAll()
             return names
         }
-        setActiveTools(getActiveToolNames() + names)
+        let matchedNames = state.withLock({ $0.allowedTools != nil })
+            ? toolRegistryOrder.filter(isActivatedOnRegistration) : []
+        setActiveTools(getActiveToolNames() + matchedNames + names)
     }
 
     private func extendResourcesFromExtensions(reason: ResourcesDiscoverReason) async {
@@ -3665,7 +3699,8 @@ public final class AgentSession: Sendable {
         if let current = getCurrentSystemMessage(context.messages) {
             let names = (current.toolsAdded ?? []).map(\.name)
             restoreActiveTools(names)
-            state.withLock { $0.systemPromptOptions.selectedTools = names.compactMap(ToolName.init(rawValue:)) }
+            let activeNames = getActiveToolNames()
+            state.withLock { $0.systemPromptOptions.selectedTools = activeNames.compactMap(ToolName.init(rawValue:)) }
         }
         if let modelInfo = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find) {
             if let model = modelRegistry.find(modelInfo.provider, modelInfo.modelId) {

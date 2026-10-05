@@ -170,10 +170,8 @@ public func getMcpToolExposure(_ config: McpServerConfig, toolName: String) -> M
     guard let overrides = config.toolExposure else { return config.effectiveExposure }
     if let exact = overrides[toolName] { return exact }
     let ordered = config.toolExposureOrder + overrides.keys.filter { !config.toolExposureOrder.contains($0) }.sorted()
-    for pattern in ordered where pattern.contains("*") {
-        let source = pattern.split(separator: "*", omittingEmptySubsequences: false)
-            .map { NSRegularExpression.escapedPattern(for: String($0)) }.joined(separator: ".*")
-        if toolName.range(of: "^\(source)$", options: .regularExpression) != nil {
+    for pattern in ordered where pattern.utf8.contains(42) {
+        if ToolNameMatcher([pattern]).matches(toolName) {
             return overrides[pattern] ?? config.effectiveExposure
         }
     }

@@ -5,7 +5,6 @@ import PiSwiftAgent
 import PiSwiftMCP
 
 public let MCP_OUTPUT_MAX_BYTES = 20 * 1024
-public let READ_MCP_RESOURCE_TOOL = "read_mcp_resource"
 
 public func mcpToolExposure(_ exposure: McpExposure) -> ToolExposure {
     exposure == .codemode ? .deferred : ToolExposure(rawValue: exposure.rawValue) ?? .hidden
