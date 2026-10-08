@@ -39,10 +39,16 @@ public struct McpMenu: Sendable, Equatable {
     /// Stop consuming changes when the menu returns or the task is cancelled.
     func menu(build: @escaping @Sendable () async -> McpMenu, changes: AsyncStream<Void>?) async -> String?
     func status(title: String, message: String)
+    func status(title: String, message: String, onCancel: (@MainActor @Sendable () -> Void)?)
     func redirectURL(title: String, authorizationURL: URL) async -> URL?
 }
 
 public extension McpUi {
+    /// Hosts can add a cancel control without changing their existing status method.
+    func status(title: String, message: String, onCancel: (@MainActor @Sendable () -> Void)?) {
+        status(title: title, message: message)
+    }
+
     /// Hosts that use snapshots can keep their existing implementation.
     func menu(build: @escaping @Sendable () async -> McpMenu,
               changes: AsyncStream<Void>? = nil) async -> String? {

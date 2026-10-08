@@ -237,6 +237,39 @@ private func mcpClientMetadataDocumentProvider(
     }
 }
 
+// A caller can stop waiting while the refresh saves a token that the server rotated.
+private actor McpRefreshWaiter {
+    private var result: Result<Void, any Error>?
+    private var continuation: CheckedContinuation<Void, any Error>?
+
+    func complete(_ value: Result<Void, any Error>) {
+        guard result == nil else { return }
+        result = value
+        continuation?.resume(with: value)
+        continuation = nil
+    }
+
+    func wait() async throws {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation in
+                if let result { continuation.resume(with: result) }
+                else { self.continuation = continuation }
+            }
+        } onCancel: {
+            Task { await self.complete(.failure(CancellationError())) }
+        }
+    }
+}
+
+private func waitForMcpRefresh(_ task: Task<Void, any Error>?) async throws {
+    try Task.checkCancellation()
+    guard let task else { return }
+    let waiter = McpRefreshWaiter()
+    Task { await waiter.complete(await task.result) }
+    try await waiter.wait()
+}
+
 /// Sends stored tokens and refreshes them before expiry or after HTTP 401.
 public actor McpServerAuthProvider: McpAuthProvider {
     private let serverURL: URL
@@ -273,13 +306,15 @@ public actor McpServerAuthProvider: McpAuthProvider {
     }
 
     public func token() async throws -> String? {
-        _ = try? await refreshTask?.value
+        _ = try? await waitForMcpRefresh(refreshTask)
+        try Task.checkCancellation()
         let state = try credentials.state(name: name, url: serverURL)
         let token = state?.tokens?.accessToken
         if let expiry = state?.tokensExpireAt,
            expiry.timeIntervalSinceNow <= 30,
            state?.tokens?.refreshToken != nil {
             try? await refresh(staleToken: token, challenge: nil)
+            try Task.checkCancellation()
             return try credentials.tokens(name: name, url: serverURL)?.accessToken
         }
         return token
@@ -295,6 +330,7 @@ public actor McpServerAuthProvider: McpAuthProvider {
     public func settled() async { _ = try? await refreshTask?.value }
 
     private func refresh(staleToken: String?, challenge: McpOAuthChallenge?) async throws {
+        try Task.checkCancellation()
         if refreshTask == nil {
             let credentials = self.credentials
             let serverURL = self.serverURL
@@ -303,6 +339,7 @@ public actor McpServerAuthProvider: McpAuthProvider {
             let http = self.http
             let clientMetadataDocumentURL = self.clientMetadataDocumentURL
             refreshTask = Task {
+                defer { self.refreshTask = nil }
                 try await credentials.withRefreshLock(name: name, url: serverURL) {
                     let stored = try credentials.state(name: name, url: serverURL)
                     if stored?.tokens?.accessToken != staleToken { return }
@@ -326,8 +363,7 @@ public actor McpServerAuthProvider: McpAuthProvider {
                 }
             }
         }
-        defer { refreshTask = nil }
-        try await refreshTask?.value
+        try await waitForMcpRefresh(refreshTask)
     }
 }
 
@@ -337,6 +373,29 @@ public func signInMcpServer(
     challenge: McpOAuthChallenge? = nil, presenter: any McpSignInPresenter,
     clientMetadataDocumentURL: URL? = nil,
     http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
+) async throws {
+    try Task.checkCancellation()
+    do {
+        try await performMcpSignIn(name: name, serverURL: serverURL, credentials: credentials,
+            settings: settings, challenge: challenge, presenter: presenter,
+            clientMetadataDocumentURL: clientMetadataDocumentURL, http: http)
+        try Task.checkCancellation()
+        await presenter.cancel()
+    } catch {
+        await presenter.cancel()
+        if isMcpSignInCancellation(error) { throw CancellationError() }
+        throw error
+    }
+}
+
+func isMcpSignInCancellation(_ error: any Error) -> Bool {
+    Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+}
+
+private func performMcpSignIn(
+    name: String, serverURL: URL, credentials: McpOAuthCredentialStore, settings: McpOAuthConfig,
+    challenge: McpOAuthChallenge?, presenter: any McpSignInPresenter,
+    clientMetadataDocumentURL: URL?, http: any McpOAuthHTTPClient
 ) async throws {
     if settings.clientRegistration == .cimd, clientMetadataDocumentURL == nil {
         throw McpRuntimeError.invalidConfig(mcpMissingClientMetadataDocument)
@@ -397,19 +456,14 @@ public func signInMcpServer(
         resourceMetadataURL: challenge?.resourceMetadataURL,
         authorizationServerMetadataURL: settings.authServerMetadataUrl.flatMap(URL.init(string:)),
         skipRefresh: stepUp)
-    do {
-        let result = try await McpOAuthFlow.authorize(provider: provider,
-            options: options, http: TimedMcpOAuthHTTPClient(base: http))
-        if result == .redirect {
-            guard let callback = await capture.url else { throw McpOAuthError.invalidRedirect }
-            _ = try await McpOAuthFlow.completeRedirect(provider: provider,
-                callbackURL: callback, options: options,
-                http: TimedMcpOAuthHTTPClient(base: http))
-        }
-        await presenter.cancel()
-    } catch {
-        await presenter.cancel()
-        throw error
+    let result = try await McpOAuthFlow.authorize(provider: provider,
+        options: options, http: TimedMcpOAuthHTTPClient(base: http))
+    try Task.checkCancellation()
+    if result == .redirect {
+        guard let callback = await capture.url else { throw McpOAuthError.invalidRedirect }
+        _ = try await McpOAuthFlow.completeRedirect(provider: provider,
+            callbackURL: callback, options: options,
+            http: TimedMcpOAuthHTTPClient(base: http))
     }
 }
 

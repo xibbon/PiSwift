@@ -174,8 +174,8 @@ func macOSOAuthPresenterKeepsEarlyCallbackAfterTimeout() async throws {
     await waitForClosedCallbackListener(callback)
     let result = try await presenter.present(authorizationURL: URL(string: "https://auth.example/authorize")!,
         state: "early")
-    // The shared callback server builds components from the request path.
-    #expect(result == URL(string: "http://localhost/callback?code=early-code&state=early"))
+    // v1.1.0 C2: the callback keeps the listener's host and bound port
+    #expect(result == callback)
     await presenter.cancel()
 }
 

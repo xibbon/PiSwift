@@ -409,6 +409,7 @@ public actor McpServerConnection {
         opening?.cancel()
         if let opening { _ = await opening.result }
         if let client { self.client = nil; await client.close() }
+        // A refresh can rotate the token. Wait until its response is saved before shutdown returns.
         await (authProvider as? McpServerAuthProvider)?.settled()
     }
 }

@@ -163,7 +163,11 @@ func f2McpManagerReconnectShowsCurrentErrorOnce() async throws {
     try await runtime.waitForServers()
     let ui = F2McpUi(["docs", "reconnect", nil, nil])
     await runtime.runManager(ui)
-    let menu = try #require(ui.menus.last { $0.title == "MCP server docs" })
+    // v1.1.0 reconnect runs in the background. Check a later menu after it finishes.
+    try await runtime.waitForServers()
+    let later = F2McpUi(["docs", nil, nil])
+    await runtime.runManager(later)
+    let menu = try #require(later.menus.last { $0.title == "MCP server docs" })
     #expect(menu.details == "fixture\nextension: fixture\nState: failed")
     #expect(menu.error == "first error\nsecond error")
     #expect(await runtime.menu().items.first?.detail == "failed: first error · direct · extension")

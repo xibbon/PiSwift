@@ -232,8 +232,9 @@ public actor OAuthCallbackServer<Value: Sendable> {
 
     private func process(_ line: String, connection: NWConnection) async {
         let parts = line.split(separator: " ")
-        guard parts.count >= 2,
-              let components = URLComponents(string: "http://localhost\(parts[1])") else {
+        let host = redirectHost.contains(":") ? "[\(redirectHost)]" : redirectHost
+        guard parts.count >= 2, let boundPort,
+              let components = URLComponents(string: "http://\(host):\(boundPort)\(parts[1])") else {
             await send(connection, status: 400, html: OAuthPage.error("Bad request."))
             return
         }
