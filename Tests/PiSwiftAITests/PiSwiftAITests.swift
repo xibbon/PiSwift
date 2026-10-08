@@ -827,8 +827,9 @@ private func runCodexSessionRequest(
             }
 
             if urlString == "https://chatgpt.com/backend-api/codex/responses" {
-                seenConversationId.withLock { $0 = request.value(forHTTPHeaderField: "conversation_id") }
-                seenSessionId.withLock { $0 = request.value(forHTTPHeaderField: "session_id") }
+                // Upstream v1.1.0 uses session-id and x-client-request-id for Codex affinity.
+                seenConversationId.withLock { $0 = request.value(forHTTPHeaderField: "x-client-request-id") }
+                seenSessionId.withLock { $0 = request.value(forHTTPHeaderField: "session-id") }
                 seenXClientRequestId.withLock { $0 = request.value(forHTTPHeaderField: "x-client-request-id") }
                 if let body = readRequestBody(request),
                    let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {

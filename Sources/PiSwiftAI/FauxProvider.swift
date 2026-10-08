@@ -67,17 +67,19 @@ public struct FauxRegistrationOptions: Sendable {
     }
 }
 
-/// SAFETY: mutable scripted-response and usage state is serialized by `lock`;
-/// immutable registration metadata is value typed.
-public final class FauxProviderRegistration: @unchecked Sendable {
+/// Mutable scripted-response and usage state is stored in `LockedState`.
+public final class FauxProviderRegistration: Sendable {
     public let api: Api
     public let models: [Model]
     public let sourceId: String
 
-    private let lock = NSLock()
-    private var pendingResponses: [FauxResponseStep] = []
-    private var stateBox: FauxState = FauxState()
-    private var promptCache: [String: String] = [:]
+    private struct State: Sendable {
+        var pendingResponses: [FauxResponseStep] = []
+        var usage = FauxState()
+        var promptCache: [String: [String]] = [:]
+    }
+
+    private let storage = LockedState(State())
     private let minTokenSize: Int
     private let maxTokenSize: Int
     private let tokensPerSecond: Double?
@@ -94,23 +96,19 @@ public final class FauxProviderRegistration: @unchecked Sendable {
     }
 
     public func setResponses(_ responses: [FauxResponseStep]) {
-        lock.lock(); defer { lock.unlock() }
-        pendingResponses = responses
+        storage.withLock { $0.pendingResponses = responses }
     }
 
     public func appendResponses(_ responses: [FauxResponseStep]) {
-        lock.lock(); defer { lock.unlock() }
-        pendingResponses.append(contentsOf: responses)
+        storage.withLock { $0.pendingResponses.append(contentsOf: responses) }
     }
 
     public func pendingResponseCount() -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return pendingResponses.count
+        storage.withLock { $0.pendingResponses.count }
     }
 
     public func state() -> FauxState {
-        lock.lock(); defer { lock.unlock() }
-        return stateBox
+        storage.withLock { $0.usage }
     }
 
     public func unregister() {
@@ -126,25 +124,21 @@ public final class FauxProviderRegistration: @unchecked Sendable {
     }
 
     fileprivate func popStep() -> FauxResponseStep? {
-        lock.lock(); defer { lock.unlock() }
-        guard !pendingResponses.isEmpty else { return nil }
-        stateBox.callCount += 1
-        return pendingResponses.removeFirst()
+        storage.withLock { state in
+            guard !state.pendingResponses.isEmpty else { return nil }
+            state.usage.callCount += 1
+            return state.pendingResponses.removeFirst()
+        }
     }
 
     fileprivate func currentState() -> FauxState {
-        lock.lock(); defer { lock.unlock() }
-        return stateBox
+        storage.withLock { $0.usage }
     }
 
-    fileprivate func cachedPrompt(forSession session: String) -> String? {
-        lock.lock(); defer { lock.unlock() }
-        return promptCache[session]
-    }
-
-    fileprivate func storePrompt(_ prompt: String, forSession session: String) {
-        lock.lock(); defer { lock.unlock() }
-        promptCache[session] = prompt
+    fileprivate func replacePrompt(_ prompt: [String], forSession session: String) -> [String]? {
+        storage.withLock { state in
+            state.promptCache.updateValue(prompt, forKey: session)
+        }
     }
 
     fileprivate func tokenSizes() -> (Int, Int) {
@@ -291,8 +285,10 @@ private func withFauxUsageEstimate(
     options: SimpleStreamOptions?,
     registration: FauxProviderRegistration
 ) -> AssistantMessage {
-    let promptText = serializeFauxContext(context)
-    let promptTokens = estimateFauxTokens(promptText)
+    // One text per message; the whole prompt joins them with blank lines.
+    let prompt = fauxContextMessages(context)
+    let promptLength = joinedFauxLength(prompt)
+    let promptTokens = (promptLength + 3) / 4
     let outputTokens = estimateFauxTokens(assistantContentToText(message.content))
     var input = promptTokens
     var cacheRead = 0
@@ -300,17 +296,14 @@ private func withFauxUsageEstimate(
     let sessionId = options?.sessionId
     let cacheEnabled = (options?.cacheRetention ?? .none) != .none
     if let sessionId, cacheEnabled {
-        if let previous = registration.cachedPrompt(forSession: sessionId) {
-            let cachedChars = commonPrefixLength(previous, promptText)
-            let head = String(previous.prefix(cachedChars))
-            let tail = String(promptText.dropFirst(cachedChars))
-            cacheRead = estimateFauxTokens(head)
-            cacheWrite = estimateFauxTokens(tail)
+        if let previous = registration.replacePrompt(prompt, forSession: sessionId) {
+            let cachedChars = commonFauxPromptPrefixLength(previous, prompt)
+            cacheRead = (cachedChars + 3) / 4
+            cacheWrite = (promptLength - cachedChars + 3) / 4
             input = max(0, promptTokens - cacheRead)
         } else {
             cacheWrite = promptTokens
         }
-        registration.storePrompt(promptText, forSession: sessionId)
     }
     var copy = message
     copy.usage = Usage(
@@ -336,7 +329,38 @@ private func commonPrefixLength(_ a: String, _ b: String) -> Int {
     return i
 }
 
+private func joinedFauxLength(_ messages: [String], count: Int? = nil) -> Int {
+    let count = count ?? messages.count
+    // Swift counts CRLF as one Character. Keep the previous joined-string count.
+    let joinedCRLFCount = messages.prefix(max(0, count - 1)).filter { $0.hasSuffix("\r") }.count
+    return max(0, count - 1) * 2 + messages.prefix(count).reduce(0) { $0 + $1.count } - joinedCRLFCount
+}
+
+/// Compare equal messages whole, then compare characters from the first difference.
+private func commonFauxPromptPrefixLength(_ previous: [String], _ current: [String]) -> Int {
+    var index = 0
+    while index < previous.count && index < current.count && previous[index] == current[index] {
+        index += 1
+    }
+    // A final CR differs from CRLF when only one prompt has a next message.
+    if index > 0, previous[index - 1].hasSuffix("\r"),
+       (index == previous.count) != (index == current.count) {
+        index -= 1
+    }
+    func rest(_ messages: [String]) -> String {
+        guard index < messages.count else { return "" }
+        return (index > 0 ? "\n\n" : "") + messages.dropFirst(index).joined(separator: "\n\n")
+    }
+    let remainingPrefix = commonPrefixLength(rest(previous), rest(current))
+    let joinedCRLFCount = index > 0 && previous[index - 1].hasSuffix("\r") && remainingPrefix > 0 ? 1 : 0
+    return joinedFauxLength(previous, count: index) + remainingPrefix - joinedCRLFCount
+}
+
 func serializeFauxContext(_ context: TranscriptContext) -> String {
+    fauxContextMessages(context).joined(separator: "\n\n")
+}
+
+private func fauxContextMessages(_ context: TranscriptContext) -> [String] {
     context.messages.map { message in
         if case .system(let system) = message {
             var lines: [String] = []
@@ -351,7 +375,7 @@ func serializeFauxContext(_ context: TranscriptContext) -> String {
             return "system:\(lines.joined(separator: "\n"))"
         }
         return "\(message.role):\(messageToFauxText(message))"
-    }.joined(separator: "\n\n")
+    }
 }
 
 private func messageToFauxText(_ message: Message) -> String {

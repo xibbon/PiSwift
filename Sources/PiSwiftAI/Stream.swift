@@ -252,7 +252,7 @@ func clampSimpleMaxTokensToContext(model: Model, context: TranscriptContext, max
 }
 
 func estimateContextTokens(_ context: TranscriptContext) -> Int {
-    func tokens(_ text: String) -> Int { (text.utf16.count + 3) / 4 }
+    func tokens(_ text: String) -> Int { (2 * text.utf16.count + 6) / 7 }
     func blocks(_ content: [ContentBlock]) -> Int {
         var chars = 0
         for block in content {
@@ -263,7 +263,7 @@ func estimateContextTokens(_ context: TranscriptContext) -> Int {
             case .toolCall(let call): chars += call.name.utf16.count + jsonString(from: call.arguments).utf16.count
             }
         }
-        return (chars + 3) / 4
+        return (2 * chars + 6) / 7
     }
     func tools(_ list: [AITool]?) -> Int {
         guard let list, !list.isEmpty else { return 0 }

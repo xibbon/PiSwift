@@ -112,8 +112,8 @@ extension ApiRegistryTests {
         let options = explicitMaxTokens.map { SimpleStreamOptions(maxTokens: $0) }
         _ = try streamSimple(model: model, context: context, options: options)
 
-        // Upstream estimates one token for each four text characters.
-        let available = contextWindow - 1_000 - 4_096
+        // Upstream #10497: ceil(4_000 / 3.5) is 1_143 tokens.
+        let available = contextWindow - 1_143 - 4_096
         let expected = min(explicitMaxTokens ?? 128_000, max(1, available))
         #expect(resolved.withLock { $0 } == expected)
     }

@@ -254,6 +254,7 @@ struct A5OtherOAuthTests {
     @Test(.timeLimit(.minutes(1))) func anthropicBrowserCallbackAndRefreshUsePlatformEndpoint() async throws {
         try await codexRequestLock.withLock {
             let callbackTask = LockedState<Task<(Int, String), Never>?>(nil)
+            let redirectUri = LockedState<String?>(nil)
             let captured = LockedState<[[String: String]]>([])
             MockURLProtocol.allowedHosts.withLock { $0 = ["platform.claude.com"] }
             MockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -274,6 +275,7 @@ struct A5OtherOAuthTests {
                     let query = URLComponents(string: info.url)?.queryItems ?? []
                     let redirect = query.first { $0.name == "redirect_uri" }?.value ?? ""
                     let state = query.first { $0.name == "state" }?.value ?? ""
+                    redirectUri.withLock { $0 = redirect }
                     let task = Task { () -> (Int, String) in
                         var components = URLComponents(string: redirect)!
                         components.queryItems = [URLQueryItem(name: "code", value: "browser-code"), URLQueryItem(name: "state", value: state)]
@@ -293,7 +295,8 @@ struct A5OtherOAuthTests {
             #expect(page.contains("Signed in to Anthropic."))
             let exchanged = captured.withLock { $0.first }
             #expect(exchanged?["code"] == "browser-code")
-            #expect(exchanged?["redirect_uri"]?.contains("/callback") == true)
+            // pi-mono v1.1.0 checks the effective URI after free-port fallback.
+            #expect(exchanged?["redirect_uri"] == redirectUri.withLock { $0 })
             _ = try await refreshAnthropicToken("refresh")
             let refreshed = captured.withLock { $0.last }
             #expect(refreshed?["grant_type"] == "refresh_token")
@@ -301,12 +304,13 @@ struct A5OtherOAuthTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(1))) func anthropicFallsBackToPasteWhenPortIsInUse() async throws {
+    // pi-mono v1.1.0 (#10571) uses a free callback port before the paste fallback.
+    @Test(.timeLimit(.minutes(1))) func anthropicFallsBackToFreePortWhenPreferredPortIsInUse() async throws {
         try await codexRequestLock.withLock {
-            let occupied = try await OAuthCallbackServer<String>.start(providerName: "Occupied", port: 0, path: "/occupied") { _ in "" }
+            let occupied = try await OAuthCallbackServer<String>.start(providerName: "Occupied", port: 53692, path: "/occupied") { _ in "" }
             defer { Task { await occupied.close() } }
-            let port = try #require(URL(string: await occupied.redirectUri())?.port)
             let auth = LockedState<URL?>(nil)
+            let callbackTask = LockedState<Task<(Int, String), Never>?>(nil)
             let form = LockedState<[String: String]>([:])
             MockURLProtocol.allowedHosts.withLock { $0 = ["platform.claude.com"] }
             MockURLProtocol.requestHandler.withLock { $0 = { request in
@@ -324,18 +328,41 @@ struct A5OtherOAuthTests {
             }
             let callbacks = OAuthLoginCallbacks(
                 onAuth: { info in auth.withLock { $0 = URL(string: info.url) } },
-                onPrompt: { _ in
+                onPrompt: { prompt in
                     let url = try #require(auth.withLock { $0 })
-                    let state = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "state" }?.value)
-                    return "manual-code#\(state)"
+                    let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                    let state = try #require(query.first { $0.name == "state" }?.value)
+                    let redirect = try #require(query.first { $0.name == "redirect_uri" }?.value)
+                    #expect(prompt.placeholder == redirect)
+                    let task = Task { () -> (Int, String) in
+                        var components = URLComponents(string: redirect)!
+                        components.host = "127.0.0.1"
+                        components.queryItems = [URLQueryItem(name: "code", value: "browser-code"), URLQueryItem(name: "state", value: state)]
+                        guard let callbackURL = components.url,
+                              let (data, response) = try? await URLSession.shared.data(from: callbackURL) else { return (0, "") }
+                        return ((response as? HTTPURLResponse)?.statusCode ?? 0, String(decoding: data, as: UTF8.self))
+                    }
+                    callbackTask.withLock { $0 = task }
+                    try await Task.sleep(for: .seconds(10))
+                    return ""
                 }
             )
-            let credential = try await loginAnthropic(callbacks, callbackPort: UInt16(port))
+            let credential = try await loginAnthropic(callbacks)
             #expect(credential.access == "access")
-            #expect(form.withLock { $0["code"] } == "manual-code")
-            #expect(form.withLock { $0["redirect_uri"] } == "http://localhost:\(port)/callback")
             let url = try #require(auth.withLock { $0 })
-            let scope = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "scope" }?.value ?? ""
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let redirect = try #require(query.first { $0.name == "redirect_uri" }?.value)
+            let components = try #require(URLComponents(string: redirect))
+            #expect(components.host == "localhost")
+            #expect(components.path == "/callback")
+            #expect(components.port != 53692)
+            #expect(form.withLock { $0["code"] } == "browser-code")
+            #expect(form.withLock { $0["redirect_uri"] } == redirect)
+            let task = try #require(callbackTask.withLock { $0 })
+            let (status, page) = await task.value
+            #expect(status == 200)
+            #expect(page.contains("Signed in to Anthropic."))
+            let scope = query.first { $0.name == "scope" }?.value ?? ""
             #expect(scope.split(separator: " ").count == 6)
         }
     }

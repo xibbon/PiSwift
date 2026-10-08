@@ -337,7 +337,9 @@ func mapMistralStopReason(_ reason: String) -> StopReasonResult {
     case "stop": return StopReasonResult(stopReason: .stop)
     case "length", "model_length": return StopReasonResult(stopReason: .length)
     case "tool_calls": return StopReasonResult(stopReason: .toolUse)
-    case "error": return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: error")
+    case "error":
+        // Mistral reports transient server failures this way; "server error" makes the message retryable.
+        return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: error (server error)")
     default: return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason)")
     }
 }

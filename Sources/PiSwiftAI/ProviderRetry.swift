@@ -103,10 +103,12 @@ public func abortableSleep(ms: Double, signal: CancellationToken? = nil) async t
     }
 }
 
+/// HTTP statuses in `noRetryStatuses` fail at once, even if the default policy permits a retry.
 public func retryProviderRequest<T: Sendable>(
     maxRetries: Int? = nil,
     maxRetryDelayMs: Int? = nil,
     signal: CancellationToken? = nil,
+    noRetryStatuses: [Int] = [],
     request: @escaping @Sendable () async throws -> T
 ) async throws -> T {
     try await retryProviderRequestDriver(
@@ -114,6 +116,7 @@ public func retryProviderRequest<T: Sendable>(
         maxRetryDelayMs: maxRetryDelayMs,
         signal: signal,
         abortRequestOnSignal: true,
+        noRetryStatuses: noRetryStatuses,
         request: request
     )
 }
@@ -130,6 +133,7 @@ private func retryProviderRequestDriver<T: Sendable>(
     maxRetryDelayMs: Int?,
     signal: CancellationToken?,
     abortRequestOnSignal: Bool,
+    noRetryStatuses: [Int] = [],
     onRetryScheduled: RetryScheduledHandler? = nil,
     onRetryAttemptStart: (@Sendable () async -> Void)? = nil,
     request: @escaping @Sendable () async throws -> T
@@ -148,6 +152,10 @@ private func retryProviderRequestDriver<T: Sendable>(
                 throw StreamError.requestAborted
             }
             guard retriesRemaining > 0, isRetryableProviderError(error) else {
+                throw error
+            }
+
+            if let status = providerMetadata(error)?.statusCode, noRetryStatuses.contains(status) {
                 throw error
             }
 

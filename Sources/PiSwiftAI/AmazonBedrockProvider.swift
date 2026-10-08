@@ -664,7 +664,7 @@ func mapBedrockStopReason(_ reason: String?) -> StopReasonResult {
     }
 }
 
-private func buildBedrockRequest(
+func buildBedrockRequest(
     model: Model,
     context: Context,
     options: BedrockOptions,
@@ -743,26 +743,15 @@ private func bedrockCapabilityIdentifier(_ model: Model) -> String {
     return id
 }
 
-private func supportsPromptCaching(model: Model, env: [String: String]? = nil) -> Bool {
-    // Force cache for all models via env var (useful for application inference profiles
-    // that don't have "claude" in the ARN)
-    if getProviderEnvValue("AWS_BEDROCK_FORCE_CACHE", env: env) == "1" {
-        return true
+func supportsPromptCaching(model: Model, env: [String: String]? = nil) -> Bool {
+    let candidates = bedrockModelMatchCandidates(model)
+    guard candidates.contains(where: { $0.contains("claude") }) else {
+        return getProviderEnvValue("AWS_BEDROCK_FORCE_CACHE", env: env) == "1"
     }
-    if model.cost.cacheRead > 0 || model.cost.cacheWrite > 0 {
-        return true
+    return candidates.contains { candidate in
+        ["fable-5", "opus-5", "sonnet-5", "haiku-5", "-4-", "claude-3-7-sonnet", "claude-3-5-haiku"]
+            .contains { candidate.contains($0) }
     }
-    let id = bedrockCapabilityIdentifier(model)
-    if id.contains("claude") && (id.contains("-4-") || id.contains("-4.")) {
-        return true
-    }
-    if id.contains("claude-3-7-sonnet") {
-        return true
-    }
-    if id.contains("claude-3-5-haiku") {
-        return true
-    }
-    return false
 }
 
 private func supportsThinkingSignature(model: Model) -> Bool {
@@ -790,6 +779,7 @@ private func supportsAdaptiveThinking(model: Model) -> Bool {
         candidate.contains("sonnet-4.6") ||
         candidate.contains("opus-5") ||
         candidate.contains("sonnet-5") ||
+        candidate.contains("haiku-5") ||
         candidate.contains("fable-5")
     }
 }
@@ -802,13 +792,14 @@ private func supportsNativeXhighEffort(model: Model) -> Bool {
         candidate.contains("opus-4.8") ||
         candidate.contains("opus-5") ||
         candidate.contains("sonnet-5") ||
+        candidate.contains("haiku-5") ||
         candidate.contains("fable-5")
     }
 }
 
 private func supportsThinkingBlockBinding(model: Model) -> Bool {
     bedrockModelMatchCandidates(model).contains { candidate in
-        ["opus-4-7", "opus-4-8", "opus-5", "sonnet-5", "fable-5"].contains { candidate.contains($0) }
+        ["opus-4-7", "opus-4-8", "opus-5", "sonnet-5", "haiku-5", "fable-5"].contains { candidate.contains($0) }
     }
 }
 
@@ -1057,7 +1048,24 @@ func buildAdditionalModelRequestFields(model: Model, options: BedrockOptions) ->
     guard let reasoning = options.reasoning, model.reasoning else { return nil }
     // v0.70.3: use capability identifier so inference-profile ARNs still detect Claude.
     let capabilityId = bedrockCapabilityIdentifier(model)
-    guard isAnthropicClaudeModel(model) || capabilityId.contains("claude") else { return nil }
+    guard isAnthropicClaudeModel(model) || capabilityId.contains("claude") else {
+        let candidates = bedrockModelMatchCandidates(model)
+        if candidates.contains(where: { $0.contains("gpt-oss") }) {
+            let effort: String
+            switch reasoning {
+            case .minimal, .low: effort = "low"
+            case .medium: effort = "medium"
+            case .high, .xhigh, .max: effort = "high"
+            }
+            return ["reasoning_effort": AnyCodable(effort)]
+        }
+        if candidates.contains(where: { $0.contains("gpt-") }) {
+            let mapped = model.thinkingLevelMap?[ModelThinkingLevel(reasoning)] ?? nil
+            let effort = mapped ?? (reasoning == .minimal ? "low" : reasoning.rawValue)
+            return ["reasoning": AnyCodable(["effort": effort])]
+        }
+        return nil
+    }
 
     var result: [String: Any] = [:]
     let isGovCloud = isGovCloudBedrockTarget(model: model, options: options)

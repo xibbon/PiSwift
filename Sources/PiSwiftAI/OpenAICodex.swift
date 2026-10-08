@@ -20,17 +20,22 @@ func resolveOpenAICodexBaseUrl(_ baseUrl: String) -> String {
 }
 
 func buildOpenAICodexHeaders(
-    baseHeaders: [String: String]?,
+    baseHeaders: ProviderHeaders?,
+    additionalHeaders: ProviderHeaders? = nil,
     accessToken: String
 ) throws -> [String: String] {
     guard let accountId = openAICodexAccountId(from: accessToken) else {
         throw OpenAICodexError.missingAccountId
     }
 
-    var headers = baseHeaders ?? [:]
-    headers["OpenAI-Beta"] = "responses=experimental"
-    headers["originator"] = "pi"
-    headers["chatgpt-account-id"] = accountId
+    // Upstream v1.1.0: defaults, model fields, caller fields, then protected auth fields.
+    let defaults: ProviderHeaders = ["originator": "pi", "User-Agent": getPiUserAgent()]
+    let requested = mergeProviderHeaders(mergeProviderHeaders(defaults, baseHeaders), additionalHeaders)
+    let protected: ProviderHeaders = [
+        "Authorization": "Bearer \(accessToken)",
+        "chatgpt-account-id": accountId,
+    ]
+    let headers = providerHeadersToRecord(mergeProviderHeaders(requested, protected)) ?? [:]
     return headers
 }
 

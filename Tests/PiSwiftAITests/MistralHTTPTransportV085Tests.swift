@@ -223,7 +223,11 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
         #expect(message.rawStopReason == reason)
         #expect(message.responseId == "response-1")
         #expect(message.stopReason == (reason == "stop" ? .stop : .error))
-        if reason != "stop" { #expect(message.errorMessage == "Provider stopped with: \(reason)") }
+        // Upstream #10487: Mistral server errors have retryable error text.
+        if reason != "stop" {
+            let expected = reason == "error" ? "Provider stopped with: error (server error)" : "Provider stopped with: \(reason)"
+            #expect(message.errorMessage == expected)
+        }
     }
 }
 

@@ -131,6 +131,9 @@ public struct OAuthLoginCallbacks: Sendable {
     public var signal: CancellationToken?
     public var getDeviceId: (@Sendable () -> String)?
     public var onSelect: (@MainActor @Sendable (OAuthSelectPrompt) async throws -> String)?
+    /// The name that this app sends during login, such as OpenAI's agent name hint
+    /// and Codex originator. If nil, use the provider's default Pi name.
+    public var agentName: String?
 
     public init(
         onAuth: @escaping @MainActor @Sendable (OAuthAuthInfo) -> Void,
@@ -139,7 +142,8 @@ public struct OAuthLoginCallbacks: Sendable {
         onManualCodeInput: (@MainActor @Sendable () async throws -> String?)? = nil,
         signal: CancellationToken? = nil,
         getDeviceId: (@Sendable () -> String)? = nil,
-        onSelect: (@MainActor @Sendable (OAuthSelectPrompt) async throws -> String)? = nil
+        onSelect: (@MainActor @Sendable (OAuthSelectPrompt) async throws -> String)? = nil,
+        agentName: String? = nil
     ) {
         self.onAuth = onAuth
         self.onPrompt = onPrompt
@@ -148,6 +152,7 @@ public struct OAuthLoginCallbacks: Sendable {
         self.signal = signal
         self.getDeviceId = getDeviceId
         self.onSelect = onSelect
+        self.agentName = agentName
     }
 }
 
@@ -306,11 +311,23 @@ public func loginAnthropic(_ callbacks: OAuthLoginCallbacks, callbackPort: UInt1
     let fallbackRedirectUri = "http://localhost:\(callbackPort)/callback"
     #if canImport(Network)
     let host = oauthCallbackHost()
-    let server = try? await OAuthCallbackServer<String>.start(
-        providerName: "Anthropic", host: host, port: callbackPort, path: "/callback",
-        redirectHost: "localhost", state: pkce.verifier, signal: callbacks.signal
-    ) { components in
-        components.queryItems?.first { $0.name == "code" }?.value ?? ""
+    func startCallbackServer(port: UInt16) async throws -> OAuthCallbackServer<String> {
+        try await OAuthCallbackServer<String>.start(
+            providerName: "Anthropic", host: host, port: port, path: "/callback",
+            redirectHost: "localhost", state: pkce.verifier, signal: callbacks.signal
+        ) { components in
+            components.queryItems?.first { $0.name == "code" }?.value ?? ""
+        }
+    }
+    // pi-mono v1.1.0 (#10571): Prefer port 53692 so it can be forwarded into
+    // containers or over SSH. Anthropic accepts any loopback port, so use a free
+    // port when the preferred port cannot be bound.
+    let server: OAuthCallbackServer<String>?
+    if let preferred = try? await startCallbackServer(port: callbackPort) {
+        server = preferred
+    } else {
+        // Without a callback server, login continues with the pasted redirect URL.
+        server = try? await startCallbackServer(port: 0)
     }
     let redirectUri = await server?.redirectUri() ?? fallbackRedirectUri
     defer { if let server { Task { await server.close() } } }
@@ -409,7 +426,7 @@ public func refreshAnthropicToken(_ refreshToken: String, signal: CancellationTo
 
 public func loginOpenAICodex(_ callbacks: OAuthLoginCallbacks, callbackPort: UInt16 = 1455) async throws -> OAuthCredentials {
     let fallbackRedirectUri = "http://localhost:\(callbackPort)/auth/callback"
-    let flow = try createOpenAICodexAuthorizationFlow(redirectUri: fallbackRedirectUri)
+    let flow = try createOpenAICodexAuthorizationFlow(redirectUri: fallbackRedirectUri, originator: callbacks.agentName ?? "pi")
     #if canImport(Network)
     let server = try? await OAuthCallbackServer<String>.start(
         providerName: "OpenAI", host: oauthCallbackHost(), port: callbackPort,
@@ -701,7 +718,7 @@ private struct OpenAICodexToken {
     let expires: Double
 }
 
-private func createOpenAICodexAuthorizationFlow(redirectUri: String = "http://localhost:1455/auth/callback") throws -> (verifier: String, state: String, url: String) {
+private func createOpenAICodexAuthorizationFlow(redirectUri: String = "http://localhost:1455/auth/callback", originator: String = "pi") throws -> (verifier: String, state: String, url: String) {
     let pkce = try generatePKCE()
     let state = randomHex(count: 16)
 
@@ -716,7 +733,7 @@ private func createOpenAICodexAuthorizationFlow(redirectUri: String = "http://lo
         URLQueryItem(name: "state", value: state),
         URLQueryItem(name: "id_token_add_organizations", value: "true"),
         URLQueryItem(name: "codex_cli_simplified_flow", value: "true"),
-        URLQueryItem(name: "originator", value: "pi"),
+        URLQueryItem(name: "originator", value: originator),
     ]
     let url = components.url?.absoluteString ?? "https://auth.openai.com/oauth/authorize"
     return (pkce.verifier, state, url)

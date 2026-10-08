@@ -26,22 +26,15 @@ public func streamOpenAICodexResponses(
                 throw StreamError.missingApiKey(model.provider)
             }
 
-            let requestedHeaders = mergeProviderHeaders(model.headers, options.headers)
             let baseHeaders = try buildOpenAICodexHeaders(
-                baseHeaders: providerHeadersToRecord(requestedHeaders),
+                baseHeaders: model.headers,
+                additionalHeaders: options.headers,
                 accessToken: apiKey
             )
             let accountId = baseHeaders["chatgpt-account-id"] ?? ""
             let cacheSessionId = codexCacheSessionId(options.sessionId, cacheRetention: options.cacheRetention)
             let codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId)
-            let defaultHeaders = buildCodexHeaders(
-                baseHeaders: baseHeaders,
-                accessToken: apiKey,
-                sessionId: codexSessionId
-            )
-            let headers = providerHeadersToRecord(
-                mergeProviderHeaders(defaultHeaders, requestedHeaders)
-            ) ?? [:]
+            let headers = buildCodexSSEHeaders(baseHeaders: baseHeaders, sessionId: codexSessionId)
 
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
             let grammarToolInputProperties = try createGrammarToolInputProperties(
@@ -406,6 +399,9 @@ public func streamOpenAICodexResponses(
             }
             let transport: Transport = options.httpClient != nil ? .sse : (options.transport ?? .auto)
             if transport != .sse {
+                // Swift UUID generation can throw. Generate the ID only for a WebSocket request.
+                let websocketRequestId = try codexWebSocketRequestId(sessionId: codexSessionId)
+                let websocketHeaders = buildCodexWebSocketHeaders(baseHeaders: baseHeaders, requestId: websocketRequestId)
                 var websocketStarted = false
                 var retriedMissingContinuation = false
                 while true {
@@ -414,7 +410,7 @@ public func streamOpenAICodexResponses(
                         try await processCodexWebSocketStream(
                             url: codexWebSocketUrl(baseUrl: model.baseUrl),
                             body: body,
-                            headers: headers,
+                            headers: websocketHeaders,
                             sessionId: cacheSessionId,
                             accountId: accountId,
                             signal: options.signal,
@@ -752,28 +748,40 @@ private actor CodexWebSocketCache {
     }
 }
 
-private func buildCodexHeaders(
+// Upstream v1.1.0: transport fields follow model and caller fields.
+func buildCodexSSEHeaders(
     baseHeaders: [String: String],
-    accessToken: String,
     sessionId: String?
 ) -> [String: String] {
-    var headers = baseHeaders
-    headers = headers.filter { $0.key.lowercased() != "x-api-key" }
-    headers["Authorization"] = "Bearer \(accessToken)"
-    headers["User-Agent"] = getPiUserAgent()
-    headers["accept"] = "text/event-stream"
-    headers["content-type"] = "application/json"
-
+    var transportHeaders: ProviderHeaders = [
+        "OpenAI-Beta": "responses=experimental",
+        "accept": "text/event-stream",
+        "content-type": "application/json",
+    ]
     if let sessionId, !sessionId.isEmpty {
-        headers["conversation_id"] = sessionId
-        headers["session_id"] = sessionId
-        headers["x-client-request-id"] = sessionId
-    } else {
-        headers.removeValue(forKey: "conversation_id")
-        headers.removeValue(forKey: "session_id")
-        headers.removeValue(forKey: "x-client-request-id")
+        transportHeaders["session-id"] = sessionId
+        transportHeaders["x-client-request-id"] = sessionId
     }
-    return headers
+    return providerHeadersToRecord(mergeProviderHeaders(baseHeaders, transportHeaders)) ?? [:]
+}
+
+func codexWebSocketRequestId(sessionId: String?) throws -> String {
+    if let sessionId, !sessionId.isEmpty { return sessionId }
+    return try uuidv7()
+}
+
+func buildCodexWebSocketHeaders(
+    baseHeaders: [String: String],
+    requestId: String
+) -> [String: String] {
+    let transportHeaders: ProviderHeaders = [
+        "accept": nil,
+        "content-type": nil,
+        "OpenAI-Beta": codexWebSocketBetaHeader,
+        "session-id": requestId,
+        "x-client-request-id": requestId,
+    ]
+    return providerHeadersToRecord(mergeProviderHeaders(baseHeaders, transportHeaders)) ?? [:]
 }
 
 private func parseCodexError(
@@ -894,12 +902,9 @@ private func processCodexWebSocketStream(
     onStart: () -> Void,
     onEvent: (CodexRawEvent) async throws -> Void
 ) async throws {
-    var wsHeaders = headers
-    wsHeaders["OpenAI-Beta"] = codexWebSocketBetaHeader
-
     let lease = await CodexWebSocketCache.shared.acquire(
         url: url,
-        headers: wsHeaders,
+        headers: headers,
         sessionId: sessionId,
         accountId: accountId,
         connectTimeoutMs: websocketConnectTimeoutMs,

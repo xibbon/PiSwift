@@ -234,7 +234,7 @@ func loginOpenAIChatGPT(
     var authorize = URLComponents(string: "https://auth.openai.com/api/accounts/authorize")!
     authorize.queryItems = [
         URLQueryItem(name: "client_id", value: "dynamic_agent_client"),
-        URLQueryItem(name: "agent_name_hint", value: "Pi"),
+        URLQueryItem(name: "agent_name_hint", value: callbacks.agentName ?? "Pi"),
         URLQueryItem(name: "ext_agent_host_id", value: hostId),
         URLQueryItem(name: "response_type", value: "code"),
         URLQueryItem(name: "redirect_uri", value: redirectUri),
