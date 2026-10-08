@@ -471,6 +471,38 @@
       "provider": "openrouter",
       "type": "image"
     },
+    "google/gemini-nano-banana-2.1": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 1.5,
+        "output": 7.5
+      },
+      "id": "google/gemini-nano-banana-2.1",
+      "input": [
+        "image",
+        "text"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Google: Nano Banana 2.1",
+      "output": [
+        "image",
+        "text"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
     "inclusionai/ming-image-0.1-design": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -1750,6 +1782,37 @@
         }
       },
       "name": "Sourceful: Riverflow V2.5 Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "tencent/hy-image-v3.5-preview": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "tencent/hy-image-v3.5-preview",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Tencent: Hy Image 3.5 Preview",
       "output": [
         "image"
       ],

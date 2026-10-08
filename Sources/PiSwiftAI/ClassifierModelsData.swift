@@ -5,6 +5,7 @@ import Foundation
 
 internal let ClassifierModelsData: [String: [String: ClassifierModel]] = [
     "cloudflare-workers-ai": providerModels_classifier_cloudflare_workers_ai,
+    "openai": providerModels_classifier_openai,
     "opencode": providerModels_classifier_opencode,
     "openrouter": providerModels_classifier_openrouter,
     "typesafe": providerModels_classifier_typesafe,
@@ -41,6 +42,19 @@ private let providerModels_classifier_cloudflare_workers_ai: [String: Classifier
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32000
+    ),
+]
+
+private let providerModels_classifier_openai: [String: ClassifierModel] = [
+    "gpt-6-luna": ClassifierModel(
+        id: "gpt-6-luna",
+        name: "GPT-6 Luna",
+        api: .openAIDecisions,
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0, cacheRead: 0, cacheWrite: 0)]),
+        contextWindow: 922000
     ),
 ]
 
@@ -85,8 +99,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        cost: ModelCost(input: 0.021, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384
     ),
     "inception/mercury-decide:free": ClassifierModel(
         id: "inception/mercury-decide:free",
@@ -110,7 +124,7 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
     ),
     "liquid/d1": ClassifierModel(
         id: "liquid/d1",
-        name: "LiquidAI: D1",
+        name: "LiquidAI: d1",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -118,14 +132,24 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         cost: ModelCost(input: 0.04, output: 0, cacheRead: 0.04, cacheWrite: 0),
         contextWindow: 65536
     ),
-    "perplexity/pplx-decider-v1-27b": ClassifierModel(
-        id: "perplexity/pplx-decider-v1-27b",
-        name: "Perplexity: Decider V1 27B",
+    "openai/gpt-6-luna-decisions": ClassifierModel(
+        id: "openai/gpt-6-luna-decisions",
+        name: "OpenAI: GPT-6 Luna Decisions",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1050000
+    ),
+    "perplexity/pplx-decider-v1.1-27b": ClassifierModel(
+        id: "perplexity/pplx-decider-v1.1-27b",
+        name: "Perplexity: Decider V1.1 27B",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144
     ),
     "respan/span-01": ClassifierModel(
@@ -176,11 +200,21 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32000
+        contextWindow: 64000
     ),
     "upstage/solar-decide": ClassifierModel(
         id: "upstage/solar-decide",
         name: "Upstage: Solar Decide",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.05, output: 0, cacheRead: 0.05, cacheWrite: 0),
+        contextWindow: 524288
+    ),
+    "upstage/solar-decide-flash": ClassifierModel(
+        id: "upstage/solar-decide-flash",
+        name: "Upstage: Solar Decide Flash",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -196,7 +230,7 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32000
+        contextWindow: 64000
     ),
 ]
 
@@ -243,6 +277,16 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         input: [.text],
         cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 65536
+    ),
+    "openai/gpt-6-luna-decisions": ClassifierModel(
+        id: "openai/gpt-6-luna-decisions",
+        name: "GPT-6 Luna Decisions",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1050000
     ),
     "typesafe-ai/jev": ClassifierModel(
         id: "typesafe-ai/jev",

@@ -111,7 +111,7 @@ struct K1CatalogV101Tests {
     }
 
     @Test func generationTimestampAndProviderCount() {
-        #expect(builtinModelDataGeneratedAt == 1_791_212_337.999) // v1.0.3 hydration, 2026-10-05T14:58:57.999Z
+        #expect(builtinModelDataGeneratedAt == 1_791_480_046.977) // v1.1.0 hydration, 2026-10-08T17:20:46.977Z
         #expect(getProviders().count == 40)
     }
 }

@@ -34,6 +34,7 @@ public enum ImageApi: String, Sendable, Codable {
 public enum ClassifierApi: String, Sendable, Codable {
     case typesafeSystemOne = "typesafe-system-one"
     case cloudflareWorkersAISystemOne = "cloudflare-workers-ai-system-one"
+    case openAIDecisions = "openai-decisions"
 }
 
 public enum KnownProvider: String, Sendable {

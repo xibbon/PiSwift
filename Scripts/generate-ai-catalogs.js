@@ -140,6 +140,7 @@ function classifierApiCase(api) {
   const cases = {
     "typesafe-system-one": "typesafeSystemOne",
     "cloudflare-workers-ai-system-one": "cloudflareWorkersAISystemOne",
+    "openai-decisions": "openAIDecisions",
   };
   if (!cases[api]) throw new Error(`Unknown classifier api: ${api}`);
   return `.${cases[api]}`;

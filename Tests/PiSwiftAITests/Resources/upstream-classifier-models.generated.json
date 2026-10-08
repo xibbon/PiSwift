@@ -55,6 +55,36 @@
       "type": "classifier"
     }
   },
+  "openai": {
+    "gpt-6-luna": {
+      "api": "openai-decisions",
+      "baseUrl": "https://api.openai.com/v1",
+      "contextWindow": 922000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.1,
+        "output": 0,
+        "tiers": [
+          {
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "input": 0.2,
+            "inputTokensAbove": 272000,
+            "output": 0
+          }
+        ]
+      },
+      "id": "gpt-6-luna",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-6 Luna",
+      "provider": "openai",
+      "type": "classifier"
+    }
+  },
   "opencode": {
     "jev-1.13": {
       "api": "typesafe-system-one",
@@ -97,7 +127,7 @@
     "~typesafe/jev-latest": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
-      "contextWindow": 32000,
+      "contextWindow": 64000,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
@@ -134,11 +164,11 @@
     "cloudflare/clef-flash": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
-      "contextWindow": 65536,
+      "contextWindow": 16384,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.09,
+        "input": 0.021,
         "output": 0
       },
       "id": "cloudflare/clef-flash",
@@ -200,26 +230,45 @@
       "input": [
         "text"
       ],
-      "name": "LiquidAI: D1",
+      "name": "LiquidAI: d1",
       "provider": "openrouter",
       "type": "classifier"
     },
-    "perplexity/pplx-decider-v1-27b": {
+    "openai/gpt-6-luna-decisions": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 1050000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.1,
+        "output": 0
+      },
+      "id": "openai/gpt-6-luna-decisions",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "OpenAI: GPT-6 Luna Decisions",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "perplexity/pplx-decider-v1.1-27b": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.04,
+        "input": 0.02,
         "output": 0
       },
-      "id": "perplexity/pplx-decider-v1-27b",
+      "id": "perplexity/pplx-decider-v1.1-27b",
       "input": [
         "text",
         "image"
       ],
-      "name": "Perplexity: Decider V1 27B",
+      "name": "Perplexity: Decider V1.1 27B",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -298,7 +347,7 @@
     "typesafe/jev-1.13": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
-      "contextWindow": 32000,
+      "contextWindow": 64000,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
@@ -328,6 +377,24 @@
         "text"
       ],
       "name": "Upstage: Solar Decide",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "upstage/solar-decide-flash": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "contextWindow": 524288,
+      "cost": {
+        "cacheRead": 0.05,
+        "cacheWrite": 0,
+        "input": 0.05,
+        "output": 0
+      },
+      "id": "upstage/solar-decide-flash",
+      "input": [
+        "text"
+      ],
+      "name": "Upstage: Solar Decide Flash",
       "provider": "openrouter",
       "type": "classifier"
     }
@@ -404,6 +471,24 @@
         "text"
       ],
       "name": "Liquid d1",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "openai/gpt-6-luna-decisions": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 1050000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.1,
+        "output": 0
+      },
+      "id": "openai/gpt-6-luna-decisions",
+      "input": [
+        "text"
+      ],
+      "name": "GPT-6 Luna Decisions",
       "provider": "vercel-ai-gateway",
       "type": "classifier"
     },

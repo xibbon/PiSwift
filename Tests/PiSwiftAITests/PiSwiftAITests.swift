@@ -6287,7 +6287,13 @@ struct ApiRegistryTests {
     #expect(mediumOptions.promptMode == nil)
     #expect(mediumOptions.reasoningEffort == "high")
 
-    let large = getModel(provider: .mistral, modelId: "magistral-medium-latest")
+    // v1.1.0: models.dev now gives the catalog magistral-medium-latest a thinking level map, which selects
+    // reasoning_effort (upstream mistral-conversations.ts:202). Upstream mistral-reasoning-mode.test.ts builds this
+    // model without a map, so the prompt-mode case uses a hand-built model too.
+    let large = Model(id: "magistral-medium-latest", name: "Magistral Medium", api: .mistralConversations,
+                      provider: "mistral", baseUrl: "https://api.mistral.ai", reasoning: true, input: [.text],
+                      cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                      contextWindow: 128_000, maxTokens: 32_000)
     let largeOptions = mapMistralSimpleOptions(model: large, options: SimpleStreamOptions(reasoning: .high), apiKey: "key")
     #expect(largeOptions.promptMode == "reasoning")
     #expect(largeOptions.reasoningEffort == nil)
@@ -6450,8 +6456,8 @@ struct ApiRegistryTests {
     #expect(getProviders().count == 40)
     #expect(!getProviders().contains(.typesafe))
     #expect(getBuiltinProviders().contains(.typesafe))
-    #expect(allModels.count == 1511) // v1.0.3 catalog
-    #expect(compared == 1511) // v1.0.3 catalog
+    #expect(allModels.count == 1536) // v1.1.0 catalog (Claude Haiku 5.5, live models.dev drift)
+    #expect(compared == 1536) // v1.1.0 catalog
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6507,8 +6513,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 59) // v1.0.1 catalog
-    #expect(compared == 59) // v1.0.1 catalog
+    #expect(models.count == 61) // v1.1.0 catalog (live OpenRouter image models)
+    #expect(compared == 61) // v1.1.0 catalog
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)
@@ -6541,7 +6547,7 @@ struct ApiRegistryTests {
             compared += 1
         }
     }
-    #expect(compared == 23) // v1.0.3 catalog
+    #expect(compared == 27) // v1.1.0 catalog (OpenAI GPT-6 Luna, live gateway classifiers)
     #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }

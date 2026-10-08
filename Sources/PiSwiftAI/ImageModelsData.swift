@@ -173,6 +173,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-nano-banana-2.1": ImageModel(
+        id: "google/gemini-nano-banana-2.1",
+        name: "Google: Nano Banana 2.1",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.image, .text],
+        output: [.image, .text],
+        cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "inclusionai/ming-image-0.1-design": ImageModel(
         id: "inclusionai/ming-image-0.1-design",
         name: "inclusionAI: Ming Image 0.1 Design",
@@ -625,6 +636,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
     "sourceful/riverflow-v2.5-pro": ImageModel(
         id: "sourceful/riverflow-v2.5-pro",
         name: "Sourceful: Riverflow V2.5 Pro",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "tencent/hy-image-v3.5-preview": ImageModel(
+        id: "tencent/hy-image-v3.5-preview",
+        name: "Tencent: Hy Image 3.5 Preview",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
