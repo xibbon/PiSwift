@@ -64,6 +64,11 @@ public func registerBuiltInClassifierApiProviders() {
         requestOptions.apiKey = requestOptions.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env)
         return await classifyCloudflareWorkersAISystemOne(model: model, context: context, options: requestOptions)
     }), sourceId: "built-in")
+    registerClassifierApiProvider(ClassifierApiProvider(api: .openAIDecisions, classify: { model, context, options in
+        var requestOptions = options ?? ClassifierOptions()
+        requestOptions.apiKey = requestOptions.apiKey ?? getEnvApiKey(provider: model.provider, env: options?.env)
+        return await classifyOpenAIDecisions(model: model, context: context, options: requestOptions)
+    }), sourceId: "built-in")
 }
 
 private let builtInClassifierProvidersRegistered: Bool = {
@@ -73,6 +78,13 @@ private let builtInClassifierProvidersRegistered: Bool = {
 
 public func classify(model: ClassifierModel, context: ClassifierContext,
                      options: ClassifierOptions? = nil) async -> ClassifierResult {
+    do {
+        try assertClassifierInputSupported(model: model, context: context)
+    } catch {
+        return ClassifierResult(api: model.api, provider: model.provider, model: model.id,
+            stopReason: options?.signal?.isCancelled == true ? .aborted : .error,
+            errorMessage: error.localizedDescription)
+    }
     _ = builtInClassifierProvidersRegistered
     guard let provider = getClassifierApiProvider(model.api) else {
         return ClassifierResult(api: model.api, provider: model.provider, model: model.id,

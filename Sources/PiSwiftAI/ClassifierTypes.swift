@@ -50,10 +50,14 @@ public struct ClassifierQuestions: Sendable, ExpressibleByDictionaryLiteral {
 public struct ClassifierContext: Sendable {
     public var state: [String: AnyCodable]
     public var questions: ClassifierQuestions
+    /// Images judged together with `state`. Only models whose `input` includes `"image"` accept them;
+    /// other models return an error result.
+    public var images: [ImageContent]?
 
-    public init(state: [String: AnyCodable], questions: ClassifierQuestions) {
+    public init(state: [String: AnyCodable], questions: ClassifierQuestions, images: [ImageContent]? = nil) {
         self.state = state
         self.questions = questions
+        self.images = images
     }
 }
 
@@ -150,5 +154,12 @@ public struct ClassifierOptions: Sendable {
         self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs
         self.temperature = temperature
+    }
+}
+
+/// Rejects classifier images for models whose catalog entry does not accept image input.
+public func assertClassifierInputSupported(model: ClassifierModel, context: ClassifierContext) throws {
+    if let images = context.images, !images.isEmpty, !model.input.contains(.image) {
+        throw ClassifierError(message: "Model \(model.provider)/\(model.id) does not accept image input")
     }
 }

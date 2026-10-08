@@ -1129,6 +1129,9 @@ public final class ModelRegistry: Sendable {
     }
 
     private func isAvailable(_ model: AnyModel) async -> Bool {
+        if case .classifier = model, model.provider == "openai", case .oauth = authStorage.get("openai") {
+            return false
+        }
         if case .chat(let chat) = model { return await isAvailable(chat) }
         if requestConfiguration(provider: model.provider).key != nil { return hasProviderConfiguredAuth(model.provider) }
         return hasProviderConfiguredAuth(model.provider) || !(model.catalog.headers?.isEmpty ?? true)
@@ -1153,6 +1156,13 @@ public final class ModelRegistry: Sendable {
     }
 
     public func classify(_ model: ClassifierModel, context: ClassifierContext, options: ClassifierOptions? = nil) async -> ClassifierResult {
+        do {
+            try assertClassifierInputSupported(model: model, context: context)
+        } catch {
+            return ClassifierResult(api: model.api, provider: model.provider, model: model.id,
+                stopReason: options?.signal?.isCancelled == true ? .aborted : .error,
+                errorMessage: error.localizedDescription)
+        }
         let resolved = await resolveModelRequest(model, signal: options?.signal, env: options?.env)
         let auth = resolved.auth
         guard auth.ok || options?.apiKey != nil || options?.headers?.isEmpty == false else {
