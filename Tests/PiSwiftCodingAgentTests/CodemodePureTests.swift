@@ -216,10 +216,12 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
                                               failure: .init(kind: .script, message: "boom", name: "Error")),
                                        calls: [call], wallTimeSeconds: 0.25)
     #expect(codemodeText(failure.content[0]) == "Script failed\nWall time 0.2 seconds\nOutput:\n")
-    #expect(codemodeText(failure.content[2]) == "Script error:\nError: boom\n\nTool calls made before the failure (they are not undone): echo (ok)")
+    // Upstream v1.1.0: partial text and the script error join in one block.
+    #expect(codemodeText(failure.content[1]) == "partial\nScript error:\nError: boom\n\nTool calls made before the failure (they are not undone): echo (ok)")
     #expect(failure.isError == true)
 
-    let rows = (0..<100).map { ContentBlock.text(TextContent(text: "row \($0)")) }
+    // Upstream v1.1.0 agent-session-codemode.test.ts:533-535: spill text has item headers.
+    let rows = (0..<100).map { CodemodeOutputItem.text("row \($0)", console: false) }
     let long = formatCodemodeResult(.init(output: rows + [.image(ImageContent(data: "AAAA", mimeType: "image/png"))]),
                                     wallTimeSeconds: 1, maxOutputTokens: 10)
     guard let details = long.details?.value as? [String: Any], let path = details["fullOutputPath"] as? String else {
@@ -228,7 +230,7 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
     }
     defer { try? FileManager.default.removeItem(atPath: path) }
     #expect(path.range(of: #"pi-codemode-[0-9a-f]{16}\.txt$"#, options: .regularExpression) != nil)
-    #expect(try String(contentsOfFile: path, encoding: .utf8) == (0..<100).map { "row \($0)" }.joined(separator: "\n"))
+    #expect(try String(contentsOfFile: path, encoding: .utf8) == (0..<100).map { "==> text \($0 + 1)/100 <==\nrow \($0)" }.joined(separator: "\n"))
     #expect(codemodeText(long.content[1])?.contains("tokens truncated") == true)
     #expect(codemodeText(long.content[1])?.contains("[Full output: \(path) (read with offset/limit)]") == true)
     if case .image(let image) = long.content.last { #expect(image.data == "AAAA") }

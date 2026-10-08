@@ -10,8 +10,9 @@ private func sandboxValue(_ result: CodemodeRuntimeResult) -> String? {
 }
 
 private func sandboxOutput(_ result: CodemodeRuntimeResult) -> [String] {
+    // Upstream v1.1.0: output items carry the console flag.
     result.execution.output.compactMap { block in
-        if case .text(let text) = block { return text.text }
+        if case .text(let text, _) = block { return text }
         return nil
     }
 }
@@ -47,7 +48,11 @@ private func sandboxRun(_ code: String, tools: [CodemodeRuntimeTool] = [],
     // Upstream #10215: image() validates the image signature.
     let output = await sandboxRun("console.log('hello', 1); text({a:1}); text(undefined); image('data:image/png;base64,iVBORw0KGgo='); return null")
     #expect(output.execution.failure == nil)
+    // Upstream v1.1.0: console output is marked in the sandbox result.
     #expect(sandboxOutput(output) == ["hello 1", #"{"a":1}"#, "undefined"])
+    if case .text("hello 1", console: true)? = output.execution.output.first {} else {
+        Issue.record("Missing console flag")
+    }
     #expect(output.execution.output.contains { if case .image(let image) = $0 { return image.data == "iVBORw0KGgo=" && image.mimeType == "image/png" }; return false })
 
     let exited = await sandboxRun("text('before'); try { exit() } catch {} text('after')")

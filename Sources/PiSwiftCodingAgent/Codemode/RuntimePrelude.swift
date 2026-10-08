@@ -1,9 +1,16 @@
-// Ported from pi-mono v1.0.4 packages/codemode/src/runtime/prelude-source.ts.
+// Ported from pi-mono v1.1.0 packages/codemode/src/runtime/prelude-source.ts.
 /// Maximum UTF-16 code units in text and base64 image output from one script.
 public let codemodeMaxOutputChars = 16_777_216
 /// Maximum number of text(), image(), and console calls from one script.
 public let codemodeMaxOutputItems = 100_000
 
+/// Output helpers: `text(value)` appends a text item (non-strings are
+/// JSON-stringified), `image(urlOrItem)` appends an image from a base64 `data:` URL, an
+/// `{ image_url }` object, or an MCP `ImageContent` block, and `exit()` ends the script
+/// successfully. `console.*` appends text items marked as console output.
+///
+/// `bridge(kind, a, b, c)` with kind "call" or "global" (id, name, argsJson),
+/// "output" ("text" or "console", text) or ("image", data, mimeType), or "done" (ok, valueJsonOrErrorJson, writesJson).
 let codemodePreludeSource = #"""
 (function (bridge, toolsJson, globalsJson, storeJson) {
 	"use strict";
@@ -402,7 +409,7 @@ let codemodePreludeSource = #"""
 	const console = {};
 	for (const level of ["log", "info", "warn", "error", "debug"]) {
 		console[level] = (...args) => {
-			output("text", args.map(format).join(" "));
+			output("console", args.map(format).join(" "));
 		};
 	}
 	Object.freeze(console);

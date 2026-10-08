@@ -35,26 +35,29 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
     let output = try await codemodeRun("console.log('hello', 1); text({a: 2}); image('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII='); return 42")
     #expect(output.isError != true)
     #expect(codemodeBlocks(output).first?.hasPrefix("Script completed\nWall time ") == true)
-    // Upstream v1.0.3 #10310: each image follows a saved-path text block.
-    let label = try #require(codemodeBlocks(output).dropFirst().dropFirst(2).first)
-    #expect(codemodeBlocks(output).dropFirst() == ["hello 1", "{\"a\":2}", label, "42"])
+    // Upstream v1.1.0 agent-session-codemode.test.ts:234: text joins its image label.
+    let first = try #require(codemodeBlocks(output).dropFirst().first)
+    let label = try #require(first.components(separatedBy: "\n").last)
+    #expect(output.content.count == 4)
+    #expect(first == "==> text 1/2 <==\n{\"a\":2}\n" + label)
+    #expect(codemodeBlocks(output).last == "==> text 2/2 <==\n42\n<console_output>\nhello 1\n</console_output>")
     #expect(label.hasPrefix("[Image saved to "))
     let pathEnd = try #require(label.range(of: " (", options: .backwards))
     let path = String(label.dropFirst("[Image saved to ".count).prefix(upTo: pathEnd.lowerBound))
     defer { try? FileManager.default.removeItem(atPath: path) }
     #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII="))
-    if case .text(let item) = output.content[3] { #expect(item.text == label) }
-    else { Issue.record("Missing saved path before image") }
-    if case .image = output.content[4] {} else { Issue.record("Missing image after saved path") }
+    // Upstream v1.1.0: the saved label is part of content[1], before the image.
+    if case .image = output.content[2] {} else { Issue.record("Missing image after saved path") }
     #expect(output.content.contains { if case .image(let item) = $0 { return item.data == "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOZkAAAAASUVORK5CYII=" }; return false })
 
     let exited = try await codemodeRun("text('before'); try { exit(); } catch {} text('after')")
     #expect(codemodeValue(exited) == "before")
 
-    let failed = try await codemodeRun("text('partial');\nthrow new TypeError('boom')")
+    // Upstream v1.1.0 agent-session-codemode.test.ts:426: console precedes the error.
+    let failed = try await codemodeRun("text('partial');\nconsole.log('log');\nthrow new TypeError('boom')")
     #expect(failed.isError == true)
-    #expect(codemodeValue(failed).contains("partial\nScript error:\nTypeError: boom"))
-    #expect(codemodeValue(failed).contains("codemode.js:2"))
+    #expect(codemodeValue(failed).contains("partial\n<console_output>\nlog\n</console_output>\nScript error:\nTypeError: boom"))
+    #expect(codemodeValue(failed).contains("codemode.js:3"))
     #expect(!codemodeValue(failed).contains("codemode-prelude.js"))
 
     let syntax = try await codemodeRun("const a = 1;\nconst b = ;")

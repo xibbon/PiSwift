@@ -45,17 +45,18 @@ private func v104ReadDirectory() throws -> URL {
         image(shot);
         """)], context: context)
     #expect(result.isError != true)
-    try #require(result.content.count == 5)
-    #expect(v104ReadText(result.content[1]) == "hello")
-    #expect(v104ReadText(result.content[2]) == "Read image file [image/png]")
-    let label = try #require(v104ReadText(result.content[3]))
+    // Upstream v1.1.0 agent-session-codemode.test.ts:572-574: join text and the image label.
+    try #require(result.content.count == 3)
+    let body = try #require(v104ReadText(result.content[1]))
+    let label = try #require(body.components(separatedBy: "\n").last)
+    #expect(body == "==> text 1/2 <==\nhello\n==> text 2/2 <==\nRead image file [image/png]\n" + label)
     #expect(label.hasPrefix("[Image saved to "))
     #expect(label.hasSuffix("(image/png, 70B)]"))
     let labelEnd = try #require(label.range(of: " (", options: .backwards))
     let savedPath = String(label.dropFirst("[Image saved to ".count).prefix(upTo: labelEnd.lowerBound))
     defer { try? FileManager.default.removeItem(atPath: savedPath) }
     #expect(try Data(contentsOf: URL(fileURLWithPath: savedPath)) == Data(base64Encoded: v104ReadPNG))
-    if case .image(let image) = result.content[4] {
+    if case .image(let image) = result.content[2] {
         #expect(image.data == v104ReadPNG)
         #expect(image.mimeType == "image/png")
     } else {

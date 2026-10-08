@@ -11,11 +11,11 @@ import PiSwiftAI
     }
 
     private func characters(_ result: CodemodeRuntimeResult) -> Int {
+        // Upstream v1.1.0: read the text and console output item type.
         result.execution.output.reduce(0) { count, block in
             switch block {
-            case .text(let text): count + text.text.utf16.count
+            case .text(let text, _): count + text.utf16.count
             case .image(let image): count + image.data.utf16.count
-            default: count
             }
         }
     }

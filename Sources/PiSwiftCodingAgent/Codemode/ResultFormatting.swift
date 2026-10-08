@@ -50,15 +50,36 @@ public struct CodemodeFailure: Sendable {
     }
 }
 
+/// Output from a script, before the result layout is applied.
+public enum CodemodeOutputItem: Sendable {
+    case text(String, console: Bool = false)
+    case image(ImageContent)
+
+    /// Create ordinary text output from an existing text content block.
+    public static func text(_ value: TextContent) -> Self { .text(value.text, console: false) }
+}
+
 public struct CodemodeExecutionResult: Sendable {
-    public var output: [ContentBlock]
+    public var output: [CodemodeOutputItem]
     public var returnedValue: AnyCodable?
     public var failure: CodemodeFailure?
 
-    public init(output: [ContentBlock], returnedValue: AnyCodable? = nil, failure: CodemodeFailure? = nil) {
+    public init(output: [CodemodeOutputItem], returnedValue: AnyCodable? = nil, failure: CodemodeFailure? = nil) {
         self.output = output
         self.returnedValue = returnedValue
         self.failure = failure
+    }
+
+    // Existing internal image tests pass ContentBlock collections.
+    init<C: Collection>(output: C, returnedValue: AnyCodable? = nil, failure: CodemodeFailure? = nil)
+    where C.Element == ContentBlock {
+        self.init(output: output.compactMap { block in
+            switch block {
+            case .text(let value): return .text(value.text, console: false)
+            case .image(let value): return .image(value)
+            default: return nil
+            }
+        }, returnedValue: returnedValue, failure: failure)
     }
 }
 
@@ -163,6 +184,40 @@ private func saveCodemodeImages(_ items: [ContentBlock], writer: CodemodeImageWr
     return result
 }
 
+/// Join adjacent text items. Each part starts on its own line.
+func joinAdjacentCodemodeText(_ items: [ContentBlock]) -> [ContentBlock] {
+    var joined: [ContentBlock] = []
+    for item in items {
+        if case .text(let next) = item, case .text(let last)? = joined.last {
+            let separator = last.text.isEmpty || last.text.hasSuffix("\n") ? "" : "\n"
+            joined[joined.count - 1] = .text(TextContent(text: last.text + separator + next.text))
+        } else {
+            joined.append(item)
+        }
+    }
+    return joined
+}
+
+private func formatCodemodeOutput(_ output: [CodemodeOutputItem]) -> [ContentBlock] {
+    let total = output.filter { if case .text(_, console: false) = $0 { return true }; return false }.count
+    var items: [ContentBlock] = []
+    var consoleLines: [String] = []
+    var index = 0
+    for item in output {
+        switch item {
+        case .image(let image): items.append(.image(image))
+        case .text(let text, console: true): consoleLines.append(text)
+        case .text(let text, console: false):
+            index += 1
+            items.append(.text(TextContent(text: total > 1 ? "==> text \(index)/\(total) <==\n\(text)" : text)))
+        }
+    }
+    if !consoleLines.isEmpty {
+        items.append(.text(TextContent(text: "<console_output>\n" + consoleLines.joined(separator: "\n") + "\n</console_output>")))
+    }
+    return items
+}
+
 /// Keep the nonthrowing API. Unsupported MIME types retain their original image block without a file label.
 public func formatCodemodeResult(_ execution: CodemodeExecutionResult,
                                  calls: [CodemodeNestedCall] = [], wallTimeSeconds: Double,
@@ -170,8 +225,9 @@ public func formatCodemodeResult(_ execution: CodemodeExecutionResult,
     var result = formatCodemodeResultBody(execution, calls: calls, wallTimeSeconds: wallTimeSeconds,
                                          maxOutputTokens: maxOutputTokens, usage: usage, outputNote: outputNote)
     // This policy preserves unknown types, so MIME validation cannot throw here.
-    result.content = (try? saveCodemodeImages(result.content, writer: saveCodemodeImage,
-                                            rejectUnsupportedMIME: false)) ?? result.content
+    let output = (try? saveCodemodeImages(Array(result.content.dropFirst()), writer: saveCodemodeImage,
+                                         rejectUnsupportedMIME: false)) ?? Array(result.content.dropFirst())
+    result.content = Array(result.content.prefix(1)) + joinAdjacentCodemodeText(output)
     return result
 }
 
@@ -182,21 +238,24 @@ func formatCodemodeResultForExecution(_ execution: CodemodeExecutionResult,
                                       imageWriter: CodemodeImageWriter = saveCodemodeImage) throws -> AgentToolResult {
     var result = formatCodemodeResultBody(execution, calls: calls, wallTimeSeconds: wallTimeSeconds,
                                          maxOutputTokens: maxOutputTokens, usage: usage, outputNote: outputNote)
-    result.content = try saveCodemodeImages(result.content, writer: imageWriter, rejectUnsupportedMIME: true)
+    let output = try saveCodemodeImages(Array(result.content.dropFirst()), writer: imageWriter, rejectUnsupportedMIME: true)
+    result.content = Array(result.content.prefix(1)) + joinAdjacentCodemodeText(output)
     return result
 }
 
 private func formatCodemodeResultBody(_ execution: CodemodeExecutionResult,
                                       calls: [CodemodeNestedCall], wallTimeSeconds: Double,
                                       maxOutputTokens: Int, usage: Usage?, outputNote: String?) -> AgentToolResult {
-    var items = execution.output
+    var scriptOutput = execution.output
+    if execution.failure == nil, let value = execution.returnedValue {
+        scriptOutput.append(.text(valueText(value), console: false))
+    }
+    var items = formatCodemodeOutput(scriptOutput)
     if let failure = execution.failure {
         items.append(.text(TextContent(text: failureText(failure, calls: calls))))
-    } else if let value = execution.returnedValue {
-        items.append(.text(TextContent(text: valueText(value))))
     }
     if let outputNote { items.append(.text(TextContent(text: outputNote))) }
-    let truncated = truncateOutput(items, maxTokens: maxOutputTokens)
+    let truncated = truncateOutput(joinAdjacentCodemodeText(items), maxTokens: maxOutputTokens)
     let header = "Script \(execution.failure == nil ? "completed" : "failed")\nWall time \(String(format: "%.1f", wallTimeSeconds)) seconds\nOutput:\n"
     var details: [String: Any] = ["calls": calls.map { call -> [String: Any] in
         var row: [String: Any] = ["id": call.id, "name": call.name, "args": call.args, "status": call.status.rawValue]

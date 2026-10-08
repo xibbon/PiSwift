@@ -42,17 +42,20 @@ private func c1ImageContext() -> CustomToolContext {
         image('data:image/png;base64,\(c1ImagePNG)');
         text('after');
         """)], context: context)
-    #expect(result.content.count == 7)
-    #expect(c1ImageText(result.content[1]) == "captured")
-    let path = try c1ImagePath(result.content[2])
+    // Upstream v1.1.0 agent-session-codemode.test.ts:382-393: join text and label.
+    #expect(result.content.count == 6)
+    let first = try #require(c1ImageText(result.content[1]))
+    let label = try #require(first.components(separatedBy: "\n").last)
+    #expect(first == "==> text 1/2 <==\ncaptured\n" + label)
+    let path = try c1ImagePath(result.content[3])
     defer { try? FileManager.default.removeItem(atPath: path) }
-    #expect(c1ImageText(result.content[2]) == c1ImageText(result.content[4]))
-    #expect(try c1ImagePath(result.content[4]) == path)
-    for index in [3, 5] {
+    #expect(label == c1ImageText(result.content[3]))
+    #expect(try c1ImagePath(.text(TextContent(text: label))) == path)
+    for index in [2, 4] {
         if case .image(let image) = result.content[index] { #expect(image.data == c1ImagePNG) }
         else { Issue.record("Missing image after path label") }
     }
-    #expect(c1ImageText(result.content[6]) == "after")
+    #expect(c1ImageText(result.content[5]) == "==> text 2/2 <==\nafter")
     #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == Data(base64Encoded: c1ImagePNG))
     let attributes = try FileManager.default.attributesOfItem(atPath: path)
     #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
@@ -81,17 +84,19 @@ private func c1ImageContext() -> CustomToolContext {
                       wallTimeSeconds: 1, maxOutputTokens: 10)
     let details = try #require(result.details?.value as? [String: Any])
     let textPath = try #require(details["fullOutputPath"] as? String)
-    let imagePath = try c1ImagePath(result.content[2])
+    // Upstream v1.1.0 agent-session-codemode.test.ts:533-535: label joins truncated text.
+    let label = try #require(c1ImageText(result.content[1])?.components(separatedBy: "\n").last)
+    let imagePath = try c1ImagePath(.text(TextContent(text: label)))
     defer {
         try? FileManager.default.removeItem(atPath: textPath)
         try? FileManager.default.removeItem(atPath: imagePath)
     }
-    #expect(result.content.count == 4)
+    #expect(result.content.count == 3)
     #expect(c1ImageText(result.content[1])?.contains("tokens truncated") == true)
     #expect(try String(contentsOfFile: textPath, encoding: .utf8) == text)
     #expect((try FileManager.default.attributesOfItem(atPath: textPath)[.posixPermissions] as? NSNumber)?.intValue == 0o600)
     #expect(textPath.range(of: #"pi-codemode-[0-9a-f]{16}\.txt$"#, options: .regularExpression) != nil)
-    if case .image = result.content[3] {} else { Issue.record("Image must follow its untruncated label") }
+    if case .image = result.content[2] {} else { Issue.record("Image must follow its untruncated label") }
 }
 
 private enum C1ImageWriteFailure: Error, LocalizedError {

@@ -92,7 +92,7 @@ private func describeValue(_ value: OrderedJSON?) -> String {
     }
 }
 
-private let classifierContextShape = #"{ state: { ... }, questions: { <id>: { type: "choice", instructions, criteria: { <label>: <meaning> } } | { type: "score", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: "bool", instructions, criteria: { true: <meaning>, false: <meaning> } } } }"#
+private let classifierContextShape = #"{ state: { ... }, images?: [{ type: "image", data: <base64>, mimeType }], questions: { <id>: { type: "choice", instructions, criteria: { <label>: <meaning> } } | { type: "score", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: "bool", instructions, criteria: { true: <meaning>, false: <meaning> } } } }"#
 
 private func classifierContext(_ ordered: OrderedJSON?) throws -> ClassifierContext {
     func fail(_ problem: String) -> CodemodeBridgeError {
@@ -103,6 +103,19 @@ private func classifierContext(_ ordered: OrderedJSON?) throws -> ClassifierCont
     }
     guard let state = ordered["state"], state.objectEntries != nil else {
         throw fail("context.state must be an object, got \(describeValue(ordered["state"]))")
+    }
+    var images: [ImageContent]?
+    if let value = ordered["images"] {
+        guard case .array(let blocks) = value else {
+            throw fail("context.images must be an array, got \(describeValue(value))")
+        }
+        images = try blocks.enumerated().map { index, block in
+            guard block.objectEntries != nil, block["type"]?.stringValue == "image",
+                  let data = block["data"]?.stringValue, let mimeType = block["mimeType"]?.stringValue else {
+                throw fail("context.images[\(index)] must be an image block, got \(describeValue(block))")
+            }
+            return ImageContent(data: data, mimeType: mimeType)
+        }
     }
     guard let questions = ordered["questions"]?.objectEntries, !questions.isEmpty else {
         throw fail("context.questions must map question IDs to questions, got \(describeValue(ordered["questions"]))")
@@ -138,7 +151,7 @@ private func classifierContext(_ ordered: OrderedJSON?) throws -> ClassifierCont
             throw fail("\(at).type must be \"choice\", \"score\", or \"bool\", got \(question["type"]?.serialized() ?? "undefined")")
         }
     }
-    return ClassifierContext(state: stateFields, questions: ClassifierQuestions(parsedQuestions))
+    return ClassifierContext(state: stateFields, questions: ClassifierQuestions(parsedQuestions), images: images)
 }
 
 private func imagesContext(_ context: OrderedJSON?) throws -> ImagesContext {

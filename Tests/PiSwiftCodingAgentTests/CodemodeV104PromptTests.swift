@@ -125,7 +125,8 @@ private func v104PromptResponse(_ model: Model, script: String?) -> AssistantMes
     }.last)
     #expect(!result.isError)
     let text = result.content.compactMap { if case .text(let block) = $0 { return block.text }; return nil }
-    #expect(text.filter { $0.contains("- " + v104ReadGuideline) }.count == 3)
+    // Upstream v1.1.0: adjacent text() output joins in one content block.
+    #expect(text.joined(separator: "\n").components(separatedBy: "- " + v104ReadGuideline).count - 1 == 3)
     let request = try #require(requests.withLock { $0.first })
     #expect(!getCurrentSystemPrompt(request.messages).contains("Use read to examine files"))
 }

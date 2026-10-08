@@ -79,7 +79,7 @@ public struct CodemodeRuntimeResult: Sendable {
 }
 
 private enum RuntimeEvent: Sendable {
-    case output(ContentBlock)
+    case output(CodemodeOutputItem)
     case call(id: Int, target: CodemodeRuntimeCall.Target, name: String, argsJSON: String?)
     case callResult(id: Int, CodemodeRuntimeReply)
     case done(ok: Bool, payload: String?, writes: String?)
@@ -204,7 +204,7 @@ public enum CodemodeSandbox {
             stopFlag.cancel()
             emitter.yield(.aborted)
         }
-        var output: [ContentBlock] = []
+        var output: [CodemodeOutputItem] = []
         var pending: [Int: CancellationToken] = [:]
         var result: CodemodeRuntimeResult?
         var waitingForThread = false
@@ -318,7 +318,7 @@ private struct RuntimeBridgeError: Error {
     var reason: String
 }
 
-private func brokenBridgeResult(_ reason: String, output: [ContentBlock], watchdog: Bool) -> CodemodeRuntimeResult {
+private func brokenBridgeResult(_ reason: String, output: [CodemodeOutputItem], watchdog: Bool) -> CodemodeRuntimeResult {
     .init(execution: .init(output: output, failure: .init(kind: .sandbox,
         message: "Sandbox bridge broken: \(reason). The script may have modified built-ins such as a prototype's toJSON.")),
         usedWatchdog: watchdog)
@@ -427,8 +427,8 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
         case "output":
             if a == "image", bValue.isString, let data = b {
                 emit.yield(.output(.image(ImageContent(data: data, mimeType: c ?? "application/octet-stream"))))
-            } else if a == "text", bValue.isString, let text = b {
-                emit.yield(.output(.text(TextContent(text: text))))
+            } else if a == "text" || a == "console", bValue.isString, let text = b {
+                emit.yield(.output(.text(text, console: a == "console")))
             } else {
                 emit.yield(.bridgeBroken("unknown message from the worker"))
             }

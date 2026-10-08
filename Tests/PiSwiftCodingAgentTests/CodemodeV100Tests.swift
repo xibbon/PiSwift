@@ -115,7 +115,11 @@ private func v100Tool(_ name: String, schema: [String: AnyCodable]? = nil) -> Ag
     let withDeferred = createCodemodeDescription([direct, deferred], options: options)
     #expect(withDeferred == createCodemodeDescription([direct]))
     #expect(!withDeferred.contains("Shared MCP Types"))
+    // Upstream v1.1.0 #10555: tool lookup helpers require await.
     #expect(withDeferred.contains("find unlisted tools, such as MCP tools"))
+    #expect(withDeferred.contains("`await searchTools(query, { limit?, namespace? })`"))
+    #expect(withDeferred.contains("`await describeTool(name)`"))
+    #expect(withDeferred.contains("`await describeNamespace(name)`"))
     let listed = createCodemodeDescription([deferred], options: .init(namespaces: options.namespaces))
     #expect(listed.contains("## mcp__docs\nDocs"))
     #expect(!listed.contains("Private guidance"))
@@ -128,8 +132,8 @@ private func v100Tool(_ name: String, schema: [String: AnyCodable]? = nil) -> Ag
     #expect(renderToolOutputType(AnyCodable(["type": "string"])) == "string")
     #expect(renderToolOutputType(nil) == "unknown")
     let description = createCodemodeDescription([], options: .init(models: true))
-    // Upstream v1.0.3 #10310: the globals description names the saved image path.
-    #expect(description == codemodeDescriptionIntro + "\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script. `image()` also saves the image to a temp file and the result names its path.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first.")
+    // Upstream v1.1.0: output layout and #10555 async lookup guidance.
+    #expect(description == codemodeDescriptionIntro + "\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script. With several text items, each starts with a `==> text N/M <==` line, and `console` lines follow the other output in one `<console_output>` block. `image()` also saves the image to a temp file and the result names its path.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `await searchTools(query, { limit?, namespace? })`, `await describeTool(name)`, `await describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first.")
     #expect(!createCodemodeDescription([]).contains("- `models`"))
     let text = try String(contentsOfFile: CODEMODE_DOCS_PATH, encoding: .utf8)
     #expect(text.contains("JavaScriptCore"))
@@ -216,7 +220,8 @@ return {id:model.id,headers:'headers' in model,stopReason:generated.stopReason,f
     let registry = v100Registry(observed)
     let result = try await v100Run(v100ImageScript, context: v100Context(registry), options: .init(models: true))
     #expect(result.isError != true)
-    #expect(v100Text(result).hasPrefix("painted a fox\n"))
+    // Upstream v1.1.0 agent-session-codemode.test.ts:856-869: count the returned value.
+    #expect(v100Text(result).hasPrefix("==> text 1/2 <==\npainted a fox\n"))
     #expect(!v100Text(result).contains("script did not show"))
     let images = result.content.compactMap { if case .image(let image) = $0 { return image }; return nil }
     #expect(images.map(\.data) == [v100PNG])
