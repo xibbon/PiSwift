@@ -26,6 +26,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     private let reconnect: McpHTTPReconnectOptions
     private var protocolVersion: String?
     private var sessionIdentifier: String?
+    private var lastToken: String?
     private var closed = false
     private var messages: [Data] = []
     private var waiters: [CheckedContinuation<Data, any Error>] = []
@@ -151,11 +152,19 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.timeoutInterval = 1
-        do {
-            _ = try await applyHeaders(to: &request)
-            _ = try await session.data(for: request)
-        } catch {
-            // Session expiry on the server is sufficient when DELETE fails.
+        applyFixedHeaders(to: &request, token: lastToken)
+        let deletionRequest = request
+        // Bound the full DELETE, including a response that continues to send data.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { [session] in
+                // Session expiry on the server is sufficient when DELETE fails.
+                _ = try? await session.data(for: deletionRequest)
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            _ = await group.next()
+            group.cancelAll()
         }
     }
 
@@ -185,14 +194,19 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     }
 
     private func applyHeaders(to request: inout URLRequest, accept: String? = nil, lastEventID: String? = nil) async throws -> String? {
+        let token = try await authProvider?.token()
+        lastToken = token
+        applyFixedHeaders(to: &request, token: token, accept: accept, lastEventID: lastEventID)
+        return token
+    }
+
+    private func applyFixedHeaders(to request: inout URLRequest, token: String?, accept: String? = nil, lastEventID: String? = nil) {
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         if let accept { request.setValue(accept, forHTTPHeaderField: "Accept") }
         if let sessionIdentifier { request.setValue(sessionIdentifier, forHTTPHeaderField: "Mcp-Session-Id") }
         if let protocolVersion { request.setValue(protocolVersion, forHTTPHeaderField: "MCP-Protocol-Version") }
         if let lastEventID { request.setValue(lastEventID, forHTTPHeaderField: "Last-Event-ID") }
-        let token = try await authProvider?.token()
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        return token
+        if let token, !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
     }
 
     private func authorizedRequest(method: String, accept: String, body: Data? = nil, lastEventID: String? = nil) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {

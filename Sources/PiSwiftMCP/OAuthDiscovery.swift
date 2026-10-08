@@ -23,6 +23,7 @@ public enum McpOAuthDiscovery {
         )
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func protectedResourceMetadata(
         serverURL: URL, resourceMetadataURL: URL? = nil,
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient(),
@@ -52,6 +53,7 @@ public enum McpOAuthDiscovery {
         return urls
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func authorizationServerMetadata(
         issuer: URL, http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient(),
         protocolVersion: String = LATEST_PROTOCOL_VERSION, skipIssuerValidation: Bool = false
@@ -71,6 +73,7 @@ public enum McpOAuthDiscovery {
         return nil
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func serverInfo(
         serverURL: URL, resourceMetadataURL: URL? = nil, authorizationServerMetadataURL: URL? = nil,
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient(),

@@ -332,6 +332,8 @@ public struct McpOAuthServerInfo: Sendable, Equatable {
     public var resourceMetadata: McpOAuthProtectedResourceMetadata?
 }
 
+/// Task cancellation stops every OAuth request. A custom client must honor task cancellation
+/// in `send(_:)` and stop the request in progress.
 public protocol McpOAuthHTTPClient: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }

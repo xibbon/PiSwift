@@ -79,6 +79,7 @@ public struct McpOAuthAuthorization: Sendable {
 
 public enum McpOAuthFlow {
     /// Validate a callback or pasted redirect URL before exchanging its code.
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func completeRedirect(
         provider: any McpOAuthClientProvider, callbackURL: URL,
         serverURL: URL, http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
@@ -88,6 +89,7 @@ public enum McpOAuthFlow {
     }
 
     /// Keep the request options when the callback supplies the code and issuer.
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func completeRedirect(
         provider: any McpOAuthClientProvider, callbackURL: URL,
         options: McpOAuthFlowOptions, http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
@@ -156,6 +158,7 @@ public enum McpOAuthFlow {
         return McpOAuthAuthorization(authorizationURL: authorizationURL, codeVerifier: pair.verifier)
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func registerClient(
         authorizationServerURL: URL, metadata: McpOAuthAuthorizationServerMetadata? = nil,
         clientMetadata: McpOAuthClientMetadata, scope: String? = nil,
@@ -185,6 +188,7 @@ public enum McpOAuthFlow {
         return information
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func exchangeAuthorizationCode(
         authorizationServerURL: URL, metadata: McpOAuthAuthorizationServerMetadata? = nil,
         clientInformation: McpOAuthClientInformation, code: String, codeVerifier: String,
@@ -199,6 +203,7 @@ public enum McpOAuthFlow {
             resource: resource, clientAuthentication: clientAuthentication, http: http)
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func refreshAuthorization(
         authorizationServerURL: URL, metadata: McpOAuthAuthorizationServerMetadata? = nil,
         clientInformation: McpOAuthClientInformation, refreshToken: String,
@@ -213,6 +218,7 @@ public enum McpOAuthFlow {
         return result
     }
 
+    /// Task cancellation stops every request. A custom HTTP client must honor cancellation.
     public static func authorize(
         provider: any McpOAuthClientProvider, options: McpOAuthFlowOptions,
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
@@ -220,6 +226,7 @@ public enum McpOAuthFlow {
         for attempt in 0..<2 {
             do { return try await runFlow(provider: provider, options: options, http: http) }
             catch let error as McpOAuthError {
+                if Task.isCancelled { throw error }
                 guard attempt == 0 else { throw error }
                 if case .authorization(let code, _, _) = error {
                     if code == "invalid_client" || code == "unauthorized_client" {
@@ -313,9 +320,14 @@ public enum McpOAuthFlow {
                     clientAuthentication: provider, http: http)
                 try await provider.saveTokens(withScope(tokens, scope: existing?.scope))
                 return .authorized
-            } catch let error as McpOAuthError {
-                if case .insecureEndpoint = error { throw error }
-                if case .authorization(let code, _, _) = error, code != "server_error" { throw error }
+            } catch {
+                if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                    throw error
+                }
+                if let oauthError = error as? McpOAuthError {
+                    if case .insecureEndpoint = oauthError { throw error }
+                    if case .authorization(let code, _, _) = oauthError, code != "server_error" { throw error }
+                }
             }
         }
         let authorization = try startAuthorization(authorizationServerURL: info.authorizationServerURL,

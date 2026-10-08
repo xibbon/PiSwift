@@ -74,16 +74,89 @@ private struct McpCallbackTimeoutError: Error, LocalizedError, Sendable {
     var errorDescription: String? { "MCP sign-in timed out" }
 }
 
+private struct McpCallbackClosedError: Error, LocalizedError, Sendable {
+    var errorDescription: String? { "OAuth callback server closed" }
+}
+
 private actor FirstOAuthRedirect {
+    private let callback: OAuthCallbackServer<String>
     private var result: Result<URL, any Error>?
     private var waiter: CheckedContinuation<URL, any Error>?
+    private var openingResult: Result<Void, any Error>?
+    private var openingWaiter: CheckedContinuation<Void, any Error>?
     private var timeoutRequested = false
+    private var stopped = false
+    private var stopError: (any Error)?
+    private var cleanupFinished = false
+    private var cleanupWaiters: [CheckedContinuation<Void, Never>] = []
+    private var callbackTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var openingTask: Task<Void, Never>?
+    private var manualTask: Task<Void, Never>?
 
-    func requestTimeout() {
-        timeoutRequested = true
+    init(callback: OAuthCallbackServer<String>) {
+        self.callback = callback
     }
 
-    func finishCallback(_ value: Result<URL, any Error>) {
+    func start(timeout: McpCallbackTimeout, sleep: @escaping @Sendable (Duration) async throws -> Void) {
+        guard !stopped else { return }
+        callbackTask = Task {
+            do {
+                guard let value = try await callback.wait(), let url = URL(string: value) else {
+                    throw McpOAuthError.invalidRedirect
+                }
+                finishCallback(.success(url))
+            } catch { finishCallback(.failure(error)) }
+        }
+        timeoutTask = Task {
+            do {
+                try await timeout.wait(sleep: sleep)
+                try Task.checkCancellation()
+                guard !stopped else { return }
+                timeoutRequested = true
+                await callback.close()
+            } catch {
+                // Cancellation stops the timer when sign-in finishes.
+            }
+        }
+    }
+
+    func open(_ url: URL, using open: @escaping @Sendable (URL) async throws -> Void) async throws {
+        if !stopped {
+            openingTask = Task {
+                do {
+                    try await open(url)
+                    finishOpening(.success(()))
+                } catch { finishOpening(.failure(error)) }
+            }
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            if cleanupFinished, let stopError { continuation.resume(throwing: stopError) }
+            else if !stopped, let openingResult { continuation.resume(with: openingResult) }
+            else { openingWaiter = continuation }
+        }
+    }
+
+    func startManual(_ paste: @escaping @Sendable () async throws -> String) {
+        guard !stopped else { return }
+        manualTask = Task {
+            do {
+                guard let url = URL(string: try await paste()) else {
+                    throw McpOAuthError.invalidRedirect
+                }
+                finish(.success(url))
+            } catch { finish(.failure(error)) }
+        }
+    }
+
+    private func finishOpening(_ value: Result<Void, any Error>) {
+        guard !stopped, openingResult == nil else { return }
+        openingResult = value
+        openingWaiter?.resume(with: value)
+        openingWaiter = nil
+    }
+
+    private func finishCallback(_ value: Result<URL, any Error>) {
         if case .failure(let error) = value,
            timeoutRequested,
            error.localizedDescription == "OAuth callback server closed" {
@@ -94,7 +167,7 @@ private actor FirstOAuthRedirect {
     }
 
     func finish(_ value: Result<URL, any Error>) {
-        guard result == nil else { return }
+        guard !stopped, result == nil else { return }
         result = value
         waiter?.resume(with: value)
         waiter = nil
@@ -102,9 +175,41 @@ private actor FirstOAuthRedirect {
 
     func wait() async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
-            if let result { continuation.resume(with: result) }
+            if cleanupFinished, let stopError { continuation.resume(throwing: stopError) }
+            else if !stopped, let result { continuation.resume(with: result) }
             else { waiter = continuation }
         }
+    }
+
+    /// Close the listener before resuming a cancelled presentation. Host closures
+    /// can ignore task cancellation, so do not wait for those tasks to finish.
+    func stop(with error: (any Error)? = nil) async {
+        if stopped {
+            if !cleanupFinished {
+                await withCheckedContinuation { cleanupWaiters.append($0) }
+            }
+            return
+        }
+        stopped = true
+        stopError = error
+        callbackTask?.cancel()
+        timeoutTask?.cancel()
+        openingTask?.cancel()
+        manualTask?.cancel()
+        callbackTask = nil
+        timeoutTask = nil
+        openingTask = nil
+        manualTask = nil
+        await callback.close()
+        cleanupFinished = true
+        if let error {
+            openingWaiter?.resume(throwing: error)
+            waiter?.resume(throwing: error)
+        }
+        openingWaiter = nil
+        waiter = nil
+        for continuation in cleanupWaiters { continuation.resume() }
+        cleanupWaiters.removeAll()
     }
 }
 
@@ -118,10 +223,7 @@ public actor McpMacOSSignInPresenter: McpSignInPresenter {
     private let redirectHost: String?
     let callbackTimeout: McpCallbackTimeout
     private let callbackTimeoutSleep: @Sendable (Duration) async throws -> Void
-    private var callbackTimeoutTask: Task<Void, Never>?
-    private var callbackTask: Task<Void, Never>?
     private var callbackRace: FirstOAuthRedirect?
-    private var callback: OAuthCallbackServer<String>?
     private var activeRace: FirstOAuthRedirect?
 
     /// The callback timeout is in seconds. It must be finite and greater than zero.
@@ -163,8 +265,10 @@ public actor McpMacOSSignInPresenter: McpSignInPresenter {
 
     public func redirectURL(for state: String) async throws -> URL {
         try callbackTimeout.validate()
-        callbackTimeoutTask?.cancel()
-        if let callback { await callback.close() }
+        let previousRace = callbackRace
+        callbackRace = nil
+        activeRace = nil
+        await previousRace?.stop(with: McpCallbackClosedError())
         let server = try await OAuthCallbackServer<String>.start(
             providerName: "MCP", host: callbackHost, port: callbackPort,
             path: callbackPath, redirectHost: redirectHost, state: state,
@@ -173,80 +277,43 @@ public actor McpMacOSSignInPresenter: McpSignInPresenter {
                 return url.absoluteString
             }
         )
-        callback = server
-        let race = FirstOAuthRedirect()
+        let race = FirstOAuthRedirect(callback: server)
         callbackRace = race
-        callbackTask = Task {
-            do {
-                guard let value = try await server.wait(), let url = URL(string: value) else {
-                    throw McpOAuthError.invalidRedirect
-                }
-                await race.finishCallback(.success(url))
-            } catch { await race.finishCallback(.failure(error)) }
-        }
-        let timeout = callbackTimeout
-        let sleep = callbackTimeoutSleep
-        callbackTimeoutTask = Task {
-            do {
-                try await timeout.wait(sleep: sleep)
-                try Task.checkCancellation()
-                await race.requestTimeout()
-                await server.close()
-            } catch {
-                // Cancellation stops the timeout when sign-in finishes.
-            }
-        }
+        await race.start(timeout: callbackTimeout, sleep: callbackTimeoutSleep)
         guard let url = URL(string: await server.redirectUri()) else { throw McpOAuthError.invalidRedirect }
         return url
     }
 
     public func present(authorizationURL: URL, state: String) async throws -> URL {
-        guard let callback, let race = callbackRace else { throw McpOAuthError.invalidRedirect }
-        do {
-            activeRace = race
-            try await openAuthorizationURL(authorizationURL)
-            let manualTask: Task<Void, Never>?
-            if let pasteRedirectURL {
-                manualTask = Task {
-                    do {
-                        guard let url = URL(string: try await pasteRedirectURL()) else {
-                            throw McpOAuthError.invalidRedirect
-                        }
-                        await race.finish(.success(url))
-                    } catch { await race.finish(.failure(error)) }
-                }
-            } else {
-                manualTask = nil
-            }
-            let result: URL
+        guard let race = callbackRace else { throw McpOAuthError.invalidRedirect }
+        return try await withTaskCancellationHandler {
             do {
-                result = try await race.wait()
+                try Task.checkCancellation()
+                activeRace = race
+                try await race.open(authorizationURL, using: openAuthorizationURL)
+                try Task.checkCancellation()
+                if let pasteRedirectURL { await race.startManual(pasteRedirectURL) }
+                let result = try await race.wait()
+                try Task.checkCancellation()
+                clear(race)
+                await race.stop()
+                try Task.checkCancellation()
+                return result
             } catch {
-                callbackTask?.cancel()
-                manualTask?.cancel()
+                clear(race)
+                await race.stop(with: error)
+                if Task.isCancelled { throw CancellationError() }
                 throw error
             }
-            manualTask?.cancel()
-            callbackTimeoutTask?.cancel()
-            callbackTimeoutTask = nil
-            callbackTask?.cancel()
-            callbackTask = nil
-            await callback.close()
-            self.callback = nil
-            callbackRace = nil
-            activeRace = nil
-            return result
-        } catch {
-            callbackTimeoutTask?.cancel()
-            callbackTimeoutTask = nil
-            callbackTask?.cancel()
-            callbackTask = nil
-            await callback.close()
-            self.callback = nil
-            callbackRace = nil
-            activeRace = nil
-            throw error
+        } onCancel: {
+            Task { await race.stop(with: CancellationError()) }
         }
+    }
+
+    private func clear(_ race: FirstOAuthRedirect) {
+        // A previous presentation must not clear a new sign-in session.
+        if callbackRace === race { callbackRace = nil }
+        if activeRace === race { activeRace = nil }
     }
 
     /// Host UI may always submit a pasted redirect, even when no paste prompt closure was supplied.
@@ -256,14 +323,9 @@ public actor McpMacOSSignInPresenter: McpSignInPresenter {
     }
 
     public func cancel() async {
-        callbackTimeoutTask?.cancel()
-        callbackTimeoutTask = nil
-        callbackTask?.cancel()
-        callbackTask = nil
-        if let callback { await callback.close() }
-        callback = nil
-        callbackRace = nil
-        activeRace = nil
+        guard let race = callbackRace else { return }
+        clear(race)
+        await race.stop(with: McpCallbackClosedError())
     }
 }
 #endif
