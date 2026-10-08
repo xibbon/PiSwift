@@ -619,6 +619,7 @@ private func executeToolCallsSequential(
                 toolCall: finalized.toolCall,
                 result: finalized.result,
                 isError: finalized.isError,
+                durationMs: finalized.durationMs,
                 prepare: config.prepareToolResultMessage,
                 emit: emit
             )
@@ -708,6 +709,7 @@ private func executeToolCallsParallel(
                 toolCall: finalized.toolCall,
                 result: finalized.result,
                 isError: finalized.isError,
+                durationMs: finalized.durationMs,
                 emit: emit
             )
             finalizedByIndex[index] = finalized
@@ -722,6 +724,7 @@ private func executeToolCallsParallel(
             toolCall: finalized.toolCall,
             result: finalized.result,
             isError: finalized.isError,
+            durationMs: finalized.durationMs,
             prepare: config.prepareToolResultMessage,
             emit: emit
         )
@@ -748,6 +751,7 @@ private enum ToolCallPreparation: Sendable {
 private struct ExecutedToolCallOutcome: Sendable {
     var result: AgentToolResult
     var isError: Bool
+    var durationMs: Int
 }
 
 /// Runs a single call through the same validation, hooks, and execution as the agent loop.
@@ -862,6 +866,13 @@ private func executePreparedToolCall(
     // matching upstream behavior that guarantees all update emissions complete.
     let pendingUpdates = LockedState<[Task<Void, Never>]>([])
     let finalized = LockedState(false)
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    let elapsed = {
+        let components = startedAt.duration(to: clock.now).components
+        let milliseconds = Double(components.seconds) * 1_000 + Double(components.attoseconds) / 1_000_000_000_000_000
+        return max(0, Int(milliseconds.rounded()))
+    }
 
     do {
         let result = try await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal) { partialResult in
@@ -871,13 +882,15 @@ private func executePreparedToolCall(
             }
             pendingUpdates.withLock { $0.append(task) }
         }
+        let durationMs = elapsed()
         finalized.withLock { $0 = true }
         // Await all pending update emissions before returning
         for task in pendingUpdates.withLock({ $0 }) {
             await task.value
         }
-        return ExecutedToolCallOutcome(result: result, isError: result.isError == true)
+        return ExecutedToolCallOutcome(result: result, isError: result.isError == true, durationMs: durationMs)
     } catch {
+        let durationMs = elapsed()
         finalized.withLock { $0 = true }
         // Await pending updates even on error path
         for task in pendingUpdates.withLock({ $0 }) {
@@ -885,7 +898,8 @@ private func executePreparedToolCall(
         }
         return ExecutedToolCallOutcome(
             result: createErrorToolResult(error.localizedDescription),
-            isError: true
+            isError: true,
+            durationMs: durationMs
         )
     }
 }
@@ -949,7 +963,8 @@ private func finalizeExecutedToolCall(
     return AgentToolCallOutcome(
         toolCall: prepared.toolCall,
         result: result,
-        isError: isError
+        isError: isError,
+        durationMs: executed.durationMs
     )
 }
 
@@ -965,11 +980,13 @@ private func emitToolCallOutcome(
     toolCall: ToolCall,
     result: AgentToolResult,
     isError: Bool,
+    durationMs: Int? = nil,
     prepare: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?,
     emit: @escaping AgentEventSink
 ) async -> ToolResultMessage {
-    await emitToolExecutionEndOnly(toolCall: toolCall, result: result, isError: isError, emit: emit)
+    await emitToolExecutionEndOnly(toolCall: toolCall, result: result, isError: isError, durationMs: durationMs, emit: emit)
     return await emitToolResultMessage(toolCall: toolCall, result: result, isError: isError,
+                                       durationMs: durationMs,
                                        prepare: prepare, emit: emit)
 }
 
@@ -978,19 +995,22 @@ private func emitToolExecutionEndOnly(
     toolCall: ToolCall,
     result: AgentToolResult,
     isError: Bool,
+    durationMs: Int? = nil,
     emit: @escaping AgentEventSink
 ) async -> FinalizedToolCall {
     await emit(.toolExecutionEnd(
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         result: result,
-        isError: isError
+        isError: isError,
+        durationMs: durationMs
     ))
 
     return FinalizedToolCall(
         toolCall: toolCall,
         result: result,
-        isError: isError
+        isError: isError,
+        durationMs: durationMs
     )
 }
 
@@ -998,6 +1018,7 @@ private func emitToolResultMessage(
     toolCall: ToolCall,
     result: AgentToolResult,
     isError: Bool,
+    durationMs: Int? = nil,
     prepare: (@Sendable (ToolResultMessage) async -> ToolResultMessage)?,
     emit: @escaping AgentEventSink
 ) async -> ToolResultMessage {
@@ -1007,7 +1028,8 @@ private func emitToolResultMessage(
         content: result.content,
         details: result.details,
         usage: result.usage,
-        isError: isError
+        isError: isError,
+        durationMs: durationMs
     )
     if let prepare { toolResultMessage = await prepare(toolResultMessage) }
 

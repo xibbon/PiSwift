@@ -233,7 +233,7 @@ private func g1EchoTool() -> AgentTool {
     var events: [AgentEvent] = []
     for await event in stream { events.append(event) }
     let ends = events.compactMap { event -> (AgentToolResult, Bool)? in
-        guard case .toolExecutionEnd(_, _, let result, let isError) = event else { return nil }
+        guard case .toolExecutionEnd(_, _, let result, let isError, _) = event else { return nil }
         return (result, isError)
     }
     #expect(ends.count == 1)

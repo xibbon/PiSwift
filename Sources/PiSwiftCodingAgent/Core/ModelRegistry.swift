@@ -1375,28 +1375,30 @@ public final class ModelRegistry: Sendable {
     /// Stream with the provider registered for this model. Credentials are resolved when the
     /// returned stream starts, including credentials supplied by an extension provider.
     public func stream(model: Model, context: Context, options: StreamOptions? = nil) -> AssistantMessageEventStream {
+        let startedAt = Int64(Date().timeIntervalSince1970 * 1000)
         let output = AssistantMessageEventStream()
         if isVirtualModel(model) {
             output.setOnStart { [weak output] in
                 guard let output else { return }
-                Task { await self.forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output) }
+                Task { await self.forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output, startedAt: startedAt) }
             }
         } else {
-            Task { await forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output) }
+            Task { await forwardStream(model: model, context: context, fullOptions: options, simpleOptions: nil, output: output, startedAt: startedAt) }
         }
         return output
     }
 
     /// Stream with provider-neutral options and request-time authentication.
     public func streamSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) -> AssistantMessageEventStream {
+        let startedAt = Int64(Date().timeIntervalSince1970 * 1000)
         let output = AssistantMessageEventStream()
         if isVirtualModel(model) {
             output.setOnStart { [weak output] in
                 guard let output else { return }
-                Task { await self.forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output) }
+                Task { await self.forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output, startedAt: startedAt) }
             }
         } else {
-            Task { await forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output) }
+            Task { await forwardStream(model: model, context: context, fullOptions: nil, simpleOptions: options ?? SimpleStreamOptions(), output: output, startedAt: startedAt) }
         }
         return output
     }
@@ -1418,7 +1420,8 @@ public final class ModelRegistry: Sendable {
         context: Context,
         fullOptions: StreamOptions?,
         simpleOptions: SimpleStreamOptions?,
-        output: AssistantMessageEventStream
+        output: AssistantMessageEventStream,
+        startedAt: Int64
     ) async {
         do {
             if isVirtualModel(model) {
@@ -1445,7 +1448,7 @@ public final class ModelRegistry: Sendable {
                     options.headers = nil
                 }
                 await forwardStream(model: route.model, context: context, fullOptions: nil,
-                                    simpleOptions: options, output: output)
+                                    simpleOptions: options, output: output, startedAt: startedAt)
                 return
             }
             let signal = fullOptions?.signal ?? simpleOptions?.signal
@@ -1502,7 +1505,7 @@ public final class ModelRegistry: Sendable {
             let failed = AssistantMessage(
                 content: [], api: model.api, provider: model.provider, model: model.id,
                 usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-                stopReason: .error, errorMessage: error.localizedDescription
+                stopReason: .error, errorMessage: error.localizedDescription, timestamp: startedAt
             )
             output.push(.error(reason: .error, error: failed))
             output.end()

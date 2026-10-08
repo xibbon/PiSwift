@@ -1576,7 +1576,7 @@ public final class AgentSession: Sendable {
                         partialResult: partialResult
                     ))
                 }
-            case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError):
+            case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError, _):
                 enqueueOnEventQueue {
                     _ = await hookRunner.emit(ToolExecutionEndEvent(
                         toolCallId: toolCallId,

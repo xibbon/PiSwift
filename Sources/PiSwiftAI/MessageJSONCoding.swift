@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 // MARK: - Canonical JSON-object codec for content blocks and usage
 //
@@ -131,7 +132,16 @@ public func assistantMessageToJSONObject(_ message: AssistantMessage) -> [String
         if let data = value.data { deferred["data"] = data.value }
         result["deferred"] = deferred
     }
+    if let value = message.durationMs { result["durationMs"] = value }
     return result
+}
+
+private func durationMillisecondsFromJSON(_ value: Any?) -> Int? {
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+    let value = number.doubleValue
+    guard value.isFinite else { return nil }
+    let rounded = max(0, value.rounded())
+    return rounded >= Double(Int.max) ? Int.max : Int(rounded)
 }
 
 public func assistantMessageFromJSONObject(_ dict: [String: Any]) -> AssistantMessage {
@@ -159,7 +169,8 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any], ordered: Order
         },
         providerThinkingLevel: dict["providerThinkingLevel"] as? String,
         thinkingLevel: (dict["thinkingLevel"] as? String).flatMap(ModelThinkingLevel.init(rawValue:)),
-        endTurn: dict["endTurn"] as? Bool
+        endTurn: dict["endTurn"] as? Bool,
+        durationMs: durationMillisecondsFromJSON(dict["durationMs"])
     )
     if let value = dict["deferred"] as? [String: Any], let provider = value["provider"] as? String,
        let modelId = value["modelId"] as? String, let api = value["api"] as? String, let id = value["id"] as? String {
@@ -216,8 +227,13 @@ public func contentBlockToOrderedJSON(_ block: ContentBlock) -> OrderedJSON {
 }
 
 public func assistantMessageToOrderedJSON(_ message: AssistantMessage) -> OrderedJSON {
-    replacingJSONMembers(OrderedJSON.fromFoundation(assistantMessageToJSONObject(message)),
-                         with: ["content": .array(message.content.map(contentBlockToOrderedJSON))])
+    var object = assistantMessageToJSONObject(message)
+    object.removeValue(forKey: "durationMs")
+    let base = replacingJSONMembers(OrderedJSON.fromFoundation(object),
+                                    with: ["content": .array(message.content.map(contentBlockToOrderedJSON))])
+    guard let durationMs = message.durationMs, case .object(var members) = base else { return base }
+    members.append(("durationMs", .number(String(durationMs))))
+    return .object(members)
 }
 
 public func nestedToolCallsToOrderedJSON(_ nested: NestedToolCalls) -> OrderedJSON {

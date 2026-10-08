@@ -117,7 +117,7 @@ func agentLoopPreparedEditsKeepOriginalCallPayloads(mode: ToolExecutionMode) asy
             #expect(id == original.id && name == original.name)
             #expect(args == original.arguments)
             payloadEvents.append("update")
-        case .toolExecutionEnd(let id, let name, let result, let isError):
+        case .toolExecutionEnd(let id, let name, let result, let isError, _):
             #expect(id == original.id && name == original.name)
             #expect(result.details == AnyCodable(["count": 1]))
             #expect(!isError)
@@ -244,7 +244,7 @@ private func agentLoopPreparedArgumentFailuresKeepOriginalPayloads(mode: ToolExe
         case .toolExecutionUpdate(let id, let name, let args, _):
             updates += 1
             #expect(id == original.id && name == original.name && args == original.arguments)
-        case .toolExecutionEnd(let id, let name, _, let isError):
+        case .toolExecutionEnd(let id, let name, _, let isError, _):
             ends += 1
             #expect(id == original.id && name == original.name && isError)
         case .messageEnd(.toolResult(let result)):

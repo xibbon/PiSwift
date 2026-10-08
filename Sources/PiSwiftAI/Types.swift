@@ -1501,7 +1501,12 @@ public struct AssistantMessage: Sendable {
     /// Provider's own unmapped stop-reason string, preserved for diagnostics.
     public var rawStopReason: String?
     public var diagnostics: [AssistantMessageDiagnostic]?
+    /// Unix timestamp in milliseconds when the request started.
     public var timestamp: Int64
+    /// Milliseconds from `timestamp` until the response ended, measured with a monotonic clock.
+    /// Set by `AssistantMessageEventStream` on the final message of a response it saw start.
+    /// Absent for legacy messages and for deferred results fetched later.
+    public var durationMs: Int?
 
     public var providerThinkingLevel: String?
     public var thinkingLevel: ModelThinkingLevel?
@@ -1523,7 +1528,8 @@ public struct AssistantMessage: Sendable {
         diagnostics: [AssistantMessageDiagnostic]? = nil,
         providerThinkingLevel: String? = nil,
         thinkingLevel: ModelThinkingLevel? = nil,
-        endTurn: Bool? = nil
+        endTurn: Bool? = nil,
+        durationMs: Int? = nil
     ) {
         self.providerThinkingLevel = providerThinkingLevel
         self.thinkingLevel = thinkingLevel
@@ -1542,6 +1548,7 @@ public struct AssistantMessage: Sendable {
         self.rawStopReason = rawStopReason
         self.diagnostics = diagnostics
         self.timestamp = timestamp
+        self.durationMs = durationMs
     }
 }
 
@@ -1633,7 +1640,10 @@ public struct ToolResultMessage: Sendable {
     /// Session metadata. Provider requests do not include nested calls.
     public var nestedCalls: NestedToolCalls?
     public var isError: Bool
+    /// Unix timestamp in milliseconds when the result was created.
     public var timestamp: Int64
+    /// Milliseconds the tool's execution took, measured with a monotonic clock. Absent for legacy results.
+    public var durationMs: Int?
 
     public init(
         toolCallId: String,
@@ -1643,7 +1653,8 @@ public struct ToolResultMessage: Sendable {
         usage: Usage? = nil,
         nestedCalls: NestedToolCalls? = nil,
         isError: Bool,
-        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        durationMs: Int? = nil
     ) {
         self.toolCallId = toolCallId
         self.toolName = toolName
@@ -1653,6 +1664,7 @@ public struct ToolResultMessage: Sendable {
         self.nestedCalls = nestedCalls
         self.isError = isError
         self.timestamp = timestamp
+        self.durationMs = durationMs
     }
 }
 

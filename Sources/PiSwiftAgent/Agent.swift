@@ -651,7 +651,7 @@ public final class Agent: Sendable {
         case .toolExecutionStart(let toolCallId, _, _):
             mutateState { $0._insertPendingToolCall(toolCallId) }
 
-        case .toolExecutionEnd(let toolCallId, _, _, _):
+        case .toolExecutionEnd(let toolCallId, _, _, _, _):
             mutateState { $0._removePendingToolCall(toolCallId) }
 
         case .turnEnd(let message, _):

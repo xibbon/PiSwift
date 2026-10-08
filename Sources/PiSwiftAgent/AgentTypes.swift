@@ -407,10 +407,14 @@ public struct AgentToolCallOutcome: Sendable {
     public var result: AgentToolResult
     public var isError: Bool
 
-    public init(toolCall: AgentToolCall, result: AgentToolResult, isError: Bool) {
+    /// Milliseconds `execute()` took, measured with a monotonic clock; absent when the tool did not run.
+    public var durationMs: Int?
+
+    public init(toolCall: AgentToolCall, result: AgentToolResult, isError: Bool, durationMs: Int? = nil) {
         self.toolCall = toolCall
         self.result = result
         self.isError = isError
+        self.durationMs = durationMs
     }
 }
 
@@ -529,7 +533,7 @@ public enum AgentEvent: Sendable {
     case messageEnd(message: AgentMessage)
     case toolExecutionStart(toolCallId: String, toolName: String, args: [String: AnyCodable])
     case toolExecutionUpdate(toolCallId: String, toolName: String, args: [String: AnyCodable], partialResult: AgentToolResult)
-    case toolExecutionEnd(toolCallId: String, toolName: String, result: AgentToolResult, isError: Bool)
+    case toolExecutionEnd(toolCallId: String, toolName: String, result: AgentToolResult, isError: Bool, durationMs: Int? = nil)
 }
 
 public struct AgentLoopConfig: Sendable {

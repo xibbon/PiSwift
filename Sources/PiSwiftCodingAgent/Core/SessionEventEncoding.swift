@@ -92,7 +92,7 @@ public func encodeSessionEventJSON(_ event: AgentSessionEvent) -> String {
         case .toolExecutionUpdate(_, _, let args, let result):
             overrides["args"] = toolArgumentsToOrderedJSON(args)
             overrides["partialResult"] = orderedToolResult(result)
-        case .toolExecutionEnd(_, _, let result, _): overrides["result"] = orderedToolResult(result)
+        case .toolExecutionEnd(_, _, let result, _, _): overrides["result"] = orderedToolResult(result)
         default: break
         }
     case .nestedToolExecution(let nested):
@@ -166,7 +166,7 @@ func encodeAgentEvent(_ event: AgentEvent) -> [String: Any] {
             "args": args.mapValues { $0.value },
             "partialResult": toolResultResultToDict(partialResult),
         ]
-    case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError):
+    case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError, _):
         return [
             "type": event.type,
             "toolCallId": toolCallId,

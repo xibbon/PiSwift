@@ -174,7 +174,7 @@ import PiSwiftAgent
     #expect(toolStart != nil)
     #expect(toolEnd != nil)
 
-    if case .toolExecutionEnd(_, _, _, let isError) = toolEnd {
+    if case .toolExecutionEnd(_, _, _, let isError, _) = toolEnd {
         #expect(!isError)
     }
 }
@@ -216,7 +216,7 @@ import PiSwiftAgent
     #expect(executed.withLock { $0 }.isEmpty)
     #expect(calls.withLock { $0 } == 2)
     let failures = events.compactMap { event -> AgentToolResult? in
-        guard case .toolExecutionEnd(_, _, let result, let isError) = event, isError else { return nil }
+        guard case .toolExecutionEnd(_, _, let result, let isError, _) = event, isError else { return nil }
         return result
     }
     #expect(failures.count == 1)
@@ -310,7 +310,7 @@ import PiSwiftAgent
     #expect(executed.withLock { Set($0) } == ["first", "second"])
 
     let toolEnds = events.compactMap { event -> (AgentToolResult, Bool)? in
-        if case .toolExecutionEnd(_, _, let result, let isError) = event {
+        if case .toolExecutionEnd(_, _, let result, let isError, _) = event {
             return (result, isError)
         }
         return nil
@@ -693,7 +693,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     // tool_execution_end is emitted in completion order, while persisted tool-result
     // messages stay in assistant source order.
     let toolExecutionEndIds = events.compactMap { event -> String? in
-        if case .toolExecutionEnd(let id, _, _, _) = event {
+        if case .toolExecutionEnd(let id, _, _, _, _) = event {
             return id
         }
         return nil
@@ -759,7 +759,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
     var toolEnd: (AgentToolResult, Bool)?
     let stream = agentLoop(prompts: [userPrompt], context: context, config: config, streamFn: streamFn)
     for await event in stream {
-        if case .toolExecutionEnd(_, _, let result, let isError) = event {
+        if case .toolExecutionEnd(_, _, let result, let isError, _) = event {
             toolEnd = (result, isError)
         }
     }
@@ -892,7 +892,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 
     // Blocked tool should show error
     let toolEnds = events.compactMap { event -> (String, Bool)? in
-        if case .toolExecutionEnd(let id, _, _, let isError) = event {
+        if case .toolExecutionEnd(let id, _, _, let isError, _) = event {
             return (id, isError)
         }
         return nil
@@ -958,7 +958,7 @@ private func makeStream(done message: AssistantMessage, reason: StopReason = .st
 
     // Tool result should have overridden content
     let toolEnd = events.compactMap { event -> AgentToolResult? in
-        if case .toolExecutionEnd(_, _, let result, _) = event { return result }
+        if case .toolExecutionEnd(_, _, let result, _, _) = event { return result }
         return nil
     }.first
     #expect(toolEnd != nil)

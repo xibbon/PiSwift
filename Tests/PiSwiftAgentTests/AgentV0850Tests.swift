@@ -58,7 +58,7 @@ private func portResponse(_ content: [ContentBlock], _ reason: StopReason = .sto
         return nil
     }, convertToLlm: { $0.compactMap(\.asMessage) }, finishTurn: { _, _ in .end })
     _ = await runAgentLoop(prompts: [.user(UserMessage(content: .text("go")))], context: testAgentContext(systemPrompt: "", messages: [], tools: [tool]), config: config, emit: { event in
-        if case .toolExecutionEnd(let id, _, let result, let isError) = event {
+        if case .toolExecutionEnd(let id, _, let result, let isError, _) = event {
             #expect(isError)
             #expect(result.content.contains { if case .text(let text) = $0 { return text.text == "Operation aborted" }; return false })
             ends.withLock { $0.append(id) }

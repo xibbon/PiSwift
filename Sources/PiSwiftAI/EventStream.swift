@@ -96,46 +96,94 @@ public final class EventStream<Element: Sendable, Result: Sendable>: AsyncSequen
     }
 }
 
+/// A stream for one assistant response. The first terminal event settles the stream.
 public final class AssistantMessageEventStream: AsyncSequence, Sendable {
     public typealias Element = AssistantMessageEvent
     public typealias AsyncIterator = AsyncStream<Element>.Iterator
 
-    private let inner: EventStream<Element, AssistantMessage>
+    private let stream: AsyncStream<Element>
+    private let continuation: AsyncStream<Element>.Continuation
+    private let startedAt: Int64
+    private let startedAtMonotonic: ContinuousClock.Instant
+    private let state = LockedState(State())
     private let onStart = LockedState<(@Sendable () -> Void)?>(nil)
 
+    private struct State: Sendable {
+        var settled = false
+        var pending: [Element] = []
+        var publishing = false
+        var resultValue: AssistantMessage?
+        var resultContinuation: CheckedContinuation<AssistantMessage, Never>?
+    }
+
     public init() {
-        self.inner = EventStream<Element, AssistantMessage>(
-            isComplete: { event in
-                switch event {
-                case .done, .error:
-                    return true
-                default:
-                    return false
-                }
-            },
-            extractResult: { event in
-                switch event {
-                case .done(_, let message):
-                    return message
-                case .error(_, let error):
-                    return error
-                default:
-                    return AssistantMessage(
-                        content: [],
-                        api: .openAICompletions,
-                        provider: "unknown",
-                        model: "unknown",
-                        usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
-                        stopReason: .error,
-                        errorMessage: "Unexpected event type for final result"
-                    )
-                }
-            }
-        )
+        startedAt = Int64(Date().timeIntervalSince1970 * 1000)
+        startedAtMonotonic = ContinuousClock.now
+        let pair = AsyncStream<Element>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+    }
+
+    private func time(_ message: AssistantMessage) -> AssistantMessage {
+        var message = message
+        guard message.durationMs == nil, message.timestamp >= startedAt else { return message }
+        let elapsed = startedAtMonotonic.duration(to: ContinuousClock.now).components
+        let milliseconds = Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15
+        message.durationMs = Swift.max(0, Int(milliseconds.rounded()))
+        return message
     }
 
     public func push(_ event: AssistantMessageEvent) {
-        inner.push(event)
+        var delivered = event
+        var resume: CheckedContinuation<AssistantMessage, Never>?
+        var result: AssistantMessage?
+        let publish = state.withLock { state in
+            guard !state.settled else { return false }
+            switch event {
+            case .done(let reason, let message):
+                let timed = time(message)
+                delivered = .done(reason: reason, message: timed)
+                result = timed
+            case .error(let reason, let message):
+                let timed = time(message)
+                delivered = .error(reason: reason, error: timed)
+                result = timed
+            default:
+                break
+            }
+            if let result {
+                state.settled = true
+                state.resultValue = result
+                resume = state.resultContinuation
+                state.resultContinuation = nil
+            }
+            state.pending.append(delivered)
+            guard !state.publishing else { return false }
+            state.publishing = true
+            return true
+        }
+        if publish { publishPending() }
+        if let result { resume?.resume(returning: result) }
+    }
+
+    // One publisher keeps push/end order while it calls the continuation outside the lock.
+    private func publishPending() {
+        while true {
+            let batch = state.withLock { state -> (events: [Element], finish: Bool) in
+                guard !state.pending.isEmpty else {
+                    state.publishing = false
+                    return ([], state.settled)
+                }
+                let events = state.pending
+                state.pending.removeAll(keepingCapacity: true)
+                return (events, false)
+            }
+            for event in batch.events { continuation.yield(event) }
+            if batch.events.isEmpty {
+                if batch.finish { continuation.finish() }
+                return
+            }
+        }
     }
 
     /// Start a deferred producer when the stream is observed for the first time.
@@ -153,20 +201,41 @@ public final class AssistantMessageEventStream: AsyncSequence, Sendable {
     }
 
     public func end(_ result: AssistantMessage? = nil) {
-        if let result = result {
-            inner.end(result)
-        } else {
-            inner.end(nil)
+        var resume: CheckedContinuation<AssistantMessage, Never>?
+        var timed: AssistantMessage?
+        let publish = state.withLock { state in
+            if !state.settled, let result {
+                timed = time(result)
+                state.resultValue = timed
+                resume = state.resultContinuation
+                state.resultContinuation = nil
+            }
+            state.settled = true
+            guard !state.publishing else { return false }
+            state.publishing = true
+            return true
         }
+        if publish { publishPending() }
+        if let timed { resume?.resume(returning: timed) }
     }
 
     public func result() async -> AssistantMessage {
         startIfNeeded()
-        return await inner.result()
+        return await withCheckedContinuation { continuation in
+            var immediate: AssistantMessage?
+            state.withLock { state in
+                if let result = state.resultValue {
+                    immediate = result
+                } else {
+                    state.resultContinuation = continuation
+                }
+            }
+            if let immediate { continuation.resume(returning: immediate) }
+        }
     }
 
     public func makeAsyncIterator() -> AsyncStream<Element>.Iterator {
         startIfNeeded()
-        return inner.makeAsyncIterator()
+        return stream.makeAsyncIterator()
     }
 }
