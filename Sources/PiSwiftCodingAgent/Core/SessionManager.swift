@@ -2017,7 +2017,7 @@ private func decodeAgentMessage(_ dict: [String: Any], ordered: OrderedJSON? = n
         let toolResult = ToolResultMessage(toolCallId: toolCallId, toolName: toolName, content: contentBlocks, details: details,
                                            usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject),
                                            nestedCalls: (dict["nestedCalls"] as? [String: Any]).flatMap { nestedToolCallsFromJSONObject($0, ordered: ordered?["nestedCalls"]) },
-                                           isError: isError, timestamp: timestamp)
+                                           isError: isError, timestamp: timestamp, durationMs: dict["durationMs"] as? Int)
         return .toolResult(toolResult)
     case "bashExecution", "hookMessage", "branchSummary", "compactionSummary":
         let payload = dict

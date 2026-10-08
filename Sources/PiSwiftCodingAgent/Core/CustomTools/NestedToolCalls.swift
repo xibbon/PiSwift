@@ -81,7 +81,7 @@ public enum NestedToolExecutionEvent: Sendable {
     case update(toolCallId: String, toolName: String, args: [String: AnyCodable],
                 partialResult: AgentToolResult, parentToolCallId: String)
     case end(toolCallId: String, toolName: String, result: AgentToolResult,
-             isError: Bool, parentToolCallId: String)
+             isError: Bool, parentToolCallId: String, durationMs: Int? = nil)
 }
 
 public struct NestedToolCallHost: Sendable {
@@ -187,7 +187,7 @@ public actor NestedToolCallRunner {
         recorders[scope.rootId] = completed
 
         await host.emit(.end(toolCallId: toolCall.id, toolName: name, result: outcome.result,
-                             isError: outcome.isError, parentToolCallId: callerId))
+                             isError: outcome.isError, parentToolCallId: callerId, durationMs: outcome.durationMs))
         return outcome
     }
 

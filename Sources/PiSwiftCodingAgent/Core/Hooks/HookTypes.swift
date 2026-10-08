@@ -193,9 +193,12 @@ public enum HookWidgetContent {
 
 public struct HookMessageRenderOptions: Sendable {
     public var expanded: Bool
+    /// Horizontal padding set by the host.
+    public var outputPad: Int
 
-    public init(expanded: Bool) {
+    public init(expanded: Bool, outputPad: Int = 1) {
         self.expanded = expanded
+        self.outputPad = outputPad
     }
 }
 
@@ -1249,8 +1252,12 @@ public struct AgentEndEvent: HookEvent, Sendable {
 /// continuation remains active.
 public struct AgentSettledEvent: HookEvent, Sendable {
     public let type: String = "agent_settled"
+    /// True if the run ended after an abort request.
+    public var aborted: Bool
 
-    public init() {}
+    public init(aborted: Bool = false) {
+        self.aborted = aborted
+    }
 }
 
 public struct TurnStartEvent: HookEvent, Sendable {
@@ -1482,14 +1489,17 @@ public struct ToolExecutionEndEvent: HookEvent, Sendable {
     public var result: AgentToolResult
     public var isError: Bool
     public var parentToolCallId: String?
+    /// Execution time in milliseconds. Nil if the tool did not run.
+    public var durationMs: Int?
 
     public init(toolCallId: String, toolName: String, result: AgentToolResult, isError: Bool,
-                parentToolCallId: String? = nil) {
+                parentToolCallId: String? = nil, durationMs: Int? = nil) {
         self.toolCallId = toolCallId
         self.toolName = toolName
         self.result = result
         self.isError = isError
         self.parentToolCallId = parentToolCallId
+        self.durationMs = durationMs
     }
 }
 

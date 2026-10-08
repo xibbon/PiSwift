@@ -139,7 +139,8 @@ private func c1Session(_ hooks: [LoadedHook], customTools: [LoadedCustomTool]) -
 
 @Test func c1VersionUsesV103() {
     // Upstream v1.0.4 package.json:3: report the release version.
-    #expect(VERSION == "1.0.4")
+    // C1 v1.1.0: update the library version assertion.
+    #expect(VERSION == "1.1.0")
     let renderer: BuiltInToolRenderer = .mcp(label: "server/tool")
     #expect(CustomToolRenderers(builtIn: renderer).builtIn == renderer)
 }

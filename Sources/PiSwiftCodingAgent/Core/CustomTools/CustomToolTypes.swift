@@ -187,10 +187,16 @@ public struct CustomToolSessionEvent: Sendable {
 public struct RenderResultOptions: Sendable {
     public var expanded: Bool
     public var isPartial: Bool
+    /// Execution time in milliseconds. Nil for partial or legacy results.
+    public var durationMs: Int?
+    /// Horizontal padding set by the host.
+    public var outputPad: Int
 
-    public init(expanded: Bool, isPartial: Bool) {
+    public init(expanded: Bool, isPartial: Bool, durationMs: Int? = nil, outputPad: Int = 1) {
         self.expanded = expanded
         self.isPartial = isPartial
+        self.durationMs = durationMs
+        self.outputPad = outputPad
     }
 }
 

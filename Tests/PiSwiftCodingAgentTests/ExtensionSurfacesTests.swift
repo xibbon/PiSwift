@@ -102,7 +102,8 @@ private func extensionSurfaceSession(
     let authStorage = AuthStorage(":memory:")
     authStorage.setRuntimeApiKey(model.provider, "test-key")
     let registry = ModelRegistry(authStorage)
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         cwd: FileManager.default.currentDirectoryPath,
         agentDir: FileManager.default.currentDirectoryPath,
         authStorage: authStorage,

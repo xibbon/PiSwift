@@ -33,11 +33,13 @@ struct McpAdapterExtensionTests {
     }
 
     @Test("registers the proxy tool from explicit configuration")
-    func registersProxyTool() async {
+    // C1 U3: propagate the SDK error; authorized follow-up test edit.
+    func registersProxyTool() async throws {
         let adapter = McpAdapter.makeExtension(McpAdapterOptions(
             config: McpConfig(mcpServers: [:])
         ))
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: the SDK now throws; authorized follow-up test edit.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             inlineExtensions: [adapter.inlineExtension()]
         ))
         defer { result.session.dispose() }
@@ -46,11 +48,13 @@ struct McpAdapterExtensionTests {
     }
 
     @Test("omits the proxy tool when direct-only mode is selected")
-    func omitsProxyTool() async {
+    // C1 U3: propagate the SDK error; authorized follow-up test edit.
+    func omitsProxyTool() async throws {
         let adapter = McpAdapter.makeExtension(McpAdapterOptions(
             config: McpConfig(mcpServers: [:], settings: McpSettings(disableProxyTool: true))
         ))
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: the SDK now throws; authorized follow-up test edit.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             inlineExtensions: [adapter.inlineExtension()]
         ))
         defer { result.session.dispose() }
@@ -59,7 +63,8 @@ struct McpAdapterExtensionTests {
     }
 
     @Test("registers configured direct tools from the supplied metadata cache")
-    func registersCachedDirectTool() async {
+    // C1 U3: propagate the SDK error; authorized follow-up test edit.
+    func registersCachedDirectTool() async throws {
         let server = ServerEntry(command: "unused", directTools: .enabled(true))
         let config = McpConfig(mcpServers: ["demo": server])
         let cache = MetadataCache(servers: [
@@ -74,7 +79,8 @@ struct McpAdapterExtensionTests {
             config: config,
             metadataCache: cache
         ))
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: the SDK now throws; authorized follow-up test edit.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             inlineExtensions: [adapter.inlineExtension()]
         ))
         defer { result.session.dispose() }

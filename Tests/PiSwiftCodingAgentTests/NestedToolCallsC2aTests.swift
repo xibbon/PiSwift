@@ -11,7 +11,8 @@ private actor NestedTestEvents {
         switch event {
         case .start(let id, _, _, let parent): entries.append(("start", id, parent))
         case .update(let id, _, _, _, let parent): entries.append(("update", id, parent))
-        case .end(let id, _, _, _, let parent): entries.append(("end", id, parent))
+        // v1.1.0 nested tool events include durationMs.
+        case .end(let id, _, _, _, let parent, _): entries.append(("end", id, parent))
         }
     }
 

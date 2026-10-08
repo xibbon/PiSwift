@@ -102,7 +102,8 @@ private func v104PromptResponse(_ model: Model, script: String?) -> AssistantMes
     let settings = SettingsManager.inMemory()
     settings.setCodemodeMode(.only)
     settings.setCodemodeInlineBudget(0)
-    let created = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, toolNames: ["read", "codemode"], resourceLoader: TestResourceLoader(),
         inlineExtensions: [createCodemodeExtension()], sessionManager: .inMemory(), settingsManager: settings))
     let session = created.session
@@ -130,9 +131,11 @@ private func v104PromptResponse(_ model: Model, script: String?) -> AssistantMes
 }
 
 // v1.0.4 #10343: getAllTools reports rules for every registered built-in tool.
-@Test func codemodeV104AllToolsReportBuiltInGuidelines() async {
+// C1 U3: propagate the SDK error; authorized follow-up test edit.
+@Test func codemodeV104AllToolsReportBuiltInGuidelines() async throws {
     let auth = AuthStorage(":memory:")
-    let created = await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
         model: getModel(provider: .openai, modelId: "gpt-4o-mini"), offline: true,
         toolNames: ["read", "bash", "edit", "write"], resourceLoader: TestResourceLoader(),
         sessionManager: .inMemory(), settingsManager: .inMemory()))

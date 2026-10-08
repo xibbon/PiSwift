@@ -165,18 +165,21 @@ private struct C1CatalogClient: ProviderHTTPClient {
         projectTrusted: false, noTools: .all, resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions + [builtin, replacement], sessionManager: SessionManager.inMemory(),
         settingsManager: SettingsManager.inMemory())
-    let result = await createAgentSession(base)
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(base)
     defer { result.session.dispose() }
     #expect(result.diagnostics.contains { $0.path == "builtin:mcp" && $0.type == "warning" })
     #expect(loads.withLock { $0 } == 1)
 
-    let disabled = await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
+    // C1 U3: SDK tool-list validation now throws.
+    let disabled = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
         modelRegistry: ModelRegistry(auth), model: model, projectTrusted: false, noTools: .all,
         resourceLoader: TestResourceLoader(), inlineExtensions: builtInExtensions + [builtin], noExtensions: true,
         sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory()))
     defer { disabled.session.dispose() }
     #expect(loads.withLock { $0 } == 1)
-    let explicit = await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
+    // C1 U3: SDK tool-list validation now throws.
+    let explicit = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth,
         modelRegistry: ModelRegistry(auth), model: model, projectTrusted: false, noTools: .all,
         resourceLoader: TestResourceLoader(), additionalExtensionPaths: ["builtin:mcp"],
         inlineExtensions: builtInExtensions + [builtin], noExtensions: true,
@@ -249,7 +252,8 @@ private struct C1CatalogClient: ProviderHTTPClient {
     settings.defaultTools = ["read"]
     let settingsManager = SettingsManager.inMemory(settings)
     let seen = LockedState<[String]?>(nil)
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         authStorage: auth, modelRegistry: ModelRegistry(auth), model: model,
         projectTrusted: false, noTools: .all, resourceLoader: TestResourceLoader(),
         hooks: [HookDefinition(path: "<c1:settings>") { api in
@@ -312,7 +316,8 @@ private struct C1CatalogClient: ProviderHTTPClient {
     let model = try #require(getModel(provider: .anthropic, modelId: "claude-sonnet-4-5"))
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
     let captured = LockedState<ProviderStreamEvent?>(nil)
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         authStorage: auth, modelRegistry: ModelRegistry(auth), model: model,
         projectTrusted: false, noTools: .all, resourceLoader: TestResourceLoader(),
         hooks: [HookDefinition(path: "<c1:stream>") { api in

@@ -47,6 +47,8 @@ public struct CreateAgentSessionOptions: Sendable {
     /// matching tools. MCP tools stay registered for codemode and tool search
     /// unless an entry starts with `mcp__`; then only matching MCP tools remain.
     /// An empty list, like `noTools: .all`, disables MCP tools too.
+    /// A list of only `+name`/`-name` entries changes the default selection.
+    /// Modifiers take exact names. A mixed list or a modifier pattern throws.
     public var toolNames: [String]?
     /// Optional denylist of tool names or patterns. Applies after `toolNames`,
     /// including to MCP tools. `*` matches any characters.
@@ -529,7 +531,10 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
     }
 }
 
-public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgentSessionOptions()) async -> CreateAgentSessionResult {
+public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgentSessionOptions()) async throws -> CreateAgentSessionResult {
+    if let names = options.toolNames, let problem = getToolListError(names) {
+        throw ToolSelectionError.invalidToolsOption(problem)
+    }
     let cwd = options.cwd ?? FileManager.default.currentDirectoryPath
     let agentDir = options.agentDir ?? getAgentDir()
     let eventBus = options.eventBus ?? createEventBus()
@@ -1104,9 +1109,10 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         cacheWarmer: cacheWarmer,
         skillsSettings: settingsManager.getSkillsSettings(),
         eventBus: eventBus,
-        usesDefaultTools: options.toolNames == nil && options.noTools == nil,
+        usesDefaultTools: selection.usesDefaultTools,
+        defaultToolModifiers: selection.defaultToolModifiers ?? [],
         excludedToolNames: excludedToolNames,
-        allowedToolNames: options.toolNames.map(Set.init) ?? (options.noTools == .all ? [] : nil),
+        allowedToolNames: selection.allowedToolNames,
         toolRegistry: toolRegistry,
         toolRegistryOrder: toolRegistryOrder,
         toolDefinitions: toolDefinitions,

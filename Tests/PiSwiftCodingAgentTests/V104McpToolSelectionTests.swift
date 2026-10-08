@@ -135,7 +135,8 @@ private func v104WithMcpSession(
         credentials: McpOAuthCredentialStore(backend: InMemoryAuthStorageBackend())))
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
-    let created = await createAgentSession(CreateAgentSessionOptions(cwd: pool.directory.path,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(cwd: pool.directory.path,
         agentDir: pool.directory.path, authStorage: auth, model: model, offline: true,
         toolNames: toolNames, excludeTools: excludeTools, noTools: noTools,
         resourceLoader: TestResourceLoader(), hooks: [],
@@ -171,10 +172,12 @@ private func v104SelectionTool(_ name: String, defaultActive: Bool = true,
 
 private func v104SelectionSession(extensions: [InlineExtension], toolNames: [String],
                                    excludeTools: [String] = [],
-                                   customTools: [CustomToolDefinition] = []) async -> AgentSession {
+                                   // C1 U3: propagate the SDK error; authorized follow-up test edit.
+                                   customTools: [CustomToolDefinition] = []) async throws -> AgentSession {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
-    let created = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, toolNames: toolNames, excludeTools: excludeTools, customTools: customTools,
         resourceLoader: TestResourceLoader(), hooks: [], inlineExtensions: extensions,
         sessionManager: .inMemory(), settingsManager: .inMemory()))
@@ -285,7 +288,8 @@ struct V104McpToolSelectionTests {
                 return nil
             }
         }
-        let session = await v104SelectionSession(extensions: [extensionFactory],
+        // C1 U3: this helper now propagates the SDK error.
+        let session = try await v104SelectionSession(extensions: [extensionFactory],
             toolNames: ["*_tool", "ask_*", "re*"], excludeTools: ["ask*"])
         defer { session.dispose() }
         _ = await session.hookRunner?.emit(SessionStartEvent())
@@ -296,7 +300,8 @@ struct V104McpToolSelectionTests {
     @Test(.timeLimit(.minutes(1)), arguments: [
         ["*_tool"], ["static_tool", "live_tool", "custom_tool", "blocked_tool", "denied_tool"]
     ])
-    func matchingNamesActivateNonDefaultToolsAtStartupRegistrationAndReload(toolNames: [String]) async {
+    // C1 U3: propagate the SDK error; authorized follow-up test edit.
+    func matchingNamesActivateNonDefaultToolsAtStartupRegistrationAndReload(toolNames: [String]) async throws {
         let extensionFactory = InlineExtension(name: "inactive") { api in
             _ = api.registerTool(v104SelectionTool("static_tool", defaultActive: false))
             _ = api.registerTool(v104SelectionTool("blocked_tool", defaultActive: false))
@@ -305,7 +310,8 @@ struct V104McpToolSelectionTests {
                 return nil
             }
         }
-        let session = await v104SelectionSession(extensions: [extensionFactory], toolNames: toolNames,
+        // C1 U3: this helper now propagates the SDK error.
+        let session = try await v104SelectionSession(extensions: [extensionFactory], toolNames: toolNames,
             excludeTools: ["blocked*", "denied*"], customTools: [
                 CustomToolDefinition(tool: v104SelectionTool("custom_tool", defaultActive: false)),
                 CustomToolDefinition(tool: v104SelectionTool("denied_tool", defaultActive: false))

@@ -1,3 +1,49 @@
+import Foundation
+
+/// Errors in the SDK tool list.
+public enum ToolSelectionError: Error, Sendable, Equatable, LocalizedError {
+    case invalidToolsOption(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidToolsOption(let problem): "Invalid tools option: \(problem)"
+        }
+    }
+}
+
+/// Returns true if the entry starts with `+` or `-`.
+public func isToolModifier(_ entry: String) -> Bool {
+    entry.hasPrefix("+") || entry.hasPrefix("-")
+}
+
+/// Returns the upstream problem text for an invalid tool list.
+public func getToolListError(_ entries: [String]) -> String? {
+    let modifiers = entries.filter(isToolModifier)
+    guard !modifiers.isEmpty else { return nil }
+    if modifiers.count < entries.count {
+        return "tool names cannot be mixed with +name or -name entries"
+    }
+    if let pattern = modifiers.first(where: { $0.contains("*") }) {
+        return "+name and -name entries take exact tool names, not patterns: \(pattern)"
+    }
+    return nil
+}
+
+/// Applies exact-name modifiers in order. A removal removes the first match.
+public func applyToolModifiers(base: [String], entries: [String]) -> [String] {
+    var tools = base
+    for entry in entries where isToolModifier(entry) {
+        let name = String(entry.dropFirst())
+        let index = tools.firstIndex(of: name)
+        if entry.hasPrefix("+"), index == nil, !name.isEmpty {
+            tools.append(name)
+        } else if entry.hasPrefix("-"), let index {
+            tools.remove(at: index)
+        }
+    }
+    return tools
+}
+
 /// Matches complete tool names. Only `*` has a special meaning: it matches
 /// any number of characters, including zero. All other characters are literal.
 public struct ToolNameMatcher: Sendable, Equatable {
@@ -69,6 +115,19 @@ public struct InitialToolRegistration: Sendable, Equatable {
 public struct InitialToolSelection: Sendable, Equatable {
     public var registeredToolNames: [String]
     public var activeToolNames: [String]
+    public var allowedToolNames: Set<String>?
+    public var usesDefaultTools: Bool
+    public var defaultToolModifiers: [String]?
+
+    public init(registeredToolNames: [String], activeToolNames: [String],
+                allowedToolNames: Set<String>? = nil, usesDefaultTools: Bool = false,
+                defaultToolModifiers: [String]? = nil) {
+        self.registeredToolNames = registeredToolNames
+        self.activeToolNames = activeToolNames
+        self.allowedToolNames = allowedToolNames
+        self.usesDefaultTools = usesDefaultTools
+        self.defaultToolModifiers = defaultToolModifiers
+    }
 }
 
 /// Selects the first tool registry and active set for SDK and CLI hosts.
@@ -84,12 +143,11 @@ public struct InitialToolSelection: Sendable, Equatable {
 /// select non-hidden indirect tools. Exact names keep their input order; pattern
 /// matches are added in registry order.
 ///
-/// A host that builds its own `AgentSessionConfig` must filter its registry with
-/// `registeredToolNames`, set the agent's first tools from `activeToolNames`,
-/// and pass `allowedToolNames: toolNames.map(Set.init) ?? (noTools == .all ? [] : nil)`
-/// and `excludedToolNames: Set(excludeTools)` to the session. Set
-/// `usesDefaultTools` to `toolNames == nil && noTools == nil`. The session applies
-/// the same rules to tools registered later and to restored tool loadouts.
+/// A host must copy `allowedToolNames`, `usesDefaultTools`, and
+/// `defaultToolModifiers` from the result into `AgentSessionConfig`. Also pass
+/// `excludedToolNames: Set(excludeTools)`. Call `getToolListError` before selection
+/// to validate a supplied list. Modifier lists change defaults; `.builtin` keeps
+/// extension defaults, while `.all` permits only the selected names.
 public func selectInitialTools(
     registeredTools: [InitialToolRegistration],
     toolNames: [String]? = nil,
@@ -97,9 +155,15 @@ public func selectInitialTools(
     noTools: NoToolsMode? = nil,
     defaultToolNames: [String]
 ) -> InitialToolSelection {
-    let allowed = toolNames.map(ToolNameMatcher.init)
+    // v1.1.0 sdk.ts:283-295: noTools clears the modifier base, not extension defaults.
+    let modifiers = toolNames.flatMap { $0.contains(where: isToolModifier) ? $0 : nil }
+    let defaultNames = noTools == nil ? defaultToolNames : []
+    let selectedNames = modifiers.map { applyToolModifiers(base: defaultNames, entries: $0) }
+    let allowlist = modifiers != nil ? (noTools == .all ? selectedNames : nil) :
+        (toolNames ?? (noTools == .all ? [] : nil))
+    let allowed = allowlist.map(ToolNameMatcher.init)
     let excluded = ToolNameMatcher(excludeTools)
-    let filtersMcp = toolNames.map { $0.isEmpty || $0.contains { $0.hasPrefix("mcp__") } } ?? false
+    let filtersMcp = allowlist.map { $0.isEmpty || $0.contains { $0.hasPrefix("mcp__") } } ?? false
     var seen: Set<String> = []
     let registered = registeredTools.filter { tool in
         guard seen.insert(tool.name).inserted, !excluded.matches(tool.name) else { return false }
@@ -108,23 +172,26 @@ public func selectInitialTools(
         }
         return noTools != .all
     }
-    let defaults = Set(defaultToolNames)
-    let exactSelections = Set(toolNames ?? [])
+    let defaults = Set(selectedNames ?? defaultNames)
+    let exactSelections = Set(allowlist ?? [])
     let active = registered.filter { tool in
         guard tool.exposure != .hidden else { return false }
         if let allowed {
             return exactSelections.contains(tool.name) ||
                 (allowed.matches(tool.name) && (tool.exposure == .direct || tool.exposure == .modelOnly))
         }
-        if tool.isBuiltin { return noTools == nil && defaults.contains(tool.name) }
-        if noTools == nil && defaults.contains(tool.name) { return true }
+        if tool.isBuiltin { return defaults.contains(tool.name) }
+        if defaults.contains(tool.name) { return true }
         return (tool.exposure == .direct || tool.exposure == .modelOnly) && tool.defaultActive
     }
     let activeNames = Set(active.map(\.name))
-    let firstNames = toolNames ?? (noTools == nil ? defaultToolNames : [])
+    let firstNames = selectedNames ?? toolNames ?? defaultNames
     var seenActive: Set<String> = []
     let orderedActive = (firstNames + active.map(\.name)).filter {
         activeNames.contains($0) && seenActive.insert($0).inserted
     }
-    return InitialToolSelection(registeredToolNames: registered.map(\.name), activeToolNames: orderedActive)
+    return InitialToolSelection(registeredToolNames: registered.map(\.name), activeToolNames: orderedActive,
+        allowedToolNames: allowlist.map(Set.init),
+        usesDefaultTools: (toolNames == nil || modifiers != nil) && noTools == nil,
+        defaultToolModifiers: modifiers)
 }

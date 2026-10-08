@@ -92,7 +92,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let auth = AuthStorage(":memory:")
         auth.setRuntimeApiKey(model.provider, "test-key")
         let sessionManager = SessionManager.inMemory(dir)
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             cwd: dir,
             agentDir: dir,
             authStorage: auth,

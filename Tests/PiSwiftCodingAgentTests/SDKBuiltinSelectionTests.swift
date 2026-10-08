@@ -29,7 +29,8 @@ private func sdkBuiltinSession(global: [String], project: [String], trusted: Boo
     settingsManager.setProjectExtensionPaths(project)
     let model = try #require(getModel(provider: .openai, modelId: "gpt-4o-mini"))
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
-    return await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    return try await createAgentSession(CreateAgentSessionOptions(
         cwd: directory.path, agentDir: directory.appendingPathComponent("agent").path,
         authStorage: auth, model: model, projectTrusted: trusted, offline: true, noTools: .builtin,
         resourceLoader: defaultLoader ? nil : TestResourceLoader(), hooks: [],

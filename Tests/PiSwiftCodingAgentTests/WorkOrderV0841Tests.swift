@@ -396,7 +396,8 @@ private func v0841Stream(_ message: AssistantMessage) -> AssistantMessageEventSt
     let registry = ModelRegistry(auth)
     let model = try #require(registry.find(OAuthProvider.githubCopilot.rawValue, "gpt-5.4"))
     let capturedBaseUrl = LockedState<String?>(nil)
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         cwd: FileManager.default.currentDirectoryPath,
         agentDir: FileManager.default.currentDirectoryPath,
         authStorage: auth,

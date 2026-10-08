@@ -21,27 +21,30 @@ private func encodeSessionEventObject(_ event: AgentSessionEvent) -> [String: An
                     "toolName": toolName, "args": args.mapValues { $0.value },
                     "partialResult": toolResultResultToDict(partialResult),
                     "parentToolCallId": parentToolCallId]
-        case .end(let toolCallId, let toolName, let result, let isError, let parentToolCallId):
-            return ["type": "tool_execution_end", "toolCallId": toolCallId,
+        case .end(let toolCallId, let toolName, let result, let isError, let parentToolCallId, let durationMs):
+            var object: [String: Any] = ["type": "tool_execution_end", "toolCallId": toolCallId,
                     "toolName": toolName, "result": toolResultResultToDict(result),
                     "isError": isError, "parentToolCallId": parentToolCallId]
+            if let durationMs { object["durationMs"] = durationMs }
+            return object
         }
     case .entryAppended(let entry):
         let data = encodeSessionEntry(entry).data(using: .utf8) ?? Data()
         return ["type": "entry_appended", "entry": (try? JSONSerialization.jsonObject(with: data)) ?? [:]]
-    case .agentSettled:
-        return ["type": "agent_settled"]
+    case .agentSettled(let aborted):
+        return ["type": "agent_settled", "aborted": aborted]
     case .autoCompactionStart(let reason):
         return [
             "type": "auto_compaction_start",
             "reason": reason.rawValue,
         ]
-    case .autoCompactionEnd(let result, let aborted, let willRetry):
+    case .autoCompactionEnd(let result, let aborted, let willRetry, let errorMessage):
         var dict: [String: Any] = [
             "type": "auto_compaction_end",
             "aborted": aborted,
             "willRetry": willRetry,
         ]
+        if let errorMessage { dict["errorMessage"] = errorMessage }
         if let result {
             dict["result"] = [
                 "summary": result.summary,
@@ -80,7 +83,7 @@ public func encodeSessionEventJSON(_ event: AgentSessionEvent) -> String {
         case .turnEnd(let message, let results):
             overrides["message"] = encodeAgentMessageJSON(message)
             overrides["toolResults"] = .array(results.map { result in
-                replacingJSONMembers(OrderedJSON.fromFoundation(toolResultToDict(result)), with: resultMessageOverrides(result))
+                orderedToolResultMessage(result)
             })
         case .messageStart(let message), .messageEnd(let message): overrides["message"] = encodeAgentMessageJSON(message)
         case .messageUpdate(_, let delta):
@@ -101,12 +104,21 @@ public func encodeSessionEventJSON(_ event: AgentSessionEvent) -> String {
         case .update(_, _, let args, let result, _):
             overrides["args"] = toolArgumentsToOrderedJSON(args)
             overrides["partialResult"] = orderedToolResult(result)
-        case .end(_, _, let result, _, _): overrides["result"] = orderedToolResult(result)
+        case .end(_, _, let result, _, _, _): overrides["result"] = orderedToolResult(result)
         }
     case .entryAppended(let entry): overrides["entry"] = try? OrderedJSON.parse(encodeSessionEntry(entry))
     default: break
     }
     return replacingJSONMembers(OrderedJSON.fromFoundation(dict), with: overrides).serialized()
+}
+
+private func orderedToolResultMessage(_ result: ToolResultMessage) -> OrderedJSON {
+    var object = toolResultToDict(result)
+    object.removeValue(forKey: "durationMs")
+    let base = replacingJSONMembers(OrderedJSON.fromFoundation(object), with: resultMessageOverrides(result))
+    guard let durationMs = result.durationMs, case .object(var members) = base else { return base }
+    members.append(("durationMs", .number(String(durationMs))))
+    return .object(members)
 }
 
 private func resultMessageOverrides(_ result: ToolResultMessage) -> [String: OrderedJSON] {
@@ -166,14 +178,16 @@ func encodeAgentEvent(_ event: AgentEvent) -> [String: Any] {
             "args": args.mapValues { $0.value },
             "partialResult": toolResultResultToDict(partialResult),
         ]
-    case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError, _):
-        return [
+    case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError, let durationMs):
+        var object: [String: Any] = [
             "type": event.type,
             "toolCallId": toolCallId,
             "toolName": toolName,
             "result": toolResultResultToDict(result),
             "isError": isError,
         ]
+        if let durationMs { object["durationMs"] = durationMs }
+        return object
     }
 }
 
@@ -188,6 +202,7 @@ private func toolResultToDict(_ message: ToolResultMessage) -> [String: Any] {
     ]
     if let usage = message.usage { object["usage"] = usageToJSONObject(usage) }
     if let nested = message.nestedCalls { object["nestedCalls"] = nestedToolCallsToJSONObject(nested) }
+    if let durationMs = message.durationMs { object["durationMs"] = durationMs }
     return object
 }
 

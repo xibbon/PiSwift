@@ -285,7 +285,8 @@ private func c3Virtual(_ route: @escaping @Sendable (ModelRouteRequest) async th
         cwd: tempDir.path, agentDir: tempDir.path, modelRegistry: registry, offline: true,
         noTools: .all, resourceLoader: TestResourceLoader(), sessionManager: manager,
         settingsManager: SettingsManager.inMemory())
-    let restored = await createAgentSession(options)
+    // C1 U3: SDK tool-list validation now throws.
+    let restored = try await createAgentSession(options)
     defer { restored.session.dispose() }
     #expect(restored.modelFallbackMessage == nil)
     #expect(restored.session.agent.state.model.provider == "router")
@@ -293,7 +294,8 @@ private func c3Virtual(_ route: @escaping @Sendable (ModelRouteRequest) async th
     #expect(restored.session.routedModel?.model.id == "large")
 
     registry.unregisterVirtualModel(provider: "router", id: "auto", sourceId: "route")
-    let fallback = await createAgentSession(options)
+    // C1 U3: SDK tool-list validation now throws.
+    let fallback = try await createAgentSession(options)
     defer { fallback.session.dispose() }
     #expect(fallback.modelFallbackMessage == nil)
     #expect(fallback.session.agent.state.model.provider == "physical")

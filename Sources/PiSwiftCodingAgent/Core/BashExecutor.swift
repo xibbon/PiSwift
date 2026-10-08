@@ -74,12 +74,64 @@ public func executeBashWithOperations(
     options: BashExecutorOptions? = nil
 ) async throws -> BashResult {
     _ = try validatedShellTimeout(options?.timeoutSeconds)
-    return try await operations.execute(command, options: options)
+    let buffer = OutputBuffer()
+    var forwardedOptions = options ?? BashExecutorOptions()
+    forwardedOptions.onChunk = { chunk in
+        buffer.appendText(chunk, onChunk: options?.onChunk)
+    }
+    var result: BashResult
+    do {
+        result = try await operations.execute(command, options: forwardedOptions)
+    } catch {
+        // v1.1.0 bash-executor.ts:122-130: keep partial output when canceled.
+        guard options?.signal?.isCancelled == true else { throw error }
+        buffer.flushPending(onChunk: options?.onChunk)
+        let data = buffer.snapshot()
+        let truncation = truncateTail(String(decoding: data, as: UTF8.self))
+        var path: String?
+        if truncation.truncated {
+            path = try? writeOutputFile(prefix: "pi-bash", extension: ".log", data: data)
+        }
+        return BashResult(
+            output: truncation.content, exitCode: nil, cancelled: true,
+            truncated: truncation.truncated, fullOutputPath: path
+        )
+    }
+    buffer.flushPending(onChunk: options?.onChunk)
+    if let streamed = buffer.snapshot(matchingRawText: Data(result.output.utf8)) {
+        // Keep the chunk boundaries that released long unfinished ANSI sequences.
+        result.output = String(decoding: streamed, as: UTF8.self)
+    } else {
+        // Custom operations can return a tail or a separate result without streaming it.
+        var outputStream = BashOutputStream()
+        result.output = outputStream.appendText(result.output) + outputStream.finish()
+    }
+    // A custom operation can return a spill file with raw bytes. Keep its file intact.
+    if let path = result.fullOutputPath,
+       let bytes = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+        var fileStream = BashOutputStream()
+        let cleanBytes = buffer.snapshot(matchingRawText: bytes) ??
+            Data((fileStream.append(bytes) + fileStream.finish()).utf8)
+        if cleanBytes != bytes {
+            result.fullOutputPath = try? writeOutputFile(prefix: "pi-bash", extension: ".log", data: cleanBytes)
+        }
+    }
+    return result
 }
 
 public func executeBash(_ command: String, options: BashExecutorOptions? = nil) async throws -> BashResult {
     _ = try validatedShellTimeout(options?.timeoutSeconds)
-    return try await BashExecutorRegistry.provider().execute(command, options)
+    return try await executeBashWithOperations(
+        command, operations: ProviderBashOperations(provider: BashExecutorRegistry.provider()), options: options
+    )
+}
+
+private struct ProviderBashOperations: BashOperations {
+    let provider: BashExecutorProvider
+
+    func execute(_ command: String, options: BashExecutorOptions?) async throws -> BashResult {
+        try await provider.execute(command, options)
+    }
 }
 
 private let defaultBashProvider: BashExecutorProvider = {
@@ -200,12 +252,11 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
             let combinedData = buffer.snapshot()
 
             var output = String(decoding: combinedData, as: UTF8.self)
-            output = sanitizeBinaryOutput(output.replacingOccurrences(of: "\r", with: ""))
 
             var fullOutputPath: String? = nil
             var truncated = false
 
-            if combinedData.count > DEFAULT_MAX_BYTES {
+            if buffer.receivedByteCount > DEFAULT_MAX_BYTES {
                 truncated = true
                 fullOutputPath = try? writeOutputFile(prefix: "pi-bash", extension: ".log", data: combinedData)
                 let truncation = truncateTail(output)
@@ -242,67 +293,136 @@ private final class ManagedAtomic: Sendable {
     }
 }
 
-private final class OutputBuffer: Sendable {
-    private struct State: Sendable {
-        var data: Data
-        var decoder: Utf8StreamDecoder
+/// Shared shell output stream for bytes from the system shell and text from custom operations.
+struct BashOutputStream: Sendable {
+    private var decoder = Utf8StreamDecoder()
+    private var pendingAnsi = ""
+
+    mutating func append(_ data: Data) -> String {
+        appendText(decoder.decode(data))
     }
 
-    private let state = LockedState(State(data: Data(), decoder: Utf8StreamDecoder()))
+    mutating func appendText(_ text: String) -> String {
+        let split = splitIncompleteAnsiSuffix(pendingAnsi + text)
+        pendingAnsi = split.pending
+        return clean(split.complete)
+    }
+
+    mutating func finish() -> String {
+        let rest = pendingAnsi + decoder.flush()
+        pendingAnsi = ""
+        return clean(rest)
+    }
+
+    private func clean(_ text: String) -> String {
+        // v1.1.0 bash-executor.ts:78: strip ANSI before binary and CR removal (decision U4).
+        sanitizeBinaryOutput(stripAnsi(text)).replacingOccurrences(of: "\r", with: "")
+    }
+}
+
+private final class OutputBuffer: Sendable {
+    private struct State: Sendable {
+        var data = Data()
+        var stream = BashOutputStream()
+        var receivedByteCount = 0
+        var rawText: Data?
+    }
+
+    private let state = LockedState(State())
 
     func append(_ chunk: Data, onChunk: (@Sendable (String) -> Void)?) {
         guard !chunk.isEmpty else { return }
-        var decoded: String?
-        state.withLock { state in
-            state.data.append(chunk)
-            decoded = state.decoder.decode(chunk)
+        let text = state.withLock { state in
+            state.receivedByteCount += chunk.count
+            let text = state.stream.append(chunk)
+            state.data.append(contentsOf: text.utf8)
+            return text
         }
-        if let decoded, !decoded.isEmpty {
-            let sanitized = sanitizeBinaryOutput(decoded.replacingOccurrences(of: "\r", with: ""))
-            onChunk?(sanitized)
+        if !text.isEmpty { onChunk?(text) }
+    }
+
+    func appendText(_ chunk: String, onChunk: (@Sendable (String) -> Void)?) {
+        guard !chunk.isEmpty else { return }
+        let text = state.withLock { state in
+            state.receivedByteCount += chunk.utf8.count
+            if state.rawText == nil { state.rawText = Data() }
+            state.rawText?.append(contentsOf: chunk.utf8)
+            let text = state.stream.appendText(chunk)
+            state.data.append(contentsOf: text.utf8)
+            return text
         }
+        if !text.isEmpty { onChunk?(text) }
     }
 
     func flushPending(onChunk: (@Sendable (String) -> Void)?) {
-        guard let onChunk else { return }
-        var flushed: String?
-        state.withLock { state in
-            flushed = state.decoder.flush()
+        let text = state.withLock { state in
+            let text = state.stream.finish()
+            state.data.append(contentsOf: text.utf8)
+            return text
         }
-        if let flushed, !flushed.isEmpty {
-            let sanitized = sanitizeBinaryOutput(flushed.replacingOccurrences(of: "\r", with: ""))
-            onChunk(sanitized)
-        }
+        if !text.isEmpty { onChunk?(text) }
     }
 
     func snapshot() -> Data {
         state.withLock { $0.data }
     }
+
+    func snapshot(matchingRawText rawText: Data) -> Data? {
+        state.withLock { $0.rawText == rawText ? $0.data : nil }
+    }
+
+    var receivedByteCount: Int {
+        state.withLock { $0.receivedByteCount }
+    }
 }
 
 private struct Utf8StreamDecoder: Sendable {
-    private var buffer: [UInt8] = []
+    private var pending: [UInt8] = []
+    private var atStart = true
 
     mutating func decode(_ data: Data) -> String {
-        guard !data.isEmpty else { return "" }
-        buffer.append(contentsOf: data)
-        var prefixLength = buffer.count
-        while prefixLength > 0 {
-            if String(bytes: buffer[0..<prefixLength], encoding: .utf8) != nil {
-                break
+        pending.append(contentsOf: data)
+        var end = pending.count
+        // Hold only a valid, incomplete UTF-8 prefix. Invalid bytes must not block later text.
+        if let leadIndex = pending.indices.reversed().first(where: { pending[$0] & 0xc0 != 0x80 }) {
+            let lead = pending[leadIndex]
+            let expectedLength: Int
+            switch lead {
+            case 0xc2...0xdf: expectedLength = 2
+            case 0xe0...0xef: expectedLength = 3
+            case 0xf0...0xf4: expectedLength = 4
+            default: expectedLength = 0
             }
-            prefixLength -= 1
+            let availableLength = pending.count - leadIndex
+            if expectedLength > availableLength {
+                var valid = true
+                if availableLength > 1 {
+                    let second = pending[leadIndex + 1]
+                    switch lead {
+                    case 0xe0: valid = second >= 0xa0
+                    case 0xed: valid = second <= 0x9f
+                    case 0xf0: valid = second >= 0x90
+                    case 0xf4: valid = second <= 0x8f
+                    default: break
+                    }
+                }
+                if valid { end = leadIndex }
+            }
         }
-        guard prefixLength > 0 else { return "" }
-        let decoded = String(bytes: buffer[0..<prefixLength], encoding: .utf8) ?? ""
-        buffer = Array(buffer[prefixLength...])
-        return decoded
+        let decoded = String(decoding: pending[..<end], as: UTF8.self)
+        pending = Array(pending[end...])
+        return removeInitialBom(decoded)
     }
 
     mutating func flush() -> String {
-        guard !buffer.isEmpty else { return "" }
-        let decoded = String(decoding: buffer, as: UTF8.self)
-        buffer.removeAll()
-        return decoded
+        let decoded = String(decoding: pending, as: UTF8.self)
+        pending.removeAll()
+        return removeInitialBom(decoded)
+    }
+
+    private mutating func removeInitialBom(_ text: String) -> String {
+        guard atStart, !text.isEmpty else { return text }
+        atStart = false
+        return text.hasPrefix("\u{feff}") ? String(text.dropFirst()) : text
     }
 }

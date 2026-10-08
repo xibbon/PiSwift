@@ -124,7 +124,8 @@ private func settings085Directory() throws -> URL {
     settings.defaultThinkingLevel = "low"
     settings.modelThinkingLevels = ["\(model.provider)/\(model.id)": .high]
     for (tools, noTools, expected) in [([String]?.none, NoToolsMode?.none, ["read"]), (["write"], .builtin, ["write"]), (nil, .all, [])] {
-        let result = await createAgentSession(CreateAgentSessionOptions(cwd: dir.path, agentDir: dir.path, model: model, offline: true, toolNames: tools, excludeTools: ["grep"], noTools: noTools, customTools: [], hooks: [], settingsManager: .inMemory(settings)))
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(cwd: dir.path, agentDir: dir.path, model: model, offline: true, toolNames: tools, excludeTools: ["grep"], noTools: noTools, customTools: [], hooks: [], settingsManager: .inMemory(settings)))
         #expect(result.session.agent.state.tools.map(\.name).sorted() == expected)
         #expect(result.session.agent.state.thinkingLevel == .high)
         if noTools == .all { #expect(result.session.getAllToolNames().isEmpty) }
@@ -145,7 +146,8 @@ private func settings085Directory() throws -> URL {
         extensionTool.name = "extension-tool"
         api.registerTool(extensionTool)
     }
-    let result = await createAgentSession(CreateAgentSessionOptions(cwd: dir.path, agentDir: dir.path, model: getModel(provider: .anthropic, modelId: "claude-sonnet-4-6"), offline: true, customTools: [CustomToolDefinition(tool: custom)], hooks: [], inlineExtensions: [inline], sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(cwd: dir.path, agentDir: dir.path, model: getModel(provider: .anthropic, modelId: "claude-sonnet-4-6"), offline: true, customTools: [CustomToolDefinition(tool: custom)], hooks: [], inlineExtensions: [inline], sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
     defer { result.session.dispose() }
     #expect(result.session.agent.state.tools.map(\.name).sorted() == ["extension-tool", "grep", "sdk-tool"])
 }

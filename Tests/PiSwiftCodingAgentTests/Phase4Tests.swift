@@ -317,7 +317,8 @@ import PiSwiftAI
         CustomToolResult(content: [.text(TextContent(text: "ok"))])
     }
 
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         cwd: dir,
         agentDir: dir,
         authStorage: authStorage,

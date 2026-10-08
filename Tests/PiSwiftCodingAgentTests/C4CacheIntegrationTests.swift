@@ -17,12 +17,14 @@ import PiSwiftAI
     #expect(await runner.emitCacheWarmingDecision(event) == .warm)
 }
 
-@Test func c4SDKExposesCacheWarmingStatusAndGlobalMode() async {
+// C1 U3: propagate the SDK error; authorized follow-up test edit.
+@Test func c4SDKExposesCacheWarmingStatusAndGlobalMode() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c4-cache-sdk-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let manager = SettingsManager.inMemory()
-    let created = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(
         cwd: directory.path, agentDir: directory.path,
         model: getModel(provider: .openai, modelId: "gpt-4o-mini"),
         offline: true, hooks: [], sessionManager: .inMemory(), settingsManager: manager

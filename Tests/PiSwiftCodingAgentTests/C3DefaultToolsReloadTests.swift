@@ -19,7 +19,8 @@ struct C3DefaultToolsReloadTests {
             _ = api.registerTool(CustomTool(name: "inactive_tool", label: "Inactive", description: "inactive",
                 parameters: [:], execute: { _, _, _, _, _ in AgentToolResult(content: []) }, defaultActive: false))
         }
-        let created = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let created = try await createAgentSession(CreateAgentSessionOptions(
             cwd: directory.path, agentDir: directory.path, authStorage: auth, model: model,
             offline: true, toolNames: tools, excludeTools: exclude, noTools: noTools,
             customTools: [], resourceLoader: TestResourceLoader(), hooks: [],

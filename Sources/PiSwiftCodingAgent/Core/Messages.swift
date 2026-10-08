@@ -28,6 +28,8 @@ public struct BashExecutionMessage: Sendable {
     public var truncated: Bool
     public var fullOutputPath: String?
     public var timestamp: Int64
+    /// Exclude this shell result from model context for the `!!` prefix.
+    public var excludeFromContext: Bool?
 
     public init(
         command: String,
@@ -36,7 +38,8 @@ public struct BashExecutionMessage: Sendable {
         cancelled: Bool,
         truncated: Bool,
         fullOutputPath: String? = nil,
-        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+        timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        excludeFromContext: Bool? = nil
     ) {
         self.command = command
         self.output = output
@@ -45,6 +48,7 @@ public struct BashExecutionMessage: Sendable {
         self.truncated = truncated
         self.fullOutputPath = fullOutputPath
         self.timestamp = timestamp
+        self.excludeFromContext = excludeFromContext
     }
 }
 
@@ -154,6 +158,7 @@ public func convertToLlm(_ messages: [AgentMessage]) -> [Message] {
             switch custom.role {
             case "bashExecution":
                 if let bash = decodeBashExecutionMessage(custom) {
+                    if bash.excludeFromContext == true { continue }
                     let content = UserContent.text(bashExecutionToText(bash))
                     output.append(.user(UserMessage(content: content, timestamp: bash.timestamp)))
                 }
@@ -223,7 +228,7 @@ private func filterImageBlocks(_ blocks: [ContentBlock]) -> (blocks: [ContentBlo
 }
 
 public func makeBashExecutionAgentMessage(_ message: BashExecutionMessage) -> AgentMessage {
-    let payload: [String: Any] = [
+    var payload: [String: Any] = [
         "command": message.command,
         "output": message.output,
         "exitCode": message.exitCode as Any,
@@ -231,6 +236,7 @@ public func makeBashExecutionAgentMessage(_ message: BashExecutionMessage) -> Ag
         "truncated": message.truncated,
         "fullOutputPath": message.fullOutputPath as Any,
     ]
+    if message.excludeFromContext == true { payload["excludeFromContext"] = true }
     return .custom(AgentCustomMessage(role: "bashExecution", payload: AnyCodable(payload), timestamp: message.timestamp))
 }
 
@@ -322,7 +328,8 @@ private func decodeBashExecutionMessage(_ custom: AgentCustomMessage) -> BashExe
         cancelled: cancelled,
         truncated: truncated,
         fullOutputPath: fullOutputPath,
-        timestamp: custom.timestamp
+        timestamp: custom.timestamp,
+        excludeFromContext: payload["excludeFromContext"] as? Bool
     )
 }
 

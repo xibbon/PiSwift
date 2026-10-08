@@ -31,15 +31,9 @@ public enum WheelScrollLines: Sendable, Equatable, Codable {
 }
 
 private func resolveDefaultTools(_ entries: [String]) -> [String] {
-    let plain = entries.filter { !$0.hasPrefix("+") && !$0.hasPrefix("-") }
-    var tools = plain.isEmpty && !entries.isEmpty ? DEFAULT_TOOL_NAMES : plain
-    for entry in entries where entry.hasPrefix("+") || entry.hasPrefix("-") {
-        let name = String(entry.dropFirst())
-        guard !name.isEmpty else { continue }
-        if entry.hasPrefix("+"), !tools.contains(name) { tools.append(name) }
-        if entry.hasPrefix("-") { tools.removeAll { $0 == name } }
-    }
-    return tools
+    let plain = entries.filter { !isToolModifier($0) }
+    return applyToolModifiers(base: plain.isEmpty && !entries.isEmpty ? DEFAULT_TOOL_NAMES : plain,
+                              entries: entries)
 }
 
 public struct CompactionModelOverride: Sendable, Equatable {

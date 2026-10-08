@@ -309,7 +309,8 @@ private func v100Response(_ model: Model, script: String? = nil) -> AssistantMes
     let auth = AuthStorage(":memory:"); auth.setRuntimeApiKey(model.provider, "test")
     let registry = v100Registry(LockedState(V100Observation()), auth: auth)
     let settings = SettingsManager.inMemory()
-    let created = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, modelRegistry: registry,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, modelRegistry: registry,
         model: model, offline: true, toolNames: ["read", "bash", "edit", "write", "codemode"], resourceLoader: TestResourceLoader(),
         inlineExtensions: [createCodemodeExtension()], sessionManager: .inMemory(), settingsManager: settings))
     let session = created.session

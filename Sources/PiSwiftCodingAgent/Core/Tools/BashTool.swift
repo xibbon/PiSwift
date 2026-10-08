@@ -228,8 +228,9 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
         }
 
         let startedAt = ContinuousClock.now
-        let result: BashResult = try await operations.execute(
+        let result: BashResult = try await executeBashWithOperations(
             resolvedCommand,
+            operations: operations,
             options: BashExecutorOptions(
                 onChunk: onChunk,
                 signal: signal,

@@ -50,11 +50,13 @@ private func searchTestTool(_ name: String, _ description: String,
 private func toolSearchSession(settings: Settings = Settings(), noExtensions: Bool = false,
                                additionalPaths: [String] = [],
                                toolNames: [String]? = nil,
-                               customTools: [CustomToolDefinition] = []) async -> CreateAgentSessionResult {
+                               // C1 U3: propagate the SDK error; authorized follow-up test edit.
+                               customTools: [CustomToolDefinition] = []) async throws -> CreateAgentSessionResult {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey(model.provider, "test")
-    return await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    return try await createAgentSession(CreateAgentSessionOptions(
         authStorage: auth, model: model, offline: true, toolNames: toolNames, noTools: .builtin,
         customTools: customTools, resourceLoader: TestResourceLoader(),
         additionalExtensionPaths: additionalPaths,
@@ -64,7 +66,8 @@ private func toolSearchSession(settings: Settings = Settings(), noExtensions: Bo
 
 @Test func toolSearchExplicitInitialLoadoutCanStillDiscoverDeferredTools() async throws {
     // The mcp__ name keeps this deferred tool registered under the tool_search allowlist.
-    let created = await toolSearchSession(toolNames: [TOOL_SEARCH_TOOL_NAME], customTools: [
+    // C1 U3: this helper now propagates the SDK error.
+    let created = try await toolSearchSession(toolNames: [TOOL_SEARCH_TOOL_NAME], customTools: [
         deferredSearchTool("mcp__docs__search", "Search documentation.")
     ])
     let session = created.session
@@ -92,7 +95,8 @@ private func deferredSearchTool(_ name: String, _ description: String,
         deferredSearchTool("private_search", "Search secret files.", exposure: .hidden),
         deferredSearchTool("direct_search", "Search direct files.", exposure: .direct)
     ]
-    let created = await toolSearchSession(customTools: tools)
+    // C1 U3: this helper now propagates the SDK error.
+    let created = try await toolSearchSession(customTools: tools)
     let session = created.session
     defer { session.dispose() }
     #expect(session.getAllTools().contains(where: isToolSearchTool))
@@ -137,27 +141,32 @@ private func deferredSearchTool(_ name: String, _ description: String,
     #expect(hugeLimit.content.compactMap { if case .text(let text) = $0 { text.text } else { nil } } == ["No matching tools found."])
 }
 
-@Test func toolSearchBuiltinCanBeDisabledAndExplicitlyLoaded() async {
+// C1 U3: propagate the SDK error; authorized follow-up test edit.
+@Test func toolSearchBuiltinCanBeDisabledAndExplicitlyLoaded() async throws {
     let loaded = ExtensionLoader.load(createToolSearchExtension(), cwd: "/tmp", eventBus: createEventBus())
     #expect(loaded.hook?.path == "builtin:tool-search")
     #expect(loaded.hook?.replaceable == true && loaded.hook?.hidden == true)
     var settings = Settings()
     settings.extensions = ["-builtin:tool-search"]
-    let disabled = await toolSearchSession(settings: settings)
+    // C1 U3: this helper now propagates the SDK error.
+    let disabled = try await toolSearchSession(settings: settings)
     #expect(!disabled.session.getAllTools().contains { $0.name == TOOL_SEARCH_TOOL_NAME })
     disabled.session.dispose()
 
-    let noExtensions = await toolSearchSession(noExtensions: true)
+    // C1 U3: this helper now propagates the SDK error.
+    let noExtensions = try await toolSearchSession(noExtensions: true)
     #expect(!noExtensions.session.getAllTools().contains { $0.name == TOOL_SEARCH_TOOL_NAME })
     noExtensions.session.dispose()
 
-    let explicit = await toolSearchSession(settings: settings, noExtensions: true,
+    // C1 U3: this helper now propagates the SDK error.
+    let explicit = try await toolSearchSession(settings: settings, noExtensions: true,
         additionalPaths: ["builtin:tool-search"])
     #expect(explicit.session.getAllTools().contains(where: isToolSearchTool))
     explicit.session.dispose()
 }
 
-@Test func toolSearchBuiltinIsReplaceableByAnotherExtension() async {
+// C1 U3: propagate the SDK error; authorized follow-up test edit.
+@Test func toolSearchBuiltinIsReplaceableByAnotherExtension() async throws {
     let replacement = InlineExtension(name: "replacement") { api in
         _ = api.registerTool(CustomTool(name: TOOL_SEARCH_TOOL_NAME, label: "replacement",
             description: "Replacement discovery tool", parameters: [:],
@@ -166,7 +175,8 @@ private func deferredSearchTool(_ name: String, _ description: String,
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey(model.provider, "test")
-    let created = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(
         authStorage: auth, model: model, offline: true, noTools: .builtin,
         resourceLoader: TestResourceLoader(), inlineExtensions: builtInExtensions + [replacement],
         sessionManager: .inMemory(), settingsManager: .inMemory()))
@@ -178,7 +188,8 @@ private func deferredSearchTool(_ name: String, _ description: String,
 }
 
 @Test(.timeLimit(.minutes(1))) func toolSearchActivationIsRecordedForTheNextModelCallAndTranscript() async throws {
-    let created = await toolSearchSession(customTools: [
+    // C1 U3: this helper now propagates the SDK error.
+    let created = try await toolSearchSession(customTools: [
         deferredSearchTool("mcp__docs__search", "Search documentation.",
             namespace: ToolNamespace(name: "mcp__docs", description: "Docs server"))
     ])

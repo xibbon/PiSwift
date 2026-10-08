@@ -118,7 +118,8 @@ private func c3PendingSession(_ pool: C3PendingMcpPool, manager: SessionManager?
         CustomToolDefinition(tool: CustomTool(name: name, label: name, description: name,
             execute: { _, _, _, _, _ in AgentToolResult(content: []) }, defaultActive: name == "base"))
     }
-    let created = await createAgentSession(CreateAgentSessionOptions(cwd: pool.directory.path,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(cwd: pool.directory.path,
         agentDir: pool.directory.path, authStorage: auth, model: model, offline: true,
         toolNames: toolNames, noTools: .builtin,
         customTools: tools, resourceLoader: TestResourceLoader(),

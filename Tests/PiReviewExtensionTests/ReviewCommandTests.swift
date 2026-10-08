@@ -93,7 +93,8 @@ private func startReviewSession(
     let model = getModel(provider: .anthropic, modelId: "claude-sonnet-4-5")
     let authStorage = AuthStorage(":memory:")
     authStorage.setRuntimeApiKey(model.provider, "test-key")
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: the SDK now throws; authorized follow-up test edit.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         cwd: repository,
         agentDir: repository,
         authStorage: authStorage,

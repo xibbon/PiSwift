@@ -36,7 +36,8 @@ private func c2aExposureSession() -> AgentSession {
         toolDefinitions: definitions))
 }
 
-@Test func c2aRegistrationActivatesOnlyDefaultDeclarableTools() async {
+// C1 U3: propagate the SDK error; authorized follow-up test edit.
+@Test func c2aRegistrationActivatesOnlyDefaultDeclarableTools() async throws {
     let definitions: [(String, ToolExposure, Bool?)] = [
         ("direct", .direct, nil), ("model", .modelOnly, nil),
         ("off", .direct, false), ("code", .codemode, nil),
@@ -50,7 +51,8 @@ private func c2aExposureSession() -> AgentSession {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey(model.provider, "test")
-    let created = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(
         authStorage: auth, model: model, offline: true, noTools: .builtin,
         customTools: custom, resourceLoader: TestResourceLoader(),
         sessionManager: .inMemory(), settingsManager: .inMemory()))

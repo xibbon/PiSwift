@@ -335,7 +335,8 @@ private func c3Session(
     }
     await session.runAutoCompaction(reason: .threshold, willRetry: false)
     let endedAborted = events.withLock { stored in stored.contains { event in
-        if case .autoCompactionEnd(_, let aborted, _) = event { return aborted }
+        // C1 U6: compaction end now includes errorMessage.
+        if case .autoCompactionEnd(_, let aborted, _, _) = event { return aborted }
         return false
     } }
     #expect(endedAborted)
@@ -372,7 +373,8 @@ private func c3Session(
     await session.abort()
     await compaction.value
     let aborted = events.withLock { stored in stored.contains { event in
-        if case .autoCompactionEnd(_, let cancelled, _) = event { return cancelled }
+        // C1 U6: compaction end now includes errorMessage.
+        if case .autoCompactionEnd(_, let cancelled, _, _) = event { return cancelled }
         return false
     } }
     #expect(aborted)

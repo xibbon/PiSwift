@@ -170,7 +170,8 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage(":memory:")
     auth.setRuntimeApiKey(model.provider, "test")
-    let created = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let created = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, noTools: .builtin, resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory()))
     defer { created.session.dispose() }
@@ -181,25 +182,29 @@ private func codemodeRun(_ code: String, session: SessionManager = .inMemory(),
     settings.defaultTools = ["+codemode"]
     // v1.0.4 C2 (upstream sdk.ts:274-276, unchanged since v0.99.1): `noTools` ignores `defaultTools`,
     // and codemode is not default-active, so only the default selection activates it.
-    let enabled = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let enabled = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
     defer { enabled.session.dispose() }
     #expect(enabled.session.getActiveToolNames().contains(CODEMODE_TOOL_NAME))
-    let noBuiltins = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let noBuiltins = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, noTools: .builtin, resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
     defer { noBuiltins.session.dispose() }
     #expect(!noBuiltins.session.getActiveToolNames().contains(CODEMODE_TOOL_NAME))
 
     settings.extensions = ["-builtin:codemode"]
-    let disabled = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let disabled = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, noTools: .builtin, resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
     defer { disabled.session.dispose() }
     #expect(!disabled.session.getAllTools().contains { $0.name == CODEMODE_TOOL_NAME })
 
-    let explicit = await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
+    // C1 U3: SDK tool-list validation now throws.
+    let explicit = try await createAgentSession(CreateAgentSessionOptions(authStorage: auth, model: model,
         offline: true, toolNames: [CODEMODE_TOOL_NAME], resourceLoader: TestResourceLoader(),
         inlineExtensions: builtInExtensions, sessionManager: .inMemory(), settingsManager: .inMemory()))
     defer { explicit.session.dispose() }

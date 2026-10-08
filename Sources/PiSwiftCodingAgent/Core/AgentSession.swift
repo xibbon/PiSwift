@@ -24,9 +24,9 @@ public enum AgentSessionEvent: Sendable {
     case agent(AgentEvent)
     case nestedToolExecution(NestedToolExecutionEvent)
     case entryAppended(SessionEntry)
-    case agentSettled
+    case agentSettled(aborted: Bool = false)
     case autoCompactionStart(reason: AutoCompactionReason)
-    case autoCompactionEnd(result: CompactionResult?, aborted: Bool, willRetry: Bool)
+    case autoCompactionEnd(result: CompactionResult?, aborted: Bool, willRetry: Bool, errorMessage: String? = nil)
     case autoRetryStart(attempt: Int, maxAttempts: Int, delayMs: Int, errorMessage: String)
     case autoRetryEnd(success: Bool, attempt: Int, finalError: String?)
 
@@ -74,6 +74,8 @@ public struct AgentSessionConfig: Sendable {
     public var eventBus: EventBus?
     /// Activate new defaultTools names on reload when the initial selection uses settings.
     public var usesDefaultTools: Bool
+    /// Exact-name modifiers applied to defaults at startup and reload.
+    public var defaultToolModifiers: [String]
     /// Tool names or patterns to remove. `*` matches any characters.
     public var excludedToolNames: Set<String>
     /// Tool names or patterns to permit. A non-empty set without an `mcp__` entry
@@ -114,6 +116,7 @@ public struct AgentSessionConfig: Sendable {
         skillsSettings: SkillsSettings? = nil,
         eventBus: EventBus? = nil,
         usesDefaultTools: Bool = false,
+        defaultToolModifiers: [String] = [],
         excludedToolNames: Set<String> = [],
         allowedToolNames: Set<String>? = nil,
         toolRegistry: [String: AgentTool]? = nil,
@@ -140,6 +143,7 @@ public struct AgentSessionConfig: Sendable {
         self.skillsSettings = skillsSettings
         self.eventBus = eventBus
         self.usesDefaultTools = usesDefaultTools
+        self.defaultToolModifiers = defaultToolModifiers
         self.excludedToolNames = excludedToolNames
         self.allowedToolNames = allowedToolNames
         self.toolRegistry = toolRegistry
@@ -497,6 +501,7 @@ public final class AgentSession: Sendable {
         var pendingToolNames: Set<String> = []
         var addedDefaultToolNames: [String] = []
         var usesDefaultTools: Bool
+        var defaultToolModifiers: [String]
         var excludedTools: ToolNameMatcher
         var allowedTools: ToolNameMatcher?
         var allowlistFiltersMcp: Bool
@@ -516,6 +521,7 @@ public final class AgentSession: Sendable {
     /// polling or unchecked Sendable storage.
     private actor AgentSessionIdleWaiter {
         private var isRunActive = false
+        private var abortRequested = false
         private var generation = 0
         private var settlingGeneration: Int?
         private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -524,6 +530,15 @@ public final class AgentSession: Sendable {
             generation += 1
             settlingGeneration = nil
             isRunActive = true
+            abortRequested = false
+        }
+
+        func requestAbort() {
+            if isRunActive { abortRequested = true }
+        }
+
+        func wasAborted(_ expectedGeneration: Int) -> Bool {
+            generation == expectedGeneration && abortRequested
         }
 
         func waitForIdle() async {
@@ -886,6 +901,7 @@ public final class AgentSession: Sendable {
             runSystemPromptAppend: nil,
             systemPromptOptions: config.systemPromptOptions ?? BuildSystemPromptOptions(cwd: config.sessionManager.getCwd()),
             usesDefaultTools: config.usesDefaultTools,
+            defaultToolModifiers: config.defaultToolModifiers,
             excludedTools: ToolNameMatcher(Array(config.excludedToolNames)),
             allowedTools: config.allowedToolNames.map { ToolNameMatcher(Array($0)) },
             allowlistFiltersMcp: config.allowedToolNames.map {
@@ -1420,10 +1436,11 @@ public final class AgentSession: Sendable {
         }
         state.withLock { $0.isEmittingAgentSettled = true }
         await cacheWarmer?.onAgentSettled()
+        let aborted = await idleWaiter.wasAborted(generation)
         if let hookRunner = _hookRunner {
-            _ = await hookRunner.emit(AgentSettledEvent())
+            _ = await hookRunner.emit(AgentSettledEvent(aborted: aborted))
         }
-        emit(.agentSettled)
+        emit(.agentSettled(aborted: aborted))
         let deferred = state.withLock { state in
             state.isEmittingAgentSettled = false
             let actions = state.deferredSettledActions
@@ -1576,13 +1593,14 @@ public final class AgentSession: Sendable {
                         partialResult: partialResult
                     ))
                 }
-            case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError, _):
+            case .toolExecutionEnd(let toolCallId, let toolName, let result, let isError, let durationMs):
                 enqueueOnEventQueue {
                     _ = await hookRunner.emit(ToolExecutionEndEvent(
                         toolCallId: toolCallId,
                         toolName: toolName,
                         result: result,
-                        isError: isError
+                        isError: isError,
+                        durationMs: durationMs
                     ))
                 }
             }
@@ -1868,7 +1886,7 @@ public final class AgentSession: Sendable {
         }
 
         let queuedPrompts = finishCompaction(compactionToken)
-        emit(.autoCompactionEnd(result: result, aborted: aborted, willRetry: result != nil && !aborted && willRetry))
+        emit(.autoCompactionEnd(result: result, aborted: aborted, willRetry: result != nil && !aborted && willRetry, errorMessage: aborted ? nil : failure))
         await deliverQueuedCompactionPrompts(queuedPrompts)
 
         guard result != nil, !aborted else { return }
@@ -2082,10 +2100,10 @@ public final class AgentSession: Sendable {
                 _ = await runner.emit(ToolExecutionUpdateEvent(toolCallId: id, toolName: name,
                                                                 args: args, partialResult: partial,
                                                                 parentToolCallId: parent))
-            case .end(let id, let name, let result, let isError, let parent):
+            case .end(let id, let name, let result, let isError, let parent, let durationMs):
                 _ = await runner.emit(ToolExecutionEndEvent(toolCallId: id, toolName: name,
                                                              result: result, isError: isError,
-                                                             parentToolCallId: parent))
+                                                             parentToolCallId: parent, durationMs: durationMs))
             }
         }
         emit(.nestedToolExecution(event))
@@ -2276,10 +2294,13 @@ public final class AgentSession: Sendable {
     /// Reload settings and resources first. Then call `reloadExtensions()` to rebuild tools
     /// and activate names newly added to defaultTools.
     public func reload() async {
-        let usesDefaults = state.withLock { $0.usesDefaultTools }
-        let previousDefaults = Set(usesDefaults ? (settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES) : [])
+        let (usesDefaults, modifiers) = state.withLock { ($0.usesDefaultTools, $0.defaultToolModifiers) }
+        let previousDefaults = Set(usesDefaults ? applyToolModifiers(
+            base: settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES, entries: modifiers) : [])
         await settingsManager.reload()
-        let added = usesDefaults ? (settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES).filter { !previousDefaults.contains($0) } : []
+        let added = usesDefaults ? applyToolModifiers(
+            base: settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES, entries: modifiers)
+            .filter { !previousDefaults.contains($0) } : []
         state.withLock { current in
             current.addedDefaultToolNames.append(contentsOf: added)
         }
@@ -2758,6 +2779,7 @@ public final class AgentSession: Sendable {
     }
 
     public func abort() async {
+        await idleWaiter.requestAbort()
         state.withLock { $0.agentRunAbortRequested = true }
         abortRetry()
         finishCancelledRetry(attempt: retryAttempt)
@@ -2812,14 +2834,14 @@ public final class AgentSession: Sendable {
     }
 
     public func recordBashResult(_ command: String, _ result: BashResult, excludeFromContext: Bool) {
-        guard !excludeFromContext else { return }
         let message = BashExecutionMessage(
             command: command,
             output: result.output,
             exitCode: result.exitCode,
             cancelled: result.cancelled,
             truncated: result.truncated,
-            fullOutputPath: result.fullOutputPath
+            fullOutputPath: result.fullOutputPath,
+            excludeFromContext: excludeFromContext ? true : nil
         )
 
         if isStreaming {

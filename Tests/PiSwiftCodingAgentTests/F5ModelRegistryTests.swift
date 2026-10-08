@@ -272,7 +272,8 @@ private func f5DoneStream(_ model: Model) -> AssistantMessageEventStream {
     let registry = fixture.registry()
     let model = try #require(registry.find("f5-custom", "demo"))
     let received = LockedState<SimpleStreamOptions?>(nil)
-    let result = await createAgentSession(CreateAgentSessionOptions(cwd: fixture.directory.path,
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(cwd: fixture.directory.path,
         agentDir: fixture.directory.appendingPathComponent("agent").path, authStorage: fixture.auth, modelRegistry: registry, model: model,
         projectTrusted: true, offline: true, noTools: .all, resourceLoader: TestResourceLoader(), hooks: [], noExtensions: true,
         sessionManager: .inMemory(), settingsManager: .inMemory()))
@@ -307,7 +308,8 @@ private func f5DoneStream(_ model: Model) -> AssistantMessageEventStream {
     let received = LockedState<[SimpleStreamOptions]>([])
     var settings = Settings()
     settings.compaction = CompactionSettingsOverrides(enabled: true, reserveTokens: 10, keepRecentTokens: 1)
-    let result = await createAgentSession(CreateAgentSessionOptions(cwd: fixture.directory.path,
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(cwd: fixture.directory.path,
         agentDir: fixture.directory.appendingPathComponent("agent").path, authStorage: fixture.auth, modelRegistry: registry, model: model,
         projectTrusted: true, offline: true, noTools: .all, resourceLoader: TestResourceLoader(), hooks: [], noExtensions: true,
         sessionManager: .inMemory(), settingsManager: .inMemory(settings)))
@@ -334,7 +336,8 @@ private func f5DoneStream(_ model: Model) -> AssistantMessageEventStream {
         apiKey: "!echo run >> '\(keyCounter.path)'; printf key", headers: ["X-Request": "!echo run >> '\(headerCounter.path)'; printf header"],
         models: [HookProviderModel(id: "demo")]), sourceId: "f5")
     let model = try #require(registry.find("f5-custom", "demo"))
-    let result = await createAgentSession(CreateAgentSessionOptions(cwd: fixture.directory.path,
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(cwd: fixture.directory.path,
         agentDir: fixture.directory.appendingPathComponent("agent").path, authStorage: fixture.auth, modelRegistry: registry, model: model,
         projectTrusted: true, offline: true, noTools: .all, resourceLoader: TestResourceLoader(), hooks: [], noExtensions: true,
         sessionManager: .inMemory(), settingsManager: .inMemory()))

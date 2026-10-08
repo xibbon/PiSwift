@@ -32,6 +32,7 @@ public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
         ]
         if let usage = result.usage { dict["usage"] = usageToJSONObject(usage) }
         if let nested = result.nestedCalls { dict["nestedCalls"] = nestedToolCallsToJSONObject(nested) }
+        if let durationMs = result.durationMs { dict["durationMs"] = durationMs }
         return dict
     case .custom(let custom):
         var dict: [String: Any] = ["role": custom.role, "timestamp": custom.timestamp]
@@ -57,7 +58,12 @@ public func encodeAgentMessageJSON(_ message: AgentMessage) -> OrderedJSON {
     case .toolResult(let result):
         var overrides: [String: OrderedJSON] = ["content": .array(result.content.map(contentBlockToOrderedJSON))]
         if let nested = result.nestedCalls { overrides["nestedCalls"] = nestedToolCallsToOrderedJSON(nested) }
-        return replacingJSONMembers(base, with: overrides)
+        var object = encodeAgentMessageDict(message)
+        object.removeValue(forKey: "durationMs")
+        let ordered = replacingJSONMembers(OrderedJSON.fromFoundation(object), with: overrides)
+        guard let durationMs = result.durationMs, case .object(var members) = ordered else { return ordered }
+        members.append(("durationMs", .number(String(durationMs))))
+        return .object(members)
     case .user(let user):
         if case .blocks(let blocks) = user.content {
             return replacingJSONMembers(base, with: ["content": .array(blocks.map(contentBlockToOrderedJSON))])

@@ -179,7 +179,8 @@ private func v104SdkDisabledBuiltinsOverrideSettingsAndExplicitPaths(_ noExtensi
     settings.extensions = ["+builtin:mcp"]
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let auth = AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))])
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         cwd: directory.path, agentDir: directory.path, authStorage: auth, model: model,
         offline: true, noTools: .all, hooks: [], additionalExtensionPaths: ["builtin:mcp"],
         inlineExtensions: [
@@ -198,7 +199,8 @@ private func v104SdkDisabledBuiltinsOverrideSettingsAndExplicitPaths(_ noExtensi
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
-    let result = await createAgentSession(CreateAgentSessionOptions(
+    // C1 U3: SDK tool-list validation now throws.
+    let result = try await createAgentSession(CreateAgentSessionOptions(
         cwd: directory.path, agentDir: directory.path,
         authStorage: AuthStorage.inMemory([model.provider: .apiKey(ApiKeyCredential(key: "test"))]),
         model: model, offline: true, noTools: .all, hooks: [],

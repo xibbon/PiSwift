@@ -390,7 +390,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
 
         // Start with no extensions, then add one via reload — proves the agent's tool
         // roster picks up newly-registered tools.
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             cwd: tempDir,
             agentDir: agentDir
         ))
@@ -440,7 +441,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let extPath = (extDir as NSString).appendingPathComponent("tool-extension.swift")
         try FileManager.default.copyItem(atPath: toolSource, toPath: extPath)
 
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             cwd: tempDir,
             agentDir: agentDir
         ))
@@ -1207,7 +1209,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let authStorage = AuthStorage(":memory:")
         let modelRegistry = ModelRegistry(authStorage)
 
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             cwd: tempDir,
             agentDir: agentDir,
             authStorage: authStorage,
@@ -1253,7 +1256,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
                 encoding: .utf8
             )
 
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             cwd: tempDir,
             agentDir: agentDir,
             authStorage: AuthStorage(":memory:"),
@@ -1289,7 +1293,8 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let agentDir = (tempDir as NSString).appendingPathComponent("agent")
         try FileManager.default.createDirectory(atPath: agentDir, withIntermediateDirectories: true)
 
-        let result = await createAgentSession(CreateAgentSessionOptions(
+        // C1 U3: SDK tool-list validation now throws.
+        let result = try await createAgentSession(CreateAgentSessionOptions(
             cwd: tempDir,
             agentDir: agentDir,
             additionalExtensionPaths: [helloSource]
