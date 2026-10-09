@@ -6,20 +6,29 @@ public typealias ApiStreamFunction = @Sendable (Model, TranscriptContext, Stream
 /// Function type for streaming with simple options.
 public typealias ApiStreamSimpleFunction = @Sendable (Model, TranscriptContext, SimpleStreamOptions?) -> AssistantMessageEventStream
 
+public typealias ApiFetchDeferredFunction = @Sendable (Model, DeferredHandle, DeferredFetchOptions?) -> AssistantMessageEventStream
+public typealias ApiCancelDeferredFunction = @Sendable (Model, DeferredHandle, DeferredCancelOptions?) async throws -> Void
+
 /// A registered API provider with stream functions.
 public struct ApiProvider: Sendable {
     public let api: Api
     public let stream: ApiStreamFunction
     public let streamSimple: ApiStreamSimpleFunction
+    public let fetchDeferred: ApiFetchDeferredFunction?
+    public let cancelDeferred: ApiCancelDeferredFunction?
 
     public init(
         api: Api,
         stream: @escaping ApiStreamFunction,
-        streamSimple: @escaping ApiStreamSimpleFunction
+        streamSimple: @escaping ApiStreamSimpleFunction,
+        fetchDeferred: ApiFetchDeferredFunction? = nil,
+        cancelDeferred: ApiCancelDeferredFunction? = nil
     ) {
         self.api = api
         self.stream = stream
         self.streamSimple = streamSimple
+        self.fetchDeferred = fetchDeferred
+        self.cancelDeferred = cancelDeferred
     }
 }
 

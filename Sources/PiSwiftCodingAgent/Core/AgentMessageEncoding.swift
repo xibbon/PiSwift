@@ -4,36 +4,10 @@ import PiSwiftAgent
 
 public func encodeAgentMessageDict(_ message: AgentMessage) -> [String: Any] {
     switch message {
-    case .system(let system):
-        return systemMessageToJSONObject(system)
-    case .user(let user):
-        var dict: [String: Any] = [
-            "role": "user",
-            "timestamp": user.timestamp,
-        ]
-        switch user.content {
-        case .text(let text):
-            dict["content"] = text
-        case .blocks(let blocks):
-            dict["content"] = blocks.map { contentBlockToDict($0) }
-        }
-        return dict
-    case .assistant(let assistant):
-        return assistantMessageToJSONObject(assistant)
-    case .toolResult(let result):
-        var dict: [String: Any] = [
-            "role": "toolResult",
-            "toolCallId": result.toolCallId,
-            "toolName": result.toolName,
-            "content": result.content.map { contentBlockToDict($0) },
-            "details": result.details?.jsonValue as Any,
-            "isError": result.isError,
-            "timestamp": result.timestamp,
-        ]
-        if let usage = result.usage { dict["usage"] = usageToJSONObject(usage) }
-        if let nested = result.nestedCalls { dict["nestedCalls"] = nestedToolCallsToJSONObject(nested) }
-        if let durationMs = result.durationMs { dict["durationMs"] = durationMs }
-        return dict
+    case .system(let system): return messageToJSONObject(.system(system))
+    case .user(let user): return messageToJSONObject(.user(user))
+    case .assistant(let assistant): return messageToJSONObject(.assistant(assistant))
+    case .toolResult(let result): return messageToJSONObject(.toolResult(result))
     case .custom(let custom):
         var dict: [String: Any] = ["role": custom.role, "timestamp": custom.timestamp]
         if let payload = custom.payload?.jsonValue as? [String: Any] {
@@ -51,24 +25,6 @@ private func encodeUsage(_ usage: Usage) -> [String: Any] {
 
 /// Encode a message with system section and tool argument order.
 public func encodeAgentMessageJSON(_ message: AgentMessage) -> OrderedJSON {
-    if case .system(let system) = message { return systemMessageToOrderedJSON(system) }
-    let base = OrderedJSON.fromFoundation(encodeAgentMessageDict(message))
-    switch message {
-    case .assistant(let assistant): return assistantMessageToOrderedJSON(assistant)
-    case .toolResult(let result):
-        var overrides: [String: OrderedJSON] = ["content": .array(result.content.map(contentBlockToOrderedJSON))]
-        if let nested = result.nestedCalls { overrides["nestedCalls"] = nestedToolCallsToOrderedJSON(nested) }
-        var object = encodeAgentMessageDict(message)
-        object.removeValue(forKey: "durationMs")
-        let ordered = replacingJSONMembers(OrderedJSON.fromFoundation(object), with: overrides)
-        guard let durationMs = result.durationMs, case .object(var members) = ordered else { return ordered }
-        members.append(("durationMs", .number(String(durationMs))))
-        return .object(members)
-    case .user(let user):
-        if case .blocks(let blocks) = user.content {
-            return replacingJSONMembers(base, with: ["content": .array(blocks.map(contentBlockToOrderedJSON))])
-        }
-        return base
-    default: return base
-    }
+    if let message = message.asMessage { return messageToOrderedJSON(message) }
+    return OrderedJSON.fromFoundation(encodeAgentMessageDict(message))
 }

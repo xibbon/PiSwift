@@ -248,69 +248,39 @@ func clampSimpleMaxTokensToContext(model: Model, context: Context, maxTokens: In
 
 func clampSimpleMaxTokensToContext(model: Model, context: TranscriptContext, maxTokens: Int) -> Int {
     guard model.contextWindow > 0 else { return max(1, maxTokens) }
-    return min(maxTokens, max(1, model.contextWindow - estimateContextTokens(context) - 4_096))
-}
-
-func estimateContextTokens(_ context: TranscriptContext) -> Int {
-    func tokens(_ text: String) -> Int { (2 * text.utf16.count + 6) / 7 }
-    func blocks(_ content: [ContentBlock]) -> Int {
-        var chars = 0
-        for block in content {
-            switch block {
-            case .text(let text): chars += text.text.utf16.count
-            case .thinking(let thinking): chars += thinking.thinking.utf16.count
-            case .image: chars += 4_800
-            case .toolCall(let call): chars += call.name.utf16.count + jsonString(from: call.arguments).utf16.count
-            }
-        }
-        return (2 * chars + 6) / 7
-    }
-    func tools(_ list: [AITool]?) -> Int {
-        guard let list, !list.isEmpty else { return 0 }
-        let system = SystemMessage(content: .text(""), toolsAdded: list)
-        return systemMessageToOrderedJSON(system)["toolsAdded"].map { tokens($0.serialized(escapeSlashes: false)) } ?? 0
-    }
-    func estimate(_ message: Message) -> Int {
-        switch message {
-        case .system(let system):
-            let removed = system.toolsRemoved?.isEmpty == false ? systemMessageToOrderedJSON(system)["toolsRemoved"] : nil
-            return tokens(getSystemMessageText(system)) + tools(system.toolsAdded) + (removed.map { tokens($0.serialized(escapeSlashes: false)) } ?? 0)
-        case .user(let user):
-            switch user.content {
-            case .text(let text): return tokens(text)
-            case .blocks(let content): return blocks(content)
-            }
-        case .assistant(let assistant): return blocks(assistant.content)
-        case .toolResult(let result): return blocks(result.content)
-        }
-    }
-    var latestTimestamp = Int64.min
-    var usageInfo: (index: Int, tokens: Int)?
-    for (index, message) in context.messages.enumerated() {
-        let timestamp: Int64
-        switch message {
-        case .system(let item): timestamp = item.timestamp
-        case .user(let item): timestamp = item.timestamp
-        case .assistant(let item):
-            timestamp = item.timestamp
-            let amount = item.usage.totalTokens > 0 ? item.usage.totalTokens :
-                item.usage.input + item.usage.output + item.usage.cacheRead + item.usage.cacheWrite
-            if timestamp >= latestTimestamp && item.stopReason != .aborted && item.stopReason != .error && amount > 0 {
-                usageInfo = (index, amount)
-            }
-        case .toolResult(let item): timestamp = item.timestamp
-        }
-        latestTimestamp = max(latestTimestamp, timestamp)
-    }
-    if let usageInfo {
-        return usageInfo.tokens + context.messages.dropFirst(usageInfo.index + 1).reduce(0) { $0 + estimate($1) }
-    }
-    return context.messages.reduce(0) { $0 + estimate($1) }
+    return min(maxTokens, max(1, model.contextWindow - estimateContextTokens(context).tokens - 4_096))
 }
 
 public func completeSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) async throws -> AssistantMessage {
     let stream = try streamSimple(model: model, context: context, options: options)
     return await stream.result()
+}
+
+public func streamDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions? = nil) throws -> AssistantMessageEventStream {
+    if getApiProvider(model.api) == nil { ensureBuiltInProviders() }
+    guard let provider = getApiProvider(model.api) else {
+        throw StreamError.noApiProvider(model.api.rawValue)
+    }
+    guard let fetch = provider.fetchDeferred else {
+        throw StreamError.deferredUnsupported(provider: model.provider)
+    }
+    return fetch(model, handle, options)
+}
+
+public func fetchDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions? = nil) async throws -> AssistantMessage {
+    let stream = try streamDeferred(model: model, handle: handle, options: options)
+    return await stream.result()
+}
+
+public func cancelDeferred(model: Model, handle: DeferredHandle, options: DeferredCancelOptions? = nil) async throws {
+    if getApiProvider(model.api) == nil { ensureBuiltInProviders() }
+    guard let provider = getApiProvider(model.api) else {
+        throw StreamError.noApiProvider(model.api.rawValue)
+    }
+    guard let cancel = provider.cancelDeferred else {
+        throw StreamError.deferredUnsupported(provider: model.provider)
+    }
+    try await cancel(model, handle, options)
 }
 
 func mapAnthropicSimpleOptions(model: Model, context: TranscriptContext, options: SimpleStreamOptions?, apiKey: String) -> AnthropicOptions {
@@ -762,6 +732,7 @@ func mergeThinkingBudgets(_ budgets: ThinkingBudgets?, reasoning: ThinkingLevel,
 public enum StreamError: Error, LocalizedError, Sendable {
     case missingApiKey(String)
     case noApiProvider(String)
+    case deferredUnsupported(provider: String)
     case providerRequest(statusCode: Int?, headers: [String: String]?, message: String)
     case retryDelayExceedsMaximum(requestedMs: Double, maximumMs: Double, providerMessage: String)
     case requestAborted
@@ -776,6 +747,8 @@ public enum StreamError: Error, LocalizedError, Sendable {
             return "No API key for provider: \(provider)"
         case .noApiProvider(let api):
             return "No API provider registered for api: \(api)"
+        case .deferredUnsupported(let provider):
+            return "Provider \(provider) does not support deferred responses"
         case .providerRequest(_, _, let message):
             return message
         case .retryDelayExceedsMaximum(let requestedMs, let maximumMs, let providerMessage):

@@ -124,7 +124,7 @@ public final class AssistantMessageEventStream: AsyncSequence, Sendable {
         continuation = pair.continuation
     }
 
-    private func time(_ message: AssistantMessage) -> AssistantMessage {
+    func time(_ message: AssistantMessage) -> AssistantMessage {
         var message = message
         guard message.durationMs == nil, message.timestamp >= startedAt else { return message }
         let elapsed = startedAtMonotonic.duration(to: ContinuousClock.now).components

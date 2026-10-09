@@ -271,7 +271,83 @@ public struct StreamOptions: Sendable {
     }
 }
 
+public enum DeferredWindow: String, Sendable, Equatable, Codable {
+    case fifteenMinutes = "15m"
+    case oneHour = "1h"
+    case twentyFourHours = "24h"
+}
+
+/// Ask a capable provider to return a durable handle and continue the request asynchronously.
+public struct DeferredRequest: Sendable, Equatable {
+    public var window: DeferredWindow?
+
+    public init(window: DeferredWindow? = nil) {
+        self.window = window
+    }
+}
+
+public struct DeferredFetchOptions: Sendable {
+    public var apiKey: String?
+    public var headers: ProviderHeaders?
+    public var env: [String: String]?
+    public var signal: CancellationToken?
+    public var timeoutMs: Int?
+    public var onResponse: ResponseHandler?
+    public var httpClient: (any ProviderHTTPClient)?
+    /// Maximum provider long-poll duration in milliseconds. `nil` or 0 performs one status check.
+    public var wait: Int?
+
+    public init(
+        apiKey: String? = nil,
+        headers: ProviderHeaders? = nil,
+        env: [String: String]? = nil,
+        signal: CancellationToken? = nil,
+        timeoutMs: Int? = nil,
+        onResponse: ResponseHandler? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil,
+        wait: Int? = nil
+    ) {
+        self.apiKey = apiKey
+        self.headers = headers
+        self.env = env
+        self.signal = signal
+        self.timeoutMs = timeoutMs
+        self.onResponse = onResponse
+        self.httpClient = httpClient
+        self.wait = wait
+    }
+}
+
+public struct DeferredCancelOptions: Sendable {
+    public var apiKey: String?
+    public var headers: ProviderHeaders?
+    public var env: [String: String]?
+    public var signal: CancellationToken?
+    public var timeoutMs: Int?
+    public var onResponse: ResponseHandler?
+    public var httpClient: (any ProviderHTTPClient)?
+
+    public init(
+        apiKey: String? = nil,
+        headers: ProviderHeaders? = nil,
+        env: [String: String]? = nil,
+        signal: CancellationToken? = nil,
+        timeoutMs: Int? = nil,
+        onResponse: ResponseHandler? = nil,
+        httpClient: (any ProviderHTTPClient)? = nil
+    ) {
+        self.apiKey = apiKey
+        self.headers = headers
+        self.env = env
+        self.signal = signal
+        self.timeoutMs = timeoutMs
+        self.onResponse = onResponse
+        self.httpClient = httpClient
+    }
+}
+
 public struct SimpleStreamOptions: Sendable {
+    public var deferred: DeferredRequest?
     public var env: [String: String]?
     public var temperature: Double?
     public var samplingParams: SamplingParams?
@@ -332,8 +408,10 @@ public struct SimpleStreamOptions: Sendable {
         azureApiVersion: String? = nil,
         azureResourceName: String? = nil,
         azureBaseUrl: String? = nil,
-        azureDeploymentName: String? = nil
+        azureDeploymentName: String? = nil,
+        deferred: DeferredRequest? = nil
     ) {
+        self.deferred = deferred
         self.env = env
         self.toolChoice = toolChoice
 
@@ -1352,7 +1430,7 @@ public enum StopReason: String, Sendable {
     case deferred
 }
 
-public struct DeferredHandle: Sendable {
+public struct DeferredHandle: Sendable, Equatable {
     public var provider: String
     public var modelId: String
     public var api: String

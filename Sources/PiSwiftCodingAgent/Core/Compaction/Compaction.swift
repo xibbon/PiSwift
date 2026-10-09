@@ -85,10 +85,6 @@ public struct CompactionPreparation: Sendable {
     }
 }
 
-public func calculateContextTokens(_ usage: Usage) -> Int {
-    usage.totalTokens == 0 ? usage.input + usage.output + usage.cacheRead + usage.cacheWrite : usage.totalTokens
-}
-
 public func getLastAssistantUsage(_ entries: [SessionEntry]) -> Usage? {
     for entry in entries.reversed() {
         if case .message(let msgEntry) = entry, case .assistant(let assistant) = msgEntry.message {
@@ -101,13 +97,8 @@ public func getLastAssistantUsage(_ entries: [SessionEntry]) -> Usage? {
     return nil
 }
 
-public struct ContextUsageEstimate: Sendable {
-    public var tokens: Int
-    public var usageTokens: Int
-    public var trailingTokens: Int
-    public var lastUsageIndex: Int?
-}
-
+// `ContextUsageEstimate` is the PiSwiftAI type (upstream `ai/src/utils/estimate.ts`); one public type
+// avoids an ambiguous name for code that imports both modules.
 public func estimateContextTokens(_ messages: [AgentMessage]) -> ContextUsageEstimate {
     let usageIndex = messages.indices.reversed().first { index in
         if case .assistant(let assistant) = messages[index] {
