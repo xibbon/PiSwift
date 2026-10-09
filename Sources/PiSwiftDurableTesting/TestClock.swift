@@ -1,6 +1,7 @@
 import Synchronization
 import PiSwiftDurable
 
+/// A manually advanced clock for deterministic sleep and retry tests.
 public final class TestClock: DurableClock, Sendable {
     private struct Sleeper: Sendable {
         let deadline: Int64
@@ -12,9 +13,13 @@ public final class TestClock: DurableClock, Sendable {
         var sleepers: [Int: Sleeper] = [:]
     }
     private let state: Mutex<State>
+    /// Creates a manual clock at the supplied millisecond time.
     public init(now: Int64 = 0) { state = Mutex(State(now: now)) }
+    /// The current manually controlled time in milliseconds.
     public func now() -> Int64 { state.withLock { $0.now } }
+    /// The number of test sleeps that have not reached their deadline.
     public var pendingSleeperCount: Int { state.withLock { $0.sleepers.count } }
+    /// Moves the test clock forward and wakes sleeps whose deadlines have passed.
     public func advance(by milliseconds: Int64) {
         precondition(milliseconds >= 0)
         let ready = state.withLock { state in
@@ -25,6 +30,7 @@ public final class TestClock: DurableClock, Sendable {
         }
         for sleeper in ready { sleeper.continuation.resume() }
     }
+    /// Waits until the millisecond deadline or Swift task cancellation.
     public func sleep(until deadline: Int64) async throws {
         let id = state.withLock { state in state.nextID += 1; return state.nextID }
         try await withTaskCancellationHandler {

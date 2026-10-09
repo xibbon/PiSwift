@@ -6,6 +6,7 @@ extension ToolExecutionApi {
         try runtime.invocation.check()
         return runtime
     }
+    /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext) async throws -> T {
         try await withTaskCancellationContext(context) { context in
             let runtime = try taskRuntime()
@@ -14,25 +15,31 @@ extension ToolExecutionApi {
             }
         }
     }
+    /// Creates a typed task and stores its encoded input and initial checkpoint.
     public func createTask<Input, Checkpoint>(_ task: TaskKind<Input, Checkpoint>, input: Input,
                                              options: TaskOptions, context: ChordContext) async throws -> TaskID {
         try await commit({ tx in try await tx.createTask(task, input: input, options: options) }, context: context)
     }
+    /// Creates a typed task and stores its encoded input and initial checkpoint.
     public func createTask<Input, Checkpoint, Result, Hooks>(
         _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input,
         options: TaskOptions, context: ChordContext
     ) async throws -> TaskID {
         try await commit({ tx in try await tx.createTask(task, input: input, options: options) }, context: context)
     }
+    /// Returns the current durable task record, or nil when it is absent.
     public func getTask(id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await taskRuntime().getTask(id, context: context)
     }
+    /// Waits for a terminal task outcome and returns its durable receipt.
     public func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await taskRuntime().waitForTask(id, context: context)
     }
+    /// Returns a conversation by ID, or nil when that ID is absent.
     public func conversation(id: ConversationID, context: ChordContext) async throws -> ConversationHandle? {
         try await taskRuntime().conversation(id, context: context)
     }
+    /// Reads the visible model context through the optional inclusive entry boundary.
     public func context(at: EntryID? = nil, context: ChordContext) async throws -> ContextView {
         try await taskRuntime().context(conversationId, at: at, context: context)
     }

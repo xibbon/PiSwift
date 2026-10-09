@@ -18,15 +18,31 @@ func validateDocumentPolicies(scope: DocumentScope, history: DocumentHistory?, f
 }
 
 /// Document history retention.
-public enum DocumentHistory: String, Sendable, Equatable, Codable { case latest, rewindable }
+public enum DocumentHistory: String, Sendable, Equatable, Codable {
+    /// Keeps the current document value without historical content reads.
+    case latest
+    /// Keeps document history for reads through an entry boundary.
+    case rewindable
+}
 /// Initialization of a conversation document in a history fork.
-public enum DocumentFork: String, Sendable, Equatable, Codable { case initial, current, asOf }
+public enum DocumentFork: String, Sendable, Equatable, Codable {
+    /// Creates the document's initial value in a fork.
+    case initial
+    /// Copies the current document value into a fork.
+    case current
+    /// Copies the document value at the inclusive fork entry.
+    case asOf
+}
 
 /// Exact persisted owner scope of a document.
 public enum DocumentScope: Sendable, Equatable, Codable {
+    /// Addresses the document within the whole session.
     case session(extensions: JSONObject = [:])
+    /// Addresses the document within the selected conversation.
     case conversation(conversationId: ConversationID, extensions: JSONObject = [:])
+    /// Addresses the document within the selected task.
     case task(taskId: TaskID, extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "kind")
@@ -37,6 +53,7 @@ public enum DocumentScope: Sendable, Equatable, Codable {
         default: throw recordUnknown("kind", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -61,9 +78,13 @@ public enum DocumentScope: Sendable, Equatable, Codable {
 
 /// Definition semantics. Session and task documents have no history or fork fields.
 public enum DocumentSemantics: Sendable, Equatable, Codable {
+    /// Uses the session-wide document scope.
     case session(extensions: JSONObject = [:])
+    /// Uses conversation ownership or document scope.
     case conversation(history: DocumentHistory, fork: DocumentFork, extensions: JSONObject = [:])
+    /// Uses task ownership or document scope.
     case task(extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "scope")
@@ -77,6 +98,7 @@ public enum DocumentSemantics: Sendable, Equatable, Codable {
             throw recordUnknown("document policies", "latest history does not support asOf forks")
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         if case .conversation(let history, let fork, _) = self, history == .latest, fork == .asOf {
             throw recordUnknown("document policies", "latest history does not support asOf forks")
@@ -103,17 +125,25 @@ public enum DocumentSemantics: Sendable, Equatable, Codable {
 
 /// Lifecycle of a document incarnation. The content holds its version; a key identifies a family member.
 public struct DocumentRecord: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: DocumentID
+    /// The stable document kind at this logical address.
     public let kind: String
+    /// The session, conversation, or task addressed by this document.
     public let scope: DocumentScope
+    /// The commit sequence at which the document incarnation began.
     public let createdAt: Seq
+    /// The document family key or named prompt section key.
     public let key: String?
+    /// The exclusive commit-sequence end of the document incarnation.
     public let retiredAt: Seq?
+    /// Whether prior document values can be read.
     public let history: DocumentHistory?
+    /// How document state is initialized in a forked conversation.
     public let fork: DocumentFork?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
-    /// The JSON boundary checks scope, history, and fork consistency.
+    /// Creates document incarnation metadata with its lifetime and retention policy.
     public init(id: DocumentID, kind: String, scope: DocumentScope, createdAt: Seq, key: String? = nil, retiredAt: Seq? = nil, history: DocumentHistory? = nil, fork: DocumentFork? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.kind = kind
@@ -125,6 +155,7 @@ public struct DocumentRecord: Sendable, Equatable, Codable {
         self.fork = fork
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         id = try recordRequired(object, "id")
@@ -138,6 +169,7 @@ public struct DocumentRecord: Sendable, Equatable, Codable {
         try validateDocumentPolicies(scope: scope, history: history, fork: fork)
         extensionFields = recordExtensions(object, excluding: ["id", "kind", "scope", "createdAt", "key", "retiredAt", "history", "fork"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         try validateDocumentPolicies(scope: scope, history: history, fork: fork)
         var object: JSONObject = extensionFields
@@ -155,15 +187,21 @@ public struct DocumentRecord: Sendable, Equatable, Codable {
 
 /// Document fields before storage assigns creation and retirement sequences.
 public struct DocumentCreate: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: DocumentID
+    /// The stored record or document kind.
     public let kind: String
+    /// The session, conversation, or task addressed by this document.
     public let scope: DocumentScope
+    /// The document family key or named prompt section key.
     public let key: String?
+    /// Whether prior document values can be read.
     public let history: DocumentHistory?
+    /// How document state is initialized in a forked conversation.
     public let fork: DocumentFork?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
-    /// The JSON boundary checks scope, history, and fork consistency.
+    /// Creates metadata for a new document incarnation before its first content write.
     public init(id: DocumentID, kind: String, scope: DocumentScope, key: String? = nil, history: DocumentHistory? = nil, fork: DocumentFork? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.kind = kind
@@ -173,6 +211,7 @@ public struct DocumentCreate: Sendable, Equatable, Codable {
         self.fork = fork
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         id = try recordRequired(object, "id")
@@ -184,6 +223,7 @@ public struct DocumentCreate: Sendable, Equatable, Codable {
         try validateDocumentPolicies(scope: scope, history: history, fork: fork)
         extensionFields = recordExtensions(object, excluding: ["id", "kind", "scope", "key", "history", "fork"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         try validateDocumentPolicies(scope: scope, history: history, fork: fork)
         var object: JSONObject = extensionFields
@@ -199,15 +239,19 @@ public struct DocumentCreate: Sendable, Equatable, Codable {
 
 /// Complete document checkpoint; creation always supplies a base.
 public struct DocumentBaseContent: Sendable, Equatable, Codable {
+    /// The stored schema or task definition version.
     public let version: Int
+    /// The detached document or operation value at this boundary.
     public let value: JSONObject
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Pairs a complete document object with its schema version.
     public init(version: Int, value: JSONObject, extensionFields: JSONObject = [:]) {
         self.version = version
         self.value = value
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let kind: String = try recordRequired(object, "kind")
@@ -217,6 +261,7 @@ public struct DocumentBaseContent: Sendable, Equatable, Codable {
         value = try recordRequired(object, "value")
         extensionFields = recordExtensions(object, excluding: ["kind", "version", "value"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         object["kind"] = .string("base")
@@ -229,8 +274,11 @@ public struct DocumentBaseContent: Sendable, Equatable, Codable {
 
 /// Document checkpoint or Chord operation batch.
 public enum DocumentContent: Sendable, Equatable, Codable {
+    /// Stores a complete document value and schema version.
     case base(version: Int, value: JSONObject, extensions: JSONObject = [:])
+    /// Stores JSON operations after the current document base.
     case delta(version: Int, ops: [Delta.Op], extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "kind")
@@ -240,6 +288,7 @@ public enum DocumentContent: Sendable, Equatable, Codable {
         default: throw recordUnknown("kind", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -262,21 +311,26 @@ public enum DocumentContent: Sendable, Equatable, Codable {
 
 /// Exact persisted incarnation and point used for a definition-free copy.
 public struct DocumentCopySource: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: DocumentID
+    /// The inclusive history boundary or scheduled time for this value.
     public let at: DocumentPoint
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Selects the source incarnation and history point for a document copy.
     public init(id: DocumentID, at: DocumentPoint, extensionFields: JSONObject = [:]) {
         self.id = id
         self.at = at
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         id = try recordRequired(object, "id")
         at = try recordRequired(object, "at")
         extensionFields = recordExtensions(object, excluding: ["id", "at"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "id", id)
@@ -287,12 +341,17 @@ public struct DocumentCopySource: Sendable, Equatable, Codable {
 
 /// Detached materialized document value and its definition version at a selected point.
 public struct StoredDocument: Sendable, Equatable, Codable {
+    /// The durable record from which this typed value is derived.
     public let record: DocumentRecord
+    /// The stored schema or task definition version.
     public let version: Int
+    /// The detached document or operation value at this boundary.
     public let value: JSONObject
+    /// The number of JSON delta commits after the selected base.
     public let deltasSinceBase: Int
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Pairs document metadata with its materialized content and replay count.
     public init(record: DocumentRecord, version: Int, value: JSONObject, deltasSinceBase: Int, extensionFields: JSONObject = [:]) {
         self.record = record
         self.version = version
@@ -300,6 +359,7 @@ public struct StoredDocument: Sendable, Equatable, Codable {
         self.deltasSinceBase = deltasSinceBase
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         record = try recordRequired(object, "record")
@@ -308,6 +368,7 @@ public struct StoredDocument: Sendable, Equatable, Codable {
         deltasSinceBase = try recordRequired(object, "deltasSinceBase")
         extensionFields = recordExtensions(object, excluding: ["record", "version", "value", "deltasSinceBase"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "record", record)
@@ -320,14 +381,23 @@ public struct StoredDocument: Sendable, Equatable, Codable {
 
 /// One mutation in an atomic commit batch. Unknown fields retain upstream JSON copies.
 public enum StorageWrite: Sendable, Equatable, Codable {
+    /// Stores a new immutable conversation record.
     case conversation(value: ConversationRecord, extensions: JSONObject = [:])
+    /// Stores a new immutable transcript entry.
     case entry(value: EntryRecord, extensions: JSONObject = [:])
+    /// Replaces the complete durable task record.
     case task(value: TaskRecord, extensions: JSONObject = [:])
+    /// Replaces the complete durable submission record.
     case submission(value: SubmissionRecord, extensions: JSONObject = [:])
+    /// Starts a new document incarnation at its logical address.
     case documentCreate(record: DocumentCreate, content: DocumentBaseContent, extensions: JSONObject = [:])
+    /// Copies committed source content into a new document incarnation.
     case documentCopy(record: DocumentCreate, source: DocumentCopySource, extensions: JSONObject = [:])
+    /// Stores a base or delta for the current document incarnation.
     case documentChange(id: DocumentID, content: DocumentContent, extensions: JSONObject = [:])
+    /// Ends the current document incarnation.
     case documentRetire(id: DocumentID, extensions: JSONObject = [:])
+    /// The stored input or write submission tag.
     public var type: String {
         switch self {
         case .conversation: "conversation"
@@ -340,6 +410,7 @@ public enum StorageWrite: Sendable, Equatable, Codable {
         case .documentRetire: "document.retire"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "type")
@@ -355,6 +426,7 @@ public enum StorageWrite: Sendable, Equatable, Codable {
         default: throw recordUnknown("type", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {

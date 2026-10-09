@@ -1,6 +1,7 @@
 import PiSwiftAI
 import PiSwiftChord
 
+/// The compaction input used when a generation must reduce its context.
 public typealias GenerationCompactionInput = CompactionInput
 func createGenerationCompaction(tx: Transaction, conversationId: ConversationID, reason: CompactionReason, owner: TaskID? = nil) async throws -> TaskID {
     try await createCompaction(tx: tx, conversationId: conversationId, input: CompactionInput(reason: reason), owner: owner)
@@ -51,6 +52,7 @@ private func generationCutCandidate(_ contributions: [[Message]], _ index: Int) 
     }
     return true
 }
+/// Estimates the token count of visible messages and additional request messages.
 public func generationEstimateContext(view: ContextView, extra: [Message] = []) -> Int {
     var measured: AssistantMessage?
     var measuredOrdinal: Int?

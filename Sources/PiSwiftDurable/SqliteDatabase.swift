@@ -3,21 +3,28 @@ import SQLite3
 
 /// A SQLite error with the result code and the connection's error text.
 public struct SqliteError: Error, Equatable, CustomStringConvertible {
+    /// The SQLite result code reported by the failed operation.
     public let resultCode: Int32
+    /// Text that describes the error, diagnostic, or model response.
     public let message: String
 
+    /// Stores the SQLite result code and error message.
     public init(resultCode: Int32, message: String) {
         self.resultCode = resultCode
         self.message = message
     }
 
+    /// Text that describes this value or error to the caller.
     public var description: String { message }
 }
 
 /// The linked SQLite library cannot create the STRICT tables in the durable schema.
 public struct SqliteVersionError: Error, Equatable, CustomStringConvertible {
+    /// The SQLite schema version stored in the database.
     public let foundVersion: Int32
+    /// The stored SQLite schema version before numeric interpretation.
     public let foundVersionText: String
+    /// Text that describes this value or error to the caller.
     public var description: String {
         "Durable SQLite requires SQLite 3.37.0 or newer; found \(foundVersionText) (\(foundVersion))"
     }
@@ -25,8 +32,11 @@ public struct SqliteVersionError: Error, Equatable, CustomStringConvertible {
 
 /// A failed rollback does not give the guarantees of the original transaction error.
 public struct SqliteRollbackError: Error, CustomStringConvertible {
+    /// The original transaction failure before rollback was attempted.
     public let transactionError: any Error
+    /// The failure from the rollback attempt after a transaction error.
     public let rollbackError: any Error
+    /// Text that describes this value or error to the caller.
     public var description: String { "SQLite transaction failed and rollback failed" }
 }
 

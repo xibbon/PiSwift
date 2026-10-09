@@ -3,14 +3,19 @@ import Synchronization
 
 /// The active entries and the built-in documents of one conversation.
 public struct ConversationView: Sendable, Equatable, Codable {
+    /// The conversation handle returned by the test setup.
     public let conversation: ConversationRecord
+    /// Visible entries in conversation order.
     public let entries: [EntryRecord]
+    /// The current built-in document objects indexed by document kind.
     public let docs: [String: JSONObject]
+    /// Pairs conversation metadata with its active entries and built-in documents.
     public init(conversation: ConversationRecord, entries: [EntryRecord], docs: [String: JSONObject]) {
         self.conversation = conversation; self.entries = entries; self.docs = docs
     }
 }
 
+/// A stream of committed conversation views. Call stop() to release its observer.
 public typealias ConversationWatch = CommittedWatch<ConversationView>
 
 /// Callbacks run on the Session line. They must not call Session operations.
@@ -239,11 +244,13 @@ internal func prefixedViewOp(_ op: Delta.Op, prefix: Delta.Path) -> Delta.Op {
 }
 
 extension Conversation {
+    /// Attaches the conversation view to committed changes. Cancel it to release the observer.
     public func viewState(context: ChordContext) async throws -> AttachedReplicatedState<ConversationView> {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen(); return try await harness.views.attachedState(id: id, context: context)
         }
     }
+    /// Attaches a stream of committed conversation views. Call stop() on the watch to release it.
     public func watch(context: ChordContext) async throws -> ConversationWatch {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen(); return try await harness.views.watch(id: id, context: context)

@@ -7,6 +7,7 @@ struct SqliteDocumentAction {
     var retire = false
 }
 extension SqliteStorage {
+    /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit(_ writes: [StorageWrite], context: ChordContext) throws -> Seq {
         try assertOpen()
         let actions = try prepareDocumentActions(writes)

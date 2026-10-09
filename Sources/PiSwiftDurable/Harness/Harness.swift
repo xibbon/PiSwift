@@ -37,6 +37,7 @@ public final class Harness: Sendable {
         self.views = try ConversationViews(session: session, storage: storage)
         self.graph = try TaskGraphView(session: session, storage: storage)
     }
+    /// Opens the session and restores runnable task state with scheduling paused.
     public static func open(storage: any DurableStorage, options: HarnessOptions,
                             context: ChordContext) async throws -> Harness {
         try await withTaskCancellationContext(context) { context in
@@ -80,28 +81,36 @@ public final class Harness: Sendable {
         }
     }
     internal func assertOpen() throws { if closed.withLock({ $0 }) { throw closedError() } }
+    /// Starts task scheduling after a harness is opened or paused.
     public func resume() throws { try assertOpen(); tasks.resume() }
+    /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {
         closed.withLock { $0 = true }
         try await withTaskCancellationContext(context) { try await session.close(context: $0) }
     }
+    /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext) async throws -> T {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); return try await session.commit(change, context: context)
         }
     }
+    /// Adds a listener on the session mutation line after commit adoption; it must not call session operations.
     public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
         try assertOpen(); return try session.subscribeCommits(listener)
     }
+    /// Adds a listener called when close seals session admission; it must not call session operations.
     public func subscribeClose(_ listener: @escaping @Sendable () -> Void) throws -> SessionSubscription {
         try assertOpen(); return try session.subscribeClose(listener)
     }
+    /// Returns the root conversation, creating and initializing it when absent.
     public func root(options: ConversationRootOptions = .init(), context: ChordContext) async throws -> Conversation {
         try await create(.root, agent: options.agent, initialize: options.initialize, context: context)
     }
+    /// Creates a conversation with the supplied ownership and optional configuration.
     public func createConversation(options: ConversationCreateOptions, context: ChordContext) async throws -> Conversation {
         try await create(.independent(options.ownership), agent: options.agent, initialize: options.initialize, context: context)
     }
+    /// Returns a conversation by ID, or nil when that ID is absent.
     public func conversation(id: ConversationID, context: ChordContext) async throws -> Conversation? {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
@@ -128,12 +137,14 @@ public final class Harness: Sendable {
             return Conversation(id: id, harness: self)
         }
     }
+    /// Returns the current durable task record, or nil when it is absent.
     public func getTask(id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
             return try await session.readOnLine { try await storage.task(id, context: context) }
         }
     }
+    /// Returns scheduling, task definition, and submission state for host inspection.
     public func inspect(context: ChordContext) async throws -> HarnessInspection {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
@@ -147,21 +158,25 @@ public final class Harness: Sendable {
             }
         }
     }
+    /// Marks a nonterminal task for its definition's abort handler.
     public func abortTask(id: TaskID, context: ChordContext) async throws -> TaskAbortResult {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); return try await tasks.abort(id: id, context: context)
         }
     }
+    /// Waits for a terminal task outcome and returns its durable receipt.
     public func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); tasks.resume(); return try await tasks.waitForTask(id: id, context: context)
         }
     }
+    /// Waits until all ordinary scheduled work is idle across the harness.
     public func waitForIdle(context: ChordContext) async throws {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); tasks.resume(); try await tasks.waitForIdle(conversationId: nil, context: context)
         }
     }
+    /// Sums current model and tool usage across all stored conversations.
     public func usage(context: ChordContext) async throws -> UsageState {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
@@ -185,8 +200,11 @@ public final class Harness: Sendable {
         return resolveAgent(state: value, snapshot: options.registry.snapshot(), settings: options.settings?.resolve() ?? resolveSettings(), report: options.onReport ?? { _ in })
     }
 }
+/// The harness cannot use the supplied registry to load its built-in tasks.
 public enum HarnessOpenError: Error, Sendable, CustomStringConvertible {
+    /// The registry does not contain the required built-in task definitions.
     case missingBuiltins([String])
+    /// Text that describes this value or error to the caller.
     public var description: String {
         switch self { case .missingBuiltins(let names): "Registry lacks built-in tasks \(names.joined(separator: ", ")); create it with createRegistry()" }
     }

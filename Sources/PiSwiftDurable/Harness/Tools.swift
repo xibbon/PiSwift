@@ -2,31 +2,57 @@ import Foundation
 import PiSwiftAI
 import PiSwiftChord
 
+/// A tool result can add tools, end the run, or hand off to another agent.
 public struct ToolControl: Sendable, Equatable, Codable {
+    /// Tool names to add to the conversation offer policy.
     public var addTools: [String]?
+    /// Whether the tool requests the current run to end.
     public var terminate: Bool?
+    /// Optional text passed to the next agent or conversation boundary.
     public var handoff: String?
+    /// Selects tool additions, run termination, or handoff text.
     public init(addTools: [String]? = nil, terminate: Bool? = nil, handoff: String? = nil) {
         self.addTools = addTools; self.terminate = terminate; self.handoff = handoff
     }
 }
+/// A tool report with a severity, message, and optional stable code.
 public struct ToolDiagnostic: Sendable, Equatable, Codable {
-    public enum Severity: String, Sendable, Codable { case info, warn, error }
+    /// The level assigned to a tool diagnostic.
+    public enum Severity: String, Sendable, Codable {
+        /// Reports information without an execution failure.
+        case info
+        /// Reports a condition that can require attention.
+        case warn
+        /// Reports a tool execution error.
+        case error
+    }
+    /// The level assigned to this tool diagnostic.
     public var severity: Severity
+    /// Text that describes the error, diagnostic, or model response.
     public var message: String
+    /// An optional stable identifier for the diagnostic.
     public var code: String?
+    /// Pairs a diagnostic level and message with an optional stable code.
     public init(severity: Severity, message: String, code: String? = nil) {
         self.severity = severity; self.message = message; self.code = code
     }
 }
+/// Tool content, details, diagnostics, usage, and optional run control.
 public struct ToolExecutionResult: Sendable {
+    /// The text or content blocks supplied by this result.
     public var content: [ContentBlock]? { didSet { contentIdentity = UUID() } }
     internal var contentIdentity = UUID()
+    /// Whether the tool content reports an execution failure.
     public var isError: Bool?
+    /// Application-defined JSON details reported by a tool.
     public var details: JSONValue?
+    /// The diagnostics reported by this tool call.
     public var diagnostics: [ToolDiagnostic]?
+    /// The recorded model or tool token and cost totals.
     public var usage: Usage?
+    /// Optional run control returned by the tool.
     public var control: ToolControl?
+    /// Creates a tool result with optional content, details, diagnostics, usage, and control.
     public init(content: [ContentBlock]? = nil, isError: Bool? = nil, details: JSONValue? = nil,
                 diagnostics: [ToolDiagnostic]? = nil, usage: Usage? = nil, control: ToolControl? = nil) {
         self.content = content; self.isError = isError; self.details = details
@@ -34,26 +60,46 @@ public struct ToolExecutionResult: Sendable {
     }
 }
 
-public enum ToolOutputChunk: Sendable { case text(String), bytes(Data) }
+/// Incremental tool output supplied as text or raw bytes.
+public enum ToolOutputChunk: Sendable {
+    /// Stores text output.
+    case text(String)
+    /// The byte limit removed output.
+    case bytes(Data)
+}
 
 /// Tool operations bound to a task invocation.
 public struct ToolExecutionApi: Sendable {
     internal var pendingDetailsCount: @Sendable () -> Int = { 0 }
+    /// The optional task runtime bound to this tool invocation.
     public var runtime: TaskRuntime?
+    /// The ID of the task bound to this value or invocation.
     public var taskId: TaskID
+    /// The conversation that owns or is addressed by this value.
     public var conversationId: ConversationID
+    /// The model-supplied identifier of the tool call.
     public var callId: String
+    /// The installed extension and task definitions used by this harness.
     public var registry: RegistrySnapshot
+    /// The agent configuration used for this conversation.
     public var agent: @Sendable (ChordContext) async throws -> Agent
+    /// The model service used by this harness or task.
     public var models: any DurableModels
+    /// The optional execution environment for the conversation.
     public var env: (any ExecutionEnv)?
+    /// Document snapshot services available to this hook or renderer.
     public var read: HarnessDocumentReader
+    /// Publishes incremental output from this tool invocation.
     public var output: @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void
+    /// The requested output window passed to the environment.
     public var outputWindow: ShellOutputWindow?
+    /// Publishes a tool diagnostic during execution.
     public var diagnostic: @Sendable (ToolDiagnostic) throws -> Void
+    /// Application-defined JSON details reported by a tool.
     public var details: @Sendable (JSONValue, ChordContext) async throws -> Void
     /// A nil candidate reads; a supplied candidate installs only when no value exists.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    /// Binds tool services and publication callbacks to one task invocation.
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                 models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                 outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
@@ -91,7 +137,9 @@ public struct ToolExecutionApi: Sendable {
 
 }
 
+/// A tool declaration and execution callback with replay and output policies.
 public struct ToolRegistration: Sendable {
+    /// The model-facing tool name, description, and argument schema.
     public var declaration: AITool {
         didSet {
             orderedDeclaration["name"] = .string(declaration.name)
@@ -100,13 +148,19 @@ public struct ToolRegistration: Sendable {
     }
     /// Full declaration with the original JSON member order, including nested schema objects.
     public var orderedDeclaration: JSONObject
+    /// An optional override of the tool replay policy.
     public var replay: ToolReplay?
+    /// An optional per-tool execution policy.
     public var executionMode: ToolExecutionMode?
+    /// An optional repair callback applied before tool argument validation.
     public var prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)?
+    /// Optional per-tool limits for retained output.
     public var outputLimits: OutputLimitOverrides?
     /// The caller supplies repaired and validated arguments. defineTool also checks at the typed boundary.
     public var execute: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
+    /// The stable name used to resolve this definition in the registry.
     public var name: String { get { declaration.name } set { declaration.name = newValue; orderedDeclaration["name"] = .string(newValue) } }
+    /// Text that describes this value or error to the caller.
     public var description: String { get { declaration.description } set { declaration.description = newValue; orderedDeclaration["description"] = .string(newValue) } }
     /// Updates the schema without losing its JSON member order.
     public mutating func setParameters(_ parameters: JSONObject) throws {
@@ -123,6 +177,7 @@ public struct ToolRegistration: Sendable {
         }
         return object
     }
+    /// Creates a tool declaration and its execution callback, preserving schema member order.
     public init(declaration: AITool, orderedDeclaration: JSONObject? = nil,
                 replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
@@ -135,6 +190,7 @@ public struct ToolRegistration: Sendable {
         self.replay = replay; self.executionMode = executionMode; self.prepareArguments = prepareArguments
         self.outputLimits = outputLimits; self.execute = execute
     }
+    /// Creates a tool declaration and its execution callback, preserving schema member order.
     public init(name: String, description: String, parameters: JSONObject,
                 replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
@@ -167,14 +223,19 @@ private func mergeDeclarationOrder(old: JSONValue, new: JSONValue) -> JSONValue 
 
 /// Per-tool overrides merge with the harness output limits.
 public struct OutputLimitOverrides: Sendable, Equatable {
+    /// The maximum UTF-8 byte count to retain.
     public var maxBytes: Int?
+    /// The maximum number of lines to retain.
     public var maxLines: Int?
+    /// Which end of output remains when limits remove content.
     public var retain: OutputRetention?
+    /// Selects per-tool byte, line, and retention overrides.
     public init(maxBytes: Int? = nil, maxLines: Int? = nil, retain: OutputRetention? = nil) {
         self.maxBytes = maxBytes; self.maxLines = maxLines; self.retain = retain
     }
 }
 
+/// Creates a tool that validates its schema arguments before decoding them for execution.
 public func defineTool<Args: Decodable & Sendable>(
     name: String, description: String, parameters: JSONObject, args: Args.Type = Args.self,
     replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,

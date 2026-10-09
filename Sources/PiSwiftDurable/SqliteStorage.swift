@@ -8,7 +8,7 @@ public actor SqliteStorage: DurableStorage {
     var closed = false
     var closeError: (any Error)?
 
-    /// Opens a file, or `:memory:`, and applies pending schema migrations.
+    /// Opens the SQLite database and applies pending schema migrations.
     public static func open(path: String) async throws -> SqliteStorage {
         try SqliteStorage(executor: AppleSqliteDatabase(path: path))
     }
@@ -30,25 +30,31 @@ public actor SqliteStorage: DurableStorage {
         }
     }
 
+    /// Allocates an unused positive ID from the shared record namespace.
     public func mintId<Kind: DurableIDKind>() throws -> DurableID<Kind> {
         try assertOpen()
         guard nextId <= DurableID<Kind>.maximumRawValue else { throw DurableStorageError.idSpaceExhausted }
         let result = try DurableID<Kind>(nextId); nextId += 1; return result
     }
 
+    /// Returns a conversation by ID, or nil when that ID is absent.
     public func conversation(_ id: ConversationID, context: ChordContext) throws -> ConversationRecord? {
         try assertOpen(); return try readRecord("conversations", id: id.rawValue)
     }
+    /// Returns the stored task record with this ID, or nil when absent.
     public func task(_ id: TaskID, context: ChordContext) throws -> TaskRecord? {
         try assertOpen(); return try readRecord("tasks", id: id.rawValue)
     }
+    /// Returns the current durable submission, or nil when it is absent.
     public func submission(_ id: SubmissionID, context: ChordContext) throws -> SubmissionRecord? {
         try assertOpen(); return try readRecord("submissions", id: id.rawValue)
     }
+    /// Returns the submission for the conversation-scoped request key, or nil.
     public func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) throws -> SubmissionRecord? {
         try assertOpen()
         return try db.get("SELECT record FROM submissions WHERE conversation_id = ? AND request_id = ?", [.integer(conversationId.rawValue), try indexed(requestId)]).map { try decodeRecord($0) }
     }
+    /// Returns a page of conversations that match all query filters.
     public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<ConversationRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
@@ -57,6 +63,7 @@ public actor SqliteStorage: DurableStorage {
         scan.add("owner_task_id", query.ownerTaskId.map { .integer($0.rawValue) })
         return try scanRecords("conversations", scan: scan, limit: limit, id: { $0.id.rawValue })
     }
+    /// Returns a page of tasks that match all query filters.
     public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<TaskRecord, Cursor> {
         try assertOpen()
         var scan = SqliteScan(try scanStart(requested: query.order, cursor: cursor, fallback: .ascending))
@@ -67,6 +74,7 @@ public actor SqliteStorage: DurableStorage {
         scan.add("background", query.background.map { .integer($0 ? 1 : 0) })
         return try scanRecords("tasks", scan: scan, limit: limit, id: { $0.id.rawValue })
     }
+    /// Returns a page of submissions that match all query filters.
     public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<SubmissionRecord, Cursor> {
         try assertOpen()
         var scan = SqliteScan(try scanStart(requested: query.order, cursor: cursor, fallback: .ascending))
@@ -74,9 +82,11 @@ public actor SqliteStorage: DurableStorage {
         scan.add("status", query.status.map { .text($0.rawValue) })
         return try scanRecords("submissions", scan: scan, limit: limit, id: { $0.id.rawValue })
     }
+    /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen(); return try readEntry(id)
     }
+    /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen()
         var conversation = try requireConversation(conversationId)
@@ -89,6 +99,7 @@ public actor SqliteStorage: DurableStorage {
         }
         return id.rawValue <= upper ? lookup : nil
     }
+    /// Returns the newest visible head marker at or below the inclusive entry cutoff.
     public func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) throws -> EntryRecord? {
         try assertOpen()
         var conversation = try requireConversation(conversationId)
@@ -99,6 +110,7 @@ public actor SqliteStorage: DurableStorage {
             upper = min(upper, parent.at.rawValue); conversation = try requireConversation(parent.conversationId)
         }
     }
+    /// Returns a page of entries in the visible ancestry and requested range.
     public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<EntryRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .descending)
@@ -142,16 +154,19 @@ public actor SqliteStorage: DurableStorage {
         return try db.all("SELECT record FROM entries WHERE \(clauses.joined(separator: " AND ")) ORDER BY id \(order == .ascending ? "ASC" : "DESC") LIMIT ?", params).map { try decodeRecord($0) }
     }
 
+    /// Finds the document incarnation alive at the address and requested point.
     public func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) throws -> DocumentRecord? {
         try assertOpen()
         var params = try addressValues(kind: address.kind, scope: address.scope, key: address.key)
         let lifetime = appendLifetime(at, params: &params)
         return try db.get("SELECT record FROM documents WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ? AND \(lifetime) ORDER BY created_at DESC LIMIT 1", params).map { try decodeRecord($0) }
     }
+    /// Returns the stored document incarnation at the requested point, or nil when absent.
     public func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) throws -> StoredDocument? {
         try assertOpen()
         return try db.transaction { try materialize($0, id: id, at: at) }
     }
+    /// Returns a page of document incarnations alive at the requested point.
     public func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<DocumentRecord, Cursor> {
         try assertOpen()
         let after: Int64
@@ -167,6 +182,7 @@ public actor SqliteStorage: DurableStorage {
         let values: [DocumentRecord] = try rows.map { try decodeRecord($0) }
         return sqlitePage(values, limit: limit, order: .ascending, id: { $0.id.rawValue })
     }
+    /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) throws {
         if closed {
             if let closeError { throw closeError }

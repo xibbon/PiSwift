@@ -2,7 +2,9 @@ import Synchronization
 
 /// The default abort reason.
 public struct AbortError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// Creates the default abort error.
     public init() {}
+    /// The text description of this value or error.
     public var description: String { "The operation was aborted" }
 }
 
@@ -64,9 +66,12 @@ public final class AbortSignal: Sendable {
         for source in sources { source.removeListener() }
     }
 
+    /// Whether this signal has an abort reason.
     public var aborted: Bool { state.withLock { $0.reason != nil } }
+    /// The first abort reason, or nil before abort.
     public var reason: (any Error)? { state.withLock { $0.reason } }
 
+    /// Throws the stored reason if this signal is aborted.
     public func throwIfAborted() throws {
         if let reason { throw reason }
     }
@@ -186,10 +191,13 @@ public final class AbortSignal: Sendable {
 
 /// Owns a signal. The first abort reason wins; later calls have no effect.
 public final class AbortController: Sendable {
+    /// The signal controlled by this controller.
     public let signal = AbortSignal()
 
+    /// Creates an independent cancellation controller.
     public init() {}
 
+    /// Aborts the signal once, using AbortError when no reason is supplied.
     public func abort(_ reason: (any Error)? = nil) {
         signal.abort(reason ?? AbortError())
     }

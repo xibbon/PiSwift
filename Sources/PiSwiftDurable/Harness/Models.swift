@@ -5,16 +5,24 @@ import PiSwiftChord
 /// The five model operations used by the durable harness.
 /// Request contexts use `PiSwiftAI.Context`; operation contexts use `ChordContext`.
 public protocol DurableModels: Sendable {
+    /// Resolves the provider and model ID, or throws when no matching model exists.
     func getModel(provider: String, modelId: String) -> Model?
+    /// Starts an assistant response stream from the selected model.
     func streamSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) -> AssistantMessageEventStream
+    /// Returns one complete assistant response from the selected model.
     func completeSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) async -> AssistantMessage
+    /// Polls a deferred provider request using its saved handle.
     func fetchDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions) async -> AssistantMessage
+    /// Cancels a deferred provider request using its saved handle.
     func cancelDeferred(model: Model, handle: DeferredHandle, options: DeferredCancelOptions) async throws
 }
 
+/// A failure to resolve a model or use a supported model operation.
 public enum DurableModelsError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// Provider the supplied value does not support deferred responses.
     case deferredUnsupported(provider: String)
 
+    /// Text that describes this value or error to the caller.
     public var description: String {
         switch self {
         case .deferredUnsupported(let provider): "Provider \(provider) does not support deferred responses"
@@ -23,14 +31,17 @@ public enum DurableModelsError: Error, Sendable, Equatable, CustomStringConverti
 }
 
 extension DurableModels {
+    /// Returns one complete assistant response from the selected model.
     public func completeSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) async -> AssistantMessage {
         await streamSimple(model: model, context: context, options: options).result()
     }
 
+    /// Polls a deferred provider request using its saved handle.
     public func fetchDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions) async -> AssistantMessage {
         durableModelFailure(model: model, error: DurableModelsError.deferredUnsupported(provider: model.provider), signal: options.signal)
     }
 
+    /// Cancels a deferred provider request using its saved handle.
     public func cancelDeferred(model: Model, handle: DeferredHandle, options: DeferredCancelOptions) async throws {
         throw DurableModelsError.deferredUnsupported(provider: model.provider)
     }
@@ -44,10 +55,12 @@ public typealias DurableAPIKeyResolver = @Sendable (Model) async throws -> Strin
 public struct PiSwiftAIDurableModels: DurableModels {
     private let resolveAPIKey: DurableAPIKeyResolver
 
+    /// Creates a PiSwiftAI adapter with an asynchronous API-key resolver.
     public init(apiKeyResolver: @escaping DurableAPIKeyResolver = { _ in nil }) {
         resolveAPIKey = apiKeyResolver
     }
 
+    /// Resolves the provider and model ID, or throws when no matching model exists.
     public func getModel(provider: String, modelId: String) -> Model? {
         guard let model = PiSwiftAI.getModel(provider: provider, modelId: modelId),
               model.provider.utf16.elementsEqual(provider.utf16),
@@ -55,6 +68,7 @@ public struct PiSwiftAIDurableModels: DurableModels {
         return model
     }
 
+    /// Starts an assistant response stream from the selected model.
     public func streamSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) -> AssistantMessageEventStream {
         let outer = AssistantMessageEventStream()
         // Upstream lazyStream starts auth and the provider only when observed.
@@ -75,6 +89,7 @@ public struct PiSwiftAIDurableModels: DurableModels {
         return outer
     }
 
+    /// Polls a deferred provider request using its saved handle.
     public func fetchDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions) async -> AssistantMessage {
         do {
             var options = options
@@ -85,6 +100,7 @@ public struct PiSwiftAIDurableModels: DurableModels {
         }
     }
 
+    /// Cancels a deferred provider request using its saved handle.
     public func cancelDeferred(model: Model, handle: DeferredHandle, options: DeferredCancelOptions) async throws {
         var options = options
         if options.apiKey == nil { options.apiKey = try await resolveAPIKey(model) }
@@ -106,10 +122,12 @@ private func durableModelFailure(model: Model, error: any Error, signal: Cancell
 /// Context abort cancels the token. Token cancellation does not abort the context.
 /// The bridge removes its listener when it is released.
 public final class ContextCancellationBridge: Sendable {
+    /// The typed document or entry token used by this operation.
     public let token: CancellationToken
     private let signal: AbortSignal?
     private let registration: AbortListenerRegistration?
 
+    /// Connects context cancellation to the model cancellation token.
     public init(context: ChordContext, token: CancellationToken = CancellationToken()) {
         self.token = token
         signal = context.abortSignal

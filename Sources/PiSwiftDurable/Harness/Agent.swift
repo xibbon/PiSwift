@@ -1,11 +1,16 @@
 import PiSwiftAI
 import PiSwiftChord
 
+/// The reserved prompt section key for agent instructions.
 public let instructionsKey = "instructions"
 
+/// Stored extension names, either an exact selection or edits to the default selection.
 public enum ExtensionSelection: Sendable, Equatable, Codable {
+    /// Replaces the selection with precisely these names or definitions.
     case exact([String])
+    /// Adds and removes names relative to the host defaults.
     case edit(add: [String]? = nil, remove: [String]? = nil)
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let single = try decoder.singleValueContainer()
         if let names = try? single.decode([String].self) { self = .exact(names); return }
@@ -13,6 +18,7 @@ public enum ExtensionSelection: Sendable, Equatable, Codable {
         self = .edit(add: try object.decodeIfPresent([String].self, forKey: .add),
                      remove: try object.decodeIfPresent([String].self, forKey: .remove))
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         switch self {
         case let .exact(names): var c = encoder.singleValueContainer(); try c.encode(names)
@@ -23,15 +29,20 @@ public enum ExtensionSelection: Sendable, Equatable, Codable {
     }
     private enum Keys: String, CodingKey { case add, remove }
 }
+/// Stored tool names, either an exact offer list or removals from extension tools.
 public enum ToolSelection: Sendable, Equatable, Codable {
+    /// Replaces the selection with precisely these names or definitions.
     case exact([String])
+    /// Excludes these names or definitions from the default selection.
     case remove([String])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let single = try decoder.singleValueContainer()
         if let names = try? single.decode([String].self) { self = .exact(names); return }
         let object = try decoder.container(keyedBy: Keys.self)
         self = .remove(try object.decode([String].self, forKey: .remove))
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         switch self {
         case let .exact(names): var c = encoder.singleValueContainer(); try c.encode(names)
@@ -43,12 +54,19 @@ public enum ToolSelection: Sendable, Equatable, Codable {
 
 /// The pi.agent document value.
 public struct AgentState: Sendable, Equatable, Codable {
+    /// The stored provider and model reference or entry model contribution.
     public var model: ModelRef?
+    /// The reasoning effort selected for the model.
     public var thinkingLevel: ModelThinkingLevel?
+    /// The selected extensions or extension-selection change.
     public var extensions: ExtensionSelection?
+    /// The tool registrations or live tool slots in this value.
     public var tools: ToolSelection?
+    /// Additional agent or compaction instructions.
     public var instructions: String?
+    /// The working directory used by this conversation or command.
     public var cwd: String?
+    /// Creates stored agent overrides. Absent fields use host defaults.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
                 extensions: ExtensionSelection? = nil, tools: ToolSelection? = nil,
                 instructions: String? = nil, cwd: String? = nil) {
@@ -63,6 +81,7 @@ public let AgentDoc = try! RewindableConversationDocToken<AgentState>(
     checkpointWhen: { _, _, _ in true }
 )
 
+/// Writes partial agent changes within the conversation transaction.
 public func configure(tx: Transaction, conversationId: ConversationID, change: AgentChange) async throws {
     let draft = try await tx.doc(AgentDoc, conversationId: conversationId)
     var state = AgentState()
@@ -99,16 +118,43 @@ func assignAgentDocument(_ draft: JSONDraft, value: JSONObject) throws {
 }
 
 /// Source undefined leaves a field alone; null clears it; a value replaces it.
-public enum AgentFieldChange<Value: Sendable>: Sendable { case unchanged, clear, set(Value) }
-public enum ExtensionChange: Sendable { case exact([Extension]); case edit(add: [Extension]? = nil, remove: [Extension]? = nil) }
-public enum ToolChange: Sendable { case exact([ToolRegistration]); case remove([ToolRegistration]) }
+public enum AgentFieldChange<Value: Sendable>: Sendable {
+    /// Leaves the stored value unchanged.
+    case unchanged
+    /// Removes the stored override so the default applies.
+    case clear
+    /// Replaces the stored field with the supplied value.
+    case set(Value)
+}
+/// Replace the selected extensions or add and remove selected extension names.
+public enum ExtensionChange: Sendable {
+    /// Replaces the selection with precisely these names or definitions.
+    case exact([Extension])
+    /// Adds and removes names relative to the host defaults.
+    case edit(add: [Extension]? = nil, remove: [Extension]? = nil)
+}
+/// Replace the offered tool list or remove tools from the selected extensions.
+public enum ToolChange: Sendable {
+    /// Replaces the selection with precisely these names or definitions.
+    case exact([ToolRegistration])
+    /// Excludes these names or definitions from the default selection.
+    case remove([ToolRegistration])
+}
+/// A partial change to stored agent configuration. Clear restores the default for a field.
 public struct AgentChange: Sendable {
+    /// Whether to keep, clear, or replace the saved model reference.
     public var model: AgentFieldChange<ModelRef>
+    /// Whether to keep, clear, or replace the saved model reasoning effort.
     public var thinkingLevel: AgentFieldChange<ModelThinkingLevel>
+    /// Whether to keep, clear, replace, or edit the saved extension selection.
     public var extensions: AgentFieldChange<ExtensionChange>
+    /// Whether to keep, clear, or replace the saved tool offer policy.
     public var tools: AgentFieldChange<ToolChange>
+    /// Whether to keep, clear, or replace the saved agent instructions.
     public var instructions: AgentFieldChange<String>
+    /// Whether to keep, clear, or replace the saved working directory.
     public var cwd: AgentFieldChange<String>
+    /// Selects the fields to keep, clear, or replace in stored agent configuration.
     public init(model: AgentFieldChange<ModelRef> = .unchanged, thinkingLevel: AgentFieldChange<ModelThinkingLevel> = .unchanged,
                 extensions: AgentFieldChange<ExtensionChange> = .unchanged, tools: AgentFieldChange<ToolChange> = .unchanged,
                 instructions: AgentFieldChange<String> = .unchanged, cwd: AgentFieldChange<String> = .unchanged) {
@@ -117,6 +163,7 @@ public struct AgentChange: Sendable {
     }
 }
 
+/// Applies only the changed fields to a stored agent value.
 public func applyAgentChange(_ state: inout AgentState, _ change: AgentChange) {
     apply(&state.model, change.model); apply(&state.thinkingLevel, change.thinkingLevel)
     switch change.extensions {
@@ -136,6 +183,7 @@ public func applyAgentChange(_ state: inout AgentState, _ change: AgentChange) {
 private func apply<Value>(_ value: inout Value?, _ change: AgentFieldChange<Value>) {
     switch change { case .unchanged: break; case .clear: value = nil; case .set(let next): value = next }
 }
+/// Adds tool names to the stored offer policy without duplicate names.
 public func addAgentTools(_ state: inout AgentState, _ added: [String]) {
     switch state.tools {
     case nil: break
@@ -148,13 +196,16 @@ public func addAgentTools(_ state: inout AgentState, _ added: [String]) {
     }
 }
 
+/// Returns the hooks supplied by the selected extensions for this task.
 public func agentHooks(_ agent: Agent, taskName: String) -> [HookRegistration] {
     agent.extensions.flatMap(\.hooks).filter { harnessNamesEqual($0.task, taskName) }
 }
+/// Returns the hooks supplied by the selected extensions for this task.
 public func agentHooks<Handlers: Sendable>(_ agent: Agent, taskName: String, as type: Handlers.Type) -> [Handlers] {
     agentHooks(agent, taskName: taskName).compactMap { $0.handlers(as: type) }
 }
 
+/// Resolves stored agent names against the current registry and host defaults.
 public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, settings: Settings = resolveSettings(),
                          report: (any Error) -> Void = { _ in }) -> Agent {
     let selected: [String]

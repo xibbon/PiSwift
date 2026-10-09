@@ -2,10 +2,34 @@ import Synchronization
 
 /// Errors from the chord revision tracker.
 public enum TrackerError: Error, Sendable, Equatable, CustomStringConvertible {
-    case settled, readOnly, changeSettled, foreign, consumed, aborted, stale, notReady
-    case holes, indexOutOfRange, invalidLength, incompatibleReceiver
+    /// The draft overlay has settled.
+    case settled
+    /// The prepared overlay is read-only.
+    case readOnly
+    /// The change was already prepared or aborted.
+    case changeSettled
+    /// The candidate belongs to another tracker.
+    case foreign
+    /// The candidate was already adopted.
+    case consumed
+    /// The candidate was aborted.
+    case aborted
+    /// The candidate no longer matches the tracker revision.
+    case stale
+    /// The candidate has not been prepared.
+    case notReady
+    /// The operation would create an array hole.
+    case holes
+    /// The array index is outside the supported range.
+    case indexOutOfRange
+    /// The requested array length is invalid.
+    case invalidLength
+    /// An array operation was called on an object.
+    case incompatibleReceiver
+    /// The operation has an invalid shape or violates a draft rule.
     case invalidOperation(String)
 
+    /// The text description of this value or error.
     public var description: String {
         switch self {
         case .settled: "Cannot use a settled overlay"
@@ -31,13 +55,16 @@ public final class DraftLifetime: Sendable {
     private let lock = Mutex(false)
     private let onAccess: (@Sendable () -> Void)?
 
+    /// Creates an active lifetime for draft operations.
     public init() { onAccess = nil }
 
     // Tests can hold a real draft operation after lifetime admission.
     init(onAccess: @escaping @Sendable () -> Void) { self.onAccess = onAccess }
 
+    /// Whether this lifetime rejects new draft operations.
     public var isRevoked: Bool { lock.withLock { $0 } }
 
+    /// Rejects new draft operations after current operations finish.
     public func revoke() { lock.withLock { $0 = true } }
 
     fileprivate func withAccess<Result>(_ body: () throws -> Result) throws -> Result {
@@ -63,9 +90,12 @@ public final class Tracker: Sendable {
     private let owner = TrackerOwner()
     private let lock: Mutex<State>
     fileprivate init(_ value: JSONValue) { lock = Mutex(State(value: value)) }
+    /// The current immutable JSON revision.
     public var value: JSONValue { lock.withLock { $0.value } }
+    /// The number of adopted revisions.
     public var revision: Int { lock.withLock { $0.revision } }
 
+    /// Creates a draft from the current revision, with an optional shared lifetime.
     public func beginChange(lifetime: DraftLifetime? = nil) -> Change {
         lock.withLock { state in
             state.contexts.removeAll { $0.value == nil }
@@ -74,6 +104,7 @@ public final class Tracker: Sendable {
             return Change(context)
         }
     }
+    /// Prepares an object or array replacement without changing the current revision.
     public func prepareReplace(_ value: JSONValue) throws -> Prepared {
         try lock.withLock { state in
             try requireContainer(value)
@@ -85,6 +116,7 @@ public final class Tracker: Sendable {
             return Prepared(context, base: state.value, value: ops.isEmpty ? state.value : value, ops: ops)
         }
     }
+    /// Adopts a candidate from this tracker and invalidates competing drafts.
     public func adopt(_ prepared: Prepared) throws {
         try lock.withLock { state in
             let context = prepared.context
@@ -121,6 +153,7 @@ public final class Tracker: Sendable {
 public final class Change: Sendable {
     private let context: DraftContext
     fileprivate init(_ context: DraftContext) { self.context = context }
+    /// Returns the root draft, or throws if the change has settled.
     public var state: JSONDraft {
         get throws {
             try context.withAccess { draft in
@@ -129,6 +162,7 @@ public final class Change: Sendable {
             }
         }
     }
+    /// Materializes the candidate and operations, and revokes its draft handles.
     public func prepare() throws -> Prepared {
         try context.lock.withLock { draft in
             guard !draft.changeSettled else { throw TrackerError.changeSettled }
@@ -149,6 +183,7 @@ public final class Change: Sendable {
             }
         }
     }
+    /// Discards this candidate or change. Repeated calls have no effect.
     public func abort() {
         context.lock.withLock { draft in
             draft.changeSettled = true
@@ -161,13 +196,18 @@ public final class Change: Sendable {
 /// A materialized candidate revision. Adoption does not run draft code.
 public final class Prepared: Sendable {
     fileprivate let context: DraftContext
+    /// The immutable revision from which this candidate was prepared.
     public let base: JSONValue
+    /// The candidate revision produced by these operations.
     public let value: JSONValue
+    /// The exact ordered operations for this revision.
     public let ops: [Delta.Op]
+    /// The tracker revision from which this candidate was prepared.
     public var baseRevision: Int { context.baseRevision }
     fileprivate init(_ context: DraftContext, base: JSONValue, value: JSONValue, ops: [Delta.Op]) {
         self.context = context; self.base = base; self.value = value; self.ops = ops
     }
+    /// Discards this candidate or change. Repeated calls have no effect.
     public func abort() {
         context.lock.withLock { draft in
             if draft.status == .open || draft.status == .prepared { draft.status = .aborted }
@@ -177,9 +217,13 @@ public final class Prepared: Sendable {
 }
 
 extension Delta {
+    /// The revision tracker available through the Delta namespace.
     public typealias Tracker = PiSwiftChord.Tracker
+    /// The draft change available through the Delta namespace.
     public typealias Change = PiSwiftChord.Change
+    /// The candidate revision available through the Delta namespace.
     public typealias Prepared = PiSwiftChord.Prepared
+    /// Creates a tracker for an object or array root; rejects scalar roots.
     public static func track(_ initial: JSONValue) throws -> Tracker {
         try requireContainer(initial)
         return Tracker(initial)
@@ -430,16 +474,25 @@ private func isContainer(_ value: JSONValue) -> Bool {
 /// A handle to one object or array in an open change.
 /// All methods use the lifetime lock, then the change lock. Reads return value snapshots.
 public final class JSONDraft: Sendable {
-    public enum Kind: Sendable { case object, array }
+    /// The container type of a draft handle.
+    public enum Kind: Sendable {
+        /// An object container.
+        case object
+        /// An array container.
+        case array
+    }
     private let context: DraftContext
     private let node: Int
     fileprivate init(_ context: DraftContext, node: Int) { self.context = context; self.node = node }
+    /// The kind of this draft or delivery.
     public var kind: Kind {
         get throws { try context.withAccess { try $0.readable(); return $0.nodes[node].isArray ? .array : .object } }
     }
+    /// Copies the current draft tree. Throws after draft settlement.
     public func snapshot() throws -> JSONValue {
         try context.withAccess { try $0.readable(); return $0.snapshot(node) }
     }
+    /// Returns a member value, or nil if the member is absent.
     public func get(_ key: String) throws -> JSONValue? {
         try context.withAccess { draft in
             try draft.readable()
@@ -451,6 +504,7 @@ public final class JSONDraft: Sendable {
             return draft.objectRef(node, .key(key)).map { draft.snapshotRef($0) }
         }
     }
+    /// Returns an element value, or nil if the index is absent.
     public func get(_ index: Int) throws -> JSONValue? {
         try context.withAccess { draft in
             try draft.readable()
@@ -458,6 +512,7 @@ public final class JSONDraft: Sendable {
             return draft.arrayValue(node, index)
         }
     }
+    /// Returns a child container handle, or nil if no container is present.
     public func child(_ key: String) throws -> JSONDraft? {
         try context.withAccess { draft in
             try draft.readable()
@@ -469,6 +524,7 @@ public final class JSONDraft: Sendable {
             return draft.child(node, key: segment).map { JSONDraft(context, node: $0) }
         }
     }
+    /// Returns an element container handle, or nil if no container is present.
     public func child(_ index: Int) throws -> JSONDraft? {
         try context.withAccess { draft in
             try draft.readable()
@@ -476,6 +532,7 @@ public final class JSONDraft: Sendable {
             return draft.child(node, key: key).map { JSONDraft(context, node: $0) }
         }
     }
+    /// Returns the current member keys in JavaScript key order.
     public func keys() throws -> [String] {
         try context.withAccess { draft in
             try draft.readable()
@@ -484,6 +541,7 @@ public final class JSONDraft: Sendable {
             return (0..<draft.nodes[node].count).map(String.init)
         }
     }
+    /// Returns the current number of members or elements.
     public func count() throws -> Int {
         try context.withAccess { draft in
             try draft.readable()
@@ -492,6 +550,7 @@ public final class JSONDraft: Sendable {
             return draft.nodes[node].count
         }
     }
+    /// Returns whether the draft has this member.
     public func contains(_ key: String) throws -> Bool {
         try context.withAccess { draft in
             try draft.readable()
@@ -502,6 +561,7 @@ public final class JSONDraft: Sendable {
             return index < draft.nodes[node].count
         }
     }
+    /// Assigns a strict JSON member value and detaches any replaced child handle.
     public func set(_ key: String, _ value: JSONValue) throws {
         try context.withAccess { draft in
             try draft.writable()
@@ -516,6 +576,7 @@ public final class JSONDraft: Sendable {
             } else { try validatePlacement(value); draft.setObject(node, .key(key), value) }
         }
     }
+    /// Assigns an array element; rejects indices that would create holes.
     public func set(_ index: Int, _ value: JSONValue) throws {
         try context.withAccess { draft in
             try draft.writable()
@@ -523,6 +584,7 @@ public final class JSONDraft: Sendable {
             else { try validatePlacement(value); draft.setObject(node, .key(String(index)), value) }
         }
     }
+    /// Removes an object member and detaches its child handle.
     public func remove(_ key: String) throws {
         try context.withAccess { draft in
             try draft.writable()
@@ -530,7 +592,9 @@ public final class JSONDraft: Sendable {
             draft.removeObject(node, .key(key))
         }
     }
+    /// Adds one strict JSON value to the end of the array.
     public func append(_ value: JSONValue) throws { try append(contentsOf: [value]) }
+    /// Adds strict JSON values to the end of the array.
     public func append(contentsOf values: [JSONValue]) throws {
         try context.withAccess { draft in
             try draft.arrayWritable(node)
@@ -538,6 +602,7 @@ public final class JSONDraft: Sendable {
             _ = draft.replaceRange(node, start: draft.nodes[node].count, remove: 0, insert: values)
         }
     }
+    /// Removes and returns the last element, or nil for an empty array.
     public func popLast() throws -> JSONValue? {
         try context.withAccess { draft in
             try draft.arrayWritable(node)
@@ -546,6 +611,7 @@ public final class JSONDraft: Sendable {
             return draft.replaceRange(node, start: count - 1, remove: 1, insert: []).first
         }
     }
+    /// Removes and returns the first element, or nil for an empty array.
     public func popFirst() throws -> JSONValue? {
         try context.withAccess { draft in
             try draft.arrayWritable(node)
@@ -553,6 +619,7 @@ public final class JSONDraft: Sendable {
             return draft.replaceRange(node, start: 0, remove: 1, insert: []).first
         }
     }
+    /// Adds strict JSON values to the start of the array.
     public func prepend(contentsOf values: [JSONValue]) throws {
         try context.withAccess { draft in
             try draft.arrayWritable(node)
@@ -560,6 +627,7 @@ public final class JSONDraft: Sendable {
             _ = draft.replaceRange(node, start: 0, remove: 0, insert: values)
         }
     }
+    /// Replaces an array range and returns the removed values; negative starts count from the end.
     @discardableResult public func splice(_ start: Int, deleteCount: Int? = nil, insert: [JSONValue] = []) throws -> [JSONValue] {
         try context.withAccess { draft in
             try draft.arrayWritable(node)
@@ -570,6 +638,7 @@ public final class JSONDraft: Sendable {
             return draft.replaceRange(node, start: at, remove: remove, insert: insert)
         }
     }
+    /// Reverses the current array elements.
     public func reverse() throws {
         try context.withAccess { draft in
             try draft.arrayWritable(node)
@@ -581,6 +650,7 @@ public final class JSONDraft: Sendable {
             draft.mark(node)
         }
     }
+    /// Shrinks the array length; rejects growth that would create holes.
     public func setCount(_ count: Int) throws {
         try context.withAccess { draft in
             try draft.arrayWritable(node)

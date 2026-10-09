@@ -5,34 +5,49 @@ import PiSwiftDurable
 
 /// Counts each protocol method. `FakeDurableModelsState.callCount` counts generation attempts.
 public struct FakeDurableModelCalls: Sendable, Equatable {
+    /// The number of model-lookup calls.
     public var getModel = 0
+    /// The number of streaming-request calls.
     public var streamSimple = 0
+    /// The number of complete-response calls.
     public var completeSimple = 0
+    /// The number of deferred-request polls.
     public var fetchDeferred = 0
+    /// The number of deferred-request cancellations.
     public var cancelDeferred = 0
+    /// Creates protocol-call counters set to zero.
     public init() {}
 }
 
 /// State passed to scripted factories and returned by `state()`.
 public struct FakeDurableModelsState: Sendable {
+    /// The number of recorded model calls.
     public var callCount = 0
+    /// The number of deferred polls recorded by the fake service.
     public var deferredFetchCount = 0
+    /// The deferred handles cancelled by the fake service.
     public var cancelledDeferred: [DeferredHandle] = []
+    /// Creates an empty model-call and deferred-request history.
     public init() {}
 }
 
+/// A model response callback supplied by a test.
 public typealias FakeDurableResponseFactory = @Sendable (
     TranscriptContext, SimpleStreamOptions?, FakeDurableModelsState, Model
 ) async throws -> AssistantMessage
 
+/// A scripted model message or callback consumed by the next request.
 public enum FakeDurableResponseStep: Sendable {
+    /// Uses the supplied model message or error text.
     case message(AssistantMessage)
+    /// Calls the scripted response factory for the next model request.
     case factory(FakeDurableResponseFactory)
 }
 
 /// A per-instance faux model runtime. It does not modify PiSwiftAI's global API registry.
 /// Factories receive the normalized transcript, request options, and the current faux state.
 public final class FakeDurableModels: DurableModels {
+    /// The faux models available from this service instance.
     public let models: [Model]
     private let options: FauxRegistrationOptions
 
@@ -67,6 +82,7 @@ public final class FakeDurableModels: DurableModels {
 
     private let storage = Mutex(State())
 
+    /// Creates a per-instance faux model service with the supplied response script.
     public init(options: FauxRegistrationOptions = FauxRegistrationOptions(), responses: [FakeDurableResponseStep] = []) {
         self.options = options
         let provider = options.provider ?? "faux"
@@ -80,28 +96,36 @@ public final class FakeDurableModels: DurableModels {
         storage.withLock { $0.responses = responses }
     }
 
+    /// Returns the faux model with matching provider and ID, or nil when absent.
     public func getModel(provider: String, modelId: String) -> Model? {
         storage.withLock { $0.calls.getModel += 1 }
         return models.first { $0.provider.utf16.elementsEqual(provider.utf16) && $0.id.utf16.elementsEqual(modelId.utf16) }
     }
 
+    /// Replaces the unused model response script.
     public func setResponses(_ responses: [FakeDurableResponseStep]) {
         storage.withLock { $0.responses = responses }
     }
 
+    /// Adds scripted model responses after the responses already queued.
     public func appendResponses(_ responses: [FakeDurableResponseStep]) {
         storage.withLock { $0.responses.append(contentsOf: responses) }
     }
 
+    /// Returns the number of scripted model responses not yet consumed.
     public func pendingResponseCount() -> Int { storage.withLock { $0.responses.count } }
+    /// Returns a detached copy of the generation-attempt and deferred-request history.
     public func state() -> FakeDurableModelsState { storage.withLock { $0.usage } }
+    /// Returns the model calls recorded by the fake service.
     public func calls() -> FakeDurableModelCalls { storage.withLock { $0.calls } }
 
+    /// Starts an assistant response stream from the selected model.
     public func streamSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) -> AssistantMessageEventStream {
         storage.withLock { $0.calls.streamSimple += 1 }
         return makeStream(model: model, context: context, options: options)
     }
 
+    /// Returns one complete assistant response from the selected model.
     public func completeSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) async -> AssistantMessage {
         storage.withLock { $0.calls.completeSimple += 1 }
         return await makeStream(model: model, context: context, options: options).result()
@@ -143,6 +167,7 @@ public final class FakeDurableModels: DurableModels {
         return stream
     }
 
+    /// Polls a deferred provider request using its saved handle.
     public func fetchDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions) async -> AssistantMessage {
         let action = storage.withLock { state -> Fetch in
             state.calls.fetchDeferred += 1
@@ -213,6 +238,7 @@ public final class FakeDurableModels: DurableModels {
         return result
     }
 
+    /// Cancels a deferred provider request using its saved handle.
     public func cancelDeferred(model: Model, handle: DeferredHandle, options: DeferredCancelOptions) async throws {
         storage.withLock { state in
             state.calls.cancelDeferred += 1

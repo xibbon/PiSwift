@@ -74,6 +74,7 @@ let package = Package(
         .target(
             name: "PiSwiftDurable",
             dependencies: ["PiSwiftAI", "PiSwiftChord"],
+            exclude: ["README.md"],
             swiftSettings: strictConcurrencySettings
         ),
         .target(

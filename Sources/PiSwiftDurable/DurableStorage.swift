@@ -2,8 +2,11 @@ import PiSwiftChord
 
 /// An entry and the sequence of the commit that first stored it.
 public struct EntryLookup: Sendable, Equatable, Codable {
+    /// The entry created or selected by this operation.
     public var entry: EntryRecord
+    /// The commit sequence that first stored the entry.
     public var commitSeq: Seq
+    /// Pairs an entry with the sequence that first stored it.
     public init(entry: EntryRecord, commitSeq: Seq) { self.entry = entry; self.commitSeq = commitSeq }
 }
 

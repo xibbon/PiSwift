@@ -2,45 +2,89 @@ import Foundation
 import PiSwiftAI
 import PiSwiftChord
 
-public struct GenerationInput: Codable, Sendable { public init() {} }
+/// The empty input of a built-in generation task.
+public struct GenerationInput: Codable, Sendable {
+    /// Creates the empty input of a built-in generation task.
+    public init() {}
+}
+/// The answer entry produced by a completed generation.
 public struct GenerationResult: Codable, Sendable, Equatable {
+    /// The ID of the saved result entry.
     public let entryId: EntryID
+    /// Records the final assistant answer entry.
     public init(entryId: EntryID) { self.entryId = entryId }
 }
 /// Persist the provider handle without adding a retroactive Codable conformance to PiSwiftAI.
 public struct GenerationDeferredHandle: Codable, Sendable {
+    /// The provider identifier used to resolve the model.
     public var provider: String
+    /// The model identifier within its provider.
     public var modelId: String
+    /// The model API used for this saved request.
     public var api: String
+    /// The stable identifier of this record or handle.
     public var id: String
+    /// The time after which cached request state expires.
     public var expiresAt: Int64?
+    /// The delay before the next deferred request poll, in milliseconds.
     public var pollAfterMs: Int?
+    /// Application data retained with the durable entry.
     public var data: AnyCodable?
+    /// Copies a provider handle into Codable checkpoint state.
     public init(_ handle: DeferredHandle) {
         provider = handle.provider; modelId = handle.modelId; api = handle.api; id = handle.id
         expiresAt = handle.expiresAt; pollAfterMs = handle.pollAfterMs; data = handle.data
     }
+    /// The provider handle used to poll or cancel a deferred request.
     public var handle: DeferredHandle {
         DeferredHandle(provider: provider, modelId: modelId, api: api, id: id,
                        expiresAt: expiresAt, pollAfterMs: pollAfterMs, data: data)
     }
 }
+/// The persisted phase, request, and tool state of a generation task.
 public struct GenerationCheckpoint: TaskCheckpoint {
-    public enum Phase: String, Codable, Sendable { case prepare, request, retry, poll, tools }
+    /// The persisted phase used to resume this built-in task.
+    public enum Phase: String, Codable, Sendable {
+        /// Saves request or execution intent before the external effect.
+        case prepare
+        /// Starts or resumes the saved model request.
+        case request
+        /// Waits until the saved retry deadline before another request.
+        case retry
+        /// Polls the saved deferred model request.
+        case poll
+        /// Selects the usage totals of tool execution.
+        case tools
+    }
+    /// The saved generation phase used on resume.
     public var phase: Phase
+    /// The current request attempt number.
     public var attempt: Int?
+    /// The compaction task awaited by this generation.
     public var compacted: TaskID?
+    /// Whether the model context exceeded the request limit.
     public var overflow: String?
+    /// The stored provider and model reference or entry model contribution.
     public var model: ModelRef?
+    /// The reasoning effort selected for the model.
     public var thinkingLevel: ModelThinkingLevel?
+    /// The saved provider options used for this request.
     public var streamOptions: ConversationStreamOptions?
+    /// The inclusive entry boundary used for this context.
     public var cutoff: EntryID?
+    /// The clock deadline in milliseconds.
     public var until: Int64?
+    /// The provider handle used to poll or cancel a deferred request.
     public var handle: GenerationDeferredHandle?
+    /// The next deferred request poll time, in milliseconds.
     public var pollAt: Int64?
+    /// The saved assistant answer or tool-call entry.
     public var assistant: EntryID?
+    /// The tool registrations or live tool slots in this value.
     public var tools: [TaskID]?
+    /// The work waiting for execution or publication.
     public var pending: [String]?
+    /// Saves the generation phase and optional request, retry, and tool state.
     public init(phase: Phase, attempt: Int? = nil, compacted: TaskID? = nil, overflow: String? = nil,
                 model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
                 streamOptions: ConversationStreamOptions? = nil, cutoff: EntryID? = nil,
@@ -52,11 +96,13 @@ public struct GenerationCheckpoint: TaskCheckpoint {
         self.assistant = assistant; self.tools = tools; self.pending = pending
     }
 }
+/// The built-in generation definition installed in every registry.
 public let generationTask = TaskDefinition<GenerationInput, GenerationCheckpoint, GenerationResult, GenerationHooks>(
     name: "pi.generation", version: 1, initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) },
     phase: { task, runtime, context in try await runGeneration(task.checkpoint, runtime, context) },
     abort: { task, runtime, context in try await abortGeneration(task.checkpoint, runtime, context) }
 )
+/// Creates the built-in generation task for the conversation.
 public func createGeneration(tx: Transaction, conversationId: ConversationID) async throws -> TaskID {
     try await tx.createTask(generationTask, input: GenerationInput(), options: .init(ownership: .conversation(), conversationId: conversationId))
 }
@@ -192,7 +238,7 @@ func appendGenerationAssistant(tx: Transaction, conversationId: ConversationID, 
     try await recordUsage(tx: tx, conversationId: conversationId, bucket: .models, key: "\(message.provider)/\(message.model)", usage: message.usage)
     return try await tx.appendEntry(conversationId, value: EntryDraft(kind: assistantEntry.kind, model: EntryRecord.encodeMessages([.assistant(message)])))
 }
-public func convertPartial(tx: Transaction, live: JSONDraft, conversationId: ConversationID) async throws {
+internal func convertPartial(tx: Transaction, live: JSONDraft, conversationId: ConversationID) async throws {
     guard let raw = try live.get("generation")?["message"] else { return }
     guard case .assistant(var message) = try EntryRecord(id: EntryID(1), conversationId: conversationId, kind: assistantEntry.kind, model: [raw]).messages()?.first else { return }
     message.stopReason = .aborted

@@ -2,8 +2,11 @@ import PiSwiftChord
 
 /// Ownership selected when a conversation is created. Stored conversations use a separate owner edge.
 public enum ConversationOwnership: Sendable, Equatable, Codable {
+    /// Creates a conversation with no task owner.
     case ownerless(extensions: JSONObject = [:])
+    /// Uses task ownership or document scope.
     case task(taskId: TaskID, extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "kind")
@@ -13,6 +16,7 @@ public enum ConversationOwnership: Sendable, Equatable, Codable {
         default: throw recordUnknown("kind", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -31,21 +35,26 @@ public enum ConversationOwnership: Sendable, Equatable, Codable {
 
 /// History inherited from a parent conversation through one inclusive entry.
 public struct ConversationParent: Sendable, Equatable, Codable {
+    /// The conversation that owns or is addressed by this value.
     public let conversationId: ConversationID
+    /// The inclusive history boundary or scheduled time for this value.
     public let at: EntryID
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Records the parent conversation and inclusive inherited entry boundary.
     public init(conversationId: ConversationID, at: EntryID, extensionFields: JSONObject = [:]) {
         self.conversationId = conversationId
         self.at = at
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         conversationId = try recordRequired(object, "conversationId")
         at = try recordRequired(object, "at")
         extensionFields = recordExtensions(object, excluding: ["conversationId", "at"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "conversationId", conversationId)
@@ -56,21 +65,26 @@ public struct ConversationParent: Sendable, Equatable, Codable {
 
 /// Task creator edge of a conversation.
 public struct ConversationOwner: Sendable, Equatable, Codable {
+    /// The conversation that owns or is addressed by this value.
     public let conversationId: ConversationID
+    /// The ID of the task bound to this value or invocation.
     public let taskId: TaskID
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Records the conversation and task that created the child conversation.
     public init(conversationId: ConversationID, taskId: TaskID, extensionFields: JSONObject = [:]) {
         self.conversationId = conversationId
         self.taskId = taskId
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         conversationId = try recordRequired(object, "conversationId")
         taskId = try recordRequired(object, "taskId")
         extensionFields = recordExtensions(object, excluding: ["conversationId", "taskId"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "conversationId", conversationId)
@@ -81,17 +95,22 @@ public struct ConversationOwner: Sendable, Equatable, Codable {
 
 /// Immutable conversation identity, history ancestry, and task ownership.
 public struct ConversationRecord: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: ConversationID
+    /// The parent conversation and inclusive inherited entry boundary.
     public let parent: ConversationParent?
+    /// The task that created this conversation, when present.
     public let owner: ConversationOwner?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Creates the immutable identity, parent edge, and owner edge of a conversation.
     public init(id: ConversationID, parent: ConversationParent? = nil, owner: ConversationOwner? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.parent = parent
         self.owner = owner
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         id = try recordRequired(object, "id")
@@ -99,6 +118,7 @@ public struct ConversationRecord: Sendable, Equatable, Codable {
         owner = try recordOptional(object, "owner")
         extensionFields = recordExtensions(object, excluding: ["id", "parent", "owner"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "id", id)
@@ -110,8 +130,11 @@ public struct ConversationRecord: Sendable, Equatable, Codable {
 
 /// Override of one visible entry in model context. Replacement messages stay opaque and lossless.
 public enum ContextEdit: Sendable, Equatable, Codable {
+    /// Removes the target entry's contribution from model context.
     case omit(target: EntryID, extensions: JSONObject = [:])
+    /// Replaces the target entry's model contribution with the supplied messages.
     case replace(target: EntryID, messages: [JSONValue], extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "action")
@@ -121,6 +144,7 @@ public enum ContextEdit: Sendable, Equatable, Codable {
         default: throw recordUnknown("action", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -141,16 +165,25 @@ public enum ContextEdit: Sendable, Equatable, Codable {
 
 /// Immutable transcript event. Opaque model messages and application data retain all JSON members.
 public struct EntryRecord: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: EntryID
+    /// The conversation that owns or is addressed by this value.
     public let conversationId: ConversationID
+    /// The entry kind used to decode application data or recognize built-in entries.
     public let kind: String
+    /// Opaque model messages contributed by this entry.
     public let model: [JSONValue]?
+    /// Application data retained with the durable entry.
     public let data: JSONValue?
+    /// The entry that defines the active model-context lower bound.
     public let head: EntryID?
+    /// Context changes applied to earlier visible entries.
     public let edits: [ContextEdit]?
+    /// The task that appended this entry, when present.
     public let byTaskId: TaskID?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Creates an immutable transcript record with opaque model and application data.
     public init(id: EntryID, conversationId: ConversationID, kind: String, model: [JSONValue]? = nil, data: JSONValue? = nil, head: EntryID? = nil, edits: [ContextEdit]? = nil, byTaskId: TaskID? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.conversationId = conversationId
@@ -162,6 +195,7 @@ public struct EntryRecord: Sendable, Equatable, Codable {
         self.byTaskId = byTaskId
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         id = try recordRequired(object, "id")
@@ -174,6 +208,7 @@ public struct EntryRecord: Sendable, Equatable, Codable {
         byTaskId = try recordOptional(object, "byTaskId")
         extensionFields = recordExtensions(object, excluding: ["id", "conversationId", "kind", "model", "data", "head", "edits", "byTaskId"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "id", id)
@@ -190,13 +225,17 @@ public struct EntryRecord: Sendable, Equatable, Codable {
 
 /// Entry draft context boundary; self selects the ID that the Session assigns.
 public enum EntryDraftHead: Sendable, Equatable, Codable {
+    /// Uses the visible state at an inclusive entry boundary.
     case entry(EntryID)
+    /// Uses the appended entry itself as the context head.
     case `self`
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let value = try JSONValue(from: decoder)
         if value == .string("self") { self = .self }
         else { self = .entry(try value.decode(EntryID.self)) }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         switch self {
         case .entry(let id): try id.encode(to: encoder)
@@ -207,13 +246,19 @@ public enum EntryDraftHead: Sendable, Equatable, Codable {
 
 /// Entry content before the Session assigns identity and task attribution.
 public struct EntryDraft: Sendable, Equatable, Codable {
+    /// The stored record or document kind.
     public let kind: String
+    /// Opaque model messages to contribute when this entry is appended.
     public let model: [JSONValue]?
+    /// Application data retained with the durable entry.
     public let data: JSONValue?
+    /// The entry that defines the active model-context lower bound.
     public let head: EntryDraftHead?
+    /// Context changes applied to earlier visible entries.
     public let edits: [ContextEdit]?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Creates a pending transcript entry before the transaction allocates its ID.
     public init(kind: String, model: [JSONValue]? = nil, data: JSONValue? = nil, head: EntryDraftHead? = nil, edits: [ContextEdit]? = nil, extensionFields: JSONObject = [:]) {
         self.kind = kind
         self.model = model
@@ -222,6 +267,7 @@ public struct EntryDraft: Sendable, Equatable, Codable {
         self.edits = edits
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         kind = try recordRequired(object, "kind")
@@ -231,6 +277,7 @@ public struct EntryDraft: Sendable, Equatable, Codable {
         edits = try recordOptional(object, "edits")
         extensionFields = recordExtensions(object, excluding: ["kind", "model", "data", "head", "edits"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "kind", kind)
@@ -244,14 +291,19 @@ public struct EntryDraft: Sendable, Equatable, Codable {
 
 /// How a waiting task handles the tasks in its wait set.
 public enum JoinPolicy: String, Sendable, Equatable, Codable {
+    /// Aborts unfinished joined tasks after a dependency fails.
     case failFast
+    /// Waits for every joined task, including failed tasks.
     case allSettled
 }
 
 /// A conversation owns a top-level task; a task owns a child task in the same conversation.
 public enum TaskOwnership: Sendable, Equatable, Codable {
+    /// Assigns the task to conversation-owned work.
     case conversation(extensions: JSONObject = [:])
+    /// Assigns the task to the supplied parent task.
     case task(taskId: TaskID, extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "kind")
@@ -261,6 +313,7 @@ public enum TaskOwnership: Sendable, Equatable, Codable {
         default: throw recordUnknown("kind", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -279,21 +332,26 @@ public enum TaskOwnership: Sendable, Equatable, Codable {
 
 /// JSON error snapshot stored in place of a runtime error.
 public struct TaskOutcomeError: Sendable, Equatable, Codable {
+    /// Text that describes the error, diagnostic, or model response.
     public let message: String
+    /// Optional JSON data that explains the failure or settlement.
     public let detail: JSONValue?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Stores a task failure message and optional JSON detail.
     public init(message: String, detail: JSONValue? = nil, extensionFields: JSONObject = [:]) {
         self.message = message
         self.detail = detail
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         message = try recordRequired(object, "message")
         detail = try recordOptional(object, "detail")
         extensionFields = recordExtensions(object, excluding: ["message", "detail"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject = extensionFields
         try recordSet(&object, "message", message)
@@ -304,11 +362,17 @@ public struct TaskOutcomeError: Sendable, Equatable, Codable {
 
 /// Durable task result receipt. Result values remain opaque JSON.
 public enum TaskOutcome: Sendable, Equatable, Codable {
+    /// Stores the task's successful result.
     case completed(result: JSONValue, extensions: JSONObject = [:])
+    /// Stores an application failure and optional result.
     case failed(error: TaskOutcomeError, result: JSONValue? = nil, extensions: JSONObject = [:])
+    /// Stores the result of cancellation.
     case aborted(reason: String? = nil, result: JSONValue? = nil, extensions: JSONObject = [:])
+    /// Stores the reason a task can no longer execute.
     case orphaned(reason: String, extensions: JSONObject = [:])
+    /// Stores an unexpected handler or runtime failure.
     case faulted(error: TaskOutcomeError, extensions: JSONObject = [:])
+    /// The stored execution or submission state tag.
     public var status: String {
         switch self {
         case .completed: "completed"
@@ -318,6 +382,7 @@ public enum TaskOutcome: Sendable, Equatable, Codable {
         case .faulted: "faulted"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "status")
@@ -330,6 +395,7 @@ public enum TaskOutcome: Sendable, Equatable, Codable {
         default: throw recordUnknown("status", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -367,11 +433,17 @@ public enum TaskOutcome: Sendable, Equatable, Codable {
 
 /// Complete durable execution state. Completing holds an outcome until ordinary owned work settles.
 public enum TaskState: Sendable, Equatable, Codable {
+    /// Work is saved and waits for scheduler admission.
     case pending(checkpoint: JSONValue, extensions: JSONObject = [:])
+    /// Work is executing with its saved checkpoint.
     case running(checkpoint: JSONValue, extensions: JSONObject = [:])
+    /// Work waits for the selected tasks under its join policy.
     case waiting(checkpoint: JSONValue, on: [TaskID], policy: JoinPolicy, extensions: JSONObject = [:])
+    /// An outcome is saved while ordinary owned work finishes.
     case completing(outcome: TaskOutcome, extensions: JSONObject = [:])
+    /// The task has a final outcome and cannot execute again.
     case terminal(outcome: TaskOutcome, extensions: JSONObject = [:])
+    /// The stored execution or submission state tag.
     public var status: String {
         switch self {
         case .pending: "pending"
@@ -381,6 +453,7 @@ public enum TaskState: Sendable, Equatable, Codable {
         case .terminal: "terminal"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "status")
@@ -393,6 +466,7 @@ public enum TaskState: Sendable, Equatable, Codable {
         default: throw recordUnknown("status", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -430,20 +504,33 @@ public enum TaskState: Sendable, Equatable, Codable {
 
 /// Complete replacement task record. Input, checkpoints, results, and memos retain opaque JSON.
 public struct TaskRecord: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: TaskID
+    /// The conversation that owns or is addressed by this value.
     public let conversationId: ConversationID
+    /// The stable definition name used to resolve this task.
     public let kind: String
+    /// The stored schema or task definition version.
     public let version: Double
+    /// The decoded or saved input supplied when the task was created.
     public let input: JSONValue
+    /// The current durable task, graph, or conversation state.
     public let state: TaskState
+    /// The parent task that owns this task, when present.
     public let owner: TaskID?
+    /// Whether this task can outlive ordinary conversation work.
     public let background: Bool
+    /// Whether an abort request has been saved for this task.
     public let abortRequested: Bool
+    /// The time at which task execution started, in milliseconds.
     public let startedAt: Double?
+    /// The time at which task execution ended, in milliseconds.
     public let endedAt: Double?
+    /// The durable task memos used to avoid repeated effects.
     public let memos: JSONObject?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
+    /// Creates a complete stored task record, including ownership and execution state.
     public init(id: TaskID, conversationId: ConversationID, kind: String, version: Double, input: JSONValue, state: TaskState, owner: TaskID? = nil, background: Bool = false, abortRequested: Bool = false, startedAt: Double? = nil, endedAt: Double? = nil, memos: JSONObject? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.conversationId = conversationId
@@ -459,6 +546,7 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         self.memos = memos
         self.extensionFields = extensionFields
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         id = try recordRequired(object, "id")
@@ -476,6 +564,7 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         if state.status == "completing" || state.status == "terminal" { try recordForbid(object, ["memos"]) }
         extensionFields = recordExtensions(object, excluding: ["id", "conversationId", "kind", "version", "input", "state", "owner", "background", "abortRequested", "startedAt", "endedAt", "memos"])
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         if (state.status == "completing" || state.status == "terminal"), memos != nil {
             throw recordUnknown("task memos", "completing and terminal tasks have no memos")
@@ -499,10 +588,15 @@ public struct TaskRecord: Sendable, Equatable, Codable {
 
 /// Lifecycle of admitted user input.
 public enum InputSubmissionState: Sendable, Equatable, Codable {
+    /// The submission waits in the conversation inbox.
     case queued(extensions: JSONObject = [:])
+    /// The input has entered the conversation at its saved entry.
     case placed(entry: EntryID, extensions: JSONObject = [:])
+    /// The submission or tool execution has a final result.
     case done(entry: EntryID, answer: EntryID, extensions: JSONObject = [:])
+    /// The input ended without an answer and has a saved reason.
     case unanswered(reason: String, entry: EntryID? = nil, detail: JSONValue? = nil, extensions: JSONObject = [:])
+    /// The stored execution or submission state tag.
     public var status: String {
         switch self {
         case .queued: "queued"
@@ -511,6 +605,7 @@ public enum InputSubmissionState: Sendable, Equatable, Codable {
         case .unanswered: "unanswered"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "status")
@@ -522,6 +617,7 @@ public enum InputSubmissionState: Sendable, Equatable, Codable {
         default: throw recordUnknown("status", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -554,9 +650,13 @@ public enum InputSubmissionState: Sendable, Equatable, Codable {
 
 /// Lifecycle of a passive entry write.
 public enum WriteSubmissionState: Sendable, Equatable, Codable {
+    /// The submission waits in the conversation inbox.
     case queued(extensions: JSONObject = [:])
+    /// The submission or tool execution has a final result.
     case done(entry: EntryID, extensions: JSONObject = [:])
+    /// The input ended without an answer and has a saved reason.
     case unanswered(reason: String, detail: JSONValue? = nil, extensions: JSONObject = [:])
+    /// The stored execution or submission state tag.
     public var status: String {
         switch self {
         case .queued: "queued"
@@ -564,6 +664,7 @@ public enum WriteSubmissionState: Sendable, Equatable, Codable {
         case .unanswered: "unanswered"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         try recordForbid(object, ["answer"])
@@ -575,6 +676,7 @@ public enum WriteSubmissionState: Sendable, Equatable, Codable {
         default: throw recordUnknown("status", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -601,23 +703,31 @@ public enum WriteSubmissionState: Sendable, Equatable, Codable {
 
 /// Durable lifecycle of admitted input or a passive write. JSON uses flat type and status fields.
 public enum SubmissionRecord: Sendable, Equatable, Codable {
+    /// Stores user content and its admission policy.
     case input(id: SubmissionID, conversationId: ConversationID, requestId: String? = nil, state: InputSubmissionState)
+    /// Stores an entry write request.
     case write(id: SubmissionID, conversationId: ConversationID, requestId: String? = nil, state: WriteSubmissionState)
+    /// The stable identifier of this record or handle.
     public var id: SubmissionID {
         switch self { case .input(let id, _, _, _), .write(let id, _, _, _): id }
     }
+    /// The conversation that owns or is addressed by this value.
     public var conversationId: ConversationID {
         switch self { case .input(_, let id, _, _), .write(_, let id, _, _): id }
     }
+    /// An optional conversation-scoped key that makes request admission idempotent.
     public var requestId: String? {
         switch self { case .input(_, _, let value, _), .write(_, _, let value, _): value }
     }
+    /// The stored input or write submission tag.
     public var type: String {
         switch self { case .input: "input"; case .write: "write" }
     }
+    /// The stored execution or submission state tag.
     public var status: String {
         switch self { case .input(_, _, _, let state): state.status; case .write(_, _, _, let state): state.status }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         var object = try recordObject(decoder)
         let type: String = try recordRequired(object, "type")
@@ -631,6 +741,7 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
         default: throw recordUnknown("submission type", type)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {
@@ -647,8 +758,11 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
 
 /// Terminal status staged for an existing submission.
 public enum SubmissionSettlement: Sendable, Equatable, Codable {
+    /// The submission or tool execution has a final result.
     case done(answer: EntryID, extensions: JSONObject = [:])
+    /// The input ended without an answer and has a saved reason.
     case unanswered(reason: String, detail: JSONValue? = nil, extensions: JSONObject = [:])
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "status")
@@ -658,6 +772,7 @@ public enum SubmissionSettlement: Sendable, Equatable, Codable {
         default: throw recordUnknown("status", tag)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var object: JSONObject
         switch self {

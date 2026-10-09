@@ -2,21 +2,38 @@ import Foundation
 import PiSwiftAI
 import PiSwiftChord
 
+/// The saved call and context consumed by the built-in tool task.
 public typealias ToolTaskInput = GenerationToolInput
+/// The persisted prepare or execute phase of a tool task.
 public struct ToolTaskCheckpoint: TaskCheckpoint {
-    public enum Phase: String, Codable, Sendable { case call, execute }
+    /// The persisted phase used to resume this built-in task.
+    public enum Phase: String, Codable, Sendable {
+        /// Executes the prepared tool or model request.
+        case call
+        /// Runs the prepared tool call.
+        case execute
+    }
+    /// The saved prepare or execute phase.
     public var phase: Phase
+    /// Replacement JSON arguments for the tool call.
     public var arguments: JSONObject?
+    /// Whether this tool can execute again after a restart.
     public var replay: ToolReplay?
+    /// Selects the saved tool phase, prepared arguments, and replay policy.
     public init(phase: Phase, arguments: JSONObject? = nil, replay: ToolReplay? = nil) {
         self.phase = phase; self.arguments = arguments; self.replay = replay
     }
 }
+/// The tool result entry produced by a completed tool task.
 public struct ToolTaskResult: Codable, Sendable {
+    /// The ID of the saved result entry.
     public var entryId: EntryID
+    /// Optional run control returned by the tool.
     public var control: ToolControl?
+    /// Records the saved tool result entry and optional run control.
     public init(entryId: EntryID, control: ToolControl? = nil) { self.entryId = entryId; self.control = control }
 }
+/// The built-in tool definition installed in every registry.
 public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTaskResult, ToolHooks>(
     name: "pi.tool", version: 1, initial: { _ in ToolTaskCheckpoint(phase: .call) },
     phase: { task, runtime, context in try await runToolTask(task, runtime, context) },
@@ -145,7 +162,7 @@ internal func settleTool(_ runtime: TaskRuntime, _ call: ToolCall, _ ending: Too
         }
     }, context: context)
 }
-public func appendToolResult(tx: Transaction, conversationId: ConversationID, call: ToolCall,
+internal func appendToolResult(tx: Transaction, conversationId: ConversationID, call: ToolCall,
                              result: ToolExecutionResult, timestamp: Int64, durationMs: Int? = nil) async throws -> EntryRecord {
     let diagnostics = result.diagnostics ?? []
     var content = result.content ?? []

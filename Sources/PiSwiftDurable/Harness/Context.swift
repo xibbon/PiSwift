@@ -3,12 +3,17 @@ import PiSwiftChord
 
 /// Raw active entries and their model contributions. Values do not share mutable state.
 public struct ContextView: Sendable {
+    /// The visible entry that sets the lower context bound, when present.
     public let head: EntryRecord?
+    /// The active entries from the context head through its inclusive upper bound.
     public let entries: [EntryRecord]
+    /// The model messages retained for each active entry after edits.
     public let contributions: [[Message]]
+    /// The flattened model messages after entry edits and tool-result ordering.
     public let messages: [Message]
     /// Raw contributions retain declaration member order at the AI boundary.
     let rawContributions: [JSONValue]?
+    /// Creates a detached view of active entries and their model contributions.
     public init(head: EntryRecord? = nil, entries: [EntryRecord] = [], contributions: [[Message]] = [], messages: [Message] = [], rawContributions: [JSONValue]? = nil) {
         self.head = head; self.entries = entries; self.contributions = contributions; self.messages = messages; self.rawContributions = rawContributions
     }
@@ -16,8 +21,11 @@ public struct ContextView: Sendable {
 
 /// Inclusive limits captured before a context scan. A head marker must have a head ID.
 public struct ContextBounds: Sendable {
+    /// The entry that defines the active model-context lower bound.
     public let head: EntryRecord?
+    /// The inclusive upper entry boundary of this context.
     public let tail: EntryID
+    /// Records the context head and inclusive upper entry boundary.
     public init(head: EntryRecord?, tail: EntryID) { self.head = head; self.tail = tail }
 }
 

@@ -14,8 +14,12 @@ public func scanAll<Item: Sendable & Equatable & Codable>(
     return items
 }
 
+/// An operation used a harness after it closed.
 public struct HarnessClosedError: Error, Sendable, CustomStringConvertible {
+    /// Creates the error for use of a closed harness.
     public init() {}
+    /// Text that describes this value or error to the caller.
     public var description: String { "Harness is closed" }
 }
+/// Creates the error returned by a closed harness.
 public func closedError() -> HarnessClosedError { HarnessClosedError() }

@@ -1,36 +1,58 @@
 import Foundation
 import Synchronization
 
-public enum OutputRetention: String, Sendable, Equatable { case head, tail }
+/// Selects whether limits keep the beginning or the end of output.
+public enum OutputRetention: String, Sendable, Equatable {
+    /// Keeps the beginning of output when limits remove content.
+    case head
+    /// Keeps the end of output when limits remove content.
+    case tail
+}
+/// Maximum retained bytes and lines, and which end of the output to keep.
 public struct OutputLimits: Sendable, Equatable {
+    /// The maximum UTF-8 byte count to retain.
     public var maxBytes: Int
+    /// The maximum number of lines to retain.
     public var maxLines: Int
+    /// Which end of output remains when limits remove content.
     public var retain: OutputRetention
+    /// Sets nonnegative byte and line limits and selects which end to retain.
     public init(maxBytes: Int, maxLines: Int, retain: OutputRetention) {
         precondition(maxBytes >= 0 && maxLines >= 0)
         self.maxBytes = maxBytes; self.maxLines = maxLines; self.retain = retain
     }
 }
+/// Retained tool output with the byte and line counts removed by its limits.
 public struct BoundedOutput: Sendable, Equatable {
+    /// The retained text of this output or result.
     public let text: String
+    /// The number of UTF-8 bytes removed from the full output.
     public let droppedBytes: Int
+    /// The number of lines removed from the full output.
     public let droppedLines: Int
+    /// Pairs retained text with discarded byte and line counts.
     public init(text: String, droppedBytes: Int, droppedLines: Int) {
         self.text = text; self.droppedBytes = droppedBytes; self.droppedLines = droppedLines
     }
 }
+/// A retained text range with its byte count and discarded output counts.
 public struct OutputSlice: Sendable, Equatable {
+    /// The retained text of this output or result.
     public let text: String
+    /// The UTF-8 byte count of the retained output.
     public let bytes: Int
+    /// The number of UTF-8 bytes removed from the full output.
     public let droppedBytes: Int
+    /// The number of lines removed from the full output.
     public let droppedLines: Int
 }
+/// Removes control characters that must not enter visible tool output.
 public func sanitizeOutput(_ text: String) -> String {
     String(String.UnicodeScalarView(text.unicodeScalars.filter {
         !((0...8).contains($0.value) || (11...31).contains($0.value) || (0xfff9...0xfffb).contains($0.value))
     }))
 }
-public func characterEnd(_ bytes: [UInt8], at index: Int) -> Int {
+internal func characterEnd(_ bytes: [UInt8], at index: Int) -> Int {
     var end = index
     while end > 0 && end < bytes.count && bytes[end] & 0xc0 == 0x80 { end -= 1 }
     return end
@@ -43,6 +65,7 @@ private func characterStart(_ bytes: [UInt8], at index: Int) -> Int {
 private func lineCount(_ bytes: ArraySlice<UInt8>) -> Int {
     bytes.isEmpty ? 0 : bytes.filter { $0 == 10 }.count + (bytes.last == 10 ? 0 : 1)
 }
+/// Retains the selected end of text within byte and line limits without splitting UTF-8 characters.
 public func boundOutput(_ text: String, limits: OutputLimits) -> OutputSlice {
     let bytes = Array(text.utf8)
     var from = 0; var to = bytes.count
@@ -95,8 +118,11 @@ public final class OutputBuffer: Sendable {
     }
     private let limits: OutputLimits
     private let state = Mutex(State())
+    /// Creates an empty output buffer with the supplied retention limits.
     public init(_ limits: OutputLimits) { self.limits = limits }
+    /// The byte count currently retained in the output buffer.
     public var storedBytes: Int { state.withLock { $0.storedBytes } }
+    /// Adds output to the buffer and returns whether visible output changed.
     @discardableResult public func push(_ text: String, skipped: ShellOutputSkip? = nil) throws -> Bool {
         try state.withLock { state in
             let pending = String(decoding: state.pending, as: UTF8.self)
@@ -104,9 +130,11 @@ public final class OutputBuffer: Sendable {
             return try pushDecoded(pending: pending, text: text, bytes: false, skipped: skipped, state: &state)
         }
     }
+    /// Adds output to the buffer and returns whether visible output changed.
     @discardableResult public func push(_ bytes: Data, skipped: ShellOutputSkip? = nil) throws -> Bool {
         try push(Array(bytes), skipped: skipped)
     }
+    /// Adds output to the buffer and returns whether visible output changed.
     @discardableResult public func push(_ bytes: [UInt8], skipped: ShellOutputSkip? = nil) throws -> Bool {
         try state.withLock { state in
             var pending = ""
@@ -134,6 +162,7 @@ public final class OutputBuffer: Sendable {
         _ = accept(text, state: &state)
         return true
     }
+    /// Flushes incomplete UTF-8 bytes into the retained output.
     public func end() {
         state.withLock { state in
             _ = accept(String(decoding: state.pending, as: UTF8.self), state: &state)
@@ -160,6 +189,7 @@ public final class OutputBuffer: Sendable {
         }
         return true
     }
+    /// Returns sanitized retained output and the byte and line counts discarded by its limits.
     public func snapshot() -> BoundedOutput {
         state.withLock { state in
             let stored = state.chunks.map(\.text).joined()
@@ -177,7 +207,11 @@ public final class OutputBuffer: Sendable {
         }
     }
 }
-public enum OutputBufferError: Error, Sendable { case skippedOutputRequiresTailRetention }
+/// An output stream cannot apply the supplied skip metadata.
+public enum OutputBufferError: Error, Sendable {
+    /// Output skip metadata can only be applied with tail retention.
+    case skippedOutputRequiresTailRetention
+}
 private func tailMargin(_ text: String, limits: OutputLimits) -> String {
     let bytes = Array(text.utf8)
     let byteStart = bytes.count > limits.maxBytes ? characterEnd(bytes, at: bytes.count - limits.maxBytes - 1) : 0

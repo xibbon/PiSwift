@@ -3,25 +3,34 @@ import PiSwiftDurable
 
 /// A check that can run with any asynchronous test runner.
 public struct StorageConformanceCase: Sendable, CustomStringConvertible {
+    /// The name reported for this storage contract check.
     public let name: String
+    /// Runs the asynchronous storage contract check.
     public let run: @Sendable () async throws -> Void
+    /// Pairs a storage test name with its asynchronous check body.
     public init(name: String, run: @escaping @Sendable () async throws -> Void) {
         self.name = name
         self.run = run
     }
+    /// Text that describes this value or error to the caller.
     public var description: String { name }
 }
 
 /// A failed storage check, with its source location.
 public struct StorageConformanceFailure: Error, Sendable, CustomStringConvertible {
+    /// Text that describes the error, diagnostic, or model response.
     public let message: String
+    /// The source file in which the check failed.
     public let file: String
+    /// The source line at which the check failed.
     public let line: UInt
+    /// Stores a failed check message with its source file and line.
     public init(_ message: String, file: String = #filePath, line: UInt = #line) {
         self.message = message
         self.file = file
         self.line = line
     }
+    /// Text that describes this value or error to the caller.
     public var description: String { "\(file):\(line): \(message)" }
 }
 

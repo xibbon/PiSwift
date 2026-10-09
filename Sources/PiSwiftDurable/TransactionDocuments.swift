@@ -310,51 +310,67 @@ final class TransactionDocuments: Sendable {
 }
 
 extension Transaction {
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable>(_ token: SessionDocToken<Value>) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .session()), seedProvider: { nil }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable>(_ token: SessionDocToken<Value>) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .session()), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable>(_ token: ConversationDocToken<Value>, conversationId: ConversationID) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId)), seedProvider: { nil }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable>(_ token: ConversationDocToken<Value>, conversationId: ConversationID) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId)), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable>(_ token: RewindableConversationDocToken<Value>, conversationId: ConversationID) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId)), seedProvider: { nil }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable>(_ token: RewindableConversationDocToken<Value>, conversationId: ConversationID) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId)), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable>(_ token: TaskDocToken<Value>, taskId: TaskID) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .task(taskId: taskId)), seedProvider: { nil }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable>(_ token: TaskDocToken<Value>, taskId: TaskID) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .task(taskId: taskId)), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: SessionDocFamilyToken<Value, Seed>, key: String, seed: Seed) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .session(), key: key), seedProvider: { try JSONValue(encoding: seed) }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: SessionDocFamilyToken<Value, Seed>, key: String) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .session(), key: key), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: ConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String, seed: Seed) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId), key: key), seedProvider: { try JSONValue(encoding: seed) }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: ConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId), key: key), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: RewindableConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String, seed: Seed) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId), key: key), seedProvider: { try JSONValue(encoding: seed) }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: RewindableConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .conversation(conversationId: conversationId), key: key), tx: self) }
     }
+    /// Returns a transaction draft for the document, creating its initial value when absent.
     public func doc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: TaskDocFamilyToken<Value, Seed>, taskId: TaskID, key: String, seed: Seed) async throws -> JSONDraft {
         try await operation { try await documents.acquire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .task(taskId: taskId), key: key), seedProvider: { try JSONValue(encoding: seed) }, tx: self) }
     }
+    /// Ends the current document incarnation in the transaction.
     public func retireDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: TaskDocFamilyToken<Value, Seed>, taskId: TaskID, key: String) async throws {
         try await operation { try await documents.retire(token.definition, address: DocumentAddress(kind: token.definition.kind, scope: .task(taskId: taskId), key: key), tx: self) }
     }

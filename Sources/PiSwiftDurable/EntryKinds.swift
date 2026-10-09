@@ -1,5 +1,6 @@
 /// An open entry-kind token. Data is a compile-time marker; the stored kind remains a string.
 public struct EntryKind<Data>: Sendable, Equatable {
+    /// The stored record or document kind.
     public let kind: String
     /// Rejects an empty kind, as upstream `defineEntry` does.
     public init(_ kind: String) throws {
@@ -7,6 +8,7 @@ public struct EntryKind<Data>: Sendable, Equatable {
         self.kind = kind
     }
     private init(checked kind: String) { self.kind = kind }
+    /// Orders values by their numeric record identifier.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.kind.utf16.elementsEqual(rhs.kind.utf16)
     }

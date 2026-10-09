@@ -3,33 +3,50 @@ import Synchronization
 
 /// The queued part of an inbox item. Content stays in the submission record.
 public struct DurableQueuedItem: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public var id: SubmissionID
+    /// The policy used to queue or execute this work.
     public var mode: InboxItem.Mode
+    /// Pairs a queued submission ID with its admission mode.
     public init(id: SubmissionID, mode: InboxItem.Mode) { self.id = id; self.mode = mode }
 }
 
+/// The active generation and its admitted input submissions.
 public struct DurableSnapshotRun: Sendable, Equatable, Codable {
+    /// The submission IDs admitted to the active generation.
     public var inputs: [SubmissionID]
+    /// Records the inputs admitted to the active generation.
     public init(inputs: [SubmissionID]) { self.inputs = inputs }
 }
 
 /// The state at event stream acquisition, or at a queue overflow.
 public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
+    /// Visible entries in conversation order.
     public var entries: [EntryRecord]
+    /// The inputs admitted to the active generation, when a run is active.
     public var run: DurableSnapshotRun?
+    /// The current partial model response and retry state.
     public var generation: LiveGeneration?
+    /// The visible tool-call slots and their current progress.
     public var tools: [ToolSlot]
+    /// The active compaction tasks and their progress.
     public var compactions: [CompactionStatus]
+    /// The queued conversation submissions.
     public var inbox: [DurableQueuedItem]
+    /// The stored agent configuration at snapshot acquisition.
     public var agent: AgentState
+    /// The recorded model or tool token and cost totals.
     public var usage: JSONObject
+    /// The snapshot event tag used in encoded JSON.
     public var type: String { "snapshot" }
+    /// Creates a detached snapshot of entries, live progress, queues, and usage.
     public init(entries: [EntryRecord] = [], run: DurableSnapshotRun? = nil, generation: LiveGeneration? = nil,
                 tools: [ToolSlot] = [], compactions: [CompactionStatus] = [], inbox: [DurableQueuedItem] = [],
                 agent: AgentState = .init(), usage: JSONObject = ["models": [:], "tools": [:]]) {
         self.entries = entries; self.run = run; self.generation = generation; self.tools = tools
         self.compactions = compactions; self.inbox = inbox; self.agent = agent; self.usage = usage
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let o = try recordObject(decoder)
         entries = try recordRequired(o, "entries"); run = try recordOptional(o, "run")
@@ -37,6 +54,7 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
         compactions = try recordRequired(o, "compactions"); inbox = try recordRequired(o, "inbox")
         agent = try recordRequired(o, "agent"); usage = try recordRequired(o, "usage")
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var o: JSONObject = ["type": .string(type)]
         try recordSet(&o, "entries", entries); try recordSetOptional(&o, "run", run)
@@ -49,14 +67,23 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
 
 /// One change to the in-flight assistant message. Paths are relative to tool arguments.
 public enum DurableMessageChange: Sendable, Equatable, Codable {
+    /// Starts a text block at the supplied content index.
     case textStart(contentIndex: Int, block: JSONObject)
+    /// Starts a reasoning block at the supplied content index.
     case thinkingStart(contentIndex: Int, block: JSONObject)
+    /// Starts a tool-call block at the supplied content index.
     case toolCallStart(contentIndex: Int, block: JSONObject)
+    /// Appends text to the selected text block.
     case textDelta(contentIndex: Int, delta: String)
+    /// Appends text to the selected reasoning block.
     case thinkingDelta(contentIndex: Int, delta: String)
+    /// Appends text at the selected path within the tool-call arguments.
     case toolCallDelta(contentIndex: Int, path: Delta.Path, delta: String)
+    /// Replaces the selected content block with its complete value.
     case block(contentIndex: Int, block: JSONObject)
+    /// Replaces the complete in-flight assistant message.
     case message(message: JSONObject)
+    /// The change or event tag used in encoded JSON.
     public var type: String {
         switch self {
         case .textStart: "text_start"
@@ -69,6 +96,7 @@ public enum DurableMessageChange: Sendable, Equatable, Codable {
         case .message: "message"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let o = try recordObject(decoder)
         let type: String = try recordRequired(o, "type")
@@ -92,6 +120,7 @@ public enum DurableMessageChange: Sendable, Equatable, Codable {
         default: throw recordUnknown("type", type)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var o: JSONObject = ["type": .string(type)]
         switch self {
@@ -110,13 +139,17 @@ public enum DurableMessageChange: Sendable, Equatable, Codable {
 
 /// Retained output changes: a front trim followed by an append, or a replacement.
 public enum DurableToolOutputChange: Sendable, Equatable, Codable {
+    /// Trims the front of retained output and appends new output.
     case delta(trimStart: Int? = nil, append: String? = nil)
+    /// Replaces the retained tool output with the supplied text.
     case set(String)
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let o = try recordObject(decoder)
         if let text: String = try recordOptional(o, "set") { self = .set(text) }
         else { self = .delta(trimStart: try recordOptional(o, "trimStart"), append: try recordOptional(o, "append")) }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var o: JSONObject = [:]
         switch self {
@@ -129,29 +162,52 @@ public enum DurableToolOutputChange: Sendable, Equatable, Codable {
 
 /// Experimental events from committed durable records. JSON uses the upstream type names.
 public enum DurableAgentEvent: Sendable, Equatable, Codable {
+    /// Publishes a complete conversation snapshot after queued events overflow.
     case snapshot(DurableAgentSnapshot)
+    /// Reports a new active generation and its admitted input submissions.
     case runStart(inputs: [SubmissionID])
+    /// Reports the end of an active generation and its admitted input submissions.
     case runEnd(inputs: [SubmissionID])
+    /// Reports the start of an assistant turn.
     case turnStart
+    /// Reports the end of an assistant turn.
     case turnEnd
+    /// Reports the initial value of an in-flight assistant message.
     case messageStart(message: JSONObject)
+    /// Reports assistant-message changes and the current request usage.
     case messageUpdate(usage: JSONObject, changes: [DurableMessageChange])
+    /// Reports the committed entry of a completed assistant message.
     case messageEnd(entry: EntryRecord)
+    /// Reports the start of a tool call with its name and prepared arguments.
     case toolExecutionStart(toolCallId: String, toolName: String, args: JSONObject)
+    /// Reports visible output, details, or diagnostics from a tool call.
     case toolExecutionUpdate(toolCallId: String, toolName: String, output: DurableToolOutputChange? = nil,
                              details: JSONValue? = nil, diagnostics: [ToolDiagnostic]? = nil)
+    /// Reports the end of a tool call and its result entry when present.
     case toolExecutionEnd(toolCallId: String, toolName: String, entry: EntryRecord? = nil)
+    /// Reports the current queued submission IDs and admission modes.
     case inboxUpdate(items: [DurableQueuedItem])
+    /// Reports the new durable state of a submission.
     case submission(record: SubmissionRecord)
+    /// Reports a scheduled request retry, its deadline, and the last error.
     case autoRetryStart(attempt: Int, at: Int64, errorMessage: String)
+    /// Reports the end of the retry wait for the selected attempt.
     case autoRetryEnd(attempt: Int)
+    /// Reports the next scheduled poll of a deferred model request.
     case deferredPoll(pollAt: Int64)
+    /// Reports a newly committed transcript entry.
     case entryAppended(entry: EntryRecord)
+    /// Reports the newly committed agent configuration.
     case agentChanged(agent: AgentState)
+    /// Reports the newly committed conversation usage totals.
     case usageChanged(usage: JSONObject)
+    /// Reports a task failure with its ID, kind, and message.
     case taskFailed(taskId: TaskID, kind: String, message: String)
+    /// Reports an active compaction and whether the generation must wait for it.
     case compactionStart(taskId: TaskID, reason: CompactionReason, blocking: Bool)
+    /// Reports the end of a compaction with its task ID and trigger.
     case compactionEnd(taskId: TaskID, reason: CompactionReason)
+    /// The change or event tag used in encoded JSON.
     public var type: String {
         switch self {
         case .snapshot: "snapshot"
@@ -178,6 +234,7 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case .compactionEnd: "compaction_end"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let o = try recordObject(decoder)
         let type: String = try recordRequired(o, "type")
@@ -209,6 +266,7 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         default: throw recordUnknown("type", type)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         if case .snapshot(let snapshot) = self { try snapshot.encode(to: encoder); return }
         var o: JSONObject = ["type": .string(type)]
@@ -240,18 +298,24 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
 
 /// Serial batches with an acquisition snapshot. The snapshot is read separately from start.
 public final class DurableAgentEventWatch: Sendable {
+    /// Receives each committed event batch serially with its delivery context.
     public typealias Listener = @Sendable ([DurableAgentEvent], ChordContext) async throws -> Void
+    /// The conversation state captured when this event watch was acquired.
     public let snapshot: DurableAgentSnapshot
     private let watch: CommittedWatch<[DurableAgentEvent]>
     internal init(snapshot: DurableAgentSnapshot, watch: CommittedWatch<[DurableAgentEvent]>) {
         self.snapshot = snapshot; self.watch = watch
     }
+    /// Installs one listener for serial event batches. It does not deliver the acquisition snapshot.
     public func start(_ listener: @escaping Listener) throws {
         try watch.start { events, _, context in try await listener(events, context) }
     }
+    /// Stops future event delivery and returns the watch end reason. An active listener can finish later.
     public func stop() async -> WatchEnd { await watch.stop() }
+    /// Waits for the watch to end and returns the reason. An active listener can finish later.
     public var closed: WatchEnd { get async { await watch.closed } }
     package func waitUntilIdle() async { await watch.waitUntilIdle() }
 }
 
+/// A conversation event watch. Call stop() to release its observer.
 public typealias DurableAgentEventStream = DurableAgentEventWatch

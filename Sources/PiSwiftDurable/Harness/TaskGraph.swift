@@ -3,11 +3,16 @@ import Synchronization
 
 /// The durable status of a live task, without checkpoint and outcome data.
 public enum TaskGraphState: Sendable, Equatable, Codable {
+    /// Work is saved and waits for scheduler admission.
     case pending(phase: String)
+    /// Work is executing with its saved checkpoint.
     case running(phase: String)
+    /// Work waits for the selected tasks under its join policy.
     case waiting(phase: String, on: [TaskID], policy: JoinPolicy)
+    /// An outcome is saved while ordinary owned work finishes.
     case completing(outcome: String)
 
+    /// The stored execution or submission state tag.
     public var status: String {
         switch self {
         case .pending: "pending"
@@ -16,6 +21,7 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
         case .completing: "completing"
         }
     }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let status: String = try recordRequired(object, "status")
@@ -28,6 +34,7 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
         default: throw recordUnknown("status", status)
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws { try json.encode(to: encoder) }
     fileprivate var json: JSONValue {
         var object: JSONObject = ["status": .string(status)]
@@ -43,13 +50,21 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
     }
 }
 
+/// One task, its ownership edges, and its current graph state.
 public struct TaskGraphNode: Sendable, Equatable, Codable {
+    /// The stable identifier of this record or handle.
     public let id: TaskID
+    /// The stable definition name stored with this task.
     public let kind: String
+    /// The conversation in which this task executes.
     public let conversationId: ConversationID
+    /// The task that owns this node, when present.
     public let owner: TaskID?
+    /// Whether the task can outlive ordinary work of its owner.
     public let background: Bool
+    /// Whether an abort request has been saved for this task.
     public let abortRequested: Bool
+    /// The task status and join or terminal outcome represented by this node.
     public let state: TaskGraphState
     /// Conversations owned by the task, in ID order.
     public let conversations: [ConversationID]
@@ -84,11 +99,15 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
 
 /// An immutable revision of all live tasks in the Session. Keys are decimal task IDs.
 public final class TaskGraph: Sendable, Equatable, Codable {
+    /// Graph nodes indexed by the decimal string of their task ID.
     public let tasks: [String: TaskGraphNode]
+    /// Creates an ownership graph indexed by task ID.
     public init(tasks: [String: TaskGraphNode] = [:]) { self.tasks = tasks }
+    /// Orders values by their numeric record identifier.
     public static func == (lhs: TaskGraph, rhs: TaskGraph) -> Bool { lhs.tasks == rhs.tasks }
     fileprivate var json: JSONValue { .object(["tasks": .object(JSONObject(tasks.map { ($0.key, $0.value.json) }))]) }
 }
+/// A stream of committed task graphs. Call stop() to release its observer.
 public typealias TaskGraphWatch = CommittedWatch<TaskGraph>
 
 private final class TaskGraphObserverID: Sendable {}

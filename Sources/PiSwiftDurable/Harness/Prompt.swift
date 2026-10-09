@@ -3,13 +3,18 @@ import PiSwiftChord
 
 /// Ordered tool declaration. AITool alone cannot retain JSON Schema member order.
 public struct DurableToolDeclaration: Sendable {
+    /// The model-facing tool declaration decoded from the ordered JSON.
     public let declaration: AITool
+    /// The JSON tool declaration with retained member order.
     public let json: JSONObject
+    /// Pairs a model tool with its ordered JSON declaration.
     public init(declaration: AITool, json: JSONObject) { self.declaration = declaration; self.json = json }
+    /// Pairs a model tool with its ordered JSON declaration.
     public init(name: String, description: String, parameters: JSONObject) throws {
         let fields: JSONObject = ["name": .string(name), "description": .string(description), "parameters": .object(parameters)]
         self = try Self(json: fields)
     }
+    /// Pairs a model tool with its ordered JSON declaration.
     public init(json: JSONObject) throws {
         let wrapper = SystemMessage(content: .text(""), timestamp: 0)
         var message = try durableJSON(fromOrdered: systemMessageToOrderedJSON(wrapper)).objectValue!
@@ -21,7 +26,7 @@ public struct DurableToolDeclaration: Sendable {
         declaration = tool; self.json = json
     }
     /// This adapter uses the deterministic order supplied by PiSwiftAI's encoder.
-    /// Use the JSON initializer when source key order is part of the declaration.
+    /// Pairs a model tool with its ordered JSON declaration.
     public init(_ declaration: AITool) throws {
         let message = SystemMessage(content: .text(""), toolsAdded: [declaration], timestamp: 0)
         let raw = try durableJSON(fromOrdered: systemMessageToOrderedJSON(message))
@@ -103,7 +108,11 @@ public func planSystemEntries(view: ContextView, desired: JSONObject, tools: [AI
     try planSystemEntries(view: view, desired: desired, tools: tools.map(DurableToolDeclaration.init), timestamp: timestamp)
 }
 
-public enum PromptPlanError: Error, Sendable { case nonStringSection }
+/// The requested prompt contains a section value that is not text.
+public enum PromptPlanError: Error, Sendable {
+    /// A desired prompt section value is not a JSON string.
+    case nonStringSection
+}
 
 private func planSectionPatches(shown: JSONObject, desired: JSONObject) -> [JSONObject] {
     let patchedOrder = shown.keys.filter { desired[$0] != nil } + desired.keys.filter { shown[$0] == nil }
@@ -144,7 +153,7 @@ private func plannedSystem(sections: JSONObject?, added: [DurableToolDeclaration
 }
 
 extension DurableToolDeclaration {
-    /// Uses the registration's source JSON Schema order.
+    /// Pairs a model tool with its ordered JSON declaration.
     public init(_ registration: ToolRegistration) throws {
         self.init(declaration: registration.declaration, json: try registration.currentOrderedDeclaration())
     }

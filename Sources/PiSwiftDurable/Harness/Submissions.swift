@@ -2,33 +2,71 @@ import PiSwiftAI
 import PiSwiftChord
 import Synchronization
 
+/// User text or content blocks submitted to a conversation.
 public typealias UserInput = UserContent
-public enum WhenBusy: String, Sendable { case steer, followUp, reject }
+/// Selects steering, follow-up, or rejection when a conversation is active.
+public enum WhenBusy: String, Sendable {
+    /// Admits input at the next steering boundary.
+    case steer
+    /// Queues input for the next follow-up boundary.
+    case followUp
+    /// Rejects input while the conversation has active work.
+    case reject
+}
+/// User input or an entry write offered to a conversation.
 public enum SubmissionDraft: Sendable {
+    /// Offers user content with an optional busy policy and request key.
     case input(content: UserInput, whenBusy: WhenBusy? = nil, requestId: String? = nil)
+    /// Offers an entry draft with an optional request key.
     case write(entry: EntryDraft, requestId: String? = nil)
+    /// An optional conversation-scoped key that makes request admission idempotent.
     public var requestId: String? { switch self { case .input(_, _, let id), .write(_, let id): id } }
+    /// The stored input or write submission tag.
     public var type: String { switch self { case .input: "input"; case .write: "write" } }
 }
+/// An input with reject-on-busy policy could not enter the conversation.
 public struct ConversationBusy: Error, Sendable, CustomStringConvertible {
+    /// The conversation that owns or is addressed by this value.
     public let conversationId: ConversationID
+    /// Records the conversation that rejected input while busy.
     public init(conversationId: ConversationID) { self.conversationId = conversationId }
+    /// Text that describes this value or error to the caller.
     public var description: String { "Conversation \(conversationId.rawValue) is busy" }
 }
-public enum SubmissionAbortResult: String, Sendable { case aborted, alreadyPlaced = "already_placed", settled, notFound = "not_found" }
+/// The result of an attempt to remove a submission before it is placed.
+public enum SubmissionAbortResult: String, Sendable {
+    /// The queued submission was withdrawn before placement.
+    case aborted
+    /// The submission already has a placement entry.
+    case alreadyPlaced = "already_placed"
+    /// The submission or transaction already has a final state.
+    case settled
+    /// No submission exists with the supplied ID.
+    case notFound = "not_found"
+}
+/// The final stored submission, including its answer or unanswered reason.
 public struct SettledSubmission: Sendable, Equatable {
+    /// The durable record from which this typed value is derived.
     public let record: SubmissionRecord
+    /// The stable identifier of this record or handle.
     public var id: SubmissionID { record.id }
+    /// The conversation that owns or is addressed by this value.
     public var conversationId: ConversationID { record.conversationId }
+    /// The stored execution or submission state tag.
     public var status: String { record.status }
+    /// The answer entry of a done input submission, or nil for other settlements.
     public var answer: EntryID? { if case .input(_, _, _, .done(_, let answer, _)) = record { return answer }; return nil }
+    /// The unanswered reason, or nil when the submission has an answer.
     public var reason: String? {
         switch record { case .input(_, _, _, .unanswered(let reason, _, _, _)), .write(_, _, _, .unanswered(let reason, _, _)): reason; default: nil }
     }
     internal init(_ record: SubmissionRecord) { self.record = record }
 }
+/// The final submission receipt returned by a submission wait.
 public typealias SettledSubmissionRecord = SettledSubmission
+/// A handle that reads, waits for, or aborts one durable submission.
 public struct Submission: Sendable {
+    /// The stable identifier of this record or handle.
     public let id: SubmissionID
     private let submissions: Submissions
     private let binding: InvocationBinding?
@@ -39,12 +77,15 @@ public struct Submission: Sendable {
     private func context(_ context: ChordContext) throws -> ChordContext {
         try binding?.check(); return binding.map { context.withAbortSignal($0.signal) } ?? context
     }
+    /// Reads the latest durable submission record.
     public func status(context: ChordContext) async throws -> SubmissionRecord {
         try await withTaskCancellationContext(try self.context(context)) { try await submissions.status(id: id, context: $0) }
     }
+    /// Resumes scheduling and waits for this submission to settle, or for caller cancellation.
     public func wait(context: ChordContext) async throws -> SettledSubmission {
         try await withTaskCancellationContext(try self.context(context)) { try await submissions.wait(id: id, context: $0) }
     }
+    /// Withdraws this submission if it has not been placed. Throws if the submission is absent.
     public func abort(context: ChordContext) async throws -> SubmissionAbortResult {
         let result = try await withTaskCancellationContext(try self.context(context)) { try await submissions.abort(id: id, context: $0) }
         if result == .notFound { throw SessionError.message("Submission \(id.rawValue) does not exist") }
@@ -119,7 +160,7 @@ internal final class Submissions: Sendable {
 }
 private func isSettled(_ record: SubmissionRecord) -> Bool { record.status == "done" || record.status == "unanswered" }
 
-public func admitSubmission(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft, now: Int64, queueModes: Settings) async throws -> SubmissionID {
+internal func admitSubmission(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft, now: Int64, queueModes: Settings) async throws -> SubmissionID {
     if let requestId = draft.requestId, let existing = try await tx.submissionByRequest(conversationId, requestId: requestId) {
         guard existing.type == draft.type else { throw SessionError.message("Request \(requestId) already identifies a submission of type \(existing.type)") }
         return existing.id

@@ -1,17 +1,25 @@
 import PiSwiftAI
 import PiSwiftChord
 
+/// The reason, instructions, and optional parent generation of a compaction.
 public struct CompactionInput: Codable, Sendable {
+    /// The saved cause of cancellation, unanswered input, or compaction.
     public let reason: CompactionReason
+    /// Additional agent or compaction instructions.
     public let instructions: String?
+    /// Selects the compaction trigger and optional summary instructions.
     public init(reason: CompactionReason, instructions: String? = nil) {
         self.reason = reason; self.instructions = instructions
     }
 }
 
+/// The saved summary entry produced by a completed compaction.
 public struct CompactionResult: Codable, Sendable, Equatable {
+    /// The ID of the saved result entry.
     public let entryId: EntryID?
+    /// The durable submission represented by this inbox item.
     public let submissionId: SubmissionID?
+    /// Records an optional summary entry and reset submission.
     public init(entryId: EntryID? = nil, submissionId: SubmissionID? = nil) {
         self.entryId = entryId; self.submissionId = submissionId
     }
@@ -19,13 +27,21 @@ public struct CompactionResult: Codable, Sendable, Equatable {
 
 /// Keep the request fixed after range selection.
 public struct SummaryRequest: Codable, Sendable {
+    /// The current request attempt number.
     public var attempt: Int
+    /// The stored provider and model reference or entry model contribution.
     public let model: ModelRef
+    /// The reasoning effort selected for the model.
     public let thinkingLevel: ModelThinkingLevel
+    /// The saved provider options used for this request.
     public let streamOptions: ConversationStreamOptions
+    /// The output token limit supplied to the model request.
     public let maxTokens: Int
+    /// The retained end of command output.
     public let tail: EntryID
+    /// The first entry retained after compaction.
     public let firstKept: EntryID
+    /// Saves model options and the selected summary messages for restart.
     public init(attempt: Int, model: ModelRef, thinkingLevel: ModelThinkingLevel,
                 streamOptions: ConversationStreamOptions, maxTokens: Int, tail: EntryID, firstKept: EntryID) {
         self.attempt = attempt; self.model = model; self.thinkingLevel = thinkingLevel
@@ -33,15 +49,29 @@ public struct SummaryRequest: Codable, Sendable {
     }
 }
 
+/// The persisted phase and request state of a compaction task.
 public enum CompactionCheckpoint: TaskCheckpoint {
-    public enum Phase: String, Codable, Sendable { case select, summarize, retry }
+    /// The persisted phase used to resume this built-in task.
+    public enum Phase: String, Codable, Sendable {
+        /// Selects the retained context and summary range.
+        case select
+        /// Requests a summary of the selected context range.
+        case summarize
+        /// Waits until the saved retry deadline before another request.
+        case retry
+    }
+    /// Selects the retained context and summary range.
     case select
+    /// Requests a summary of the selected context range.
     case summarize(SummaryRequest)
+    /// Waits until the saved retry deadline before another request.
     case retry(SummaryRequest, until: Int64)
+    /// The saved compaction phase used on resume.
     public var phase: Phase {
         switch self { case .select: .select; case .summarize: .summarize; case .retry: .retry }
     }
     private enum CodingKeys: String, CodingKey { case phase, until }
+    /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Phase.self, forKey: .phase) {
@@ -50,6 +80,7 @@ public enum CompactionCheckpoint: TaskCheckpoint {
         case .retry: self = .retry(try SummaryRequest(from: decoder), until: try container.decode(Int64.self, forKey: .until))
         }
     }
+    /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(phase, forKey: .phase)
@@ -63,6 +94,7 @@ public enum CompactionCheckpoint: TaskCheckpoint {
     }
 }
 
+/// The built-in compaction definition installed in every registry.
 public let compactionTask = TaskDefinition<CompactionInput, CompactionCheckpoint, CompactionResult, CompactionHooks>(
     name: "pi.compaction", version: 1, initial: { _ in .select },
     phase: { task, runtime, context in
@@ -92,7 +124,7 @@ public let compactionTask = TaskDefinition<CompactionInput, CompactionCheckpoint
 )
 
 /// Add the task and its live status in the same commit.
-public func createCompaction(tx: Transaction, conversationId: ConversationID,
+internal func createCompaction(tx: Transaction, conversationId: ConversationID,
                              input: CompactionInput, owner: TaskID? = nil) async throws -> TaskID {
     let ownership: TaskOwnership = owner.map { .task(taskId: $0) } ?? .conversation()
     let id = try await tx.createTask(compactionTask, input: input,
@@ -102,13 +134,13 @@ public func createCompaction(tx: Transaction, conversationId: ConversationID,
     return id
 }
 
-public func selectCut(view: ContextView, keepRecentTokens: Int) -> Int? {
+internal func selectCut(view: ContextView, keepRecentTokens: Int) -> Int? {
     generationSelectCut(view: view, keepRecentTokens: keepRecentTokens)
 }
-public func estimateContext(view: ContextView, extra: [Message] = []) -> Int {
+internal func estimateContext(view: ContextView, extra: [Message] = []) -> Int {
     generationEstimateContext(view: view, extra: extra)
 }
-public func summarizedMessages(view: ContextView, cut: Int) -> [Message] {
+internal func summarizedMessages(view: ContextView, cut: Int) -> [Message] {
     let end = cut < 0 ? max(0, view.contributions.count + cut) : cut
     return orderToolResults(view.contributions.prefix(end).flatMap { $0 })
 }

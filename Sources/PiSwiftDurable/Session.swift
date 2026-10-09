@@ -4,14 +4,22 @@ import Synchronization
 
 /// Hooks for the harness. Conversation creation runs inside its transaction.
 public protocol SessionHooks: Sendable {
+    /// Initializes application state inside the new conversation transaction.
     func conversationCreated(_ tx: Transaction, record: ConversationRecord) async throws
+    /// Runs before the session releases its storage.
     func beforeClose() async
 }
 public extension SessionHooks {
+    /// Performs no initialization unless the application supplies an override.
     func conversationCreated(_ tx: Transaction, record: ConversationRecord) async throws {}
+    /// Performs no action unless the application supplies an override.
     func beforeClose() async {}
 }
-public struct DefaultSessionHooks: SessionHooks { public init() {} }
+/// Session hooks that perform no application initialization.
+public struct DefaultSessionHooks: SessionHooks {
+    /// Creates hooks with no application callbacks.
+    public init() {}
+}
 
 /// One mutation line over one storage backend.
 public final class Session: Sendable {
@@ -41,6 +49,7 @@ public final class Session: Sendable {
     private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64, hooks: any SessionHooks) {
         self.storage = storage; self.now = now; self.hooks = hooks
     }
+    /// Creates a session over the supplied storage without reading persisted records.
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             hooks: any SessionHooks = DefaultSessionHooks(),
@@ -57,6 +66,7 @@ public final class Session: Sendable {
     internal func assertHealthy() throws {
         try state.withLock { if $0.poison != nil { throw SessionError.poisoned } }
     }
+    /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T,
                           context: ChordContext) async throws -> T {
         try await commitWith(change, context: context, scope: TransactionScope())
@@ -137,6 +147,7 @@ public final class Session: Sendable {
         }
         return SessionSubscription { [weak self] in self?.state.withLock { $0.closes.removeAll { $0.id == id } } }
     }
+    /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {
         let begin = SessionLine.Ticket()
         let (task, listeners) = state.withLock { state -> (Task<Void, any Error>, [CloseListener]) in

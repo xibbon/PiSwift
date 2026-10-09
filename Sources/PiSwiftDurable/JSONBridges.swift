@@ -5,7 +5,9 @@ import PiSwiftChord
 
 /// Errors from the optional typed message view and Foundation bridge.
 public enum DurableJSONBridgeError: Error, Sendable, Equatable {
+    /// The Foundation value has no supported JSON representation.
     case unsupportedFoundationValue
+    /// The JSON model contribution could not decode as a supported message.
     case invalidMessage(index: Int)
 }
 

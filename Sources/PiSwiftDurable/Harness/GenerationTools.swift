@@ -1,9 +1,13 @@
 import PiSwiftAI
 import PiSwiftChord
 
+/// The saved tool call and model context required for a tool task.
 public struct GenerationToolInput: Codable, Sendable {
+    /// The assistant entry that supplied this tool call.
     public var assistant: EntryID
+    /// The model-supplied identifier of the tool call.
     public var callId: String
+    /// Identifies the assistant entry and call ID that created the tool task.
     public init(assistant: EntryID, callId: String) { self.assistant = assistant; self.callId = callId }
 }
 let generationToolKind = toolTask.kind
@@ -53,7 +57,7 @@ func startGenerationToolRound(runtime: TaskRuntime, request: GenerationCheckpoin
         return try generationTask.waiting(GenerationCheckpoint(phase: .tools, assistant: entry.id, tools: tools, pending: pending), on: tools, policy: .allSettled)
     }, context: context)
 }
-public func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], context: ChordContext) async throws {
+internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], context: ChordContext) async throws {
     let outcomes = try await runtime.outcomes(tools, context: context)
     var controls: [ToolControl?] = []
     for outcome in outcomes {

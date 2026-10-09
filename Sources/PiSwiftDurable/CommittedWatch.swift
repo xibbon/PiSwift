@@ -3,15 +3,21 @@ import Synchronization
 
 /// The first condition that stops a watch. A listener error stops only its watch.
 public enum WatchEnd: Sendable {
+    /// The attachment stopped delivering values.
     case stopped
+    /// The caller cancelled the watch.
     case cancelled
+    /// The session closed and ended its watches.
     case sessionClosed
+    /// The watched document incarnation ended.
     case retired
+    /// A watch listener failed while processing an update.
     case listenerError(any Error)
 }
 
 /// A serial watch of committed values from one document incarnation.
 public final class CommittedWatch<Value: Sendable>: Sendable {
+    /// Receives each committed value and its JSON operations serially with the delivery context.
     public typealias Listener = @Sendable (Value, [Delta.Op], ChordContext) async throws -> Void
 
     private final class OverflowReservation: Sendable {}

@@ -25,14 +25,17 @@ internal enum TransactionSubmissionChange: Sendable {
 }
 
 extension Transaction {
+    /// Returns a conversation by ID, or nil when that ID is absent.
     public func conversation(_ id: ConversationID) async throws -> ConversationRecord? {
         try await operation(tableRead: "conversation") { try await storage.conversation(id, context: context) }
     }
 
+    /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ id: EntryID) async throws -> EntryRecord? {
         try await operation(tableRead: "entry") { try await storage.entry(id, context: context)?.entry }
     }
 
+    /// Reads the entry identified by ID, or nil when it is absent.
     public func entry<Data>(_ token: EntryKind<Data>, id: EntryID) async throws -> TypedEntry<Data>?
     where Data: Codable & Sendable {
         try await operation(tableRead: "entry") {
@@ -41,28 +44,33 @@ extension Transaction {
         }
     }
 
+    /// Reads the stored task record before the first table write, or returns nil when absent.
     public func task(_ id: TaskID) async throws -> TaskRecord? {
         try await operation(tableRead: "task") { try await committedTask(id) }
     }
 
+    /// Returns a page of conversations that match all query filters.
     public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor? = nil) async throws -> Page<ConversationRecord, Cursor> {
         try await operation(tableRead: "scanConversations") {
             try await storage.scanConversations(query, limit: limit, cursor: cursor, context: context)
         }
     }
 
+    /// Returns a page of entries in the visible ancestry and requested range.
     public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor? = nil) async throws -> Page<EntryRecord, Cursor> {
         try await operation(tableRead: "scanEntries") {
             try await storage.scanEntries(query, limit: limit, cursor: cursor, context: context)
         }
     }
 
+    /// Returns the newest visible entry that sets a context lower bound.
     public func latestHeadMarker(_ conversationId: ConversationID) async throws -> EntryRecord? {
         try await operation(tableRead: "latestHeadMarker") {
             try await storage.findLatestHeadMarker(conversationId, atOrBeforeEntryId: nil, context: context)
         }
     }
 
+    /// Returns a page of tasks that match all query filters.
     public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor? = nil) async throws -> Page<TaskRecord, Cursor> {
         try await operation(tableRead: "scanTasks") {
             try await storage.scanTasks(query, limit: limit, cursor: cursor, context: context)
@@ -73,12 +81,14 @@ extension Transaction {
         try await operation(tableRead: "submission") { try await storage.submission(id, context: context) }
     }
 
+    /// Returns the submission for the conversation-scoped request key, or nil.
     public func submissionByRequest(_ conversationId: ConversationID, requestId: String) async throws -> SubmissionRecord? {
         try await operation(tableRead: "submissionByRequest") {
             try await storage.submissionByRequest(conversationId, requestId: requestId, context: context)
         }
     }
 
+    /// Creates a conversation with the supplied ownership and optional configuration.
     public func createConversation(ownership: ConversationOwnership) async throws -> ConversationRecord {
         try await operation(tableWrite: true) { try await stageConversation(parent: nil, ownership: ownership) }
     }
@@ -89,6 +99,7 @@ extension Transaction {
         }
     }
 
+    /// Creates a conversation with capped ancestry through the selected entry.
     public func forkConversation(_ parentConversationId: ConversationID, at: EntryID, ownership: ConversationOwnership) async throws -> ConversationRecord {
         try await operation(tableWrite: true) {
             try await stageConversation(parent: ConversationParent(conversationId: parentConversationId, at: at), ownership: ownership)
@@ -140,6 +151,7 @@ extension Transaction {
         }
     }
 
+    /// Creates an immutable entry in the transaction's conversation history.
     public func appendEntry(_ conversationId: ConversationID, value: EntryDraft) async throws -> EntryRecord {
         try await operation(tableWrite: true) {
             try await requireConversation(conversationId)
@@ -157,6 +169,7 @@ extension Transaction {
         }
     }
 
+    /// Creates an immutable entry in the transaction's conversation history.
     public func appendEntry<Data>(_ token: EntryKind<Data>, conversationId: ConversationID, value: TypedEntryDraft<Data>) async throws -> TypedEntry<Data>
     where Data: Codable & Sendable {
         try await operation(tableWrite: true) {
@@ -165,6 +178,7 @@ extension Transaction {
         }
     }
 
+    /// Creates a typed task and stores its encoded input and initial checkpoint.
     public func createTask<Input, Checkpoint>(_ task: TaskKind<Input, Checkpoint>, input: Input, options: TaskOptions) async throws -> TaskID {
         try await operation(tableWrite: true) {
             var owner: TaskRecord?
@@ -198,6 +212,7 @@ extension Transaction {
         }
     }
 
+    /// Creates the durable record for an input or entry-write request.
     public func createSubmission(_ create: SubmissionCreate) async throws -> SubmissionRecord {
         try await operation(tableWrite: true) {
             try await requireConversation(create.conversationId)
@@ -214,6 +229,7 @@ extension Transaction {
         }
     }
 
+    /// Stores the final answer or unanswered reason for a submission.
     public func settleSubmission(_ id: SubmissionID, settlement: SubmissionSettlement) throws {
         try synchronousOperation(tableWrite: true) {
             try validateTableJSON(settlement)
@@ -221,6 +237,7 @@ extension Transaction {
         }
     }
 
+    /// Records the entry at which an input submission entered the conversation.
     public func placeSubmission(_ id: SubmissionID, entry: EntryID) throws {
         try synchronousOperation(tableWrite: true) {
             tableState.withLock { $0.submissionChanges.append((id, .placed(entry))) }

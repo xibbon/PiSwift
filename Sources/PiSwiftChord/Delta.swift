@@ -2,12 +2,17 @@
 public enum Delta {
     /// An object key or a non-negative array index.
     public enum PathSegment: Sendable, Hashable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral {
+        /// An object member selected by its exact string key.
         case key(String)
+        /// An array element selected by its integer index.
         case index(Int)
 
+        /// Creates an object-key path segment from a string literal.
         public init(stringLiteral value: String) { self = .key(value) }
+        /// Creates an array-index path segment from an integer literal.
         public init(integerLiteral value: Int) { self = .index(value) }
 
+        /// Compares values using exact string code units where strings are present.
         public static func == (lhs: Self, rhs: Self) -> Bool {
             switch (lhs, rhs) {
             case let (.key(a), .key(b)): a.utf16.elementsEqual(b.utf16)
@@ -15,6 +20,7 @@ public enum Delta {
             default: false
             }
         }
+        /// Hashes the segment using its exact key code units or index.
         public func hash(into hasher: inout Hasher) {
             switch self {
             case .key(let key):
@@ -37,18 +43,27 @@ public enum Delta {
         }
     }
 
+    /// An ordered path from the root to a JSON value.
     public typealias Path = [PathSegment]
 
     /// Operations use the upstream JSON tuple form at storage boundaries.
     public enum Op: Sendable, Equatable, Codable {
+        /// Replaces the root value.
         case replace(JSONValue)
+        /// Assigns the value at a nonempty path.
         case set(Path, JSONValue)
+        /// Removes the value at a nonempty path.
         case delete(Path)
+        /// Appends text to the string at a nonempty path.
         case append(Path, String)
+        /// Removes the given number of UTF-16 units from the end of a string.
         case trim(Path, Int)
+        /// Replaces an array range with the supplied items.
         case splice(Path, index: Int, remove: Int, items: [JSONValue])
+        /// Reorders array elements with a bijective permutation.
         case move(Path, permutation: [Int])
 
+        /// The upstream JSON tuple representation of this operation.
         public var json: JSONValue {
             switch self {
             case .replace(let value): ["r", value]
@@ -126,12 +141,15 @@ public enum Delta {
             }
         }
 
+        /// Decodes and validates the upstream operation tuple.
         public init(from decoder: any Decoder) throws { try self.init(json: JSONValue(from: decoder)) }
+        /// Validates and encodes the upstream operation tuple.
         public func encode(to encoder: any Encoder) throws {
             try validate()
             try json.encode(to: encoder)
         }
 
+        /// Compares values using exact string code units where strings are present.
         public static func == (lhs: Self, rhs: Self) -> Bool {
             switch (lhs, rhs) {
             case let (.replace(a), .replace(b)): a == b
@@ -184,6 +202,7 @@ public enum Delta {
     /// Keys that upstream rejects to protect the JavaScript prototype chain.
     public static let reservedSegments: Set<String> = ["__proto__", "constructor", "prototype"]
 
+    /// Rejects reserved object keys and invalid array indices.
     public static func assertSafePath(_ path: Path) throws {
         for segment in path {
             switch segment {
@@ -223,10 +242,14 @@ public enum Delta {
 
 /// Errors use the upstream decoded-operation texts.
 public enum DeltaError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// The operation path cannot be resolved.
     case unresolvablePath(Delta.Path)
+    /// A path segment is reserved or is an invalid array index.
     case unsafeSegment(Delta.PathSegment)
+    /// The operation has an invalid shape or violates a draft rule.
     case invalidOperation(String)
 
+    /// The text description of this value or error.
     public var description: String {
         switch self {
         case .unresolvablePath(let path): "unresolvable path: \(JSONValue.array(path.map(\.json)))"

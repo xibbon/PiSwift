@@ -1,7 +1,9 @@
 /// A typed key. Two keys with the same description have separate identities.
 public final class ChordContextKey<Value: Sendable>: Sendable {
+    /// The diagnostic name of this key; it does not determine key identity.
     public let description: String
 
+    /// Creates a key with a new identity and the given diagnostic name.
     public init(_ description: String) { self.description = description }
 }
 
@@ -42,7 +44,9 @@ private final class ContextNode: Sendable {
 /// | `withCancel` | `withCancel()` |
 /// | `awaitWithContext` | `awaitWithContext(_:_:)` |
 public struct ChordContext: Sendable, CustomStringConvertible {
+    /// A context with no values and no cancellation signal.
     public static let background = ChordContext(node: ContextNode(name: "[Context BACKGROUND_CONTEXT]"))
+    /// A context for a caller that has not yet supplied its own context.
     public static let todo = ChordContext(node: ContextNode(name: "[Context TODO_CONTEXT]"))
     private static let abortSignalKey = ChordContextKey<AbortSignal>("chord.abortSignal")
 
@@ -50,6 +54,7 @@ public struct ChordContext: Sendable, CustomStringConvertible {
 
     private init(node: ContextNode) { self.node = node }
 
+    /// Returns the nearest value for this key, or nil if it is absent or masked.
     public func value<Value>(_ key: ChordContextKey<Value>) -> Value? {
         var current: ContextNode? = node
         while let entry = current {
@@ -59,6 +64,7 @@ public struct ChordContext: Sendable, CustomStringConvertible {
         return nil
     }
 
+    /// The effective cancellation signal, or nil if cancellation is absent or masked.
     public var abortSignal: AbortSignal? { value(Self.abortSignalKey) }
 
     /// Adds or replaces a value. A nil value masks the parent's value.
@@ -77,11 +83,13 @@ public struct ChordContext: Sendable, CustomStringConvertible {
         withValue(nil, for: Self.abortSignalKey)
     }
 
+    /// Creates a child context with an independent cancellation controller.
     public func withCancel() -> CancellableChordContext {
         let controller = AbortController()
         return CancellableChordContext(context: withAbortSignal(controller.signal), controller: controller)
     }
 
+    /// The diagnostic chain of context names and value keys.
     public var description: String {
         var names: [String] = []
         var current: ContextNode? = node
@@ -95,6 +103,7 @@ public struct ChordContext: Sendable, CustomStringConvertible {
 
 /// A child context and its independent cancellation control.
 public struct CancellableChordContext: Sendable {
+    /// The context supplied with this source commit.
     public let context: ChordContext
     private let controller: AbortController
 
@@ -103,5 +112,6 @@ public struct CancellableChordContext: Sendable {
         self.controller = controller
     }
 
+    /// Cancels this child context once; its parent remains unchanged.
     public func cancel(_ reason: (any Error)? = nil) { controller.abort(reason) }
 }
