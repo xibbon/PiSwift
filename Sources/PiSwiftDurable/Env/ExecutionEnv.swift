@@ -380,8 +380,8 @@ public struct ShellExecOptions: Sendable {
     public var env: [String: String]?
     /// Whether the command inherits the host environment.
     public var inheritEnv: Bool?
-    /// The command timeout in milliseconds.
-    public var timeout: Int64?
+    /// The command timeout. It must be positive and at most 2,147,483,647 milliseconds.
+    public var timeout: Duration?
     /// Receives output chunks with their context and stream metadata.
     public var onOutput: (@Sendable (String, ChordContext, ShellOutputInfo) throws -> Void)?
     /// The optional thresholds for output spill files.
@@ -389,7 +389,7 @@ public struct ShellExecOptions: Sendable {
     /// The optional output window and pacing limits.
     public var window: ShellOutputWindow?
     /// Creates ShellExecOptions with the supplied values.
-    public init(cwd: String? = nil, env: [String: String]? = nil, inheritEnv: Bool? = nil, timeout: Int64? = nil,
+    public init(cwd: String? = nil, env: [String: String]? = nil, inheritEnv: Bool? = nil, timeout: Duration? = nil,
                 onOutput: (@Sendable (String, ChordContext, ShellOutputInfo) throws -> Void)? = nil,
                 spill: ShellSpillOptions? = nil, window: ShellOutputWindow? = nil) {
         self.cwd = cwd; self.env = env; self.inheritEnv = inheritEnv; self.timeout = timeout

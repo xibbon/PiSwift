@@ -27,6 +27,9 @@ public final class LocalExecutionEnv: ExecutionEnv {
     public let id = "local"
     private let workingDirectory: Mutex<String>
     private let watchOptions: LocalWatchOptions
+    #if os(macOS)
+    private let shell: LocalShell
+    #endif
     private let io: LocalFileIO
     /// The working directory used to resolve relative paths.
     public var cwd: String {
@@ -34,17 +37,39 @@ public final class LocalExecutionEnv: ExecutionEnv {
         set { workingDirectory.withLock { $0 = newValue } }
     }
     /// Creates a local environment. Relative paths use the supplied working directory.
-    public init(cwd: String = FileManager.default.currentDirectoryPath, watch: LocalWatchOptions = .init()) {
+    public init(cwd: String = FileManager.default.currentDirectoryPath, watch: LocalWatchOptions = .init(),
+                shellPath: String? = nil, shellEnv: [String: String]? = nil) {
         workingDirectory = Mutex(cwd); watchOptions = watch; io = LocalFileIO()
+        #if os(macOS)
+        shell = LocalShell(shellPath: shellPath, shellEnv: shellEnv)
+        #endif
     }
     internal init(cwd: String, watch: LocalWatchOptions = .init(), io: LocalFileIO) {
         workingDirectory = Mutex(cwd); watchOptions = watch; self.io = io
+        #if os(macOS)
+        shell = LocalShell()
+        #endif
     }
+    #if os(macOS)
+    internal init(cwd: String, shellPath: String? = nil, shellEnv: [String: String]? = nil, shellIO: LocalShellIO,
+                  shellHooks: LocalShellHooks = .init()) {
+        workingDirectory = Mutex(cwd); watchOptions = .init(); io = LocalFileIO()
+        shell = LocalShell(shellPath: shellPath, shellEnv: shellEnv, io: shellIO, hooks: shellHooks)
+    }
+    internal convenience init(cwd: String, shellHooks: LocalShellHooks) {
+        self.init(cwd: cwd, shellIO: .init(), shellHooks: shellHooks)
+    }
+    #endif
     private func resolve(_ path: String) -> String { LocalFS.resolve(path, cwd: cwd) }
-    /// Executes a command. E2 adds the macOS shell implementation.
+    /// Executes a command on macOS. iOS returns shellUnavailable.
+    /// The local environment ignores window and reports every decoded chunk.
+    /// Spill files are not deleted, as in upstream NodeExecutionEnv. The caller owns each spill file.
     public func exec(_ command: ShellCommand, options: ShellExecOptions?, context: ChordContext) async -> Result<ShellExecResult, ExecutionError> {
-        // E2: add macOS shell execution; iOS keeps this result.
-        .failure(ExecutionError(.shellUnavailable, message: "Shell execution is unavailable"))
+        #if os(macOS)
+        return await shell.exec(command, cwd: cwd, options: options, context: context)
+        #else
+        return .failure(ExecutionError(.shellUnavailable, message: "Shell execution is unavailable"))
+        #endif
     }
     /// Resolves home paths, file URLs, and relative paths.
     public func absolutePath(_ path: String, context: ChordContext) async -> Result<String, FileError> {
@@ -301,7 +326,11 @@ public final class LocalExecutionEnv: ExecutionEnv {
         }
     }
     /// Releases environment-owned resources. Callers close their own readers and watchers.
-    public func cleanup(context: ChordContext) async {}
+    public func cleanup(context: ChordContext) async {
+        #if os(macOS)
+        shell.cleanup()
+        #endif
+    }
 }
 
 private func systemWrite(_ fd: Int32, _ bytes: UnsafeRawPointer, _ length: Int) -> Int {

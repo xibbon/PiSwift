@@ -88,8 +88,8 @@ extension EnvChecks {
     }
 
     static func case22(_ h: Self) async throws {
-        // H3 specifies timeout in milliseconds; upstream supplies 0.1 seconds.
-        let timedOut = await h.env.exec(.argv(h.shell + ["sleep 2"]), options: .init(timeout: 100), context: context)
+        // Upstream uses a timeout of 0.1 seconds.
+        let timedOut = await h.env.exec(.argv(h.shell + ["sleep 2"]), options: .init(timeout: .milliseconds(100)), context: context)
         try EnvAssertions.equal(code(timedOut), .timeout)
         let controller = AbortController()
         // A reported startup chunk triggers cancellation instead of a fixed sleep.
