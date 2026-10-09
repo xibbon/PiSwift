@@ -1,0 +1,2 @@
+{"format":1,"type":"record","seq":6,"ordinal":6,"payload":{"type":"document","id":31,"content":{"version":1,"kind":"base","value":{"count":0,"items":["base"]}}}}
+{"format":1,"type":"record","seq":8,"ordinal":5,"payload":{"type":"document","id":31,"content":{"version":1,"kind":"delta","ops":[["s",["count"],2]]}}}

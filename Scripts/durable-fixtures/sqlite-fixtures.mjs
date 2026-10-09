@@ -16,11 +16,11 @@ export async function readRecordedCalls(storage, reads, context) {
   return actual;
 }
 
-export function compareRecordedReads(actual, expected) {
+export function compareRecordedReads(actual, expected, backend = 'SQLite') {
   if (actual.length !== expected.length) throw new Error(`Read count differs: ${actual.length} != ${expected.length}`);
   for (let index = 0; index < expected.length; index++) {
     if (!isDeepStrictEqual(actual[index], expected[index])) {
-      throw new Error(`SQLite read ${index + 1} (${expected[index].method}) differs from Memory: ${JSON.stringify(actual[index])}`);
+      throw new Error(`${backend} read ${index + 1} (${expected[index].method}) differs from Memory: ${JSON.stringify(actual[index])}`);
     }
   }
 }

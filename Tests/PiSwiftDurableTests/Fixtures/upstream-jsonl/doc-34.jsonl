@@ -1,0 +1,2 @@
+{"format":1,"type":"record","seq":6,"ordinal":9,"payload":{"type":"document","id":34,"content":{"version":1,"kind":"base","value":{"seed":["conversation"],"count":0}}}}
+{"format":1,"type":"record","seq":8,"ordinal":7,"payload":{"type":"document","id":34,"content":{"version":1,"kind":"delta","ops":[["s",["count"],3]]}}}

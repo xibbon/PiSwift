@@ -1,11 +1,12 @@
 // All record JSON below comes from v1.1.0 Session and MemoryStorage results.
 import { spawnSync } from 'node:child_process';
-import { readFile, writeFile, mkdir, mkdtemp, copyFile, stat, readdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, copyFile, cp, stat, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mirror, upstreamTag } from './mirror.mjs';
 import { replaySqlite, readRecordedCalls, compareRecordedReads } from './sqlite-fixtures.mjs';
+import { replayJsonl, compareJsonl, jsonlSize } from './jsonl-fixtures.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
@@ -224,6 +225,25 @@ try {
       console.log(`Wrote durable SQLite fixture: ${counts.reads} reads, ${size} bytes; closed with no sidecar files.`);
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
+  const jsonlDirectory = await mkdtemp(join(tmpdir(), 'piswift-upstream-jsonl-'));
+  const jsonlPath = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/upstream-jsonl/', import.meta.url));
+  try {
+    const generated = join(jsonlDirectory, 'generated');
+    await replayJsonl(source, generated, batches, reads, context);
+    const size = await jsonlSize(generated);
+    if (process.argv.includes('--check')) {
+      // Recovery can change files. Check a copy of the stored fixture.
+      const checked = join(jsonlDirectory, 'checked');
+      const storedSize = await jsonlSize(jsonlPath);
+      await cp(jsonlPath, checked, { recursive: true });
+      await compareJsonl(source, checked, reads, context);
+      console.log(`Durable JSONL fixture matches: ${counts.reads} reads, ${storedSize.files} files, ${storedSize.bytes} bytes; regenerated ${size.bytes} bytes.`);
+    } else {
+      await rm(jsonlPath, { recursive: true, force: true });
+      await cp(generated, jsonlPath, { recursive: true });
+      console.log(`Wrote durable JSONL fixture: ${counts.reads} reads, ${size.files} files, ${size.bytes} bytes.`);
+    }
+  } finally { await rm(jsonlDirectory, { recursive: true, force: true }); }
 } finally {
   await source.close();
 }

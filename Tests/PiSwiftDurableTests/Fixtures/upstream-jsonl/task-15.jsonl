@@ -1,0 +1,1 @@
+{"format":1,"type":"record","seq":3,"ordinal":12,"payload":{"type":"task","value":{"id":15,"conversationId":2,"kind":"fixture.task","version":2,"input":["child",true],"owner":3,"background":false,"abortRequested":false,"state":{"status":"pending","checkpoint":{"phase":"start","input":["child",true]}}}}}
