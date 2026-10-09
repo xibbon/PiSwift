@@ -14,18 +14,18 @@ public enum CompactionReason: String, Sendable, Codable { case manual, threshold
 
 /// Committed document reads with typed token adapters.
 public struct HarnessDocumentReader: Sendable {
-    internal let typedRead: (@Sendable (DocumentDefinition, DocumentAddress, PiSwiftChord.Context) async throws -> JSONObject?)?
-    internal let typedHistoricalRead: (@Sendable (DocumentDefinition, DocumentAddress, EntryID, PiSwiftChord.Context) async throws -> JSONObject?)?
-    public var snapshot: @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject?
-    public var snapshotAsOf: @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject?
+    internal let typedRead: (@Sendable (DocumentDefinition, DocumentAddress, ChordContext) async throws -> JSONObject?)?
+    internal let typedHistoricalRead: (@Sendable (DocumentDefinition, DocumentAddress, EntryID, ChordContext) async throws -> JSONObject?)?
+    public var snapshot: @Sendable (String, ConversationID?, ChordContext) async throws -> JSONObject?
+    public var snapshotAsOf: @Sendable (String, ConversationID, EntryID, ChordContext) async throws -> JSONObject?
     public init(
-        snapshot: @escaping @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject? = { _, _, _ in nil },
-        snapshotAsOf: @escaping @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject? = { _, _, _, _ in nil }
+        snapshot: @escaping @Sendable (String, ConversationID?, ChordContext) async throws -> JSONObject? = { _, _, _ in nil },
+        snapshotAsOf: @escaping @Sendable (String, ConversationID, EntryID, ChordContext) async throws -> JSONObject? = { _, _, _, _ in nil }
     ) { self.snapshot = snapshot; self.snapshotAsOf = snapshotAsOf; typedRead = nil; typedHistoricalRead = nil }
-    internal init(snapshot: @escaping @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject?,
-                  snapshotAsOf: @escaping @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject?,
-                  typedRead: @escaping @Sendable (DocumentDefinition, DocumentAddress, PiSwiftChord.Context) async throws -> JSONObject?,
-                  typedHistoricalRead: @escaping @Sendable (DocumentDefinition, DocumentAddress, EntryID, PiSwiftChord.Context) async throws -> JSONObject?) {
+    internal init(snapshot: @escaping @Sendable (String, ConversationID?, ChordContext) async throws -> JSONObject?,
+                  snapshotAsOf: @escaping @Sendable (String, ConversationID, EntryID, ChordContext) async throws -> JSONObject?,
+                  typedRead: @escaping @Sendable (DocumentDefinition, DocumentAddress, ChordContext) async throws -> JSONObject?,
+                  typedHistoricalRead: @escaping @Sendable (DocumentDefinition, DocumentAddress, EntryID, ChordContext) async throws -> JSONObject?) {
         self.snapshot = snapshot; self.snapshotAsOf = snapshotAsOf; self.typedRead = typedRead; self.typedHistoricalRead = typedHistoricalRead
     }
 }
@@ -44,16 +44,16 @@ public struct PromptInput: Sendable {
 
 public struct PromptSection: Sendable {
     public var key: String
-    public var render: @Sendable (PromptInput, PiSwiftChord.Context) async throws -> String?
+    public var render: @Sendable (PromptInput, ChordContext) async throws -> String?
     public var tag: Bool?
     public init(key: String, tag: Bool? = nil,
-                render: @escaping @Sendable (PromptInput, PiSwiftChord.Context) async throws -> String?) {
+                render: @escaping @Sendable (PromptInput, ChordContext) async throws -> String?) {
         self.key = key; self.tag = tag; self.render = render
     }
 }
 
 public func section(_ key: String, tag: Bool? = nil,
-                    render: @escaping @Sendable (PromptInput, PiSwiftChord.Context) async throws -> String?) -> PromptSection {
+                    render: @escaping @Sendable (PromptInput, ChordContext) async throws -> String?) -> PromptSection {
     PromptSection(key: key, tag: tag, render: render)
 }
 

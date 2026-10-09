@@ -162,7 +162,7 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         let storage = ControlledStorage(), chat = try await openChat(storage: storage, setup: HarnessChatSetup())
         let hold = await storage.holdCommits()
         let blocking = Task { _ = try await viewNote(chat.root, "block") }; await hold.waitUntilEntered()
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let cancelled = Task { try await chat.root.watch(context: caller.context) }
         try await eventually { chat.harness.session.line.queuedCount >= 1 }; caller.cancel(StorageRejected("cancelled"))
         await hold.release(); _ = try await blocking.value

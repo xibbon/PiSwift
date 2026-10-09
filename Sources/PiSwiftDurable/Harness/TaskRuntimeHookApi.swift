@@ -24,8 +24,8 @@ extension TaskRuntime {
             }
         })
     }
-    private func hookRead<Value>(_ context: PiSwiftChord.Context,
-                                 read: (PiSwiftChord.Context) async throws -> Value) async throws -> Value {
+    private func hookRead<Value>(_ context: ChordContext,
+                                 read: (ChordContext) async throws -> Value) async throws -> Value {
         try await withTaskCancellationContext(context.withAbortSignal(signal)) { context in
             try invocation.check(); try context.abortSignal?.throwIfAborted()
             let value = try await read(context)

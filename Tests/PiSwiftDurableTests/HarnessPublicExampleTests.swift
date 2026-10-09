@@ -47,7 +47,7 @@ private typealias HarnessExampleJob = TaskDefinition<Int, HarnessExampleWork, In
             [AnyTaskDefinition(parent), AnyTaskDefinition(child)]))
         let clock = TestClock()
         let options = HarnessOptions(models: FakeDurableModels(), registry: registry, clock: clock)
-        let context = PiSwiftChord.Context.background
+        let context = ChordContext.background
         let harness = try await Harness.open(storage: SqliteStorage.open(path: path),
             options: options, context: context)
         let root = try await harness.root(context: context)

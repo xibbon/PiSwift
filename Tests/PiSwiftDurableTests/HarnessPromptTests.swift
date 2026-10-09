@@ -61,7 +61,7 @@ private enum PromptTestError: Error { case render, cancelled }
 
     @Test("propagates section errors after cancellation")
     func cancellation() async throws {
-        let cancelled = PiSwiftChord.Context.background.withCancel(); cancelled.cancel()
+        let cancelled = ChordContext.background.withCancel(); cancelled.cancel()
         let input = PromptInput(conversationId: rootConversationID, agent: Agent())
         await #expect(throws: PromptTestError.cancelled) {
             try await renderSections([section("a") { _, _ in throw PromptTestError.cancelled }], input: input, shown: [:], context: cancelled.context)

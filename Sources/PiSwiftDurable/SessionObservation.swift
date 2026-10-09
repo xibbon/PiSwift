@@ -52,7 +52,7 @@ private final class ObservationRevision: Sendable {
 extension Session {
     internal func currentWatch<Value: Codable & Sendable>(
         _ definition: DocumentDefinition, address: DocumentAddress,
-        context: PiSwiftChord.Context
+        context: ChordContext
     ) async throws -> CommittedWatch<Value?>? {
         let watch: CommittedWatch<Value?>? = try await readOnLine {
             try context.abortSignal?.throwIfAborted()
@@ -91,7 +91,7 @@ extension Session {
 
     internal func currentDocumentState<Value: Codable & Sendable>(
         _ definition: DocumentDefinition, address: DocumentAddress,
-        context: PiSwiftChord.Context
+        context: ChordContext
     ) async throws -> AttachedReplicatedState<Value?>? {
         try await readOnLine {
             try context.abortSignal?.throwIfAborted()
@@ -128,7 +128,7 @@ extension Session {
 
     private func attachObservation(
         recordID: DocumentID, revision: ObservationRevision, subscriptions: ObservationSubscriptions,
-        advance: @escaping @Sendable (DocumentCommitChange, [Delta.Op], PiSwiftChord.Context) -> Void,
+        advance: @escaping @Sendable (DocumentCommitChange, [Delta.Op], ChordContext) -> Void,
         close: @escaping @Sendable () -> Void
     ) throws {
         subscriptions.add(try subscribeCommits { publication, context in

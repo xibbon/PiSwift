@@ -277,34 +277,34 @@ final class H6CountingStorage: DurableStorage, Sendable {
     var rows: Int { count.withLock { $0 } }
     init(_ base: any DurableStorage = MemoryStorage()) { self.base = base }
     func holdNextRange(_ gate: SessionTestGate) { holdState.withLock { $0 = gate } }
-    func commit(_ writes: [StorageWrite], context: PiSwiftChord.Context) async throws -> Seq {
+    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
         try await base.commit(writes, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await base.mintId()
     }
 
-    func conversation(_ id: ConversationID, context: PiSwiftChord.Context) async throws -> ConversationRecord? {
+    func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationRecord? {
         try await base.conversation(id, context: context)
     }
 
-    func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: PiSwiftChord.Context) async throws -> Page<ConversationRecord, Cursor> {
+    func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<ConversationRecord, Cursor> {
         try await base.scanConversations(query, limit: limit, cursor: cursor, context: context)
     }
 
-    func entry(_ id: EntryID, context: PiSwiftChord.Context) async throws -> EntryLookup? {
+    func entry(_ id: EntryID, context: ChordContext) async throws -> EntryLookup? {
         try await base.entry(id, context: context)
     }
 
-    func entry(_ conversationId: ConversationID, id: EntryID, context: PiSwiftChord.Context) async throws -> EntryLookup? {
+    func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) async throws -> EntryLookup? {
         try await base.entry(conversationId, id: id, context: context)
     }
 
-    func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: PiSwiftChord.Context) async throws -> EntryRecord? {
+    func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) async throws -> EntryRecord? {
         try await base.findLatestHeadMarker(conversationId, atOrBeforeEntryId: atOrBeforeEntryId, context: context)
     }
 
-    func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: PiSwiftChord.Context) async throws -> Page<EntryRecord, Cursor> {
+    func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
         if limit > 1 {
             let gate = holdState.withLock { state in let gate = state; state = nil; return gate }
             if let gate { scanStarted.release(); await gate.wait() }
@@ -314,39 +314,39 @@ final class H6CountingStorage: DurableStorage, Sendable {
         return page
     }
 
-    func task(_ id: TaskID, context: PiSwiftChord.Context) async throws -> TaskRecord? {
+    func task(_ id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await base.task(id, context: context)
     }
 
-    func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: PiSwiftChord.Context) async throws -> Page<TaskRecord, Cursor> {
+    func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<TaskRecord, Cursor> {
         try await base.scanTasks(query, limit: limit, cursor: cursor, context: context)
     }
 
-    func submission(_ id: SubmissionID, context: PiSwiftChord.Context) async throws -> SubmissionRecord? {
+    func submission(_ id: SubmissionID, context: ChordContext) async throws -> SubmissionRecord? {
         let gate = submissionHold.withLock { value in let gate = value; value = nil; return gate }
         if let gate { submissionReadStarted.release(); await gate.wait() }
         return try await base.submission(id, context: context)
     }
 
-    func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: PiSwiftChord.Context) async throws -> Page<SubmissionRecord, Cursor> {
+    func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<SubmissionRecord, Cursor> {
         try await base.scanSubmissions(query, limit: limit, cursor: cursor, context: context)
     }
 
-    func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: PiSwiftChord.Context) async throws -> SubmissionRecord? {
+    func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) async throws -> SubmissionRecord? {
         try await base.submissionByRequest(conversationId, requestId: requestId, context: context)
     }
 
-    func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: PiSwiftChord.Context) async throws -> DocumentRecord? {
+    func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) async throws -> DocumentRecord? {
         try await base.findDocument(address, at: at, context: context)
     }
 
-    func document(_ id: DocumentID, at: DocumentPoint, context: PiSwiftChord.Context) async throws -> StoredDocument? {
+    func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) async throws -> StoredDocument? {
         try await base.document(id, at: at, context: context)
     }
 
-    func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: PiSwiftChord.Context) async throws -> Page<DocumentRecord, Cursor> {
+    func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<DocumentRecord, Cursor> {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
-    func close(context: PiSwiftChord.Context) async throws { try await base.close(context: context) }
+    func close(context: ChordContext) async throws { try await base.close(context: context) }
 }

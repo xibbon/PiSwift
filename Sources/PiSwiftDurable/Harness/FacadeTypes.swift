@@ -54,7 +54,7 @@ public struct EnvTarget: Sendable {
         self.conversationId = conversationId; self.cwd = cwd; self.read = read
     }
 }
-public typealias HarnessEnvFactory = @Sendable (EnvTarget, PiSwiftChord.Context) async throws -> (any ExecutionEnv)?
+public typealias HarnessEnvFactory = @Sendable (EnvTarget, ChordContext) async throws -> (any ExecutionEnv)?
 public struct HarnessOptions: Sendable {
     public let models: any DurableModels
     public let registry: any RegistryReader

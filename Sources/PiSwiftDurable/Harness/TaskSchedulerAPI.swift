@@ -2,7 +2,7 @@ import Foundation
 import PiSwiftChord
 
 extension TaskScheduler {
-    func abort(id: TaskID, context: PiSwiftChord.Context) async throws -> TaskAbortResult {
+    func abort(id: TaskID, context: ChordContext) async throws -> TaskAbortResult {
         let marked: (TaskAbortResult, TaskInvocation?) = try await session.commit({ tx in
             guard let record = try await tx.task(id) else { throw SessionError.message("Task \(id.rawValue) does not exist") }
             if record.state.status == "terminal" { return (.terminal, nil) }
@@ -23,7 +23,7 @@ extension TaskScheduler {
         }
         return marked.0
     }
-    func waitForTask(id: TaskID, context: PiSwiftChord.Context) async throws -> SettledTask {
+    func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         let promise: HarnessPromise<SettledTask> = try await session.readOnLine {
             if closing { throw closedError() }
             if current(id) != nil {
@@ -38,7 +38,7 @@ extension TaskScheduler {
         }
         return try await promise.value()
     }
-    func waitForIdle(conversationId: ConversationID?, context: PiSwiftChord.Context) async throws {
+    func waitForIdle(conversationId: ConversationID?, context: ChordContext) async throws {
         let promise: HarnessPromise<Void>? = try await session.readOnLine {
             if closing { throw closedError() }
             try context.abortSignal?.throwIfAborted()
@@ -51,7 +51,7 @@ extension TaskScheduler {
         }
         try await promise?.value()
     }
-    func abortConversation(id: ConversationID, background: Bool, context: PiSwiftChord.Context) async throws {
+    func abortConversation(id: ConversationID, background: Bool, context: ChordContext) async throws {
         let reached: [TaskID] = try await session.commit({ tx in
             try await loadScopes()
             let queued = try await loadQueuedScopes()
@@ -92,7 +92,7 @@ extension TaskScheduler {
         }
         return (state.withLock { $0.closing ? .closing : $0.enabled ? .running : .paused }, tasks)
     }
-    func gated<T>(_ invocation: TaskInvocation, context: PiSwiftChord.Context,
+    func gated<T>(_ invocation: TaskInvocation, context: ChordContext,
                   change: (Transaction, TaskRecord) async throws -> T) async throws -> T {
         try invocation.check()
         return try await session.commitWith({ tx in
@@ -175,7 +175,7 @@ extension TaskScheduler {
             }
         }
     }
-    func readContext(_ invocation: TaskInvocation, id: ConversationID, at: EntryID?, context: PiSwiftChord.Context) async throws -> ContextView {
+    func readContext(_ invocation: TaskInvocation, id: ConversationID, at: EntryID?, context: ChordContext) async throws -> ContextView {
         try invocation.check()
         let previous = state.withLock { $0.contexts[id]?.range }
         let result = try await readContextFrom(session: session, storage: storage, id: id, context: context, at: at, previous: previous)

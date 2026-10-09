@@ -19,7 +19,7 @@ final class HarnessLiveDeltaLog: Sendable {
     }
 }
 struct HarnessLiveDeltaDriver: Sendable {
-    typealias Action = @Sendable (ToolExecutionApi, PiSwiftChord.Context) async throws -> Bool
+    typealias Action = @Sendable (ToolExecutionApi, ChordContext) async throws -> Bool
     let opened: OpenChatResult
     let input: Submission
     let log: HarnessLiveDeltaLog
@@ -41,7 +41,7 @@ struct HarnessLiveDeltaDriver: Sendable {
         try await eventually { try await generationLive(opened)?.tools?.first?.status == .running && log.commits.contains([.set(["tools", 0, "status"], "running")]) }
         return Self(opened: opened, input: input, log: log, clock: clock, queue: actions.continuation, subscription: subscription)
     }
-    func step(_ action: @escaping @Sendable (ToolExecutionApi, PiSwiftChord.Context) async throws -> Void) async throws -> [Delta.Op] {
+    func step(_ action: @escaping @Sendable (ToolExecutionApi, ChordContext) async throws -> Void) async throws -> [Delta.Op] {
         let before = log.commits.count; clock.advance(by: 1_000_000)
         queue.yield { api, context in try await action(api, context); return true }
         try await eventually { self.log.commits.count > before }

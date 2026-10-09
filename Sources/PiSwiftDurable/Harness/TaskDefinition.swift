@@ -35,7 +35,7 @@ public struct RunningTask<Input: Codable & Sendable, Checkpoint: TaskCheckpoint>
 /// Use one switch over `task.checkpoint.phase` to dispatch all phases.
 public struct TaskDefinition<Input: Codable & Sendable, Checkpoint: TaskCheckpoint,
                              Result: Codable & Sendable, Hooks: Sendable>: Sendable {
-    public typealias Handler = @Sendable (RunningTask<Input, Checkpoint>, TaskRuntime, PiSwiftChord.Context) async throws -> Void
+    public typealias Handler = @Sendable (RunningTask<Input, Checkpoint>, TaskRuntime, ChordContext) async throws -> Void
     public let identity: UUID
     public let kind: TaskKind<Input, Checkpoint>
     public let phase: Handler
@@ -79,8 +79,8 @@ public struct AnyTaskDefinition: Sendable {
     public let version: Double
     public let initial: @Sendable (JSONValue) throws -> JSONValue
     public let migrate: (@Sendable (JSONValue, JSONValue, Double) throws -> (input: JSONValue, checkpoint: JSONValue))?
-    public let run: @Sendable (TaskRecord, TaskRuntime, PiSwiftChord.Context) async throws -> Void
-    public let abort: @Sendable (TaskRecord, TaskRuntime, PiSwiftChord.Context) async throws -> Void
+    public let run: @Sendable (TaskRecord, TaskRuntime, ChordContext) async throws -> Void
+    public let abort: @Sendable (TaskRecord, TaskRuntime, ChordContext) async throws -> Void
 
     public init<Input, Checkpoint, Result, Hooks>(_ definition: TaskDefinition<Input, Checkpoint, Result, Hooks>) {
         identity = definition.identity; name = definition.name; version = definition.version

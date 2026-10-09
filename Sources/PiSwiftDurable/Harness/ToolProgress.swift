@@ -24,11 +24,11 @@ private final class ToolReported: Sendable {
 private actor ToolProgressWriter {
     let runtime: TaskRuntime
     let reported: ToolReported
-    let context: PiSwiftChord.Context
+    let context: ChordContext
     var writtenText = ""
     var writtenDetails: JSONValue?
     var writtenDiagnostics = 0
-    init(runtime: TaskRuntime, reported: ToolReported, context: PiSwiftChord.Context) {
+    init(runtime: TaskRuntime, reported: ToolReported, context: ChordContext) {
         self.runtime = runtime; self.reported = reported; self.context = context
     }
     func write() async throws -> Int {
@@ -68,7 +68,7 @@ internal final class ToolReporter: Sendable {
     private let lifetime: ToolInvocationLifetime
     private let events: AsyncStream<Event>.Continuation
     private let drain: Task<[ProgressWaiter], Never>
-    init(runtime: TaskRuntime, lifetime: ToolInvocationLifetime, limits: OutputLimits, context: PiSwiftChord.Context) {
+    init(runtime: TaskRuntime, lifetime: ToolInvocationLifetime, limits: OutputLimits, context: ChordContext) {
         self.limits = limits; self.lifetime = lifetime
         let reported = ToolReported(limits); self.reported = reported
         let writer = ToolProgressWriter(runtime: runtime, reported: reported, context: context)
@@ -107,7 +107,7 @@ internal final class ToolReporter: Sendable {
             if !state.markQueued { state.markQueued = true; events.yield(.mark) }
         }
     }
-    func details(_ value: JSONValue, context: PiSwiftChord.Context) async throws {
+    func details(_ value: JSONValue, context: ChordContext) async throws {
         try context.abortSignal?.throwIfAborted()
         _ = try value.jsonText()
         let waits = Waiters<Int, Void>()

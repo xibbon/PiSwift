@@ -25,7 +25,7 @@ public actor MemoryStorage: DurableStorage {
 
     public init() {}
 
-    public func commit(_ writes: [StorageWrite], context: Context) throws -> Seq {
+    public func commit(_ writes: [StorageWrite], context: ChordContext) throws -> Seq {
         try assertOpen()
         let plan = try tables.prepare(writes, seq: nextSequence())
         tables.apply(plan)
@@ -62,10 +62,10 @@ public actor MemoryStorage: DurableStorage {
         return id
     }
 
-    public func conversation(_ id: ConversationID, context: Context) throws -> ConversationRecord? {
+    public func conversation(_ id: ConversationID, context: ChordContext) throws -> ConversationRecord? {
         try assertOpen(); return tables.conversations[id]
     }
-    public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<ConversationRecord, Cursor> {
+    public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<ConversationRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         let ids: [ConversationID]
@@ -78,17 +78,17 @@ public actor MemoryStorage: DurableStorage {
         return page(values, limit: limit, order: start.order, id: { $0.id.rawValue })
     }
 
-    public func entry(_ id: EntryID, context: Context) throws -> EntryLookup? {
+    public func entry(_ id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen()
         return tables.entries[id].map { EntryLookup(entry: $0, commitSeq: tables.entryCommitSeqs[id]!) }
     }
-    public func entry(_ conversationId: ConversationID, id: EntryID, context: Context) throws -> EntryLookup? {
+    public func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen()
         return try visibleEntries(conversationId, minimum: id.rawValue, maximum: id.rawValue, order: .descending).first.map {
             EntryLookup(entry: $0, commitSeq: tables.entryCommitSeqs[id]!)
         }
     }
-    public func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: Context) throws -> EntryRecord? {
+    public func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) throws -> EntryRecord? {
         try assertOpen(); try checkConversation(conversationId)
         var current = conversationId
         var upper = atOrBeforeEntryId?.rawValue ?? Int64.max
@@ -99,7 +99,7 @@ public actor MemoryStorage: DurableStorage {
             upper = min(upper, parent.at.rawValue); current = parent.conversationId
         }
     }
-    public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<EntryRecord, Cursor> {
+    public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<EntryRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .descending)
         var minimum = query.minEntryId?.rawValue ?? Int64.min
@@ -112,8 +112,8 @@ public actor MemoryStorage: DurableStorage {
         return page(values, limit: limit, order: start.order, id: { $0.id.rawValue })
     }
 
-    public func task(_ id: TaskID, context: Context) throws -> TaskRecord? { try assertOpen(); return tables.tasks[id] }
-    public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<TaskRecord, Cursor> {
+    public func task(_ id: TaskID, context: ChordContext) throws -> TaskRecord? { try assertOpen(); return tables.tasks[id] }
+    public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<TaskRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         let ids = query.status.map { tables.taskIdsByStatus[$0.rawValue] ?? [] } ?? tables.taskIds
@@ -126,8 +126,8 @@ public actor MemoryStorage: DurableStorage {
         return page(values, limit: limit, order: start.order, id: { $0.id.rawValue })
     }
 
-    public func submission(_ id: SubmissionID, context: Context) throws -> SubmissionRecord? { try assertOpen(); return tables.submissions[id] }
-    public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<SubmissionRecord, Cursor> {
+    public func submission(_ id: SubmissionID, context: ChordContext) throws -> SubmissionRecord? { try assertOpen(); return tables.submissions[id] }
+    public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<SubmissionRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         let ids = query.status.map { tables.submissionIdsByStatus[$0.rawValue] ?? [] } ?? tables.submissionIds
@@ -136,22 +136,22 @@ public actor MemoryStorage: DurableStorage {
         }
         return page(values, limit: limit, order: start.order, id: { $0.id.rawValue })
     }
-    public func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: Context) throws -> SubmissionRecord? {
+    public func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) throws -> SubmissionRecord? {
         try assertOpen()
         guard let id = tables.submissionIdsByRequest[conversationId]?[MemoryStringKey(requestId)] else { return nil }
         return tables.submissions[id]
     }
 
-    public func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: Context) throws -> DocumentRecord? {
+    public func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) throws -> DocumentRecord? {
         try assertOpen()
         guard let index = tables.documentAddresses[MemoryAddressKey(address)] else { return nil }
         if at == .current { return index.currentId.flatMap { tables.documents[$0]?.record } }
         return index.ids.compactMap { tables.documents[$0]?.record }.first { $0.memoryAlive(at) }
     }
-    public func document(_ id: DocumentID, at: DocumentPoint, context: Context) throws -> StoredDocument? {
+    public func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) throws -> StoredDocument? {
         try assertOpen(); return try tables.materialize(id, at: at)
     }
-    public func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<DocumentRecord, Cursor> {
+    public func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<DocumentRecord, Cursor> {
         try assertOpen()
         // Unlike ordered table scans, upstream document scans ignore the cursor's order.
         var after: Int64?
@@ -168,7 +168,7 @@ public actor MemoryStorage: DurableStorage {
     }
 
     /// Closing twice is permitted by the upstream backend. All reads and writes then reject.
-    public func close(context: Context) throws { closed = true }
+    public func close(context: ChordContext) throws { closed = true }
 
     private func assertOpen() throws { if closed { throw DurableStorageError.closed(backend: "MemoryStorage") } }
     private func checkConversation(_ id: ConversationID) throws {

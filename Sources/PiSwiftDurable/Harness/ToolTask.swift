@@ -28,7 +28,7 @@ public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTask
     }
 )
 internal enum ToolEnding { case completed, failed(String), aborted }
-private func readToolCall(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ context: PiSwiftChord.Context) async throws -> ToolCall {
+private func readToolCall(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ context: ChordContext) async throws -> ToolCall {
     if let entry = try await runtime.entry(assistantEntry, id: input.assistant, context: context),
        case .assistant(let message) = try entry.record.messages()?.first {
         for block in message.content {
@@ -50,7 +50,7 @@ private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ 
     return arguments
 }
 private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>, _ runtime: TaskRuntime,
-                         _ context: PiSwiftChord.Context) async throws {
+                         _ context: ChordContext) async throws {
     let call = try await readToolCall(runtime, task.input, context)
     let tool = try await runtime.agent(context: context).tools.first { harnessNamesEqual($0.name, call.name) }
     if task.checkpoint.phase == .execute {
@@ -128,7 +128,7 @@ internal func toolResultFromSlot(_ slot: ToolSlot?, code: String, message: Strin
                                isError: true, details: slot?.details, diagnostics: diagnostics)
 }
 internal func settleTool(_ runtime: TaskRuntime, _ call: ToolCall, _ ending: ToolEnding,
-                         durationMs: Int? = nil, context: PiSwiftChord.Context,
+                         durationMs: Int? = nil, context: ChordContext,
                          build: (ToolSlot?) throws -> ToolExecutionResult) async throws {
     try await runtime.commit({ tx, _ in
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)

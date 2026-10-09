@@ -13,7 +13,7 @@ internal struct TransactionScope: Sendable {
 public final class Transaction: Sendable {
     internal let session: Session
     internal let storage: any DurableStorage
-    internal let context: PiSwiftChord.Context
+    internal let context: ChordContext
     internal let scope: TransactionScope
     internal let now: @Sendable () -> Int64
     internal let conversationCreated: @Sendable (Transaction, ConversationRecord) async throws -> Void
@@ -29,7 +29,7 @@ public final class Transaction: Sendable {
         var pendingWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
     }
     private let state = Mutex(State())
-    internal init(session: Session, context: PiSwiftChord.Context, scope: TransactionScope) {
+    internal init(session: Session, context: ChordContext, scope: TransactionScope) {
         self.session = session; storage = session.storage; self.context = context; self.scope = scope
         now = session.now
         conversationCreated = { tx, record in try await session.hooks.conversationCreated(tx, record: record) }

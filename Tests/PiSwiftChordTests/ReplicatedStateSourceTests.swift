@@ -94,7 +94,7 @@ private final class SourceTestSource<Value: Sendable>: ReplicatedStateSource {
         onAttach?()
         return attachment
     }
-    func commit(_ value: Value, ops: [Delta.Op] = [], context: Context = .background, cursor: Int? = nil) {
+    func commit(_ value: Value, ops: [Delta.Op] = [], context: ChordContext = .background, cursor: Int? = nil) {
         let (frame, attachments) = storage.withLock { state in
             state.value = value
             state.cursor = cursor ?? state.cursor + 1
@@ -138,7 +138,7 @@ struct ReplicatedStateSourceTests {
         defer { state.dispose() }
         let deliveries = Mutex<[ReplicatedStateDelivery]>([])
         state.subscribe { _, context, delivery in
-            #expect(context.description == Context.background.description)
+            #expect(context.description == ChordContext.background.description)
             deliveries.withLock { $0.append(delivery) }
         }
         await state.waitUntilIdle()
@@ -154,8 +154,8 @@ struct ReplicatedStateSourceTests {
         let next = SourceTestValue(1)
         // Deliberately unrelated to the value. Applying or re-diffing changes this batch.
         let ops: [Delta.Op] = [.delete(["absent"]), .set(["value"], 99), .set(["value"], 99)]
-        let marker = ContextKey<String>("commit")
-        let context = Context.todo.withValue("exact", for: marker)
+        let marker = ChordContextKey<String>("commit")
+        let context = ChordContext.todo.withValue("exact", for: marker)
         let receivedOps = Mutex<[[Delta.Op]]>([])
         let receivedValues = Mutex<[SourceTestValue]>([])
         state.subscribeOperations { batch, sequence, receivedContext in

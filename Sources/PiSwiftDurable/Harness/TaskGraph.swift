@@ -95,7 +95,7 @@ private final class TaskGraphObserverID: Sendable {}
 private enum TaskGraphObserver: Sendable {
     case state(CommittedStateSource<TaskGraph>)
     case watch(TaskGraphWatch)
-    func advance(_ value: TaskGraph, _ ops: [Delta.Op], _ context: PiSwiftChord.Context) {
+    func advance(_ value: TaskGraph, _ ops: [Delta.Op], _ context: ChordContext) {
         switch self {
         case .state(let source): source.advance(value: value, ops: ops, context: context)
         case .watch(let watch): watch.advance(value: value, ops: ops, context: context)
@@ -133,7 +133,7 @@ internal final class TaskGraphView: Sendable {
     }
     deinit { for subscription in subscriptions.withLock({ $0 }) { subscription.cancel() } }
 
-    func attached(context: PiSwiftChord.Context) async throws -> AttachedReplicatedState<TaskGraph> {
+    func attached(context: ChordContext) async throws -> AttachedReplicatedState<TaskGraph> {
         try await session.readOnLine {
             let source = try await attach(context: context) { value, release in
                 let source = CommittedStateSource(value: value, release: release)
@@ -147,7 +147,7 @@ internal final class TaskGraphView: Sendable {
             } catch { source.closeSession(); throw error }
         }
     }
-    func watch(context: PiSwiftChord.Context) async throws -> TaskGraphWatch {
+    func watch(context: ChordContext) async throws -> TaskGraphWatch {
         let watch = try await session.readOnLine {
             try await attach(context: context) { value, release in
                 let watch = TaskGraphWatch(value: value, replacement: { $0.json }, detach: release)
@@ -161,7 +161,7 @@ internal final class TaskGraphView: Sendable {
             return watch
         } catch { watch.cancel(); throw error }
     }
-    private func attach<Observer: Sendable>(context: PiSwiftChord.Context,
+    private func attach<Observer: Sendable>(context: ChordContext,
         create: (TaskGraph, @escaping @Sendable () -> Void) -> (Observer, TaskGraphObserver)
     ) async throws -> Observer {
         try context.abortSignal?.throwIfAborted()
@@ -202,7 +202,7 @@ internal final class TaskGraphView: Sendable {
         let observers = mount?.storage.withLock { Array($0.observers.values) } ?? []
         for observer in observers { observer.close() }
     }
-    private func build(_ context: PiSwiftChord.Context) async throws -> TaskGraph {
+    private func build(_ context: ChordContext) async throws -> TaskGraph {
         var records: [TaskRecord] = []
         for status in [TaskStatus.pending, .running, .waiting, .completing] {
             records += try await scanAll { try await storage.scanTasks(.init(status: status), limit: 256, cursor: $0, context: context) }
@@ -214,7 +214,7 @@ internal final class TaskGraphView: Sendable {
         }
         return TaskGraph(tasks: tasks)
     }
-    private func advance(_ publication: CommitPublication, _ context: PiSwiftChord.Context) {
+    private func advance(_ publication: CommitPublication, _ context: ChordContext) {
         guard let mount = state.withLock({ $0.mount }) else { return }
         let frame = mount.storage.withLock { state -> (TaskGraph, [Delta.Op], [TaskGraphObserver])? in
             var tasks = state.value.tasks
@@ -256,14 +256,14 @@ internal final class TaskGraphView: Sendable {
 
 extension Harness {
     /// A disposable read-only Chord state of every live task.
-    public func taskGraph(context: PiSwiftChord.Context) async throws -> AttachedReplicatedState<TaskGraph> {
+    public func taskGraph(context: ChordContext) async throws -> AttachedReplicatedState<TaskGraph> {
         try await withTaskCancellationContext(context) { context in
             try assertOpen()
             return try await graph.attached(context: context)
         }
     }
     /// Exact committed graph frames. The watch keeps at most 100 pending frames.
-    public func watchTaskGraph(context: PiSwiftChord.Context) async throws -> TaskGraphWatch {
+    public func watchTaskGraph(context: ChordContext) async throws -> TaskGraphWatch {
         try await withTaskCancellationContext(context) { context in
             try assertOpen()
             return try await graph.watch(context: context)

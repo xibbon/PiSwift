@@ -6,7 +6,7 @@ public struct HookRunner: Sendable {
     private let runtime: TaskRuntime
     internal init(_ runtime: TaskRuntime) { self.runtime = runtime }
     public func each<Hooks: Sendable>(_ type: Hooks.Type,
-                                     context: PiSwiftChord.Context,
+                                     context: ChordContext,
                                      invoke: (Hooks) async throws -> Void) async throws {
         try await withTaskCancellationContext(context) { context in
             let agent = try await runtime.agent(context: context)
@@ -30,7 +30,7 @@ public final class TaskRuntime: Sendable {
     public var taskId: TaskID { invocation.taskId }
     public var conversationId: ConversationID { invocation.conversationId }
     public var signal: AbortSignal { invocation.controller.signal }
-    public var context: PiSwiftChord.Context { invocation.context }
+    public var context: ChordContext { invocation.context }
     public var models: any DurableModels { scheduler.models }
     public var settings: Settings { scheduler.settings() }
     public var registry: RegistrySnapshot { phase.state.withLock { $0.snapshot } }
@@ -39,14 +39,14 @@ public final class TaskRuntime: Sendable {
     public func now() throws -> Int64 { try invocation.check(); return scheduler.now() }
     public func report(_ error: any Error) throws { try invocation.check(); scheduler.report(error) }
     public func commit(_ change: (Transaction, TaskRecord) async throws -> TaskState?,
-                       context: PiSwiftChord.Context) async throws {
+                       context: ChordContext) async throws {
         try await withTaskCancellationContext(context) { context in
             try await scheduler.gated(invocation, context: context) { tx, current in
                 if let next = try await change(tx, current) { try await scheduler.commitState(tx, invocation: invocation, current: current, next: next) }
             }
         }
     }
-    public func memo(_ name: String, value: JSONValue? = nil, context: PiSwiftChord.Context) async throws -> JSONValue? {
+    public func memo(_ name: String, value: JSONValue? = nil, context: ChordContext) async throws -> JSONValue? {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             try context.abortSignal?.throwIfAborted()
@@ -58,7 +58,7 @@ public final class TaskRuntime: Sendable {
             }
         }
     }
-    public func agent(context: PiSwiftChord.Context) async throws -> Agent {
+    public func agent(context: ChordContext) async throws -> Agent {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             let work = phase.state.withLock { state -> Task<Agent, any Error> in
@@ -70,10 +70,10 @@ public final class TaskRuntime: Sendable {
             return try await awaitWithContext(work, context)
         }
     }
-    public func env(context: PiSwiftChord.Context) async throws -> (any ExecutionEnv)? {
+    public func env(context: ChordContext) async throws -> (any ExecutionEnv)? {
         try await withTaskCancellationContext(context) { context in try invocation.check(); try context.abortSignal?.throwIfAborted(); return try await scheduler.env(conversationId, context) }
     }
-    public func sleep(until deadline: Int64, context: PiSwiftChord.Context) async throws {
+    public func sleep(until deadline: Int64, context: ChordContext) async throws {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             let bound = context.withAbortSignal(signal)
@@ -88,19 +88,19 @@ public final class TaskRuntime: Sendable {
             }
         }
     }
-    public func getTask(_ id: TaskID, context: PiSwiftChord.Context) async throws -> TaskRecord? {
+    public func getTask(_ id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             return try await scheduler.session.readOnLine { try await scheduler.storage.task(id, context: context) }
         }
     }
-    public func waitForTask(_ id: TaskID, context: PiSwiftChord.Context) async throws -> SettledTask {
+    public func waitForTask(_ id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await withTaskCancellationContext(context) { context in
             try invocation.check(); scheduler.resume()
             return try await scheduler.waitForTask(id: id, context: context.withAbortSignal(signal))
         }
     }
-    public func outcomes(_ ids: [TaskID], context: PiSwiftChord.Context) async throws -> [TaskOutcome] {
+    public func outcomes(_ ids: [TaskID], context: ChordContext) async throws -> [TaskOutcome] {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             return try await scheduler.session.readOnLine {
@@ -113,23 +113,23 @@ public final class TaskRuntime: Sendable {
             }
         }
     }
-    public func conversation(_ id: ConversationID, context: PiSwiftChord.Context) async throws -> ConversationHandle? {
+    public func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationHandle? {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             return try await scheduler.conversation(id, .init(signal: signal, check: { [invocation] in try invocation.check() }), context)
         }
     }
-    public func entry(_ id: EntryID, context: PiSwiftChord.Context) async throws -> EntryRecord? {
+    public func entry(_ id: EntryID, context: ChordContext) async throws -> EntryRecord? {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             return try await scheduler.session.readOnLine { try await scheduler.storage.entry(conversationId, id: id, context: context)?.entry }
         }
     }
-    public func entry<Data>(_ token: EntryKind<Data>, id: EntryID, context: PiSwiftChord.Context) async throws -> TypedEntry<Data>? {
+    public func entry<Data>(_ token: EntryKind<Data>, id: EntryID, context: ChordContext) async throws -> TypedEntry<Data>? {
         guard let record = try await entry(id, context: context), record.kind == token.kind else { return nil }
         return try TypedEntry(record)
     }
-    public func context(_ id: ConversationID, at: EntryID? = nil, context: PiSwiftChord.Context) async throws -> ContextView {
+    public func context(_ id: ConversationID, at: EntryID? = nil, context: ChordContext) async throws -> ContextView {
         try await withTaskCancellationContext(context) { context in try await scheduler.readContext(invocation, id: id, at: at, context: context) }
     }
 }

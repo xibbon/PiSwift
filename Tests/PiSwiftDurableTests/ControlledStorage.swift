@@ -78,7 +78,7 @@ actor ControlledStorage: DurableStorage {
         await held.gate.resolve()
     }
 
-    func commit(_ writes: [StorageWrite], context: Context) async throws -> Seq {
+    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
         admittedCommits.append(writes)
         commits.append(writes)
         if let held = commitGate {
@@ -97,12 +97,12 @@ actor ControlledStorage: DurableStorage {
         return try await storage.mintId()
     }
 
-    func document(_ id: DocumentID, at: DocumentPoint, context: Context) async throws -> StoredDocument? {
+    func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) async throws -> StoredDocument? {
         documentReadCount += 1
         return try await storage.document(id, at: at, context: context)
     }
 
-    func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: Context) async throws -> DocumentRecord? {
+    func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) async throws -> DocumentRecord? {
         if let held = findGate {
             await held.entered.resolve()
             await held.gate.wait()
@@ -110,41 +110,41 @@ actor ControlledStorage: DurableStorage {
         return try await storage.findDocument(address, at: at, context: context)
     }
 
-    func conversation(_ id: ConversationID, context: Context) async throws -> ConversationRecord? {
+    func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationRecord? {
         try await storage.conversation(id, context: context)
     }
-    func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: Context) async throws -> Page<ConversationRecord, Cursor> {
+    func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<ConversationRecord, Cursor> {
         try await storage.scanConversations(query, limit: limit, cursor: cursor, context: context)
     }
-    func entry(_ id: EntryID, context: Context) async throws -> EntryLookup? {
+    func entry(_ id: EntryID, context: ChordContext) async throws -> EntryLookup? {
         try await storage.entry(id, context: context)
     }
-    func entry(_ conversationId: ConversationID, id: EntryID, context: Context) async throws -> EntryLookup? {
+    func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) async throws -> EntryLookup? {
         try await storage.entry(conversationId, id: id, context: context)
     }
-    func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: Context) async throws -> EntryRecord? {
+    func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) async throws -> EntryRecord? {
         try await storage.findLatestHeadMarker(conversationId, atOrBeforeEntryId: atOrBeforeEntryId, context: context)
     }
-    func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: Context) async throws -> Page<EntryRecord, Cursor> {
+    func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
         try await storage.scanEntries(query, limit: limit, cursor: cursor, context: context)
     }
-    func task(_ id: TaskID, context: Context) async throws -> TaskRecord? {
+    func task(_ id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await storage.task(id, context: context)
     }
-    func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: Context) async throws -> Page<TaskRecord, Cursor> {
+    func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<TaskRecord, Cursor> {
         try await storage.scanTasks(query, limit: limit, cursor: cursor, context: context)
     }
-    func submission(_ id: SubmissionID, context: Context) async throws -> SubmissionRecord? {
+    func submission(_ id: SubmissionID, context: ChordContext) async throws -> SubmissionRecord? {
         try await storage.submission(id, context: context)
     }
-    func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: Context) async throws -> Page<SubmissionRecord, Cursor> {
+    func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<SubmissionRecord, Cursor> {
         try await storage.scanSubmissions(query, limit: limit, cursor: cursor, context: context)
     }
-    func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: Context) async throws -> SubmissionRecord? {
+    func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) async throws -> SubmissionRecord? {
         try await storage.submissionByRequest(conversationId, requestId: requestId, context: context)
     }
-    func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: Context) async throws -> Page<DocumentRecord, Cursor> {
+    func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<DocumentRecord, Cursor> {
         try await storage.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
-    func close(context: Context) async throws { try await storage.close(context: context) }
+    func close(context: ChordContext) async throws { try await storage.close(context: context) }
 }

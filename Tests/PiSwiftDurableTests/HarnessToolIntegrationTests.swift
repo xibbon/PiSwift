@@ -6,7 +6,7 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
-private func integrationChild(_ api: ToolExecutionApi, _ context: PiSwiftChord.Context) async throws -> ConversationID {
+private func integrationChild(_ api: ToolExecutionApi, _ context: ChordContext) async throws -> ConversationID {
     try await api.commit({ tx in
         let child = try await tx.createConversation(ownership: .task(taskId: api.taskId))
         try await configure(tx: tx, conversationId: child.id, change: .init(model: .set(.init(provider: "faux", modelId: "faux-1"))))
@@ -16,7 +16,7 @@ private func integrationChild(_ api: ToolExecutionApi, _ context: PiSwiftChord.C
 private func integrationTasks(_ chat: OpenChatResult) async throws -> [TaskRecord] {
     try await chat.root.commit({ tx in try await tx.scanTasks(.init(conversationId: chat.root.id), limit: 100).items }, context: .background)
 }
-private func integrationWaitForAbort(_ context: PiSwiftChord.Context) async throws {
+private func integrationWaitForAbort(_ context: ChordContext) async throws {
     let stopped = HarnessChatSignal()
     let registration = context.abortSignal?.addAbortListener { _ in stopped.signal() }
     defer { if let registration { context.abortSignal?.removeAbortListener(registration) } }

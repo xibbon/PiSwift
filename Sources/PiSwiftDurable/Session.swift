@@ -21,7 +21,7 @@ public final class Session: Sendable {
     internal let line = SessionLine()
     private struct CommitListener: Sendable {
         let id: Int
-        let call: @Sendable (CommitPublication, PiSwiftChord.Context) -> Void
+        let call: @Sendable (CommitPublication, ChordContext) -> Void
     }
     private struct CloseListener: Sendable {
         let id: Int
@@ -44,7 +44,7 @@ public final class Session: Sendable {
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             hooks: any SessionHooks = DefaultSessionHooks(),
-                            context: PiSwiftChord.Context) async throws -> Session {
+                            context: ChordContext) async throws -> Session {
         Session(storage: storage, now: now, hooks: hooks)
     }
     private func admit() throws -> SessionLine.Ticket {
@@ -58,11 +58,11 @@ public final class Session: Sendable {
         try state.withLock { if $0.poison != nil { throw SessionError.poisoned } }
     }
     public func commit<T>(_ change: (Transaction) async throws -> T,
-                          context: PiSwiftChord.Context) async throws -> T {
+                          context: ChordContext) async throws -> T {
         try await commitWith(change, context: context, scope: TransactionScope())
     }
     internal func commitWith<T>(_ change: (Transaction) async throws -> T,
-                                context: PiSwiftChord.Context,
+                                context: ChordContext,
                                 scope: TransactionScope = TransactionScope()) async throws -> T {
         let ticket = try admit()
         await ticket.wait()
@@ -116,7 +116,7 @@ public final class Session: Sendable {
         state.withLock { $0.documents.removeAll() }
     }
     /// The listener runs on the line after adoption. It must not block or call Session operations.
-    public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, PiSwiftChord.Context) -> Void) throws -> SessionSubscription {
+    public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
         let id = try state.withLock { state in
             if state.closing != nil { throw SessionError.closed }
             if state.poison != nil { throw SessionError.poisoned }
@@ -137,7 +137,7 @@ public final class Session: Sendable {
         }
         return SessionSubscription { [weak self] in self?.state.withLock { $0.closes.removeAll { $0.id == id } } }
     }
-    public func close(context: PiSwiftChord.Context) async throws {
+    public func close(context: ChordContext) async throws {
         let begin = SessionLine.Ticket()
         let (task, listeners) = state.withLock { state -> (Task<Void, any Error>, [CloseListener]) in
             if let closing = state.closing { return (closing, []) }
@@ -160,7 +160,7 @@ public final class Session: Sendable {
         try await awaitWithContext(task, context)
     }
     internal func loadDocument(_ definition: DocumentDefinition, address: DocumentAddress,
-                               context: PiSwiftChord.Context) async throws -> LoadedDocument? {
+                               context: ChordContext) async throws -> LoadedDocument? {
         if let cached = cachedDocument(address) {
             if cached.valueVersion == definition.version { return cached }
             evictDocument(address, recordID: cached.record.id)
@@ -177,7 +177,7 @@ public final class Session: Sendable {
         return loaded
     }
     internal func currentSnapshot<Value: Decodable & Sendable>(_ definition: DocumentDefinition,
-                        address: DocumentAddress, context: PiSwiftChord.Context) async throws -> Value? {
+                        address: DocumentAddress, context: ChordContext) async throws -> Value? {
         let captured = try committedRead.withLock { _ -> (LoadedDocument, Int, JSONValue)? in
             let cached = try state.withLock { state -> LoadedDocument? in
                 if state.closing != nil { throw SessionError.closed }
@@ -200,7 +200,7 @@ public final class Session: Sendable {
         }
     }
     internal func historicalSnapshot<Value: Decodable & Sendable>(_ definition: DocumentDefinition,
-                        address: DocumentAddress, at: EntryID, context: PiSwiftChord.Context) async throws -> Value? {
+                        address: DocumentAddress, at: EntryID, context: ChordContext) async throws -> Value? {
         try await readOnLine {
             guard case .conversation(let conversationID, _) = address.scope else {
                 throw SessionError.message("Session.snapshotAsOf() requires a conversation document")
@@ -217,15 +217,15 @@ public final class Session: Sendable {
         }
     }
     internal func conversationDocumentOnLine<Value: Codable & Sendable>(_ token: ConversationDocToken<Value>, conversationId: ConversationID,
-                        context: PiSwiftChord.Context) async throws -> (record: DocumentRecord, version: Int, value: JSONObject)? {
+                        context: ChordContext) async throws -> (record: DocumentRecord, version: Int, value: JSONObject)? {
         try await conversationDocumentOnLine(token.definition, conversationId: conversationId, context: context)
     }
     internal func conversationDocumentOnLine<Value: Codable & Sendable>(_ token: RewindableConversationDocToken<Value>, conversationId: ConversationID,
-                        context: PiSwiftChord.Context) async throws -> (record: DocumentRecord, version: Int, value: JSONObject)? {
+                        context: ChordContext) async throws -> (record: DocumentRecord, version: Int, value: JSONObject)? {
         try await conversationDocumentOnLine(token.definition, conversationId: conversationId, context: context)
     }
     private func conversationDocumentOnLine(_ definition: DocumentDefinition, conversationId: ConversationID,
-                        context: PiSwiftChord.Context) async throws -> (record: DocumentRecord, version: Int, value: JSONObject)? {
+                        context: ChordContext) async throws -> (record: DocumentRecord, version: Int, value: JSONObject)? {
         let address = DocumentAddress(kind: definition.kind, scope: .conversation(conversationId: conversationId))
         guard let loaded = try await loadDocument(definition, address: address, context: context) else { return nil }
         try definition.check(loaded.record)

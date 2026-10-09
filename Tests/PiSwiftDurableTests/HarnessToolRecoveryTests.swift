@@ -12,7 +12,7 @@ private func recoveryCall(_ name: String, id: String = "c1") -> AssistantMessage
     return message
 }
 private func recoveryTool(_ name: String = "work", replay: ToolReplay? = nil,
-    execute: @escaping @Sendable (JSONValue, ToolExecutionApi, PiSwiftChord.Context) async throws -> ToolExecutionResult
+    execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
 ) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: name, parameters: ["type": "object", "properties": [:]], replay: replay, execute: execute)
 }
@@ -43,7 +43,7 @@ private func recoveryWait(_ opened: OpenChatResult, id: SubmissionID) async thro
     let submission = try #require(try await opened.harness.submission(id: id, context: .background))
     return try await submission.wait(context: .background)
 }
-private func recoveryAborted(_ context: PiSwiftChord.Context) async throws {
+private func recoveryAborted(_ context: ChordContext) async throws {
     let signal = try #require(context.abortSignal)
     let reached = HarnessChatSignal()
     let listener = signal.addAbortListener { _ in reached.signal() }

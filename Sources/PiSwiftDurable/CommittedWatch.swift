@@ -12,13 +12,13 @@ public enum WatchEnd: Sendable {
 
 /// A serial watch of committed values from one document incarnation.
 public final class CommittedWatch<Value: Sendable>: Sendable {
-    public typealias Listener = @Sendable (Value, [Delta.Op], PiSwiftChord.Context) async throws -> Void
+    public typealias Listener = @Sendable (Value, [Delta.Op], ChordContext) async throws -> Void
 
     private final class OverflowReservation: Sendable {}
     private struct Frame: Sendable {
         let value: Value
         let ops: [Delta.Op]
-        let context: PiSwiftChord.Context
+        let context: ChordContext
         let retired: Bool
         let reservation: OverflowReservation?
     }
@@ -115,7 +115,7 @@ public final class CommittedWatch<Value: Sendable>: Sendable {
     package func fail(_ error: any Error) { terminate(.listenerError(error)) }
 
     /// Keep at most 100 pending frames. Overflow replaces only the pending suffix.
-    package func advance(value: Value, ops: [Delta.Op], context: PiSwiftChord.Context,
+    package func advance(value: Value, ops: [Delta.Op], context: ChordContext,
                          retired: Bool = false) {
         let deliveryContext = context.withoutAbortSignal()
         let (start, reservation) = storage.withLock { state -> (Bool, OverflowReservation?) in

@@ -28,7 +28,7 @@ public struct OpenChatResult: Sendable {
 
 public func openChat(storage: any DurableStorage = MemoryStorage(), setup: HarnessChatSetup,
                      models: (any DurableModels)? = nil,
-                     context: PiSwiftChord.Context = .background) async throws -> OpenChatResult {
+                     context: ChordContext = .background) async throws -> OpenChatResult {
     let harness = try await Harness.open(storage: storage,
         options: HarnessOptions(models: models ?? setup.models, registry: setup.registry,
             settings: setup.settingsProvider, clock: setup.clock, onReport: { setup.reports.append($0) }), context: context)
@@ -36,7 +36,7 @@ public func openChat(storage: any DurableStorage = MemoryStorage(), setup: Harne
     return OpenChatResult(harness: harness, root: root)
 }
 
-public func allEntries(_ conversation: Conversation, context: PiSwiftChord.Context = .background) async throws -> [EntryRecord] {
+public func allEntries(_ conversation: Conversation, context: ChordContext = .background) async throws -> [EntryRecord] {
     try await scanAll { cursor in
         try await conversation.entries(order: .ascending, limit: 1000, cursor: cursor, context: context)
     }

@@ -19,7 +19,7 @@ func createObservationState() async throws -> (SessionTestHarness, SessionDocTok
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     return (harness, token)
 }
-func setObservation(_ value: Int, _ harness: SessionTestHarness, _ token: SessionDocToken<ObservationValue>, context: Context = .background) async throws {
+func setObservation(_ value: Int, _ harness: SessionTestHarness, _ token: SessionDocToken<ObservationValue>, context: ChordContext = .background) async throws {
     try await harness.session.commit({ tx in try await tx.doc(token).set("value", .number(Double(value))) }, context: context)
 }
 struct ObservationFrame: Sendable, Equatable { let value: ObservationValue?; let ops: [Delta.Op] }
@@ -113,8 +113,8 @@ enum ObservationFailure: Error, Equatable { case acquisition, listener }
 
     @Test("preserves commit Context values without inheriting producer cancellation") func frameContext() async throws {
         let (harness, token) = try await createObservationState(); let watch = try #require(try await harness.session.watchDoc(token, context: .background))
-        let key = ContextKey<String>("watch-test"); let producer = Context.background.withCancel(); let context = producer.context.withValue("newest-commit", for: key)
-        let entered = SessionTestGate(); let release = SessionTestGate(); let delivered = SessionTestLog<Context>()
+        let key = ChordContextKey<String>("watch-test"); let producer = ChordContext.background.withCancel(); let context = producer.context.withValue("newest-commit", for: key)
+        let entered = SessionTestGate(); let release = SessionTestGate(); let delivered = SessionTestLog<ChordContext>()
         try watch.start { _, _, context in delivered.append(context); entered.release(); await release.wait() }
         try await setObservation(1, harness, token, context: context); await entered.wait()
         #expect(delivered.values[0].value(key) == "newest-commit"); #expect(delivered.values[0].abortSignal == nil)
@@ -163,13 +163,13 @@ enum ObservationFailure: Error, Equatable { case acquisition, listener }
     }
 
     @Test("cancels acquisition without leaking a registered watch") func acquisitionCancellation() async throws {
-        let (harness, token) = try await createObservationState(); try await harness.session.unloadDocuments(); let gate = await harness.storage.holdFindDocument(); let child = Context.background.withCancel()
+        let (harness, token) = try await createObservationState(); try await harness.session.unloadDocuments(); let gate = await harness.storage.holdFindDocument(); let child = ChordContext.background.withCancel()
         let acquisition = Task { try await harness.session.watchDoc(token, context: child.context) }; await gate.waitUntilEntered(); child.cancel(ObservationFailure.acquisition); await gate.release()
         await #expect(throws: ObservationFailure.acquisition) { _ = try await acquisition.value }; try await harness.session.close(context: .background)
     }
 
     @Test("cancels future delivery without aborting an in-flight callback") func cancellationInFlight() async throws {
-        let (harness, token) = try await createObservationState(); let child = Context.background.withCancel(); let watch = try #require(try await harness.session.watchDoc(token, context: child.context)); let entered = SessionTestGate(); let release = SessionTestGate(); let contexts = SessionTestLog<Context>()
+        let (harness, token) = try await createObservationState(); let child = ChordContext.background.withCancel(); let watch = try #require(try await harness.session.watchDoc(token, context: child.context)); let entered = SessionTestGate(); let release = SessionTestGate(); let contexts = SessionTestLog<ChordContext>()
         try watch.start { _, _, context in contexts.append(context); entered.release(); await release.wait() }
         try await setObservation(1, harness, token); await entered.wait(); child.cancel()
         guard case .cancelled = await watch.closed else { Issue.record("Expected cancellation"); return }
@@ -177,7 +177,7 @@ enum ObservationFailure: Error, Equatable { case acquisition, listener }
     }
 
     @Test("Session close stops future delivery without joining an in-flight callback") func closeInFlight() async throws {
-        let (harness, token) = try await createObservationState(); let watch = try #require(try await harness.session.watchDoc(token, context: .background)); let entered = SessionTestGate(); let release = SessionTestGate(); let contexts = SessionTestLog<Context>()
+        let (harness, token) = try await createObservationState(); let watch = try #require(try await harness.session.watchDoc(token, context: .background)); let entered = SessionTestGate(); let release = SessionTestGate(); let contexts = SessionTestLog<ChordContext>()
         try watch.start { _, _, context in contexts.append(context); entered.release(); await release.wait() }
         try await setObservation(1, harness, token); await entered.wait(); try await harness.session.close(context: .background)
         guard case .sessionClosed = await watch.closed else { Issue.record("Expected Session close"); return }

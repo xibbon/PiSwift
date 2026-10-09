@@ -3,7 +3,7 @@ import PiSwiftAI
 import PiSwiftChord
 
 internal func executeTool(_ runtime: TaskRuntime, _ call: ToolCall, _ tool: ToolRegistration,
-                          _ args: JSONObject, _ context: PiSwiftChord.Context) async throws {
+                          _ args: JSONObject, _ context: ChordContext) async throws {
     let limits = OutputLimits(maxBytes: tool.outputLimits?.maxBytes ?? defaultMaxBytes,
                               maxLines: tool.outputLimits?.maxLines ?? defaultMaxLines,
                               retain: tool.outputLimits?.retain ?? .head)
@@ -55,7 +55,7 @@ private func toolDurationMs(_ duration: Duration) -> Int {
     return max(0, Int(value.rounded()))
 }
 private func finalToolResult(_ runtime: TaskRuntime, _ call: ToolCall, _ result: ToolExecutionResult,
-                             _ reporter: ToolReporter, _ context: PiSwiftChord.Context) async throws -> ToolExecutionResult {
+                             _ reporter: ToolReporter, _ context: ChordContext) async throws -> ToolExecutionResult {
     let reported = reporter.snapshot()
     let retained = result.content == nil ? reported.output : nil
     var final = result

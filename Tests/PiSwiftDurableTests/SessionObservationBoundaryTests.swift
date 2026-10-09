@@ -8,7 +8,7 @@ import Testing
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     try await harness.session.unloadDocuments()
     let gate = await harness.storage.holdFindDocument()
-    let context = PiSwiftChord.Context.background.withCancel()
+    let context = ChordContext.background.withCancel()
     let acquisition = Task { try await harness.session.documentState(token, context: context.context) }
     await gate.waitUntilEntered()
     context.cancel()

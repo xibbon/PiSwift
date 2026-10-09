@@ -82,7 +82,7 @@ import PiSwiftDurableTesting
         })
         let harness = try await harnessOpen([AnyTaskDefinition(definition)]), root = try await harness.root(context: .background), id = try await harnessStart(root, definition)
         try harness.resume(); await runEntered.wait()
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let first = Task { try await harness.abortTask(id: id, context: caller.context) }
         try await harnessEventually { try await harness.getTask(id: id, context: .background)?.abortRequested == true }
         caller.cancel(TaskDefinitionError("caller gave up"))
@@ -206,7 +206,7 @@ extension HarnessSchedulerRaceTests {
         try await harnessEventually { !harness.tasks.state.withLock { $0.pumping } }
         let blocker = Task { try await harness.commit({ _ in lineEntered.release(); await lineRelease.wait() }, context: .background) }
         await lineEntered.wait()
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let waiter = Task { try await harness.waitForTask(id: id, context: caller.context) }
         try await harnessEventually { harness.session.line.queuedCount > 0 }
         let closing: Task<Void, any Error>?

@@ -2,7 +2,7 @@ import PiSwiftAI
 import PiSwiftChord
 
 func classifyGeneration(_ runtime: TaskRuntime, request: GenerationCheckpoint, message: AssistantMessage,
-                        messages: [Message]? = nil, context: PiSwiftChord.Context) async throws {
+                        messages: [Message]? = nil, context: ChordContext) async throws {
     try runtime.signal.throwIfAborted()
     let attempt = request.attempt ?? 1
     if message.stopReason == .deferred, let handle = message.deferred {
@@ -57,7 +57,7 @@ func classifyGeneration(_ runtime: TaskRuntime, request: GenerationCheckpoint, m
         return .terminal(outcome: .failed(error: TaskOutcomeError(message: text, detail: .object(["reason": .string("model_error")]))))
     }, context: context)
 }
-private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, context: PiSwiftChord.Context) async throws {
+private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, context: ChordContext) async throws {
     var continuation: UserContent?
     try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in
         guard continuation == nil, let hook = hooks.onYield else { return }

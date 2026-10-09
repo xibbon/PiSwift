@@ -104,7 +104,7 @@ import PiSwiftDurableTesting
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], clock: clock)
         let root = try await harness.root(context: .background)
         let id = try await harnessStart(root, definition)
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let wait = Task { try await harness.waitForTask(id: id, context: caller.context) }
         try await harnessEventually { clock.pendingSleeperCount > 0 }
         caller.cancel()

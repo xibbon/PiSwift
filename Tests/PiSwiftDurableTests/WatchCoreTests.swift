@@ -119,9 +119,9 @@ struct WatchCoreTests {
     func genericStateContext() async throws {
         let source = CommittedStateSource<Int?>(value: 0, release: {})
         let state = try replicatedState(source)
-        let key = ContextKey<String>("commit")
-        let child = Context.background.withValue("kept", for: key).withCancel()
-        let contexts = SessionTestLog<PiSwiftChord.Context>()
+        let key = ChordContextKey<String>("commit")
+        let child = ChordContext.background.withValue("kept", for: key).withCancel()
+        let contexts = SessionTestLog<ChordContext>()
         let operations = SessionTestLog<[Delta.Op]>()
         let subscription = state.subscribeOperations { ops, _, context in
             operations.append(ops)

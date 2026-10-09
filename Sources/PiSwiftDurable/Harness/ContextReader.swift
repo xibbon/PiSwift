@@ -12,7 +12,7 @@ internal struct ContextRange: Sendable {
 
 /// Capture immutable bounds on the line, then scan only the missing range off the line.
 internal func readContextFrom(session: Session, storage: any DurableStorage, id: ConversationID,
-                              context: PiSwiftChord.Context, at: EntryID? = nil,
+                              context: ChordContext, at: EntryID? = nil,
                               previous: ContextRange? = nil) async throws -> (view: ContextView, range: ContextRange?) {
     let bounds: ContextBounds? = try await session.readOnLine {
         let tail: EntryID

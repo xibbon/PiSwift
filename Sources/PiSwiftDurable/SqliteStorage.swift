@@ -36,20 +36,20 @@ public actor SqliteStorage: DurableStorage {
         let result = try DurableID<Kind>(nextId); nextId += 1; return result
     }
 
-    public func conversation(_ id: ConversationID, context: Context) throws -> ConversationRecord? {
+    public func conversation(_ id: ConversationID, context: ChordContext) throws -> ConversationRecord? {
         try assertOpen(); return try readRecord("conversations", id: id.rawValue)
     }
-    public func task(_ id: TaskID, context: Context) throws -> TaskRecord? {
+    public func task(_ id: TaskID, context: ChordContext) throws -> TaskRecord? {
         try assertOpen(); return try readRecord("tasks", id: id.rawValue)
     }
-    public func submission(_ id: SubmissionID, context: Context) throws -> SubmissionRecord? {
+    public func submission(_ id: SubmissionID, context: ChordContext) throws -> SubmissionRecord? {
         try assertOpen(); return try readRecord("submissions", id: id.rawValue)
     }
-    public func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: Context) throws -> SubmissionRecord? {
+    public func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) throws -> SubmissionRecord? {
         try assertOpen()
         return try db.get("SELECT record FROM submissions WHERE conversation_id = ? AND request_id = ?", [.integer(conversationId.rawValue), try indexed(requestId)]).map { try decodeRecord($0) }
     }
-    public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<ConversationRecord, Cursor> {
+    public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<ConversationRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         var scan = SqliteScan(start)
@@ -57,7 +57,7 @@ public actor SqliteStorage: DurableStorage {
         scan.add("owner_task_id", query.ownerTaskId.map { .integer($0.rawValue) })
         return try scanRecords("conversations", scan: scan, limit: limit, id: { $0.id.rawValue })
     }
-    public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<TaskRecord, Cursor> {
+    public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<TaskRecord, Cursor> {
         try assertOpen()
         var scan = SqliteScan(try scanStart(requested: query.order, cursor: cursor, fallback: .ascending))
         scan.add("conversation_id", query.conversationId.map { .integer($0.rawValue) })
@@ -67,17 +67,17 @@ public actor SqliteStorage: DurableStorage {
         scan.add("background", query.background.map { .integer($0 ? 1 : 0) })
         return try scanRecords("tasks", scan: scan, limit: limit, id: { $0.id.rawValue })
     }
-    public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<SubmissionRecord, Cursor> {
+    public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<SubmissionRecord, Cursor> {
         try assertOpen()
         var scan = SqliteScan(try scanStart(requested: query.order, cursor: cursor, fallback: .ascending))
         scan.add("conversation_id", query.conversationId.map { .integer($0.rawValue) })
         scan.add("status", query.status.map { .text($0.rawValue) })
         return try scanRecords("submissions", scan: scan, limit: limit, id: { $0.id.rawValue })
     }
-    public func entry(_ id: EntryID, context: Context) throws -> EntryLookup? {
+    public func entry(_ id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen(); return try readEntry(id)
     }
-    public func entry(_ conversationId: ConversationID, id: EntryID, context: Context) throws -> EntryLookup? {
+    public func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen()
         var conversation = try requireConversation(conversationId)
         guard let lookup = try readEntry(id) else { return nil }
@@ -89,7 +89,7 @@ public actor SqliteStorage: DurableStorage {
         }
         return id.rawValue <= upper ? lookup : nil
     }
-    public func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: Context) throws -> EntryRecord? {
+    public func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) throws -> EntryRecord? {
         try assertOpen()
         var conversation = try requireConversation(conversationId)
         var upper = atOrBeforeEntryId?.rawValue ?? Seq.maximumRawValue
@@ -99,7 +99,7 @@ public actor SqliteStorage: DurableStorage {
             upper = min(upper, parent.at.rawValue); conversation = try requireConversation(parent.conversationId)
         }
     }
-    public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<EntryRecord, Cursor> {
+    public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<EntryRecord, Cursor> {
         try assertOpen()
         let start = try scanStart(requested: query.order, cursor: cursor, fallback: .descending)
         var upper = query.maxEntryId?.rawValue
@@ -142,17 +142,17 @@ public actor SqliteStorage: DurableStorage {
         return try db.all("SELECT record FROM entries WHERE \(clauses.joined(separator: " AND ")) ORDER BY id \(order == .ascending ? "ASC" : "DESC") LIMIT ?", params).map { try decodeRecord($0) }
     }
 
-    public func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: Context) throws -> DocumentRecord? {
+    public func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) throws -> DocumentRecord? {
         try assertOpen()
         var params = try addressValues(kind: address.kind, scope: address.scope, key: address.key)
         let lifetime = appendLifetime(at, params: &params)
         return try db.get("SELECT record FROM documents WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ? AND \(lifetime) ORDER BY created_at DESC LIMIT 1", params).map { try decodeRecord($0) }
     }
-    public func document(_ id: DocumentID, at: DocumentPoint, context: Context) throws -> StoredDocument? {
+    public func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) throws -> StoredDocument? {
         try assertOpen()
         return try db.transaction { try materialize($0, id: id, at: at) }
     }
-    public func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: Context) throws -> Page<DocumentRecord, Cursor> {
+    public func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<DocumentRecord, Cursor> {
         try assertOpen()
         let after: Int64
         if let value = cursor?["after"] {
@@ -167,7 +167,7 @@ public actor SqliteStorage: DurableStorage {
         let values: [DocumentRecord] = try rows.map { try decodeRecord($0) }
         return sqlitePage(values, limit: limit, order: .ascending, id: { $0.id.rawValue })
     }
-    public func close(context: Context) throws {
+    public func close(context: ChordContext) throws {
         if closed {
             if let closeError { throw closeError }
             return

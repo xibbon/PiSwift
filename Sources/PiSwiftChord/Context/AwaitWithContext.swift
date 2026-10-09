@@ -36,7 +36,7 @@ private final class ContextWaiter<Value: Sendable>: Sendable {
 /// Swift task cancellation does not end this wait. Use
 /// `withTaskCancellationContext(_:_:)` to connect task cancellation to a context.
 public func awaitWithContext<T: Sendable>(
-    _ work: Task<T, any Error>, _ context: Context
+    _ work: Task<T, any Error>, _ context: ChordContext
 ) async throws -> T {
     guard let signal = context.abortSignal else { return try await work.value }
     try signal.throwIfAborted()
@@ -59,7 +59,7 @@ public func awaitWithContext<T: Sendable>(
 /// The nonthrowing-work form of `awaitWithContext(_:_:)`.
 /// Context cancellation can still throw. It never cancels work.
 public func awaitWithContext<T: Sendable>(
-    _ work: Task<T, Never>, _ context: Context
+    _ work: Task<T, Never>, _ context: ChordContext
 ) async throws -> T {
     guard let signal = context.abortSignal else { return await work.value }
     try signal.throwIfAborted()
@@ -81,7 +81,7 @@ public func awaitWithContext<T: Sendable>(
 /// Parent cancellation also reaches the child. The parent does not change.
 /// The first abort reason wins if parent and task cancellation both occur.
 public func withTaskCancellationContext<T>(
-    _ context: Context, _ body: (Context) async throws -> T
+    _ context: ChordContext, _ body: (ChordContext) async throws -> T
 ) async rethrows -> T {
     let child = context.withCancel()
     return try await withTaskCancellationHandler {

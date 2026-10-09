@@ -18,7 +18,7 @@ import PiSwiftDurableTesting
         }, context: .background)
         let reader = countingReader(createRegistry()); let held = await storage.holdCommits()
         await storage.failNextCommit(StorageRejected("disk full"))
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let opening = Task { try await Harness.open(storage: storage, options: .init(models: FakeDurableModels(), registry: reader), context: caller.context) }
         await held.waitUntilEntered(); caller.cancel(StorageRejected("caller gave up")); await held.release()
         do { _ = try await opening.value; Issue.record("Open must fail") }
@@ -72,7 +72,7 @@ import PiSwiftDurableTesting
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], storage: storage)
         let root = try await harness.root(context: .background); _ = try await harnessStart(root, definition)
         try harness.resume(); await entered.wait()
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let first = Task { try await harness.close(context: caller.context) }
         try await harnessEventually { harness.tasks.closing }; caller.cancel(StorageRejected("stop waiting"))
         do { try await first.value; Issue.record("Close waiter must cancel") }
@@ -87,7 +87,7 @@ import PiSwiftDurableTesting
     // harness-lifecycle.test.ts:256
     @Test func cancelledCommitterStillGetsDurableReceiptAfterStorageAdmission() async throws {
         let storage = ControlledStorage(); let h = try await openHarness(storage: storage); let root = try await h.harness.root(context: .background)
-        let held = await storage.holdCommits(); let caller = PiSwiftChord.Context.background.withCancel()
+        let held = await storage.holdCommits(); let caller = ChordContext.background.withCancel()
         let commit = Task { try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "note")) }, context: caller.context) }
         await held.waitUntilEntered(); caller.cancel(StorageRejected("committer gave up")); await held.release()
         let entry = try await commit.value
@@ -115,7 +115,7 @@ import PiSwiftDurableTesting
         let root = try await h.harness.root(context: .background); let held = await storage.holdCommits()
         let blocking = Task { _ = try await harnessAppendForLifecycle(root) }
         await held.waitUntilEntered()
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let acquire = Task { try await h.harness.watchDoc(token, context: caller.context) }
         caller.cancel(StorageRejected("stop acquisition")); await held.release(); try await blocking.value
         await #expect(throws: (any Error).self) { _ = try await acquire.value }

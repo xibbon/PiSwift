@@ -25,12 +25,12 @@ internal func durableEventSnapshot(_ view: ConversationView) throws -> DurableAg
 
 extension Harness {
     /// Attach atomically on the Session line. Only later commits produce batches.
-    public func watchEvents(conversationId: ConversationID, context: PiSwiftChord.Context) async throws -> DurableAgentEventWatch {
+    public func watchEvents(conversationId: ConversationID, context: ChordContext) async throws -> DurableAgentEventWatch {
         try await withTaskCancellationContext(context) { context in
             try await acquireEvents(conversationId: conversationId, context: context)
         }
     }
-    private func acquireEvents(conversationId: ConversationID, context: PiSwiftChord.Context) async throws -> DurableAgentEventWatch {
+    private func acquireEvents(conversationId: ConversationID, context: ChordContext) async throws -> DurableAgentEventWatch {
         try assertOpen()
         try context.abortSignal?.throwIfAborted()
         let result = Mutex<DurableAgentEventWatch?>(nil)
@@ -70,7 +70,7 @@ extension Harness {
 
 /// Experimental event adapter for a durable conversation.
 public func watchEvents(_ harness: Harness, conversationId: ConversationID,
-                        context: PiSwiftChord.Context) async throws -> DurableAgentEventWatch {
+                        context: ChordContext) async throws -> DurableAgentEventWatch {
     try await harness.watchEvents(conversationId: conversationId, context: context)
 }
 

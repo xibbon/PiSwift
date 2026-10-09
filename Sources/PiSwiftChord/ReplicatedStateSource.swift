@@ -15,9 +15,9 @@ public struct ReplicatedStateSourceFrame<Value: Sendable>: Sendable {
     public let cursor: Int
     public let value: Value
     public let ops: [Delta.Op]
-    public let context: Context
+    public let context: ChordContext
 
-    public init(cursor: Int, value: Value, ops: [Delta.Op], context: Context) {
+    public init(cursor: Int, value: Value, ops: [Delta.Op], context: ChordContext) {
         self.cursor = cursor
         self.value = value
         self.ops = ops

@@ -11,7 +11,7 @@ public final class AttachedReplicatedState<Value: Sendable>: Sendable {
         let frame: ReplicatedStateSourceFrame<Value>
         let sequence: Int
     }
-    private typealias OperationsListener = @Sendable ([Delta.Op], Int, Context) throws -> Void
+    private typealias OperationsListener = @Sendable ([Delta.Op], Int, ChordContext) throws -> Void
     private struct State {
         var value: Value
         var cursor: Int
@@ -46,7 +46,7 @@ public final class AttachedReplicatedState<Value: Sendable>: Sendable {
     /// The last published value. It is also available after disposal.
     public var value: Value { storage.withLock { $0.value } }
 
-    /// Hydrate first with the current local sequence and `Context.background`.
+    /// Hydrate first with the current local sequence and `ChordContext.background`.
     /// Await each listener call before the next call on this subscription.
     /// At 100 pending deliveries, clear the queue and keep the newest delivery,
     /// plus hydration if it has not started. Sequences can thus skip on overflow.
@@ -54,7 +54,7 @@ public final class AttachedReplicatedState<Value: Sendable>: Sendable {
     /// Two subscriptions of the same closure are independent.
     @discardableResult
     public func subscribe(
-        _ listener: @escaping @Sendable (Value, Context, ReplicatedStateDelivery) async throws -> Void
+        _ listener: @escaping @Sendable (Value, ChordContext, ReplicatedStateDelivery) async throws -> Void
     ) -> ReplicatedStateSubscription {
         let subscriber = ReplicatedStateSubscriber<Value>(idle: idle, listener: listener) { [onError] error in
             try? onError(error)
@@ -87,7 +87,7 @@ public final class AttachedReplicatedState<Value: Sendable>: Sendable {
     /// There is no hydration batch. Errors go to the creation error handler.
     @discardableResult
     package func subscribeOperations(
-        _ listener: @escaping @Sendable ([Delta.Op], Int, Context) throws -> Void
+        _ listener: @escaping @Sendable ([Delta.Op], Int, ChordContext) throws -> Void
     ) -> ReplicatedStateSubscription {
         // The identity token has no capture of this state.
         let identity = ReplicatedStateSubscription {}

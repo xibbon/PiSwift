@@ -46,8 +46,8 @@ public struct TextLine: Sendable, Equatable {
     public init(text: String, terminated: Bool) { self.text = text; self.terminated = terminated }
 }
 public protocol TextLineReader: Sendable {
-    func readLine(context: PiSwiftChord.Context) async -> Result<TextLine?, FileError>
-    func close(context: PiSwiftChord.Context) async
+    func readLine(context: ChordContext) async -> Result<TextLine?, FileError>
+    func close(context: ChordContext) async
 }
 public struct ScanLinesOptions: Sendable {
     public var startLine: Int
@@ -68,10 +68,10 @@ public struct LineScan: Sendable, Equatable {
     }
 }
 public protocol BinaryReader: Sendable {
-    func info(context: PiSwiftChord.Context) async -> Result<FileInfo, FileError>
-    func read(offset: Int64, length: Int, context: PiSwiftChord.Context) async -> Result<[UInt8], FileError>
-    func scanLines(options: ScanLinesOptions, context: PiSwiftChord.Context) async -> Result<LineScan, FileError>
-    func close(context: PiSwiftChord.Context) async
+    func info(context: ChordContext) async -> Result<FileInfo, FileError>
+    func read(offset: Int64, length: Int, context: ChordContext) async -> Result<[UInt8], FileError>
+    func scanLines(options: ScanLinesOptions, context: ChordContext) async -> Result<LineScan, FileError>
+    func close(context: ChordContext) async
 }
 public struct WatchExclude: Sendable {
     public var hidden: Bool?
@@ -90,7 +90,7 @@ public enum WatchChange: Sendable { case paths([String]), overflow, error(FileEr
 public enum WatchMode: String, Sendable { case native, polling }
 public protocol FileWatcher: Sendable {
     var mode: WatchMode { get }
-    func close(context: PiSwiftChord.Context) async
+    func close(context: ChordContext) async
 }
 public struct DirectoryPage: Sendable {
     public var entries: [FileInfo]
@@ -98,8 +98,8 @@ public struct DirectoryPage: Sendable {
     public init(entries: [FileInfo], done: Bool) { self.entries = entries; self.done = done }
 }
 public protocol DirReader: Sendable {
-    func next(maxEntries: Int, context: PiSwiftChord.Context) async -> Result<DirectoryPage, FileError>
-    func close(context: PiSwiftChord.Context) async
+    func next(maxEntries: Int, context: ChordContext) async -> Result<DirectoryPage, FileError>
+    func close(context: ChordContext) async
 }
 public enum FileContent: Sendable { case text(String), bytes([UInt8]) }
 public struct ReadTextLinesOptions: Sendable {
@@ -128,29 +128,29 @@ public struct CreateTempFileOptions: Sendable {
 public protocol FileSystem: Sendable {
     var id: String { get }
     var cwd: String { get set }
-    func absolutePath(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError>
-    func joinPath(_ parts: [String], context: PiSwiftChord.Context) async -> Result<String, FileError>
-    func readTextFile(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError>
-    func openTextLineReader(_ path: String, context: PiSwiftChord.Context) async -> Result<any TextLineReader, FileError>
-    func readTextLines(_ path: String, options: ReadTextLinesOptions?, context: PiSwiftChord.Context) async -> Result<[String], FileError>
-    func readBinaryFile(_ path: String, context: PiSwiftChord.Context) async -> Result<[UInt8], FileError>
-    func openBinaryReader(_ path: String, options: OpenBinaryReaderOptions?, context: PiSwiftChord.Context) async -> Result<any BinaryReader, FileError>
-    func writeFile(_ path: String, content: FileContent, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func appendFile(_ path: String, content: FileContent, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func truncateFile(_ path: String, size: Int64, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func flushFile(_ path: String, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func renameFile(_ sourcePath: String, destinationPath: String, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func fileInfo(_ path: String, context: PiSwiftChord.Context) async -> Result<FileInfo, FileError>
-    func listDir(_ path: String, context: PiSwiftChord.Context) async -> Result<[FileInfo], FileError>
-    func openDirReader(_ path: String, context: PiSwiftChord.Context) async -> Result<any DirReader, FileError>
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: PiSwiftChord.Context) async -> Result<any FileWatcher, FileError>
-    func canonicalPath(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError>
-    func exists(_ path: String, context: PiSwiftChord.Context) async -> Result<Bool, FileError>
-    func createDir(_ path: String, options: CreateDirOptions?, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func remove(_ path: String, options: RemoveOptions?, context: PiSwiftChord.Context) async -> Result<Void, FileError>
-    func createTempDir(prefix: String?, context: PiSwiftChord.Context) async -> Result<String, FileError>
-    func createTempFile(options: CreateTempFileOptions?, context: PiSwiftChord.Context) async -> Result<String, FileError>
-    func cleanup(context: PiSwiftChord.Context) async
+    func absolutePath(_ path: String, context: ChordContext) async -> Result<String, FileError>
+    func joinPath(_ parts: [String], context: ChordContext) async -> Result<String, FileError>
+    func readTextFile(_ path: String, context: ChordContext) async -> Result<String, FileError>
+    func openTextLineReader(_ path: String, context: ChordContext) async -> Result<any TextLineReader, FileError>
+    func readTextLines(_ path: String, options: ReadTextLinesOptions?, context: ChordContext) async -> Result<[String], FileError>
+    func readBinaryFile(_ path: String, context: ChordContext) async -> Result<[UInt8], FileError>
+    func openBinaryReader(_ path: String, options: OpenBinaryReaderOptions?, context: ChordContext) async -> Result<any BinaryReader, FileError>
+    func writeFile(_ path: String, content: FileContent, context: ChordContext) async -> Result<Void, FileError>
+    func appendFile(_ path: String, content: FileContent, context: ChordContext) async -> Result<Void, FileError>
+    func truncateFile(_ path: String, size: Int64, context: ChordContext) async -> Result<Void, FileError>
+    func flushFile(_ path: String, context: ChordContext) async -> Result<Void, FileError>
+    func renameFile(_ sourcePath: String, destinationPath: String, context: ChordContext) async -> Result<Void, FileError>
+    func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError>
+    func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError>
+    func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError>
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError>
+    func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError>
+    func exists(_ path: String, context: ChordContext) async -> Result<Bool, FileError>
+    func createDir(_ path: String, options: CreateDirOptions?, context: ChordContext) async -> Result<Void, FileError>
+    func remove(_ path: String, options: RemoveOptions?, context: ChordContext) async -> Result<Void, FileError>
+    func createTempDir(prefix: String?, context: ChordContext) async -> Result<String, FileError>
+    func createTempFile(options: CreateTempFileOptions?, context: ChordContext) async -> Result<String, FileError>
+    func cleanup(context: ChordContext) async
 }
 public struct ShellSpillOptions: Sendable {
     public var afterBytes: Int
@@ -188,11 +188,11 @@ public struct ShellExecOptions: Sendable {
     public var env: [String: String]?
     public var inheritEnv: Bool?
     public var timeout: Int64?
-    public var onOutput: (@Sendable (String, PiSwiftChord.Context, ShellOutputInfo) throws -> Void)?
+    public var onOutput: (@Sendable (String, ChordContext, ShellOutputInfo) throws -> Void)?
     public var spill: ShellSpillOptions?
     public var window: ShellOutputWindow?
     public init(cwd: String? = nil, env: [String: String]? = nil, inheritEnv: Bool? = nil, timeout: Int64? = nil,
-                onOutput: (@Sendable (String, PiSwiftChord.Context, ShellOutputInfo) throws -> Void)? = nil,
+                onOutput: (@Sendable (String, ChordContext, ShellOutputInfo) throws -> Void)? = nil,
                 spill: ShellSpillOptions? = nil, window: ShellOutputWindow? = nil) {
         self.cwd = cwd; self.env = env; self.inheritEnv = inheritEnv; self.timeout = timeout
         self.onOutput = onOutput; self.spill = spill; self.window = window
@@ -200,8 +200,8 @@ public struct ShellExecOptions: Sendable {
 }
 public enum ShellCommand: Sendable { case shell(String), argv([String]) }
 public protocol Shell: Sendable {
-    func exec(_ command: ShellCommand, options: ShellExecOptions?, context: PiSwiftChord.Context) async -> Result<ShellExecResult, ExecutionError>
-    func cleanup(context: PiSwiftChord.Context) async
+    func exec(_ command: ShellCommand, options: ShellExecOptions?, context: ChordContext) async -> Result<ShellExecResult, ExecutionError>
+    func cleanup(context: ChordContext) async
 }
 public protocol ExecutionEnv: FileSystem, Shell {}
 

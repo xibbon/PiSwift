@@ -11,7 +11,7 @@ internal final class TaskInvocation: Sendable {
     let conversationId: ConversationID
     let abort: Bool
     let controller = AbortController()
-    let context: PiSwiftChord.Context
+    let context: ChordContext
     let done = HarnessPromise<Void>()
     struct State: Sendable {
         var ended = false
@@ -19,7 +19,7 @@ internal final class TaskInvocation: Sendable {
         var watches: [UUID: @Sendable () -> Void] = [:]
     }
     let state = Mutex(State())
-    init(_ record: TaskRecord, abort: Bool, context: PiSwiftChord.Context) {
+    init(_ record: TaskRecord, abort: Bool, context: ChordContext) {
         taskId = record.id; conversationId = record.conversationId; self.abort = abort
         self.context = context.withoutAbortSignal().withAbortSignal(controller.signal)
     }
@@ -49,11 +49,11 @@ internal final class TaskScheduler: Sendable {
     let clock: any DurableClock
     let now: @Sendable () -> Int64
     let settings: @Sendable () -> Settings
-    let resolveAgent: @Sendable (ConversationID, RegistrySnapshot, PiSwiftChord.Context) async throws -> Agent
-    let env: @Sendable (ConversationID, PiSwiftChord.Context) async throws -> (any ExecutionEnv)?
-    let conversation: @Sendable (ConversationID, InvocationBinding, PiSwiftChord.Context) async throws -> ConversationHandle?
+    let resolveAgent: @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent
+    let env: @Sendable (ConversationID, ChordContext) async throws -> (any ExecutionEnv)?
+    let conversation: @Sendable (ConversationID, InvocationBinding, ChordContext) async throws -> ConversationHandle?
     let report: @Sendable (any Error) -> Void
-    let context: PiSwiftChord.Context
+    let context: ChordContext
     let settleOutcome: @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void
     let withdrawInputs: @Sendable (Transaction, ConversationID) async throws -> Void
     struct KeptContext: Sendable { let range: ContextRange; var idleSince: Int64? }
@@ -87,10 +87,10 @@ internal final class TaskScheduler: Sendable {
     init(session: Session, registry: any RegistryReader, models: any DurableModels,
          clock: any DurableClock, now: @escaping @Sendable () -> Int64,
          settings: @escaping @Sendable () -> Settings,
-         agent: @escaping @Sendable (ConversationID, RegistrySnapshot, PiSwiftChord.Context) async throws -> Agent,
-         env: @escaping @Sendable (ConversationID, PiSwiftChord.Context) async throws -> (any ExecutionEnv)?,
-         conversation: @escaping @Sendable (ConversationID, InvocationBinding, PiSwiftChord.Context) async throws -> ConversationHandle?,
-         report: @escaping @Sendable (any Error) -> Void, context: PiSwiftChord.Context,
+         agent: @escaping @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent,
+         env: @escaping @Sendable (ConversationID, ChordContext) async throws -> (any ExecutionEnv)?,
+         conversation: @escaping @Sendable (ConversationID, InvocationBinding, ChordContext) async throws -> ConversationHandle?,
+         report: @escaping @Sendable (any Error) -> Void, context: ChordContext,
          settleOutcome: @escaping @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void = { _, _, _ in },
          withdrawInputs: @escaping @Sendable (Transaction, ConversationID) async throws -> Void = { _, _ in }) {
         self.session = session; storage = session.storage; self.registry = registry; self.models = models
@@ -101,7 +101,7 @@ internal final class TaskScheduler: Sendable {
     var closing: Bool { state.withLock { $0.closing } }
     func records() -> [TaskRecord] { state.withLock { state in state.order.compactMap { state.live[$0] } } }
     func current(_ id: TaskID) -> TaskRecord? { state.withLock { $0.live[id] } }
-    func open(context: PiSwiftChord.Context) async throws {
+    func open(context: ChordContext) async throws {
         let commits = try session.subscribeCommits { [weak self] publication, _ in self?.observe(publication) }
         let close = try session.subscribeClose { [weak self] in self?.seal() }
         let unsubscribe = registry.subscribe { [weak self] in self?.kick() }

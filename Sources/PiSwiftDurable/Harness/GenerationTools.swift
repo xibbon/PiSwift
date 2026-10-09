@@ -11,7 +11,7 @@ func createGenerationTool(tx: Transaction, runtime: TaskRuntime, assistant: Entr
     try await tx.createTask(generationToolKind, input: GenerationToolInput(assistant: assistant, callId: callId),
                            options: .init(ownership: .task(taskId: runtime.taskId)))
 }
-func generationCalls(runtime: TaskRuntime, assistant: EntryID, callIds: [String], context: PiSwiftChord.Context) async throws -> [ToolCall] {
+func generationCalls(runtime: TaskRuntime, assistant: EntryID, callIds: [String], context: ChordContext) async throws -> [ToolCall] {
     guard let entry = try await runtime.entry(assistant, context: context), case .assistant(let message) = try entry.messages()?.first else { return [] }
     let calls = message.content.compactMap { block -> ToolCall? in if case .toolCall(let call) = block { return call }; return nil }
     return callIds.compactMap { id in calls.first { harnessNamesEqual($0.id, id) } }
@@ -24,7 +24,7 @@ func appendGenerationToolError(tx: Transaction, conversationId: ConversationID, 
         model: EntryRecord.encodeMessages([.toolResult(message)]), data: JSONValue(encoding: ToolResultEntryData(diagnostics: diagnostics))))
 }
 func startGenerationToolRound(runtime: TaskRuntime, request: GenerationCheckpoint, message: AssistantMessage, calls: [ToolCall],
-                              messages: [Message]?, context: PiSwiftChord.Context) async throws {
+                              messages: [Message]?, context: ChordContext) async throws {
     let offeredMessages: [Message]
     if let messages { offeredMessages = messages }
     else { offeredMessages = try await runtime.context(runtime.conversationId, at: request.cutoff, context: context).messages }
@@ -53,7 +53,7 @@ func startGenerationToolRound(runtime: TaskRuntime, request: GenerationCheckpoin
         return try generationTask.waiting(GenerationCheckpoint(phase: .tools, assistant: entry.id, tools: tools, pending: pending), on: tools, policy: .allSettled)
     }, context: context)
 }
-public func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], context: PiSwiftChord.Context) async throws {
+public func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], context: ChordContext) async throws {
     let outcomes = try await runtime.outcomes(tools, context: context)
     var controls: [ToolControl?] = []
     for outcome in outcomes {

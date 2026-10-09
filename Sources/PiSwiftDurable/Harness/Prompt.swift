@@ -51,7 +51,7 @@ public func replaySections(_ messages: [Message]) -> JSONObject {
 /// A render failure after context cancellation is thrown to the caller.
 public func renderSections(
     _ sections: [PromptSection], input: PromptInput, shown: JSONObject,
-    report: @Sendable (any Error) -> Void = { _ in }, context: PiSwiftChord.Context
+    report: @Sendable (any Error) -> Void = { _ in }, context: ChordContext
 ) async throws -> JSONObject {
     var desired = JSONObject()
     for section in sections {

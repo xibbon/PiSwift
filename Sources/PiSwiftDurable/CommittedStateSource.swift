@@ -33,7 +33,7 @@ package final class CommittedStateSource<Value: Sendable>: ReplicatedStateSource
 
     /// Register each frame under the source lock, then deliver outside all locks.
     /// Source delivery is synchronous; Chord's public subscribers remain async.
-    package func advance(value: Value, ops: [Delta.Op], context: PiSwiftChord.Context,
+    package func advance(value: Value, ops: [Delta.Op], context: ChordContext,
                          retired: Bool = false) {
         let drains = storage.withLock { state -> [CommittedSourceAttachment<Value>] in
             guard !state.closed, !state.retired else { return [] }

@@ -6,10 +6,10 @@ public struct HookApi: Sendable {
     public var conversationId: ConversationID
     public var models: any DurableModels
     public var read: HarnessDocumentReader
-    public var memo: @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue?
+    public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
     public init(taskId: TaskID, conversationId: ConversationID, models: any DurableModels,
                 read: HarnessDocumentReader = .init(),
-                memo: @escaping @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue? = { _, _, _ in nil }) {
+                memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil }) {
         self.taskId = taskId; self.conversationId = conversationId; self.models = models; self.read = read; self.memo = memo
     }
 }
@@ -23,15 +23,15 @@ public struct GenerationYield: Sendable {
     public init(continue input: UserContent) { self.continue = input }
 }
 public struct GenerationHooks: Sendable {
-    public var beforeRequest: (@Sendable (GenerationRequest, HookApi, PiSwiftChord.Context) async throws -> GenerationRequest?)?
-    public var afterResponse: (@Sendable (AssistantMessage, HookApi, PiSwiftChord.Context) async throws -> Void)?
-    public var onYield: (@Sendable (AssistantMessage, HookApi, PiSwiftChord.Context) async throws -> GenerationYield?)?
-    public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, PiSwiftChord.Context) async throws -> Void)?
+    public var beforeRequest: (@Sendable (GenerationRequest, HookApi, ChordContext) async throws -> GenerationRequest?)?
+    public var afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)?
+    public var onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)?
+    public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)?
     public init(
-        beforeRequest: (@Sendable (GenerationRequest, HookApi, PiSwiftChord.Context) async throws -> GenerationRequest?)? = nil,
-        afterResponse: (@Sendable (AssistantMessage, HookApi, PiSwiftChord.Context) async throws -> Void)? = nil,
-        onYield: (@Sendable (AssistantMessage, HookApi, PiSwiftChord.Context) async throws -> GenerationYield?)? = nil,
-        afterTools: (@Sendable (EntryID, [EntryID], HookApi, PiSwiftChord.Context) async throws -> Void)? = nil
+        beforeRequest: (@Sendable (GenerationRequest, HookApi, ChordContext) async throws -> GenerationRequest?)? = nil,
+        afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)? = nil,
+        onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)? = nil,
+        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)? = nil
     ) {
         self.beforeRequest = beforeRequest; self.afterResponse = afterResponse; self.onYield = onYield; self.afterTools = afterTools
     }
@@ -43,11 +43,11 @@ public struct BeforeToolResult: Sendable {
     public init(arguments: JSONObject? = nil, block: String? = nil) { self.arguments = arguments; self.block = block }
 }
 public struct ToolHooks: Sendable {
-    public var beforeTool: (@Sendable (ToolCall, HookApi, PiSwiftChord.Context) async throws -> BeforeToolResult?)?
-    public var afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, PiSwiftChord.Context) async throws -> ToolExecutionResult?)?
+    public var beforeTool: (@Sendable (ToolCall, HookApi, ChordContext) async throws -> BeforeToolResult?)?
+    public var afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)?
     public init(
-        beforeTool: (@Sendable (ToolCall, HookApi, PiSwiftChord.Context) async throws -> BeforeToolResult?)? = nil,
-        afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, PiSwiftChord.Context) async throws -> ToolExecutionResult?)? = nil
+        beforeTool: (@Sendable (ToolCall, HookApi, ChordContext) async throws -> BeforeToolResult?)? = nil,
+        afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)? = nil
     ) { self.beforeTool = beforeTool; self.afterTool = afterTool }
 }
 public struct CompactionHookInput: Sendable {
@@ -62,8 +62,8 @@ public struct CompactionHookInput: Sendable {
 }
 public enum CompactionHookDecision: Sendable { case decline, summary(String) }
 public struct CompactionHooks: Sendable {
-    public var beforeCompact: (@Sendable (CompactionHookInput, HookApi, PiSwiftChord.Context) async throws -> CompactionHookDecision?)?
-    public init(beforeCompact: (@Sendable (CompactionHookInput, HookApi, PiSwiftChord.Context) async throws -> CompactionHookDecision?)? = nil) {
+    public var beforeCompact: (@Sendable (CompactionHookInput, HookApi, ChordContext) async throws -> CompactionHookDecision?)?
+    public init(beforeCompact: (@Sendable (CompactionHookInput, HookApi, ChordContext) async throws -> CompactionHookDecision?)? = nil) {
         self.beforeCompact = beforeCompact
     }
 }

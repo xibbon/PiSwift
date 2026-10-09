@@ -40,22 +40,22 @@ func waitForContextListeners(_ signal: AbortSignal, _ count: Int) async {
 struct ContextTests {
     @Test("provides distinct empty root contexts")
     func roots() {
-        let key = ContextKey<String>("value")
-        #expect(Context.todo.description != Context.background.description)
-        #expect(Context.todo.abortSignal == nil)
-        #expect(Context.todo.value(key) == nil)
-        #expect(String(describing: Context.background) == "[Context BACKGROUND_CONTEXT]")
-        #expect(String(describing: Context.todo) == "[Context TODO_CONTEXT]")
+        let key = ChordContextKey<String>("value")
+        #expect(ChordContext.todo.description != ChordContext.background.description)
+        #expect(ChordContext.todo.abortSignal == nil)
+        #expect(ChordContext.todo.value(key) == nil)
+        #expect(String(describing: ChordContext.background) == "[Context BACKGROUND_CONTEXT]")
+        #expect(String(describing: ChordContext.todo) == "[Context TODO_CONTEXT]")
     }
 
     @Test("layers typed values without modifying parents")
     func values() {
-        let firstKey = ContextKey<String>("first")
-        let secondKey = ContextKey<Int>("second")
-        let first = Context.background.withValue("one", for: firstKey)
+        let firstKey = ChordContextKey<String>("first")
+        let secondKey = ChordContextKey<Int>("second")
+        let first = ChordContext.background.withValue("one", for: firstKey)
         let second = first.withValue(2, for: secondKey)
         let replaced = second.withValue("updated", for: firstKey)
-        #expect(Context.background.value(firstKey) == nil)
+        #expect(ChordContext.background.value(firstKey) == nil)
         #expect(first.value(firstKey) == "one")
         #expect(first.value(secondKey) == nil)
         #expect(second.value(firstKey) == "one")
@@ -68,7 +68,7 @@ struct ContextTests {
     @Test("inherits parent cancellation and isolates child cancellation")
     func cancellation() throws {
         let controller = AbortController()
-        let parent = Context.background.withAbortSignal(controller.signal)
+        let parent = ChordContext.background.withAbortSignal(controller.signal)
         let child = parent.withCancel()
         let sibling = parent.withCancel()
         let calls = Mutex(0)
@@ -88,8 +88,8 @@ struct ContextTests {
     @Test("masks caller cancellation for mandatory cleanup")
     func cleanup() {
         let controller = AbortController()
-        let key = ContextKey<String>("value")
-        let context = Context.background.withAbortSignal(controller.signal).withValue("preserved", for: key)
+        let key = ChordContextKey<String>("value")
+        let context = ChordContext.background.withAbortSignal(controller.signal).withValue("preserved", for: key)
         let cleanup = context.withoutAbortSignal()
         controller.abort()
         #expect(context.abortSignal?.aborted == true)
@@ -100,7 +100,7 @@ struct ContextTests {
     @Test("stops waiting when the invocation is cancelled")
     func stopsWaiting() async throws {
         let controller = AbortController()
-        let context = Context.background.withAbortSignal(controller.signal)
+        let context = ChordContext.background.withAbortSignal(controller.signal)
         let gate = ContextTestGate()
         let work = Task<String, Never> { await gate.wait(); return "completed later" }
         let waiting = Task { try await awaitWithContext(work, context) }
@@ -120,18 +120,18 @@ struct ContextTests {
 
     @Test("Keys with equal descriptions have distinct identities")
     func keyIdentity() {
-        let first = ContextKey<String>("same")
-        let second = ContextKey<String>("same")
-        let context = Context.background.withValue("first", for: first).withValue("second", for: second)
+        let first = ChordContextKey<String>("same")
+        let second = ChordContextKey<String>("same")
+        let context = ChordContext.background.withValue("first", for: first).withValue("second", for: second)
         #expect(context.value(first) == "first")
         #expect(context.value(second) == "second")
-        #expect(context.value(ContextKey<String>("same")) == nil)
+        #expect(context.value(ChordContextKey<String>("same")) == nil)
     }
 
     @Test("A nil value masks its parent value")
     func nilValue() {
-        let key = ContextKey<String>("value")
-        let parent = Context.background.withValue("parent", for: key)
+        let key = ChordContextKey<String>("value")
+        let parent = ChordContext.background.withValue("parent", for: key)
         let child = parent.withValue(nil, for: key)
         #expect(child.value(key) == nil)
         #expect(parent.value(key) == "parent")
@@ -140,7 +140,7 @@ struct ContextTests {
     @Test("Both task forms return results and remove listeners")
     func success() async throws {
         let controller = AbortController()
-        let context = Context.background.withAbortSignal(controller.signal)
+        let context = ChordContext.background.withAbortSignal(controller.signal)
         let unrelatedCalls = Mutex(0)
         let unrelated = controller.signal.addAbortListener { _ in unrelatedCalls.withLock { $0 += 1 } }
         defer { controller.signal.removeAbortListener(unrelated) }
@@ -166,7 +166,7 @@ struct ContextTests {
     @Test("Work errors pass through and remove the listener")
     func failure() async {
         let controller = AbortController()
-        let context = Context.background.withAbortSignal(controller.signal)
+        let context = ChordContext.background.withAbortSignal(controller.signal)
         let gate = ContextTestGate()
         let failure = ContextTestError(text: "work failed")
         let work = Task<Int, any Error> { await gate.wait(); throw failure }
@@ -183,7 +183,7 @@ struct ContextTests {
     @Test("Abort removes both task waiters and leaves work active")
     func abortBothForms() async throws {
         let controller = AbortController()
-        let context = Context.background.withAbortSignal(controller.signal)
+        let context = ChordContext.background.withAbortSignal(controller.signal)
         let gate = ContextTestGate()
         let errorWork = Task<Int, any Error> { await gate.wait(); return 21 }
         let neverWork = Task<Int, Never> { await gate.wait(); return 22 }
@@ -209,7 +209,7 @@ struct ContextTests {
         let controller = AbortController()
         let reason = ContextTestError(text: "already stopped")
         controller.abort(reason)
-        let context = Context.background.withAbortSignal(controller.signal)
+        let context = ChordContext.background.withAbortSignal(controller.signal)
         let gate = ContextTestGate()
         let errorWork = Task<Int, any Error> { await gate.wait(); return 1 }
         let neverWork = Task<Int, Never> { await gate.wait(); return 2 }
@@ -236,7 +236,7 @@ struct ContextTests {
     @Test("Swift cancellation alone does not end the wait")
     func cancelledWaiter() async throws {
         let controller = AbortController()
-        let context = Context.background.withAbortSignal(controller.signal)
+        let context = ChordContext.background.withAbortSignal(controller.signal)
         let gate = ContextTestGate()
         let work = Task<Int, Never> { await gate.wait(); return 41 }
         let waiting = Task { try await awaitWithContext(work, context) }
@@ -252,7 +252,7 @@ struct ContextTests {
 
     @Test("The bridge handles task cancellation before its call")
     func bridgeBeforeCall() async throws {
-        let parent = Context.background.withCancel()
+        let parent = ChordContext.background.withCancel()
         let gate = ContextTestGate()
         let ready = ContextTestGate()
         let waiting = Task {
@@ -273,7 +273,7 @@ struct ContextTests {
 
     @Test("The bridge handles task cancellation after its call")
     func bridgeAfterCall() async throws {
-        let parent = Context.background.withCancel()
+        let parent = ChordContext.background.withCancel()
         let ready = ContextTestGate()
         let gate = ContextTestGate()
         let childSignal = Mutex<AbortSignal?>(nil)

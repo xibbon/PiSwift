@@ -231,13 +231,13 @@ struct HarnessModelsTests {
     }
 
     @Test func contextBridgeHandlesBeforeAndAfterAbortAndIsOneWay() {
-        let cancellable = PiSwiftChord.Context.background.withCancel()
+        let cancellable = ChordContext.background.withCancel()
         let bridge = ContextCancellationBridge(context: cancellable.context)
         #expect(!bridge.token.isCancelled)
         cancellable.cancel()
         #expect(bridge.token.isCancelled)
         #expect(ContextCancellationBridge(context: cancellable.context).token.isCancelled)
-        let other = PiSwiftChord.Context.background.withCancel()
+        let other = ChordContext.background.withCancel()
         let reverse = ContextCancellationBridge(context: other.context)
         reverse.token.cancel()
         #expect(other.context.abortSignal?.aborted == false)
@@ -245,7 +245,7 @@ struct HarnessModelsTests {
     }
 
     @Test func releasedContextBridgeRemovesItsListener() {
-        let cancellable = PiSwiftChord.Context.background.withCancel()
+        let cancellable = ChordContext.background.withCancel()
         let token = CancellationToken()
         do {
             let bridge = ContextCancellationBridge(context: cancellable.context, token: token)
@@ -256,7 +256,7 @@ struct HarnessModelsTests {
     }
 
     @Test func contextCancellationHelperKeepsListenerAcrossSuspension() async throws {
-        let cancellable = PiSwiftChord.Context.background.withCancel()
+        let cancellable = ChordContext.background.withCancel()
         await withContextCancellation(cancellable.context) { token in
             await Task.yield()
             cancellable.cancel()

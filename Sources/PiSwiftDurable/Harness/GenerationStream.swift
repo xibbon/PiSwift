@@ -6,12 +6,12 @@ private actor GenerationPartialThrottle {
     let runtime: TaskRuntime
     let attempt: Int
     let interval: Int64
-    let context: PiSwiftChord.Context
+    let context: ChordContext
     var pending: JSONValue?
     var timer: Task<Void, Never>?
     var inFlight: Task<Void, Never>?
     var stopped = false
-    init(runtime: TaskRuntime, attempt: Int, context: PiSwiftChord.Context) {
+    init(runtime: TaskRuntime, attempt: Int, context: ChordContext) {
         self.runtime = runtime; self.attempt = attempt; self.context = context
         interval = runtime.settings.progress.partialIntervalMs
     }
@@ -54,7 +54,7 @@ private actor GenerationPartialThrottle {
     }
 }
 func streamGeneration(runtime: TaskRuntime, model: Model, messages: [Message], options: SimpleStreamOptions,
-                      attempt: Int, context: PiSwiftChord.Context) async throws -> AssistantMessage {
+                      attempt: Int, context: ChordContext) async throws -> AssistantMessage {
     let throttle = GenerationPartialThrottle(runtime: runtime, attempt: attempt, context: context)
     do {
         let events = runtime.models.streamSimple(model: model, context: PiSwiftAI.Context(messages: messages), options: options)

@@ -103,7 +103,7 @@ internal enum StorageAssertions {
 
 internal struct StorageChecks: Sendable {
     let storage: any DurableStorage
-    static let context = Context.background
+    static let context = ChordContext.background
     static func number(_ id: Int64) -> JSONValue { .number(Double(id)) }
     func mint() async throws -> Int64 {
         let id: EntryID = try await storage.mintId()

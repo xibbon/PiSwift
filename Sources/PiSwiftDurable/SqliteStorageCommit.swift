@@ -7,7 +7,7 @@ struct SqliteDocumentAction {
     var retire = false
 }
 extension SqliteStorage {
-    public func commit(_ writes: [StorageWrite], context: Context) throws -> Seq {
+    public func commit(_ writes: [StorageWrite], context: ChordContext) throws -> Seq {
         try assertOpen()
         let actions = try prepareDocumentActions(writes)
         let candidate = writes.compactMap(sqliteWriteIdentity).reduce(nextId) { max($0, $1.id + 1) }

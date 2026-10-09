@@ -51,7 +51,7 @@ final class ReplicatedStateIdle: Sendable {
 final class ReplicatedStateSubscriber<Value: Sendable>: Sendable {
     struct Frame: Sendable {
         let value: Value
-        let context: Context
+        let context: ChordContext
         let delivery: ReplicatedStateDelivery
     }
     private struct State {
@@ -61,12 +61,12 @@ final class ReplicatedStateSubscriber<Value: Sendable>: Sendable {
         var closed = false
     }
     private let storage = Mutex(State())
-    private let listener: @Sendable (Value, Context, ReplicatedStateDelivery) async throws -> Void
+    private let listener: @Sendable (Value, ChordContext, ReplicatedStateDelivery) async throws -> Void
     private let report: @Sendable (any Error) -> Void
     private let idle: ReplicatedStateIdle
 
     init(idle: ReplicatedStateIdle,
-         listener: @escaping @Sendable (Value, Context, ReplicatedStateDelivery) async throws -> Void,
+         listener: @escaping @Sendable (Value, ChordContext, ReplicatedStateDelivery) async throws -> Void,
          report: @escaping @Sendable (any Error) -> Void) {
         self.idle = idle
         self.listener = listener

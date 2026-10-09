@@ -17,12 +17,12 @@ import PiSwiftDurableTesting
         _ = try await harnessStart(root, definition, input: 100)
         let background = try await harnessStart(root, definition, input: 1_000, background: true)
         _ = try await harnessStart(other, definition, input: 200)
-        let caller = PiSwiftChord.Context.background.withCancel()
+        let caller = ChordContext.background.withCancel()
         let cancelled = Task { try await harness.waitForIdle(context: caller.context) }
         try await harnessEventually { clock.pendingSleeperCount == 3 }
         caller.cancel()
         await #expect(throws: (any Error).self) { try await cancelled.value }
-        let already = PiSwiftChord.Context.background.withCancel()
+        let already = ChordContext.background.withCancel()
         already.cancel()
         await #expect(throws: (any Error).self) { try await root.waitForIdle(context: already.context) }
         let rootIdle = Task { try await root.waitForIdle(context: .background) }

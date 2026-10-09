@@ -114,7 +114,7 @@ public func summarizedMessages(view: ContextView, cut: Int) -> [Message] {
 }
 
 private func selectCompaction(_ task: RunningTask<CompactionInput, CompactionCheckpoint>,
-                              _ runtime: TaskRuntime, _ context: PiSwiftChord.Context) async throws {
+                              _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     let agent = try await runtime.agent(context: context), settings = runtime.settings
     guard let ref = agent.model, let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) else {
         return try await failCompactionNoModel(runtime, ref: agent.model, context: context)
@@ -148,7 +148,7 @@ private func selectCompaction(_ task: RunningTask<CompactionInput, CompactionChe
 }
 
 private func summarizeCompaction(_ task: RunningTask<CompactionInput, CompactionCheckpoint>, _ request: SummaryRequest,
-                                 _ runtime: TaskRuntime, _ context: PiSwiftChord.Context) async throws {
+                                 _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     let ref = request.model
     guard let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) else {
         return try await failCompactionNoModel(runtime, ref: ref, context: context)
@@ -219,14 +219,14 @@ private func placeCompactionSummary(_ tx: Transaction, _ runtime: TaskRuntime, _
     return try compactionTask.completed(result)
 }
 
-private func completeCompaction(_ runtime: TaskRuntime, context: PiSwiftChord.Context) async throws {
+private func completeCompaction(_ runtime: TaskRuntime, context: ChordContext) async throws {
     try await runtime.commit({ tx, _ in
         try removeCompactionStatus(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId)
         return try compactionTask.completed(CompactionResult())
     }, context: context)
 }
 
-private func failCompactionNoModel(_ runtime: TaskRuntime, ref: ModelRef?, context: PiSwiftChord.Context) async throws {
+private func failCompactionNoModel(_ runtime: TaskRuntime, ref: ModelRef?, context: ChordContext) async throws {
     let message = ref.map { "Model \($0.provider)/\($0.modelId) is not available" } ?? "No model is configured"
     try await runtime.commit({ tx, _ in
         try removeCompactionStatus(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId)

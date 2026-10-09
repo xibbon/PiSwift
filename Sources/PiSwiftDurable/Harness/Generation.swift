@@ -63,7 +63,7 @@ public func createGeneration(tx: Transaction, conversationId: ConversationID) as
 private func required<Value>(_ value: Value?, _ key: String) throws -> Value {
     guard let value else { throw TaskDefinitionError("Generation checkpoint is missing \(key)") }; return value
 }
-private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: PiSwiftChord.Context) async throws {
+private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     switch checkpoint.phase {
     case .prepare: try await prepareGeneration(checkpoint, runtime, context)
     case .request: try await requestGeneration(checkpoint, runtime, context)
@@ -104,7 +104,7 @@ private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRu
         }, context: context)
     }
 }
-private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: PiSwiftChord.Context) async throws {
+private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     let agent = try await runtime.agent(context: context), settings = runtime.settings
     guard let ref = agent.model, let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) else {
         return try await failGeneration(runtime, ref: agent.model, context: context)
@@ -147,7 +147,7 @@ private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
             model: ref, thinkingLevel: agent.thinkingLevel, streamOptions: settings.stream, cutoff: cutoff))
     }, context: context)
 }
-private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: PiSwiftChord.Context) async throws {
+private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     let attempt = try required(checkpoint.attempt, "attempt"), ref = try required(checkpoint.model, "model")
     try await runtime.commit({ tx, _ in
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
@@ -174,14 +174,14 @@ func generationStreamOptions(_ options: ConversationStreamOptions, thinkingLevel
         cacheRetention: options.cacheRetention, sessionId: sessionId, headers: options.headers, maxRetryDelayMs: options.maxRetryDelayMs,
         metadata: metadata, timeoutMs: options.timeoutMs, maxRetries: options.maxRetries, deferred: options.deferred)
 }
-private func failGeneration(_ runtime: TaskRuntime, ref: ModelRef?, context: PiSwiftChord.Context) async throws {
+private func failGeneration(_ runtime: TaskRuntime, ref: ModelRef?, context: ChordContext) async throws {
     let text = ref.map { "Model \($0.provider)/\($0.modelId) is not available" } ?? "No model is configured"
     try await failGeneration(runtime, reason: "no_model", text: text, context: context)
 }
-private func failGeneration(_ runtime: TaskRuntime, modelError: String, context: PiSwiftChord.Context) async throws {
+private func failGeneration(_ runtime: TaskRuntime, modelError: String, context: ChordContext) async throws {
     try await failGeneration(runtime, reason: "model_error", text: modelError, context: context)
 }
-private func failGeneration(_ runtime: TaskRuntime, reason: String, text: String, context: PiSwiftChord.Context) async throws {
+private func failGeneration(_ runtime: TaskRuntime, reason: String, text: String, context: ChordContext) async throws {
     try await runtime.commit({ tx, _ in
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: reason, detail: reason == "model_error" ? .string(text) : nil))
@@ -198,7 +198,7 @@ public func convertPartial(tx: Transaction, live: JSONDraft, conversationId: Con
     message.stopReason = .aborted
     _ = try await appendGenerationAssistant(tx: tx, conversationId: conversationId, message: message)
 }
-private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: PiSwiftChord.Context) async throws {
+private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     if checkpoint.phase == .poll, let ref = checkpoint.model, let handle = checkpoint.handle,
        let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) {
         do {

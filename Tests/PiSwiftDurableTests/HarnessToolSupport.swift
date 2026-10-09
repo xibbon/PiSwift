@@ -17,7 +17,7 @@ func toolCalls(_ calls: [(String, JSONObject, String)]) throws -> AssistantMessa
 func harnessTestTool(_ name: String = "echo", limits: OutputLimitOverrides? = nil,
                      mode: ToolExecutionMode? = nil,
                      prepare: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
-                     execute: @escaping @Sendable (JSONValue, ToolExecutionApi, PiSwiftChord.Context) async throws -> ToolExecutionResult = { _, _, _ in ToolExecutionResult(content: []) }) throws -> ToolRegistration {
+                     execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult = { _, _, _ in ToolExecutionResult(content: []) }) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: "The \(name) tool", parameters: ["type": "object", "properties": ["text": ["type": "string"]]],
         executionMode: mode, prepareArguments: prepare, outputLimits: limits, execute: execute)
 }
@@ -40,7 +40,7 @@ func runHarnessTools(_ setup: HarnessChatSetup, calls: [(String, JSONObject, Str
     return (opened, try await allEntries(opened.root))
 }
 
-func harnessToolAwaitAbort(_ context: PiSwiftChord.Context) async throws {
+func harnessToolAwaitAbort(_ context: ChordContext) async throws {
     let signal = try #require(context.abortSignal), gate = HarnessChatSignal()
     let registration = signal.addAbortListener { _ in gate.signal() }
     defer { signal.removeAbortListener(registration) }
@@ -60,28 +60,28 @@ final class HarnessToolEnvironment: ExecutionEnv, Sendable {
     init(cwd: String) { directory = .init(cwd) }
     var cwd: String { get { directory.withLock { $0 } } set { directory.withLock { $0 = newValue } } }
     private func unavailable<T>() -> Result<T, FileError> { .failure(FileError(.notSupported, message: "Fixture operation is not available")) }
-    func absolutePath(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError> { .success(path) }
-    func joinPath(_ parts: [String], context: PiSwiftChord.Context) async -> Result<String, FileError> { .success(parts.joined(separator: "/")) }
-    func readTextFile(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError> { unavailable() }
-    func openTextLineReader(_ path: String, context: PiSwiftChord.Context) async -> Result<any TextLineReader, FileError> { unavailable() }
-    func readTextLines(_ path: String, options: ReadTextLinesOptions?, context: PiSwiftChord.Context) async -> Result<[String], FileError> { unavailable() }
-    func readBinaryFile(_ path: String, context: PiSwiftChord.Context) async -> Result<[UInt8], FileError> { unavailable() }
-    func openBinaryReader(_ path: String, options: OpenBinaryReaderOptions?, context: PiSwiftChord.Context) async -> Result<any BinaryReader, FileError> { unavailable() }
-    func writeFile(_ path: String, content: FileContent, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func appendFile(_ path: String, content: FileContent, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func truncateFile(_ path: String, size: Int64, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func flushFile(_ path: String, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func renameFile(_ sourcePath: String, destinationPath: String, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func fileInfo(_ path: String, context: PiSwiftChord.Context) async -> Result<FileInfo, FileError> { unavailable() }
-    func listDir(_ path: String, context: PiSwiftChord.Context) async -> Result<[FileInfo], FileError> { unavailable() }
-    func openDirReader(_ path: String, context: PiSwiftChord.Context) async -> Result<any DirReader, FileError> { unavailable() }
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: PiSwiftChord.Context) async -> Result<any FileWatcher, FileError> { unavailable() }
-    func canonicalPath(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError> { unavailable() }
-    func exists(_ path: String, context: PiSwiftChord.Context) async -> Result<Bool, FileError> { unavailable() }
-    func createDir(_ path: String, options: CreateDirOptions?, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func remove(_ path: String, options: RemoveOptions?, context: PiSwiftChord.Context) async -> Result<Void, FileError> { unavailable() }
-    func createTempDir(prefix: String?, context: PiSwiftChord.Context) async -> Result<String, FileError> { unavailable() }
-    func createTempFile(options: CreateTempFileOptions?, context: PiSwiftChord.Context) async -> Result<String, FileError> { unavailable() }
-    func cleanup(context: PiSwiftChord.Context) async {}
-    func exec(_ command: ShellCommand, options: ShellExecOptions?, context: PiSwiftChord.Context) async -> Result<ShellExecResult, ExecutionError> { .failure(.init(.shellUnavailable, message: "Fixture has no shell")) }
+    func absolutePath(_ path: String, context: ChordContext) async -> Result<String, FileError> { .success(path) }
+    func joinPath(_ parts: [String], context: ChordContext) async -> Result<String, FileError> { .success(parts.joined(separator: "/")) }
+    func readTextFile(_ path: String, context: ChordContext) async -> Result<String, FileError> { unavailable() }
+    func openTextLineReader(_ path: String, context: ChordContext) async -> Result<any TextLineReader, FileError> { unavailable() }
+    func readTextLines(_ path: String, options: ReadTextLinesOptions?, context: ChordContext) async -> Result<[String], FileError> { unavailable() }
+    func readBinaryFile(_ path: String, context: ChordContext) async -> Result<[UInt8], FileError> { unavailable() }
+    func openBinaryReader(_ path: String, options: OpenBinaryReaderOptions?, context: ChordContext) async -> Result<any BinaryReader, FileError> { unavailable() }
+    func writeFile(_ path: String, content: FileContent, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func appendFile(_ path: String, content: FileContent, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func truncateFile(_ path: String, size: Int64, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func flushFile(_ path: String, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func renameFile(_ sourcePath: String, destinationPath: String, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError> { unavailable() }
+    func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError> { unavailable() }
+    func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> { unavailable() }
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { unavailable() }
+    func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError> { unavailable() }
+    func exists(_ path: String, context: ChordContext) async -> Result<Bool, FileError> { unavailable() }
+    func createDir(_ path: String, options: CreateDirOptions?, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func remove(_ path: String, options: RemoveOptions?, context: ChordContext) async -> Result<Void, FileError> { unavailable() }
+    func createTempDir(prefix: String?, context: ChordContext) async -> Result<String, FileError> { unavailable() }
+    func createTempFile(options: CreateTempFileOptions?, context: ChordContext) async -> Result<String, FileError> { unavailable() }
+    func cleanup(context: ChordContext) async {}
+    func exec(_ command: ShellCommand, options: ShellExecOptions?, context: ChordContext) async -> Result<ShellExecResult, ExecutionError> { .failure(.init(.shellUnavailable, message: "Fixture has no shell")) }
 }

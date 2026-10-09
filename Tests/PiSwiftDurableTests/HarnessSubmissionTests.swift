@@ -62,7 +62,7 @@ import PiSwiftDurableTesting
         let chat = try await openChat(setup: setup)
         let input = try await chat.root.submit(.input(content: .text("hi")), context: .background); await held.reached.wait()
         let controller = AbortController()
-        let cancelled = Task { try await input.wait(context: PiSwiftChord.Context.background.withAbortSignal(controller.signal)) }
+        let cancelled = Task { try await input.wait(context: ChordContext.background.withAbortSignal(controller.signal)) }
         let pending = Task { try await input.wait(context: .background) }
         try await eventually { chat.harness.session.line.queuedCount == 0 }
         controller.abort()

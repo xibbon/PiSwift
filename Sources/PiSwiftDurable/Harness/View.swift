@@ -15,11 +15,11 @@ public typealias ConversationWatch = CommittedWatch<ConversationView>
 
 /// Callbacks run on the Session line. They must not call Session operations.
 internal final class ConversationViewObserver: Sendable {
-    let advance: (@Sendable (ConversationView, [Delta.Op], PiSwiftChord.Context) -> Void)?
-    let publication: (@Sendable (ConversationView, ConversationView, [Delta.Op], CommitPublication, PiSwiftChord.Context) -> Void)?
+    let advance: (@Sendable (ConversationView, [Delta.Op], ChordContext) -> Void)?
+    let publication: (@Sendable (ConversationView, ConversationView, [Delta.Op], CommitPublication, ChordContext) -> Void)?
     let closeSession: @Sendable () -> Void
-    init(advance: (@Sendable (ConversationView, [Delta.Op], PiSwiftChord.Context) -> Void)? = nil,
-         publication: (@Sendable (ConversationView, ConversationView, [Delta.Op], CommitPublication, PiSwiftChord.Context) -> Void)? = nil,
+    init(advance: (@Sendable (ConversationView, [Delta.Op], ChordContext) -> Void)? = nil,
+         publication: (@Sendable (ConversationView, ConversationView, [Delta.Op], CommitPublication, ChordContext) -> Void)? = nil,
          closeSession: @escaping @Sendable () -> Void) {
         self.advance = advance; self.publication = publication; self.closeSession = closeSession
     }
@@ -66,7 +66,7 @@ internal final class ConversationViews: Sendable {
     deinit { for subscription in state.withLock({ $0.subscriptions }) { subscription.cancel() } }
 
     /// Hydrate and register atomically, so no committed revision can be missed.
-    func attach(id: ConversationID, context: PiSwiftChord.Context,
+    func attach(id: ConversationID, context: ChordContext,
                 create: @Sendable (ConversationView, @escaping @Sendable () -> Void, any DurableStorage) async throws -> ConversationViewObserver
     ) async throws -> ConversationViewObserver {
         try await session.readOnLine {
@@ -89,7 +89,7 @@ internal final class ConversationViews: Sendable {
             } catch { observer.closeSession(); throw error }
         }
     }
-    func watch(id: ConversationID, context: PiSwiftChord.Context) async throws -> CommittedWatch<ConversationView> {
+    func watch(id: ConversationID, context: ChordContext) async throws -> CommittedWatch<ConversationView> {
         let result = Mutex<CommittedWatch<ConversationView>?>(nil)
         _ = try await attach(id: id, context: context) { value, release, _ in
             let tree = Mutex(try JSONValue(encoding: value))
@@ -107,7 +107,7 @@ internal final class ConversationViews: Sendable {
             return watch
         } catch { watch.cancel(); throw error }
     }
-    func attachedState(id: ConversationID, context: PiSwiftChord.Context) async throws -> AttachedReplicatedState<ConversationView> {
+    func attachedState(id: ConversationID, context: ChordContext) async throws -> AttachedReplicatedState<ConversationView> {
         let result = Mutex<CommittedStateSource<ConversationView>?>(nil)
         _ = try await attach(id: id, context: context) { value, release, _ in
             let source = CommittedStateSource(value: value, release: release)
@@ -123,7 +123,7 @@ internal final class ConversationViews: Sendable {
             return attached
         } catch { source.closeSession(); throw error }
     }
-    private func build(id: ConversationID, context: PiSwiftChord.Context) async throws -> ConversationMount {
+    private func build(id: ConversationID, context: ChordContext) async throws -> ConversationMount {
         guard let conversation = try await storage.conversation(id, context: context) else {
             throw SessionError.message("Conversation \(id.rawValue) does not exist")
         }
@@ -162,7 +162,7 @@ internal final class ConversationViews: Sendable {
             for observer in observers { observer.closeSession() }
         }
     }
-    private func advance(_ publication: CommitPublication, context: PiSwiftChord.Context) {
+    private func advance(_ publication: CommitPublication, context: ChordContext) {
         let mounts = state.withLock { Array($0.mounts) }
         for (id, mount) in mounts {
             do {
@@ -239,12 +239,12 @@ internal func prefixedViewOp(_ op: Delta.Op, prefix: Delta.Path) -> Delta.Op {
 }
 
 extension Conversation {
-    public func viewState(context: PiSwiftChord.Context) async throws -> AttachedReplicatedState<ConversationView> {
+    public func viewState(context: ChordContext) async throws -> AttachedReplicatedState<ConversationView> {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen(); return try await harness.views.attachedState(id: id, context: context)
         }
     }
-    public func watch(context: PiSwiftChord.Context) async throws -> ConversationWatch {
+    public func watch(context: ChordContext) async throws -> ConversationWatch {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen(); return try await harness.views.watch(id: id, context: context)
         }

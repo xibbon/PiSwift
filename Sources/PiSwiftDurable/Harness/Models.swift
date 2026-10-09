@@ -3,7 +3,7 @@ import PiSwiftAI
 import PiSwiftChord
 
 /// The five model operations used by the durable harness.
-/// Request contexts use `PiSwiftAI.Context`; operation contexts use `PiSwiftChord.Context`.
+/// Request contexts use `PiSwiftAI.Context`; operation contexts use `ChordContext`.
 public protocol DurableModels: Sendable {
     func getModel(provider: String, modelId: String) -> Model?
     func streamSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) -> AssistantMessageEventStream
@@ -110,7 +110,7 @@ public final class ContextCancellationBridge: Sendable {
     private let signal: AbortSignal?
     private let registration: AbortListenerRegistration?
 
-    public init(context: PiSwiftChord.Context, token: CancellationToken = CancellationToken()) {
+    public init(context: ChordContext, token: CancellationToken = CancellationToken()) {
         self.token = token
         signal = context.abortSignal
         registration = signal?.addAbortListener { _ in token.cancel() }
@@ -126,7 +126,7 @@ public final class ContextCancellationBridge: Sendable {
 
 /// Keeps the bridge alive until an asynchronous operation ends.
 public func withContextCancellation<Result: Sendable>(
-    _ context: PiSwiftChord.Context,
+    _ context: ChordContext,
     operation: @Sendable (CancellationToken) async throws -> Result
 ) async rethrows -> Result {
     let bridge = ContextCancellationBridge(context: context)

@@ -10,7 +10,7 @@ internal struct ForkDocumentCopy: Sendable {
 /// Select stored records. Storage resolves their content before it applies the batch.
 internal func prepareForkDocumentCopies(storage: any DurableStorage, parentConversationId: ConversationID,
                                        at: EntryID, childConversationId: ConversationID,
-                                       context: PiSwiftChord.Context) async throws -> [ForkDocumentCopy] {
+                                       context: ChordContext) async throws -> [ForkDocumentCopy] {
     guard let entry = try await storage.entry(parentConversationId, id: at, context: context) else {
         throw SessionError.message("Entry \(at.rawValue) is not visible from conversation \(parentConversationId.rawValue)")
     }
@@ -27,7 +27,7 @@ internal func prepareForkDocumentCopies(storage: any DurableStorage, parentConve
 
 private func collectForkCopies(storage: any DurableStorage, scope: DocumentScope, at: DocumentPoint,
                                policy: DocumentFork, child: ConversationID, copies: inout [ForkDocumentCopy],
-                               addresses: inout Set<[UInt8]>, context: PiSwiftChord.Context) async throws {
+                               addresses: inout Set<[UInt8]>, context: ChordContext) async throws {
     var cursor: Cursor?
     repeat {
         let page = try await storage.scanDocuments(DocumentQuery(scope: scope, at: at), limit: 256, cursor: cursor, context: context)

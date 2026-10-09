@@ -5,7 +5,7 @@ import PiSwiftDurable
 
 /// An in-memory file system with scripted command results. It does not start a process.
 public final class FakeExecutionEnv: ExecutionEnv {
-    public typealias ExecStep = @Sendable (ShellCommand, ShellExecOptions?, PiSwiftChord.Context) async -> Result<ShellExecResult, ExecutionError>
+    public typealias ExecStep = @Sendable (ShellCommand, ShellExecOptions?, ChordContext) async -> Result<ShellExecResult, ExecutionError>
     public struct ExecCall: Sendable {
         public let command: ShellCommand
         public let cwd: String
@@ -39,7 +39,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
     }
     public var execCalls: [ExecCall] { state.withLock { $0.calls } }
     public func appendExec(_ step: @escaping ExecStep) { state.withLock { $0.steps.append(step) } }
-    public func exec(_ command: ShellCommand, options: ShellExecOptions?, context: PiSwiftChord.Context) async -> Result<ShellExecResult, ExecutionError> {
+    public func exec(_ command: ShellCommand, options: ShellExecOptions?, context: ChordContext) async -> Result<ShellExecResult, ExecutionError> {
         if context.abortSignal?.aborted == true { return .failure(ExecutionError(.aborted, message: "Command aborted")) }
         let step = state.withLock { value -> ExecStep? in
             value.calls.append(ExecCall(command: command, cwd: options?.cwd ?? value.cwd))
@@ -64,13 +64,13 @@ public final class FakeExecutionEnv: ExecutionEnv {
                  kind: bytes == nil ? .directory : .file, size: Int64(bytes?.count ?? 0), mtimeMs: 0)
     }
     private func missing<T>(_ path: String) -> Result<T, FileError> { .failure(FileError(.notFound, message: "File not found", path: path)) }
-    private func cancelled<T>(_ context: PiSwiftChord.Context) -> Result<T, FileError>? {
+    private func cancelled<T>(_ context: ChordContext) -> Result<T, FileError>? {
         context.abortSignal?.aborted == true ? .failure(FileError(.aborted, message: "File operation aborted")) : nil
     }
-    public func absolutePath(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError> {
+    public func absolutePath(_ path: String, context: ChordContext) async -> Result<String, FileError> {
         cancelled(context) ?? .success(Self.resolve(path, cwd: cwd))
     }
-    public func joinPath(_ parts: [String], context: PiSwiftChord.Context) async -> Result<String, FileError> {
+    public func joinPath(_ parts: [String], context: ChordContext) async -> Result<String, FileError> {
         if let result: Result<String, FileError> = cancelled(context) { return result }
         let joined = parts.filter { !$0.isEmpty }.joined(separator: "/")
         let absolute = joined.hasPrefix("/")
@@ -83,30 +83,30 @@ public final class FakeExecutionEnv: ExecutionEnv {
         let result = (absolute ? "/" : "") + components.joined(separator: "/")
         return .success(result.isEmpty ? "." : result)
     }
-    public func readBinaryFile(_ path: String, context: PiSwiftChord.Context) async -> Result<[UInt8], FileError> {
+    public func readBinaryFile(_ path: String, context: ChordContext) async -> Result<[UInt8], FileError> {
         if let result: Result<[UInt8], FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         return state.withLock { value in value.files[key].map(Result.success) ?? missing(key) }
     }
-    public func readTextFile(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError> {
+    public func readTextFile(_ path: String, context: ChordContext) async -> Result<String, FileError> {
         await readBinaryFile(path, context: context).map { String(decoding: $0, as: UTF8.self) }
     }
-    public func readTextLines(_ path: String, options: ReadTextLinesOptions?, context: PiSwiftChord.Context) async -> Result<[String], FileError> {
+    public func readTextLines(_ path: String, options: ReadTextLinesOptions?, context: ChordContext) async -> Result<[String], FileError> {
         if let maxLines = options?.maxLines, maxLines <= 0 { return .success([]) }
         return await readTextFile(path, context: context).map { text in
             let lines = FakeTextLineReader.lines(text).map(\.text)
             return Array(lines.prefix(options?.maxLines ?? lines.count))
         }
     }
-    public func openTextLineReader(_ path: String, context: PiSwiftChord.Context) async -> Result<any TextLineReader, FileError> {
+    public func openTextLineReader(_ path: String, context: ChordContext) async -> Result<any TextLineReader, FileError> {
         await readTextFile(path, context: context).map { FakeTextLineReader($0) as any TextLineReader }
     }
-    public func openBinaryReader(_ path: String, options: OpenBinaryReaderOptions?, context: PiSwiftChord.Context) async -> Result<any BinaryReader, FileError> {
+    public func openBinaryReader(_ path: String, options: OpenBinaryReaderOptions?, context: ChordContext) async -> Result<any BinaryReader, FileError> {
         let absolute = Self.resolve(path, cwd: cwd)
         return await readBinaryFile(path, context: context).map { FakeBinaryReader(bytes: $0, info: Self.info(absolute, bytes: $0)) as any BinaryReader }
     }
     private func bytes(_ content: FileContent) -> [UInt8] { switch content { case .text(let value): Array(value.utf8); case .bytes(let value): value } }
-    public func writeFile(_ path: String, content: FileContent, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func writeFile(_ path: String, content: FileContent, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd), data = bytes(content)
         return state.withLock { value in
@@ -114,7 +114,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
             value.files[key] = data; return .success(())
         }
     }
-    public func appendFile(_ path: String, content: FileContent, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func appendFile(_ path: String, content: FileContent, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd), data = bytes(content)
         return state.withLock { value in
@@ -122,7 +122,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
             value.files[key, default: []].append(contentsOf: data); return .success(())
         }
     }
-    public func truncateFile(_ path: String, size: Int64, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func truncateFile(_ path: String, size: Int64, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         guard size >= 0, size <= Int64(Int.max) else { return .failure(FileError(.invalid, message: "Invalid file size")) }
@@ -133,10 +133,10 @@ public final class FakeExecutionEnv: ExecutionEnv {
             value.files[key] = data; return .success(())
         }
     }
-    public func flushFile(_ path: String, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func flushFile(_ path: String, context: ChordContext) async -> Result<Void, FileError> {
         await fileInfo(path, context: context).map { _ in () }
     }
-    public func renameFile(_ sourcePath: String, destinationPath: String, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func renameFile(_ sourcePath: String, destinationPath: String, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let source = Self.resolve(sourcePath, cwd: cwd), destination = Self.resolve(destinationPath, cwd: cwd)
         return state.withLock { value in
@@ -145,7 +145,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
             value.files.removeValue(forKey: source); value.files[destination] = data; return .success(())
         }
     }
-    public func fileInfo(_ path: String, context: PiSwiftChord.Context) async -> Result<FileInfo, FileError> {
+    public func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError> {
         if let result: Result<FileInfo, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         return state.withLock { value in
@@ -153,7 +153,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
             return value.directories.contains(key) ? .success(Self.info(key)) : missing(key)
         }
     }
-    public func listDir(_ path: String, context: PiSwiftChord.Context) async -> Result<[FileInfo], FileError> {
+    public func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError> {
         if let result: Result<[FileInfo], FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         return state.withLock { value in
@@ -163,19 +163,19 @@ public final class FakeExecutionEnv: ExecutionEnv {
             return .success((files + directories).sorted { $0.path < $1.path })
         }
     }
-    public func openDirReader(_ path: String, context: PiSwiftChord.Context) async -> Result<any DirReader, FileError> {
+    public func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> {
         await listDir(path, context: context).map { FakeDirReader($0) as any DirReader }
     }
-    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: PiSwiftChord.Context) async -> Result<any FileWatcher, FileError> {
+    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
         .failure(FileError(.notSupported, message: "Fake file watches are not supported"))
     }
-    public func canonicalPath(_ path: String, context: PiSwiftChord.Context) async -> Result<String, FileError> { await absolutePath(path, context: context) }
-    public func exists(_ path: String, context: PiSwiftChord.Context) async -> Result<Bool, FileError> {
+    public func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError> { await absolutePath(path, context: context) }
+    public func exists(_ path: String, context: ChordContext) async -> Result<Bool, FileError> {
         if let result: Result<Bool, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         return .success(state.withLock { $0.files[key] != nil || $0.directories.contains(key) })
     }
-    public func createDir(_ path: String, options: CreateDirOptions?, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func createDir(_ path: String, options: CreateDirOptions?, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         return state.withLock { value in
@@ -185,7 +185,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
             return .success(())
         }
     }
-    public func remove(_ path: String, options: RemoveOptions?, context: PiSwiftChord.Context) async -> Result<Void, FileError> {
+    public func remove(_ path: String, options: RemoveOptions?, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let key = Self.resolve(path, cwd: cwd)
         return state.withLock { value in
@@ -202,15 +202,15 @@ public final class FakeExecutionEnv: ExecutionEnv {
     private func temp(prefix: String?, suffix: String?) -> String {
         state.withLock { value in value.nextTemp += 1; return Self.resolve("\(prefix ?? "tmp")\(value.nextTemp)\(suffix ?? "")", cwd: value.cwd) }
     }
-    public func createTempDir(prefix: String?, context: PiSwiftChord.Context) async -> Result<String, FileError> {
+    public func createTempDir(prefix: String?, context: ChordContext) async -> Result<String, FileError> {
         let path = temp(prefix: prefix, suffix: nil)
         return await createDir(path, options: .init(recursive: true), context: context).map { path }
     }
-    public func createTempFile(options: CreateTempFileOptions?, context: PiSwiftChord.Context) async -> Result<String, FileError> {
+    public func createTempFile(options: CreateTempFileOptions?, context: ChordContext) async -> Result<String, FileError> {
         let path = temp(prefix: options?.prefix, suffix: options?.suffix)
         return await writeFile(path, content: .bytes([]), context: context).map { path }
     }
-    public func cleanup(context: PiSwiftChord.Context) async {}
+    public func cleanup(context: ChordContext) async {}
 }
 
 private actor FakeTextLineReader: TextLineReader {
@@ -222,35 +222,35 @@ private actor FakeTextLineReader: TextLineReader {
         else if !lines.isEmpty { lines[lines.count - 1].terminated = false }
         return text.isEmpty ? [] : lines
     }
-    func readLine(context: PiSwiftChord.Context) async -> Result<TextLine?, FileError> {
+    func readLine(context: ChordContext) async -> Result<TextLine?, FileError> {
         if context.abortSignal?.aborted == true { return .failure(FileError(.aborted, message: "Read aborted")) }
         return .success(pending.isEmpty ? nil : pending.removeFirst())
     }
-    func close(context: PiSwiftChord.Context) async { pending.removeAll() }
+    func close(context: ChordContext) async { pending.removeAll() }
 }
 private actor FakeDirReader: DirReader {
     private var pending: [FileInfo]
     init(_ entries: [FileInfo]) { pending = entries }
-    func next(maxEntries: Int, context: PiSwiftChord.Context) async -> Result<DirectoryPage, FileError> {
+    func next(maxEntries: Int, context: ChordContext) async -> Result<DirectoryPage, FileError> {
         if context.abortSignal?.aborted == true { return .failure(FileError(.aborted, message: "Read aborted")) }
         guard maxEntries > 0 else { return .failure(FileError(.invalid, message: "Page size must be positive")) }
         let entries = Array(pending.prefix(maxEntries)); pending.removeFirst(entries.count)
         return .success(DirectoryPage(entries: entries, done: pending.isEmpty))
     }
-    func close(context: PiSwiftChord.Context) async { pending.removeAll() }
+    func close(context: ChordContext) async { pending.removeAll() }
 }
 private actor FakeBinaryReader: BinaryReader {
     private let bytes: [UInt8]
     private let fileInfo: FileInfo
     private var closed = false
     init(bytes: [UInt8], info: FileInfo) { self.bytes = bytes; fileInfo = info }
-    func info(context: PiSwiftChord.Context) async -> Result<FileInfo, FileError> { .success(fileInfo) }
-    func read(offset: Int64, length: Int, context: PiSwiftChord.Context) async -> Result<[UInt8], FileError> {
+    func info(context: ChordContext) async -> Result<FileInfo, FileError> { .success(fileInfo) }
+    func read(offset: Int64, length: Int, context: ChordContext) async -> Result<[UInt8], FileError> {
         guard !closed, offset >= 0, length >= 0, offset <= Int64(bytes.count) else { return .failure(FileError(.invalid, message: "Invalid read range")) }
         if context.abortSignal?.aborted == true { return .failure(FileError(.aborted, message: "Read aborted")) }
         return .success(Array(bytes[Int(offset)..<min(bytes.count, Int(offset) + min(length, bytes.count - Int(offset)))]))
     }
-    func scanLines(options: ScanLinesOptions, context: PiSwiftChord.Context) async -> Result<LineScan, FileError> {
+    func scanLines(options: ScanLinesOptions, context: ChordContext) async -> Result<LineScan, FileError> {
         guard !closed, options.startLine >= 0, options.endLine.map({ $0 > options.startLine }) ?? true else {
             return .failure(FileError(.invalid, message: "Invalid line range"))
         }
@@ -271,5 +271,5 @@ private actor FakeBinaryReader: BinaryReader {
             firstLineEnd: Int64(firstEnd), lastLineStart: Int64(lastStart),
             selectedBytes: decodedSize(start, end), firstLineBytes: decodedSize(start, firstEnd)))
     }
-    func close(context: PiSwiftChord.Context) async { closed = true }
+    func close(context: ChordContext) async { closed = true }
 }

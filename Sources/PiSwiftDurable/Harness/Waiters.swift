@@ -36,7 +36,7 @@ internal final class Waiters<Key: Hashable & Sendable, Value: Sendable>: Sendabl
         let registration: AbortListenerRegistration?
     }
     private let state = Mutex<[Key: [UUID: Wait]]>([:])
-    func add(_ key: Key, context: PiSwiftChord.Context) throws -> HarnessPromise<Value> {
+    func add(_ key: Key, context: ChordContext) throws -> HarnessPromise<Value> {
         try context.abortSignal?.throwIfAborted()
         let id = UUID(), promise = HarnessPromise<Value>()
         // Add before installing cancellation so concurrent resolution cannot miss the wait.

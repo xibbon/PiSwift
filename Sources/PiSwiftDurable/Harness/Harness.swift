@@ -38,7 +38,7 @@ public final class Harness: Sendable {
         self.graph = try TaskGraphView(session: session, storage: storage)
     }
     public static func open(storage: any DurableStorage, options: HarnessOptions,
-                            context: PiSwiftChord.Context) async throws -> Harness {
+                            context: ChordContext) async throws -> Harness {
         try await withTaskCancellationContext(context) { context in
             try context.abortSignal?.throwIfAborted()
             let snapshot = options.registry.snapshot()
@@ -81,28 +81,28 @@ public final class Harness: Sendable {
     }
     internal func assertOpen() throws { if closed.withLock({ $0 }) { throw closedError() } }
     public func resume() throws { try assertOpen(); tasks.resume() }
-    public func close(context: PiSwiftChord.Context) async throws {
+    public func close(context: ChordContext) async throws {
         closed.withLock { $0 = true }
         try await withTaskCancellationContext(context) { try await session.close(context: $0) }
     }
-    public func commit<T>(_ change: (Transaction) async throws -> T, context: PiSwiftChord.Context) async throws -> T {
+    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext) async throws -> T {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); return try await session.commit(change, context: context)
         }
     }
-    public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, PiSwiftChord.Context) -> Void) throws -> SessionSubscription {
+    public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
         try assertOpen(); return try session.subscribeCommits(listener)
     }
     public func subscribeClose(_ listener: @escaping @Sendable () -> Void) throws -> SessionSubscription {
         try assertOpen(); return try session.subscribeClose(listener)
     }
-    public func root(options: ConversationRootOptions = .init(), context: PiSwiftChord.Context) async throws -> Conversation {
+    public func root(options: ConversationRootOptions = .init(), context: ChordContext) async throws -> Conversation {
         try await create(.root, agent: options.agent, initialize: options.initialize, context: context)
     }
-    public func createConversation(options: ConversationCreateOptions, context: PiSwiftChord.Context) async throws -> Conversation {
+    public func createConversation(options: ConversationCreateOptions, context: ChordContext) async throws -> Conversation {
         try await create(.independent(options.ownership), agent: options.agent, initialize: options.initialize, context: context)
     }
-    public func conversation(id: ConversationID, context: PiSwiftChord.Context) async throws -> Conversation? {
+    public func conversation(id: ConversationID, context: ChordContext) async throws -> Conversation? {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
             let record = try await session.readOnLine { try await storage.conversation(id, context: context) }
@@ -110,7 +110,7 @@ public final class Harness: Sendable {
         }
     }
     internal enum CreateTarget { case root, independent(ConversationOwnership), fork(ConversationID, EntryID, ConversationOwnership) }
-    internal func create(_ target: CreateTarget, agent: AgentChange?, initialize: ConversationInit?, context: PiSwiftChord.Context) async throws -> Conversation {
+    internal func create(_ target: CreateTarget, agent: AgentChange?, initialize: ConversationInit?, context: ChordContext) async throws -> Conversation {
         try await withTaskCancellationContext(context) { context in
             try assertOpen()
             let id = try await session.commit({ tx in
@@ -128,13 +128,13 @@ public final class Harness: Sendable {
             return Conversation(id: id, harness: self)
         }
     }
-    public func getTask(id: TaskID, context: PiSwiftChord.Context) async throws -> TaskRecord? {
+    public func getTask(id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
             return try await session.readOnLine { try await storage.task(id, context: context) }
         }
     }
-    public func inspect(context: PiSwiftChord.Context) async throws -> HarnessInspection {
+    public func inspect(context: ChordContext) async throws -> HarnessInspection {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
             return try await session.readOnLine {
@@ -147,22 +147,22 @@ public final class Harness: Sendable {
             }
         }
     }
-    public func abortTask(id: TaskID, context: PiSwiftChord.Context) async throws -> TaskAbortResult {
+    public func abortTask(id: TaskID, context: ChordContext) async throws -> TaskAbortResult {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); return try await tasks.abort(id: id, context: context)
         }
     }
-    public func waitForTask(id: TaskID, context: PiSwiftChord.Context) async throws -> SettledTask {
+    public func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); tasks.resume(); return try await tasks.waitForTask(id: id, context: context)
         }
     }
-    public func waitForIdle(context: PiSwiftChord.Context) async throws {
+    public func waitForIdle(context: ChordContext) async throws {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); tasks.resume(); try await tasks.waitForIdle(conversationId: nil, context: context)
         }
     }
-    public func usage(context: PiSwiftChord.Context) async throws -> UsageState {
+    public func usage(context: ChordContext) async throws -> UsageState {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); try context.abortSignal?.throwIfAborted()
             let conversations = try await session.readOnLine {
@@ -179,7 +179,7 @@ public final class Harness: Sendable {
             return total
         }
     }
-    internal func resolveConversationAgent(id: ConversationID, context: PiSwiftChord.Context) async throws -> Agent {
+    internal func resolveConversationAgent(id: ConversationID, context: ChordContext) async throws -> Agent {
         try assertOpen(); try context.abortSignal?.throwIfAborted()
         let value = try await session.snapshot(AgentDoc, conversationId: id, context: context)
         return resolveAgent(state: value, snapshot: options.registry.snapshot(), settings: options.settings?.resolve() ?? resolveSettings(), report: options.onReport ?? { _ in })

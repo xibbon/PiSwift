@@ -126,7 +126,7 @@ struct HarnessToolTests {
                 return .init()
             case "null": try await api.details(["old": 1], context); return .init(content: [], details: .null)
             default:
-                let detailsContext: PiSwiftChord.Context = mode == "coalesceInvocation" ? context : .background
+                let detailsContext: ChordContext = mode == "coalesceInvocation" ? context : .background
                 let first = Task { try await api.details(["n": 1], detailsContext); settled.withLock { $0.append(1) } }
                 try await first.value
                 let second = Task { try await api.details(["n": 2], detailsContext); settled.withLock { $0.append(2) } }

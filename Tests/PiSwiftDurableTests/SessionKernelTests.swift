@@ -51,8 +51,8 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
     @Test func SessionPublicationIsSynchronousAndCarriesContext() async throws {
         let harness = try await openTestSession()
         let token = try SessionDocToken<JSONObject>(kind: "publication", version: 1, initial: { ["count": 0] })
-        let marker = ContextKey<Int>("Session test")
-        let context = PiSwiftChord.Context.background.withValue(42, for: marker)
+        let marker = ChordContextKey<Int>("Session test")
+        let context = ChordContext.background.withValue(42, for: marker)
         let values = SessionTestLog<Int>()
         let subscription = try harness.session.subscribeCommits { _, delivered in
             values.append(delivered.value(marker) ?? -1)
@@ -173,14 +173,14 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
 
     @Test func SessionChecksContextAbortOnlyBeforeCallback() async throws {
         let harness = try await openTestSession()
-        let cancelled = PiSwiftChord.Context.background.withCancel()
+        let cancelled = ChordContext.background.withCancel()
         cancelled.cancel()
         let calls = SessionTestLog<String>()
         await #expect(throws: AbortError.self) {
             try await harness.session.commit({ _ in calls.append("unexpected") }, context: cancelled.context)
         }
         #expect(calls.values.isEmpty)
-        let admitted = PiSwiftChord.Context.background.withCancel()
+        let admitted = ChordContext.background.withCancel()
         let conversation = try await harness.session.commit({ tx in
             admitted.cancel()
             return try await tx.createConversation(ownership: .ownerless())
@@ -227,7 +227,7 @@ extension SessionKernelTests {
             }, context: .background)
         }
         await entered.wait()
-        let cancelled = PiSwiftChord.Context.background.withCancel()
+        let cancelled = ChordContext.background.withCancel()
         let calls = SessionTestLog<String>()
         let second = Task {
             try await harness.session.commit({ _ in calls.append("unexpected") }, context: cancelled.context)
@@ -243,7 +243,7 @@ extension SessionKernelTests {
 
     @Test func SessionAbortAfterStorageAdmissionDoesNotAbortCommit() async throws {
         let harness = try await openTestSession()
-        let cancelled = PiSwiftChord.Context.background.withCancel()
+        let cancelled = ChordContext.background.withCancel()
         let gate = await harness.storage.holdCommits()
         let commit = Task {
             try await harness.session.commit({ tx in

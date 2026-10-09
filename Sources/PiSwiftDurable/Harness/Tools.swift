@@ -44,24 +44,24 @@ public struct ToolExecutionApi: Sendable {
     public var conversationId: ConversationID
     public var callId: String
     public var registry: RegistrySnapshot
-    public var agent: @Sendable (PiSwiftChord.Context) async throws -> Agent
+    public var agent: @Sendable (ChordContext) async throws -> Agent
     public var models: any DurableModels
     public var env: (any ExecutionEnv)?
     public var read: HarnessDocumentReader
     public var output: @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void
     public var outputWindow: ShellOutputWindow?
     public var diagnostic: @Sendable (ToolDiagnostic) throws -> Void
-    public var details: @Sendable (JSONValue, PiSwiftChord.Context) async throws -> Void
+    public var details: @Sendable (JSONValue, ChordContext) async throws -> Void
     /// A nil candidate reads; a supplied candidate installs only when no value exists.
-    public var memo: @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue?
+    public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                 models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                 outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
-                agent: @escaping @Sendable (PiSwiftChord.Context) async throws -> Agent,
+                agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                 output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void = { _, _ in },
                 diagnostic: @escaping @Sendable (ToolDiagnostic) throws -> Void = { _ in },
-                details: @escaping @Sendable (JSONValue, PiSwiftChord.Context) async throws -> Void = { _, _ in },
-                memo: @escaping @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue? = { _, _, _ in nil }) {
+                details: @escaping @Sendable (JSONValue, ChordContext) async throws -> Void = { _, _ in },
+                memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil }) {
         self.runtime = runtime
         self.taskId = taskId; self.conversationId = conversationId; self.callId = callId; self.registry = registry
         self.models = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
@@ -71,11 +71,11 @@ public struct ToolExecutionApi: Sendable {
                   models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                   outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime,
                   lifetime: ToolInvocationLifetime,
-                  agent: @escaping @Sendable (PiSwiftChord.Context) async throws -> Agent,
+                  agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                   output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void,
                   diagnostic: @escaping @Sendable (ToolDiagnostic) throws -> Void,
-                  details: @escaping @Sendable (JSONValue, PiSwiftChord.Context) async throws -> Void,
-                  memo: @escaping @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue?) {
+                  details: @escaping @Sendable (JSONValue, ChordContext) async throws -> Void,
+                  memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?) {
         let check: @Sendable () throws -> Void = {
             try runtime.invocation.check()
         }
@@ -105,7 +105,7 @@ public struct ToolRegistration: Sendable {
     public var prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)?
     public var outputLimits: OutputLimitOverrides?
     /// The caller supplies repaired and validated arguments. defineTool also checks at the typed boundary.
-    public var execute: @Sendable (JSONValue, ToolExecutionApi, PiSwiftChord.Context) async throws -> ToolExecutionResult
+    public var execute: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
     public var name: String { get { declaration.name } set { declaration.name = newValue; orderedDeclaration["name"] = .string(newValue) } }
     public var description: String { get { declaration.description } set { declaration.description = newValue; orderedDeclaration["description"] = .string(newValue) } }
     /// Updates the schema without losing its JSON member order.
@@ -127,7 +127,7 @@ public struct ToolRegistration: Sendable {
                 replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
                 outputLimits: OutputLimitOverrides? = nil,
-                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, PiSwiftChord.Context) async throws -> ToolExecutionResult) throws {
+                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
         self.declaration = declaration
         self.orderedDeclaration = try orderedDeclaration ?? JSONObject([
             ("name", .string(declaration.name)), ("description", .string(declaration.description)),
@@ -139,7 +139,7 @@ public struct ToolRegistration: Sendable {
                 replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
                 outputLimits: OutputLimitOverrides? = nil,
-                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, PiSwiftChord.Context) async throws -> ToolExecutionResult) throws {
+                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
         let dictionary = try foundationJSON(from: .object(parameters)) as! [String: Any]
         try self.init(declaration: AITool(name: name, description: description, parameters: dictionary.mapValues(AnyCodable.init)),
             orderedDeclaration: ["name": .string(name), "description": .string(description), "parameters": .object(parameters)],
@@ -180,7 +180,7 @@ public func defineTool<Args: Decodable & Sendable>(
     replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
     prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
     outputLimits: OutputLimitOverrides? = nil,
-    execute: @escaping @Sendable (Args, ToolExecutionApi, PiSwiftChord.Context) async throws -> ToolExecutionResult
+    execute: @escaping @Sendable (Args, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
 ) throws -> ToolRegistration {
     let schema = try foundationJSON(from: .object(parameters)) as! [String: Any]
     let declaration = AITool(name: name, description: description, parameters: schema.mapValues(AnyCodable.init))

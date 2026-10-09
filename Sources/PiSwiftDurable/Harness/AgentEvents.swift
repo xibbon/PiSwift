@@ -240,7 +240,7 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
 
 /// Serial batches with an acquisition snapshot. The snapshot is read separately from start.
 public final class DurableAgentEventWatch: Sendable {
-    public typealias Listener = @Sendable ([DurableAgentEvent], PiSwiftChord.Context) async throws -> Void
+    public typealias Listener = @Sendable ([DurableAgentEvent], ChordContext) async throws -> Void
     public let snapshot: DurableAgentSnapshot
     private let watch: CommittedWatch<[DurableAgentEvent]>
     internal init(snapshot: DurableAgentSnapshot, watch: CommittedWatch<[DurableAgentEvent]>) {

@@ -18,7 +18,7 @@ public struct OpenHarnessResult: Sendable {
 public func openHarness(storage: any DurableStorage = MemoryStorage(), registry: Registry = Registry(),
                         settings: HarnessSettingsProvider? = nil,
                         clock: any DurableClock = SystemDurableClock(),
-                        context: PiSwiftChord.Context = .background) async throws -> OpenHarnessResult {
+                        context: ChordContext = .background) async throws -> OpenHarnessResult {
     let reports = HarnessReports()
     let harness = try await Harness.open(storage: storage,
         options: HarnessOptions(models: FakeDurableModels(), registry: registry, settings: settings,
@@ -29,7 +29,7 @@ public func openTasks(storage: any DurableStorage = MemoryStorage(), tasks: [Any
                       registry: Registry = Registry(), now: (@Sendable () -> Int64)? = nil,
                       settings: HarnessSettingsProvider? = nil,
                       clock: any DurableClock = SystemDurableClock(),
-                      context: PiSwiftChord.Context = .background) async throws -> OpenHarnessResult {
+                      context: ChordContext = .background) async throws -> OpenHarnessResult {
     if !tasks.isEmpty { try registry.install(Extension(name: "tasks", tasks: tasks)) }
     let reports = HarnessReports()
     let harness = try await Harness.open(storage: storage,

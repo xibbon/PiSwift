@@ -70,7 +70,7 @@ private final class DeliveryTestAttachment: ReplicatedStateSourceAttachment, Sen
 
     func dispose() { listener.withLock { $0 = nil } }
 
-    func publish(_ value: Value, context: Context) {
+    func publish(_ value: Value, context: ChordContext) {
         let receive = listener.withLock { $0 }
         receive?(.init(cursor: value.value, value: value,
                        ops: [.set(["value"], .number(Double(value.value)))], context: context))
@@ -81,14 +81,14 @@ private final class DeliveryTestSource: ReplicatedStateSource, Sendable {
     typealias Value = DeliveryTestValue
     let attachment = DeliveryTestAttachment()
     func attach() throws -> any ReplicatedStateSourceAttachment<Value> { attachment }
-    func publish(_ value: Int, context: Context = .background) {
+    func publish(_ value: Int, context: ChordContext = .background) {
         attachment.publish(DeliveryTestValue(value), context: context)
     }
 }
 
 private struct DeliveryTestEvent: Sendable {
     let value: DeliveryTestValue
-    let context: Context
+    let context: ChordContext
     let delivery: ReplicatedStateDelivery
 }
 
@@ -161,8 +161,8 @@ struct ReplicatedStateDeliveryTests {
         let state = try replicatedState(source)
         defer { state.dispose() }
         let gate = DeliveryTestGate()
-        let context = Context.background.withCancel().context
-        let marker = ContextKey<String>("delivery-test-context")
+        let context = ChordContext.background.withCancel().context
+        let marker = ChordContextKey<String>("delivery-test-context")
         let markedContext = context.withValue("newest", for: marker)
         let received = DeliveryTestLog<DeliveryTestEvent>()
         state.subscribe { value, context, delivery in
@@ -212,7 +212,7 @@ struct ReplicatedStateDeliveryTests {
         defer { state.dispose() }
         let gate = DeliveryTestGate()
         let received = DeliveryTestLog<Int>()
-        let listener: @Sendable (DeliveryTestValue, Context, ReplicatedStateDelivery) async throws -> Void = {
+        let listener: @Sendable (DeliveryTestValue, ChordContext, ReplicatedStateDelivery) async throws -> Void = {
             value, _, _ in
             received.append(value.value)
             if value.value == 0 { await gate.wait() }
@@ -235,7 +235,7 @@ struct ReplicatedStateDeliveryTests {
         let state = try replicatedState(source)
         defer { state.dispose() }
         let gate = DeliveryTestGate()
-        let context = Context.background.withCancel().context
+        let context = ChordContext.background.withCancel().context
         let received = DeliveryTestLog<Int>()
         let completed = DeliveryTestLog<Bool>()
         let stop = state.subscribe { value, _, _ in

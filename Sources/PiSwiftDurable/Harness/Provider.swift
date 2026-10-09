@@ -3,7 +3,7 @@ import PiSwiftChord
 
 public let ProviderDoc = try! ConversationDocToken<ProviderState>(kind: "pi.provider", version: 1, fork: .initial,
     initial: { try ProviderState.fresh() }, checkpointWhen: { _, _, _ in true })
-public func ensureProviderSessionId(runtime: TaskRuntime, context: PiSwiftChord.Context) async throws -> String {
+public func ensureProviderSessionId(runtime: TaskRuntime, context: ChordContext) async throws -> String {
     if let state = try await runtime.snapshot(ProviderDoc, conversationId: runtime.conversationId, context: context) { return state.sessionId }
     var created: String?
     try await runtime.commit({ tx, _ in

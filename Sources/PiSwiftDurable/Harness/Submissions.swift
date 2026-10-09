@@ -36,16 +36,16 @@ public struct Submission: Sendable {
         self.id = id; self.submissions = submissions; self.binding = binding
     }
     internal func bound(_ binding: InvocationBinding?) -> Submission { Submission(id: id, submissions: submissions, binding: binding) }
-    private func context(_ context: PiSwiftChord.Context) throws -> PiSwiftChord.Context {
+    private func context(_ context: ChordContext) throws -> ChordContext {
         try binding?.check(); return binding.map { context.withAbortSignal($0.signal) } ?? context
     }
-    public func status(context: PiSwiftChord.Context) async throws -> SubmissionRecord {
+    public func status(context: ChordContext) async throws -> SubmissionRecord {
         try await withTaskCancellationContext(try self.context(context)) { try await submissions.status(id: id, context: $0) }
     }
-    public func wait(context: PiSwiftChord.Context) async throws -> SettledSubmission {
+    public func wait(context: ChordContext) async throws -> SettledSubmission {
         try await withTaskCancellationContext(try self.context(context)) { try await submissions.wait(id: id, context: $0) }
     }
-    public func abort(context: PiSwiftChord.Context) async throws -> SubmissionAbortResult {
+    public func abort(context: ChordContext) async throws -> SubmissionAbortResult {
         let result = try await withTaskCancellationContext(try self.context(context)) { try await submissions.abort(id: id, context: $0) }
         if result == .notFound { throw SessionError.message("Submission \(id.rawValue) does not exist") }
         return result
@@ -70,26 +70,26 @@ internal final class Submissions: Sendable {
         }
         state.withLock { $0.subscriptions = [commits, close] }
     }
-    func submit(conversationId: ConversationID, draft: SubmissionDraft, context: PiSwiftChord.Context) async throws -> Submission {
+    func submit(conversationId: ConversationID, draft: SubmissionDraft, context: ChordContext) async throws -> Submission {
         resume()
         let id = try await session.commit({ tx in
             try await admitSubmission(tx: tx, conversationId: conversationId, draft: draft, now: now(), queueModes: settings())
         }, context: context)
         return Submission(id: id, submissions: self)
     }
-    func get(id: SubmissionID, context: PiSwiftChord.Context) async throws -> Submission? {
+    func get(id: SubmissionID, context: ChordContext) async throws -> Submission? {
         try context.abortSignal?.throwIfAborted()
         let record = try await session.readOnLine { try await storage.submission(id, context: context) }
         return record.map { Submission(id: $0.id, submissions: self) }
     }
-    func status(id: SubmissionID, context: PiSwiftChord.Context) async throws -> SubmissionRecord {
+    func status(id: SubmissionID, context: ChordContext) async throws -> SubmissionRecord {
         try context.abortSignal?.throwIfAborted()
         guard let record = try await session.readOnLine({ try await storage.submission(id, context: context) }) else {
             throw SessionError.message("Submission \(id.rawValue) does not exist")
         }
         return record
     }
-    func wait(id: SubmissionID, context: PiSwiftChord.Context) async throws -> SettledSubmission {
+    func wait(id: SubmissionID, context: ChordContext) async throws -> SettledSubmission {
         resume()
         let promise: HarnessPromise<SettledSubmission> = try await session.readOnLine {
             try context.abortSignal?.throwIfAborted()
@@ -100,7 +100,7 @@ internal final class Submissions: Sendable {
         }
         return try await promise.value()
     }
-    func abort(id: SubmissionID, context: PiSwiftChord.Context, conversationId: ConversationID? = nil) async throws -> SubmissionAbortResult {
+    func abort(id: SubmissionID, context: ChordContext, conversationId: ConversationID? = nil) async throws -> SubmissionAbortResult {
         try await session.commit({ tx in
             guard let record = try await tx.submission(id), conversationId == nil || record.conversationId == conversationId else { return .notFound }
             if record.status == "queued" {
