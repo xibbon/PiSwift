@@ -1,8 +1,8 @@
 /// A file size and a callback for byte-range reads.
-public struct ByteSource: Sendable {
-    public let size: Int64
-    public let read: @Sendable (Int64, Int) async throws -> [UInt8]
-    public init(size: Int64, read: @escaping @Sendable (Int64, Int) async throws -> [UInt8]) {
+internal struct ByteSource: Sendable {
+    internal let size: Int64
+    internal let read: @Sendable (Int64, Int) async throws -> [UInt8]
+    internal init(size: Int64, read: @escaping @Sendable (Int64, Int) async throws -> [UInt8]) {
         self.size = size; self.read = read
     }
 }
@@ -10,7 +10,7 @@ public struct ByteSource: Sendable {
 private let pngSignature: [UInt8] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
 /// Detects supported images from the header and PNG chunk headers. It uses bounded memory.
-public func detectSupportedImageMimeTypeOf(_ source: ByteSource) async throws -> String? {
+internal func detectSupportedImageMimeTypeOf(_ source: ByteSource) async throws -> String? {
     let header = try await source.read(0, 32)
     guard header.starts(with: pngSignature) else { return detectSupportedImageMimeType(header) }
     guard isPng(header) else { return nil }
@@ -34,7 +34,7 @@ public func detectSupportedImageMimeTypeOf(_ source: ByteSource) async throws ->
 }
 
 /// Detects JPEG, PNG, GIF, WebP, and BMP images from their bytes. Animated PNG is excluded.
-public func detectSupportedImageMimeType(_ bytes: [UInt8]) -> String? {
+internal func detectSupportedImageMimeType(_ bytes: [UInt8]) -> String? {
     if bytes.starts(with: [0xff, 0xd8, 0xff]) { return bytes.count > 3 && bytes[3] == 0xf7 ? nil : "image/jpeg" }
     if bytes.starts(with: pngSignature) {
         guard isPng(bytes) else { return nil }

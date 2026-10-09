@@ -1,7 +1,7 @@
 import PiSwiftChord
 import PiSwiftDurable
 
-/// Reopens a file after each commit, including a rejected commit.
+/// Reopens the storage directory after each commit, including a rejected commit.
 /// Use one wrapper per test case. The test must serialize its calls.
 public actor JsonlReopeningStorage: DurableStorage {
     private var current: JsonlStorage

@@ -94,51 +94,67 @@ public actor JsonlStorage: DurableStorage {
         return seq
     }
 
+    /// Allocates an unused positive ID from the shared record namespace.
     public func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await withStore { try await $0.mintId() }
     }
+    /// Returns a conversation by ID, or nil when that ID is absent.
     public func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationRecord? {
         try await withStore { try await $0.conversation(id, context: context) }
     }
+    /// Returns a page of conversations that match all query filters.
     public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<ConversationRecord, Cursor> {
         try await withStore { try await $0.scanConversations(query, limit: limit, cursor: cursor, context: context) }
     }
+    /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ id: EntryID, context: ChordContext) async throws -> EntryLookup? {
         try await withStore { try await $0.entry(id, context: context) }
     }
+    /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) async throws -> EntryLookup? {
         try await withStore { try await $0.entry(conversationId, id: id, context: context) }
     }
+    /// Returns the newest visible head marker at or below the inclusive entry cutoff.
     public func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) async throws -> EntryRecord? {
         try await withStore { try await $0.findLatestHeadMarker(conversationId, atOrBeforeEntryId: atOrBeforeEntryId, context: context) }
     }
+    /// Returns a page of entries in the visible ancestry and requested range.
     public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
         try await withStore { try await $0.scanEntries(query, limit: limit, cursor: cursor, context: context) }
     }
+    /// Returns the current stored task record, or nil when absent.
     public func task(_ id: TaskID, context: ChordContext) async throws -> TaskRecord? {
         try await withStore { try await $0.task(id, context: context) }
     }
+    /// Returns a page of tasks that match all query filters.
     public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<TaskRecord, Cursor> {
         try await withStore { try await $0.scanTasks(query, limit: limit, cursor: cursor, context: context) }
     }
+    /// Returns the current durable submission, or nil when it is absent.
     public func submission(_ id: SubmissionID, context: ChordContext) async throws -> SubmissionRecord? {
         try await withStore { try await $0.submission(id, context: context) }
     }
+    /// Returns a page of submissions that match all query filters.
     public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<SubmissionRecord, Cursor> {
         try await withStore { try await $0.scanSubmissions(query, limit: limit, cursor: cursor, context: context) }
     }
+    /// Returns the submission for the conversation-scoped request key, or nil.
     public func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) async throws -> SubmissionRecord? {
         try await withStore { try await $0.submissionByRequest(conversationId, requestId: requestId, context: context) }
     }
+    /// Finds the document incarnation alive at the address and requested point.
     public func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) async throws -> DocumentRecord? {
         try await withStore { try await $0.findDocument(address, at: at, context: context) }
     }
+    /// Returns the stored document incarnation at the requested point, or nil when absent.
     public func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) async throws -> StoredDocument? {
         try await withStore { try await $0.document(id, at: at, context: context) }
     }
+    /// Returns a page of document incarnations alive at the requested point.
     public func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<DocumentRecord, Cursor> {
         try await withStore { try await $0.scanDocuments(query, limit: limit, cursor: cursor, context: context) }
     }
+    /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {
         await acquire(); defer { release() }
         if closed { return }
@@ -152,6 +168,8 @@ public actor JsonlStorage: DurableStorage {
 }
 
 /// Opens or creates JSONL storage through the local file system.
+/// This is the Swift equivalent of the upstream openNodeJsonlStorage function.
+/// It uses the same local file system as JsonlStorage.open(directory:options:context:).
 public func openLocalJsonlStorage(directory: String, options: JsonlStorageOptions = .init(), context: ChordContext = .background) async throws -> JsonlStorage {
     try await JsonlStorage.open(directory: directory, options: options, context: context)
 }

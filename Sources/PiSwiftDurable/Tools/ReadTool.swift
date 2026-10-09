@@ -4,9 +4,13 @@ import PiSwiftChord
 
 /// Arguments for the text read tool. Line numbers start at one.
 public struct ReadToolInput: Sendable, Codable {
+    /// The file path, relative to the environment directory or absolute.
     public var path: String
+    /// The first line to read. Line numbers start at one; nil starts at the first line.
     public var offset: Double?
+    /// The maximum number of lines to read. Nil selects all remaining lines.
     public var limit: Double?
+    /// Creates read arguments with an optional first line and line limit.
     public init(path: String, offset: Double? = nil, limit: Double? = nil) {
         self.path = path; self.offset = offset; self.limit = limit
     }
@@ -14,15 +18,17 @@ public struct ReadToolInput: Sendable, Codable {
 
 /// Details from a text read. The truncation object contains counts and limits, without file content.
 public struct ReadToolDetails: Sendable, Codable, Equatable {
+    /// The content-free truncation counts and limits, or nil when no truncation occurred.
     public var truncation: JSONValue?
+    /// Creates read details with optional truncation information.
     public init(truncation: JSONValue? = nil) { self.truncation = truncation }
 }
 
 /// A read failure that includes text for the caller.
-public struct ReadToolError: Error, Sendable, CustomStringConvertible {
-    public let message: String
-    public var description: String { message }
-    public init(_ message: String) { self.message = message }
+internal struct ReadToolError: Error, Sendable, CustomStringConvertible {
+    internal let message: String
+    internal var description: String { message }
+    internal init(_ message: String) { self.message = message }
 }
 
 /// Creates a tool that reads text with bounded memory and reports continuation in diagnostics.

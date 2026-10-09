@@ -9,8 +9,9 @@ import PiSwiftDurable
 // TypeScript-only shapes: Type.Object is a JSON Schema plus Decodable arguments;
 // object spread is a mutable value copy; phase unions use TaskCheckpoint;
 // live getters use HarnessSettingsProvider; property drafts use JSONDraft.
-// The upstream CodingTools/read/edit/bash factories are not in this module.
-// The application supplies their ToolRegistration values and environment factory.
+// E5: the real P1 B factory replaces the H10 stand-in
+// The library supplies coding tools, local environments, and JSONL storage.
+// The application supplies the container environment, as in upstream.
 private struct SpecPlan: Codable, Sendable { var enabled = false }
 private struct SpecContainer: Codable, Sendable { var image = "node:22" }
 private struct SpecToolArgs: Decodable, Sendable { var task: String }
@@ -37,13 +38,11 @@ private enum SpecUsageError: Error { case childFailed, absentAnswer, absentKey }
 private typealias SpecPayment = TaskDefinition<JSONValue, SpecCharge, SpecPaymentResult, NoTaskHooks>
 
 private struct SpecDependencies: Sendable {
-    let read: ToolRegistration
-    let edit: ToolRegistration
-    let bash: ToolRegistration
-    let venvBash: ToolRegistration
-    let codingTools: Extension
+    // E5: the real P1 B factory replaces the H10 stand-in
+    // Tool factories and CodingTools below replace injected registrations.
     let models: any DurableModels
-    let storage: any DurableStorage
+    // E5: the real P1 B factory replaces the H10 stand-in
+    let storageDirectory: String
     let session: Session
     let conversationId: ConversationID
     let renderAgentsMd: @Sendable () -> String?
@@ -57,7 +56,8 @@ private struct SpecDependencies: Sendable {
     let cancel: @Sendable (SpecCharge) async throws -> Void
     let newKey: @Sendable () -> String
     let settings: @Sendable () -> HarnessSettings
-    let localEnv: @Sendable (String) -> any ExecutionEnv
+    // E5: the real P1 B factory replaces the H10 stand-in
+    // LocalExecutionEnv below replaces the injected local factory.
     let containerEnv: @Sendable (String, String, ChordContext) async throws -> any ExecutionEnv
 }
 
@@ -80,7 +80,8 @@ private func specExtensions(_ app: SpecDependencies) throws -> (extensions: [Ext
     let reviewer = Extension(name: "reviewer", sections: [
         section("role") { _, _ in "You review diffs. Report problems as a list. Never edit files." },
     ], hooks: [hook(generationTask, handlers: GenerationHooks(onYield: app.secondPass))])
-    let timing = Extension(name: "timing", wraps: [wrapTool(app.bash) { tool in
+    // E5: the real P1 B factory replaces the H10 stand-in
+    let timing = Extension(name: "timing", wraps: [wrapTool(try createBashTool()) { tool in
         var wrapped = tool
         wrapped.execute = { args, api, context in
             let start = ContinuousClock.now
@@ -89,7 +90,9 @@ private func specExtensions(_ app: SpecDependencies) throws -> (extensions: [Ext
         }
         return wrapped
     }])
-    let venv = Extension(name: "venv", tools: [app.venvBash])
+    // E5: the real P1 B factory replaces the H10 stand-in
+    let venv = Extension(name: "venv", tools: [try createBashTool(
+        options: .init(commandPrefix: "source .venv/bin/activate"))])
     let planDoc = try ConversationDocToken<SpecPlan>(kind: "app.plan-mode", version: 1,
         fork: .current, initial: { SpecPlan() })
     let planMode = Extension(name: "plan-mode", hooks: [hook(toolTask, handlers: ToolHooks(
@@ -124,7 +127,8 @@ private func specExtensions(_ app: SpecDependencies) throws -> (extensions: [Ext
         initial: { _ in SpecHold() }, phase: { _, _, _ in }, abort: { _, _, _ in })
     let reporter = TaskDefinition<JSONValue, SpecReport, JSONValue, NoTaskHooks>(name: "app.reporter", version: 1,
         initial: { _ in SpecReport() }, phase: { _, _, _ in }, abort: { _, _, _ in })
-    let subagentTools = Extension(name: "subagent-tools", tools: [app.read],
+    // E5: the real P1 B factory replaces the H10 stand-in
+    let subagentTools = Extension(name: "subagent-tools", tools: [try createReadTool()],
         tasks: [AnyTaskDefinition(anchor), AnyTaskDefinition(reporter)])
     let chat = Extension(name: "chat", sections: [section("preamble", tag: false) { _, _ in "You are a helpful assistant." }])
 
@@ -156,7 +160,8 @@ private func specChildSequences(tx: Transaction, api: ToolExecutionApi, app: Spe
     let child = try await tx.createConversation(ownership: .task(taskId: api.taskId))
     try await configure(tx: tx, conversationId: child.id, change: AgentChange(
         model: .set(ModelRef(provider: "anthropic", modelId: "haiku")),
-        tools: .set(.exact([app.read])), cwd: .set("/worktree")))
+        // E5: the real P1 B factory replaces the H10 stand-in
+        tools: .set(.exact([try createReadTool()])), cwd: .set("/worktree")))
     let anchor = TaskDefinition<JSONValue, SpecHold, JSONValue, NoTaskHooks>(name: "app.anchor", version: 1,
         initial: { _ in SpecHold() }, phase: { _, _, _ in }, abort: { _, _, _ in })
     let id = try await tx.createTask(anchor, input: .null, options: .init(ownership: .conversation(), background: true))
@@ -184,15 +189,20 @@ private func specLiveSettings(_ manager: SpecSettingsManager) -> HarnessSettings
 private func specHostSequences(_ app: SpecDependencies, context: ChordContext) async throws {
     let extensions = try specExtensions(app).extensions
     let registry = createRegistry()
-    for item in [app.codingTools] + extensions { try registry.install(item) }
+    // E5: the real P1 B factory replaces the H10 stand-in
+    for item in [try CodingTools] + extensions { try registry.install(item) }
     let provider = HarnessSettingsProvider { app.settings() }
     let options = HarnessOptions(models: app.models, registry: registry, settings: provider,
-        env: { target, _ in app.localEnv(target.cwd ?? "/work") })
-    let harness = try await Harness.open(storage: app.storage, options: options, context: context)
+        // E5: the real P1 B factory replaces the H10 stand-in
+        env: { target, _ in LocalExecutionEnv(cwd: target.cwd ?? "/work") })
+    // E5: the real P1 B factory replaces the H10 stand-in
+    let storage = try await JsonlStorage.open(directory: app.storageDirectory, context: context)
+    let harness = try await Harness.open(storage: storage, options: options, context: context)
     let root = try await harness.root(options: .init(agent: AgentChange(
         model: .set(.init(provider: "anthropic", modelId: "sonnet")), cwd: .set("/work"))), context: context)
-    try await root.configure(change: AgentChange(tools: .set(.remove([app.edit]))), context: context)
-    try await root.configure(change: AgentChange(tools: .set(.remove([app.bash]))), context: context)
+    // E5: the real P1 B factory replaces the H10 stand-in
+    try await root.configure(change: AgentChange(tools: .set(.remove([try createEditTool()]))), context: context)
+    try await root.configure(change: AgentChange(tools: .set(.remove([try createBashTool()]))), context: context)
     try await root.configure(change: AgentChange(tools: .clear), context: context)
     try await root.configure(change: AgentChange(extensions: .set(.edit(add: [Extension(name: "venv")]))), context: context)
     let plan = try ConversationDocToken<SpecPlan>(kind: "app.plan-mode", version: 1, fork: .current, initial: { SpecPlan() })
@@ -208,9 +218,12 @@ private func specHostSequences(_ app: SpecDependencies, context: ChordContext) a
         if let value = try await target.read.snapshot(container, conversationId: target.conversationId, context: context) {
             return try await app.containerEnv(value.image, target.cwd ?? "/work", context)
         }
-        return app.localEnv(target.cwd ?? "/work")
+        // E5: the real P1 B factory replaces the H10 stand-in
+        return LocalExecutionEnv(cwd: target.cwd ?? "/work")
     })
-    let containerHarness = try await Harness.open(storage: app.storage, options: containerOptions, context: context)
+    // E5: the real P1 B factory replaces the H10 stand-in
+    let containerStorage = try await JsonlStorage.open(directory: app.storageDirectory, context: context)
+    let containerHarness = try await Harness.open(storage: containerStorage, options: containerOptions, context: context)
     try await containerHarness.close(context: context)
 }
 

@@ -29,59 +29,62 @@ import Foundation
 
 /// One text replacement. All replacements use the same source content.
 public struct Edit: Sendable, Codable, Equatable {
+    /// The unique text to replace in the original file.
     public var oldText: String
+    /// The replacement text.
     public var newText: String
+    /// Creates a replacement from the original text and the new text.
     public init(oldText: String, newText: String) { self.oldText = oldText; self.newText = newText }
 }
 
 /// The source and result of a group of replacements.
-public struct AppliedEditsResult: Sendable, Codable, Equatable {
-    public var baseContent: String
-    public var newContent: String
-    public init(baseContent: String, newContent: String) { self.baseContent = baseContent; self.newContent = newContent }
+internal struct AppliedEditsResult: Sendable, Codable, Equatable {
+    internal var baseContent: String
+    internal var newContent: String
+    internal init(baseContent: String, newContent: String) { self.baseContent = baseContent; self.newContent = newContent }
 }
 
 /// A text match with offsets measured in UTF-16 code units.
-public struct FuzzyMatchResult: Sendable, Equatable {
-    public var found: Bool
-    public var index: Int
-    public var matchLength: Int
-    public var usedFuzzyMatch: Bool
-    public var contentForReplacement: String
+internal struct FuzzyMatchResult: Sendable, Equatable {
+    internal var found: Bool
+    internal var index: Int
+    internal var matchLength: Int
+    internal var usedFuzzyMatch: Bool
+    internal var contentForReplacement: String
 }
 
 /// A replacement with offsets measured in UTF-16 code units.
-public struct TextReplacement: Sendable, Equatable {
-    public var matchIndex: Int
-    public var matchLength: Int
-    public var newText: String
-    public init(matchIndex: Int, matchLength: Int, newText: String) {
+internal struct TextReplacement: Sendable, Equatable {
+    internal var matchIndex: Int
+    internal var matchLength: Int
+    internal var newText: String
+    internal init(matchIndex: Int, matchLength: Int, newText: String) {
         self.matchIndex = matchIndex; self.matchLength = matchLength; self.newText = newText
     }
 }
 
 /// A display diff and the first changed line in the new content.
-public struct EditDiffResult: Sendable, Equatable {
-    public var diff: String
-    public var firstChangedLine: Int?
-    public init(diff: String, firstChangedLine: Int?) { self.diff = diff; self.firstChangedLine = firstChangedLine }
+internal struct EditDiffResult: Sendable, Equatable {
+    internal var diff: String
+    internal var firstChangedLine: Int?
+    internal init(diff: String, firstChangedLine: Int?) { self.diff = diff; self.firstChangedLine = firstChangedLine }
 }
 
 /// Returns the first newline style, or LF when the content has no newline.
-public func detectLineEnding(_ content: String) -> String {
+internal func detectLineEnding(_ content: String) -> String {
     let units = Array(content.utf16)
     guard let firstLF = units.firstIndex(of: 10) else { return "\n" }
     return firstLF > 0 && units[firstLF - 1] == 13 ? "\r\n" : "\n"
 }
 
 /// Replaces CRLF and CR newlines with LF.
-public func normalizeToLF(_ text: String) -> String {
+internal func normalizeToLF(_ text: String) -> String {
     text.replacingOccurrences(of: "\r\n", with: "\n", options: .literal)
         .replacingOccurrences(of: "\r", with: "\n", options: .literal)
 }
 
 /// Restores CRLF when the source used CRLF.
-public func restoreLineEndings(_ text: String, ending: String) -> String {
+internal func restoreLineEndings(_ text: String, ending: String) -> String {
     ending == "\r\n" ? text.replacingOccurrences(of: "\n", with: "\r\n", options: .literal) : text
 }
 
@@ -94,7 +97,7 @@ private func editTrimWhitespace(_ value: UInt32) -> Bool {
 }
 
 /// Applies NFKC, removes trailing spaces, and converts quotes, dashes, and spaces.
-public func normalizeForFuzzyMatch(_ text: String) -> String {
+internal func normalizeForFuzzyMatch(_ text: String) -> String {
     let normalized = text.precomposedStringWithCompatibilityMapping
     let trimmed = normalized.components(separatedBy: "\n").map { line in
         var scalars = Array(line.unicodeScalars)
@@ -125,7 +128,7 @@ private func editSlice(_ content: String, _ start: Int, _ end: Int) -> String {
 }
 
 /// Finds exact text first, then text with the fuzzy normalization rules.
-public func fuzzyFindText(_ content: String, oldText: String) -> FuzzyMatchResult {
+internal func fuzzyFindText(_ content: String, oldText: String) -> FuzzyMatchResult {
     if let index = editExactIndex(content, oldText) {
         return .init(found: true, index: index, matchLength: oldText.utf16.count,
                      usedFuzzyMatch: false, contentForReplacement: content)
@@ -139,7 +142,7 @@ public func fuzzyFindText(_ content: String, oldText: String) -> FuzzyMatchResul
 }
 
 /// Removes one leading UTF-8 byte order mark from decoded text.
-public func stripBom(_ content: String) -> (bom: String, text: String) {
+internal func stripBom(_ content: String) -> (bom: String, text: String) {
     content.utf16.first == 0xFEFF ? ("\u{FEFF}", editSlice(content, 1, content.utf16.count)) : ("", content)
 }
 
@@ -163,7 +166,7 @@ private func applyTextReplacements(_ content: String, replacements: [TextReplace
 }
 
 /// Changes only the lines that the replacement ranges touch.
-public func applyReplacementsPreservingUnchangedLines(
+internal func applyReplacementsPreservingUnchangedLines(
     _ originalContent: String, baseContent: String, replacements: [TextReplacement]
 ) throws -> String {
     let originalLines = editLinesWithEndings(originalContent), baseLines = editLinesWithEndings(baseContent)
@@ -205,7 +208,7 @@ private func editOccurrences(_ content: String, _ oldText: String) -> Int {
 }
 
 /// Matches all edits in the original content. Rejects absent, duplicate, or overlapping targets.
-public func applyEditsToNormalizedContent(_ normalizedContent: String, edits: [Edit], path: String) throws -> AppliedEditsResult {
+internal func applyEditsToNormalizedContent(_ normalizedContent: String, edits: [Edit], path: String) throws -> AppliedEditsResult {
     let edits = edits.map { Edit(oldText: normalizeToLF($0.oldText), newText: normalizeToLF($0.newText)) }
     for (index, edit) in edits.enumerated() where edit.oldText.isEmpty {
         throw DurableToolError(message: edits.count == 1 ? "oldText must not be empty in \(path)." : "edits[\(index)].oldText must not be empty in \(path).")
@@ -314,7 +317,7 @@ private func editDiffParts(_ oldContent: String, _ newContent: String) -> [EditD
 }
 
 /// Generates the display diff with line numbers and context.
-public func generateDiffString(_ oldContent: String, newContent: String, contextLines: Int = 4) -> EditDiffResult {
+internal func generateDiffString(_ oldContent: String, newContent: String, contextLines: Int = 4) -> EditDiffResult {
     let parts = editDiffParts(oldContent, newContent), context = max(0, contextLines)
     let width = String(max(oldContent.components(separatedBy: "\n").count, newContent.components(separatedBy: "\n").count)).count
     var output: [String] = [], oldLine = 1, newLine = 1, lastWasChange = false, first: Int?
@@ -352,7 +355,7 @@ public func generateDiffString(_ oldContent: String, newContent: String, context
 }
 
 /// Generates the same file headers and unified hunks as jsdiff createTwoFilesPatch.
-public func generateUnifiedPatch(_ path: String, oldContent: String, newContent: String, contextLines: Int = 4) -> String {
+internal func generateUnifiedPatch(_ path: String, oldContent: String, newContent: String, contextLines: Int = 4) -> String {
     var parts = editDiffParts(oldContent, newContent)
     parts.append(.init(kind: .same, value: ""))
     let context = max(0, contextLines)

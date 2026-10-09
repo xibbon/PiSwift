@@ -4,16 +4,23 @@ import PiSwiftChord
 
 /// Arguments for the edit tool.
 public struct EditToolInput: Sendable, Codable, Equatable {
+    /// The file path, relative to the environment directory or absolute.
     public var path: String
+    /// The replacements to match against the same original file content.
     public var edits: [Edit]
+    /// Creates edit arguments for a file and its replacements.
     public init(path: String, edits: [Edit]) { self.path = path; self.edits = edits }
 }
 
 /// The display diff, unified patch, and first changed line from an edit.
 public struct EditToolDetails: Sendable, Codable, Equatable {
+    /// The display diff with line numbers.
     public var diff: String
+    /// The unified patch for the file.
     public var patch: String
+    /// The first changed line in the new content, or nil when there is no changed line.
     public var firstChangedLine: Int?
+    /// Creates edit details from the display diff, patch, and optional first changed line.
     public init(diff: String, patch: String, firstChangedLine: Int? = nil) {
         self.diff = diff; self.patch = patch; self.firstChangedLine = firstChangedLine
     }
@@ -25,7 +32,7 @@ private func editSingleArgument(_ value: JSONValue?) -> Bool {
 }
 
 /// Repairs common argument shapes without changing the input value.
-public func prepareEditArguments(_ input: JSONValue) throws -> JSONValue {
+internal func prepareEditArguments(_ input: JSONValue) throws -> JSONValue {
     guard case .object(var args) = input else { return input }
     if case .string(let encoded) = args["edits"], let data = encoded.data(using: .utf8),
        let parsed = try? JSONDecoder().decode(JSONValue.self, from: data) {

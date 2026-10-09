@@ -6,6 +6,7 @@ public struct RangeDecoder: Sendable {
     private var lower: UInt8 = 0x80
     private var upper: UInt8 = 0xbf
 
+    /// Creates a decoder with no pending bytes.
     public init() {}
 
     /// Decodes a chunk. Pass no bytes to finish the stream.
@@ -75,6 +76,7 @@ public struct StreamDecoder: Sendable {
     private var decoder = rangeDecoder()
     private var started = false
 
+    /// Creates a decoder with no pending bytes.
     public init() {}
 
     /// Decodes a chunk. Pass no bytes to finish the stream.

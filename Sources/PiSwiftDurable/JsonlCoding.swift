@@ -4,31 +4,40 @@ import PiSwiftChord
 public struct JsonlStorageOptions: Sendable {
     /// Flush each sidecar before the main marker. The default is false.
     public var fsync: Bool
+    /// Creates storage options. Sidecar flushes are disabled by default.
     public init(fsync: Bool = false) { self.fsync = fsync }
 }
 
 /// A complete record or committed state is invalid.
 public struct JsonlCorruptionError: Error, Sendable, CustomStringConvertible {
+    /// The error message.
     public let message: String
+    /// The error that caused this failure.
     public let cause: (any Error)?
+    /// The error message for display.
     public var description: String { message }
+    /// Creates a corruption error with a message and optional cause.
     public init(message: String, cause: (any Error)? = nil) { self.message = message; self.cause = cause }
 }
 
 /// An I/O failure has an uncertain result. Open the storage again before use.
 public struct JsonlStoragePoisonedError: Error, Sendable, CustomStringConvertible {
+    /// The error message.
     public let message = "JSONL storage is poisoned and must be reopened"
+    /// The error that caused this failure.
     public let cause: any Error
+    /// The error message for display.
     public var description: String { message }
+    /// Creates a poisoned-storage error with the operation failure that caused it.
     public init(cause: any Error) { self.cause = cause }
 }
 
 /// A file-system operation failed.
-public struct JsonlFileError: Error, Sendable, CustomStringConvertible {
-    public let message: String
-    public let cause: FileError
-    public var description: String { message }
-    public init(action: String, cause: FileError) {
+internal struct JsonlFileError: Error, Sendable, CustomStringConvertible {
+    internal let message: String
+    internal let cause: FileError
+    internal var description: String { message }
+    internal init(action: String, cause: FileError) {
         self.message = "JSONL \(action) failed: \(cause.message)"; self.cause = cause
     }
 }

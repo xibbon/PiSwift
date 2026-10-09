@@ -14,6 +14,7 @@ public struct EnvConformanceCase: Sendable, CustomStringConvertible {
     public init(name: String, timeoutMs: Int? = nil, run: @escaping @Sendable () async throws -> Void) {
         self.name = name; self.timeoutMs = timeoutMs; self.run = run
     }
+    /// The case name for display.
     public var description: String { name }
 }
 
@@ -25,6 +26,7 @@ public struct EnvConformanceCapabilities: Sendable {
     public var symlinks: Bool
     /// Include file watch checks.
     public var watch: Bool
+    /// Selects the supported checks. All capabilities are enabled by default.
     public init(exec: Bool = true, symlinks: Bool = true, watch: Bool = true) {
         self.exec = exec; self.symlinks = symlinks; self.watch = watch
     }
@@ -32,12 +34,17 @@ public struct EnvConformanceCapabilities: Sendable {
 
 /// A failed environment check, with its source location.
 public struct EnvConformanceFailure: Error, Sendable, CustomStringConvertible {
+    /// The failed check message.
     public let message: String
+    /// The source file that contains the failed check.
     public let file: String
+    /// The source line that contains the failed check.
     public let line: UInt
+    /// Creates a failed check with its message and source location.
     public init(_ message: String, file: String = #filePath, line: UInt = #line) {
         self.message = message; self.file = file; self.line = line
     }
+    /// The failure message and source location for display.
     public var description: String { "\(file):\(line): \(message)" }
 }
 
