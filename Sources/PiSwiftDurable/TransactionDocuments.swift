@@ -38,11 +38,13 @@ private enum DocumentTarget: Sendable {
     case loaded(LoadedDocument)
     case created(DocumentCreate, Tracker)
     case retirement(DocumentRecord)
+    case forkCopy(ForkDocumentCopy)
 }
 private final class DocumentEntry: Sendable {
     let address: DocumentAddress
-    let definition: DocumentDefinition
+    var definition: DocumentDefinition? { state.withLock { $0.definition } }
     struct State: Sendable {
+        var definition: DocumentDefinition?
         var target: DocumentTarget?
         var change: Change?
         var prepared: Prepared?
@@ -51,8 +53,8 @@ private final class DocumentEntry: Sendable {
         var retire = false
     }
     let state: Mutex<State>
-    init(address: DocumentAddress, definition: DocumentDefinition, retire: Bool) {
-        self.address = address; self.definition = definition; state = Mutex(State(retire: retire))
+    init(address: DocumentAddress, definition: DocumentDefinition?, retire: Bool, target: DocumentTarget? = nil) {
+        self.address = address; state = Mutex(State(definition: definition, target: target, retire: retire))
     }
 }
 private struct DocumentPlan: Sendable {
@@ -68,6 +70,7 @@ private struct DocumentPlan: Sendable {
     var conversationID: ConversationID?
     var id: DocumentID { create?.id ?? record!.id }
     var scope: DocumentScope { create?.scope ?? record!.scope }
+    var fork: DocumentFork? { create?.fork ?? record?.fork }
 }
 
 /// Staged incarnations, including more than one incarnation at the same address.
@@ -79,6 +82,16 @@ final class TransactionDocuments: Sendable {
     }
     private let state = Mutex(State())
 
+    func stageForkCopies(_ copies: [ForkDocumentCopy]) {
+        state.withLock { state in
+            for copy in copies {
+                let entry = DocumentEntry(address: copy.address, definition: nil, retire: false, target: .forkCopy(copy))
+                state.entries.append(entry)
+                state.latest[Array(documentAddressID(copy.address).utf8)] = entry
+            }
+        }
+    }
+
     func acquire(_ definition: DocumentDefinition, address: DocumentAddress, seedProvider: @escaping @Sendable () throws -> JSONValue?, tx: Transaction) async throws -> JSONDraft {
         try tx.assertOpen()
         try tx.assertTaskDocumentsOpen(address)
@@ -86,6 +99,14 @@ final class TransactionDocuments: Sendable {
             let key = Array(documentAddressID(address).utf8)
             let latest = state.latest[key]
             if let latest, let task = latest.state.withLock({ $0.retire ? nil : $0.acquisition }) { return task }
+            if let latest, latest.state.withLock({ state in
+                guard !state.retire, case .forkCopy = state.target else { return false }
+                return true
+            }) {
+                let task = Task { try await self.acquireForkCopy(latest, definition: definition, tx: tx) }
+                latest.state.withLock { $0.acquisition = task }
+                return task
+            }
             let skipLoad = latest?.state.withLock { $0.retire } ?? false
             let entry = DocumentEntry(address: address, definition: definition, retire: false)
             state.entries.append(entry); state.latest[key] = entry
@@ -96,11 +117,36 @@ final class TransactionDocuments: Sendable {
         return try await task.value
     }
 
+    private func acquireForkCopy(_ entry: DocumentEntry, definition: DocumentDefinition, tx: Transaction) async throws -> JSONDraft {
+        let copy = entry.state.withLock { state -> ForkDocumentCopy in
+            guard case .forkCopy(let copy) = state.target else { preconditionFailure("Expected fork copy") }
+            return copy
+        }
+        guard let stored = try await tx.storage.document(copy.source.id, at: copy.source.at, context: tx.context) else {
+            throw SessionError.message("Fork source document \(copy.source.id.rawValue) cannot be read")
+        }
+        try tx.assertOpen()
+        guard case .conversation = stored.record.scope,
+              stored.record.kind.utf8.elementsEqual(copy.record.kind.utf8),
+              stored.record.key.map({ Array($0.utf8) }) == copy.record.key.map({ Array($0.utf8) }),
+              stored.record.history == copy.record.history, stored.record.fork == copy.record.fork else {
+            throw SessionError.message("Fork source document \(copy.source.id.rawValue) does not match the copied record")
+        }
+        let record = DocumentRecord(id: copy.record.id, kind: copy.record.kind, scope: copy.record.scope,
+                                    createdAt: stored.record.createdAt, key: copy.record.key,
+                                    history: copy.record.history, fork: copy.record.fork)
+        let value = try definition.materialize(StoredDocument(record: record, version: stored.version, value: stored.value, deltasSinceBase: 0))
+        let tracker = try Delta.track(.object(value))
+        let change = tracker.beginChange(lifetime: tx.lifetime)
+        entry.state.withLock { $0.definition = definition; $0.target = .created(copy.record, tracker); $0.change = change }
+        return try change.state
+    }
+
     private func acquire(_ entry: DocumentEntry, seed: JSONValue?, skipLoad: Bool, tx: Transaction) async throws -> JSONDraft {
-        let loaded = skipLoad ? nil : try await tx.session.loadDocument(entry.definition, address: entry.address, context: tx.context)
+        let loaded = skipLoad ? nil : try await tx.session.loadDocument(entry.definition!, address: entry.address, context: tx.context)
         try tx.assertOpen()
         if let loaded {
-            try entry.definition.check(loaded.record); try entry.definition.checkVersion(loaded.storedVersion, record: loaded.record)
+            try entry.definition!.check(loaded.record); try entry.definition!.checkVersion(loaded.storedVersion, record: loaded.record)
             let change = loaded.tracker.beginChange(lifetime: tx.lifetime)
             entry.state.withLock { $0.target = .loaded(loaded); $0.change = change }
             return try change.state
@@ -113,12 +159,13 @@ final class TransactionDocuments: Sendable {
             if task.state.status == "terminal" { throw DocumentDefinitionError("Task \(id.rawValue) is terminal") }
         }
         try tx.assertOpen()
-        let initial = try entry.definition.initial(seed)
+        let initial = try entry.definition!.initial(seed)
         let id: DocumentID = try await tx.storage.mintId()
         try tx.assertOpen()
         let tracker = try Delta.track(.object(initial))
         let change = tracker.beginChange(lifetime: tx.lifetime)
-        entry.state.withLock { $0.target = .created(entry.definition.create(entry.address, id: id), tracker); $0.change = change }
+        let create = entry.definition!.create(entry.address, id: id)
+        entry.state.withLock { $0.target = .created(create, tracker); $0.change = change }
         return try change.state
     }
 
@@ -170,21 +217,24 @@ final class TransactionDocuments: Sendable {
             let plan = entry.state.withLock { state -> DocumentPlan? in
                 guard let target = state.target else { return nil }
                 switch target {
+                case .forkCopy(let copy):
+                    return DocumentPlan(address: entry.address, create: copy.record, record: nil, retire: state.retire, content: .documentCopy(record: copy.record, source: copy.source), tracker: nil, prepared: nil, loaded: nil, definition: nil)
                 case .retirement(let record): return DocumentPlan(address: entry.address, create: nil, record: record, retire: state.retire, content: nil, tracker: nil, prepared: nil, loaded: nil, definition: nil)
                 case .created(let record, let tracker):
                     let prepared = state.prepared!
-                    return DocumentPlan(address: entry.address, create: record, record: nil, retire: state.retire, content: .documentCreate(record: record, content: DocumentBaseContent(version: entry.definition.version, value: prepared.value.objectValue!)), tracker: tracker, prepared: prepared, loaded: nil, definition: entry.definition)
+                    return DocumentPlan(address: entry.address, create: record, record: nil, retire: state.retire, content: .documentCreate(record: record, content: DocumentBaseContent(version: state.definition!.version, value: prepared.value.objectValue!)), tracker: tracker, prepared: prepared, loaded: nil, definition: state.definition)
                 case .loaded(let loaded):
                     let prepared = state.prepared!
                     let content: StorageWrite?
-                    if loaded.storedVersion < entry.definition.version { content = .documentChange(id: loaded.record.id, content: .base(version: entry.definition.version, value: prepared.value.objectValue!)) }
-                    else if !prepared.ops.isEmpty { content = .documentChange(id: loaded.record.id, content: .delta(version: entry.definition.version, ops: prepared.ops)) }
+                    if loaded.storedVersion < state.definition!.version { content = .documentChange(id: loaded.record.id, content: .base(version: state.definition!.version, value: prepared.value.objectValue!)) }
+                    else if !prepared.ops.isEmpty { content = .documentChange(id: loaded.record.id, content: .delta(version: state.definition!.version, ops: prepared.ops)) }
                     else { content = nil }
-                    return DocumentPlan(address: entry.address, create: nil, record: loaded.record, retire: state.retire, content: content, tracker: loaded.tracker, prepared: prepared, loaded: loaded, definition: entry.definition)
+                    return DocumentPlan(address: entry.address, create: nil, record: loaded.record, retire: state.retire, content: content, tracker: loaded.tracker, prepared: prepared, loaded: loaded, definition: state.definition)
                 }
             }
             if let plan { plans.append(plan) }
         }
+        try tx.rejectForkSourceWrites(plans.map { ($0.id, $0.scope, $0.fork, $0.content != nil || $0.retire) })
         let terminal = tx.terminalTaskIDs()
         var retiring = Set<DocumentID>()
         for index in plans.indices {
@@ -249,6 +299,8 @@ final class TransactionDocuments: Sendable {
             if plan.retire {
                 if plan.record != nil { session.evictDocument(plan.address, recordID: record.id) }
                 result.append(DocumentCommitChange(record: record, conversationId: plan.conversationID, version: nil, value: nil, ops: []))
+            } else if case .documentCopy(_, let source, _) = plan.content {
+                result.append(DocumentCommitChange(record: record, conversationId: plan.conversationID, source: source))
             } else if plan.content != nil, let prepared = plan.prepared, let definition = plan.definition {
                 result.append(DocumentCommitChange(record: record, conversationId: plan.conversationID, version: definition.version, value: prepared.value.objectValue!, ops: plan.loaded == nil ? [] : prepared.ops))
             }

@@ -4,6 +4,8 @@ import Synchronization
 internal struct TransactionTableState: Sendable {
     var writes: [StorageWrite] = []
     var createdConversationIDs: Set<ConversationID> = []
+    var forkSourceConversationIDs: Set<ConversationID> = []
+    var forkSourceDocumentIDs: Set<DocumentID> = []
     var tasks: [TaskID: TransactionTask] = [:]
     var taskOrder: [TaskID] = []
     var submissions: [SubmissionID: SubmissionRecord] = [:]
@@ -106,13 +108,14 @@ extension Transaction {
             owner = ConversationOwner(conversationId: task.conversationId, taskId: ownerId)
         }
         if let parent {
-            guard let entry = try await storage.entry(parent.conversationId, id: parent.at, context: context) else {
-                throw SessionError.message("Entry \(parent.at.rawValue) is not visible from conversation \(parent.conversationId.rawValue)")
-            }
-            // D6: Copying documents in a fork is not supported in this slice.
-            try await rejectForkCopies(scope: .conversation(conversationId: entry.entry.conversationId), at: .sequence(entry.commitSeq), policy: .asOf)
-            try await rejectForkCopies(scope: .conversation(conversationId: parent.conversationId), at: .current, policy: .current)
+            let copies = try await prepareForkDocumentCopies(storage: storage, parentConversationId: parent.conversationId,
+                                                            at: parent.at, childConversationId: id, context: context)
             try assertOpen()
+            documents.stageForkCopies(copies)
+            tableState.withLock { state in
+                state.forkSourceConversationIDs.insert(parent.conversationId)
+                state.forkSourceDocumentIDs.formUnion(copies.map { $0.source.id })
+            }
         }
         let record = ConversationRecord(id: id, parent: parent, owner: owner)
         tableState.withLock { state in
@@ -124,16 +127,17 @@ extension Transaction {
         return record
     }
 
-    private func rejectForkCopies(scope: DocumentScope, at: DocumentPoint, policy: DocumentFork) async throws {
-        var cursor: Cursor?
-        repeat {
-            let page = try await storage.scanDocuments(DocumentQuery(scope: scope, at: at), limit: 256, cursor: cursor, context: context)
-            try assertOpen()
-            guard !page.items.contains(where: { $0.fork == policy }) else {
-                throw SessionError.message("Fork document copies are not supported yet (D6)")
+    internal func rejectForkSourceWrites(_ plans: [(DocumentID, DocumentScope, DocumentFork?, Bool)]) throws {
+        let snapshot = tableState.withLock { $0 }
+        for (id, scope, fork, changes) in plans where changes {
+            if snapshot.forkSourceDocumentIDs.contains(id) {
+                throw SessionError.message("Cannot change fork source document \(id.rawValue) in the fork transaction")
             }
-            cursor = page.next
-        } while cursor != nil
+            if case .conversation(let conversation, _) = scope,
+               snapshot.forkSourceConversationIDs.contains(conversation), fork == .current {
+                throw SessionError.message("Cannot fork conversation \(conversation.rawValue) while changing its current-policy documents")
+            }
+        }
     }
 
     public func appendEntry(_ conversationId: ConversationID, value: EntryDraft) async throws -> EntryRecord {

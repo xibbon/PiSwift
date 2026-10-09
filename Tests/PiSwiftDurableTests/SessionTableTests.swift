@@ -326,7 +326,7 @@ struct SessionTableTests {
         }
     }
 
-    @Test func SessionTablesForkEdgeAndD6Boundary() async throws {
+    @Test func SessionTablesForkEdgeAndDocumentCopy() async throws {
         let h = try await openTestSession()
         let conversation = try await createConversation(h.session)
         let entry = try await h.session.commit({ tx in try await tx.appendEntry(conversation, value: EntryDraft(kind: "note")) }, context: .background)
@@ -335,10 +335,12 @@ struct SessionTableTests {
         let current = try ConversationDocToken<JSONObject>(kind: "copy", version: 1, fork: .current, initial: { [:] })
         try await h.session.commit({ tx in _ = try await tx.doc(current, conversationId: conversation) }, context: .background)
         let count = await h.storage.commits.count
-        await tableError("Fork document copies are not supported yet (D6)") {
-            _ = try await h.session.commit({ tx in try await tx.forkConversation(conversation, at: entry.id, ownership: .ownerless()) }, context: .background)
-        }
-        #expect(await h.storage.commits.count == count)
+        let copiedChild = try await h.session.commit({ tx in
+            try await tx.forkConversation(conversation, at: entry.id, ownership: .ownerless())
+        }, context: .background)
+        #expect(try await h.session.snapshot(current, conversationId: copiedChild.id, context: .background) == [:])
+        #expect(await h.storage.commits.count == count + 1)
+        #expect(documentCopyChanges(h.publications.values.last!).count == 1)
     }
 
     @Test func SessionTablesPendingConversationSuccess() async throws {
