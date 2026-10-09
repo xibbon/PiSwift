@@ -41,7 +41,7 @@ public enum ToolSelection: Sendable, Equatable, Codable {
     private enum Keys: String, CodingKey { case remove }
 }
 
-/// The pi.agent document value. D4/H5 adds its rewindable, asOf document token.
+/// The pi.agent document value.
 public struct AgentState: Sendable, Equatable, Codable {
     public var model: ModelRef?
     public var thinkingLevel: ModelThinkingLevel?
@@ -55,6 +55,47 @@ public struct AgentState: Sendable, Equatable, Codable {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
         self.tools = tools; self.instructions = instructions; self.cwd = cwd
     }
+}
+
+/// A fork uses the agent at its fork entry.
+public let AgentDoc = try! RewindableConversationDocToken<AgentState>(
+    kind: "pi.agent", version: 1, fork: .asOf, initial: { AgentState() },
+    checkpointWhen: { _, _, _ in true }
+)
+
+public func configure(tx: Transaction, conversationId: ConversationID, change: AgentChange) async throws {
+    let draft = try await tx.doc(AgentDoc, conversationId: conversationId)
+    var state = AgentState()
+    applyAgentChange(&state, change)
+    let value = try documentObject(state)
+    try applyAgentField(draft, key: "model", change: change.model, value: value)
+    try applyAgentField(draft, key: "thinkingLevel", change: change.thinkingLevel, value: value)
+    try applyAgentField(draft, key: "extensions", change: change.extensions, value: value)
+    try applyAgentField(draft, key: "tools", change: change.tools, value: value)
+    try applyAgentField(draft, key: "instructions", change: change.instructions, value: value)
+    try applyAgentField(draft, key: "cwd", change: change.cwd, value: value)
+}
+
+private func applyAgentField<Value>(_ draft: JSONDraft, key: String, change: AgentFieldChange<Value>, value: JSONObject) throws {
+    switch change {
+    case .unchanged: return
+    case .clear: try draft.remove(key)
+    case .set: if let next = value[key] { try draft.set(key, next) }
+    }
+}
+
+/// A new task-owned conversation starts with its owner's stored agent.
+public func createAgent(tx: Transaction, conversation: ConversationRecord) async throws {
+    guard conversation.parent == nil else { return }
+    let draft = try await tx.doc(AgentDoc, conversationId: conversation.id)
+    guard let owner = conversation.owner else { return }
+    let source = try await tx.doc(AgentDoc, conversationId: owner.conversationId)
+    try assignAgentDocument(draft, value: source.snapshot().objectValue!)
+}
+
+func assignAgentDocument(_ draft: JSONDraft, value: JSONObject) throws {
+    for key in try draft.keys() where value[key] == nil { try draft.remove(key) }
+    for (key, item) in value { try draft.set(key, item) }
 }
 
 /// Source undefined leaves a field alone; null clears it; a value replaces it.

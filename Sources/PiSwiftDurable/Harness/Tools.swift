@@ -35,8 +35,9 @@ public struct ToolExecutionResult: Sendable {
 
 public enum ToolOutputChunk: Sendable { case text(String), bytes(Data) }
 
-/// The H3 tool operations. H5 adds Session commits, document watches and task operations.
+/// Tool operations bound to a task invocation.
 public struct ToolExecutionApi: Sendable {
+    public var runtime: TaskRuntime?
     public var taskId: TaskID
     public var conversationId: ConversationID
     public var callId: String
@@ -53,12 +54,13 @@ public struct ToolExecutionApi: Sendable {
     public var memo: @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue?
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                 models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
-                outputWindow: ShellOutputWindow? = nil,
+                outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
                 agent: @escaping @Sendable (PiSwiftChord.Context) async throws -> Agent,
                 output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void = { _, _ in },
                 diagnostic: @escaping @Sendable (ToolDiagnostic) throws -> Void = { _ in },
                 details: @escaping @Sendable (JSONValue, PiSwiftChord.Context) async throws -> Void = { _, _ in },
                 memo: @escaping @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue? = { _, _, _ in nil }) {
+        self.runtime = runtime
         self.taskId = taskId; self.conversationId = conversationId; self.callId = callId; self.registry = registry
         self.models = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
         self.output = output; self.diagnostic = diagnostic; self.details = details; self.memo = memo

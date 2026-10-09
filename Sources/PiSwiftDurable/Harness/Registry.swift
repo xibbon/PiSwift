@@ -8,6 +8,7 @@ public enum HarnessDefinitionError: Error, Sendable, Equatable, CustomStringConv
     case reservedSectionKey(String)
     case renamedWrapper(target: String, name: String)
     case argumentsMustBeObject(String)
+    case duplicateTask(extensionName: String, name: String)
     public var description: String {
         switch self {
         case let .duplicateTool(extensionName, name): return "Extension \(extensionName) has two tools named \(name)"
@@ -16,6 +17,7 @@ public enum HarnessDefinitionError: Error, Sendable, Equatable, CustomStringConv
         case let .reservedSectionKey(key): return "Section key \(key) is reserved for the agent's instructions"
         case let .renamedWrapper(target, name): return "Wrapper renamed \(target) to \(name)"
         case let .argumentsMustBeObject(name): return "Arguments of tool \(name) must be an object"
+        case let .duplicateTask(extensionName, name): return "Task \(name) of extension \(extensionName) is already installed"
         }
     }
 }
@@ -31,7 +33,8 @@ public struct RegistrySnapshot: Sendable {
     public func sections() -> [(extension: Extension, section: PromptSection)] {
         extensions.flatMap { item in item.sections.map { (item, $0) } }
     }
-    // H5 adds built-in and installed task lookup once task kinds are available.
+    public func tasks() -> [AnyTaskDefinition] { AnyTaskDefinition.builtins + extensions.flatMap(\.tasks) }
+    public func task(name: String) -> AnyTaskDefinition? { tasks().first { harnessNamesEqual($0.name, name) } }
 }
 
 public protocol RegistryReader: Sendable {
@@ -55,10 +58,11 @@ public final class Registry: RegistryReader, Sendable {
     }
     public func install(_ extensionValue: Extension) throws {
         try validateExtension(extensionValue)
-        let callbacks = state.withLock { state in
+        let callbacks = try state.withLock { state in
             var installed = state.current.installed()
             if let index = installed.firstIndex(where: { harnessNamesEqual($0.name, extensionValue.name) }) { installed[index] = extensionValue }
             else { installed.append(extensionValue) }
+            try validateTasks(installed)
             state.current = RegistrySnapshot(extensions: installed)
             return state.listeners.map(\.1)
         }
@@ -90,5 +94,16 @@ private func validateExtension(_ value: Extension) throws {
         }) else { throw HarnessDefinitionError.invalidSectionKey(section.key) }
         guard section.key != instructionsKey else { throw HarnessDefinitionError.reservedSectionKey(section.key) }
         guard sections.insert(section.key).inserted else { throw HarnessDefinitionError.duplicateSection(extensionName: value.name, key: section.key) }
+    }
+}
+
+private func validateTasks(_ extensions: [Extension]) throws {
+    var names = Set(AnyTaskDefinition.builtins.map { Array($0.name.utf16) })
+    for item in extensions {
+        for task in item.tasks {
+            guard names.insert(Array(task.name.utf16)).inserted else {
+                throw HarnessDefinitionError.duplicateTask(extensionName: item.name, name: task.name)
+            }
+        }
     }
 }

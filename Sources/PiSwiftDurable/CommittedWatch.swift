@@ -73,6 +73,9 @@ public final class CommittedWatch<Value: Sendable>: Sendable {
         return await closed
     }
 
+    /// End task watches before the invocation signal is aborted.
+    internal func stopForInvocation() { terminate(.stopped) }
+
     /// Await the terminal condition. An in-flight listener can finish afterwards.
     public var closed: WatchEnd {
         get async {

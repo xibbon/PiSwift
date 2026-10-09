@@ -12,14 +12,22 @@ public enum QueueMode: String, Sendable, Codable { case all; case oneAtATime = "
 public enum ToolReplay: String, Sendable, Codable { case safe, unsafe }
 public enum CompactionReason: String, Sendable, Codable { case manual, threshold, overflow }
 
-/// Raw committed document reads. H5 supplies typed adapters after D4 defines document tokens.
+/// Committed document reads with typed token adapters.
 public struct HarnessDocumentReader: Sendable {
+    internal let typedRead: (@Sendable (DocumentDefinition, DocumentAddress, PiSwiftChord.Context) async throws -> JSONObject?)?
+    internal let typedHistoricalRead: (@Sendable (DocumentDefinition, DocumentAddress, EntryID, PiSwiftChord.Context) async throws -> JSONObject?)?
     public var snapshot: @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject?
     public var snapshotAsOf: @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject?
     public init(
         snapshot: @escaping @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject? = { _, _, _ in nil },
         snapshotAsOf: @escaping @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject? = { _, _, _, _ in nil }
-    ) { self.snapshot = snapshot; self.snapshotAsOf = snapshotAsOf }
+    ) { self.snapshot = snapshot; self.snapshotAsOf = snapshotAsOf; typedRead = nil; typedHistoricalRead = nil }
+    internal init(snapshot: @escaping @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject?,
+                  snapshotAsOf: @escaping @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject?,
+                  typedRead: @escaping @Sendable (DocumentDefinition, DocumentAddress, PiSwiftChord.Context) async throws -> JSONObject?,
+                  typedHistoricalRead: @escaping @Sendable (DocumentDefinition, DocumentAddress, EntryID, PiSwiftChord.Context) async throws -> JSONObject?) {
+        self.snapshot = snapshot; self.snapshotAsOf = snapshotAsOf; self.typedRead = typedRead; self.typedHistoricalRead = typedHistoricalRead
+    }
 }
 
 public struct PromptInput: Sendable {
@@ -66,10 +74,11 @@ public struct Extension: Sendable {
     public var sections: [PromptSection]
     public var hooks: [HookRegistration]
     public var wraps: [Wrap]
-    // H5 adds task definitions after D4 supplies task kinds.
+    public var tasks: [AnyTaskDefinition]
     public init(name: String, tools: [ToolRegistration] = [], sections: [PromptSection] = [],
-                hooks: [HookRegistration] = [], wraps: [Wrap] = []) {
+                hooks: [HookRegistration] = [], wraps: [Wrap] = [], tasks: [AnyTaskDefinition] = []) {
         self.name = name; self.tools = tools; self.sections = sections; self.hooks = hooks; self.wraps = wraps
+        self.tasks = tasks
     }
 }
 public func defineExtension(_ value: Extension) -> Extension { value }
