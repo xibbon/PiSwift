@@ -77,14 +77,13 @@ public struct AnyTaskDefinition: Sendable {
     public let identity: UUID
     public let name: String
     public let version: Double
-    public let isPlaceholder: Bool
     public let initial: @Sendable (JSONValue) throws -> JSONValue
     public let migrate: (@Sendable (JSONValue, JSONValue, Double) throws -> (input: JSONValue, checkpoint: JSONValue))?
     public let run: @Sendable (TaskRecord, TaskRuntime, PiSwiftChord.Context) async throws -> Void
     public let abort: @Sendable (TaskRecord, TaskRuntime, PiSwiftChord.Context) async throws -> Void
 
     public init<Input, Checkpoint, Result, Hooks>(_ definition: TaskDefinition<Input, Checkpoint, Result, Hooks>) {
-        identity = definition.identity; name = definition.name; version = definition.version; isPlaceholder = false
+        identity = definition.identity; name = definition.name; version = definition.version
         initial = { try encodeTaskCheckpoint(definition.kind.initial($0.decode(Input.self))) }
         if let migrate = definition.migrate {
             self.migrate = { input, checkpoint, version in
@@ -96,13 +95,11 @@ public struct AnyTaskDefinition: Sendable {
         abort = { record, runtime, context in try await definition.abort(RunningTask(record), runtime, context) }
     }
 
-    private init(placeholder name: String) {
-        identity = UUID(); self.name = name; version = 1; isPlaceholder = true; migrate = nil
-        initial = { _ in throw TaskDefinitionError("Task \(name) has no definition") }
-        run = { _, _, _ in throw TaskDefinitionError("Task \(name) has no definition") }
-        abort = { _, _, _ in throw TaskDefinitionError("Task \(name) has no definition") }
-    }
-    public static let builtins: [AnyTaskDefinition] = ["pi.generation", "pi.tool", "pi.compaction"].map { AnyTaskDefinition(placeholder: $0) }
+    /// The built-in run tasks every registry holds, in upstream order (`registry.ts:10`).
+    public static let builtins: [AnyTaskDefinition] = [
+        generationTask.eraseToAnyTaskDefinition(), toolTask.eraseToAnyTaskDefinition(),
+        compactionTask.eraseToAnyTaskDefinition(),
+    ]
 }
 
 func encodeTaskCheckpoint<Checkpoint: TaskCheckpoint>(_ checkpoint: Checkpoint) throws -> JSONValue {

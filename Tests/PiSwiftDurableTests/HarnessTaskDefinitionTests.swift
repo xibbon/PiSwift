@@ -56,7 +56,8 @@ private struct DefinitionAgentHooks: SessionHooks {
         let registry = Registry()
         let before = registry.snapshot()
         #expect(before.tasks().map(\.name) == ["pi.generation", "pi.tool", "pi.compaction"])
-        #expect(before.tasks().allSatisfy { $0.isPlaceholder })
+        // All built-ins are real since H7/H8 (upstream registry.ts:10 installs them in every registry).
+        #expect(before.tasks().map(\.identity) == AnyTaskDefinition.builtins.map(\.identity))
         let definition = definitionTask()
         try registry.install(Extension(name: "user", tasks: [AnyTaskDefinition(definition)]))
         let published = registry.snapshot()

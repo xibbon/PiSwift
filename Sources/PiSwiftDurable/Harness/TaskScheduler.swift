@@ -367,7 +367,7 @@ internal final class TaskScheduler: Sendable {
         if !held && (outcome.status == "faulted" || outcome.status == "orphaned") { try await settleOutcome(tx, record, outcome) }
     }
     func fit(_ record: TaskRecord, definition: AnyTaskDefinition?) -> (reason: String?, error: (any Error)?, migrates: Bool) {
-        guard let definition, !definition.isPlaceholder else { return ("missing_task", nil, false) }
+        guard let definition else { return ("missing_task", nil, false) }
         if definition.version < record.version { return ("task_too_old", nil, false) }
         if definition.version == record.version { return (nil, nil, false) }
         if let failed = state.withLock({ $0.failedMigrations[record.id] }), failed.0 == definition.identity { return ("migration_failed", failed.1, false) }
@@ -476,7 +476,7 @@ internal final class TaskScheduler: Sendable {
                 let old = phase.state.withLock { $0.definition }
                 phase.state.withLock { $0.snapshot = snapshot }
                 if next?.identity != old.identity {
-                    if let next, !next.isPlaceholder, next.version == current.version || (next.version > current.version && next.migrate != nil) {
+                    if let next, next.version == current.version || (next.version > current.version && next.migrate != nil) {
                         try tx.setTask(current.replacing(state: .pending(checkpoint: current.state.checkpoint!))); return .end
                     }
                     let shouldReport = phase.state.withLock { state -> Bool in
