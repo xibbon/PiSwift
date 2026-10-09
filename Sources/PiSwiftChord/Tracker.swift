@@ -25,6 +25,30 @@ public enum TrackerError: Error, Sendable, Equatable, CustomStringConvertible {
     }
 }
 
+/// A shared lifetime for draft handles from one or more changes.
+/// Revocation waits for draft operations that are already in progress.
+public final class DraftLifetime: Sendable {
+    private let lock = Mutex(false)
+    private let onAccess: (@Sendable () -> Void)?
+
+    public init() { onAccess = nil }
+
+    // Tests can hold a real draft operation after lifetime admission.
+    init(onAccess: @escaping @Sendable () -> Void) { self.onAccess = onAccess }
+
+    public var isRevoked: Bool { lock.withLock { $0 } }
+
+    public func revoke() { lock.withLock { $0 = true } }
+
+    fileprivate func withAccess<Result>(_ body: () throws -> Result) throws -> Result {
+        try lock.withLock { revoked in
+            guard !revoked else { throw TrackerError.settled }
+            onAccess?()
+            return try body()
+        }
+    }
+}
+
 private final class TrackerOwner: Sendable {}
 private enum TrackerStatus { case open, prepared, consumed, aborted, stale }
 private struct TrackerWeakContext { weak var value: DraftContext? }
@@ -42,10 +66,10 @@ public final class Tracker: Sendable {
     public var value: JSONValue { lock.withLock { $0.value } }
     public var revision: Int { lock.withLock { $0.revision } }
 
-    public func beginChange() -> Change {
+    public func beginChange(lifetime: DraftLifetime? = nil) -> Change {
         lock.withLock { state in
             state.contexts.removeAll { $0.value == nil }
-            let context = DraftContext(owner: owner, base: state.value, revision: state.revision)
+            let context = DraftContext(owner: owner, base: state.value, revision: state.revision, lifetime: lifetime)
             state.contexts.append(TrackerWeakContext(value: context))
             return Change(context)
         }
@@ -99,7 +123,7 @@ public final class Change: Sendable {
     fileprivate init(_ context: DraftContext) { self.context = context }
     public var state: JSONDraft {
         get throws {
-            try context.lock.withLock { draft in
+            try context.withAccess { draft in
                 try draft.readable()
                 return JSONDraft(context, node: 0)
             }
@@ -214,9 +238,17 @@ private final class DraftContext: Sendable {
     let owner: TrackerOwner
     let baseRevision: Int
     let lock: Mutex<DraftState>
-    init(owner: TrackerOwner, base: JSONValue, revision: Int) {
-        self.owner = owner; self.baseRevision = revision
+    private let lifetime: DraftLifetime?
+    init(owner: TrackerOwner, base: JSONValue, revision: Int, lifetime: DraftLifetime? = nil) {
+        self.owner = owner; self.baseRevision = revision; self.lifetime = lifetime
         self.lock = Mutex(DraftState(base: base, nodes: [DraftNode(base)]))
+    }
+    // The lifetime lock must be acquired before the change lock.
+    func withAccess<Result: Sendable>(_ body: (inout sending DraftState) throws -> Result) throws -> Result {
+        if let lifetime {
+            return try lifetime.withAccess { try lock.withLock { draft in try body(&draft) } }
+        }
+        return try lock.withLock { draft in try body(&draft) }
     }
 }
 private struct DraftState {
@@ -396,20 +428,20 @@ private func isContainer(_ value: JSONValue) -> Bool {
 }
 
 /// A handle to one object or array in an open change.
-/// All methods use the shared change lock. Reads return value snapshots.
+/// All methods use the lifetime lock, then the change lock. Reads return value snapshots.
 public final class JSONDraft: Sendable {
     public enum Kind: Sendable { case object, array }
     private let context: DraftContext
     private let node: Int
     fileprivate init(_ context: DraftContext, node: Int) { self.context = context; self.node = node }
     public var kind: Kind {
-        get throws { try context.lock.withLock { try $0.readable(); return $0.nodes[node].isArray ? .array : .object } }
+        get throws { try context.withAccess { try $0.readable(); return $0.nodes[node].isArray ? .array : .object } }
     }
     public func snapshot() throws -> JSONValue {
-        try context.lock.withLock { try $0.readable(); return $0.snapshot(node) }
+        try context.withAccess { try $0.readable(); return $0.snapshot(node) }
     }
     public func get(_ key: String) throws -> JSONValue? {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             if draft.nodes[node].isArray {
                 if key == "length" { draft.ensureSlots(node); return .number(Double(draft.nodes[node].count)) }
@@ -420,14 +452,14 @@ public final class JSONDraft: Sendable {
         }
     }
     public func get(_ index: Int) throws -> JSONValue? {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             if !draft.nodes[node].isArray { return draft.objectRef(node, .key(String(index))).map { draft.snapshotRef($0) } }
             return draft.arrayValue(node, index)
         }
     }
     public func child(_ key: String) throws -> JSONDraft? {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             let segment: Delta.PathSegment
             if draft.nodes[node].isArray {
@@ -438,14 +470,14 @@ public final class JSONDraft: Sendable {
         }
     }
     public func child(_ index: Int) throws -> JSONDraft? {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             let key: Delta.PathSegment = draft.nodes[node].isArray ? .index(index) : .key(String(index))
             return draft.child(node, key: key).map { JSONDraft(context, node: $0) }
         }
     }
     public func keys() throws -> [String] {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             if !draft.nodes[node].isArray { return draft.objectKeys(node) }
             draft.ensureSlots(node)
@@ -453,7 +485,7 @@ public final class JSONDraft: Sendable {
         }
     }
     public func count() throws -> Int {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             if !draft.nodes[node].isArray { return draft.objectKeys(node).count }
             draft.ensureSlots(node)
@@ -461,7 +493,7 @@ public final class JSONDraft: Sendable {
         }
     }
     public func contains(_ key: String) throws -> Bool {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.readable()
             if !draft.nodes[node].isArray { return draft.objectRef(node, .key(key)) != nil }
             if key == "length" { return true }
@@ -471,7 +503,7 @@ public final class JSONDraft: Sendable {
         }
     }
     public func set(_ key: String, _ value: JSONValue) throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.writable()
             if draft.nodes[node].isArray {
                 if key == "length" {
@@ -485,14 +517,14 @@ public final class JSONDraft: Sendable {
         }
     }
     public func set(_ index: Int, _ value: JSONValue) throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.writable()
             if draft.nodes[node].isArray { try draft.setIndex(node, index, value) }
             else { try validatePlacement(value); draft.setObject(node, .key(String(index)), value) }
         }
     }
     public func remove(_ key: String) throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.writable()
             if draft.nodes[node].isArray { throw TrackerError.holes }
             draft.removeObject(node, .key(key))
@@ -500,14 +532,14 @@ public final class JSONDraft: Sendable {
     }
     public func append(_ value: JSONValue) throws { try append(contentsOf: [value]) }
     public func append(contentsOf values: [JSONValue]) throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             try validatePlacements(values)
             _ = draft.replaceRange(node, start: draft.nodes[node].count, remove: 0, insert: values)
         }
     }
     public func popLast() throws -> JSONValue? {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             let count = draft.nodes[node].count
             if count == 0 { return nil }
@@ -515,21 +547,21 @@ public final class JSONDraft: Sendable {
         }
     }
     public func popFirst() throws -> JSONValue? {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             if draft.nodes[node].count == 0 { return nil }
             return draft.replaceRange(node, start: 0, remove: 1, insert: []).first
         }
     }
     public func prepend(contentsOf values: [JSONValue]) throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             try validatePlacements(values)
             _ = draft.replaceRange(node, start: 0, remove: 0, insert: values)
         }
     }
     @discardableResult public func splice(_ start: Int, deleteCount: Int? = nil, insert: [JSONValue] = []) throws -> [JSONValue] {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             let count = draft.nodes[node].count
             let at = start < 0 ? (start < -count ? 0 : count + start) : min(start, count)
@@ -539,7 +571,7 @@ public final class JSONDraft: Sendable {
         }
     }
     public func reverse() throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             let target = draft.nodes[node]
             if target.count < 2 { return }
@@ -550,7 +582,7 @@ public final class JSONDraft: Sendable {
         }
     }
     public func setCount(_ count: Int) throws {
-        try context.lock.withLock { draft in
+        try context.withAccess { draft in
             try draft.arrayWritable(node)
             try draft.setCount(node, count)
         }
