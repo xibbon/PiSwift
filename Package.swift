@@ -77,6 +77,11 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .target(
+            name: "PiSwiftDurableTesting",
+            dependencies: ["PiSwiftDurable", "PiSwiftChord"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
             name: "PiSwiftChord",
             path: "Sources/PiSwiftChord",
             swiftSettings: strictConcurrencySettings
@@ -156,7 +161,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PiSwiftDurableTests",
-            dependencies: ["PiSwiftDurable", "PiSwiftChord", "PiSwiftAI"],
+            dependencies: ["PiSwiftDurable", "PiSwiftDurableTesting", "PiSwiftChord", "PiSwiftAI"],
             resources: [.copy("Fixtures")],
             swiftSettings: strictConcurrencySettings
         ),
