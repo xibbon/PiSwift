@@ -32,12 +32,16 @@ public struct JsonlStoragePoisonedError: Error, Sendable, CustomStringConvertibl
     public init(cause: any Error) { self.cause = cause }
 }
 
-/// A file-system operation failed.
-internal struct JsonlFileError: Error, Sendable, CustomStringConvertible {
-    internal let message: String
-    internal let cause: FileError
-    internal var description: String { message }
-    internal init(action: String, cause: FileError) {
+/// A file-system operation of the JSONL storage failed.
+public struct JsonlFileError: Error, Sendable, CustomStringConvertible {
+    /// The error message, with the failed action and the file error's message.
+    public let message: String
+    /// The file error from the environment's file system.
+    public let cause: FileError
+    /// The error message for display.
+    public var description: String { message }
+    /// Creates an error for a failed action, such as "append to main.jsonl".
+    public init(action: String, cause: FileError) {
         self.message = "JSONL \(action) failed: \(cause.message)"; self.cause = cause
     }
 }

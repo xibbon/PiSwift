@@ -24,11 +24,14 @@ public struct ReadToolDetails: Sendable, Codable, Equatable {
     public init(truncation: JSONValue? = nil) { self.truncation = truncation }
 }
 
-/// A read failure that includes text for the caller.
-internal struct ReadToolError: Error, Sendable, CustomStringConvertible {
-    internal let message: String
-    internal var description: String { message }
-    internal init(_ message: String) { self.message = message }
+/// A read failure that the read tool reports to the model as an error result.
+public struct ReadToolError: Error, Sendable, CustomStringConvertible {
+    /// The error message.
+    public let message: String
+    /// The error message for display.
+    public var description: String { message }
+    /// Creates a read error with a message.
+    public init(_ message: String) { self.message = message }
 }
 
 /// Creates a tool that reads text with bounded memory and reports continuation in diagnostics.
