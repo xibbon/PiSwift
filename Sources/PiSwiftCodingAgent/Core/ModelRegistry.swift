@@ -1413,6 +1413,16 @@ public final class ModelRegistry: Sendable {
         return output
     }
 
+    /// Dispatches a physical model request with authentication and options already resolved.
+    /// The caller must apply `resolveModelRequest` and merge its auth into the options first.
+    /// This method does not resolve authentication or route virtual models.
+    public func streamSimplePrepared(model: Model, context: Context, options: SimpleStreamOptions) throws -> AssistantMessageEventStream {
+        if let customStream = extensionStream(for: model) {
+            return customStream(model, normalizeContext(context), options)
+        }
+        return try PiSwiftAI.streamSimple(model: model, context: context, options: options)
+    }
+
     private func extensionStream(for model: Model) -> ApiStreamSimpleFunction? {
         state.withLock { state in
             for source in state.dynamicSourceOrder.reversed() {
