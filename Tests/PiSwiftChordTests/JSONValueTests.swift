@@ -158,4 +158,12 @@ import PiSwiftChord
         #expect(throws: JSONValueError.self) { try JSONValue(jsonData: Data([0x22, 0xff, 0x22])) }
         #expect(throws: JSONValueError.self) { try JSONValue(jsonData: Data([0xef, 0xbb, 0xbf, 0x31])) }
     }
+
+    @Test func keepsByteOrderMarksInsideStrings() throws {
+        // A raw U+FEFF at the start of a string and after an escape stays, as in JSON.parse.
+        let bom: [UInt8] = [0xef, 0xbb, 0xbf]
+        let text = [0x22] + bom + [0x61, 0x5c, 0x6e] + bom + [0x62, 0x22]
+        #expect(try JSONValue(jsonData: Data(text)) == .string("\u{FEFF}a\n\u{FEFF}b"))
+        #expect(try JSONValue(jsonText: "[\"\u{FEFF}\"]") == .array([.string("\u{FEFF}")]))
+    }
 }

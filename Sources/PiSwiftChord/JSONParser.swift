@@ -112,7 +112,8 @@ private struct JSONParser {
             if byte != 92 {
                 let start = index
                 while let next = current, next >= 32, next != 34, next != 92 { index += 1 }
-                guard let segment = String(bytes: bytes[start..<index], encoding: .utf8) else {
+                // Foundation's String(bytes:encoding:) drops a leading U+FEFF; JSON.parse keeps it.
+                guard let segment = String(validating: bytes[start..<index], as: UTF8.self) else {
                     throw JSONValueError.invalidJSON(offset: start, reason: "Invalid UTF-8 in string")
                 }
                 result += segment
