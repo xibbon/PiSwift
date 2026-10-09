@@ -41,6 +41,7 @@ internal final class RuntimePhase: Sendable {
 
 /// Every decision that changes a task runs in one callback on the Session line.
 internal final class TaskScheduler: Sendable {
+    internal let toolServices = ToolServices()
     let session: Session
     let storage: any DurableStorage
     let registry: any RegistryReader

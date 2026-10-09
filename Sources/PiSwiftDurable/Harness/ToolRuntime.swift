@@ -3,16 +3,25 @@ import PiSwiftChord
 extension ToolExecutionApi {
     internal func taskRuntime() throws -> TaskRuntime {
         guard let runtime else { throw TaskDefinitionError("Tool execution API has no task runtime") }
+        try runtime.invocation.check()
         return runtime
     }
     public func commit<T>(_ change: (Transaction) async throws -> T, context: PiSwiftChord.Context) async throws -> T {
         try await withTaskCancellationContext(context) { context in
             let runtime = try taskRuntime()
-            return try await runtime.scheduler.gated(runtime.invocation, context: context) { tx, _ in try await change(tx) }
+            return try await runtime.scheduler.gated(runtime.invocation, context: context) { tx, _ in
+                return try await change(tx)
+            }
         }
     }
     public func createTask<Input, Checkpoint>(_ task: TaskKind<Input, Checkpoint>, input: Input,
                                              options: TaskOptions, context: PiSwiftChord.Context) async throws -> TaskID {
+        try await commit({ tx in try await tx.createTask(task, input: input, options: options) }, context: context)
+    }
+    public func createTask<Input, Checkpoint, Result, Hooks>(
+        _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input,
+        options: TaskOptions, context: PiSwiftChord.Context
+    ) async throws -> TaskID {
         try await commit({ tx in try await tx.createTask(task, input: input, options: options) }, context: context)
     }
     public func getTask(id: TaskID, context: PiSwiftChord.Context) async throws -> TaskRecord? {

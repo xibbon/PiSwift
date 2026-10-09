@@ -20,7 +20,8 @@ public struct ToolDiagnostic: Sendable, Equatable, Codable {
     }
 }
 public struct ToolExecutionResult: Sendable {
-    public var content: [ContentBlock]?
+    public var content: [ContentBlock]? { didSet { contentIdentity = UUID() } }
+    internal var contentIdentity = UUID()
     public var isError: Bool?
     public var details: JSONValue?
     public var diagnostics: [ToolDiagnostic]?
@@ -37,6 +38,7 @@ public enum ToolOutputChunk: Sendable { case text(String), bytes(Data) }
 
 /// Tool operations bound to a task invocation.
 public struct ToolExecutionApi: Sendable {
+    internal var pendingDetailsCount: @Sendable () -> Int = { 0 }
     public var runtime: TaskRuntime?
     public var taskId: TaskID
     public var conversationId: ConversationID
@@ -65,6 +67,28 @@ public struct ToolExecutionApi: Sendable {
         self.models = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
         self.output = output; self.diagnostic = diagnostic; self.details = details; self.memo = memo
     }
+    internal init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
+                  models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
+                  outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime,
+                  lifetime: ToolInvocationLifetime,
+                  agent: @escaping @Sendable (PiSwiftChord.Context) async throws -> Agent,
+                  output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void,
+                  diagnostic: @escaping @Sendable (ToolDiagnostic) throws -> Void,
+                  details: @escaping @Sendable (JSONValue, PiSwiftChord.Context) async throws -> Void,
+                  memo: @escaping @Sendable (String, JSONValue?, PiSwiftChord.Context) async throws -> JSONValue?) {
+        let check: @Sendable () throws -> Void = {
+            try runtime.invocation.check()
+        }
+        self.init(taskId: taskId, conversationId: conversationId, callId: callId, registry: registry,
+                  models: models, env: env, read: toolBoundReader(read, check: check),
+                  outputWindow: outputWindow, runtime: runtime,
+                  agent: { context in try check(); return try await agent(context) },
+                  output: { chunk, skipped in try lifetime.check(); try check(); try output(chunk, skipped) },
+                  diagnostic: { value in try lifetime.check(); try check(); try diagnostic(value) },
+                  details: { value, context in try lifetime.check(); try check(); try await details(value, context) },
+                  memo: { name, candidate, context in try check(); return try await memo(name, candidate, context) })
+    }
+
 }
 
 public struct ToolRegistration: Sendable {

@@ -6,8 +6,7 @@ public struct GenerationToolInput: Codable, Sendable {
     public var callId: String
     public init(assistant: EntryID, callId: String) { self.assistant = assistant; self.callId = callId }
 }
-/// H7 will supply the handler for this source-compatible initial record.
-let generationToolKind = TaskKind<GenerationToolInput, JSONObject>(name: "pi.tool", version: 1, initial: { _ in ["phase": .string("call")] })
+let generationToolKind = toolTask.kind
 func createGenerationTool(tx: Transaction, runtime: TaskRuntime, assistant: EntryID, callId: String) async throws -> TaskID {
     try await tx.createTask(generationToolKind, input: GenerationToolInput(assistant: assistant, callId: callId),
                            options: .init(ownership: .task(taskId: runtime.taskId)))

@@ -92,3 +92,35 @@ extension ToolExecutionApi {
         }
     }
 }
+
+/// Keeps direct reader operations within the task invocation's lifetime.
+internal func toolBoundReader(_ reader: HarnessDocumentReader,
+                              check: @escaping @Sendable () throws -> Void) -> HarnessDocumentReader {
+    let snapshot: @Sendable (String, ConversationID?, PiSwiftChord.Context) async throws -> JSONObject? = { kind, id, context in
+        try check()
+        let value = try await reader.snapshot(kind, id, context)
+        try check()
+        return value
+    }
+    let historical: @Sendable (String, ConversationID, EntryID, PiSwiftChord.Context) async throws -> JSONObject? = { kind, id, at, context in
+        try check()
+        let value = try await reader.snapshotAsOf(kind, id, at, context)
+        try check()
+        return value
+    }
+    guard let typedRead = reader.typedRead, let typedHistoricalRead = reader.typedHistoricalRead else {
+        return HarnessDocumentReader(snapshot: snapshot, snapshotAsOf: historical)
+    }
+    return HarnessDocumentReader(snapshot: snapshot, snapshotAsOf: historical,
+        typedRead: { definition, address, context in
+            try check()
+            let value = try await typedRead(definition, address, context)
+            try check()
+            return value
+        }, typedHistoricalRead: { definition, address, at, context in
+            try check()
+            let value = try await typedHistoricalRead(definition, address, at, context)
+            try check()
+            return value
+        })
+}

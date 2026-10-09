@@ -61,21 +61,22 @@ struct HarnessGenerationHooksTests {
         try await opened.harness.close(context: .background)
     }
     @Test func offeredToolsCreateBlockedOwnedRoundAndUnavailableCallsGetResults() async throws {
-        let tool = try ToolRegistration(name: "offered", description: "", parameters: [:]) { _, _, _ in ToolExecutionResult() }
+        let entered = HarnessChatSignal() // H7: the real tool task replaces the H5/H6 placeholder
+        let tool = try ToolRegistration(name: "offered", description: "", parameters: [:]) { _, _, context in entered.signal(); try await harnessToolAwaitAbort(context); return ToolExecutionResult() } // H7: the real tool task replaces the H5/H6 placeholder
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "tools", tools: [tool]))
         var message = chatAssistant("", reason: .toolUse)
         message.content = [.toolCall(ToolCall(id: "a", name: "offered", arguments: [:])), .toolCall(ToolCall(id: "b", name: "missing", arguments: [:]))]
         setup.models.setResponses([.message(message)])
         let opened = try await openChat(setup: setup), submission = try await generationSubmit(opened)
-        try await eventually { try await generationLive(opened)?.tools?.count == 2 }
+        await entered.wait() // H7: the real tool task replaces the H5/H6 placeholder
         let live = try #require(await generationLive(opened)), slots = try #require(live.tools), taskId = try #require(slots[0].taskId)
         let record = try #require(await opened.harness.getTask(id: taskId, context: .background))
         #expect(record.kind == "pi.tool" && record.input["callId"] == .string("a"))
         let ownerId = try #require(live.run?.taskId)
         #expect(record.owner == ownerId)
-        #expect(record.state.status == "pending")
-        if case .pending(let checkpoint, _) = record.state { #expect(checkpoint["phase"] == .string("call")) }
+        #expect(record.state.status == "running") // H7: the real tool task replaces the H5/H6 placeholder
+        if case .running(let checkpoint, _) = record.state { #expect(checkpoint["phase"] == .string("execute")) } // H7: the real tool task replaces the H5/H6 placeholder
         #expect(slots[1].status == .done && slots[1].taskId == nil)
         let entries = try await allEntries(opened.root)
         #expect(entries.map(\.kind) == ["pi.user", "pi.system", "pi.assistant", "pi.tool-result"])
@@ -85,20 +86,22 @@ struct HarnessGenerationHooksTests {
         try await opened.harness.close(context: .background)
     }
     @Test func sequentialRoundStartsOnlyFirstCallAndAbortsUnstartedCalls() async throws {
-        let tool = try ToolRegistration(name: "offered", description: "", parameters: [:]) { _, _, _ in ToolExecutionResult() }
+        let entered = HarnessChatSignal() // H7: the real tool task replaces the H5/H6 placeholder
+        let tool = try ToolRegistration(name: "offered", description: "", parameters: [:]) { _, _, context in entered.signal(); try await harnessToolAwaitAbort(context); return ToolExecutionResult() } // H7: the real tool task replaces the H5/H6 placeholder
         let setup = HarnessChatSetup(settings: .init(toolExecution: .sequential))
         try setup.registry.install(Extension(name: "tools", tools: [tool]))
         var message = chatAssistant("", reason: .toolUse)
         message.content = [.toolCall(ToolCall(id: "a", name: "offered", arguments: [:])), .toolCall(ToolCall(id: "b", name: "offered", arguments: [:]))]
         setup.models.setResponses([.message(message)])
         let opened = try await openChat(setup: setup), submission = try await generationSubmit(opened)
-        try await eventually { try await generationLive(opened)?.tools?.count == 2 }
+        await entered.wait() // H7: the real tool task replaces the H5/H6 placeholder
         let slots = try #require(await generationLive(opened)?.tools)
         #expect(slots[0].taskId != nil && slots[1].taskId == nil)
         try await opened.root.abort(context: .background)
         #expect(try await submission.wait(context: .background).reason == "aborted")
         let results = try await allEntries(opened.root).filter { $0.kind == toolResultEntry.kind }
-        #expect(results.count == 1)
+        #expect(results.count == 2) // H7: the real tool task replaces the H5/H6 placeholder
+        #expect(try results.flatMap { try $0.messages() ?? [] }.compactMap { if case .toolResult(let result) = $0 { result.toolCallId } else { nil } } == ["a", "b"]) // H7: the real tool task replaces the H5/H6 placeholder
         #expect(results.first?.data?["diagnostics"]?[0]?["code"] == .string("aborted"))
         try await opened.harness.close(context: .background)
     }

@@ -4,11 +4,14 @@ public let progressBytesPerSecond = 100 * 1024
 
 /// A waiter that the final output commit must settle after progress stops.
 public final class ProgressWaiter: Sendable {
-    private let continuation: Mutex<CheckedContinuation<Void, any Error>?>
-    fileprivate init(_ continuation: CheckedContinuation<Void, any Error>) { self.continuation = Mutex(continuation) }
-    public func resolve() { take()?.resume() }
-    public func reject(_ error: any Error) { take()?.resume(throwing: error) }
-    private func take() -> CheckedContinuation<Void, any Error>? {
+    private let continuation: Mutex<(@Sendable (Result<Void, any Error>) -> Void)?>
+    internal init(_ continuation: CheckedContinuation<Void, any Error>) {
+        self.continuation = Mutex({ continuation.resume(with: $0) })
+    }
+    internal init(notify: @escaping @Sendable (Result<Void, any Error>) -> Void) { continuation = Mutex(notify) }
+    public func resolve() { take()?(.success(())) }
+    public func reject(_ error: any Error) { take()?(.failure(error)) }
+    private func take() -> (@Sendable (Result<Void, any Error>) -> Void)? {
         continuation.withLock { value in let result = value; value = nil; return result }
     }
 }
@@ -32,6 +35,7 @@ public actor Progress {
         self.write = write; self.onError = onError; self.minIntervalMs = minIntervalMs; self.clock = clock
     }
     public func mark() { dirty = true; schedule() }
+    internal func mark(waiter: ProgressWaiter) { waiters.append(waiter); mark() }
     public func markAndWait() async throws {
         try await withCheckedThrowingContinuation { continuation in
             waiters.append(ProgressWaiter(continuation)); mark()

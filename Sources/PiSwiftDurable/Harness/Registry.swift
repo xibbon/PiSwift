@@ -91,7 +91,7 @@ public final class Registry: RegistryReader, Sendable {
     }
 }
 public func createRegistry() -> Registry {
-    Registry(builtins: [generationTask.eraseToAnyTaskDefinition()] + AnyTaskDefinition.builtins.dropFirst())
+    Registry(builtins: [generationTask.eraseToAnyTaskDefinition(), toolTask.eraseToAnyTaskDefinition()] + AnyTaskDefinition.builtins.dropFirst(2))
 }
 
 private func validateExtension(_ value: Extension) throws {
