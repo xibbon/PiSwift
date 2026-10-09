@@ -1,8 +1,11 @@
 // All record JSON below comes from v1.1.0 Session and MemoryStorage results.
 import { spawnSync } from 'node:child_process';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, copyFile, stat, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mirror, upstreamTag } from './mirror.mjs';
+import { replaySqlite, readRecordedCalls, compareRecordedReads } from './sqlite-fixtures.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
@@ -197,6 +200,30 @@ try {
     await writeFile(path, fixture);
     console.log(`Wrote durable record fixtures: ${counts.batches} batches, ${counts.writes} writes, ${counts.reads} reads.`);
   }
+  const directory = await mkdtemp(join(tmpdir(), 'piswift-upstream-sqlite-'));
+  const sqlitePath = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/upstream.sqlite', import.meta.url));
+  try {
+    const generated = join(directory, 'upstream.sqlite');
+    await replaySqlite(source, generated, batches, reads, context);
+    if ((await readdir(directory)).some(name => name !== 'upstream.sqlite')) throw new Error('SQLite fixture has sidecar files after close');
+    const size = (await stat(generated)).size;
+    if (size >= 1_000_000) throw new Error(`SQLite fixture exceeds 1 MB: ${size} bytes`);
+    if (process.argv.includes('--check')) {
+      // SQLite page layout can vary by version. Check parsed results, not file bytes.
+      const checked = join(directory, 'checked.sqlite');
+      await copyFile(sqlitePath, checked);
+      const { openNodeSqliteStorage } = await source.import('packages/durable/src/storage/sqlite/node.ts');
+      const sqlite = await openNodeSqliteStorage(checked);
+      try { compareRecordedReads(await readRecordedCalls(sqlite, reads, context), reads); }
+      finally { await sqlite.close(context); }
+      const storedSize = (await stat(sqlitePath)).size;
+      if (storedSize >= 1_000_000) throw new Error(`Checked-in SQLite fixture exceeds 1 MB: ${storedSize} bytes`);
+      console.log(`Durable SQLite fixture matches: ${counts.reads} reads, ${storedSize} bytes; regenerated ${size} bytes.`);
+    } else {
+      await copyFile(generated, sqlitePath);
+      console.log(`Wrote durable SQLite fixture: ${counts.reads} reads, ${size} bytes; closed with no sidecar files.`);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 } finally {
   await source.close();
 }
