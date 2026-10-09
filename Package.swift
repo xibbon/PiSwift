@@ -87,6 +87,7 @@ let package = Package(
         .target(
             name: "PiSwiftCodingAgentDurable",
             dependencies: ["PiSwiftCodingAgent", "PiSwiftDurable", "PiSwiftChord", "PiSwiftAI", "PiSwiftAgent"],
+            exclude: ["README.md"],
             swiftSettings: strictConcurrencySettings
         ),
         .target(

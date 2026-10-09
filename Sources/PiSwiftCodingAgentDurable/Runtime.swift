@@ -9,7 +9,9 @@ import Synchronization
 public final class OpenDurableResult: Sendable {
     /// The plain view. Its listeners run once per burst of changes on a private serial queue.
     public let view: any DurableViewSource
+    /// Commands for the shown conversation. Failures appear as view notices.
     public let controller: any DurableController
+    /// The loaded settings, also available to a host for theme and terminal setup.
     public let settings: SettingsManager
     private let runtime: DurableRuntime
     private let commands: RuntimeController
@@ -38,6 +40,12 @@ public final class OpenDurableResult: Sendable {
 }
 
 /// Opens a durable coding session and starts restored work after view setup.
+/// A new session uses the loaded default model and thinking level.
+/// A continued session keeps its saved agent configuration.
+/// The agent directory supplies settings, credentials, models, and the session root.
+/// Throws on setup or session selection failure. Failed setup releases its resources.
+/// Call `close()` on the result to release storage, environments, and the session lock.
+/// This function uses local execution environments. It has no environment override.
 public func openDurable(_ options: OpenDurableOptions = .init()) async throws -> OpenDurableResult {
     try await openDurable(options, dependencies: .live)
 }

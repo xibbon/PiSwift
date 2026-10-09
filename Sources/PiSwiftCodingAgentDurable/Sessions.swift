@@ -6,9 +6,12 @@ import Synchronization
 
 /// An error when no session is available, or when its lock cannot be acquired.
 public enum SessionLocationError: Error, Sendable, LocalizedError {
+    /// No saved session exists for the resolved working directory.
     case noSession(cwd: String)
+    /// The session lock could not be acquired. The cause gives the system error.
     case alreadyOpen(directory: String, cause: POSIXError)
 
+    /// The session failure text for display to the user.
     public var errorDescription: String? {
         switch self {
         case .noSession(let cwd): "No durable session exists for \(cwd)"
@@ -21,12 +24,12 @@ public enum SessionLocationError: Error, Sendable, LocalizedError {
 /// Swift uses `session.lock` and `flock`, with a two-second retry limit.
 /// Upstream uses proper-lockfile, stale detection after ten seconds, and twelve retries.
 /// The kernel releases this lock when the process dies. No stale check is needed.
-public final class SessionLocation: Sendable {
-    public let id: String
-    public let directory: String
-    public let database: String
-    public let cwd: String
-    public let created: Bool
+internal final class SessionLocation: Sendable {
+    let id: String
+    let directory: String
+    let database: String
+    let cwd: String
+    let created: Bool
     private let descriptor: Mutex<Int32?>
 
     fileprivate init(directory: String, cwd: String, created: Bool, descriptor: Int32) {
@@ -39,7 +42,7 @@ public final class SessionLocation: Sendable {
     }
 
     /// Releases the lock and closes its file. Repeated calls have no effect.
-    public func release() {
+    func release() {
         descriptor.withLock { fd in
             guard let openDescriptor = fd else { return }
             fd = nil
@@ -63,7 +66,7 @@ public final class SessionLocation: Sendable {
 /// Selects a new session, or the newest session for the real working directory.
 /// `agentDirectory` permits an isolated root. By default, it uses `getAgentDir()`.
 /// Swift sessions use `durable-sessions-swift` and are separate from TypeScript sessions.
-public func selectSession(
+internal func selectSession(
     _ cwdInput: String,
     continueSession: Bool,
     agentDirectory: String? = nil

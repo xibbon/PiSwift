@@ -6,7 +6,7 @@ import Synchronization
 
 /// Uses coding-agent authentication and model routing for durable requests.
 public final class RegistryDurableModels: DurableModels {
-    public let registry: ModelRegistry
+    private let registry: ModelRegistry
     private struct Snapshot: Sendable {
         var models: [Model] = []
         var generation: UInt64 = 0
@@ -44,6 +44,7 @@ public final class RegistryDurableModels: DurableModels {
         snapshot.withLock { $0.models }
     }
 
+    /// Finds a model by its exact provider and model ID, including unavailable models.
     public func getModel(provider: String, modelId: String) -> Model? {
         registry.getAll().first {
             $0.provider.utf16.elementsEqual(provider.utf16) && $0.id.utf16.elementsEqual(modelId.utf16)
@@ -92,6 +93,7 @@ public final class RegistryDurableModels: DurableModels {
         return output
     }
 
+    /// Polls a deferred response with current credentials. Setup failures return an error message.
     public func fetchDeferred(model: Model, handle: DeferredHandle, options: DeferredFetchOptions) async -> AssistantMessage {
         let startedAt = Int64(Date().timeIntervalSince1970 * 1000)
         do {
@@ -107,6 +109,7 @@ public final class RegistryDurableModels: DurableModels {
         }
     }
 
+    /// Cancels a deferred response with current credentials. Failures throw an error.
     public func cancelDeferred(model: Model, handle: DeferredHandle, options: DeferredCancelOptions) async throws {
         let resolved = try await prepareRequest(model: model, apiKey: options.apiKey, headers: options.headers,
                                                 env: options.env, signal: options.signal)
