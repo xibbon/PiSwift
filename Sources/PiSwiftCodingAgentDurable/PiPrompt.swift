@@ -14,7 +14,17 @@ private let piPromptContributions = [
 /// Creates pi's prompt sections for the selected tools and working directory.
 /// Context files and skills load once per directory. The build cache holds 128 entries.
 public func createPiPrompt(settingsManager: SettingsManager, fallbackCwd: String) -> PiSwiftDurable.Extension {
-    let cache = PiPromptCache(settings: settingsManager, fallbackCwd: fallbackCwd)
+    piPromptExtension(cache: PiPromptCache(settings: settingsManager, fallbackCwd: fallbackCwd))
+}
+
+internal func createPiPrompt(settingsManager: SettingsManager, fallbackCwd: String,
+                             agentDirectory: String) -> PiSwiftDurable.Extension {
+    let cache = PiPromptCache(settings: settingsManager, fallbackCwd: fallbackCwd,
+                              agentDirectory: { agentDirectory })
+    return piPromptExtension(cache: cache)
+}
+
+private func piPromptExtension(cache: PiPromptCache) -> PiSwiftDurable.Extension {
     return defineExtension(PiSwiftDurable.Extension(name: "pi-prompt", sections: piPromptKeys.map { key in
         section(key, tag: false) { input, _ in try cache.build(input)[key] }
     }))

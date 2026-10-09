@@ -8,3 +8,12 @@ public func createCodingRegistry(settingsManager: SettingsManager, cwd: String) 
     try registry.install(createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd))
     return registry
 }
+
+internal func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
+                                   agentDirectory: String) throws -> Registry {
+    let registry = createRegistry()
+    try registry.install(try CodingTools)
+    try registry.install(createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd,
+                                        agentDirectory: agentDirectory))
+    return registry
+}
