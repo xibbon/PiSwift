@@ -587,8 +587,13 @@ extension UpstreamAdvancedExamplesTests {
         let setup = HarnessChatSetup(options: .init(models: [.init(id: "tiny", contextWindow: 3000, maxTokens: 1000)]),
             settings: .init(compaction: .init(reserveTokens: 1000, keepRecentTokens: 400, backgroundTokens: 800)))
         let summaries = Mutex(0), overflow = Mutex(false), hold = Mutex<HarnessGatedResponse?>(nil)
+        // One-shot gates for the manual step: one holds a generation's prepare (it builds the env
+        // before its commit), one holds a summary request.
+        let prepareGate = Mutex<HarnessChatSignal?>(nil), prepareReached = HarnessChatSignal()
+        let summaryGate = Mutex<HarnessChatSignal?>(nil)
         let route: FakeDurableResponseStep = .factory { transcript, options, state, model in
             if case .system(let system)? = transcript.messages.first, getSystemMessageText(system).contains("summarization") {
+                if let gate = summaryGate.withLock({ value in let old = value; value = nil; return old }) { await gate.wait() }
                 let number = summaries.withLock { $0 += 1; return $0 }
                 return chatAssistant("## Goal\nPlan a week in Lisbon (summary #\(number)).")
             }
@@ -602,10 +607,14 @@ extension UpstreamAdvancedExamplesTests {
             return chatAssistant("A detailed answer to \"\(question)\": " + String(repeating: "details ", count: 200))
         }
         setup.models.setResponses(Array(repeating: route, count: 100))
-        let harness = try await Harness.open(storage: MemoryStorage(), options: .init(models: setup.models, registry: setup.registry, settings: setup.settingsProvider), context: .background)
+        let harness = try await Harness.open(storage: MemoryStorage(), options: .init(models: setup.models, registry: setup.registry, settings: setup.settingsProvider,
+            env: { _, _ in
+                if let gate = prepareGate.withLock({ value in let old = value; value = nil; return old }) { prepareReached.signal(); await gate.wait() }
+                return nil
+            }), context: .background)
         let root = try await harness.root(options: .init(agent: .init(model: .set(.init(provider: "faux", modelId: "tiny")))), context: .background)
-        // The lines use the upstream show() format. The counts were checked
-        // against Swift snapshots; the message text follows the source script.
+        // The lines use the upstream show() format. The counts and lines equal the
+        // upstream script's output at v1.1.0, run in Node through the fixture mirror.
         let summaryLine = "  user      The conversation history before this point was compacted into the foll"
         let systemLine = "  system    (system prompt)"
         let stayLine = "  assistant A detailed answer to \"Where should we stay?\": details details details "
@@ -635,11 +644,11 @@ extension UpstreamAdvancedExamplesTests {
                 "  (threshold compaction summary first)", summaryLine, museumsLine,
                 "  user      Nightlife?", systemLine, nightlifeLine],
             "What should we pack?": [
-                "after \"What should we pack?\" (answered): 7 messages in context, 21 entries stored",
+                "after \"What should we pack?\" (answered): 7 messages in context, 20 entries stored",
                 "  (manual compaction summary first)", summaryLine, nightlifeLine,
                 "  user      How do we get around?", aroundLine, "  user      What should we pack?", systemLine, packLine],
             "Summarize the plan for my partner": [
-                "after \"Summarize the plan for my partner\" (model_error): 4 messages in context, 25 entries stored",
+                "after \"Summarize the plan for my partner\" (model_error): 4 messages in context, 24 entries stored",
                 "  (threshold compaction summary first)", summaryLine, packLine,
                 "  user      Summarize the plan for my partner", systemLine]
         ]
@@ -665,9 +674,18 @@ extension UpstreamAdvancedExamplesTests {
         #expect(before.contains { $0.kind == "pi.compaction" && $0.data?["reason"] == "threshold" })
         let gated = HarnessGatedResponse(message: chatAssistant("A detailed answer to \"How do we get around?\": " + String(repeating: "details ", count: 200)))
         hold.withLock { $0 = gated }
+        // Upstream calls compact() right after submit(): the manual compaction is listed before the
+        // generation's prepare commit, so that commit starts no background compaction. Hold prepare
+        // until compact() is admitted, and hold the summary until the answer is being written.
+        let prepare = HarnessChatSignal(), summarize = HarnessChatSignal()
+        prepareGate.withLock { $0 = prepare }
+        summaryGate.withLock { $0 = summarize }
         let busy = try await root.submit(.input(content: .text("How do we get around?")), context: .background)
-        await gated.reached.wait()
+        await prepareReached.wait()
         let manual = try await root.compact(instructions: "Keep the hotel shortlist", context: .background)
+        prepare.signal()
+        await gated.reached.wait()
+        summarize.signal()
         let manualOutcome = try await harness.waitForTask(id: manual, context: .background).outcome
         guard case .completed(let result, _) = manualOutcome else { throw TestDeadlineError() }
         let placement = try #require(try result.decode(CompactionResult.self).submissionId)
@@ -686,7 +704,7 @@ extension UpstreamAdvancedExamplesTests {
         #expect(manualView.messages.count < entries.count)
         let show = try await advancedShow(root, label: "after compact()")
         #expect(show == [
-            "after compact(): 4 messages in context, 18 entries stored",
+            "after compact(): 4 messages in context, 17 entries stored",
             "  (manual compaction summary first)", summaryLine, nightlifeLine,
             "  user      How do we get around?", aroundLine
         ])
