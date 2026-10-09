@@ -23,6 +23,16 @@ public final class Conversation: Sendable {
             return try await harness.submissions.submit(conversationId: id, draft: draft, context: context).bound(binding)
         }
     }
+    public func compact(instructions: String? = nil, context: PiSwiftChord.Context) async throws -> TaskID {
+        try await withTaskCancellationContext(try bound(context)) { context in
+            try harness.assertOpen()
+            harness.tasks.resume()
+            return try await harness.session.commitWith({ tx in
+                try await createCompaction(tx: tx, conversationId: id,
+                    input: CompactionInput(reason: .manual, instructions: instructions))
+            }, context: context)
+        }
+    }
     public func reset(handoff: String? = nil, context: PiSwiftChord.Context) async throws {
         let now = harness.options.now?() ?? harness.options.clock.now()
         let model = try handoff.map { try EntryRecord.encodeMessages([.user(UserMessage(content: .text($0), timestamp: now))]) }

@@ -173,18 +173,20 @@ struct HarnessGenerationHooksTests {
 
     @Test func overflowCreatesOwnedBlockedCompaction() async throws {
         let setup = HarnessChatSetup(settings: .init(compaction: .init(reserveTokens: 0, keepRecentTokens: 1, backgroundTokens: 0)))
-        setup.models.setResponses([.message(chatAssistant("", reason: .error, error: "maximum context length exceeded"))])
+        let summary = HarnessUnanswered() // H8: the real compaction handler replaces the H5/H6 placeholder
+        setup.models.setResponses([.message(chatAssistant("", reason: .error, error: "maximum context length exceeded")), summary.step]) // H8: the real compaction handler replaces the H5/H6 placeholder
         let opened = try await openChat(setup: setup)
         try await opened.root.commit({ tx in
             _ = try await tx.appendEntry(opened.root.id, value: EntryDraft(kind: userEntry.kind,
                 model: EntryRecord.encodeMessages([.user(UserMessage(content: .text("old history"), timestamp: 1))])))
         }, context: .background)
         let submission = try await generationSubmit(opened)
-        try await eventually { try await generationLive(opened)?.compactions?.first?.reason == .overflow }
+        await summary.reached.wait() // H8: the real compaction handler replaces the H5/H6 placeholder
         let live = try #require(await generationLive(opened)), compaction = try #require(live.compactions?.first)
         let child = try #require(await opened.harness.getTask(id: compaction.taskId, context: .background))
         #expect(child.kind == "pi.compaction" && child.owner == live.run?.taskId)
-        #expect(compaction.blocking && child.state.status == "pending")
+        #expect(compaction.reason == .overflow) // H8: the real compaction handler replaces the H5/H6 placeholder
+        #expect(compaction.blocking && child.state.status == "running") // H8: the real compaction handler replaces the H5/H6 placeholder
         #expect(live.generation == nil)
         try await opened.root.abort(context: .background)
         #expect(try await submission.wait(context: .background).reason == "aborted")

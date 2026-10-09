@@ -1,18 +1,9 @@
 import PiSwiftAI
 import PiSwiftChord
 
-public struct GenerationCompactionInput: Codable, Sendable {
-    public let reason: CompactionReason
-    public init(reason: CompactionReason) { self.reason = reason }
-}
-let generationCompactionKind = TaskKind<GenerationCompactionInput, JSONObject>(name: "pi.compaction", version: 1, initial: { _ in ["phase": .string("select")] })
+public typealias GenerationCompactionInput = CompactionInput
 func createGenerationCompaction(tx: Transaction, conversationId: ConversationID, reason: CompactionReason, owner: TaskID? = nil) async throws -> TaskID {
-    let ownership: TaskOwnership = owner.map { .task(taskId: $0) } ?? .conversation()
-    let taskId = try await tx.createTask(generationCompactionKind, input: GenerationCompactionInput(reason: reason),
-        options: .init(ownership: ownership, conversationId: conversationId, background: owner == nil && reason != .manual))
-    let live = try await tx.doc(LiveDoc, conversationId: conversationId)
-    try addCompactionStatus(live: live, status: CompactionStatus(taskId: taskId, reason: reason, blocking: owner != nil, attempt: 1))
-    return taskId
+    try await createCompaction(tx: tx, conversationId: conversationId, input: CompactionInput(reason: reason), owner: owner)
 }
 enum GenerationCompactionThreshold { case blocking, background }
 func generationThresholdCompaction(view: ContextView, planned: [EntryDraft], contextWindow: Int, policy: CompactionPolicy) throws -> GenerationCompactionThreshold? {
@@ -25,7 +16,7 @@ func generationThresholdCompaction(view: ContextView, planned: [EntryDraft], con
     guard over != nil, generationSelectCut(view: view, keepRecentTokens: policy.keepRecentTokens) != nil else { return nil }
     return over
 }
-/// Same range selection as compaction.ts. H8 can reuse this implementation.
+/// First kept entry for the source compaction policy.
 public func generationSelectCut(view: ContextView, keepRecentTokens: Int) -> Int? {
     let contributions = view.contributions, start = view.head == nil ? 0 : 1
     guard start < contributions.count else { return nil }
