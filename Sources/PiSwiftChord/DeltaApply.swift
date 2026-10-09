@@ -36,7 +36,7 @@ extension Delta {
         let path = op.path
         let containerPath = op.containerPath
         guard value != nil else { throw DeltaError.unresolvablePath(containerPath) }
-        try withContainer(&value!, path: containerPath, depth: 0) { container in
+        try withContainer(&value!, path: containerPath) { container in
             switch op {
             case .splice(_, let index, let remove, let items):
                 guard let _: Void = container.withArray({ array in
@@ -102,31 +102,58 @@ extension Delta {
         }
     }
 
-    // Every payload is taken out during the recursive call. Its storage remains
-    // unique when the caller owns the tree. defer restores it if the call throws.
+    private struct ContainerParent {
+        var value: JSONValue
+        let segment: PathSegment
+    }
+
+    // Take each child out before descent. This keeps owned storage unique.
+    // Restore the parent stack on both success and failure.
     private static func withContainer(
-        _ node: inout JSONValue, path: Path, depth: Int,
+        _ node: inout JSONValue, path: Path,
         _ body: (inout JSONValue) throws -> Void
     ) throws {
-        if depth == path.count {
-            guard node.isContainer else { throw DeltaError.unresolvablePath(path) }
-            try body(&node)
-            return
+        var current = node
+        node = .null
+        var parents: [ContainerParent] = []
+        defer {
+            while !parents.isEmpty {
+                let segment = parents.last!.segment
+                var parent = parents.removeLast().value
+                if parent.isArray {
+                    if case .index(let index) = segment {
+                        _ = parent.withArray { $0[index] = current }
+                    }
+                } else {
+                    _ = parent.withObject { $0[segment.propertyKey] = current }
+                }
+                current = parent
+            }
+            node = current
         }
-        let segment = path[depth]
-        if node.isArray {
-            guard case .index(let index) = segment else { throw DeltaError.unsafeSegment(segment) }
-            _ = try node.withArray { array in
-                guard array.indices.contains(index) else { throw DeltaError.unresolvablePath(path) }
-                try withContainer(&array[index], path: path, depth: depth + 1, body)
-            }
-        } else if node.isObject {
-            _ = try node.withObject { object in
-                guard let _: Void = try object.withValue(forKey: segment.propertyKey, { member in
-                    try withContainer(&member, path: path, depth: depth + 1, body)
-                }) else { throw DeltaError.unresolvablePath(path) }
-            }
-        } else { throw DeltaError.unresolvablePath(path) }
+        for segment in path {
+            if current.isArray {
+                guard case .index(let index) = segment else { throw DeltaError.unsafeSegment(segment) }
+                let child = try current.withArray { array in
+                    guard array.indices.contains(index) else { throw DeltaError.unresolvablePath(path) }
+                    let child = array[index]
+                    array[index] = .null
+                    return child
+                }!
+                parents.append(ContainerParent(value: current, segment: segment))
+                current = child
+            } else if current.isObject {
+                let child = try current.withObject { object in
+                    guard let child = object[segment.propertyKey] else { throw DeltaError.unresolvablePath(path) }
+                    object[segment.propertyKey] = .null
+                    return child
+                }!
+                parents.append(ContainerParent(value: current, segment: segment))
+                current = child
+            } else { throw DeltaError.unresolvablePath(path) }
+        }
+        guard current.isContainer else { throw DeltaError.unresolvablePath(path) }
+        try body(&current)
     }
 
     private static func checkImmutableContainers(_ root: JSONValue?, path: Path) throws {

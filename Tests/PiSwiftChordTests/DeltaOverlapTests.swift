@@ -1,6 +1,40 @@
+import CryptoKit
 import Foundation
 import Testing
 import PiSwiftChord
+
+private enum DeltaFixtureText: Decodable {
+    case text(String)
+    case digest(sha256: String, length: Int)
+
+    private struct Digest: Decodable { let sha256: String; let length: Int }
+    init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let text = try? value.decode(String.self) { self = .text(text) }
+        else {
+            let digest = try value.decode(Digest.self)
+            self = .digest(sha256: digest.sha256, length: digest.length)
+        }
+    }
+}
+
+private func checkDeltaFixtureValue(_ value: JSONValue?, expected: DeltaFixtureText?, name: String) throws {
+    guard let expected else {
+        #expect(value == nil, "case: \(name)")
+        return
+    }
+    let text = try #require(try value?.jsonText())
+    switch expected {
+    case .text(let expectedText):
+        #expect(value == (try JSONValue(jsonText: expectedText)), "case: \(name)")
+        #expect(Array(text.utf8) == Array(expectedText.utf8), "case: \(name)")
+    case .digest(let sha256, let length):
+        let bytes = Array(text.utf8)
+        let digest = SHA256.hash(data: Data(bytes)).map { String(format: "%02x", $0) }.joined()
+        #expect(bytes.count == length, "case: \(name)")
+        #expect(digest == sha256, "case: \(name)")
+    }
+}
 
 private struct DeltaFixtures: Decodable {
     struct OverlapCase: Decodable {
@@ -16,7 +50,7 @@ private struct DeltaFixtures: Decodable {
         let name: String
         let initialText: String?
         let ops: [JSONValue]
-        let resultText: String?
+        let resultText: DeltaFixtureText?
         let errorKind: String?
         let errorText: String?
     }
@@ -63,11 +97,7 @@ private func fixtureErrorKind(_ error: DeltaError) -> String {
                 var value = try entry.initialText.map { try JSONValue(jsonText: $0) }
                 try Delta.apply(ops, to: &value)
                 #expect(entry.errorKind == nil, "case: \(entry.name), expected error: \(entry.errorText ?? "none")")
-                let expected = try entry.resultText.map { try JSONValue(jsonText: $0) }
-                #expect(value == expected, "case: \(entry.name)")
-                // JSON text also checks object key order and scalar identity.
-                let text = try value?.jsonText()
-                #expect(text.map { Array($0.utf8) } == entry.resultText.map { Array($0.utf8) }, "case: \(entry.name)")
+                try checkDeltaFixtureValue(value, expected: entry.resultText, name: entry.name)
             } catch let error as DeltaError {
                 #expect(fixtureErrorKind(error) == entry.errorKind, "case: \(entry.name), error: \(error)")
                 #expect(error.description == entry.errorText, "case: \(entry.name)")
@@ -82,10 +112,7 @@ private func fixtureErrorKind(_ error: DeltaError) -> String {
                 let ops = try entry.ops.map { try Delta.Op(json: $0) }
                 let value = try Delta.applyImmutable(initial, ops)
                 #expect(entry.errorKind == nil, "case: \(entry.name), expected error: \(entry.errorText ?? "none")")
-                let expected = try entry.resultText.map { try JSONValue(jsonText: $0) }
-                #expect(value == expected, "case: \(entry.name)")
-                let text = try value?.jsonText()
-                #expect(text.map { Array($0.utf8) } == entry.resultText.map { Array($0.utf8) }, "case: \(entry.name)")
+                try checkDeltaFixtureValue(value, expected: entry.resultText, name: entry.name)
                 #expect(initial == (try entry.initialText.map { try JSONValue(jsonText: $0) }), "case: \(entry.name), input must stay unchanged")
             } catch let error as DeltaError {
                 #expect(fixtureErrorKind(error) == entry.errorKind, "case: \(entry.name), error: \(error)")

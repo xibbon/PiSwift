@@ -2,6 +2,13 @@
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+
+// Write one case per line. Keep each case and its nested arrays compact.
+function fixtureJSON(value) {
+  if (Array.isArray(value)) return '[' + (value.length ? '\n' + value.map(entry => JSON.stringify(entry)).join(',\n') + '\n' : '') + ']';
+  return '{' + Object.entries(value).map(([key, entry]) => JSON.stringify(key) + ':' + (entry && typeof entry === 'object' ? fixtureJSON(entry) : JSON.stringify(entry))).join(',') + '}';
+}
+
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/json-fixtures.json', import.meta.url));
 let seed = 0x6d2b79f5;
 function randomWord() {
@@ -76,7 +83,7 @@ for (const input of invalidInputs) {
   if (!rejected) throw new Error(`Invalid input was accepted by Node: ${input}`);
 }
 const parse = { valid: validInputs.map(input => ({ input, text: JSON.stringify(JSON.parse(input)) })), invalid: invalidInputs };
-const output = JSON.stringify({ numbers, keyOrders, strings, parse }, null, 2) + '\n';
+const output = fixtureJSON({ numbers, keyOrders, strings, parse }) + '\n';
 if (process.argv.includes('--check')) {
   const temporaryPath = fileURLToPath(new URL(`.json-fixtures-${process.pid}.tmp`, import.meta.url));
   try {

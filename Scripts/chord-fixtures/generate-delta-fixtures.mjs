@@ -1,6 +1,20 @@
 // Node 22 reference cases for the PiSwiftChord delta tests.
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+
+
+// Write one case per line. Keep each case and its nested arrays compact.
+function fixtureJSON(value) {
+  if (Array.isArray(value)) return '[' + (value.length ? '\n' + value.map(entry => JSON.stringify(entry)).join(',\n') + '\n' : '') + ']';
+  return '{' + Object.entries(value).map(([key, entry]) => JSON.stringify(key) + ':' + (entry && typeof entry === 'object' ? fixtureJSON(entry) : JSON.stringify(entry))).join(',') + '}';
+}
+
+// Digest only expected output. Inputs remain available for replay.
+function expectedText(text) {
+  const length = Buffer.byteLength(text, 'utf8');
+  return length > 4096 ? { sha256: createHash('sha256').update(text, 'utf8').digest('hex'), length } : text;
+}
 
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/overlap-fixtures.json', import.meta.url));
 
@@ -286,7 +300,7 @@ function addApply(name, initial, ops) {
   const entry = { name, initialText: initial === undefined ? null : JSON.stringify(initial), ops };
   try {
     const result = applyOps(clone(initial), clone(ops));
-    entry.resultText = result === undefined ? null : JSON.stringify(result);
+    entry.resultText = result === undefined ? null : expectedText(JSON.stringify(result));
   } catch (error) {
     entry.errorKind = error.name;
     entry.errorText = error.message;
@@ -410,7 +424,7 @@ addApply('verb-object-blocks-string-conversion', {}, [[{ toString: 1 }]]);
 addApply('verb-object-valueOf-keeps-default-string', {}, [[{ valueOf: 1 }]]);
 
 
-const output = JSON.stringify({ upstream: 'pi-mono v1.1.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }, null, 2) + '\n';
+const output = fixtureJSON({ upstream: 'pi-mono v1.1.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }) + '\n';
 const counts = `${overlapCases.length} overlap cases, ${applyCases.length} apply cases (${applyCases.filter(entry => entry.errorKind).length} invalid)`;
 if (process.argv.includes('--check')) {
   const temporaryPath = fileURLToPath(new URL(`.delta-fixtures-${process.pid}.tmp`, import.meta.url));
