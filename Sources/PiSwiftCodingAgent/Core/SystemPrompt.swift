@@ -240,11 +240,35 @@ public enum SystemPromptError: Error, LocalizedError, Sendable, Equatable {
     }
 }
 
+/// Use the whitespace set specified by ECMAScript String.prototype.trim.
+private func trimSystemPromptText(_ text: String) -> String {
+    func isWhitespace(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0009...0x000D, 0x0020, 0x00A0, 0x1680, 0x2000...0x200A,
+             0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF:
+            return true
+        default:
+            return false
+        }
+    }
+    let scalars = text.unicodeScalars
+    var start = scalars.startIndex
+    var end = scalars.endIndex
+    while start < end, isWhitespace(scalars[start]) { scalars.formIndex(after: &start) }
+    while start < end {
+        let previous = scalars.index(before: end)
+        guard isWhitespace(scalars[previous]) else { break }
+        end = previous
+    }
+    return String(scalars[start..<end])
+}
+
 private func systemPromptRules(_ names: [String], _ options: BuildSystemPromptOptions) -> String {
     var rules: [String] = []
+    var seen: Set<[UInt16]> = []
     func add(_ rule: String) {
-        let value = rule.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !value.isEmpty && !rules.contains(value) { rules.append(value) }
+        let value = trimSystemPromptText(rule)
+        if !value.isEmpty && seen.insert(Array(value.utf16)).inserted { rules.append(value) }
     }
     let hasBash = names.contains("bash")
     let hasPowerShell = names.contains("powershell")
@@ -270,7 +294,7 @@ public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = Buil
     let hidden = Set(options.hiddenTools ?? [])
     let declared = tools.filter { !hidden.contains($0) }
     let snippets = options.toolSnippets ?? [:]
-    let custom = resolvePromptInput(options.customPrompt, "system prompt")
+    let custom = options.customPrompt
     var entries: [(name: String, value: String?)] = []
     func add(_ name: String, _ value: String) { entries.append((name: name, value: name == "preamble" ? value : "<\(name)>\n\(value)\n</\(name)>")) }
     if let custom, !custom.isEmpty {
@@ -281,6 +305,7 @@ public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = Buil
         let list = visible.isEmpty ? "(none)" : visible.map { "- \($0): \(snippets[$0]!)" }.joined(separator: "\n")
         add("tools", "\(list)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.")
         add("rules", systemPromptRules(declared, options))
+        // Keep the Codemode reference accepted in PORT_SYNC_NOTES.md (v1.0.0).
         add("docs", """
         Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
         - Main documentation: \(getReadmePath())
@@ -293,20 +318,17 @@ public func buildSystemPromptSections(_ options: BuildSystemPromptOptions = Buil
         - Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)
         """)
     }
-    if let append = resolvePromptInput(options.appendSystemPrompt, "append system prompt"), !append.isEmpty { add("addendum", append) }
-    let contextFiles = options.contextFiles ?? loadProjectContextFiles(LoadContextFilesOptions(cwd: cwd, agentDir: options.agentDir))
+    if let append = options.appendSystemPrompt, !append.isEmpty { add("addendum", append) }
+    let contextFiles = options.contextFiles ?? []
     if !contextFiles.isEmpty {
         let files = contextFiles.map { "<project_instructions path=\"\($0.path)\">\n\($0.content)\n</project_instructions>" }
         add("project_context", (["Project-specific instructions and guidelines:"] + files).joined(separator: "\n\n"))
     }
-    let skills: [Skill]
-    if let supplied = options.skills { skills = supplied }
-    else if options.skillsSettings?.enabled == false { skills = [] }
-    else { skills = loadSkills(LoadSkillsOptions(cwd: cwd, agentDir: options.agentDir)).skills }
+    let skills = options.skills ?? []
     let reader: SkillFileReadTool? = declared.contains("read") ? .read :
         (declared.contains("bash") ? .bash : (tools.contains("read") || tools.contains("bash") ? .indirect : nil))
     if let reader, !skills.isEmpty {
-        let value = formatSkillsForPrompt(skills, fileReadTool: reader).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = trimSystemPromptText(formatSkillsForPrompt(skills, fileReadTool: reader))
         if !value.isEmpty { add("skills", value) }
     }
     add("cwd", cwd.replacingOccurrences(of: "\\", with: "/"))

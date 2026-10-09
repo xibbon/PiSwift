@@ -528,57 +528,8 @@ public final class DefaultResourceLoader: ResourceLoader {
     }
 
     private func loadSkillsFromPaths(_ paths: [String], includeDefaults: Bool) -> (skills: [Skill], diagnostics: [ResourceDiagnostic]) {
-        var skills: [Skill] = []
-        var diagnostics: [ResourceDiagnostic] = []
-        var seenNames: [String: Skill] = [:]
-        var seenRealPaths = Set<String>()
-        var collisions: [ResourceDiagnostic] = []
-
-        func addSkills(_ loaded: [Skill]) {
-            for skill in loaded {
-                let realPath = URL(fileURLWithPath: skill.filePath).resolvingSymlinksInPath().standardized.path
-                if seenRealPaths.contains(realPath) { continue }
-                if let winner = seenNames[skill.name] {
-                    collisions.append(ResourceDiagnostic(
-                        type: "collision",
-                        message: "name \"\(skill.name)\" collision",
-                        path: skill.filePath,
-                        collision: ResourceCollision(
-                            resourceType: "skill", name: skill.name,
-                            winnerPath: winner.filePath, loserPath: skill.filePath
-                        )
-                    ))
-                } else {
-                    seenNames[skill.name] = skill
-                    seenRealPaths.insert(realPath)
-                    skills.append(skill)
-                }
-            }
-        }
-
-        if !includeDefaults, paths.isEmpty {
-            return ([], [])
-        }
-
-        for path in paths {
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { continue }
-            if isDir.boolValue {
-                let result = loadSkillsFromDir(options: LoadSkillsFromDirOptions(dir: path, source: "path"))
-                let metadata = metadataForExactPath(path)
-                addSkills(applySkillMetadata(result.skills, metadata: metadata))
-                diagnostics.append(contentsOf: result.warnings.map { ResourceDiagnostic(type: "warning", message: $0.message, path: $0.skillPath) })
-            } else {
-                let result = loadSkillFromFile(path, source: "path")
-                if let skill = result.skill {
-                    let metadata = metadataForExactPath(path)
-                    addSkills(applySkillMetadata([skill], metadata: metadata))
-                }
-                diagnostics.append(contentsOf: result.warnings.map { ResourceDiagnostic(type: "warning", message: $0.message, path: $0.skillPath) })
-            }
-        }
-
-        return (skills, diagnostics + collisions)
+        let result = loadSkillsWithDiagnostics(cwd: cwd, agentDir: agentDir, skillPaths: paths, includeDefaults: includeDefaults)
+        return (applySkillMetadata(result.skills), result.diagnostics)
     }
 
     private func updateSkillsFromPaths(_ paths: [String]) {
@@ -652,15 +603,6 @@ public final class DefaultResourceLoader: ResourceLoader {
             if let metadata = metadataForResourcePath(skill.filePath) {
                 updated.sourceInfo = SourceInfo(path: skill.filePath, metadata: metadata)
             }
-            return updated
-        }
-    }
-
-    private func applySkillMetadata(_ loaded: [Skill], metadata: PathMetadata?) -> [Skill] {
-        guard let metadata else { return loaded }
-        return loaded.map { skill in
-            var updated = skill
-            updated.sourceInfo = SourceInfo(path: skill.filePath, metadata: metadata)
             return updated
         }
     }

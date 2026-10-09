@@ -3,16 +3,11 @@ import PiSwiftAI
 import PiSwiftAgent
 
 // v1.0.4 #10343: all prompt paths use the same built-in contributions.
-private let builtInToolPrompt: [String: (snippet: String, guidelines: [String])] = [
-    "read": ("Read file contents", ["Use read to examine files instead of cat or sed."]),
-    "bash": ("Execute bash commands (ls, grep, find, etc.)", ["You can inspect PI_* environment variables for current model and session details."]),
-    "edit": ("Make precise file edits with exact text replacement, including multiple disjoint edits in one call", [
-        "Use edit for precise changes (edits[].oldText must match exactly)",
-        "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
-        "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
-        "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
-    ]),
-    "write": ("Create or overwrite files", ["Use write only for new files or complete rewrites."]),
+private let builtInToolPrompt: [String: ToolSystemPromptContribution] = [
+    "read": readToolSystemPromptContribution,
+    "bash": bashToolSystemPromptContribution,
+    "edit": editToolSystemPromptContribution,
+    "write": writeToolSystemPromptContribution,
 ]
 
 public enum AutoCompactionReason: String, Sendable {

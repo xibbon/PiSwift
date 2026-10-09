@@ -55,6 +55,21 @@ public func getChangelogPath() -> String {
 
 public func getAgentDir() -> String {
     if let override = ProcessInfo.processInfo.environment[ENV_AGENT_DIR], !override.isEmpty {
+        if override == "~" { return getHomeDir() }
+        if override.hasPrefix("~/") {
+            // Match path.join without resolving symlinks in the override.
+            var components = getHomeDir().split(separator: "/").map(String.init)
+            for component in override.dropFirst(2).split(separator: "/") {
+                if component == "." { continue }
+                if component == ".." {
+                    if !components.isEmpty { components.removeLast() }
+                } else { components.append(String(component)) }
+            }
+            return "/" + components.joined(separator: "/")
+        }
+        if override.hasPrefix("file://"), let url = URL(string: override), url.isFileURL {
+            return url.path
+        }
         return override
     }
 

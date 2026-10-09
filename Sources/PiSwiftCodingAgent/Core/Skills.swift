@@ -157,7 +157,7 @@ private func validateDescription(_ description: String?) -> [String] {
     return []
 }
 
-func loadSkillFromFile(_ filePath: String, source: String) -> (skill: Skill?, warnings: [SkillWarning]) {
+func loadSkillFromFile(_ filePath: String, source: String, requireBooleanModelInvocation: Bool = false) -> (skill: Skill?, warnings: [SkillWarning]) {
     var warnings: [SkillWarning] = []
     let content: String
     do {
@@ -180,6 +180,7 @@ func loadSkillFromFile(_ filePath: String, source: String) -> (skill: Skill?, wa
         return (nil, [])
     }
     let disableModelInvocation = parsed.frontmatter["disable-model-invocation"]?.lowercased() == "true"
+        && (!requireBooleanModelInvocation || parsed.nonStringKeys.contains("disable-model-invocation"))
 
     for error in validateDescription(description) {
         warnings.append(SkillWarning(skillPath: filePath, message: error))

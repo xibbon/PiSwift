@@ -17,6 +17,8 @@ let package = Package(
             targets: ["PiSwift"]
         ),
         .library(name: "PiSwiftDurable", targets: ["PiSwiftDurable"]),
+        .library(name: "PiSwiftDurableTesting", targets: ["PiSwiftDurableTesting"]),
+        .library(name: "PiSwiftCodingAgentDurable", targets: ["PiSwiftCodingAgentDurable"]),
         .library(
             name: "PiSwiftChord",
             targets: ["PiSwiftChord"]
@@ -80,6 +82,11 @@ let package = Package(
         .target(
             name: "PiSwiftDurableTesting",
             dependencies: ["PiSwiftDurable", "PiSwiftChord"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiSwiftCodingAgentDurable",
+            dependencies: ["PiSwiftCodingAgent", "PiSwiftDurable", "PiSwiftChord", "PiSwiftAI", "PiSwiftAgent"],
             swiftSettings: strictConcurrencySettings
         ),
         .target(
@@ -164,6 +171,11 @@ let package = Package(
             name: "PiSwiftDurableTests",
             dependencies: ["PiSwiftDurable", "PiSwiftDurableTesting", "PiSwiftChord", "PiSwiftAI"],
             resources: [.copy("Fixtures")],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiSwiftCodingAgentDurableTests",
+            dependencies: ["PiSwiftCodingAgentDurable", "PiSwiftCodingAgent", "PiSwiftDurable", "PiSwiftDurableTesting"],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
