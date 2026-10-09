@@ -59,6 +59,30 @@ public enum JSONValue: Sendable, Equatable {
         guard let array = arrayValue, array.indices.contains(index) else { return nil }
         return array[index]
     }
+    /// Takes out the array payload during mutation, then puts it back on all exits.
+    package mutating func withArray<R>(_ body: (inout [JSONValue]) throws -> R) rethrows -> R? {
+        // End the match before mutation. A guard-case keeps a hidden payload
+        // reference alive through the call in a debug build.
+        var values: [JSONValue]
+        switch self {
+        case .array(let payload): values = payload
+        default: return nil
+        }
+        self = .null
+        defer { self = .array(values) }
+        return try body(&values)
+    }
+    /// Takes out the object payload during mutation, then puts it back on all exits.
+    package mutating func withObject<R>(_ body: (inout JSONObject) throws -> R) rethrows -> R? {
+        var object: JSONObject
+        switch self {
+        case .object(let payload): object = payload
+        default: return nil
+        }
+        self = .null
+        defer { self = .object(object) }
+        return try body(&object)
+    }
     /// Writes the same compact text as JavaScript `JSON.stringify` for strict JSON.
     public func jsonText() throws -> String {
         guard isStrictJSON else { throw JSONValueError.nonFiniteNumber }
