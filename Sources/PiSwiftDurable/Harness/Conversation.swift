@@ -7,7 +7,7 @@ public final class Conversation: Sendable {
     internal let harness: Harness
     private let binding: InvocationBinding?
     internal init(id: ConversationID, harness: Harness, binding: InvocationBinding? = nil) { self.id = id; self.harness = harness; self.binding = binding }
-    private func bound(_ context: PiSwiftChord.Context) throws -> PiSwiftChord.Context {
+    internal func bound(_ context: PiSwiftChord.Context) throws -> PiSwiftChord.Context {
         try binding?.check()
         return binding.map { context.withAbortSignal($0.signal) } ?? context
     }

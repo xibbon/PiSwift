@@ -38,6 +38,16 @@ public struct ToolSlot: Sendable, Equatable, Codable {
     public init(callId: String, name: String, taskId: TaskID? = nil, status: Status = .pending, entry: EntryID? = nil) {
         self.callId = callId; self.name = name; self.taskId = taskId; self.status = status; self.entry = entry
     }
+    public init(from decoder: any Decoder) throws {
+        let object = try recordObject(decoder)
+        callId = try recordRequired(object, "callId"); name = try recordRequired(object, "name")
+        taskId = try recordOptional(object, "taskId"); status = try recordRequired(object, "status")
+        output = try recordOptional(object, "output"); droppedBytes = try recordOptional(object, "droppedBytes")
+        droppedLines = try recordOptional(object, "droppedLines")
+        // An explicit null is a reported value. Absence means no details were reported.
+        details = object["details"]
+        diagnostics = try recordOptional(object, "diagnostics"); entry = try recordOptional(object, "entry")
+    }
 }
 public struct CompactionStatus: Sendable, Equatable, Codable {
     public var taskId: TaskID

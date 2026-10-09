@@ -28,10 +28,14 @@ public final class Harness: Sendable {
     internal let options: HarnessOptions
     internal let tasks: TaskScheduler
     internal let submissions: Submissions
+    internal let views: ConversationViews
+    internal let graph: TaskGraphView
     private let closed = Mutex(false)
     private init(session: Session, storage: any DurableStorage, options: HarnessOptions,
-                 tasks: TaskScheduler, submissions: Submissions) {
+                 tasks: TaskScheduler, submissions: Submissions) throws {
         self.session = session; self.storage = storage; self.options = options; self.tasks = tasks; self.submissions = submissions
+        self.views = try ConversationViews(session: session, storage: storage)
+        self.graph = try TaskGraphView(session: session, storage: storage)
     }
     public static func open(storage: any DurableStorage, options: HarnessOptions,
                             context: PiSwiftChord.Context) async throws -> Harness {
@@ -65,7 +69,7 @@ public final class Harness: Sendable {
                 withdrawInputs: { tx, id in try await withdrawQueuedInputs(tx: tx, conversationId: id) })
             hooks.scheduler.withLock { $0 = scheduler }
             let submissions = try Submissions(session: session, storage: storage, now: now, settings: settings, resume: { scheduler.resume() })
-            let harness = Harness(session: session, storage: storage, options: options, tasks: scheduler, submissions: submissions)
+            let harness = try Harness(session: session, storage: storage, options: options, tasks: scheduler, submissions: submissions)
             reference.withLock { $0.value = harness }
             do { try await scheduler.open(context: context) }
             catch {
