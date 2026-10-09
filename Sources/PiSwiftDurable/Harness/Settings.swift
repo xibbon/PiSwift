@@ -1,7 +1,7 @@
 import PiSwiftAI
 import PiSwiftChord
 
-public struct ConversationStreamOptions: Sendable {
+public struct ConversationStreamOptions: Sendable, Codable {
     public var transport: Transport?
     public var timeoutMs: Int?
     public var maxRetries: Int?
@@ -16,6 +16,40 @@ public struct ConversationStreamOptions: Sendable {
         self.transport = transport; self.timeoutMs = timeoutMs; self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs; self.headers = headers; self.metadata = metadata
         self.cacheRetention = cacheRetention; self.deferred = deferred
+    }
+    private enum CodingKeys: String, CodingKey {
+        case transport, timeoutMs, maxRetries, maxRetryDelayMs, headers, metadata, cacheRetention, deferred
+    }
+    private struct DeferredValue: Codable { let window: DeferredWindow? }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let transport = try c.decodeIfPresent(String.self, forKey: .transport)
+        if let transport, Transport(rawValue: transport) == nil {
+            throw DecodingError.dataCorruptedError(forKey: .transport, in: c, debugDescription: "Unknown transport")
+        }
+        let cache = try c.decodeIfPresent(String.self, forKey: .cacheRetention)
+        if let cache, CacheRetention(rawValue: cache) == nil {
+            throw DecodingError.dataCorruptedError(forKey: .cacheRetention, in: c, debugDescription: "Unknown cache retention")
+        }
+        self.transport = transport.flatMap(Transport.init(rawValue:))
+        timeoutMs = try c.decodeIfPresent(Int.self, forKey: .timeoutMs)
+        maxRetries = try c.decodeIfPresent(Int.self, forKey: .maxRetries)
+        maxRetryDelayMs = try c.decodeIfPresent(Int.self, forKey: .maxRetryDelayMs)
+        headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        metadata = try c.decodeIfPresent(JSONObject.self, forKey: .metadata)
+        cacheRetention = cache.flatMap(CacheRetention.init(rawValue:))
+        deferred = try c.decodeIfPresent(DeferredValue.self, forKey: .deferred).map { DeferredRequest(window: $0.window) }
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(transport?.rawValue, forKey: .transport)
+        try c.encodeIfPresent(timeoutMs, forKey: .timeoutMs)
+        try c.encodeIfPresent(maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(maxRetryDelayMs, forKey: .maxRetryDelayMs)
+        try c.encodeIfPresent(headers, forKey: .headers)
+        try c.encodeIfPresent(metadata, forKey: .metadata)
+        try c.encodeIfPresent(cacheRetention?.rawValue, forKey: .cacheRetention)
+        try c.encodeIfPresent(deferred.map { DeferredValue(window: $0.window) }, forKey: .deferred)
     }
 }
 

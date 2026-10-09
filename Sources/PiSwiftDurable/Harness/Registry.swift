@@ -24,7 +24,13 @@ public enum HarnessDefinitionError: Error, Sendable, Equatable, CustomStringConv
 
 public struct RegistrySnapshot: Sendable {
     private let extensions: [Extension]
-    public init(extensions: [Extension] = []) { self.extensions = extensions }
+    private let builtins: [AnyTaskDefinition]
+    public init(extensions: [Extension] = []) {
+        self.extensions = extensions; builtins = AnyTaskDefinition.builtins
+    }
+    internal init(extensions: [Extension], builtins: [AnyTaskDefinition]) {
+        self.extensions = extensions; self.builtins = builtins
+    }
     public func installed() -> [Extension] { extensions }
     public func `extension`(name: String) -> Extension? { extensions.first { harnessNamesEqual($0.name, name) } }
     public func tools() -> [(extension: Extension, tool: ToolRegistration)] {
@@ -33,7 +39,7 @@ public struct RegistrySnapshot: Sendable {
     public func sections() -> [(extension: Extension, section: PromptSection)] {
         extensions.flatMap { item in item.sections.map { (item, $0) } }
     }
-    public func tasks() -> [AnyTaskDefinition] { AnyTaskDefinition.builtins + extensions.flatMap(\.tasks) }
+    public func tasks() -> [AnyTaskDefinition] { builtins + extensions.flatMap(\.tasks) }
     public func task(name: String) -> AnyTaskDefinition? { tasks().first { harnessNamesEqual($0.name, name) } }
 }
 
@@ -49,7 +55,12 @@ public final class Registry: RegistryReader, Sendable {
         var listeners: [(UUID, @Sendable () -> Void)] = []
     }
     private let state = Mutex(State())
-    public init() {}
+    private let builtins: [AnyTaskDefinition]
+    public init() { builtins = AnyTaskDefinition.builtins }
+    internal init(builtins: [AnyTaskDefinition]) {
+        self.builtins = builtins
+        state.withLock { $0.current = RegistrySnapshot(extensions: [], builtins: builtins) }
+    }
     public func snapshot() -> RegistrySnapshot { state.withLock { $0.current } }
     public func subscribe(_ listener: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
         let id = UUID()
@@ -63,7 +74,7 @@ public final class Registry: RegistryReader, Sendable {
             if let index = installed.firstIndex(where: { harnessNamesEqual($0.name, extensionValue.name) }) { installed[index] = extensionValue }
             else { installed.append(extensionValue) }
             try validateTasks(installed)
-            state.current = RegistrySnapshot(extensions: installed)
+            state.current = RegistrySnapshot(extensions: installed, builtins: builtins)
             return state.listeners.map(\.1)
         }
         for callback in callbacks { callback() }
@@ -73,13 +84,15 @@ public final class Registry: RegistryReader, Sendable {
         let callbacks = state.withLock { state -> [@Sendable () -> Void] in
             let installed = state.current.installed()
             guard installed.contains(where: { harnessNamesEqual($0.name, name) }) else { return [] }
-            state.current = RegistrySnapshot(extensions: installed.filter { !harnessNamesEqual($0.name, name) })
+            state.current = RegistrySnapshot(extensions: installed.filter { !harnessNamesEqual($0.name, name) }, builtins: builtins)
             return state.listeners.map(\.1)
         }
         for callback in callbacks { callback() }
     }
 }
-public func createRegistry() -> Registry { Registry() }
+public func createRegistry() -> Registry {
+    Registry(builtins: [generationTask.eraseToAnyTaskDefinition()] + AnyTaskDefinition.builtins.dropFirst())
+}
 
 private func validateExtension(_ value: Extension) throws {
     var tools = Set<[UInt16]>()

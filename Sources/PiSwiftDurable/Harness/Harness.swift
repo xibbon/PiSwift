@@ -8,6 +8,10 @@ private final class HarnessSessionHooks: SessionHooks {
     let app: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?
     init(app: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?) { self.app = app }
     func conversationCreated(_ tx: Transaction, record: ConversationRecord) async throws {
+        _ = try await tx.doc(LiveDoc, conversationId: record.id)
+        _ = try await tx.doc(InboxDoc, conversationId: record.id)
+        _ = try await tx.doc(UsageDoc, conversationId: record.id)
+        _ = try await tx.doc(ProviderDoc, conversationId: record.id)
         try await createAgent(tx: tx, conversation: record)
         try await app?(tx, record)
     }
@@ -23,10 +27,11 @@ public final class Harness: Sendable {
     internal let storage: any DurableStorage
     internal let options: HarnessOptions
     internal let tasks: TaskScheduler
+    internal let submissions: Submissions
     private let closed = Mutex(false)
     private init(session: Session, storage: any DurableStorage, options: HarnessOptions,
-                 tasks: TaskScheduler) {
-        self.session = session; self.storage = storage; self.options = options; self.tasks = tasks
+                 tasks: TaskScheduler, submissions: Submissions) {
+        self.session = session; self.storage = storage; self.options = options; self.tasks = tasks; self.submissions = submissions
     }
     public static func open(storage: any DurableStorage, options: HarnessOptions,
                             context: PiSwiftChord.Context) async throws -> Harness {
@@ -55,9 +60,12 @@ public final class Harness: Sendable {
                     guard found != nil else { return nil }
                     guard let harness = reference.withLock({ $0.value }) else { throw closedError() }
                     return ConversationHandle(Conversation(id: id, harness: harness, binding: binding))
-                }, report: report, context: context.withoutAbortSignal())
+                }, report: report, context: context.withoutAbortSignal(),
+                settleOutcome: { tx, record, outcome in try await settleSchedulerOutcome(tx: tx, record: record, outcome: outcome) },
+                withdrawInputs: { tx, id in try await withdrawQueuedInputs(tx: tx, conversationId: id) })
             hooks.scheduler.withLock { $0 = scheduler }
-            let harness = Harness(session: session, storage: storage, options: options, tasks: scheduler)
+            let submissions = try Submissions(session: session, storage: storage, now: now, settings: settings, resume: { scheduler.resume() })
+            let harness = Harness(session: session, storage: storage, options: options, tasks: scheduler, submissions: submissions)
             reference.withLock { $0.value = harness }
             do { try await scheduler.open(context: context) }
             catch {

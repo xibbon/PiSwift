@@ -19,6 +19,30 @@ public struct UsageState: Sendable, Codable {
     }
 }
 
+/// Each conversation records only its own spend. A fork starts with empty totals.
+public let UsageDoc = try! ConversationDocToken<UsageState>(
+    kind: "pi.usage", version: 1, fork: .initial,
+    initial: { UsageState() }, checkpointWhen: { _, _, _ in true }
+)
+
+public enum UsageBucket: String, Sendable { case models, tools }
+
+/// Call this in the same commit that appends the response or tool result.
+public func recordUsage(tx: Transaction, conversationId: ConversationID, bucket: UsageBucket,
+                        key: String, usage: Usage) async throws {
+    let draft = try await tx.doc(UsageDoc, conversationId: conversationId)
+    guard let totals = try draft.child(bucket.rawValue) else {
+        throw DocumentDefinitionError("Usage bucket is missing")
+    }
+    if let current = try totals.get(key) {
+        var total = try durableUsage(current)
+        addUsage(total: &total, usage: usage)
+        try assignJSON(target: totals, key: key, value: usageValue(total))
+    } else {
+        try totals.set(key, usageValue(usage))
+    }
+}
+
 /// Adds all counters. An optional counter is retained once either side reports it.
 public func addUsage(total: inout Usage, usage: Usage) {
     total.input += usage.input; total.output += usage.output

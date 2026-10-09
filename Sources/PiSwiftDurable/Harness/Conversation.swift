@@ -1,4 +1,5 @@
 import PiSwiftChord
+import PiSwiftAI
 
 /// A handle for one durable conversation. Compare handles by ID.
 public final class Conversation: Sendable {
@@ -15,6 +16,17 @@ public final class Conversation: Sendable {
     }
     public func configure(change: AgentChange, context: PiSwiftChord.Context) async throws {
         try await commit({ tx in try await PiSwiftDurable.configure(tx: tx, conversationId: id, change: change) }, context: context)
+    }
+    public func submit(_ draft: SubmissionDraft, context: PiSwiftChord.Context) async throws -> Submission {
+        try await withTaskCancellationContext(try bound(context)) { context in
+            try harness.assertOpen()
+            return try await harness.submissions.submit(conversationId: id, draft: draft, context: context).bound(binding)
+        }
+    }
+    public func reset(handoff: String? = nil, context: PiSwiftChord.Context) async throws {
+        let now = harness.options.now?() ?? harness.options.clock.now()
+        let model = try handoff.map { try EntryRecord.encodeMessages([.user(UserMessage(content: .text($0), timestamp: now))]) }
+        _ = try await submit(.write(entry: EntryDraft(kind: resetEntry.kind, model: model, head: .self)), context: context)
     }
     public func commit<T>(_ change: (Transaction) async throws -> T, context: PiSwiftChord.Context) async throws -> T {
         try await withTaskCancellationContext(try bound(context)) { context in
@@ -59,6 +71,10 @@ public struct ConversationHandle: Sendable {
     public let id: ConversationID
     private let conversation: Conversation
     internal init(_ conversation: Conversation) { self.conversation = conversation; id = conversation.id }
+    public func submit(_ draft: SubmissionDraft, context: PiSwiftChord.Context) async throws -> Submission {
+        guard case .input = draft else { throw SessionError.message("A conversation handle can submit only input") }
+        return try await conversation.submit(draft, context: context)
+    }
     public func abort(background: Bool = false, context: PiSwiftChord.Context) async throws {
         try await conversation.abort(background: background, context: context)
     }
