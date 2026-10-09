@@ -174,11 +174,61 @@ A watch is not an exact submission receipt; use `Submission.wait` for that outco
 | `MemoryStorage` | In memory | Integration and storage-conformance tests |
 | `SqliteStorage.open(path:)` | SQLite file, or `:memory:` | Reopen, recovery, migration, and conformance tests |
 | Custom `DurableStorage` | Host-defined | Protocol and reusable storage-conformance cases |
-| JSONL and encrypted storage | Files | Outside this slice |
+| `JsonlStorage.open(directory:)` | Recoverable JSONL files | Reopen and conformance tests; coding-tools example |
+| Encrypted storage | Files | Outside this slice |
 
 SQLite uses the Apple SDK library and requires SQLite 3.37 or later. The port reads
 the upstream SQLite schema. Keep commits serialized through Session; storage preparation
 alone does not reserve a future commit.
+
+## Coding Tools
+
+Install `CodingTools` to offer `read`, `write`, `edit`, and `bash`. The extension is
+not installed by default. Each call uses the environment for its conversation.
+Run this body in an async throwing function. Supply `models` and a writable
+`projectDirectory`; the model can call `edit` to change a file during the turn.
+
+```swift
+let registry = createRegistry()
+try registry.install(try CodingTools)
+let harness = try await Harness.open(storage: MemoryStorage(),
+    options: .init(models: models, registry: registry,
+        env: { target, _ in LocalExecutionEnv(cwd: target.cwd ?? projectDirectory) }),
+    context: .background)
+let root = try await harness.root(options: .init(agent: .init(
+    model: .set(.init(provider: "faux", modelId: "faux-1")),
+    cwd: .set(projectDirectory))), context: .background)
+let submission = try await root.submit(
+    .input(content: .text("Edit notes.txt: replace world with durable.")),
+    context: .background)
+let settled = try await submission.wait(context: .background)
+try await harness.close(context: .background)
+```
+
+`read` uses bounded memory. It reports truncation and continuation as diagnostics.
+Images return `unsupported_image`. `write` keeps the supplied content. `edit`
+matches every replacement against the original file and rejects missing, duplicate,
+and overlapping targets. Its details contain a display diff, a unified patch, and
+the first changed line. BOM and a uniform CRLF style are preserved. As upstream,
+mixed line endings are converted to the first detected style. Unchanged fuzzy
+match lines keep their quotes, spaces, and Unicode characters.
+
+`bash` streams raw output. The harness keeps its tail; the environment saves full
+output to a spill file when needed. The host owns these spill files. On iOS,
+`LocalExecutionEnv` returns `shellUnavailable`, which the harness converts to an
+error result. A mobile host can offer only the three file tools:
+
+```swift
+try await root.configure(change: .init(tools: .set(.exact([
+    createReadTool(), createWriteTool(), createEditTool()
+]))), context: .background)
+```
+
+The factories and `CodingTools` are throwing Swift values because tool schemas
+are checked at construction. `BashToolOptions.prepare` returns a `BashExecution`
+value with the command, cwd, environment variables, and inheritance choice for
+that call. Mutations of one canonical path in one environment ID run in order.
+This queue does not lock files against shell commands or other processes.
 
 ## Swift Differences and Scope
 
@@ -202,14 +252,15 @@ alone does not reserve a future commit.
   declared upstream API, not extra members on its JavaScript runtime object.
 - `DurableModels` and live `HarnessSettingsProvider` are injected services. Fake models
   are per instance. Expected file/command failures are Result values from a host
-  `ExecutionEnv`. No local shell, coding tools, CLI, or TUI is included here.
+  `ExecutionEnv`. The local file environment, macOS shell, and coding tools are
+  included. CLI and TUI code is outside this library.
 - Swift AI token estimation and validation retain the existing port's JSON formatting
   and error-wording differences. Copy/session rejection errors omit JavaScript cause
   chains. Snapshot decoding has a typed failure boundary.
 
-Upstream examples 00–14, 20–25, and 31 have Swift integration tests with assertions.
-Examples 15–19 and 26–30 belong to the later P1 B slice: local environments, coding
-tools, real-provider setup, and CLI modes. The compile-only spec-usage test checks the
+Upstream examples 00–15, 17, and 20–31 have Swift integration tests with assertions.
+Examples 16, 18, and 19 need real-provider setup or CLI modes and remain outside
+this library slice. The compile-only spec-usage test checks the
 public Swift API shapes and marks the TypeScript-only forms.
 
 The upstream [spec at v1.1.0](https://github.com/earendil-works/pi/blob/v1.1.0/packages/durable/docs/spec.md)

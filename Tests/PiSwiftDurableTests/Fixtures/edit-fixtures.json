@@ -1,0 +1,3836 @@
+{
+  "tag": "v1.1.0",
+  "diffVersion": "8.0.3",
+  "compatibleDiffVersion": "8.0.4",
+  "edits": [
+    {
+      "name": "disjoint",
+      "content": "alpha\nbeta\ngamma\ndelta\n",
+      "replacements": [
+        {
+          "oldText": "alpha\n",
+          "newText": "ALPHA\n"
+        },
+        {
+          "oldText": "gamma\n",
+          "newText": "GAMMA\n"
+        }
+      ],
+      "result": {
+        "baseContent": "alpha\nbeta\ngamma\ndelta\n",
+        "newContent": "ALPHA\nbeta\nGAMMA\ndelta\n"
+      }
+    },
+    {
+      "name": "reverse-order",
+      "content": "alpha\nbeta\ngamma\n",
+      "replacements": [
+        {
+          "oldText": "gamma",
+          "newText": "GAMMA"
+        },
+        {
+          "oldText": "alpha",
+          "newText": "ALPHA"
+        }
+      ],
+      "result": {
+        "baseContent": "alpha\nbeta\ngamma\n",
+        "newContent": "ALPHA\nbeta\nGAMMA\n"
+      }
+    },
+    {
+      "name": "original-not-incremental",
+      "content": "one\ntwo\n",
+      "replacements": [
+        {
+          "oldText": "one",
+          "newText": "three"
+        },
+        {
+          "oldText": "three",
+          "newText": "four"
+        }
+      ],
+      "error": "Could not find edits[1] in fixture.txt. The oldText must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "overlap",
+      "content": "one\ntwo\nthree\n",
+      "replacements": [
+        {
+          "oldText": "one\ntwo\n",
+          "newText": "ONE"
+        },
+        {
+          "oldText": "two\nthree\n",
+          "newText": "TWO"
+        }
+      ],
+      "error": "edits[0] and edits[1] overlap in fixture.txt. Merge them into one edit or target disjoint regions."
+    },
+    {
+      "name": "nested",
+      "content": "abcdef",
+      "replacements": [
+        {
+          "oldText": "abcdef",
+          "newText": "X"
+        },
+        {
+          "oldText": "cd",
+          "newText": "Y"
+        }
+      ],
+      "error": "edits[0] and edits[1] overlap in fixture.txt. Merge them into one edit or target disjoint regions."
+    },
+    {
+      "name": "same-start",
+      "content": "abcdef",
+      "replacements": [
+        {
+          "oldText": "abc",
+          "newText": "X"
+        },
+        {
+          "oldText": "ab",
+          "newText": "Y"
+        }
+      ],
+      "error": "edits[0] and edits[1] overlap in fixture.txt. Merge them into one edit or target disjoint regions."
+    },
+    {
+      "name": "adjacent",
+      "content": "abcdef",
+      "replacements": [
+        {
+          "oldText": "abc",
+          "newText": "X"
+        },
+        {
+          "oldText": "def",
+          "newText": "Y"
+        }
+      ],
+      "result": {
+        "baseContent": "abcdef",
+        "newContent": "XY"
+      }
+    },
+    {
+      "name": "missing",
+      "content": "foo foo foo",
+      "replacements": [
+        {
+          "oldText": "bar",
+          "newText": "baz"
+        }
+      ],
+      "error": "Could not find the exact text in fixture.txt. The old text must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "duplicate",
+      "content": "foo foo foo",
+      "replacements": [
+        {
+          "oldText": "foo",
+          "newText": "bar"
+        }
+      ],
+      "error": "Found 3 occurrences of the text in fixture.txt. The text must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "non-overlapping-occurrences",
+      "content": "aaa",
+      "replacements": [
+        {
+          "oldText": "aa",
+          "newText": "b"
+        }
+      ],
+      "result": {
+        "baseContent": "aaa",
+        "newContent": "ba"
+      }
+    },
+    {
+      "name": "multi-missing",
+      "content": "alpha",
+      "replacements": [
+        {
+          "oldText": "alpha",
+          "newText": "A"
+        },
+        {
+          "oldText": "beta",
+          "newText": "B"
+        }
+      ],
+      "error": "Could not find edits[1] in fixture.txt. The oldText must match exactly including all whitespace and newlines."
+    },
+    {
+      "name": "multi-duplicate",
+      "content": "alpha beta beta",
+      "replacements": [
+        {
+          "oldText": "alpha",
+          "newText": "A"
+        },
+        {
+          "oldText": "beta",
+          "newText": "B"
+        }
+      ],
+      "error": "Found 2 occurrences of edits[1] in fixture.txt. Each oldText must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "empty",
+      "content": "alpha",
+      "replacements": [
+        {
+          "oldText": "",
+          "newText": "A"
+        }
+      ],
+      "error": "oldText must not be empty in fixture.txt."
+    },
+    {
+      "name": "multi-empty",
+      "content": "alpha",
+      "replacements": [
+        {
+          "oldText": "alpha",
+          "newText": "A"
+        },
+        {
+          "oldText": "",
+          "newText": "B"
+        }
+      ],
+      "error": "edits[1].oldText must not be empty in fixture.txt."
+    },
+    {
+      "name": "no-change",
+      "content": "alpha",
+      "replacements": [
+        {
+          "oldText": "alpha",
+          "newText": "alpha"
+        }
+      ],
+      "error": "No changes made to fixture.txt. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected."
+    },
+    {
+      "name": "multi-no-change",
+      "content": "alpha beta",
+      "replacements": [
+        {
+          "oldText": "alpha",
+          "newText": "alpha"
+        },
+        {
+          "oldText": "beta",
+          "newText": "beta"
+        }
+      ],
+      "error": "No changes made to fixture.txt. The replacements produced identical content."
+    },
+    {
+      "name": "delete",
+      "content": "alpha\nbeta\n",
+      "replacements": [
+        {
+          "oldText": "alpha\n",
+          "newText": ""
+        }
+      ],
+      "result": {
+        "baseContent": "alpha\nbeta\n",
+        "newContent": "beta\n"
+      }
+    },
+    {
+      "name": "line-endings",
+      "content": "alpha\r\nbeta\rgamma\n",
+      "replacements": [
+        {
+          "oldText": "alpha\r\nbeta\r",
+          "newText": "ALPHA\r\nBETA\r"
+        }
+      ],
+      "result": {
+        "baseContent": "alpha\nbeta\ngamma\n",
+        "newContent": "ALPHA\nBETA\ngamma\n"
+      }
+    },
+    {
+      "name": "utf16-emoji",
+      "content": "😀 start\n👩🏽‍💻 middle\n終 end\n",
+      "replacements": [
+        {
+          "oldText": "👩🏽‍💻",
+          "newText": "🚀"
+        },
+        {
+          "oldText": "終",
+          "newText": "finish"
+        }
+      ],
+      "result": {
+        "baseContent": "😀 start\n👩🏽‍💻 middle\n終 end\n",
+        "newContent": "😀 start\n🚀 middle\nfinish end\n"
+      }
+    },
+    {
+      "name": "combining-exact",
+      "content": "before é after\n",
+      "replacements": [
+        {
+          "oldText": "é",
+          "newText": "x"
+        }
+      ],
+      "result": {
+        "baseContent": "before é after\n",
+        "newContent": "before x after\n"
+      }
+    },
+    {
+      "name": "combining-fuzzy",
+      "content": "before é after\n",
+      "replacements": [
+        {
+          "oldText": "é",
+          "newText": "x"
+        }
+      ],
+      "result": {
+        "baseContent": "before é after\n",
+        "newContent": "before x after\n"
+      }
+    },
+    {
+      "name": "canonical-no-change-is-byte-change",
+      "content": "é\n",
+      "replacements": [
+        {
+          "oldText": "é",
+          "newText": "é"
+        }
+      ],
+      "result": {
+        "baseContent": "é\n",
+        "newContent": "é\n"
+      }
+    },
+    {
+      "name": "nfkc-ligature",
+      "content": "keep ﬀ  \nﬃ target\nkeep  \n",
+      "replacements": [
+        {
+          "oldText": "ffi target",
+          "newText": "changed"
+        }
+      ],
+      "result": {
+        "baseContent": "keep ﬀ  \nﬃ target\nkeep  \n",
+        "newContent": "keep ﬀ  \nchanged\nkeep  \n"
+      }
+    },
+    {
+      "name": "fuzzy-quotes",
+      "content": "“alpha”\nuntouched ‘quote’  \n",
+      "replacements": [
+        {
+          "oldText": "\"alpha\"",
+          "newText": "\"ALPHA\""
+        }
+      ],
+      "result": {
+        "baseContent": "“alpha”\nuntouched ‘quote’  \n",
+        "newContent": "\"ALPHA\"\nuntouched ‘quote’  \n"
+      }
+    },
+    {
+      "name": "fuzzy-dashes",
+      "content": "a—b\nuntouched – dash\n",
+      "replacements": [
+        {
+          "oldText": "a-b",
+          "newText": "a+B"
+        }
+      ],
+      "result": {
+        "baseContent": "a—b\nuntouched – dash\n",
+        "newContent": "a+B\nuntouched – dash\n"
+      }
+    },
+    {
+      "name": "fuzzy-spaces",
+      "content": "a b\nkeep  \n",
+      "replacements": [
+        {
+          "oldText": "a b",
+          "newText": "A B"
+        }
+      ],
+      "result": {
+        "baseContent": "a b\nkeep  \n",
+        "newContent": "A B\nkeep  \n"
+      }
+    },
+    {
+      "name": "fuzzy-trailing",
+      "content": "alpha  \nbeta\t\nkeep  \n",
+      "replacements": [
+        {
+          "oldText": "alpha\nbeta",
+          "newText": "A\nB"
+        }
+      ],
+      "result": {
+        "baseContent": "alpha  \nbeta\t\nkeep  \n",
+        "newContent": "A\nB\nkeep  \n"
+      }
+    },
+    {
+      "name": "fuzzy-preserve-duplicate-lines",
+      "content": "same “quote”  \ntarget—one\nsame \"quote\"\n",
+      "replacements": [
+        {
+          "oldText": "target-one",
+          "newText": "target+one"
+        }
+      ],
+      "result": {
+        "baseContent": "same “quote”  \ntarget—one\nsame \"quote\"\n",
+        "newContent": "same “quote”  \ntarget+one\nsame \"quote\"\n"
+      }
+    },
+    {
+      "name": "mixed-exact-fuzzy",
+      "content": "alpha\n“beta”\nkeep ﬃ  \n",
+      "replacements": [
+        {
+          "oldText": "alpha",
+          "newText": "ALPHA"
+        },
+        {
+          "oldText": "\"beta\"",
+          "newText": "BETA"
+        }
+      ],
+      "result": {
+        "baseContent": "alpha\n“beta”\nkeep ﬃ  \n",
+        "newContent": "ALPHA\nBETA\nkeep ﬃ  \n"
+      }
+    },
+    {
+      "name": "normalized-duplicates",
+      "content": "“alpha”\n\"alpha\"\n",
+      "replacements": [
+        {
+          "oldText": "“alpha”",
+          "newText": "beta"
+        }
+      ],
+      "error": "Found 2 occurrences of the text in fixture.txt. The text must be unique. Please provide more context to make it unique."
+    },
+    {
+      "name": "same-line-fuzzy",
+      "content": "x—y and a—b\nkeep  \n",
+      "replacements": [
+        {
+          "oldText": "x-y",
+          "newText": "X"
+        },
+        {
+          "oldText": "a-b",
+          "newText": "A"
+        }
+      ],
+      "result": {
+        "baseContent": "x—y and a—b\nkeep  \n",
+        "newContent": "X and A\nkeep  \n"
+      }
+    },
+    {
+      "name": "fuzzy-no-change",
+      "content": "“alpha”\n",
+      "replacements": [
+        {
+          "oldText": "\"alpha\"",
+          "newText": "“alpha”"
+        }
+      ],
+      "error": "No changes made to fixture.txt. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected."
+    },
+    {
+      "name": "js-trim-whitespace",
+      "content": "alpha﻿  \t\nkeep\n",
+      "replacements": [
+        {
+          "oldText": "alpha\n",
+          "newText": "A\n"
+        }
+      ],
+      "result": {
+        "baseContent": "alpha﻿  \t\nkeep\n",
+        "newContent": "A\nkeep\n"
+      }
+    },
+    {
+      "name": "fuzzy-empty-target",
+      "content": "a b\n",
+      "replacements": [
+        {
+          "oldText": "\t",
+          "newText": "X"
+        }
+      ],
+      "error": "Found 3 occurrences of the text in fixture.txt. The text must be unique. Please provide more context to make it unique."
+    }
+  ],
+  "diffs": [
+    {
+      "name": "edit-disjoint",
+      "path": "fixture.txt",
+      "oldContent": "alpha\nbeta\ngamma\ndelta\n",
+      "newContent": "ALPHA\nbeta\nGAMMA\ndelta\n",
+      "contextLines": 4,
+      "diff": "-1 alpha\n+1 ALPHA\n 2 beta\n-3 gamma\n+3 GAMMA\n 4 delta",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,4 @@\n-alpha\n+ALPHA\n beta\n-gamma\n+GAMMA\n delta\n"
+    },
+    {
+      "name": "edit-reverse-order",
+      "path": "fixture.txt",
+      "oldContent": "alpha\nbeta\ngamma\n",
+      "newContent": "ALPHA\nbeta\nGAMMA\n",
+      "contextLines": 4,
+      "diff": "-1 alpha\n+1 ALPHA\n 2 beta\n-3 gamma\n+3 GAMMA",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n-alpha\n+ALPHA\n beta\n-gamma\n+GAMMA\n"
+    },
+    {
+      "name": "edit-adjacent",
+      "path": "fixture.txt",
+      "oldContent": "abcdef",
+      "newContent": "XY",
+      "contextLines": 4,
+      "diff": "-1 abcdef\n+1 XY",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-abcdef\n\\ No newline at end of file\n+XY\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "edit-non-overlapping-occurrences",
+      "path": "fixture.txt",
+      "oldContent": "aaa",
+      "newContent": "ba",
+      "contextLines": 4,
+      "diff": "-1 aaa\n+1 ba",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-aaa\n\\ No newline at end of file\n+ba\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "edit-delete",
+      "path": "fixture.txt",
+      "oldContent": "alpha\nbeta\n",
+      "newContent": "beta\n",
+      "contextLines": 4,
+      "diff": "-1 alpha\n 2 beta",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,1 @@\n-alpha\n beta\n"
+    },
+    {
+      "name": "edit-line-endings",
+      "path": "fixture.txt",
+      "oldContent": "alpha\nbeta\ngamma\n",
+      "newContent": "ALPHA\nBETA\ngamma\n",
+      "contextLines": 4,
+      "diff": "-1 alpha\n-2 beta\n+1 ALPHA\n+2 BETA\n 3 gamma",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n-alpha\n-beta\n+ALPHA\n+BETA\n gamma\n"
+    },
+    {
+      "name": "edit-utf16-emoji",
+      "path": "fixture.txt",
+      "oldContent": "😀 start\n👩🏽‍💻 middle\n終 end\n",
+      "newContent": "😀 start\n🚀 middle\nfinish end\n",
+      "contextLines": 4,
+      "diff": " 1 😀 start\n-2 👩🏽‍💻 middle\n-3 終 end\n+2 🚀 middle\n+3 finish end",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n 😀 start\n-👩🏽‍💻 middle\n-終 end\n+🚀 middle\n+finish end\n"
+    },
+    {
+      "name": "edit-combining-exact",
+      "path": "fixture.txt",
+      "oldContent": "before é after\n",
+      "newContent": "before x after\n",
+      "contextLines": 4,
+      "diff": "-1 before é after\n+1 before x after",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-before é after\n+before x after\n"
+    },
+    {
+      "name": "edit-combining-fuzzy",
+      "path": "fixture.txt",
+      "oldContent": "before é after\n",
+      "newContent": "before x after\n",
+      "contextLines": 4,
+      "diff": "-1 before é after\n+1 before x after",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-before é after\n+before x after\n"
+    },
+    {
+      "name": "edit-canonical-no-change-is-byte-change",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "é\n",
+      "contextLines": 4,
+      "diff": "-1 é\n+1 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+é\n"
+    },
+    {
+      "name": "edit-nfkc-ligature",
+      "path": "fixture.txt",
+      "oldContent": "keep ﬀ  \nﬃ target\nkeep  \n",
+      "newContent": "keep ﬀ  \nchanged\nkeep  \n",
+      "contextLines": 4,
+      "diff": " 1 keep ﬀ  \n-2 ﬃ target\n+2 changed\n 3 keep  ",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n keep ﬀ  \n-ﬃ target\n+changed\n keep  \n"
+    },
+    {
+      "name": "edit-fuzzy-quotes",
+      "path": "fixture.txt",
+      "oldContent": "“alpha”\nuntouched ‘quote’  \n",
+      "newContent": "\"ALPHA\"\nuntouched ‘quote’  \n",
+      "contextLines": 4,
+      "diff": "-1 “alpha”\n+1 \"ALPHA\"\n 2 untouched ‘quote’  ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-“alpha”\n+\"ALPHA\"\n untouched ‘quote’  \n"
+    },
+    {
+      "name": "edit-fuzzy-dashes",
+      "path": "fixture.txt",
+      "oldContent": "a—b\nuntouched – dash\n",
+      "newContent": "a+B\nuntouched – dash\n",
+      "contextLines": 4,
+      "diff": "-1 a—b\n+1 a+B\n 2 untouched – dash",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-a—b\n+a+B\n untouched – dash\n"
+    },
+    {
+      "name": "edit-fuzzy-spaces",
+      "path": "fixture.txt",
+      "oldContent": "a b\nkeep  \n",
+      "newContent": "A B\nkeep  \n",
+      "contextLines": 4,
+      "diff": "-1 a b\n+1 A B\n 2 keep  ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-a b\n+A B\n keep  \n"
+    },
+    {
+      "name": "edit-fuzzy-trailing",
+      "path": "fixture.txt",
+      "oldContent": "alpha  \nbeta\t\nkeep  \n",
+      "newContent": "A\nB\nkeep  \n",
+      "contextLines": 4,
+      "diff": "-1 alpha  \n-2 beta\t\n+1 A\n+2 B\n 3 keep  ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n-alpha  \n-beta\t\n+A\n+B\n keep  \n"
+    },
+    {
+      "name": "edit-fuzzy-preserve-duplicate-lines",
+      "path": "fixture.txt",
+      "oldContent": "same “quote”  \ntarget—one\nsame \"quote\"\n",
+      "newContent": "same “quote”  \ntarget+one\nsame \"quote\"\n",
+      "contextLines": 4,
+      "diff": " 1 same “quote”  \n-2 target—one\n+2 target+one\n 3 same \"quote\"",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n same “quote”  \n-target—one\n+target+one\n same \"quote\"\n"
+    },
+    {
+      "name": "edit-mixed-exact-fuzzy",
+      "path": "fixture.txt",
+      "oldContent": "alpha\n“beta”\nkeep ﬃ  \n",
+      "newContent": "ALPHA\nBETA\nkeep ﬃ  \n",
+      "contextLines": 4,
+      "diff": "-1 alpha\n-2 “beta”\n+1 ALPHA\n+2 BETA\n 3 keep ﬃ  ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,3 @@\n-alpha\n-“beta”\n+ALPHA\n+BETA\n keep ﬃ  \n"
+    },
+    {
+      "name": "edit-same-line-fuzzy",
+      "path": "fixture.txt",
+      "oldContent": "x—y and a—b\nkeep  \n",
+      "newContent": "X and A\nkeep  \n",
+      "contextLines": 4,
+      "diff": "-1 x—y and a—b\n+1 X and A\n 2 keep  ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-x—y and a—b\n+X and A\n keep  \n"
+    },
+    {
+      "name": "edit-js-trim-whitespace",
+      "path": "fixture.txt",
+      "oldContent": "alpha﻿  \t\nkeep\n",
+      "newContent": "A\nkeep\n",
+      "contextLines": 4,
+      "diff": "-1 alpha﻿  \t\n+1 A\n 2 keep",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-alpha﻿  \t\n+A\n keep\n"
+    },
+    {
+      "name": "empty-context-0",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "",
+      "contextLines": 0,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "empty-context-1",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "empty-context-4",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "add-empty-context-0",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "a\n",
+      "contextLines": 0,
+      "diff": "+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+a\n"
+    },
+    {
+      "name": "add-empty-context-1",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "a\n",
+      "contextLines": 1,
+      "diff": "+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+a\n"
+    },
+    {
+      "name": "add-empty-context-4",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "a\n",
+      "contextLines": 4,
+      "diff": "+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+a\n"
+    },
+    {
+      "name": "remove-empty-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "",
+      "contextLines": 0,
+      "diff": "-1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-a\n"
+    },
+    {
+      "name": "remove-empty-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "-1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-a\n"
+    },
+    {
+      "name": "remove-empty-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "-1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-a\n"
+    },
+    {
+      "name": "same-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\n",
+      "newContent": "a\nb\n",
+      "contextLines": 0,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "same-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\n",
+      "newContent": "a\nb\n",
+      "contextLines": 1,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "same-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\n",
+      "newContent": "a\nb\n",
+      "contextLines": 4,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "eof-replace-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a",
+      "newContent": "b",
+      "contextLines": 0,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+b\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "eof-replace-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a",
+      "newContent": "b",
+      "contextLines": 1,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+b\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "eof-replace-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a",
+      "newContent": "b",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+b\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "eof-add-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "a",
+      "contextLines": 0,
+      "diff": "-1 a\n+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n+a\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "eof-add-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "a",
+      "contextLines": 1,
+      "diff": "-1 a\n+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n+a\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "eof-add-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "a",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n+a\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "eof-remove-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a",
+      "newContent": "a\n",
+      "contextLines": 0,
+      "diff": "-1 a\n+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+a\n"
+    },
+    {
+      "name": "eof-remove-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a",
+      "newContent": "a\n",
+      "contextLines": 1,
+      "diff": "-1 a\n+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+a\n"
+    },
+    {
+      "name": "eof-remove-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a",
+      "newContent": "a\n",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n\\ No newline at end of file\n+a\n"
+    },
+    {
+      "name": "blank-lines-context-0",
+      "path": "fixture.txt",
+      "oldContent": "\n\n\na\n",
+      "newContent": "\n\nb\n",
+      "contextLines": 0,
+      "diff": "   ...\n-3 \n-4 a\n+3 b",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -3,2 +3,1 @@\n-\n-a\n+b\n"
+    },
+    {
+      "name": "blank-lines-context-1",
+      "path": "fixture.txt",
+      "oldContent": "\n\n\na\n",
+      "newContent": "\n\nb\n",
+      "contextLines": 1,
+      "diff": "   ...\n 2 \n-3 \n-4 a\n+3 b",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,3 +2,2 @@\n \n-\n-a\n+b\n"
+    },
+    {
+      "name": "blank-lines-context-4",
+      "path": "fixture.txt",
+      "oldContent": "\n\n\na\n",
+      "newContent": "\n\nb\n",
+      "contextLines": 4,
+      "diff": " 1 \n 2 \n-3 \n-4 a\n+3 b",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,3 @@\n \n \n-\n-a\n+b\n"
+    },
+    {
+      "name": "duplicate-tie-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\na\nb\n",
+      "newContent": "b\na\nb\na\n",
+      "contextLines": 0,
+      "diff": "-1 a\n   ...\n+4 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-a\n@@ -4,0 +4,1 @@\n+a\n"
+    },
+    {
+      "name": "duplicate-tie-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\na\nb\n",
+      "newContent": "b\na\nb\na\n",
+      "contextLines": 1,
+      "diff": "-1 a\n 2 b\n   ...\n 4 b\n+4 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,1 @@\n-a\n b\n@@ -4,1 +3,2 @@\n b\n+a\n"
+    },
+    {
+      "name": "duplicate-tie-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\na\nb\n",
+      "newContent": "b\na\nb\na\n",
+      "contextLines": 4,
+      "diff": "-1 a\n 2 b\n 3 a\n 4 b\n+4 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,4 @@\n-a\n b\n a\n b\n+a\n"
+    },
+    {
+      "name": "crlf-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a\r\nb\r\n",
+      "newContent": "a\r\nc\r\n",
+      "contextLines": 0,
+      "diff": "   ...\n-2 b\r\n+2 c\r",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,1 +2,1 @@\n-b\r\n+c\r\n"
+    },
+    {
+      "name": "crlf-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a\r\nb\r\n",
+      "newContent": "a\r\nc\r\n",
+      "contextLines": 1,
+      "diff": " 1 a\r\n-2 b\r\n+2 c\r",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n a\r\n-b\r\n+c\r\n"
+    },
+    {
+      "name": "crlf-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a\r\nb\r\n",
+      "newContent": "a\r\nc\r\n",
+      "contextLines": 4,
+      "diff": " 1 a\r\n-2 b\r\n+2 c\r",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n a\r\n-b\r\n+c\r\n"
+    },
+    {
+      "name": "cr-context-0",
+      "path": "fixture.txt",
+      "oldContent": "a\rb\r",
+      "newContent": "a\rc\r",
+      "contextLines": 0,
+      "diff": "-1 a\rb\r\n+1 a\rc\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\rb\r\n\\ No newline at end of file\n+a\rc\r\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "cr-context-1",
+      "path": "fixture.txt",
+      "oldContent": "a\rb\r",
+      "newContent": "a\rc\r",
+      "contextLines": 1,
+      "diff": "-1 a\rb\r\n+1 a\rc\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\rb\r\n\\ No newline at end of file\n+a\rc\r\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "cr-context-4",
+      "path": "fixture.txt",
+      "oldContent": "a\rb\r",
+      "newContent": "a\rc\r",
+      "contextLines": 4,
+      "diff": "-1 a\rb\r\n+1 a\rc\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\rb\r\n\\ No newline at end of file\n+a\rc\r\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "combining-context-0",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "é\n",
+      "contextLines": 0,
+      "diff": "-1 é\n+1 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+é\n"
+    },
+    {
+      "name": "combining-context-1",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "é\n",
+      "contextLines": 1,
+      "diff": "-1 é\n+1 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+é\n"
+    },
+    {
+      "name": "combining-context-4",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "é\n",
+      "contextLines": 4,
+      "diff": "-1 é\n+1 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+é\n"
+    },
+    {
+      "name": "unicode-context-0",
+      "path": "fixture.txt",
+      "oldContent": "😀\n👩🏽‍💻\n",
+      "newContent": "😀\n🚀\n",
+      "contextLines": 0,
+      "diff": "   ...\n-2 👩🏽‍💻\n+2 🚀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,1 +2,1 @@\n-👩🏽‍💻\n+🚀\n"
+    },
+    {
+      "name": "unicode-context-1",
+      "path": "fixture.txt",
+      "oldContent": "😀\n👩🏽‍💻\n",
+      "newContent": "😀\n🚀\n",
+      "contextLines": 1,
+      "diff": " 1 😀\n-2 👩🏽‍💻\n+2 🚀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n 😀\n-👩🏽‍💻\n+🚀\n"
+    },
+    {
+      "name": "unicode-context-4",
+      "path": "fixture.txt",
+      "oldContent": "😀\n👩🏽‍💻\n",
+      "newContent": "😀\n🚀\n",
+      "contextLines": 4,
+      "diff": " 1 😀\n-2 👩🏽‍💻\n+2 🚀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n 😀\n-👩🏽‍💻\n+🚀\n"
+    },
+    {
+      "name": "line-width-context-0",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n",
+      "newContent": "0\n1\n2\n3\n4\n5\n6\n7\nchanged\n9\n10\n11\n12\n13\n14\n15\n16\n17\n",
+      "contextLines": 0,
+      "diff": "    ...\n- 9 8\n+ 9 changed\n    ...",
+      "firstChangedLine": 9,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -9,1 +9,1 @@\n-8\n+changed\n"
+    },
+    {
+      "name": "line-width-context-1",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n",
+      "newContent": "0\n1\n2\n3\n4\n5\n6\n7\nchanged\n9\n10\n11\n12\n13\n14\n15\n16\n17\n",
+      "contextLines": 1,
+      "diff": "    ...\n  8 7\n- 9 8\n+ 9 changed\n 10 9\n    ...",
+      "firstChangedLine": 9,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -8,3 +8,3 @@\n 7\n-8\n+changed\n 9\n"
+    },
+    {
+      "name": "line-width-context-4",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n",
+      "newContent": "0\n1\n2\n3\n4\n5\n6\n7\nchanged\n9\n10\n11\n12\n13\n14\n15\n16\n17\n",
+      "contextLines": 4,
+      "diff": "    ...\n  5 4\n  6 5\n  7 6\n  8 7\n- 9 8\n+ 9 changed\n 10 9\n 11 10\n 12 11\n 13 12\n    ...",
+      "firstChangedLine": 9,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -5,9 +5,9 @@\n 4\n 5\n 6\n 7\n-8\n+changed\n 9\n 10\n 11\n 12\n"
+    },
+    {
+      "name": "separate-hunks-context-0",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n",
+      "newContent": "0\n1\nchanged\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\nchanged\n31\n32\n33\n34\n",
+      "contextLines": 0,
+      "diff": "    ...\n- 3 2\n+ 3 changed\n    ...\n-31 30\n+31 changed\n    ...",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -3,1 +3,1 @@\n-2\n+changed\n@@ -31,1 +31,1 @@\n-30\n+changed\n"
+    },
+    {
+      "name": "separate-hunks-context-1",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n",
+      "newContent": "0\n1\nchanged\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\nchanged\n31\n32\n33\n34\n",
+      "contextLines": 1,
+      "diff": "    ...\n  2 1\n- 3 2\n+ 3 changed\n  4 3\n    ...\n 30 29\n-31 30\n+31 changed\n 32 31\n    ...",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,3 +2,3 @@\n 1\n-2\n+changed\n 3\n@@ -30,3 +30,3 @@\n 29\n-30\n+changed\n 31\n"
+    },
+    {
+      "name": "separate-hunks-context-4",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n",
+      "newContent": "0\n1\nchanged\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\nchanged\n31\n32\n33\n34\n",
+      "contextLines": 4,
+      "diff": "  1 0\n  2 1\n- 3 2\n+ 3 changed\n  4 3\n  5 4\n  6 5\n  7 6\n    ...\n 27 26\n 28 27\n 29 28\n 30 29\n-31 30\n+31 changed\n 32 31\n 33 32\n 34 33\n 35 34",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,7 @@\n 0\n 1\n-2\n+changed\n 3\n 4\n 5\n 6\n@@ -27,9 +27,9 @@\n 26\n 27\n 28\n 29\n-30\n+changed\n 31\n 32\n 33\n 34\n"
+    },
+    {
+      "name": "join-hunks-context-0",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n",
+      "newContent": "0\n1\nchanged\n3\n4\n5\n6\n7\n8\nchanged\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n",
+      "contextLines": 0,
+      "diff": "    ...\n- 3 2\n+ 3 changed\n    ...\n-10 9\n+10 changed\n    ...",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -3,1 +3,1 @@\n-2\n+changed\n@@ -10,1 +10,1 @@\n-9\n+changed\n"
+    },
+    {
+      "name": "join-hunks-context-1",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n",
+      "newContent": "0\n1\nchanged\n3\n4\n5\n6\n7\n8\nchanged\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n",
+      "contextLines": 1,
+      "diff": "    ...\n  2 1\n- 3 2\n+ 3 changed\n  4 3\n    ...\n  9 8\n-10 9\n+10 changed\n 11 10\n    ...",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,3 +2,3 @@\n 1\n-2\n+changed\n 3\n@@ -9,3 +9,3 @@\n 8\n-9\n+changed\n 10\n"
+    },
+    {
+      "name": "join-hunks-context-4",
+      "path": "fixture.txt",
+      "oldContent": "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n",
+      "newContent": "0\n1\nchanged\n3\n4\n5\n6\n7\n8\nchanged\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n",
+      "contextLines": 4,
+      "diff": "  1 0\n  2 1\n- 3 2\n+ 3 changed\n  4 3\n  5 4\n  6 5\n  7 6\n  8 7\n  9 8\n-10 9\n+10 changed\n 11 10\n 12 11\n 13 12\n 14 13\n    ...",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,14 @@\n 0\n 1\n-2\n+changed\n 3\n 4\n 5\n 6\n 7\n 8\n-9\n+changed\n 10\n 11\n 12\n 13\n"
+    },
+    {
+      "name": "path-\"space name.txt\"",
+      "path": "space name.txt",
+      "oldContent": "a\n",
+      "newContent": "b\n",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- space name.txt\n+++ space name.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+    },
+    {
+      "name": "path-\"tab\\tname.txt\"",
+      "path": "tab\tname.txt",
+      "oldContent": "a\n",
+      "newContent": "b\n",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- tab\tname.txt\n+++ tab\tname.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+    },
+    {
+      "name": "path-\"日本😀.txt\"",
+      "path": "日本😀.txt",
+      "oldContent": "a\n",
+      "newContent": "b\n",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- 日本😀.txt\n+++ 日本😀.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+    },
+    {
+      "name": "path-\"line\\nname.txt\"",
+      "path": "line\nname.txt",
+      "oldContent": "a\n",
+      "newContent": "b\n",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- line\nname.txt\n+++ line\nname.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+    },
+    {
+      "name": "seeded-0",
+      "path": "fixture.txt",
+      "oldContent": "x\r\né\n",
+      "newContent": "😀\nb\n😀\né\n",
+      "contextLines": 0,
+      "diff": "-1 x\r\n-2 é\n+1 😀\n+2 b\n+3 😀\n+4 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,4 @@\n-x\r\n-é\n+😀\n+b\n+😀\n+é\n"
+    },
+    {
+      "name": "seeded-1",
+      "path": "fixture.txt",
+      "oldContent": "😀\n😀\nx\r\na\n😀\n",
+      "newContent": "b\nx\r\na\nx\r\né\né\nb\na\né\nx\r\nx\r\n\nx\r\na\n",
+      "contextLines": 1,
+      "diff": "- 1 😀\n- 2 😀\n+ 1 b\n  3 x\r\n  4 a\n- 5 😀\n+ 4 x\r\n+ 5 é\n+ 6 é\n+ 7 b\n+ 8 a\n+ 9 é\n+10 x\r\n+11 x\r\n+12 \n+13 x\r\n+14 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,14 @@\n-😀\n-😀\n+b\n x\r\n a\n-😀\n+x\r\n+é\n+é\n+b\n+a\n+é\n+x\r\n+x\r\n+\n+x\r\n+a\n"
+    },
+    {
+      "name": "seeded-2",
+      "path": "fixture.txt",
+      "oldContent": "b\nx\r\né\n😀\na\né\n",
+      "newContent": "é\n😀\né\na\n\n😀\nx\r\ntail",
+      "contextLines": 4,
+      "diff": "-1 b\n-2 x\r\n 3 é\n 4 😀\n+3 é\n 5 a\n-6 é\n+5 \n+6 😀\n+7 x\r\n+8 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,8 @@\n-b\n-x\r\n é\n 😀\n+é\n a\n-é\n+\n+😀\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-3",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\nb\n\nb\nb\nb\n😀\na\nx\r\n",
+      "newContent": "a\na\na\nb\nx\r\né\né\né\n😀\n😀\n",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 é\n- 3 b\n- 4 \n- 5 b\n- 6 b\n- 7 b\n- 8 😀\n    ...\n+ 2 a\n+ 3 a\n+ 4 b\n    ...\n+ 6 é\n+ 7 é\n+ 8 é\n+ 9 😀\n+10 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +0,0 @@\n-😀\n-é\n-b\n-\n-b\n-b\n-b\n-😀\n@@ -9,0 +2,3 @@\n+a\n+a\n+b\n@@ -10,0 +6,5 @@\n+é\n+é\n+é\n+😀\n+😀\n"
+    },
+    {
+      "name": "seeded-4",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "a\nb\nb\né\né\nb\né\né\n",
+      "contextLines": 1,
+      "diff": "+1 a\n+2 b\n+3 b\n+4 é\n 1 é\n+6 b\n+7 é\n+8 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,8 @@\n+a\n+b\n+b\n+é\n é\n+b\n+é\n+é\n"
+    },
+    {
+      "name": "seeded-5",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "\né\né\n\né\né\nx\r\nb\ntail",
+      "contextLines": 4,
+      "diff": "+1 \n+2 é\n+3 é\n+4 \n+5 é\n+6 é\n+7 x\r\n+8 b\n+9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,9 @@\n+\n+é\n+é\n+\n+é\n+é\n+x\r\n+b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-6",
+      "path": "fixture.txt",
+      "oldContent": "a\na\nb\ntail",
+      "newContent": "a\nb\n😀\nx\r\né\né\na\n😀\na\n😀\n😀\nb\nx\r\n😀\n",
+      "contextLines": 0,
+      "diff": "    ...\n+ 2 b\n+ 3 😀\n+ 4 x\r\n+ 5 é\n+ 6 é\n    ...\n+ 8 😀\n+ 9 a\n+10 😀\n+11 😀\n    ...\n- 4 tail\n+13 x\r\n+14 😀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,0 +2,5 @@\n+b\n+😀\n+x\r\n+é\n+é\n@@ -2,0 +8,4 @@\n+😀\n+a\n+😀\n+😀\n@@ -4,1 +13,2 @@\n-tail\n\\ No newline at end of file\n+x\r\n+😀\n"
+    },
+    {
+      "name": "seeded-7",
+      "path": "fixture.txt",
+      "oldContent": "é\n\nb\n😀\nb\nx\r\ntail",
+      "newContent": "\né\nx\r\n\na\né\n😀\né\nb\nb\né\n😀\né\né\ntail",
+      "contextLines": 1,
+      "diff": "+ 1 \n  1 é\n+ 3 x\r\n  2 \n- 3 b\n+ 5 a\n+ 6 é\n  4 😀\n+ 8 é\n  5 b\n- 6 x\r\n+10 b\n+11 é\n+12 😀\n+13 é\n+14 é\n  7 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,15 @@\n+\n é\n+x\r\n \n-b\n+a\n+é\n 😀\n+é\n b\n-x\r\n+b\n+é\n+😀\n+é\n+é\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-8",
+      "path": "fixture.txt",
+      "oldContent": "b\na\né\nb\né\n😀\n",
+      "newContent": "😀\n\né\né\ntail",
+      "contextLines": 4,
+      "diff": "-1 b\n-2 a\n-3 é\n-4 b\n-5 é\n 6 😀\n+2 \n+3 é\n+4 é\n+5 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,5 @@\n-b\n-a\n-é\n-b\n-é\n 😀\n+\n+é\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-9",
+      "path": "fixture.txt",
+      "oldContent": "😀\na\né\n",
+      "newContent": "a\né\né\nb\n😀\n\nb\nx\r\n",
+      "contextLines": 0,
+      "diff": "-1 😀\n   ...\n+3 é\n+4 b\n+5 😀\n+6 \n+7 b\n+8 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-😀\n@@ -3,0 +3,6 @@\n+é\n+b\n+😀\n+\n+b\n+x\r\n"
+    },
+    {
+      "name": "seeded-10",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nb\né\n\na\n\ntail",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "-1 x\r\n-2 b\n-3 é\n-4 \n-5 a\n-6 \n-7 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +0,0 @@\n-x\r\n-b\n-é\n-\n-a\n-\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-11",
+      "path": "fixture.txt",
+      "oldContent": "é\né\na\ntail",
+      "newContent": "\na\né\n😀\na\n😀\né\n",
+      "contextLines": 4,
+      "diff": "-1 é\n+1 \n+2 a\n 2 é\n+4 😀\n 3 a\n-4 tail\n+6 😀\n+7 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,7 @@\n-é\n+\n+a\n é\n+😀\n a\n-tail\n\\ No newline at end of file\n+😀\n+é\n"
+    },
+    {
+      "name": "seeded-12",
+      "path": "fixture.txt",
+      "oldContent": "b\na\ntail",
+      "newContent": "é\na\nx\r\né\n",
+      "contextLines": 0,
+      "diff": "-1 b\n+1 é\n   ...\n-3 tail\n+3 x\r\n+4 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-b\n+é\n@@ -3,1 +3,2 @@\n-tail\n\\ No newline at end of file\n+x\r\n+é\n"
+    },
+    {
+      "name": "seeded-13",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "x\r\n",
+      "contextLines": 1,
+      "diff": "-1 é\n+1 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+x\r\n"
+    },
+    {
+      "name": "seeded-14",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\nx\r\nx\r\na\nx\r\n",
+      "newContent": "a\ntail",
+      "contextLines": 4,
+      "diff": "-1 é\n-2 😀\n-3 x\r\n-4 x\r\n 5 a\n-6 x\r\n+2 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,2 @@\n-é\n-😀\n-x\r\n-x\r\n a\n-x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-15",
+      "path": "fixture.txt",
+      "oldContent": "\né\na\né\n\né\nb\né\né\né\nb\nx\r\n😀\ntail",
+      "newContent": "b\nb\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 é\n- 3 a\n- 4 é\n- 5 \n- 6 é\n    ...\n- 8 é\n- 9 é\n-10 é\n    ...\n-13 😀\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +0,0 @@\n-\n-é\n-a\n-é\n-\n-é\n@@ -8,3 +1,0 @@\n-é\n-é\n-é\n@@ -13,1 +3,0 @@\n-😀\n"
+    },
+    {
+      "name": "seeded-16",
+      "path": "fixture.txt",
+      "oldContent": "😀\ntail",
+      "newContent": "é\n",
+      "contextLines": 1,
+      "diff": "-1 😀\n-2 tail\n+1 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,1 @@\n-😀\n-tail\n\\ No newline at end of file\n+é\n"
+    },
+    {
+      "name": "seeded-17",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nb\nx\r\nb\né\nb\n",
+      "newContent": "é\na\né\n",
+      "contextLines": 4,
+      "diff": " 1 é\n+2 a\n 2 é\n-3 b\n-4 x\r\n-5 b\n-6 é\n-7 b",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,3 @@\n é\n+a\n é\n-b\n-x\r\n-b\n-é\n-b\n"
+    },
+    {
+      "name": "seeded-18",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "x\r\na\na\nb\nb\na\né\nx\r\n😀\n\nx\r\na\né\na\ntail",
+      "contextLines": 0,
+      "diff": "- 1 é\n+ 1 x\r\n+ 2 a\n+ 3 a\n+ 4 b\n+ 5 b\n+ 6 a\n+ 7 é\n+ 8 x\r\n+ 9 😀\n+10 \n+11 x\r\n+12 a\n+13 é\n+14 a\n+15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,15 @@\n-é\n+x\r\n+a\n+a\n+b\n+b\n+a\n+é\n+x\r\n+😀\n+\n+x\r\n+a\n+é\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-19",
+      "path": "fixture.txt",
+      "oldContent": "\n",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "-1 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-\n"
+    },
+    {
+      "name": "seeded-20",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\né\nb\n\né\n😀\nx\r\ntail",
+      "newContent": "b\ntail",
+      "contextLines": 4,
+      "diff": "-1 😀\n-2 \n-3 é\n 4 b\n-5 \n-6 é\n-7 😀\n-8 x\r\n 9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,2 @@\n-😀\n-\n-é\n b\n-\n-é\n-😀\n-x\r\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-21",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "a\na\nx\r\né\né\nb\né\nx\r\nb\nx\r\né\nb\n\né\n",
+      "contextLines": 0,
+      "diff": "+ 1 a\n+ 2 a\n+ 3 x\r\n    ...\n+ 5 é\n+ 6 b\n+ 7 é\n+ 8 x\r\n+ 9 b\n+10 x\r\n+11 é\n+12 b\n+13 \n+14 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,3 @@\n+a\n+a\n+x\r\n@@ -1,0 +5,10 @@\n+é\n+b\n+é\n+x\r\n+b\n+x\r\n+é\n+b\n+\n+é\n"
+    },
+    {
+      "name": "seeded-22",
+      "path": "fixture.txt",
+      "oldContent": "\n😀\né\n😀\né\né\nb\n😀\n",
+      "newContent": "é\né\nb\né\né\né\nx\r\nb\nx\r\né\nb\nx\r\nb\né\n",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 😀\n+ 1 é\n  3 é\n- 4 😀\n+ 3 b\n  5 é\n  6 é\n+ 6 é\n+ 7 x\r\n  7 b\n- 8 😀\n+ 9 x\r\n+10 é\n+11 b\n+12 x\r\n+13 b\n+14 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,14 @@\n-\n-😀\n+é\n é\n-😀\n+b\n é\n é\n+é\n+x\r\n b\n-😀\n+x\r\n+é\n+b\n+x\r\n+b\n+é\n"
+    },
+    {
+      "name": "seeded-23",
+      "path": "fixture.txt",
+      "oldContent": "\nx\r\na\né\né\nx\r\nx\r\né\n😀\né\ntail",
+      "newContent": "é\né\né\n😀\n\nb\né\né\nb\né\nb\n😀\nx\r\n",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 x\r\n- 3 a\n- 4 é\n  5 é\n- 6 x\r\n- 7 x\r\n  8 é\n+ 3 é\n  9 😀\n+ 5 \n+ 6 b\n 10 é\n-11 tail\n+ 8 é\n+ 9 b\n+10 é\n+11 b\n+12 😀\n+13 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,13 @@\n-\n-x\r\n-a\n-é\n é\n-x\r\n-x\r\n é\n+é\n 😀\n+\n+b\n é\n-tail\n\\ No newline at end of file\n+é\n+b\n+é\n+b\n+😀\n+x\r\n"
+    },
+    {
+      "name": "seeded-24",
+      "path": "fixture.txt",
+      "oldContent": "b\né\na\n\n",
+      "newContent": "é\n😀\nx\r\n😀\n\nb\n\n\na\nx\r\né\nb\né\nx\r\n",
+      "contextLines": 0,
+      "diff": "+ 1 é\n+ 2 😀\n+ 3 x\r\n+ 4 😀\n+ 5 \n    ...\n- 2 é\n- 3 a\n    ...\n+ 8 \n+ 9 a\n+10 x\r\n+11 é\n+12 b\n+13 é\n+14 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,5 @@\n+é\n+😀\n+x\r\n+😀\n+\n@@ -2,2 +6,0 @@\n-é\n-a\n@@ -4,0 +8,7 @@\n+\n+a\n+x\r\n+é\n+b\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-25",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\n\n😀\né\n",
+      "newContent": "é\n\né\né\nx\r\n\n",
+      "contextLines": 1,
+      "diff": "-1 é\n-2 b\n+1 é\n 3 \n-4 😀\n+3 é\n 5 é\n+5 x\r\n+6 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,6 @@\n-é\n-b\n+é\n \n-😀\n+é\n é\n+x\r\n+\n"
+    },
+    {
+      "name": "seeded-26",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\nx\r\nb\nb\na\na\n😀\n😀\n\nx\r\né\nx\r\ntail",
+      "newContent": "é\nx\r\né\nb\nx\r\na\na\n😀\nx\r\n",
+      "contextLines": 4,
+      "diff": "+ 1 é\n  1 x\r\n- 2 \n- 3 x\r\n+ 3 é\n  4 b\n- 5 b\n+ 5 x\r\n  6 a\n  7 a\n  8 😀\n- 9 😀\n-10 \n 11 x\r\n-12 é\n-13 x\r\n-14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,9 @@\n+é\n x\r\n-\n-x\r\n+é\n b\n-b\n+x\r\n a\n a\n 😀\n-😀\n-\n x\r\n-é\n-x\r\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-27",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\né\na\né\n😀\na\nb\n",
+      "newContent": "tail",
+      "contextLines": 0,
+      "diff": "-1 é\n-2 x\r\n-3 é\n-4 a\n-5 é\n-6 😀\n-7 a\n-8 b\n+1 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,1 @@\n-é\n-x\r\n-é\n-a\n-é\n-😀\n-a\n-b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-28",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\n\nx\r\nx\r\né\n😀\n😀\nb\na\ntail",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "- 1 a\n- 2 b\n- 3 \n- 4 x\r\n- 5 x\r\n- 6 é\n- 7 😀\n- 8 😀\n- 9 b\n-10 a\n-11 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +0,0 @@\n-a\n-b\n-\n-x\r\n-x\r\n-é\n-😀\n-😀\n-b\n-a\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-29",
+      "path": "fixture.txt",
+      "oldContent": "\n",
+      "newContent": "é\nx\r\na\na\né\né\n😀\né\nb\n😀\n😀\na\nb\né\n",
+      "contextLines": 4,
+      "diff": "- 1 \n+ 1 é\n+ 2 x\r\n+ 3 a\n+ 4 a\n+ 5 é\n+ 6 é\n+ 7 😀\n+ 8 é\n+ 9 b\n+10 😀\n+11 😀\n+12 a\n+13 b\n+14 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,14 @@\n-\n+é\n+x\r\n+a\n+a\n+é\n+é\n+😀\n+é\n+b\n+😀\n+😀\n+a\n+b\n+é\n"
+    },
+    {
+      "name": "seeded-30",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "",
+      "contextLines": 0,
+      "diff": "",
+      "firstChangedLine": null,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n"
+    },
+    {
+      "name": "seeded-31",
+      "path": "fixture.txt",
+      "oldContent": "tail",
+      "newContent": "é\n😀\né\né\nb\nb\nb\nb\n\né\ntail",
+      "contextLines": 1,
+      "diff": "+ 1 é\n+ 2 😀\n+ 3 é\n+ 4 é\n+ 5 b\n+ 6 b\n+ 7 b\n+ 8 b\n+ 9 \n+10 é\n  1 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,11 @@\n+é\n+😀\n+é\n+é\n+b\n+b\n+b\n+b\n+\n+é\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-32",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nx\r\nb\nx\r\nx\r\n😀\na\nb\n",
+      "newContent": "é\nb\nx\r\nx\r\na\n\n",
+      "contextLines": 4,
+      "diff": "-1 x\r\n-2 x\r\n+1 é\n 3 b\n 4 x\r\n 5 x\r\n-6 😀\n 7 a\n-8 b\n+6 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,6 @@\n-x\r\n-x\r\n+é\n b\n x\r\n x\r\n-😀\n a\n-b\n+\n"
+    },
+    {
+      "name": "seeded-33",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\n😀\n\na\nx\r\nx\r\ntail",
+      "newContent": "b\nx\r\na\nx\r\na\né\na\né\n",
+      "contextLines": 0,
+      "diff": "+1 b\n   ...\n-2 \n-3 😀\n-4 \n   ...\n-7 x\r\n-8 tail\n+5 a\n+6 é\n+7 a\n+8 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+b\n@@ -2,3 +2,0 @@\n-\n-😀\n-\n@@ -7,2 +5,4 @@\n-x\r\n-tail\n\\ No newline at end of file\n+a\n+é\n+a\n+é\n"
+    },
+    {
+      "name": "seeded-34",
+      "path": "fixture.txt",
+      "oldContent": "\n😀\né\na\n\n😀\ntail",
+      "newContent": "x\r\na\n😀\n\nx\r\nx\r\n\né\né\n😀\nb\n",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 😀\n- 3 é\n+ 1 x\r\n  4 a\n+ 3 😀\n  5 \n+ 5 x\r\n+ 6 x\r\n+ 7 \n+ 8 é\n+ 9 é\n  6 😀\n- 7 tail\n+11 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,11 @@\n-\n-😀\n-é\n+x\r\n a\n+😀\n \n+x\r\n+x\r\n+\n+é\n+é\n 😀\n-tail\n\\ No newline at end of file\n+b\n"
+    },
+    {
+      "name": "seeded-35",
+      "path": "fixture.txt",
+      "oldContent": "😀\na\n\na\nx\r\n\né\nb\n",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "-1 😀\n-2 a\n-3 \n-4 a\n-5 x\r\n-6 \n-7 é\n-8 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +0,0 @@\n-😀\n-a\n-\n-a\n-x\r\n-\n-é\n-b\n"
+    },
+    {
+      "name": "seeded-36",
+      "path": "fixture.txt",
+      "oldContent": "a\n\n😀\n\né\nb\né\ntail",
+      "newContent": "😀\na\nb\né\nx\r\né\né\n\n😀\n",
+      "contextLines": 0,
+      "diff": "- 1 a\n- 2 \n    ...\n- 4 \n- 5 é\n+ 2 a\n    ...\n+ 4 é\n+ 5 x\r\n    ...\n- 8 tail\n+ 7 é\n+ 8 \n+ 9 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +0,0 @@\n-a\n-\n@@ -4,2 +2,1 @@\n-\n-é\n+a\n@@ -6,0 +4,2 @@\n+é\n+x\r\n@@ -8,1 +7,3 @@\n-tail\n\\ No newline at end of file\n+é\n+\n+😀\n"
+    },
+    {
+      "name": "seeded-37",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nb\nb\né\nb\n\né\n",
+      "newContent": "a\n😀\nx\r\né\nb\né\n😀\n\nx\r\na\n",
+      "contextLines": 1,
+      "diff": "+ 1 a\n+ 2 😀\n  1 x\r\n+ 4 é\n  2 b\n- 3 b\n  4 é\n- 5 b\n+ 7 😀\n  6 \n- 7 é\n+ 9 x\r\n+10 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,10 @@\n+a\n+😀\n x\r\n+é\n b\n-b\n é\n-b\n+😀\n \n-é\n+x\r\n+a\n"
+    },
+    {
+      "name": "seeded-38",
+      "path": "fixture.txt",
+      "oldContent": "é\na\né\n😀\né\n\n\n\n\nx\r\nb\n",
+      "newContent": "a\nx\r\né\n\n\né\né\né\na\n😀\nx\r\nx\r\nx\r\n",
+      "contextLines": 4,
+      "diff": "- 1 é\n  2 a\n+ 2 x\r\n  3 é\n- 4 😀\n- 5 é\n  6 \n  7 \n- 8 \n- 9 \n+ 6 é\n+ 7 é\n+ 8 é\n+ 9 a\n+10 😀\n 10 x\r\n-11 b\n+12 x\r\n+13 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,13 @@\n-é\n a\n+x\r\n é\n-😀\n-é\n \n \n-\n-\n+é\n+é\n+é\n+a\n+😀\n x\r\n-b\n+x\r\n+x\r\n"
+    },
+    {
+      "name": "seeded-39",
+      "path": "fixture.txt",
+      "oldContent": "\né\na\né\né\né\n😀\nx\r\né\na\n\nb\n",
+      "newContent": "😀\nx\r\nb\n\na\na\n",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 é\n- 3 a\n- 4 é\n- 5 é\n- 6 é\n    ...\n- 9 é\n-10 a\n-11 \n    ...\n+ 4 \n+ 5 a\n+ 6 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +0,0 @@\n-\n-é\n-a\n-é\n-é\n-é\n@@ -9,3 +2,0 @@\n-é\n-a\n-\n@@ -12,0 +4,3 @@\n+\n+a\n+a\n"
+    },
+    {
+      "name": "seeded-40",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\n😀\nb\nx\r\n\n\nx\r\né\né\na\n\na\n",
+      "newContent": "a\nb\né\né\na\n\nx\r\n😀\n\n",
+      "contextLines": 1,
+      "diff": "- 1 é\n+ 1 a\n  2 b\n- 3 😀\n- 4 b\n- 5 x\r\n+ 3 é\n+ 4 é\n+ 5 a\n  6 \n- 7 \n  8 x\r\n- 9 é\n-10 é\n-11 a\n+ 8 😀\n 12 \n-13 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,9 @@\n-é\n+a\n b\n-😀\n-b\n-x\r\n+é\n+é\n+a\n \n-\n x\r\n-é\n-é\n-a\n+😀\n \n-a\n"
+    },
+    {
+      "name": "seeded-41",
+      "path": "fixture.txt",
+      "oldContent": "é\né\ntail",
+      "newContent": "😀\né\n",
+      "contextLines": 4,
+      "diff": "+1 😀\n 1 é\n-2 é\n-3 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,2 @@\n+😀\n é\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-42",
+      "path": "fixture.txt",
+      "oldContent": "é\n\n\n😀\nb\né\né\né\ntail",
+      "newContent": "x\r\n\nb\na\nb\n😀\n😀\né\nx\r\né\n😀\n",
+      "contextLines": 0,
+      "diff": "- 1 é\n+ 1 x\r\n    ...\n- 3 \n- 4 😀\n    ...\n+ 4 a\n+ 5 b\n+ 6 😀\n+ 7 😀\n    ...\n+ 9 x\r\n    ...\n- 8 é\n- 9 tail\n+11 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+x\r\n@@ -3,2 +2,0 @@\n-\n-😀\n@@ -5,0 +4,4 @@\n+a\n+b\n+😀\n+😀\n@@ -6,0 +9,1 @@\n+x\r\n@@ -8,2 +11,1 @@\n-é\n-tail\n\\ No newline at end of file\n+😀\n"
+    },
+    {
+      "name": "seeded-43",
+      "path": "fixture.txt",
+      "oldContent": "\n\n😀\né\n😀\ntail",
+      "newContent": "é\na\n\né\na\nx\r\na\n",
+      "contextLines": 1,
+      "diff": "-1 \n-2 \n-3 😀\n 4 é\n-5 😀\n-6 tail\n+2 a\n+3 \n+4 é\n+5 a\n+6 x\r\n+7 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,7 @@\n-\n-\n-😀\n é\n-😀\n-tail\n\\ No newline at end of file\n+a\n+\n+é\n+a\n+x\r\n+a\n"
+    },
+    {
+      "name": "seeded-44",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\na\né\nb\n\nx\r\nx\r\n😀\na\n",
+      "newContent": "é\né\n\n\n😀\na\nb\nx\r\nx\r\n\né\n\n😀\n\n",
+      "contextLines": 4,
+      "diff": "- 1 😀\n+ 1 é\n  2 é\n+ 3 \n+ 4 \n+ 5 😀\n  3 a\n- 4 é\n  5 b\n- 6 \n  7 x\r\n  8 x\r\n+10 \n+11 é\n+12 \n  9 😀\n-10 a\n+14 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,14 @@\n-😀\n+é\n é\n+\n+\n+😀\n a\n-é\n b\n-\n x\r\n x\r\n+\n+é\n+\n 😀\n-a\n+\n"
+    },
+    {
+      "name": "seeded-45",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\né\né\né\n",
+      "newContent": "\né\n😀\né\nb\n😀\nb\na\né\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 \n    ...\n- 2 x\r\n- 3 é\n+ 3 😀\n    ...\n- 5 é\n+ 5 b\n+ 6 😀\n+ 7 b\n+ 8 a\n+ 9 é\n+10 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+\n@@ -2,2 +3,1 @@\n-x\r\n-é\n+😀\n@@ -5,1 +5,6 @@\n-é\n+b\n+😀\n+b\n+a\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-46",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\ntail",
+      "newContent": "\nx\r\né\ntail",
+      "contextLines": 1,
+      "diff": "-1 é\n+1 \n 2 x\r\n+3 é\n 3 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,4 @@\n-é\n+\n x\r\n+é\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-47",
+      "path": "fixture.txt",
+      "oldContent": "😀\nx\r\né\né\nb\n😀\nx\r\né\né\né\n",
+      "newContent": "é\na\n😀\n\nx\r\na\n\na\né\nx\r\n😀\né\né\na\n",
+      "contextLines": 4,
+      "diff": "- 1 😀\n- 2 x\r\n  3 é\n- 4 é\n- 5 b\n+ 2 a\n  6 😀\n+ 4 \n  7 x\r\n+ 6 a\n+ 7 \n+ 8 a\n  8 é\n- 9 é\n-10 é\n+10 x\r\n+11 😀\n+12 é\n+13 é\n+14 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,14 @@\n-😀\n-x\r\n é\n-é\n-b\n+a\n 😀\n+\n x\r\n+a\n+\n+a\n é\n-é\n-é\n+x\r\n+😀\n+é\n+é\n+a\n"
+    },
+    {
+      "name": "seeded-48",
+      "path": "fixture.txt",
+      "oldContent": "é\na\né\né\né\né\né\n\n😀\n",
+      "newContent": "a\nb\n",
+      "contextLines": 0,
+      "diff": "- 1 é\n    ...\n- 3 é\n- 4 é\n- 5 é\n- 6 é\n- 7 é\n- 8 \n- 9 😀\n+ 2 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-é\n@@ -3,7 +2,1 @@\n-é\n-é\n-é\n-é\n-é\n-\n-😀\n+b\n"
+    },
+    {
+      "name": "seeded-49",
+      "path": "fixture.txt",
+      "oldContent": "😀\nx\r\n😀\n😀\n😀\né\na\nx\r\n\n\n\nx\r\n",
+      "newContent": "a\né\nx\r\nx\r\nb\nb\né\né\né\né\nx\r\n",
+      "contextLines": 1,
+      "diff": "- 1 😀\n- 2 x\r\n- 3 😀\n- 4 😀\n- 5 😀\n- 6 é\n  7 a\n+ 2 é\n  8 x\r\n- 9 \n-10 \n-11 \n 12 x\r\n+ 5 b\n+ 6 b\n+ 7 é\n+ 8 é\n+ 9 é\n+10 é\n+11 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,11 @@\n-😀\n-x\r\n-😀\n-😀\n-😀\n-é\n a\n+é\n x\r\n-\n-\n-\n x\r\n+b\n+b\n+é\n+é\n+é\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-50",
+      "path": "fixture.txt",
+      "oldContent": "b\né\nb\né\nb\nx\r\nb\n\ntail",
+      "newContent": "b\nx\r\né\n\na\na\n😀\né\n",
+      "contextLines": 4,
+      "diff": " 1 b\n-2 é\n-3 b\n-4 é\n-5 b\n 6 x\r\n-7 b\n+3 é\n 8 \n-9 tail\n+5 a\n+6 a\n+7 😀\n+8 é",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,8 @@\n b\n-é\n-b\n-é\n-b\n x\r\n-b\n+é\n \n-tail\n\\ No newline at end of file\n+a\n+a\n+😀\n+é\n"
+    },
+    {
+      "name": "seeded-51",
+      "path": "fixture.txt",
+      "oldContent": "\né\n\na\n😀\n\né\n😀\nb\n\na\nb\n😀\n",
+      "newContent": "a\n",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 é\n- 3 \n    ...\n- 5 😀\n- 6 \n- 7 é\n- 8 😀\n- 9 b\n-10 \n-11 a\n-12 b\n-13 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +0,0 @@\n-\n-é\n-\n@@ -5,9 +1,0 @@\n-😀\n-\n-é\n-😀\n-b\n-\n-a\n-b\n-😀\n"
+    },
+    {
+      "name": "seeded-52",
+      "path": "fixture.txt",
+      "oldContent": "\n",
+      "newContent": "é\nx\r\nx\r\né\na\n😀\n😀\né\n\na\nx\r\né\n",
+      "contextLines": 1,
+      "diff": "+ 1 é\n+ 2 x\r\n+ 3 x\r\n+ 4 é\n+ 5 a\n+ 6 😀\n+ 7 😀\n+ 8 é\n  1 \n+10 a\n+11 x\r\n+12 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,12 @@\n+é\n+x\r\n+x\r\n+é\n+a\n+😀\n+😀\n+é\n \n+a\n+x\r\n+é\n"
+    },
+    {
+      "name": "seeded-53",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nx\r\né\nx\r\né\nb\nx\r\né\né\n\né\né\nb\n😀\n",
+      "newContent": "x\r\né\na\n😀\na\nb\nx\r\n\n\nx\r\n\ntail",
+      "contextLines": 4,
+      "diff": "  1 x\r\n- 2 x\r\n  3 é\n- 4 x\r\n- 5 é\n+ 3 a\n+ 4 😀\n+ 5 a\n  6 b\n  7 x\r\n- 8 é\n- 9 é\n 10 \n-11 é\n-12 é\n-13 b\n-14 😀\n+ 9 \n+10 x\r\n+11 \n+12 tail",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,12 @@\n x\r\n-x\r\n é\n-x\r\n-é\n+a\n+😀\n+a\n b\n x\r\n-é\n-é\n \n-é\n-é\n-b\n-😀\n+\n+x\r\n+\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-54",
+      "path": "fixture.txt",
+      "oldContent": "\n😀\na\nx\r\n😀\n\na\n😀\n😀\nb\n",
+      "newContent": "tail",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 😀\n- 3 a\n- 4 x\r\n- 5 😀\n- 6 \n- 7 a\n- 8 😀\n- 9 😀\n-10 b\n+ 1 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,1 @@\n-\n-😀\n-a\n-x\r\n-😀\n-\n-a\n-😀\n-😀\n-b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-55",
+      "path": "fixture.txt",
+      "oldContent": "a\n\n\na\nx\r\né\n",
+      "newContent": "b\n",
+      "contextLines": 1,
+      "diff": "-1 a\n-2 \n-3 \n-4 a\n-5 x\r\n-6 é\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,1 @@\n-a\n-\n-\n-a\n-x\r\n-é\n+b\n"
+    },
+    {
+      "name": "seeded-56",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nb\né\né\né\nx\r\né\n\ntail",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "-1 x\r\n-2 b\n-3 é\n-4 é\n-5 é\n-6 x\r\n-7 é\n-8 \n-9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +0,0 @@\n-x\r\n-b\n-é\n-é\n-é\n-x\r\n-é\n-\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-57",
+      "path": "fixture.txt",
+      "oldContent": "é\né\né\nx\r\né\n\n😀\nb\na\né\n😀\ntail",
+      "newContent": "é\na\né\nx\r\n😀\né\n\n\n😀\n\ntail",
+      "contextLines": 0,
+      "diff": "    ...\n- 2 é\n+ 2 a\n    ...\n- 5 é\n- 6 \n    ...\n- 8 b\n- 9 a\n    ...\n+ 7 \n+ 8 \n    ...\n+10 \n    ...",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,1 +2,1 @@\n-é\n+a\n@@ -5,2 +4,0 @@\n-é\n-\n@@ -8,2 +5,0 @@\n-b\n-a\n@@ -10,0 +7,2 @@\n+\n+\n@@ -11,0 +10,1 @@\n+\n"
+    },
+    {
+      "name": "seeded-58",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n\n😀\n😀\na\nx\r\na\nx\r\né\ntail",
+      "newContent": "é\na\n\nb\né\n😀\n",
+      "contextLines": 1,
+      "diff": "  1 é\n- 2 é\n- 3 \n- 4 😀\n- 5 😀\n  6 a\n- 7 x\r\n- 8 a\n- 9 x\r\n+ 3 \n+ 4 b\n 10 é\n-11 tail\n+ 6 😀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,6 @@\n é\n-é\n-\n-😀\n-😀\n a\n-x\r\n-a\n-x\r\n+\n+b\n é\n-tail\n\\ No newline at end of file\n+😀\n"
+    },
+    {
+      "name": "seeded-59",
+      "path": "fixture.txt",
+      "oldContent": "b\n\n😀\n",
+      "newContent": "😀\né\nb\n\ntail",
+      "contextLines": 4,
+      "diff": "+1 😀\n+2 é\n 1 b\n 2 \n-3 😀\n+5 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,5 @@\n+😀\n+é\n b\n \n-😀\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-60",
+      "path": "fixture.txt",
+      "oldContent": "b\na\n",
+      "newContent": "é\nx\r\n\na\n\n\nb\n\né\n\n",
+      "contextLines": 0,
+      "diff": "- 1 b\n+ 1 é\n+ 2 x\r\n+ 3 \n    ...\n+ 5 \n+ 6 \n+ 7 b\n+ 8 \n+ 9 é\n+10 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,3 @@\n-b\n+é\n+x\r\n+\n@@ -2,0 +5,6 @@\n+\n+\n+b\n+\n+é\n+\n"
+    },
+    {
+      "name": "seeded-61",
+      "path": "fixture.txt",
+      "oldContent": "a\né\n😀\nx\r\né\n😀\nx\r\n😀\na\né\né\n\nb\n",
+      "newContent": "x\r\ntail",
+      "contextLines": 1,
+      "diff": "- 1 a\n- 2 é\n- 3 😀\n  4 x\r\n- 5 é\n- 6 😀\n- 7 x\r\n- 8 😀\n- 9 a\n-10 é\n-11 é\n-12 \n-13 b\n+ 2 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,2 @@\n-a\n-é\n-😀\n x\r\n-é\n-😀\n-x\r\n-😀\n-a\n-é\n-é\n-\n-b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-62",
+      "path": "fixture.txt",
+      "oldContent": "a\n\n😀\n😀\n😀\né\né\nb\n\né\n\n\ntail",
+      "newContent": "x\r\nb\nx\r\na\n😀\nb\n",
+      "contextLines": 4,
+      "diff": "+ 1 x\r\n+ 2 b\n+ 3 x\r\n  1 a\n- 2 \n  3 😀\n- 4 😀\n- 5 😀\n- 6 é\n- 7 é\n  8 b\n- 9 \n-10 é\n-11 \n-12 \n-13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,6 @@\n+x\r\n+b\n+x\r\n a\n-\n 😀\n-😀\n-😀\n-é\n-é\n b\n-\n-é\n-\n-\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-63",
+      "path": "fixture.txt",
+      "oldContent": "\né\né\n\n\n",
+      "newContent": "",
+      "contextLines": 0,
+      "diff": "-1 \n-2 é\n-3 é\n-4 \n-5 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +0,0 @@\n-\n-é\n-é\n-\n-\n"
+    },
+    {
+      "name": "seeded-64",
+      "path": "fixture.txt",
+      "oldContent": "b\nb\nb\né\nb\n😀\nx\r\nx\r\né\nb\né\né\nb\n",
+      "newContent": "é\né\né\né\n\nb\na\nx\r\n\n\nb\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 b\n- 3 b\n  4 é\n- 5 b\n- 6 😀\n- 7 x\r\n- 8 x\r\n  9 é\n-10 b\n 11 é\n-12 é\n+ 4 é\n+ 5 \n 13 b\n+ 7 a\n+ 8 x\r\n+ 9 \n+10 \n+11 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,11 @@\n-b\n-b\n-b\n é\n-b\n-😀\n-x\r\n-x\r\n é\n-b\n é\n-é\n+é\n+\n b\n+a\n+x\r\n+\n+\n+b\n"
+    },
+    {
+      "name": "seeded-65",
+      "path": "fixture.txt",
+      "oldContent": "a\né\nb\n😀\nb\nx\r\nx\r\n😀\nx\r\nb\na\n",
+      "newContent": "é\n😀\n😀\n",
+      "contextLines": 4,
+      "diff": "- 1 a\n  2 é\n- 3 b\n  4 😀\n- 5 b\n- 6 x\r\n- 7 x\r\n  8 😀\n- 9 x\r\n-10 b\n-11 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,3 @@\n-a\n é\n-b\n 😀\n-b\n-x\r\n-x\r\n 😀\n-x\r\n-b\n-a\n"
+    },
+    {
+      "name": "seeded-66",
+      "path": "fixture.txt",
+      "oldContent": "a\nb\nx\r\né\na\n😀\né\nb\n\nx\r\na\nb\n😀\na\n",
+      "newContent": "é\né\ntail",
+      "contextLines": 0,
+      "diff": "- 1 a\n- 2 b\n- 3 x\r\n    ...\n- 5 a\n- 6 😀\n- 7 é\n- 8 b\n- 9 \n-10 x\r\n-11 a\n-12 b\n-13 😀\n-14 a\n+ 2 é\n+ 3 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +0,0 @@\n-a\n-b\n-x\r\n@@ -5,10 +2,2 @@\n-a\n-😀\n-é\n-b\n-\n-x\r\n-a\n-b\n-😀\n-a\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-67",
+      "path": "fixture.txt",
+      "oldContent": "a\nx\r\n\na\n\nx\r\na\né\né\né\nx\r\né\nx\r\ntail",
+      "newContent": "a\na\né\né\n😀\n",
+      "contextLines": 1,
+      "diff": "  1 a\n- 2 x\r\n- 3 \n  4 a\n- 5 \n- 6 x\r\n- 7 a\n  8 é\n- 9 é\n-10 é\n-11 x\r\n-12 é\n-13 x\r\n-14 tail\n+ 4 é\n+ 5 😀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,5 @@\n a\n-x\r\n-\n a\n-\n-x\r\n-a\n é\n-é\n-é\n-x\r\n-é\n-x\r\n-tail\n\\ No newline at end of file\n+é\n+😀\n"
+    },
+    {
+      "name": "seeded-68",
+      "path": "fixture.txt",
+      "oldContent": "\n\n😀\né\na\nx\r\né\né\na\nx\r\n😀\nx\r\nx\r\n\n",
+      "newContent": "a\né\na\né\na\n",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 \n- 3 😀\n- 4 é\n  5 a\n- 6 x\r\n  7 é\n+ 3 a\n  8 é\n  9 a\n-10 x\r\n-11 😀\n-12 x\r\n-13 x\r\n-14 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,5 @@\n-\n-\n-😀\n-é\n a\n-x\r\n é\n+a\n é\n a\n-x\r\n-😀\n-x\r\n-x\r\n-\n"
+    },
+    {
+      "name": "seeded-69",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n😀\n\né\n\n\nb\nx\r\nx\r\n",
+      "newContent": "😀\né\n\nb\né\né\nb\nb\nx\r\nx\r\n",
+      "contextLines": 0,
+      "diff": "- 1 x\r\n    ...\n- 3 \n    ...\n- 6 \n    ...\n+ 5 é\n+ 6 é\n+ 7 b\n+ 8 b\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-x\r\n@@ -3,1 +1,0 @@\n-\n@@ -6,1 +3,0 @@\n-\n@@ -7,0 +5,4 @@\n+é\n+é\n+b\n+b\n"
+    },
+    {
+      "name": "seeded-70",
+      "path": "fixture.txt",
+      "oldContent": "a\n\na\né\nb\nb\n😀\né\nx\r\na\n",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "- 1 a\n- 2 \n- 3 a\n- 4 é\n- 5 b\n- 6 b\n- 7 😀\n- 8 é\n- 9 x\r\n-10 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +0,0 @@\n-a\n-\n-a\n-é\n-b\n-b\n-😀\n-é\n-x\r\n-a\n"
+    },
+    {
+      "name": "seeded-71",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\n\nx\r\né\né\n\né\ntail",
+      "newContent": "😀\né\nx\r\n😀\n😀\nx\r\n\n",
+      "contextLines": 4,
+      "diff": "+1 😀\n+2 é\n 1 x\r\n-2 \n-3 \n+4 😀\n+5 😀\n 4 x\r\n-5 é\n-6 é\n 7 \n-8 é\n-9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,7 @@\n+😀\n+é\n x\r\n-\n-\n+😀\n+😀\n x\r\n-é\n-é\n \n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-72",
+      "path": "fixture.txt",
+      "oldContent": "é\n\n\nb\né\né\né\nx\r\nx\r\na\né\n😀\ntail",
+      "newContent": "😀\né\n\né\né\nb\nx\r\na\né\ntail",
+      "contextLines": 0,
+      "diff": "- 1 é\n+ 1 😀\n+ 2 é\n    ...\n- 3 \n- 4 b\n- 5 é\n    ...\n+ 6 b\n    ...\n- 9 x\r\n    ...\n-12 😀\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,2 @@\n-é\n+😀\n+é\n@@ -3,3 +3,0 @@\n-\n-b\n-é\n@@ -7,0 +6,1 @@\n+b\n@@ -9,1 +7,0 @@\n-x\r\n@@ -12,1 +9,0 @@\n-😀\n"
+    },
+    {
+      "name": "seeded-73",
+      "path": "fixture.txt",
+      "oldContent": "a\né\na\né\n😀\na\né\nb\na\na\na\né\nb\ntail",
+      "newContent": "é\né\n😀\né\na\na\nx\r\n😀\né\né\n",
+      "contextLines": 1,
+      "diff": "+ 1 é\n+ 2 é\n+ 3 😀\n+ 4 é\n  1 a\n- 2 é\n  3 a\n- 4 é\n+ 7 x\r\n  5 😀\n- 6 a\n  7 é\n- 8 b\n- 9 a\n-10 a\n-11 a\n 12 é\n-13 b\n-14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,10 @@\n+é\n+é\n+😀\n+é\n a\n-é\n a\n-é\n+x\r\n 😀\n-a\n é\n-b\n-a\n-a\n-a\n é\n-b\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-74",
+      "path": "fixture.txt",
+      "oldContent": "x\r\né\na\nb\né\né\né\n\na\na\n",
+      "newContent": "x\r\ntail",
+      "contextLines": 4,
+      "diff": "  1 x\r\n- 2 é\n- 3 a\n- 4 b\n- 5 é\n- 6 é\n- 7 é\n- 8 \n- 9 a\n-10 a\n+ 2 tail",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,2 @@\n x\r\n-é\n-a\n-b\n-é\n-é\n-é\n-\n-a\n-a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-75",
+      "path": "fixture.txt",
+      "oldContent": "b\né\n\né\né\n\n😀\na\n😀\nx\r\ntail",
+      "newContent": "é\nb\né\na\na\n\n😀\né\né\nx\r\né\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 é\n    ...\n+ 4 a\n+ 5 a\n    ...\n+ 7 😀\n    ...\n- 6 \n- 7 😀\n- 8 a\n- 9 😀\n    ...\n+11 é\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+é\n@@ -2,0 +4,2 @@\n+a\n+a\n@@ -3,0 +7,1 @@\n+😀\n@@ -6,4 +9,0 @@\n-\n-😀\n-a\n-😀\n@@ -10,0 +11,1 @@\n+é\n"
+    },
+    {
+      "name": "seeded-76",
+      "path": "fixture.txt",
+      "oldContent": "b\nb\na\né\nx\r\nb\nb\na\nb\n",
+      "newContent": "é\né\né\né\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 b\n- 3 a\n  4 é\n- 5 x\r\n- 6 b\n- 7 b\n- 8 a\n- 9 b\n+ 2 é\n+ 3 é\n+ 4 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,4 @@\n-b\n-b\n-a\n é\n-x\r\n-b\n-b\n-a\n-b\n+é\n+é\n+é\n"
+    },
+    {
+      "name": "seeded-77",
+      "path": "fixture.txt",
+      "oldContent": "b\na\né\nx\r\n\nb\n",
+      "newContent": "a\né\né\n\na\né\na\n",
+      "contextLines": 4,
+      "diff": "-1 b\n 2 a\n-3 é\n-4 x\r\n+2 é\n+3 é\n 5 \n-6 b\n+5 a\n+6 é\n+7 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,7 @@\n-b\n a\n-é\n-x\r\n+é\n+é\n \n-b\n+a\n+é\n+a\n"
+    },
+    {
+      "name": "seeded-78",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\né\nx\r\n😀\nb\n\nb\né\ntail",
+      "newContent": "x\r\né\n😀\na\nx\r\nb\n\né\na\nx\r\n",
+      "contextLines": 0,
+      "diff": "- 1 é\n    ...\n- 4 x\r\n    ...\n+ 4 a\n+ 5 x\r\n    ...\n- 8 b\n    ...\n-10 tail\n+ 9 a\n+10 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-é\n@@ -4,1 +2,0 @@\n-x\r\n@@ -5,0 +4,2 @@\n+a\n+x\r\n@@ -8,1 +7,0 @@\n-b\n@@ -10,1 +9,2 @@\n-tail\n\\ No newline at end of file\n+a\n+x\r\n"
+    },
+    {
+      "name": "seeded-79",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\n\na\n😀\n😀\né\né\n",
+      "newContent": "😀\né\nb\n😀\n\n\nx\r\né\ntail",
+      "contextLines": 1,
+      "diff": " 1 😀\n+2 é\n+3 b\n+4 😀\n 2 \n 3 \n-4 a\n-5 😀\n-6 😀\n+7 x\r\n 7 é\n-8 é\n+9 tail",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,9 @@\n 😀\n+é\n+b\n+😀\n \n \n-a\n-😀\n-😀\n+x\r\n é\n-é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-80",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nb\n😀\nx\r\nb\né\né\né\n",
+      "newContent": "x\r\né\né\nx\r\nx\r\na\na\n\n😀\né\n",
+      "contextLines": 4,
+      "diff": "  1 x\r\n- 2 b\n- 3 😀\n+ 2 é\n+ 3 é\n  4 x\r\n- 5 b\n+ 5 x\r\n+ 6 a\n+ 7 a\n+ 8 \n+ 9 😀\n  6 é\n- 7 é\n- 8 é",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,10 @@\n x\r\n-b\n-😀\n+é\n+é\n x\r\n-b\n+x\r\n+a\n+a\n+\n+😀\n é\n-é\n-é\n"
+    },
+    {
+      "name": "seeded-81",
+      "path": "fixture.txt",
+      "oldContent": "a\né\n😀\nb\nx\r\nx\r\n",
+      "newContent": "x\r\né\n😀\nb\nx\r\né\na\né\n\n",
+      "contextLines": 0,
+      "diff": "- 1 a\n- 2 é\n+ 1 x\r\n+ 2 é\n    ...\n- 6 x\r\n+ 6 é\n+ 7 a\n+ 8 é\n+ 9 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-a\n-é\n+x\r\n+é\n@@ -6,1 +6,4 @@\n-x\r\n+é\n+a\n+é\n+\n"
+    },
+    {
+      "name": "seeded-82",
+      "path": "fixture.txt",
+      "oldContent": "b\n\nb\nb\nb\na\na\né\nb\né\nb\n😀\na\na\ntail",
+      "newContent": "\n\né\na\nb\né\na\nx\r\na\nb\né\nx\r\nb\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n  2 \n+ 2 \n+ 3 é\n+ 4 a\n  3 b\n- 4 b\n- 5 b\n+ 6 é\n  6 a\n+ 8 x\r\n  7 a\n- 8 é\n  9 b\n-10 é\n+11 é\n+12 x\r\n 11 b\n-12 😀\n-13 a\n-14 a\n-15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,15 +1,13 @@\n-b\n \n+\n+é\n+a\n b\n-b\n-b\n+é\n a\n+x\r\n a\n-é\n b\n-é\n+é\n+x\r\n b\n-😀\n-a\n-a\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-83",
+      "path": "fixture.txt",
+      "oldContent": "😀\ntail",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "-1 😀\n-2 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +0,0 @@\n-😀\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-84",
+      "path": "fixture.txt",
+      "oldContent": "😀\na\n\nx\r\né\nb\na\né\né\né\né\nx\r\na\n",
+      "newContent": "é\n\nb\na\nb\né\na\n",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 a\n+ 1 é\n    ...\n- 4 x\r\n- 5 é\n    ...\n- 8 é\n+ 5 b\n    ...\n-10 é\n-11 é\n-12 x\r\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,1 @@\n-😀\n-a\n+é\n@@ -4,2 +2,0 @@\n-x\r\n-é\n@@ -8,1 +5,1 @@\n-é\n+b\n@@ -10,3 +6,0 @@\n-é\n-é\n-x\r\n"
+    },
+    {
+      "name": "seeded-85",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\nb\na\né\nx\r\nb\né\na\né\n😀\n",
+      "newContent": "a\n\n\né\né\n\né\n😀\n\né\né\na\n\n",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 x\r\n- 3 b\n  4 a\n+ 2 \n+ 3 \n+ 4 é\n+ 5 é\n+ 6 \n+ 7 é\n+ 8 😀\n+ 9 \n  5 é\n- 6 x\r\n- 7 b\n  8 é\n  9 a\n-10 é\n-11 😀\n+13 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,13 @@\n-é\n-x\r\n-b\n a\n+\n+\n+é\n+é\n+\n+é\n+😀\n+\n é\n-x\r\n-b\n é\n a\n-é\n-😀\n+\n"
+    },
+    {
+      "name": "seeded-86",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\n",
+      "newContent": "é\n\né\nb\né\n😀\na\ntail",
+      "contextLines": 4,
+      "diff": " 1 é\n-2 x\r\n+2 \n+3 é\n+4 b\n+5 é\n+6 😀\n+7 a\n+8 tail",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,8 @@\n é\n-x\r\n+\n+é\n+b\n+é\n+😀\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-87",
+      "path": "fixture.txt",
+      "oldContent": "b\n\né\né\n\ntail",
+      "newContent": "\né\ntail",
+      "contextLines": 0,
+      "diff": "-1 b\n   ...\n-4 é\n-5 \n   ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-b\n@@ -4,2 +2,0 @@\n-é\n-\n"
+    },
+    {
+      "name": "seeded-88",
+      "path": "fixture.txt",
+      "oldContent": "b\na\n😀\na\n\né\né\n",
+      "newContent": "\né\n\né\na\nb\né\n\n😀\nb\né\né\nx\r\nb\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n+ 1 \n+ 2 é\n+ 3 \n+ 4 é\n  2 a\n- 3 😀\n- 4 a\n+ 6 b\n+ 7 é\n  5 \n+ 9 😀\n+10 b\n  6 é\n  7 é\n+13 x\r\n+14 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,14 @@\n-b\n+\n+é\n+\n+é\n a\n-😀\n-a\n+b\n+é\n \n+😀\n+b\n é\n é\n+x\r\n+b\n"
+    },
+    {
+      "name": "seeded-89",
+      "path": "fixture.txt",
+      "oldContent": "x\r\né\né\n\na\n\n",
+      "newContent": "x\r\na\n😀\né\n",
+      "contextLines": 4,
+      "diff": " 1 x\r\n-2 é\n-3 é\n-4 \n 5 a\n-6 \n+3 😀\n+4 é",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,4 @@\n x\r\n-é\n-é\n-\n a\n-\n+😀\n+é\n"
+    },
+    {
+      "name": "seeded-90",
+      "path": "fixture.txt",
+      "oldContent": "\né\né\n\né\nx\r\n😀\nb\né\nb\n",
+      "newContent": "x\r\n😀\nb\nx\r\nx\r\nx\r\n\nb\na\n",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 é\n- 3 é\n- 4 \n- 5 é\n    ...\n- 9 é\n+ 4 x\r\n+ 5 x\r\n+ 6 x\r\n+ 7 \n    ...\n+ 9 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +0,0 @@\n-\n-é\n-é\n-\n-é\n@@ -9,1 +4,4 @@\n-é\n+x\r\n+x\r\n+x\r\n+\n@@ -10,0 +9,1 @@\n+a\n"
+    },
+    {
+      "name": "seeded-91",
+      "path": "fixture.txt",
+      "oldContent": "tail",
+      "newContent": "\na\n😀\né\na\n",
+      "contextLines": 1,
+      "diff": "-1 tail\n+1 \n+2 a\n+3 😀\n+4 é\n+5 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,5 @@\n-tail\n\\ No newline at end of file\n+\n+a\n+😀\n+é\n+a\n"
+    },
+    {
+      "name": "seeded-92",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n",
+      "newContent": "é\n😀\né\n\n😀\né\nb\n",
+      "contextLines": 4,
+      "diff": "-1 x\r\n+1 é\n+2 😀\n+3 é\n+4 \n+5 😀\n+6 é\n+7 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,7 @@\n-x\r\n+é\n+😀\n+é\n+\n+😀\n+é\n+b\n"
+    },
+    {
+      "name": "seeded-93",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\nb\né\n\nx\r\nb\n",
+      "newContent": "😀\n",
+      "contextLines": 0,
+      "diff": "-1 é\n-2 b\n-3 b\n-4 é\n-5 \n-6 x\r\n-7 b\n+1 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,1 @@\n-é\n-b\n-b\n-é\n-\n-x\r\n-b\n+😀\n"
+    },
+    {
+      "name": "seeded-94",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "😀\n😀\né\né\na\nx\r\né\n😀\na\né\n",
+      "contextLines": 1,
+      "diff": "+ 1 😀\n+ 2 😀\n+ 3 é\n+ 4 é\n+ 5 a\n+ 6 x\r\n+ 7 é\n+ 8 😀\n+ 9 a\n+10 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,10 @@\n+😀\n+😀\n+é\n+é\n+a\n+x\r\n+é\n+😀\n+a\n+é\n"
+    },
+    {
+      "name": "seeded-95",
+      "path": "fixture.txt",
+      "oldContent": "\n",
+      "newContent": "😀\na\n\ntail",
+      "contextLines": 4,
+      "diff": "+1 😀\n+2 a\n 1 \n+4 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,4 @@\n+😀\n+a\n \n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-96",
+      "path": "fixture.txt",
+      "oldContent": "\na\né\nx\r\n\n\na\nx\r\n\ntail",
+      "newContent": "b\né\na\na\n\n😀\né\né\né\ntail",
+      "contextLines": 0,
+      "diff": "- 1 \n+ 1 b\n+ 2 é\n    ...\n- 3 é\n- 4 x\r\n- 5 \n- 6 \n    ...\n- 8 x\r\n    ...\n+ 6 😀\n+ 7 é\n+ 8 é\n+ 9 é\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,2 @@\n-\n+b\n+é\n@@ -3,4 +3,0 @@\n-é\n-x\r\n-\n-\n@@ -8,1 +4,0 @@\n-x\r\n@@ -9,0 +6,4 @@\n+😀\n+é\n+é\n+é\n"
+    },
+    {
+      "name": "seeded-97",
+      "path": "fixture.txt",
+      "oldContent": "b\nx\r\nx\r\nb\ntail",
+      "newContent": "\na\nx\r\nb\n\n😀\né\na\nb\n\n😀\n😀\n😀\nx\r\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n+ 1 \n+ 2 a\n  2 x\r\n- 3 x\r\n  4 b\n- 5 tail\n+ 5 \n+ 6 😀\n+ 7 é\n+ 8 a\n+ 9 b\n+10 \n+11 😀\n+12 😀\n+13 😀\n+14 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,14 @@\n-b\n+\n+a\n x\r\n-x\r\n b\n-tail\n\\ No newline at end of file\n+\n+😀\n+é\n+a\n+b\n+\n+😀\n+😀\n+😀\n+x\r\n"
+    },
+    {
+      "name": "seeded-98",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\nx\r\na\n\n\n\né\né\nx\r\n",
+      "newContent": "é\ntail",
+      "contextLines": 4,
+      "diff": "- 1 b\n- 2 😀\n- 3 x\r\n- 4 a\n- 5 \n- 6 \n- 7 \n- 8 é\n  9 é\n-10 x\r\n+ 2 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,2 @@\n-b\n-😀\n-x\r\n-a\n-\n-\n-\n-é\n é\n-x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-99",
+      "path": "fixture.txt",
+      "oldContent": "\nb\né\né\n😀\nb\nb\n😀\nx\r\ntail",
+      "newContent": "x\r\n\n\na\né\n😀\nb\né\nb\n",
+      "contextLines": 0,
+      "diff": "+ 1 x\r\n    ...\n- 2 b\n+ 3 \n+ 4 a\n    ...\n- 4 é\n    ...\n+ 8 é\n    ...\n- 8 😀\n- 9 x\r\n-10 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+x\r\n@@ -2,1 +3,2 @@\n-b\n+\n+a\n@@ -4,1 +5,0 @@\n-é\n@@ -6,0 +8,1 @@\n+é\n@@ -8,3 +9,0 @@\n-😀\n-x\r\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-100",
+      "path": "fixture.txt",
+      "oldContent": "a\né\n😀\nb\né\né\n",
+      "newContent": "\né\né\n\nx\r\né\na\n",
+      "contextLines": 1,
+      "diff": "-1 a\n+1 \n 2 é\n-3 😀\n-4 b\n-5 é\n 6 é\n+4 \n+5 x\r\n+6 é\n+7 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,7 @@\n-a\n+\n é\n-😀\n-b\n-é\n é\n+\n+x\r\n+é\n+a\n"
+    },
+    {
+      "name": "seeded-101",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\n😀\nb\n\na\né\né\n\ntail",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "- 1 x\r\n- 2 \n- 3 😀\n- 4 b\n- 5 \n- 6 a\n- 7 é\n- 8 é\n- 9 \n-10 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +0,0 @@\n-x\r\n-\n-😀\n-b\n-\n-a\n-é\n-é\n-\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-102",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nb\n",
+      "newContent": "é\nb\né\nb\ntail",
+      "contextLines": 0,
+      "diff": "-1 x\r\n+1 é\n   ...\n+3 é\n+4 b\n+5 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-x\r\n+é\n@@ -2,0 +3,3 @@\n+é\n+b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-103",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\n\n\na\n😀\na\nx\r\na\nx\r\nb\né\n\n",
+      "newContent": "a\na\nx\r\né\né\né\n😀\n\né\n😀\n\ntail",
+      "contextLines": 1,
+      "diff": "- 1 x\r\n- 2 \n- 3 \n- 4 \n  5 a\n- 6 😀\n  7 a\n  8 x\r\n- 9 a\n-10 x\r\n-11 b\n 12 é\n+ 5 é\n+ 6 é\n+ 7 😀\n 13 \n+ 9 é\n+10 😀\n+11 \n+12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,12 @@\n-x\r\n-\n-\n-\n a\n-😀\n a\n x\r\n-a\n-x\r\n-b\n é\n+é\n+é\n+😀\n \n+é\n+😀\n+\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-104",
+      "path": "fixture.txt",
+      "oldContent": "\nb\né\nx\r\n\né\né\n\nx\r\n😀\né\n",
+      "newContent": "x\r\n",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 b\n- 3 é\n  4 x\r\n- 5 \n- 6 é\n- 7 é\n- 8 \n- 9 x\r\n-10 😀\n-11 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,1 @@\n-\n-b\n-é\n x\r\n-\n-é\n-é\n-\n-x\r\n-😀\n-é\n"
+    },
+    {
+      "name": "seeded-105",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\né\na\na\n",
+      "newContent": "é\né\né\n\n\na\né\n😀\n😀\n😀\n\n\né\nb\n",
+      "contextLines": 0,
+      "diff": "    ...\n- 2 x\r\n    ...\n+ 3 é\n+ 4 \n+ 5 \n    ...\n- 5 a\n+ 7 é\n+ 8 😀\n+ 9 😀\n+10 😀\n+11 \n+12 \n+13 é\n+14 b",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,1 +1,0 @@\n-x\r\n@@ -3,0 +3,3 @@\n+é\n+\n+\n@@ -5,1 +7,8 @@\n-a\n+é\n+😀\n+😀\n+😀\n+\n+\n+é\n+b\n"
+    },
+    {
+      "name": "seeded-106",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n\né\ntail",
+      "newContent": "x\r\né\nb\na\na\nb\né\na\né\n",
+      "contextLines": 1,
+      "diff": "- 1 é\n+ 1 x\r\n  2 é\n- 3 \n- 4 é\n- 5 tail\n+ 3 b\n+ 4 a\n+ 5 a\n+ 6 b\n+ 7 é\n+ 8 a\n+ 9 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,9 @@\n-é\n+x\r\n é\n-\n-é\n-tail\n\\ No newline at end of file\n+b\n+a\n+a\n+b\n+é\n+a\n+é\n"
+    },
+    {
+      "name": "seeded-107",
+      "path": "fixture.txt",
+      "oldContent": "b\n\nb\n😀\n\na\nx\r\na\né\nb\ntail",
+      "newContent": "😀\né\nb\né\nb\n😀\n😀\ntail",
+      "contextLines": 4,
+      "diff": "+ 1 😀\n+ 2 é\n  1 b\n- 2 \n+ 4 é\n  3 b\n  4 😀\n- 5 \n- 6 a\n- 7 x\r\n- 8 a\n- 9 é\n-10 b\n+ 7 😀\n 11 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,8 @@\n+😀\n+é\n b\n-\n+é\n b\n 😀\n-\n-a\n-x\r\n-a\n-é\n-b\n+😀\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-108",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\né\n\né\nb\né\né\nb\n",
+      "newContent": "\nx\r\n😀\né\n\na\né\n\nb\nx\r\nx\r\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 \n+ 2 x\r\n    ...\n- 3 é\n    ...\n+ 6 a\n    ...\n+ 8 \n    ...\n- 7 é\n- 8 é\n- 9 b\n+10 x\r\n+11 x\r\n+12 x\r\n+13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,2 @@\n+\n+x\r\n@@ -3,1 +4,0 @@\n-é\n@@ -4,0 +6,1 @@\n+a\n@@ -5,0 +8,1 @@\n+\n@@ -7,3 +10,4 @@\n-é\n-é\n-b\n+x\r\n+x\r\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-109",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\na\nb\nb\nb\né\nb\n\na\n\n\ntail",
+      "newContent": "é\né\né\n😀\nx\r\né\ntail",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 😀\n- 3 a\n- 4 b\n- 5 b\n- 6 b\n  7 é\n- 8 b\n- 9 \n-10 a\n-11 \n-12 \n+ 2 é\n+ 3 é\n+ 4 😀\n+ 5 x\r\n+ 6 é\n 13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,7 @@\n-b\n-😀\n-a\n-b\n-b\n-b\n é\n-b\n-\n-a\n-\n-\n+é\n+é\n+😀\n+x\r\n+é\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-110",
+      "path": "fixture.txt",
+      "oldContent": "b\na\nx\r\na\né\né\n",
+      "newContent": "é\n😀\na\n\ntail",
+      "contextLines": 4,
+      "diff": "-1 b\n-2 a\n-3 x\r\n-4 a\n 5 é\n-6 é\n+2 😀\n+3 a\n+4 \n+5 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,5 @@\n-b\n-a\n-x\r\n-a\n é\n-é\n+😀\n+a\n+\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-111",
+      "path": "fixture.txt",
+      "oldContent": "\na\nb\n",
+      "newContent": "a\n😀\né\n\nb\nx\r\né\né\nx\r\né\n😀\nb\né\nx\r\n",
+      "contextLines": 0,
+      "diff": "- 1 \n    ...\n+ 2 😀\n+ 3 é\n+ 4 \n    ...\n+ 6 x\r\n+ 7 é\n+ 8 é\n+ 9 x\r\n+10 é\n+11 😀\n+12 b\n+13 é\n+14 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-\n@@ -2,0 +2,3 @@\n+😀\n+é\n+\n@@ -3,0 +6,9 @@\n+x\r\n+é\n+é\n+x\r\n+é\n+😀\n+b\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-112",
+      "path": "fixture.txt",
+      "oldContent": "\né\nx\r\nb\nx\r\né\n\n\né\n\ntail",
+      "newContent": "b\né\n😀\né\nx\r\nx\r\nx\r\na\nx\r\n😀\n😀\nb\na\ntail",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 é\n- 3 x\r\n  4 b\n- 5 x\r\n  6 é\n- 7 \n- 8 \n+ 3 😀\n  9 é\n-10 \n+ 5 x\r\n+ 6 x\r\n+ 7 x\r\n+ 8 a\n+ 9 x\r\n+10 😀\n+11 😀\n+12 b\n+13 a\n 11 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,14 @@\n-\n-é\n-x\r\n b\n-x\r\n é\n-\n-\n+😀\n é\n-\n+x\r\n+x\r\n+x\r\n+a\n+x\r\n+😀\n+😀\n+b\n+a\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-113",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n😀\nb\na\nb\na\na\né\na\ntail",
+      "newContent": "😀\né\né\nb\né\n😀\né\n😀\n\na\nx\r\na\n",
+      "contextLines": 4,
+      "diff": "+ 1 😀\n  1 é\n  2 é\n- 3 😀\n  4 b\n- 5 a\n- 6 b\n- 7 a\n- 8 a\n  9 é\n+ 6 😀\n+ 7 é\n+ 8 😀\n+ 9 \n 10 a\n-11 tail\n+11 x\r\n+12 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,12 @@\n+😀\n é\n é\n-😀\n b\n-a\n-b\n-a\n-a\n é\n+😀\n+é\n+😀\n+\n a\n-tail\n\\ No newline at end of file\n+x\r\n+a\n"
+    },
+    {
+      "name": "seeded-114",
+      "path": "fixture.txt",
+      "oldContent": "b\na\nx\r\na\n\nx\r\né\nx\r\né\na\ntail",
+      "newContent": "é\nb\nx\r\na\nb\n😀\n",
+      "contextLines": 0,
+      "diff": "+ 1 é\n    ...\n- 2 a\n    ...\n- 5 \n- 6 x\r\n- 7 é\n- 8 x\r\n- 9 é\n-10 a\n-11 tail\n+ 5 b\n+ 6 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+é\n@@ -2,1 +2,0 @@\n-a\n@@ -5,7 +5,2 @@\n-\n-x\r\n-é\n-x\r\n-é\n-a\n-tail\n\\ No newline at end of file\n+b\n+😀\n"
+    },
+    {
+      "name": "seeded-115",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nx\r\nb\n\n😀\n😀\n😀\n😀\né\n",
+      "newContent": "a\nb\né\nb\n\nx\r\n😀\n😀\nx\r\né\n",
+      "contextLines": 1,
+      "diff": "- 1 x\r\n- 2 x\r\n+ 1 a\n  3 b\n+ 3 é\n+ 4 b\n  4 \n+ 6 x\r\n  5 😀\n  6 😀\n- 7 😀\n- 8 😀\n+ 9 x\r\n  9 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,10 @@\n-x\r\n-x\r\n+a\n b\n+é\n+b\n \n+x\r\n 😀\n 😀\n-😀\n-😀\n+x\r\n é\n"
+    },
+    {
+      "name": "seeded-116",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "a\né\na\nx\r\né\né\né\n\nx\r\n\n😀\né\n",
+      "contextLines": 4,
+      "diff": "+ 1 a\n+ 2 é\n+ 3 a\n+ 4 x\r\n+ 5 é\n+ 6 é\n+ 7 é\n+ 8 \n+ 9 x\r\n+10 \n+11 😀\n+12 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,12 @@\n+a\n+é\n+a\n+x\r\n+é\n+é\n+é\n+\n+x\r\n+\n+😀\n+é\n"
+    },
+    {
+      "name": "seeded-117",
+      "path": "fixture.txt",
+      "oldContent": "é\na\n😀\nb\né\né\né\né\né\n\n",
+      "newContent": "b\né\né\na\né\nx\r\na\né\n😀\n\n\na\ntail",
+      "contextLines": 0,
+      "diff": "- 1 é\n- 2 a\n- 3 😀\n    ...\n- 7 é\n- 8 é\n+ 4 a\n    ...\n+ 6 x\r\n+ 7 a\n+ 8 é\n+ 9 😀\n    ...\n+11 \n+12 a\n+13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +0,0 @@\n-é\n-a\n-😀\n@@ -7,2 +4,1 @@\n-é\n-é\n+a\n@@ -9,0 +6,4 @@\n+x\r\n+a\n+é\n+😀\n@@ -10,0 +11,3 @@\n+\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-118",
+      "path": "fixture.txt",
+      "oldContent": "b\né\na\na\na\nx\r\nb\né\ntail",
+      "newContent": "x\r\nx\r\n\nx\r\nb\n\na\nb\n",
+      "contextLines": 1,
+      "diff": "+1 x\r\n+2 x\r\n+3 \n+4 x\r\n 1 b\n-2 é\n+6 \n 3 a\n-4 a\n-5 a\n-6 x\r\n 7 b\n-8 é\n-9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,8 @@\n+x\r\n+x\r\n+\n+x\r\n b\n-é\n+\n a\n-a\n-a\n-x\r\n b\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-119",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\né\nx\r\n😀\nx\r\n",
+      "newContent": "😀\na\né\né\né\n😀\né\n\n\né\n",
+      "contextLines": 4,
+      "diff": "  1 😀\n- 2 \n- 3 é\n- 4 x\r\n+ 2 a\n+ 3 é\n+ 4 é\n+ 5 é\n  5 😀\n- 6 x\r\n+ 7 é\n+ 8 \n+ 9 \n+10 é",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,10 @@\n 😀\n-\n-é\n-x\r\n+a\n+é\n+é\n+é\n 😀\n-x\r\n+é\n+\n+\n+é\n"
+    },
+    {
+      "name": "seeded-120",
+      "path": "fixture.txt",
+      "oldContent": "a\né\nb\nx\r\na\n😀\n\n\n",
+      "newContent": "x\r\né\na\nx\r\n😀\na\né\n\n\n\né\n",
+      "contextLines": 0,
+      "diff": "- 1 a\n- 2 é\n- 3 b\n    ...\n+ 2 é\n    ...\n+ 4 x\r\n    ...\n+ 6 a\n+ 7 é\n    ...\n+10 \n+11 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +0,0 @@\n-a\n-é\n-b\n@@ -4,0 +2,1 @@\n+é\n@@ -5,0 +4,1 @@\n+x\r\n@@ -6,0 +6,2 @@\n+a\n+é\n@@ -8,0 +10,2 @@\n+\n+é\n"
+    },
+    {
+      "name": "seeded-121",
+      "path": "fixture.txt",
+      "oldContent": "\né\n😀\na\n\né\nb\nx\r\né\nb\n\na\n",
+      "newContent": "é\n😀\nx\r\né\né\nb\né\n",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 é\n- 3 😀\n- 4 a\n- 5 \n  6 é\n- 7 b\n+ 2 😀\n  8 x\r\n- 9 é\n+ 4 é\n+ 5 é\n 10 b\n-11 \n-12 a\n+ 7 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,7 @@\n-\n-é\n-😀\n-a\n-\n é\n-b\n+😀\n x\r\n-é\n+é\n+é\n b\n-\n-a\n+é\n"
+    },
+    {
+      "name": "seeded-122",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "é\n\nx\r\né\né\nx\r\ntail",
+      "contextLines": 4,
+      "diff": "+1 é\n+2 \n+3 x\r\n+4 é\n+5 é\n+6 x\r\n+7 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,7 @@\n+é\n+\n+x\r\n+é\n+é\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-123",
+      "path": "fixture.txt",
+      "oldContent": "😀\n😀\n😀\nb\nx\r\n😀\né\n😀\nb\na\ntail",
+      "newContent": "a\n😀\na\né\n😀\nx\r\na\né\nx\r\n😀\n😀\n😀\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 a\n    ...\n+ 3 a\n+ 4 é\n    ...\n- 3 😀\n- 4 b\n    ...\n+ 7 a\n+ 8 é\n+ 9 x\r\n    ...\n- 7 é\n    ...\n- 9 b\n-10 a\n+12 😀\n+13 x\r\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+a\n@@ -1,0 +3,2 @@\n+a\n+é\n@@ -3,2 +5,0 @@\n-😀\n-b\n@@ -5,0 +7,3 @@\n+a\n+é\n+x\r\n@@ -7,1 +10,0 @@\n-é\n@@ -9,2 +12,2 @@\n-b\n-a\n+😀\n+x\r\n"
+    },
+    {
+      "name": "seeded-124",
+      "path": "fixture.txt",
+      "oldContent": "b\n\nb\nx\r\na\nb\n\na\né\né\n\n😀\né\n😀\n",
+      "newContent": "tail",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 \n- 3 b\n- 4 x\r\n- 5 a\n- 6 b\n- 7 \n- 8 a\n- 9 é\n-10 é\n-11 \n-12 😀\n-13 é\n-14 😀\n+ 1 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,1 @@\n-b\n-\n-b\n-x\r\n-a\n-b\n-\n-a\n-é\n-é\n-\n-😀\n-é\n-😀\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-125",
+      "path": "fixture.txt",
+      "oldContent": "x\r\né\né\nb\n😀\né\né\nb\né\né\né\né\né\n",
+      "newContent": "\na\n\n\né\nx\r\n😀\na\nb\na\na\nx\r\n\ntail",
+      "contextLines": 4,
+      "diff": "- 1 x\r\n+ 1 \n+ 2 a\n+ 3 \n+ 4 \n  2 é\n- 3 é\n- 4 b\n+ 6 x\r\n  5 😀\n- 6 é\n- 7 é\n+ 8 a\n  8 b\n- 9 é\n-10 é\n-11 é\n-12 é\n-13 é\n+10 a\n+11 a\n+12 x\r\n+13 \n+14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,14 @@\n-x\r\n+\n+a\n+\n+\n é\n-é\n-b\n+x\r\n 😀\n-é\n-é\n+a\n b\n-é\n-é\n-é\n-é\n-é\n+a\n+a\n+x\r\n+\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-126",
+      "path": "fixture.txt",
+      "oldContent": "\né\n😀\na\né\né\nx\r\né\nb\né\nx\r\na\nx\r\né\ntail",
+      "newContent": "\nb\na\n😀\nx\r\né\na\na\nb\nb\ntail",
+      "contextLines": 0,
+      "diff": "    ...\n- 2 é\n- 3 😀\n+ 2 b\n    ...\n- 5 é\n- 6 é\n+ 4 😀\n    ...\n- 9 b\n-10 é\n-11 x\r\n    ...\n-13 x\r\n-14 é\n+ 8 a\n+ 9 b\n+10 b\n    ...",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,2 +2,1 @@\n-é\n-😀\n+b\n@@ -5,2 +4,1 @@\n-é\n-é\n+😀\n@@ -9,3 +6,0 @@\n-b\n-é\n-x\r\n@@ -13,2 +8,3 @@\n-x\r\n-é\n+a\n+b\n+b\n"
+    },
+    {
+      "name": "seeded-127",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\na\na\né\né\né\n\né\n😀\n😀\n\n",
+      "newContent": "é\n\n",
+      "contextLines": 1,
+      "diff": "- 1 😀\n- 2 é\n- 3 a\n- 4 a\n  5 é\n- 6 é\n- 7 é\n  8 \n- 9 é\n-10 😀\n-11 😀\n-12 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,2 @@\n-😀\n-é\n-a\n-a\n é\n-é\n-é\n \n-é\n-😀\n-😀\n-\n"
+    },
+    {
+      "name": "seeded-128",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n",
+      "newContent": "\né\na\n\nb\n\n😀\n\n\n😀\né\n\n",
+      "contextLines": 4,
+      "diff": "- 1 x\r\n+ 1 \n+ 2 é\n+ 3 a\n+ 4 \n+ 5 b\n+ 6 \n+ 7 😀\n+ 8 \n+ 9 \n+10 😀\n+11 é\n+12 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,12 @@\n-x\r\n+\n+é\n+a\n+\n+b\n+\n+😀\n+\n+\n+😀\n+é\n+\n"
+    },
+    {
+      "name": "seeded-129",
+      "path": "fixture.txt",
+      "oldContent": "a\né\na\né\na\na\nb\na\ntail",
+      "newContent": "\n😀\nb\né\n😀\né\nb\né\na\nb\né\n😀\nb\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "- 1 a\n+ 1 \n+ 2 😀\n+ 3 b\n    ...\n- 3 a\n- 4 é\n- 5 a\n- 6 a\n+ 5 😀\n+ 6 é\n    ...\n+ 8 é\n    ...\n+10 b\n+11 é\n+12 😀\n+13 b\n+14 x\r\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,3 @@\n-a\n+\n+😀\n+b\n@@ -3,4 +5,2 @@\n-a\n-é\n-a\n-a\n+😀\n+é\n@@ -7,0 +8,1 @@\n+é\n@@ -8,0 +10,5 @@\n+b\n+é\n+😀\n+b\n+x\r\n"
+    },
+    {
+      "name": "seeded-130",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n",
+      "newContent": "😀\né\na\ntail",
+      "contextLines": 1,
+      "diff": "-1 x\r\n+1 😀\n+2 é\n+3 a\n+4 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,4 @@\n-x\r\n+😀\n+é\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-131",
+      "path": "fixture.txt",
+      "oldContent": "a\n😀\né\n",
+      "newContent": "b\n😀\né\nb\nb\né\n😀\n",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 b\n 2 😀\n-3 é\n+3 é\n+4 b\n+5 b\n+6 é\n+7 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,7 @@\n-a\n+b\n 😀\n-é\n+é\n+b\n+b\n+é\n+😀\n"
+    },
+    {
+      "name": "seeded-132",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n😀\ntail",
+      "newContent": "é\n😀\nx\r\n😀\né\né\n😀\nb\nx\r\n\n\n😀\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 é\n+ 2 😀\n    ...\n+ 5 é\n+ 6 é\n+ 7 😀\n+ 8 b\n+ 9 x\r\n+10 \n+11 \n+12 😀\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,2 @@\n+é\n+😀\n@@ -2,0 +5,8 @@\n+é\n+é\n+😀\n+b\n+x\r\n+\n+\n+😀\n"
+    },
+    {
+      "name": "seeded-133",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\né\nb\né\né\né\n😀\né\n😀\n\n",
+      "newContent": "😀\na\né\n\n😀\né\né\n😀\n\né\n",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 b\n+ 1 😀\n+ 2 a\n  3 é\n- 4 b\n- 5 é\n+ 4 \n+ 5 😀\n  6 é\n    ...\n  8 😀\n- 9 é\n-10 😀\n 11 \n+10 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,6 @@\n-é\n-b\n+😀\n+a\n é\n-b\n-é\n+\n+😀\n é\n@@ -8,4 +8,3 @@\n 😀\n-é\n-😀\n \n+é\n"
+    },
+    {
+      "name": "seeded-134",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nb\n\n\nx\r\na\nx\r\né\na\n",
+      "newContent": "😀\n\né\nb\n😀\né\n😀\né\n😀\né\nb\n",
+      "contextLines": 4,
+      "diff": "+ 1 😀\n+ 2 \n  1 é\n- 2 é\n  3 b\n- 4 \n- 5 \n- 6 x\r\n- 7 a\n- 8 x\r\n+ 5 😀\n  9 é\n-10 a\n+ 7 😀\n+ 8 é\n+ 9 😀\n+10 é\n+11 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,11 @@\n+😀\n+\n é\n-é\n b\n-\n-\n-x\r\n-a\n-x\r\n+😀\n é\n-a\n+😀\n+é\n+😀\n+é\n+b\n"
+    },
+    {
+      "name": "seeded-135",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\né\nb\nx\r\n😀\nx\r\n\nb\nx\r\n😀\nx\r\n\n",
+      "newContent": "a\na\n😀\n😀\n",
+      "contextLines": 0,
+      "diff": "+ 1 a\n+ 2 a\n    ...\n- 2 \n- 3 é\n- 4 b\n- 5 x\r\n    ...\n- 7 x\r\n- 8 \n- 9 b\n-10 x\r\n-11 😀\n-12 x\r\n-13 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,2 @@\n+a\n+a\n@@ -2,4 +3,0 @@\n-\n-é\n-b\n-x\r\n@@ -7,7 +4,0 @@\n-x\r\n-\n-b\n-x\r\n-😀\n-x\r\n-\n"
+    },
+    {
+      "name": "seeded-136",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nb\n\né\n😀\nx\r\n\nx\r\nb\na\na\n",
+      "newContent": "b\n\na\nb\n😀\n😀\nb\ntail",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 é\n  3 b\n  4 \n- 5 é\n+ 3 a\n+ 4 b\n  6 😀\n- 7 x\r\n- 8 \n- 9 x\r\n+ 6 😀\n 10 b\n-11 a\n-12 a\n+ 8 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,8 @@\n-é\n-é\n b\n \n-é\n+a\n+b\n 😀\n-x\r\n-\n-x\r\n+😀\n b\n-a\n-a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-137",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "b\né\né\n\nb\nx\r\né\né\n\n😀\ntail",
+      "contextLines": 4,
+      "diff": "+ 1 b\n+ 2 é\n+ 3 é\n+ 4 \n+ 5 b\n+ 6 x\r\n+ 7 é\n+ 8 é\n+ 9 \n+10 😀\n+11 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,11 @@\n+b\n+é\n+é\n+\n+b\n+x\r\n+é\n+é\n+\n+😀\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-138",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n\né\né\nx\r\né\n\né\na\nb\na\n\n😀\n",
+      "newContent": "x\r\n\né\n😀\né\na\n😀\né\nx\r\né\nx\r\nx\r\né\n",
+      "contextLines": 0,
+      "diff": "- 1 é\n- 2 é\n- 3 \n- 4 é\n- 5 é\n    ...\n- 7 é\n    ...\n- 9 é\n+ 3 é\n+ 4 😀\n+ 5 é\n    ...\n-11 b\n-12 a\n-13 \n    ...\n+ 8 é\n+ 9 x\r\n+10 é\n+11 x\r\n+12 x\r\n+13 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +0,0 @@\n-é\n-é\n-\n-é\n-é\n@@ -7,1 +1,0 @@\n-é\n@@ -9,1 +3,3 @@\n-é\n+é\n+😀\n+é\n@@ -11,3 +6,0 @@\n-b\n-a\n-\n@@ -14,0 +8,6 @@\n+é\n+x\r\n+é\n+x\r\n+x\r\n+é\n"
+    },
+    {
+      "name": "seeded-139",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\né\nb\né\ntail",
+      "newContent": "😀\na\n😀\n😀\né\nx\r\né\n😀\n\na\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n  2 😀\n- 3 é\n- 4 b\n+ 2 a\n+ 3 😀\n+ 4 😀\n  5 é\n- 6 tail\n+ 6 x\r\n+ 7 é\n+ 8 😀\n+ 9 \n+10 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,10 @@\n-b\n 😀\n-é\n-b\n+a\n+😀\n+😀\n é\n-tail\n\\ No newline at end of file\n+x\r\n+é\n+😀\n+\n+a\n"
+    },
+    {
+      "name": "seeded-140",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\n😀\n😀\nb\n\né\na\n",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "-1 é\n-2 😀\n-3 😀\n-4 😀\n-5 b\n-6 \n-7 é\n-8 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +0,0 @@\n-é\n-😀\n-😀\n-😀\n-b\n-\n-é\n-a\n"
+    },
+    {
+      "name": "seeded-141",
+      "path": "fixture.txt",
+      "oldContent": "😀\n😀\na\na\n\nb\n\nb\nb\n\nx\r\né\ntail",
+      "newContent": "",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 😀\n- 3 a\n- 4 a\n- 5 \n- 6 b\n- 7 \n- 8 b\n- 9 b\n-10 \n-11 x\r\n-12 é\n-13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +0,0 @@\n-😀\n-😀\n-a\n-a\n-\n-b\n-\n-b\n-b\n-\n-x\r\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-142",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\nb\né\né\n😀\né\n\nx\r\né\né\n😀\nb\ntail",
+      "newContent": "é\n\n\n",
+      "contextLines": 1,
+      "diff": "  1 é\n- 2 x\r\n- 3 b\n- 4 é\n- 5 é\n- 6 😀\n- 7 é\n  8 \n- 9 x\r\n-10 é\n-11 é\n-12 😀\n-13 b\n-14 tail\n+ 3 ",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,3 @@\n é\n-x\r\n-b\n-é\n-é\n-😀\n-é\n \n-x\r\n-é\n-é\n-😀\n-b\n-tail\n\\ No newline at end of file\n+\n"
+    },
+    {
+      "name": "seeded-143",
+      "path": "fixture.txt",
+      "oldContent": "\né\na\né\n😀\n\né\na\né\n\n\nb\n😀\n",
+      "newContent": "a\né\nb\nx\r\né\n\né\né\ntail",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 é\n  3 a\n  4 é\n- 5 😀\n- 6 \n+ 3 b\n+ 4 x\r\n  7 é\n- 8 a\n- 9 é\n 10 \n-11 \n-12 b\n-13 😀\n+ 7 é\n+ 8 é\n+ 9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,9 @@\n-\n-é\n a\n é\n-😀\n-\n+b\n+x\r\n é\n-a\n-é\n \n-\n-b\n-😀\n+é\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-144",
+      "path": "fixture.txt",
+      "oldContent": "\nb\na\ntail",
+      "newContent": "\na\na\na\n😀\né\na\nx\r\n\né\ntail",
+      "contextLines": 0,
+      "diff": "    ...\n- 2 b\n    ...\n+ 3 a\n+ 4 a\n+ 5 😀\n+ 6 é\n+ 7 a\n+ 8 x\r\n+ 9 \n+10 é\n    ...",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,1 +1,0 @@\n-b\n@@ -3,0 +3,8 @@\n+a\n+a\n+😀\n+é\n+a\n+x\r\n+\n+é\n"
+    },
+    {
+      "name": "seeded-145",
+      "path": "fixture.txt",
+      "oldContent": "\nx\r\nb\nb\na\n\n😀\né\nx\r\ntail",
+      "newContent": "\né\né\n\né\né\nb\na\n😀\né\nx\r\n😀\n",
+      "contextLines": 1,
+      "diff": "  1 \n- 2 x\r\n+ 2 é\n+ 3 é\n+ 4 \n+ 5 é\n+ 6 é\n  3 b\n- 4 b\n  5 a\n- 6 \n  7 😀\n- 8 é\n+10 é\n  9 x\r\n-10 tail\n+12 😀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,12 @@\n \n-x\r\n+é\n+é\n+\n+é\n+é\n b\n-b\n a\n-\n 😀\n-é\n+é\n x\r\n-tail\n\\ No newline at end of file\n+😀\n"
+    },
+    {
+      "name": "seeded-146",
+      "path": "fixture.txt",
+      "oldContent": "😀\n😀\nx\r\nx\r\né\né\nb\n😀\n",
+      "newContent": "😀\né\nb\na\nx\r\n",
+      "contextLines": 4,
+      "diff": " 1 😀\n-2 😀\n-3 x\r\n-4 x\r\n 5 é\n-6 é\n 7 b\n-8 😀\n+4 a\n+5 x\r",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,5 @@\n 😀\n-😀\n-x\r\n-x\r\n é\n-é\n b\n-😀\n+a\n+x\r\n"
+    },
+    {
+      "name": "seeded-147",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nx\r\na\nx\r\né\nb\né\n😀\n😀\nx\r\n",
+      "newContent": "é\nx\r\n😀\n\né\n😀\nb\né\n😀\nb\nx\r\né\n",
+      "contextLines": 0,
+      "diff": "- 1 é\n    ...\n- 4 a\n- 5 x\r\n+ 3 😀\n+ 4 \n    ...\n+ 6 😀\n    ...\n- 8 é\n+ 8 é\n    ...\n-10 😀\n+10 b\n    ...\n+12 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-é\n@@ -4,2 +3,2 @@\n-a\n-x\r\n+😀\n+\n@@ -6,0 +6,1 @@\n+😀\n@@ -8,1 +8,1 @@\n-é\n+é\n@@ -10,1 +10,1 @@\n-😀\n+b\n@@ -11,0 +12,1 @@\n+é\n"
+    },
+    {
+      "name": "seeded-148",
+      "path": "fixture.txt",
+      "oldContent": "b\n",
+      "newContent": "a\né\né\né\né\n😀\n\n😀\n😀\n😀\né\n😀\né\ntail",
+      "contextLines": 1,
+      "diff": "- 1 b\n+ 1 a\n+ 2 é\n+ 3 é\n+ 4 é\n+ 5 é\n+ 6 😀\n+ 7 \n+ 8 😀\n+ 9 😀\n+10 😀\n+11 é\n+12 😀\n+13 é\n+14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,14 @@\n-b\n+a\n+é\n+é\n+é\n+é\n+😀\n+\n+😀\n+😀\n+😀\n+é\n+😀\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-149",
+      "path": "fixture.txt",
+      "oldContent": "a\n😀\né\nb\né\nb\né\né\ntail",
+      "newContent": "x\r\na\n\n😀\né\né\n",
+      "contextLines": 4,
+      "diff": "+1 x\r\n 1 a\n+3 \n 2 😀\n-3 é\n-4 b\n 5 é\n-6 b\n 7 é\n-8 é\n-9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,6 @@\n+x\r\n a\n+\n 😀\n-é\n-b\n é\n-b\n é\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-150",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nx\r\n😀\né\n😀\na\né\nx\r\n",
+      "newContent": "b\n😀\nb\n\né\na\né\né\n\n😀\né\na\n",
+      "contextLines": 0,
+      "diff": "+ 1 b\n+ 2 😀\n+ 3 b\n+ 4 \n    ...\n+ 6 a\n    ...\n- 3 x\r\n- 4 😀\n    ...\n+ 9 \n    ...\n- 7 a\n    ...\n- 9 x\r\n+12 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,4 @@\n+b\n+😀\n+b\n+\n@@ -1,0 +6,1 @@\n+a\n@@ -3,2 +7,0 @@\n-x\r\n-😀\n@@ -5,0 +9,1 @@\n+\n@@ -7,1 +10,0 @@\n-a\n@@ -9,1 +12,1 @@\n-x\r\n+a\n"
+    },
+    {
+      "name": "seeded-151",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\né\né\né\nx\r\nb\n😀\né\n😀\na\nb\nb\n",
+      "newContent": "\n",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 😀\n- 3 é\n- 4 é\n- 5 é\n- 6 x\r\n- 7 b\n- 8 😀\n- 9 é\n-10 😀\n-11 a\n-12 b\n-13 b\n+ 1 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,1 @@\n-é\n-😀\n-é\n-é\n-é\n-x\r\n-b\n-😀\n-é\n-😀\n-a\n-b\n-b\n+\n"
+    },
+    {
+      "name": "seeded-152",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\n\né\n",
+      "newContent": "x\r\né\na\né\nx\r\n😀\né\nx\r\n😀\na\n\nx\r\n",
+      "contextLines": 4,
+      "diff": "+ 1 x\r\n+ 2 é\n+ 3 a\n  1 é\n- 2 b\n- 3 \n+ 5 x\r\n+ 6 😀\n  4 é\n+ 8 x\r\n+ 9 😀\n+10 a\n+11 \n+12 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,12 @@\n+x\r\n+é\n+a\n é\n-b\n-\n+x\r\n+😀\n é\n+x\r\n+😀\n+a\n+\n+x\r\n"
+    },
+    {
+      "name": "seeded-153",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "\né\n😀\nx\r\na\nx\r\n",
+      "contextLines": 0,
+      "diff": "+1 \n+2 é\n+3 😀\n+4 x\r\n   ...\n+6 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,4 @@\n+\n+é\n+😀\n+x\r\n@@ -1,0 +6,1 @@\n+x\r\n"
+    },
+    {
+      "name": "seeded-154",
+      "path": "fixture.txt",
+      "oldContent": "\n😀\né\nx\r\nb\nx\r\n😀\nx\r\n\n",
+      "newContent": "é\n",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 😀\n  3 é\n- 4 x\r\n- 5 b\n- 6 x\r\n- 7 😀\n- 8 x\r\n- 9 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,1 @@\n-\n-😀\n é\n-x\r\n-b\n-x\r\n-😀\n-x\r\n-\n"
+    },
+    {
+      "name": "seeded-155",
+      "path": "fixture.txt",
+      "oldContent": "a\n",
+      "newContent": "tail",
+      "contextLines": 4,
+      "diff": "-1 a\n+1 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-156",
+      "path": "fixture.txt",
+      "oldContent": "😀\nx\r\nx\r\nx\r\né\né\n",
+      "newContent": "\né\né\n",
+      "contextLines": 0,
+      "diff": "-1 😀\n-2 x\r\n-3 x\r\n-4 x\r\n+1 \n   ...\n-6 é\n+3 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,1 @@\n-😀\n-x\r\n-x\r\n-x\r\n+\n@@ -6,1 +3,1 @@\n-é\n+é\n"
+    },
+    {
+      "name": "seeded-157",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\n😀\n😀\n\ntail",
+      "newContent": "é\n\n\né\n\né\nb\n",
+      "contextLines": 1,
+      "diff": "-1 x\r\n+1 é\n 2 \n-3 😀\n-4 😀\n 5 \n-6 tail\n+4 é\n+5 \n+6 é\n+7 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,7 @@\n-x\r\n+é\n \n-😀\n-😀\n \n-tail\n\\ No newline at end of file\n+é\n+\n+é\n+b\n"
+    },
+    {
+      "name": "seeded-158",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\n",
+      "newContent": "😀\n\n😀\n😀\né\n",
+      "contextLines": 4,
+      "diff": " 1 😀\n 2 \n+3 😀\n+4 😀\n+5 é",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,5 @@\n 😀\n \n+😀\n+😀\n+é\n"
+    },
+    {
+      "name": "seeded-159",
+      "path": "fixture.txt",
+      "oldContent": "b\né\né\né\nx\r\nb\n\n\n",
+      "newContent": "é\né\n",
+      "contextLines": 0,
+      "diff": "-1 b\n-2 é\n   ...\n-5 x\r\n-6 b\n-7 \n-8 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +0,0 @@\n-b\n-é\n@@ -5,4 +2,0 @@\n-x\r\n-b\n-\n-\n"
+    },
+    {
+      "name": "seeded-160",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nx\r\né\nx\r\n😀\n😀\nx\r\ntail",
+      "newContent": "a\né\né\né\né\ntail",
+      "contextLines": 1,
+      "diff": "-1 é\n+1 a\n 2 é\n-3 x\r\n 4 é\n-5 x\r\n-6 😀\n-7 😀\n-8 x\r\n+4 é\n+5 é\n 9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,6 @@\n-é\n+a\n é\n-x\r\n é\n-x\r\n-😀\n-😀\n-x\r\n+é\n+é\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-161",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n",
+      "newContent": "\nx\r\nx\r\n\né\nx\r\nx\r\n",
+      "contextLines": 4,
+      "diff": "+1 \n 1 x\r\n+3 x\r\n+4 \n+5 é\n+6 x\r\n+7 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,7 @@\n+\n x\r\n+x\r\n+\n+é\n+x\r\n+x\r\n"
+    },
+    {
+      "name": "seeded-162",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\na\nx\r\né\né\né\nx\r\né\n",
+      "newContent": "\né\né\nb\nx\r\na\na\n\n\na\né\ntail",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 é\n- 3 a\n+ 1 \n+ 2 é\n+ 3 é\n+ 4 b\n    ...\n- 5 é\n- 6 é\n- 7 é\n- 8 x\r\n+ 6 a\n+ 7 a\n+ 8 \n+ 9 \n+10 a\n    ...\n+12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,4 @@\n-😀\n-é\n-a\n+\n+é\n+é\n+b\n@@ -5,4 +6,5 @@\n-é\n-é\n-é\n-x\r\n+a\n+a\n+\n+\n+a\n@@ -9,0 +12,1 @@\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-163",
+      "path": "fixture.txt",
+      "oldContent": "x\r\n\n",
+      "newContent": "x\r\n😀\nx\r\né\na\né\né\nx\r\na\n\na\nb\nb\n😀\n",
+      "contextLines": 1,
+      "diff": "  1 x\r\n+ 2 😀\n+ 3 x\r\n+ 4 é\n+ 5 a\n+ 6 é\n+ 7 é\n+ 8 x\r\n+ 9 a\n  2 \n+11 a\n+12 b\n+13 b\n+14 😀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,14 @@\n x\r\n+😀\n+x\r\n+é\n+a\n+é\n+é\n+x\r\n+a\n \n+a\n+b\n+b\n+😀\n"
+    },
+    {
+      "name": "seeded-164",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\n😀\né\na\ntail",
+      "newContent": "😀\n😀\n😀\nx\r\n\na\na\nx\r\n😀\né\n\nx\r\ntail",
+      "contextLines": 4,
+      "diff": "- 1 é\n  2 😀\n  3 😀\n- 4 é\n+ 3 😀\n+ 4 x\r\n+ 5 \n  5 a\n+ 7 a\n+ 8 x\r\n+ 9 😀\n+10 é\n+11 \n+12 x\r\n  6 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,13 @@\n-é\n 😀\n 😀\n-é\n+😀\n+x\r\n+\n a\n+a\n+x\r\n+😀\n+é\n+\n+x\r\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-165",
+      "path": "fixture.txt",
+      "oldContent": "😀\n😀\n\n😀\n\n😀\na\na\né\né\nx\r\n",
+      "newContent": "\n\né\na\né\né\n😀\nx\r\n\n\n",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 😀\n    ...\n- 4 😀\n    ...\n- 6 😀\n+ 3 é\n    ...\n- 8 a\n    ...\n-10 é\n+ 6 é\n+ 7 😀\n    ...\n+ 9 \n+10 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +0,0 @@\n-😀\n-😀\n@@ -4,1 +1,0 @@\n-😀\n@@ -6,1 +3,1 @@\n-😀\n+é\n@@ -8,1 +4,0 @@\n-a\n@@ -10,1 +6,2 @@\n-é\n+é\n+😀\n@@ -11,0 +9,2 @@\n+\n+\n"
+    },
+    {
+      "name": "seeded-166",
+      "path": "fixture.txt",
+      "oldContent": "a\né\n\na\nx\r\n😀\né\n😀\n",
+      "newContent": "é\nb\n😀\nb\na\n\ntail",
+      "contextLines": 1,
+      "diff": "-1 a\n-2 é\n-3 \n-4 a\n-5 x\r\n-6 😀\n 7 é\n+2 b\n 8 😀\n+4 b\n+5 a\n+6 \n+7 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,7 @@\n-a\n-é\n-\n-a\n-x\r\n-😀\n é\n+b\n 😀\n+b\n+a\n+\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-167",
+      "path": "fixture.txt",
+      "oldContent": "tail",
+      "newContent": "b\n",
+      "contextLines": 4,
+      "diff": "-1 tail\n+1 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-tail\n\\ No newline at end of file\n+b\n"
+    },
+    {
+      "name": "seeded-168",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\n😀\nb\né\nb\na\nb\né\na\n😀\ntail",
+      "newContent": "x\r\né\na\n😀\n",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 é\n- 3 😀\n- 4 b\n+ 1 x\r\n    ...\n- 6 b\n    ...\n- 8 b\n- 9 é\n-10 a\n    ...\n-12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,1 @@\n-😀\n-é\n-😀\n-b\n+x\r\n@@ -6,1 +2,0 @@\n-b\n@@ -8,3 +3,0 @@\n-b\n-é\n-a\n@@ -12,1 +4,0 @@\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-169",
+      "path": "fixture.txt",
+      "oldContent": "\né\nb\nx\r\na\nx\r\na\nx\r\n",
+      "newContent": "b\né\né\n😀\nx\r\né\né\né\nx\r\na\n😀\nx\r\nx\r\ntail",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 é\n  3 b\n+ 2 é\n+ 3 é\n+ 4 😀\n  4 x\r\n- 5 a\n+ 6 é\n+ 7 é\n+ 8 é\n  6 x\r\n  7 a\n+11 😀\n  8 x\r\n+13 x\r\n+14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,14 @@\n-\n-é\n b\n+é\n+é\n+😀\n x\r\n-a\n+é\n+é\n+é\n x\r\n a\n+😀\n x\r\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-170",
+      "path": "fixture.txt",
+      "oldContent": "é\n\n\na\nb\né\nb\né\n😀\né\n",
+      "newContent": "\nx\r\n😀\n\na\n\n😀\né\nx\r\ntail",
+      "contextLines": 4,
+      "diff": "- 1 é\n  2 \n+ 2 x\r\n+ 3 😀\n  3 \n  4 a\n- 5 b\n- 6 é\n- 7 b\n- 8 é\n+ 6 \n  9 😀\n-10 é\n+ 8 é\n+ 9 x\r\n+10 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,10 @@\n-é\n \n+x\r\n+😀\n \n a\n-b\n-é\n-b\n-é\n+\n 😀\n-é\n+é\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-171",
+      "path": "fixture.txt",
+      "oldContent": "b\nx\r\nx\r\n\né\n😀\n😀\né\n😀\né\né\né\n😀\nb\n",
+      "newContent": "😀\n\né\nb\na\n\n😀\n\né\nb\né\ntail",
+      "contextLines": 0,
+      "diff": "- 1 b\n- 2 x\r\n- 3 x\r\n+ 1 😀\n    ...\n+ 4 b\n+ 5 a\n+ 6 \n    ...\n- 7 😀\n+ 8 \n    ...\n- 9 😀\n-10 é\n-11 é\n-12 é\n-13 😀\n    ...\n+11 é\n+12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,1 @@\n-b\n-x\r\n-x\r\n+😀\n@@ -5,0 +4,3 @@\n+b\n+a\n+\n@@ -7,1 +8,1 @@\n-😀\n+\n@@ -9,5 +9,0 @@\n-😀\n-é\n-é\n-é\n-😀\n@@ -14,0 +11,2 @@\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-172",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\né\n😀\nx\r\nx\r\né\n",
+      "newContent": "é\n😀\n😀\n😀\nx\r\n😀\né\nx\r\nx\r\nb\n",
+      "contextLines": 1,
+      "diff": "+ 1 é\n  1 😀\n- 2 é\n- 3 é\n  4 😀\n+ 4 😀\n  5 x\r\n- 6 x\r\n+ 6 😀\n  7 é\n+ 8 x\r\n+ 9 x\r\n+10 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,10 @@\n+é\n 😀\n-é\n-é\n 😀\n+😀\n x\r\n-x\r\n+😀\n é\n+x\r\n+x\r\n+b\n"
+    },
+    {
+      "name": "seeded-173",
+      "path": "fixture.txt",
+      "oldContent": "\nb\nx\r\na\nb\nx\r\né\né\n",
+      "newContent": "b\né\na\né\na\na\n",
+      "contextLines": 4,
+      "diff": "-1 \n 2 b\n-3 x\r\n+2 é\n 4 a\n-5 b\n-6 x\r\n 7 é\n-8 é\n+5 a\n+6 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,6 @@\n-\n b\n-x\r\n+é\n a\n-b\n-x\r\n é\n-é\n+a\n+a\n"
+    },
+    {
+      "name": "seeded-174",
+      "path": "fixture.txt",
+      "oldContent": "x\r\na\n\na\n\né\né\ntail",
+      "newContent": "😀\n😀\nx\r\nb\n\né\n\nb\ntail",
+      "contextLines": 0,
+      "diff": "+1 😀\n+2 😀\n   ...\n-2 a\n+4 b\n   ...\n-4 a\n-5 \n   ...\n-7 é\n+7 \n+8 b\n   ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,2 @@\n+😀\n+😀\n@@ -2,1 +4,1 @@\n-a\n+b\n@@ -4,2 +5,0 @@\n-a\n-\n@@ -7,1 +7,2 @@\n-é\n+\n+b\n"
+    },
+    {
+      "name": "seeded-175",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\n😀\na\na\nb\n\n",
+      "newContent": "x\r\nb\n😀\nb\n\nx\r\na\n\n\né\nx\r\n",
+      "contextLines": 1,
+      "diff": "- 1 é\n  2 x\r\n+ 2 b\n  3 😀\n- 4 a\n- 5 a\n  6 b\n  7 \n+ 6 x\r\n+ 7 a\n+ 8 \n+ 9 \n+10 é\n+11 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,11 @@\n-é\n x\r\n+b\n 😀\n-a\n-a\n b\n \n+x\r\n+a\n+\n+\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-176",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "é\n😀\né\na\né\ntail",
+      "contextLines": 4,
+      "diff": "+1 é\n+2 😀\n+3 é\n+4 a\n+5 é\n+6 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,6 @@\n+é\n+😀\n+é\n+a\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-177",
+      "path": "fixture.txt",
+      "oldContent": "😀\nb\nx\r\n\n😀\né\né\nb\n\nx\r\n",
+      "newContent": "x\r\né\n😀\n😀\né\na\nb\na\nx\r\nx\r\nx\r\n\nx\r\né\n",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 b\n    ...\n- 4 \n+ 2 é\n    ...\n+ 4 😀\n    ...\n- 7 é\n+ 6 a\n    ...\n+ 8 a\n+ 9 x\r\n+10 x\r\n+11 x\r\n    ...\n+14 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +0,0 @@\n-😀\n-b\n@@ -4,1 +2,1 @@\n-\n+é\n@@ -5,0 +4,1 @@\n+😀\n@@ -7,1 +6,1 @@\n-é\n+a\n@@ -8,0 +8,4 @@\n+a\n+x\r\n+x\r\n+x\r\n@@ -10,0 +14,1 @@\n+é\n"
+    },
+    {
+      "name": "seeded-178",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nx\r\n\ntail",
+      "newContent": "a\n😀\né\nx\r\né\nb\ntail",
+      "contextLines": 1,
+      "diff": "+1 a\n+2 😀\n+3 é\n 1 x\r\n-2 x\r\n-3 \n+5 é\n+6 b\n 4 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,7 @@\n+a\n+😀\n+é\n x\r\n-x\r\n-\n+é\n+b\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-179",
+      "path": "fixture.txt",
+      "oldContent": "é\n\ntail",
+      "newContent": "b\nx\r\nx\r\nx\r\n😀\n\n😀\n😀\n😀\n\nx\r\na\n",
+      "contextLines": 4,
+      "diff": "- 1 é\n+ 1 b\n+ 2 x\r\n+ 3 x\r\n+ 4 x\r\n+ 5 😀\n  2 \n- 3 tail\n+ 7 😀\n+ 8 😀\n+ 9 😀\n+10 \n+11 x\r\n+12 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,12 @@\n-é\n+b\n+x\r\n+x\r\n+x\r\n+😀\n \n-tail\n\\ No newline at end of file\n+😀\n+😀\n+😀\n+\n+x\r\n+a\n"
+    },
+    {
+      "name": "seeded-180",
+      "path": "fixture.txt",
+      "oldContent": "\nb\nx\r\nx\r\n😀\na\n\na\né\n",
+      "newContent": "a\né\nx\r\n\n😀\né\na\n😀\né\nb\nx\r\né\n",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 b\n+ 1 a\n+ 2 é\n    ...\n- 4 x\r\n+ 4 \n    ...\n+ 6 é\n    ...\n- 7 \n- 8 a\n+ 8 😀\n    ...\n+10 b\n+11 x\r\n+12 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-\n-b\n+a\n+é\n@@ -4,1 +4,1 @@\n-x\r\n+\n@@ -5,0 +6,1 @@\n+é\n@@ -7,2 +8,1 @@\n-\n-a\n+😀\n@@ -9,0 +10,3 @@\n+b\n+x\r\n+é\n"
+    },
+    {
+      "name": "seeded-181",
+      "path": "fixture.txt",
+      "oldContent": "b\né\nx\r\n\na\nb\nx\r\n😀\na\na\nx\r\ntail",
+      "newContent": "\ntail",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 é\n- 3 x\r\n  4 \n- 5 a\n- 6 b\n- 7 x\r\n- 8 😀\n- 9 a\n-10 a\n-11 x\r\n 12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,2 @@\n-b\n-é\n-x\r\n \n-a\n-b\n-x\r\n-😀\n-a\n-a\n-x\r\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-182",
+      "path": "fixture.txt",
+      "oldContent": "\n😀\n\na\né\na\nx\r\né\né\nx\r\nx\r\n😀\nx\r\n",
+      "newContent": "b\né\n\n😀\né\nb\n\nb\nx\r\n😀\n😀\ntail",
+      "contextLines": 4,
+      "diff": "+ 1 b\n+ 2 é\n  1 \n  2 😀\n+ 5 é\n+ 6 b\n  3 \n- 4 a\n- 5 é\n- 6 a\n+ 8 b\n  7 x\r\n- 8 é\n- 9 é\n-10 x\r\n-11 x\r\n 12 😀\n-13 x\r\n+11 😀\n+12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,12 @@\n+b\n+é\n \n 😀\n+é\n+b\n \n-a\n-é\n-a\n+b\n x\r\n-é\n-é\n-x\r\n-x\r\n 😀\n-x\r\n+😀\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-183",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\n",
+      "newContent": "a\n\nb\nb\né\na\nb\na\na\n😀\n\na\n\né\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 a\n+ 2 \n+ 3 b\n+ 4 b\n+ 5 é\n+ 6 a\n+ 7 b\n+ 8 a\n+ 9 a\n    ...\n+11 \n+12 a\n+13 \n    ...\n+15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,9 @@\n+a\n+\n+b\n+b\n+é\n+a\n+b\n+a\n+a\n@@ -1,0 +11,3 @@\n+\n+a\n+\n@@ -2,0 +15,1 @@\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-184",
+      "path": "fixture.txt",
+      "oldContent": "b\nx\r\na\nx\r\né\né\né\nb\nb\na\né\na\n\né\ntail",
+      "newContent": "é\na\n😀\nx\r\né\né\n\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 x\r\n+ 1 é\n  3 a\n+ 3 😀\n  4 x\r\n- 5 é\n- 6 é\n  7 é\n- 8 b\n- 9 b\n-10 a\n-11 é\n-12 a\n+ 6 é\n 13 \n-14 é\n-15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,15 +1,7 @@\n-b\n-x\r\n+é\n a\n+😀\n x\r\n-é\n-é\n é\n-b\n-b\n-a\n-é\n-a\n+é\n \n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-185",
+      "path": "fixture.txt",
+      "oldContent": "a\na\né\né\n😀\na\nx\r\n😀\né\ntail",
+      "newContent": "é\n😀\n",
+      "contextLines": 4,
+      "diff": "- 1 a\n- 2 a\n- 3 é\n- 4 é\n+ 1 é\n  5 😀\n- 6 a\n- 7 x\r\n- 8 😀\n- 9 é\n-10 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,2 @@\n-a\n-a\n-é\n-é\n+é\n 😀\n-a\n-x\r\n-😀\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-186",
+      "path": "fixture.txt",
+      "oldContent": "\na\na\nb\né\nb\n😀\na\né\n😀\nx\r\na\né\na\ntail",
+      "newContent": "\nx\r\na\nx\r\nb\n😀\né\né\nx\r\n😀\nx\r\né\na\n\n",
+      "contextLines": 0,
+      "diff": "    ...\n+ 2 x\r\n    ...\n- 3 a\n+ 4 x\r\n    ...\n- 5 é\n- 6 b\n    ...\n- 8 a\n    ...\n+ 8 é\n+ 9 x\r\n    ...\n+12 é\n    ...\n-13 é\n-14 a\n-15 tail\n+14 ",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,0 +2,1 @@\n+x\r\n@@ -3,1 +4,1 @@\n-a\n+x\r\n@@ -5,2 +5,0 @@\n-é\n-b\n@@ -8,1 +6,0 @@\n-a\n@@ -9,0 +8,2 @@\n+é\n+x\r\n@@ -11,0 +12,1 @@\n+é\n@@ -13,3 +14,1 @@\n-é\n-a\n-tail\n\\ No newline at end of file\n+\n"
+    },
+    {
+      "name": "seeded-187",
+      "path": "fixture.txt",
+      "oldContent": "😀\nx\r\nb\nb\né\nx\r\na\ntail",
+      "newContent": "b\né\n",
+      "contextLines": 1,
+      "diff": "-1 😀\n-2 x\r\n 3 b\n-4 b\n 5 é\n-6 x\r\n-7 a\n-8 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,2 @@\n-😀\n-x\r\n b\n-b\n é\n-x\r\n-a\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-188",
+      "path": "fixture.txt",
+      "oldContent": "é\n",
+      "newContent": "b\n😀\ntail",
+      "contextLines": 4,
+      "diff": "-1 é\n+1 b\n+2 😀\n+3 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,3 @@\n-é\n+b\n+😀\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-189",
+      "path": "fixture.txt",
+      "oldContent": "é\n\ntail",
+      "newContent": "x\r\nb\n😀\na\na\nb\na\né\n😀\n😀\ntail",
+      "contextLines": 0,
+      "diff": "- 1 é\n- 2 \n+ 1 x\r\n+ 2 b\n+ 3 😀\n+ 4 a\n+ 5 a\n+ 6 b\n+ 7 a\n+ 8 é\n+ 9 😀\n+10 😀\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,10 @@\n-é\n-\n+x\r\n+b\n+😀\n+a\n+a\n+b\n+a\n+é\n+😀\n+😀\n"
+    },
+    {
+      "name": "seeded-190",
+      "path": "fixture.txt",
+      "oldContent": "b\na\n",
+      "newContent": "x\r\n\nb\né\na\ntail",
+      "contextLines": 1,
+      "diff": "+1 x\r\n+2 \n 1 b\n+4 é\n 2 a\n+6 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,6 @@\n+x\r\n+\n b\n+é\n a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-191",
+      "path": "fixture.txt",
+      "oldContent": "😀\na\nx\r\né\nb\nb\nb\nb\n\na\né\nb\n",
+      "newContent": "",
+      "contextLines": 4,
+      "diff": "- 1 😀\n- 2 a\n- 3 x\r\n- 4 é\n- 5 b\n- 6 b\n- 7 b\n- 8 b\n- 9 \n-10 a\n-11 é\n-12 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +0,0 @@\n-😀\n-a\n-x\r\n-é\n-b\n-b\n-b\n-b\n-\n-a\n-é\n-b\n"
+    },
+    {
+      "name": "seeded-192",
+      "path": "fixture.txt",
+      "oldContent": "\nx\r\na\nx\r\na\nb\né\né\né\né\n",
+      "newContent": "é\ntail",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 x\r\n- 3 a\n- 4 x\r\n- 5 a\n- 6 b\n- 7 é\n    ...\n- 9 é\n-10 é\n+ 2 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +0,0 @@\n-\n-x\r\n-a\n-x\r\n-a\n-b\n-é\n@@ -9,2 +2,1 @@\n-é\n-é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-193",
+      "path": "fixture.txt",
+      "oldContent": "\na\nb\n\nx\r\né\né\nx\r\ntail",
+      "newContent": "\nb\n😀\né\n😀\nb\né\né\n😀\na\nx\r\né\nx\r\n",
+      "contextLines": 1,
+      "diff": "  1 \n- 2 a\n  3 b\n- 4 \n- 5 x\r\n+ 3 😀\n  6 é\n+ 5 😀\n+ 6 b\n+ 7 é\n  7 é\n+ 9 😀\n+10 a\n  8 x\r\n- 9 tail\n+12 é\n+13 x\r",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,13 @@\n \n-a\n b\n-\n-x\r\n+😀\n é\n+😀\n+b\n+é\n é\n+😀\n+a\n x\r\n-tail\n\\ No newline at end of file\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-194",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\na\n\ntail",
+      "newContent": "é\na\n😀\né\né\nx\r\nb\n😀\nx\r\ntail",
+      "contextLines": 4,
+      "diff": "+ 1 é\n+ 2 a\n+ 3 😀\n+ 4 é\n+ 5 é\n+ 6 x\r\n  1 b\n  2 😀\n- 3 a\n- 4 \n+ 9 x\r\n  5 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,10 @@\n+é\n+a\n+😀\n+é\n+é\n+x\r\n b\n 😀\n-a\n-\n+x\r\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-195",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\nb\n😀\né\né\na\n\ntail",
+      "newContent": "tail",
+      "contextLines": 0,
+      "diff": "-1 😀\n-2 \n-3 b\n-4 😀\n-5 é\n-6 é\n-7 a\n-8 \n   ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +0,0 @@\n-😀\n-\n-b\n-😀\n-é\n-é\n-a\n-\n"
+    },
+    {
+      "name": "seeded-196",
+      "path": "fixture.txt",
+      "oldContent": "😀\n\nx\r\n\n😀\n😀\n",
+      "newContent": "x\r\na\n😀\nx\r\nb\n😀\né\na\n😀\nx\r\na\nx\r\na\n\ntail",
+      "contextLines": 1,
+      "diff": "+ 1 x\r\n+ 2 a\n  1 😀\n- 2 \n  3 x\r\n- 4 \n+ 5 b\n  5 😀\n+ 7 é\n+ 8 a\n  6 😀\n+10 x\r\n+11 a\n+12 x\r\n+13 a\n+14 \n+15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,15 @@\n+x\r\n+a\n 😀\n-\n x\r\n-\n+b\n 😀\n+é\n+a\n 😀\n+x\r\n+a\n+x\r\n+a\n+\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-197",
+      "path": "fixture.txt",
+      "oldContent": "\né\nb\nx\r\né\na\n\nx\r\nx\r\n😀\né\ntail",
+      "newContent": "a\nb\né\na\né\n",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 é\n+ 1 a\n  3 b\n- 4 x\r\n  5 é\n  6 a\n- 7 \n- 8 x\r\n- 9 x\r\n-10 😀\n 11 é\n-12 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,5 @@\n-\n-é\n+a\n b\n-x\r\n é\n a\n-\n-x\r\n-x\r\n-😀\n é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-198",
+      "path": "fixture.txt",
+      "oldContent": "😀\na\n😀\né\na\nb\né\n\nx\r\n😀\na\né\n",
+      "newContent": "\n\né\nb\nb\n",
+      "contextLines": 0,
+      "diff": "- 1 😀\n- 2 a\n- 3 😀\n- 4 é\n- 5 a\n- 6 b\n- 7 é\n    ...\n- 9 x\r\n-10 😀\n-11 a\n+ 2 \n    ...\n+ 4 b\n+ 5 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +0,0 @@\n-😀\n-a\n-😀\n-é\n-a\n-b\n-é\n@@ -9,3 +2,1 @@\n-x\r\n-😀\n-a\n+\n@@ -12,0 +4,2 @@\n+b\n+b\n"
+    },
+    {
+      "name": "seeded-199",
+      "path": "fixture.txt",
+      "oldContent": "é\na\n😀\né\na\né\n😀\na\n😀\nb\n\nx\r\n",
+      "newContent": "\n\n😀\n\n😀\n😀\na\ntail",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 a\n+ 1 \n+ 2 \n  3 😀\n- 4 é\n- 5 a\n- 6 é\n+ 4 \n  7 😀\n- 8 a\n  9 😀\n-10 b\n-11 \n-12 x\r\n+ 7 a\n+ 8 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,8 @@\n-é\n-a\n+\n+\n 😀\n-é\n-a\n-é\n+\n 😀\n-a\n 😀\n-b\n-\n-x\r\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-200",
+      "path": "fixture.txt",
+      "oldContent": "😀\nx\r\na\né\né\nb\n",
+      "newContent": "a\né\nb\nb\na\né\né\né\n😀\n",
+      "contextLines": 4,
+      "diff": "- 1 😀\n- 2 x\r\n  3 a\n- 4 é\n  5 é\n  6 b\n+ 4 b\n+ 5 a\n+ 6 é\n+ 7 é\n+ 8 é\n+ 9 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,9 @@\n-😀\n-x\r\n a\n-é\n é\n b\n+b\n+a\n+é\n+é\n+é\n+😀\n"
+    },
+    {
+      "name": "seeded-201",
+      "path": "fixture.txt",
+      "oldContent": "b\né\nx\r\n\na\nb\n😀\nx\r\n😀\na\né\ntail",
+      "newContent": "😀\nx\r\n😀\n😀\nx\r\n\na\ntail",
+      "contextLines": 0,
+      "diff": "- 1 b\n- 2 é\n- 3 x\r\n- 4 \n- 5 a\n- 6 b\n    ...\n+ 4 😀\n+ 5 x\r\n+ 6 \n    ...\n-11 é\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +0,0 @@\n-b\n-é\n-x\r\n-\n-a\n-b\n@@ -9,0 +4,3 @@\n+😀\n+x\r\n+\n@@ -11,1 +7,0 @@\n-é\n"
+    },
+    {
+      "name": "seeded-202",
+      "path": "fixture.txt",
+      "oldContent": "é\né\nx\r\né\na\na\na\ntail",
+      "newContent": "é\nb\nb\né\nx\r\na\n😀\né\nx\r\n😀\n😀\n",
+      "contextLines": 1,
+      "diff": "  1 é\n+ 2 b\n+ 3 b\n  2 é\n  3 x\r\n- 4 é\n  5 a\n- 6 a\n- 7 a\n- 8 tail\n+ 7 😀\n+ 8 é\n+ 9 x\r\n+10 😀\n+11 😀",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +1,11 @@\n é\n+b\n+b\n é\n x\r\n-é\n a\n-a\n-a\n-tail\n\\ No newline at end of file\n+😀\n+é\n+x\r\n+😀\n+😀\n"
+    },
+    {
+      "name": "seeded-203",
+      "path": "fixture.txt",
+      "oldContent": "é\n\né\né\né\né\nx\r\n\né\n😀\n😀\na\n",
+      "newContent": "é\n😀\na\né\nb\né\né\n\nx\r\né\nx\r\na\ntail",
+      "contextLines": 4,
+      "diff": "- 1 é\n- 2 \n  3 é\n- 4 é\n+ 2 😀\n+ 3 a\n  5 é\n+ 5 b\n  6 é\n- 7 x\r\n+ 7 é\n  8 \n+ 9 x\r\n  9 é\n-10 😀\n-11 😀\n+11 x\r\n 12 a\n+13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,13 @@\n-é\n-\n é\n-é\n+😀\n+a\n é\n+b\n é\n-x\r\n+é\n \n+x\r\n é\n-😀\n-😀\n+x\r\n a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-204",
+      "path": "fixture.txt",
+      "oldContent": "\nb\na\nb\né\nb\n😀\né\nb\nb\n😀\n\n",
+      "newContent": "x\r\né\na\né\n\nx\r\nb\n",
+      "contextLines": 0,
+      "diff": "- 1 \n- 2 b\n+ 1 x\r\n+ 2 é\n    ...\n- 4 b\n    ...\n- 6 b\n- 7 😀\n- 8 é\n- 9 b\n-10 b\n-11 😀\n    ...\n+ 6 x\r\n+ 7 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,2 @@\n-\n-b\n+x\r\n+é\n@@ -4,1 +3,0 @@\n-b\n@@ -6,6 +4,0 @@\n-b\n-😀\n-é\n-b\n-b\n-😀\n@@ -12,0 +6,2 @@\n+x\r\n+b\n"
+    },
+    {
+      "name": "seeded-205",
+      "path": "fixture.txt",
+      "oldContent": "é\na\na\né\nb\na\né\na\né\né\né\n\na\ntail",
+      "newContent": "😀\né\nb\nx\r\n\né\n",
+      "contextLines": 1,
+      "diff": "+ 1 😀\n  1 é\n- 2 a\n- 3 a\n- 4 é\n  5 b\n- 6 a\n- 7 é\n- 8 a\n- 9 é\n-10 é\n-11 é\n+ 4 x\r\n 12 \n-13 a\n-14 tail\n+ 6 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,6 @@\n+😀\n é\n-a\n-a\n-é\n b\n-a\n-é\n-a\n-é\n-é\n-é\n+x\r\n \n-a\n-tail\n\\ No newline at end of file\n+é\n"
+    },
+    {
+      "name": "seeded-206",
+      "path": "fixture.txt",
+      "oldContent": "😀\na\n",
+      "newContent": "\n\nb\nx\r\n\né\né\nb\nx\r\n",
+      "contextLines": 4,
+      "diff": "- 1 😀\n- 2 a\n+ 1 \n+ 2 \n+ 3 b\n+ 4 x\r\n+ 5 \n+ 6 é\n+ 7 é\n+ 8 b\n+ 9 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +1,9 @@\n-😀\n-a\n+\n+\n+b\n+x\r\n+\n+é\n+é\n+b\n+x\r\n"
+    },
+    {
+      "name": "seeded-207",
+      "path": "fixture.txt",
+      "oldContent": "a\n\n\n",
+      "newContent": "x\r\na\né\n😀\n\n😀\n",
+      "contextLines": 0,
+      "diff": "+1 x\r\n   ...\n+3 é\n+4 😀\n   ...\n-3 \n+6 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+x\r\n@@ -1,0 +3,2 @@\n+é\n+😀\n@@ -3,1 +6,1 @@\n-\n+😀\n"
+    },
+    {
+      "name": "seeded-208",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n\n😀\nb\né\n😀\nx\r\né\né\na\na\n\ntail",
+      "newContent": "",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 é\n- 3 \n- 4 😀\n- 5 b\n- 6 é\n- 7 😀\n- 8 x\r\n- 9 é\n-10 é\n-11 a\n-12 a\n-13 \n-14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +0,0 @@\n-é\n-é\n-\n-😀\n-b\n-é\n-😀\n-x\r\n-é\n-é\n-a\n-a\n-\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-209",
+      "path": "fixture.txt",
+      "oldContent": "b\nx\r\n😀\na\né\n😀\né\né\nx\r\né\ntail",
+      "newContent": "b\n\nb\n😀\na\né\né\n",
+      "contextLines": 4,
+      "diff": "  1 b\n- 2 x\r\n+ 2 \n+ 3 b\n  3 😀\n  4 a\n  5 é\n- 6 😀\n  7 é\n- 8 é\n- 9 x\r\n-10 é\n-11 tail",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,7 @@\n b\n-x\r\n+\n+b\n 😀\n a\n é\n-😀\n é\n-é\n-x\r\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-210",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nx\r\né\né\n\n\n😀\né\ntail",
+      "newContent": "tail",
+      "contextLines": 0,
+      "diff": "-1 x\r\n-2 x\r\n-3 é\n-4 é\n-5 \n-6 \n-7 😀\n-8 é\n   ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,8 +0,0 @@\n-x\r\n-x\r\n-é\n-é\n-\n-\n-😀\n-é\n"
+    },
+    {
+      "name": "seeded-211",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\na\né\nx\r\né\n😀\nx\r\né\n\n",
+      "newContent": "😀\n😀\n😀\né\né\né\nb\na\ntail",
+      "contextLines": 1,
+      "diff": "- 1 é\n  2 😀\n- 3 a\n- 4 é\n- 5 x\r\n- 6 é\n  7 😀\n- 8 x\r\n+ 3 😀\n  9 é\n-10 \n+ 5 é\n+ 6 é\n+ 7 b\n+ 8 a\n+ 9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,9 @@\n-é\n 😀\n-a\n-é\n-x\r\n-é\n 😀\n-x\r\n+😀\n é\n-\n+é\n+é\n+b\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-212",
+      "path": "fixture.txt",
+      "oldContent": "a\né\n😀\né\n😀\na\nb\n\n😀\nb\nb\né\nx\r\ntail",
+      "newContent": "\n😀\nb\nb\nx\r\né\né\n\na\nx\r\nx\r\na\nx\r\né\n",
+      "contextLines": 4,
+      "diff": "- 1 a\n- 2 é\n- 3 😀\n- 4 é\n- 5 😀\n- 6 a\n- 7 b\n  8 \n  9 😀\n 10 b\n 11 b\n+ 5 x\r\n 12 é\n+ 7 é\n+ 8 \n+ 9 a\n 13 x\r\n-14 tail\n+11 x\r\n+12 a\n+13 x\r\n+14 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,14 @@\n-a\n-é\n-😀\n-é\n-😀\n-a\n-b\n \n 😀\n b\n b\n+x\r\n é\n+é\n+\n+a\n x\r\n-tail\n\\ No newline at end of file\n+x\r\n+a\n+x\r\n+é\n"
+    },
+    {
+      "name": "seeded-213",
+      "path": "fixture.txt",
+      "oldContent": "x\r\nb\né\n",
+      "newContent": "tail",
+      "contextLines": 0,
+      "diff": "-1 x\r\n-2 b\n-3 é\n+1 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +1,1 @@\n-x\r\n-b\n-é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-214",
+      "path": "fixture.txt",
+      "oldContent": "x\r\né\nb\né\na\n\nx\r\n\ntail",
+      "newContent": "😀\n",
+      "contextLines": 1,
+      "diff": "-1 x\r\n-2 é\n-3 b\n-4 é\n-5 a\n-6 \n-7 x\r\n-8 \n-9 tail\n+1 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,1 @@\n-x\r\n-é\n-b\n-é\n-a\n-\n-x\r\n-\n-tail\n\\ No newline at end of file\n+😀\n"
+    },
+    {
+      "name": "seeded-215",
+      "path": "fixture.txt",
+      "oldContent": "\n\né\na\nb\né\nx\r\na\n😀\n",
+      "newContent": "😀\nb\né\né\né\na\na\né\né\n😀\n😀\nx\r\nb\n",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 \n- 3 é\n- 4 a\n+ 1 😀\n  5 b\n  6 é\n- 7 x\r\n+ 4 é\n+ 5 é\n  8 a\n+ 7 a\n+ 8 é\n+ 9 é\n  9 😀\n+11 😀\n+12 x\r\n+13 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,13 @@\n-\n-\n-é\n-a\n+😀\n b\n é\n-x\r\n+é\n+é\n a\n+a\n+é\n+é\n 😀\n+😀\n+x\r\n+b\n"
+    },
+    {
+      "name": "seeded-216",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\né\nx\r\n\nx\r\nx\r\n😀\né\nb\nb\n\né\ntail",
+      "newContent": "é\né\né\né\nx\r\nx\r\né\na\né\n😀\na\ntail",
+      "contextLines": 0,
+      "diff": "- 1 😀\n    ...\n+ 3 é\n+ 4 é\n    ...\n- 5 \n    ...\n- 7 x\r\n- 8 😀\n    ...\n-10 b\n-11 b\n-12 \n+ 8 a\n    ...\n+10 😀\n+11 a\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +0,0 @@\n-😀\n@@ -3,0 +3,2 @@\n+é\n+é\n@@ -5,1 +5,0 @@\n-\n@@ -7,2 +6,0 @@\n-x\r\n-😀\n@@ -10,3 +8,1 @@\n-b\n-b\n-\n+a\n@@ -13,0 +10,2 @@\n+😀\n+a\n"
+    },
+    {
+      "name": "seeded-217",
+      "path": "fixture.txt",
+      "oldContent": "a\nx\r\nb\nb\n\na\nb\né\né\n\né\nb\n😀\ntail",
+      "newContent": "x\r\nx\r\né\né\nb\n\né\né\né\n\nx\r\n😀\né\nx\r\n",
+      "contextLines": 1,
+      "diff": "- 1 a\n  2 x\r\n+ 2 x\r\n+ 3 é\n+ 4 é\n  3 b\n- 4 b\n  5 \n- 6 a\n- 7 b\n  8 é\n  9 é\n-10 \n 11 é\n-12 b\n+10 \n+11 x\r\n 13 😀\n-14 tail\n+13 é\n+14 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,14 @@\n-a\n x\r\n+x\r\n+é\n+é\n b\n-b\n \n-a\n-b\n é\n é\n-\n é\n-b\n+\n+x\r\n 😀\n-tail\n\\ No newline at end of file\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-218",
+      "path": "fixture.txt",
+      "oldContent": "b\nx\r\n😀\n\na\né\n😀\nb\na\né\né\n\n\nb\n",
+      "newContent": "b\né\n😀\nb\na\nb\n\n😀\n😀\né\né\nb\ntail",
+      "contextLines": 4,
+      "diff": "  1 b\n- 2 x\r\n- 3 😀\n- 4 \n- 5 a\n  6 é\n  7 😀\n  8 b\n  9 a\n-10 é\n-11 é\n+ 6 b\n 12 \n-13 \n+ 8 😀\n+ 9 😀\n+10 é\n+11 é\n 14 b\n+13 tail",
+      "firstChangedLine": 2,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,13 @@\n b\n-x\r\n-😀\n-\n-a\n é\n 😀\n b\n a\n-é\n-é\n+b\n \n-\n+😀\n+😀\n+é\n+é\n b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-219",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\nx\r\nb\né\nb\né\né\né\na\nx\r\n",
+      "newContent": "a\nb\nb\n😀\n\nb\nx\r\nx\r\nx\r\nb\n\n\né\na\n",
+      "contextLines": 0,
+      "diff": "- 1 é\n+ 1 a\n+ 2 b\n+ 3 b\n    ...\n+ 5 \n+ 6 b\n    ...\n+ 8 x\r\n+ 9 x\r\n    ...\n+11 \n+12 \n    ...\n- 6 b\n- 7 é\n- 8 é\n- 9 é\n    ...\n-11 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,3 @@\n-é\n+a\n+b\n+b\n@@ -2,0 +5,2 @@\n+\n+b\n@@ -3,0 +8,2 @@\n+x\r\n+x\r\n@@ -4,0 +11,2 @@\n+\n+\n@@ -6,4 +13,0 @@\n-b\n-é\n-é\n-é\n@@ -11,1 +14,0 @@\n-x\r\n"
+    },
+    {
+      "name": "seeded-220",
+      "path": "fixture.txt",
+      "oldContent": "é\na\né\nb\n😀\né\n",
+      "newContent": "x\r\n\né\n\n",
+      "contextLines": 1,
+      "diff": "+1 x\r\n+2 \n 1 é\n-2 a\n-3 é\n-4 b\n-5 😀\n-6 é\n+4 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,4 @@\n+x\r\n+\n é\n-a\n-é\n-b\n-😀\n-é\n+\n"
+    },
+    {
+      "name": "seeded-221",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n\na\né\nb\n\né\nb\né\n",
+      "newContent": "😀\né\nx\r\n\nb\n😀\na\n😀\n",
+      "contextLines": 4,
+      "diff": "- 1 é\n+ 1 😀\n  2 é\n+ 3 x\r\n  3 \n- 4 a\n- 5 é\n  6 b\n- 7 \n- 8 é\n- 9 b\n-10 é\n+ 6 😀\n+ 7 a\n+ 8 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,8 @@\n-é\n+😀\n é\n+x\r\n \n-a\n-é\n b\n-\n-é\n-b\n-é\n+😀\n+a\n+😀\n"
+    },
+    {
+      "name": "seeded-222",
+      "path": "fixture.txt",
+      "oldContent": "\n",
+      "newContent": "b\nx\r\né\n",
+      "contextLines": 0,
+      "diff": "-1 \n+1 b\n+2 x\r\n+3 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,3 @@\n-\n+b\n+x\r\n+é\n"
+    },
+    {
+      "name": "seeded-223",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\n😀\n\nb\né\né\né\ntail",
+      "newContent": "\nx\r\n😀\nx\r\né\n",
+      "contextLines": 1,
+      "diff": "-1 b\n-2 😀\n-3 😀\n 4 \n-5 b\n-6 é\n-7 é\n+2 x\r\n+3 😀\n+4 x\r\n 8 é\n-9 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,5 @@\n-b\n-😀\n-😀\n \n-b\n-é\n-é\n+x\r\n+😀\n+x\r\n é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-224",
+      "path": "fixture.txt",
+      "oldContent": "é\na\na\nb\n\né\n😀\né\né\né\n",
+      "newContent": "a\n\n\nx\r\nx\r\n😀\n",
+      "contextLines": 4,
+      "diff": "- 1 é\n  2 a\n- 3 a\n- 4 b\n  5 \n- 6 é\n+ 3 \n+ 4 x\r\n+ 5 x\r\n  7 😀\n- 8 é\n- 9 é\n-10 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,10 +1,6 @@\n-é\n a\n-a\n-b\n \n-é\n+\n+x\r\n+x\r\n 😀\n-é\n-é\n-é\n"
+    },
+    {
+      "name": "seeded-225",
+      "path": "fixture.txt",
+      "oldContent": "b\n",
+      "newContent": "a\né\nx\r\n😀\na\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "-1 b\n+1 a\n+2 é\n+3 x\r\n+4 😀\n+5 a\n+6 x\r\n+7 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,7 @@\n-b\n+a\n+é\n+x\r\n+😀\n+a\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-226",
+      "path": "fixture.txt",
+      "oldContent": "a\né\né\n😀\nb\n😀\nx\r\n",
+      "newContent": "é\né\n\na\nx\r\nx\r\n😀\nb\na\nb\nb\na\na\ntail",
+      "contextLines": 1,
+      "diff": "+ 1 é\n+ 2 é\n+ 3 \n  1 a\n- 2 é\n- 3 é\n+ 5 x\r\n+ 6 x\r\n  4 😀\n  5 b\n- 6 😀\n- 7 x\r\n+ 9 a\n+10 b\n+11 b\n+12 a\n+13 a\n+14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,7 +1,14 @@\n+é\n+é\n+\n a\n-é\n-é\n+x\r\n+x\r\n 😀\n b\n-😀\n-x\r\n+a\n+b\n+b\n+a\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-227",
+      "path": "fixture.txt",
+      "oldContent": "b\né\na\n😀\ntail",
+      "newContent": "é\né\n\nb\né\n",
+      "contextLines": 4,
+      "diff": "-1 b\n 2 é\n-3 a\n-4 😀\n-5 tail\n+2 é\n+3 \n+4 b\n+5 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,5 @@\n-b\n é\n-a\n-😀\n-tail\n\\ No newline at end of file\n+é\n+\n+b\n+é\n"
+    },
+    {
+      "name": "seeded-228",
+      "path": "fixture.txt",
+      "oldContent": "x\r\né\n😀\n😀\n😀\né\né\né\na\n",
+      "newContent": "😀\n",
+      "contextLines": 0,
+      "diff": "- 1 x\r\n- 2 é\n    ...\n- 4 😀\n- 5 😀\n- 6 é\n- 7 é\n- 8 é\n- 9 a",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,2 +0,0 @@\n-x\r\n-é\n@@ -4,6 +1,0 @@\n-😀\n-😀\n-é\n-é\n-é\n-a\n"
+    },
+    {
+      "name": "seeded-229",
+      "path": "fixture.txt",
+      "oldContent": "",
+      "newContent": "😀\né\na\nb\n\né\né\n😀\né\n😀\né\nx\r\ntail",
+      "contextLines": 1,
+      "diff": "+ 1 😀\n+ 2 é\n+ 3 a\n+ 4 b\n+ 5 \n+ 6 é\n+ 7 é\n+ 8 😀\n+ 9 é\n+10 😀\n+11 é\n+12 x\r\n+13 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,13 @@\n+😀\n+é\n+a\n+b\n+\n+é\n+é\n+😀\n+é\n+😀\n+é\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-230",
+      "path": "fixture.txt",
+      "oldContent": "😀\n😀\né\n\nx\r\n\nb\na\n\nx\r\né\ntail",
+      "newContent": "a\né\n",
+      "contextLines": 4,
+      "diff": "- 1 😀\n- 2 😀\n- 3 é\n- 4 \n- 5 x\r\n- 6 \n- 7 b\n  8 a\n- 9 \n-10 x\r\n-11 é\n-12 tail\n+ 2 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,2 @@\n-😀\n-😀\n-é\n-\n-x\r\n-\n-b\n a\n-\n-x\r\n-é\n-tail\n\\ No newline at end of file\n+é\n"
+    },
+    {
+      "name": "seeded-231",
+      "path": "fixture.txt",
+      "oldContent": "tail",
+      "newContent": "x\r\n\n😀\nb\n😀\n",
+      "contextLines": 0,
+      "diff": "-1 tail\n+1 x\r\n+2 \n+3 😀\n+4 b\n+5 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,5 @@\n-tail\n\\ No newline at end of file\n+x\r\n+\n+😀\n+b\n+😀\n"
+    },
+    {
+      "name": "seeded-232",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\nb\né\né\n😀\nx\r\nb\nb\nb\nb\nb\né\nb\n",
+      "newContent": "b\na\na\ntail",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 x\r\n  3 b\n- 4 é\n- 5 é\n- 6 😀\n- 7 x\r\n- 8 b\n- 9 b\n-10 b\n-11 b\n-12 b\n-13 é\n-14 b\n+ 2 a\n+ 3 a\n+ 4 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,4 @@\n-é\n-x\r\n b\n-é\n-é\n-😀\n-x\r\n-b\n-b\n-b\n-b\n-b\n-é\n-b\n+a\n+a\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-233",
+      "path": "fixture.txt",
+      "oldContent": "a\né\né\n😀\n\nb\n\nb\na\n😀\n\né\n",
+      "newContent": "\nb\nx\r\né\n",
+      "contextLines": 4,
+      "diff": "- 1 a\n- 2 é\n- 3 é\n- 4 😀\n  5 \n  6 b\n- 7 \n- 8 b\n- 9 a\n-10 😀\n-11 \n+ 3 x\r\n 12 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,4 @@\n-a\n-é\n-é\n-😀\n \n b\n-\n-b\n-a\n-😀\n-\n+x\r\n é\n"
+    },
+    {
+      "name": "seeded-234",
+      "path": "fixture.txt",
+      "oldContent": "\nx\r\n😀\nx\r\nx\r\né\né\nb\né\n\na\n😀\n",
+      "newContent": "b\n\né\n\na\na\nx\r\nx\r\nb\n",
+      "contextLines": 0,
+      "diff": "+ 1 b\n    ...\n- 2 x\r\n- 3 😀\n- 4 x\r\n- 5 x\r\n    ...\n- 7 é\n- 8 b\n- 9 é\n    ...\n-12 😀\n+ 6 a\n+ 7 x\r\n+ 8 x\r\n+ 9 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+b\n@@ -2,4 +2,0 @@\n-x\r\n-😀\n-x\r\n-x\r\n@@ -7,3 +3,0 @@\n-é\n-b\n-é\n@@ -12,1 +6,4 @@\n-😀\n+a\n+x\r\n+x\r\n+b\n"
+    },
+    {
+      "name": "seeded-235",
+      "path": "fixture.txt",
+      "oldContent": "é\nx\r\n\né\n\ntail",
+      "newContent": "a\nb\né\nb\n\n",
+      "contextLines": 1,
+      "diff": "-1 é\n-2 x\r\n-3 \n+1 a\n+2 b\n 4 é\n+4 b\n 5 \n-6 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,6 +1,5 @@\n-é\n-x\r\n-\n+a\n+b\n é\n+b\n \n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-236",
+      "path": "fixture.txt",
+      "oldContent": "é\n\na\nx\r\né\nx\r\n😀\nx\r\na\nb\né\n",
+      "newContent": "\n\né\nx\r\nx\r\n\n😀\na\né\nx\r\na\n😀\né\né\ntail",
+      "contextLines": 4,
+      "diff": "- 1 é\n  2 \n- 3 a\n- 4 x\r\n+ 2 \n  5 é\n  6 x\r\n+ 5 x\r\n+ 6 \n  7 😀\n+ 8 a\n+ 9 é\n  8 x\r\n  9 a\n-10 b\n+12 😀\n+13 é\n 11 é\n+15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,15 @@\n-é\n \n-a\n-x\r\n+\n é\n x\r\n+x\r\n+\n 😀\n+a\n+é\n x\r\n a\n-b\n+😀\n+é\n é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-237",
+      "path": "fixture.txt",
+      "oldContent": "é\n😀\n\n😀\né\n\na\nx\r\n😀\ntail",
+      "newContent": "x\r\n😀\nx\r\nx\r\né\né\nb\né\n\ntail",
+      "contextLines": 0,
+      "diff": "- 1 é\n+ 1 x\r\n    ...\n- 3 \n- 4 😀\n+ 3 x\r\n+ 4 x\r\n    ...\n+ 6 é\n+ 7 b\n+ 8 é\n    ...\n- 7 a\n- 8 x\r\n- 9 😀\n    ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,1 +1,1 @@\n-é\n+x\r\n@@ -3,2 +3,2 @@\n-\n-😀\n+x\r\n+x\r\n@@ -5,0 +6,3 @@\n+é\n+b\n+é\n@@ -7,3 +9,0 @@\n-a\n-x\r\n-😀\n"
+    },
+    {
+      "name": "seeded-238",
+      "path": "fixture.txt",
+      "oldContent": "é\na\n😀\na\nb\n😀\né\nb\ntail",
+      "newContent": "😀\n😀\n\né\né\né\n😀\n😀\né\nx\r\né\n\n\n",
+      "contextLines": 1,
+      "diff": "+ 1 😀\n+ 2 😀\n+ 3 \n  1 é\n- 2 a\n+ 5 é\n+ 6 é\n  3 😀\n- 4 a\n- 5 b\n  6 😀\n  7 é\n- 8 b\n- 9 tail\n+10 x\r\n+11 é\n+12 \n+13 ",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,13 @@\n+😀\n+😀\n+\n é\n-a\n+é\n+é\n 😀\n-a\n-b\n 😀\n é\n-b\n-tail\n\\ No newline at end of file\n+x\r\n+é\n+\n+\n"
+    },
+    {
+      "name": "seeded-239",
+      "path": "fixture.txt",
+      "oldContent": "b\né\né\nx\r\né\na\né\n😀\na\n",
+      "newContent": "é\né\n😀\n\né\nx\r\n",
+      "contextLines": 4,
+      "diff": "- 1 b\n- 2 é\n- 3 é\n- 4 x\r\n  5 é\n- 6 a\n- 7 é\n+ 2 é\n  8 😀\n- 9 a\n+ 4 \n+ 5 é\n+ 6 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,9 +1,6 @@\n-b\n-é\n-é\n-x\r\n é\n-a\n-é\n+é\n 😀\n-a\n+\n+é\n+x\r\n"
+    },
+    {
+      "name": "seeded-240",
+      "path": "fixture.txt",
+      "oldContent": "é\né\ntail",
+      "newContent": "é\nx\r\né\nx\r\né\nb\n\né\né\né\na\né\nx\r\nb\n",
+      "contextLines": 0,
+      "diff": "+ 1 é\n+ 2 x\r\n+ 3 é\n+ 4 x\r\n+ 5 é\n+ 6 b\n+ 7 \n+ 8 é\n    ...\n- 2 é\n- 3 tail\n+10 é\n+11 a\n+12 é\n+13 x\r\n+14 b",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,8 @@\n+é\n+x\r\n+é\n+x\r\n+é\n+b\n+\n+é\n@@ -2,2 +10,5 @@\n-é\n-tail\n\\ No newline at end of file\n+é\n+a\n+é\n+x\r\n+b\n"
+    },
+    {
+      "name": "seeded-241",
+      "path": "fixture.txt",
+      "oldContent": "é\né\n😀\nb\n\n😀\nb\na\né\na\ntail",
+      "newContent": "😀\ntail",
+      "contextLines": 1,
+      "diff": "- 1 é\n- 2 é\n  3 😀\n- 4 b\n- 5 \n- 6 😀\n- 7 b\n- 8 a\n- 9 é\n-10 a\n 11 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,2 @@\n-é\n-é\n 😀\n-b\n-\n-😀\n-b\n-a\n-é\n-a\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-242",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\né\né\nb\nx\r\n😀\n\nb\na\ntail",
+      "newContent": "é\na\na\né\nx\r\na\nb\n😀\n",
+      "contextLines": 4,
+      "diff": "- 1 b\n- 2 😀\n- 3 é\n- 4 é\n- 5 b\n+ 1 é\n+ 2 a\n+ 3 a\n+ 4 é\n  6 x\r\n- 7 😀\n- 8 \n- 9 b\n 10 a\n-11 tail\n+ 7 b\n+ 8 😀",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,11 +1,8 @@\n-b\n-😀\n-é\n-é\n-b\n+é\n+a\n+a\n+é\n x\r\n-😀\n-\n-b\n a\n-tail\n\\ No newline at end of file\n+b\n+😀\n"
+    },
+    {
+      "name": "seeded-243",
+      "path": "fixture.txt",
+      "oldContent": "a\n😀\ntail",
+      "newContent": "a\n😀\né\nb\né\né\né\na\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "    ...\n+ 3 é\n+ 4 b\n+ 5 é\n+ 6 é\n+ 7 é\n+ 8 a\n+ 9 x\r\n    ...",
+      "firstChangedLine": 3,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -2,0 +3,7 @@\n+é\n+b\n+é\n+é\n+é\n+a\n+x\r\n"
+    },
+    {
+      "name": "seeded-244",
+      "path": "fixture.txt",
+      "oldContent": "😀\nb\nb\né\n\nx\r\né\na\na\nx\r\na\nx\r\n",
+      "newContent": "é\nb\nb\ntail",
+      "contextLines": 1,
+      "diff": "- 1 😀\n+ 1 é\n  2 b\n  3 b\n- 4 é\n- 5 \n- 6 x\r\n- 7 é\n- 8 a\n- 9 a\n-10 x\r\n-11 a\n-12 x\r\n+ 4 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,4 @@\n-😀\n+é\n b\n b\n-é\n-\n-x\r\n-é\n-a\n-a\n-x\r\n-a\n-x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-245",
+      "path": "fixture.txt",
+      "oldContent": "\n😀\nb\né\né\nx\r\nb\n\n\nb\nb\né\né\né\n",
+      "newContent": "é\nx\r\n\nb\nb\né\n😀\né\né\nx\r\nx\r\n😀\nb\ntail",
+      "contextLines": 4,
+      "diff": "- 1 \n- 2 😀\n- 3 b\n  4 é\n- 5 é\n  6 x\r\n- 7 b\n  8 \n- 9 \n 10 b\n 11 b\n 12 é\n-13 é\n-14 é\n+ 7 😀\n+ 8 é\n+ 9 é\n+10 x\r\n+11 x\r\n+12 😀\n+13 b\n+14 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,14 +1,14 @@\n-\n-😀\n-b\n é\n-é\n x\r\n-b\n \n-\n b\n b\n é\n-é\n-é\n+😀\n+é\n+é\n+x\r\n+x\r\n+😀\n+b\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-246",
+      "path": "fixture.txt",
+      "oldContent": "😀\né\na\nb\n\né\né\n😀\n\na\n",
+      "newContent": "x\r\n😀\nb\na\né\n\n😀\na\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "+ 1 x\r\n    ...\n- 2 é\n- 3 a\n    ...\n+ 4 a\n+ 5 é\n    ...\n- 6 é\n- 7 é\n    ...\n- 9 \n    ...\n+ 9 x\r\n+10 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -0,0 +1,1 @@\n+x\r\n@@ -2,2 +2,0 @@\n-é\n-a\n@@ -4,0 +4,2 @@\n+a\n+é\n@@ -6,2 +6,0 @@\n-é\n-é\n@@ -9,1 +7,0 @@\n-\n@@ -10,0 +9,2 @@\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-247",
+      "path": "fixture.txt",
+      "oldContent": "\né\né\né\né\né\na\nx\r\n😀\nx\r\nb\nx\r\n",
+      "newContent": "b\n",
+      "contextLines": 1,
+      "diff": "- 1 \n- 2 é\n- 3 é\n- 4 é\n- 5 é\n- 6 é\n- 7 a\n- 8 x\r\n- 9 😀\n-10 x\r\n 11 b\n-12 x\r",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,12 +1,1 @@\n-\n-é\n-é\n-é\n-é\n-é\n-a\n-x\r\n-😀\n-x\r\n b\n-x\r\n"
+    },
+    {
+      "name": "seeded-248",
+      "path": "fixture.txt",
+      "oldContent": "a\nx\r\n😀\nx\r\ntail",
+      "newContent": "😀\nb\nx\r\ntail",
+      "contextLines": 4,
+      "diff": "-1 a\n-2 x\r\n 3 😀\n+2 b\n 4 x\r\n 5 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,4 @@\n-a\n-x\r\n 😀\n+b\n x\r\n tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-249",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\nb\n\n😀\n",
+      "newContent": "x\r\nx\r\ntail",
+      "contextLines": 0,
+      "diff": "-1 é\n-2 b\n-3 b\n-4 \n-5 😀\n+1 x\r\n+2 x\r\n+3 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,5 +1,3 @@\n-é\n-b\n-b\n-\n-😀\n+x\r\n+x\r\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-250",
+      "path": "fixture.txt",
+      "oldContent": "b\nb\né\né\nx\r\nb\né\n😀\né\nb\n\n\na\né\ntail",
+      "newContent": "é\n",
+      "contextLines": 1,
+      "diff": "- 1 b\n- 2 b\n  3 é\n- 4 é\n- 5 x\r\n- 6 b\n- 7 é\n- 8 😀\n- 9 é\n-10 b\n-11 \n-12 \n-13 a\n-14 é\n-15 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,15 +1,1 @@\n-b\n-b\n é\n-é\n-x\r\n-b\n-é\n-😀\n-é\n-b\n-\n-\n-a\n-é\n-tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-251",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\n😀\n\né\n\n😀\na\né\nb\na\n😀\n\n",
+      "newContent": "b\né\n😀\nb\né\ntail",
+      "contextLines": 4,
+      "diff": "- 1 é\n  2 b\n- 3 😀\n- 4 \n  5 é\n- 6 \n  7 😀\n- 8 a\n- 9 é\n 10 b\n-11 a\n-12 😀\n-13 \n+ 5 é\n+ 6 tail",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,6 @@\n-é\n b\n-😀\n-\n é\n-\n 😀\n-a\n-é\n b\n-a\n-😀\n-\n+é\n+tail\n\\ No newline at end of file\n"
+    },
+    {
+      "name": "seeded-252",
+      "path": "fixture.txt",
+      "oldContent": "é\nb\na\ntail",
+      "newContent": "tail",
+      "contextLines": 0,
+      "diff": "-1 é\n-2 b\n-3 a\n   ...",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +0,0 @@\n-é\n-b\n-a\n"
+    },
+    {
+      "name": "seeded-253",
+      "path": "fixture.txt",
+      "oldContent": "b\n😀\n\né\n",
+      "newContent": "😀\né\nx\r\na\nx\r\nb\né\n",
+      "contextLines": 1,
+      "diff": "-1 b\n 2 😀\n-3 \n 4 é\n+3 x\r\n+4 a\n+5 x\r\n+6 b\n+7 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,4 +1,7 @@\n-b\n 😀\n-\n é\n+x\r\n+a\n+x\r\n+b\n+é\n"
+    },
+    {
+      "name": "seeded-254",
+      "path": "fixture.txt",
+      "oldContent": "b\né\nx\r\n😀\né\n\n\na\né\na\n😀\né\ntail",
+      "newContent": "😀\n\na\né\né\n",
+      "contextLines": 4,
+      "diff": "- 1 b\n- 2 é\n- 3 x\r\n  4 😀\n- 5 é\n  6 \n- 7 \n  8 a\n- 9 é\n-10 a\n-11 😀\n 12 é\n-13 tail\n+ 5 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,13 +1,5 @@\n-b\n-é\n-x\r\n 😀\n-é\n \n-\n a\n-é\n-a\n-😀\n é\n-tail\n\\ No newline at end of file\n+é\n"
+    },
+    {
+      "name": "seeded-255",
+      "path": "fixture.txt",
+      "oldContent": "a\n\né\né\né\nx\r\nb\n\né\nb\nb\n\na\n",
+      "newContent": "é\nb\n\n😀\nx\r\né\n😀\n\nx\r\nb\né\n",
+      "contextLines": 0,
+      "diff": "- 1 a\n- 2 \n- 3 é\n    ...\n- 5 é\n- 6 x\r\n    ...\n+ 4 😀\n+ 5 x\r\n    ...\n-10 b\n-11 b\n+ 7 😀\n    ...\n-13 a\n+ 9 x\r\n+10 b\n+11 é",
+      "firstChangedLine": 1,
+      "patch": "--- fixture.txt\n+++ fixture.txt\n@@ -1,3 +0,0 @@\n-a\n-\n-é\n@@ -5,2 +1,0 @@\n-é\n-x\r\n@@ -8,0 +4,2 @@\n+😀\n+x\r\n@@ -10,2 +7,1 @@\n-b\n-b\n+😀\n@@ -13,1 +9,3 @@\n-a\n+x\r\n+b\n+é\n"
+    }
+  ],
+  "normalization": [
+    {
+      "content": "a\r\nb\rc\n",
+      "bom": "",
+      "text": "a\r\nb\rc\n",
+      "ending": "\r\n",
+      "normalized": "a\nb\nc\n",
+      "fuzzy": "a\nb\rc\n",
+      "restored": "a\r\nb\r\nc\r\n"
+    },
+    {
+      "content": "ﬃ “x”—y  \nkeep\t\n",
+      "bom": "",
+      "text": "ﬃ “x”—y  \nkeep\t\n",
+      "ending": "\n",
+      "normalized": "ﬃ “x”—y  \nkeep\t\n",
+      "fuzzy": "ffi \"x\"-y\nkeep\n",
+      "restored": "ﬃ “x”—y  \nkeep\t\n"
+    },
+    {
+      "content": "﻿alpha\r\n",
+      "bom": "﻿",
+      "text": "alpha\r\n",
+      "ending": "\r\n",
+      "normalized": "alpha\n",
+      "fuzzy": "alpha\n",
+      "restored": "alpha\r\n"
+    },
+    {
+      "content": "alpha\nsecond\r\n",
+      "bom": "",
+      "text": "alpha\nsecond\r\n",
+      "ending": "\n",
+      "normalized": "alpha\nsecond\n",
+      "fuzzy": "alpha\nsecond\n",
+      "restored": "alpha\nsecond\n"
+    },
+    {
+      "content": "",
+      "bom": "",
+      "text": "",
+      "ending": "\n",
+      "normalized": "",
+      "fuzzy": "",
+      "restored": ""
+    },
+    {
+      "content": "x\n",
+      "bom": "",
+      "text": "x\n",
+      "ending": "\n",
+      "normalized": "x\n",
+      "fuzzy": "x\n",
+      "restored": "x\n"
+    },
+    {
+      "content": "x﻿  \t\n",
+      "bom": "",
+      "text": "x﻿  \t\n",
+      "ending": "\n",
+      "normalized": "x﻿  \t\n",
+      "fuzzy": "x\n",
+      "restored": "x﻿  \t\n"
+    }
+  ],
+  "counts": {
+    "edits": 34,
+    "diffs": 327,
+    "normalization": 7
+  }
+}
