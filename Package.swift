@@ -17,6 +17,10 @@ let package = Package(
             targets: ["PiSwift"]
         ),
         .library(
+            name: "PiSwiftChord",
+            targets: ["PiSwiftChord"]
+        ),
+        .library(
             name: "PiSwiftAI",
             targets: ["PiSwiftAI"]
         ),
@@ -64,6 +68,11 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "PiSwift",
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiSwiftChord",
+            path: "Sources/PiSwiftChord",
             swiftSettings: strictConcurrencySettings
         ),
         .target(
@@ -137,6 +146,12 @@ let package = Package(
                 "PiSwiftAI",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiSwiftChordTests",
+            dependencies: ["PiSwiftChord"],
+            resources: [.copy("Fixtures")],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
