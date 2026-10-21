@@ -288,23 +288,19 @@ public func streamOpenAICodexResponses(
                         guard let index = currentBlockIndex,
                               case .toolCall(let existing) = output.content[index],
                               existing.id == combinedId else { return }
-                        let preferredArgs = currentToolCallPartial.trimmingCharacters(in: .whitespacesAndNewlines)
-                        var arguments = preferredArgs.isEmpty ? [:] : parseStreamingJSON(preferredArgs)
-                        if arguments.isEmpty {
-                            arguments = parseCodexArguments(item["arguments"])
+                        let name = item["name"] as? String ?? ""
+                        let resolvedName = name.isEmpty ? existing.name : name
+                        let namespace = item["namespace"] as? String ?? existing.namespace
+                        let finalArguments: String
+                        if let text = item["arguments"] as? String {
+                            finalArguments = text.isEmpty ? currentToolCallPartial : text
+                        } else if let value = event.json?["item"]?["arguments"] {
+                            finalArguments = javascriptPropertyOrder(value).serialized()
+                        } else {
+                            finalArguments = currentToolCallPartial
                         }
-                        var resolvedName = item["name"] as? String ?? ""
-                        if resolvedName.isEmpty {
-                            resolvedName = existing.name
-                        }
-                        if arguments.isEmpty, !existing.arguments.isEmpty {
-                            arguments = existing.arguments
-                        }
-                        var namespace = item["namespace"] as? String
-                        if namespace == nil { namespace = existing.namespace }
-                        let source = toolArgumentsSource(arguments) ?? (item["arguments"] as? String).flatMap(parseToolArgumentsSource)
-                            ?? event.json?["item"]?["arguments"].flatMap { $0.objectEntries == nil ? nil : javascriptPropertyOrder($0) } ?? existing.argumentsJSON
-                        let toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: arguments, namespace: namespace, argumentsJSON: source)
+                        var toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: [:], namespace: namespace)
+                        toolCall.finalizeArguments(from: finalArguments)
                         output.content[index] = .toolCall(toolCall)
                         stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                         pendingToolCallIndices.remove(index)
@@ -1108,6 +1104,7 @@ func convertCodexMessages(
             case .pending, .error, .aborted, .deferred:
                 allowToolCalls = false
             }
+            var textBlockIndex = 0
             for block in assistant.content {
                 switch block {
                 case .thinking(let thinking) where allowToolCalls:
@@ -1117,7 +1114,8 @@ func convertCodexMessages(
                         outputItems.append(json)
                     }
                 case .text(let textBlock):
-                    let messageId = codexMessageId(textBlock.textSignature, index: msgIndex)
+                    let messageId = codexMessageId(textBlock.textSignature, index: msgIndex, textBlockIndex: textBlockIndex)
+                    textBlockIndex += 1
                     outputItems.append([
                         "type": "message",
                         "role": "assistant",
@@ -1216,9 +1214,9 @@ func convertCodexMessages(model: Model, context: Context) -> [Any] {
     )) ?? []
 }
 
-private func codexMessageId(_ id: String?, index: Int) -> String {
+private func codexMessageId(_ id: String?, index: Int, textBlockIndex: Int) -> String {
     guard let id, !id.isEmpty else {
-        return "msg_\(index)"
+        return textBlockIndex == 0 ? "msg_pi_\(index)" : "msg_pi_\(index)_\(textBlockIndex)"
     }
     if id.count > 64 {
         return "msg_\(codexShortHash(id))"
@@ -1295,21 +1293,6 @@ private func extractCodexMessageText(_ item: [String: Any]) -> String {
         return nil
     }
     return parts.joined()
-}
-
-private func parseCodexArguments(_ value: Any?) -> [String: AnyCodable] {
-    if let dict = value as? [String: Any] {
-        return dict.mapValues { AnyCodable($0) }
-    }
-    guard let string = value as? String else {
-        return [:]
-    }
-    guard let data = string.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data, options: []),
-          let dict = object as? [String: Any] else {
-        return [:]
-    }
-    return toolArgumentsWithOrder(dict.mapValues { AnyCodable($0) }, argumentsJSON: parseToolArgumentsSource(string))
 }
 
 func mapCodexStopReason(_ status: String, incompleteReason: String? = nil) -> StopReasonResult {

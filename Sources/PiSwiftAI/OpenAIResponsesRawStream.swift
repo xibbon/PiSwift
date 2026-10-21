@@ -240,7 +240,7 @@ func processRawOpenAIResponsesStream(
                 if case .toolCall(var tool) = output.content[slot.contentIndex] {
                     let finalArguments = item["arguments"] as? String ?? ""
                     let arguments = finalArguments.isEmpty ? slot.partialInput : finalArguments
-                    tool.setArguments(from: arguments)
+                    tool.finalizeArguments(from: arguments)
                     output.content[slot.contentIndex] = .toolCall(tool)
                     stream.push(.toolCallEnd(contentIndex: slot.contentIndex, toolCall: tool, partial: output))
                 }

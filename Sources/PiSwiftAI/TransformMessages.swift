@@ -23,20 +23,12 @@ public func transformMessages(
             let transformedContent: [ContentBlock] = assistant.content.compactMap { block in
                 switch block {
                 case .thinking(let thinking):
-                    // Redacted thinking must be dropped on cross-model replay for safety
-                    if thinking.redacted == true && !isSameModel {
-                        return nil
-                    }
-                    let trimmed = thinking.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if isSameModel {
-                        // Preserve empty thinking blocks to maintain reasoning structure
-                        // continuity during same-model replay.
+                    guard isSameModel else { return nil }
+                    if thinking.redacted == true || !(thinking.thinkingSignature ?? "").isEmpty {
                         return .thinking(thinking)
                     }
-                    if trimmed.isEmpty {
-                        return nil
-                    }
-                    return .text(TextContent(text: thinking.thinking))
+                    guard !trimJavaScriptWhitespace(thinking.thinking).isEmpty else { return nil }
+                    return .thinking(thinking)
                 case .text(let text):
                     if isSameModel {
                         return .text(text)

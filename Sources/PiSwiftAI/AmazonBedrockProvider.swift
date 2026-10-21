@@ -558,7 +558,7 @@ private func handleContentBlockStop(
         stream.push(.thinkingEnd(contentIndex: contentIndex, content: thinkingContent.thinking, partial: output))
     case .toolCall(var toolCall):
         let partial = state.toolCallPartials[blockIndex] ?? ""
-        toolCall.setArguments(from: partial)
+        toolCall.finalizeArguments(from: partial)
         output.content[contentIndex] = .toolCall(toolCall)
         state.toolCallPartials.removeValue(forKey: blockIndex)
         stream.push(.toolCallEnd(contentIndex: contentIndex, toolCall: toolCall, partial: output))

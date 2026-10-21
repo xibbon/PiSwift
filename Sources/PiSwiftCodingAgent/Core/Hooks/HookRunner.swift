@@ -1253,7 +1253,7 @@ private func deepCopyContentBlock(_ block: ContentBlock) -> ContentBlock {
     case .text(let text):
         return .text(TextContent(text: text.text, textSignature: text.textSignature))
     case .thinking(let thinking):
-        return .thinking(ThinkingContent(thinking: thinking.thinking, thinkingSignature: thinking.thinkingSignature))
+        return .thinking(ThinkingContent(thinking: thinking.thinking, thinkingSignature: thinking.thinkingSignature, redacted: thinking.redacted))
     case .image(let image):
         return .image(ImageContent(data: image.data, mimeType: image.mimeType))
     case .toolCall(let call):
@@ -1263,7 +1263,8 @@ private func deepCopyContentBlock(_ block: ContentBlock) -> ContentBlock {
             arguments: deepCopyAnyCodableMap(call.arguments),
             thoughtSignature: call.thoughtSignature,
             namespace: call.namespace,
-            argumentsJSON: call.argumentsJSON
+            argumentsJSON: call.argumentsJSON,
+            argumentsError: call.argumentsError
         ))
     }
 }

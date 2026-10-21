@@ -401,23 +401,17 @@ public func streamOpenAIResponses(
                         case .functionToolCall(let toolCall):
                             let idPart = toolCall.id ?? ""
                             let combinedId = "\(toolCall.callId)|\(idPart)"
-                            let partialArgs = toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
-                            let preferredArgs = partialArgs.trimmingCharacters(in: .whitespacesAndNewlines)
-                            var arguments = preferredArgs.isEmpty ? [:] : parseStreamingJSON(preferredArgs)
-                            if arguments.isEmpty {
-                                arguments = parseJSONStringArguments(toolCall.arguments)
-                            }
                             var resolvedName = toolCall.name
-                            if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .toolCall(let existing) = output.content[index] {
-                                if resolvedName.isEmpty {
-                                    resolvedName = existing.name
-                                }
-                                if arguments.isEmpty, !existing.arguments.isEmpty {
-                                    arguments = existing.arguments
-                                }
+                            if resolvedName.isEmpty,
+                               let index = blockIndexByOutputIndex[doneEvent.outputIndex],
+                               case .toolCall(let existing) = output.content[index] {
+                                resolvedName = existing.name
                             }
-                            let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments,
-                                                argumentsJSON: toolArgumentsSource(arguments) ?? parseToolArgumentsSource(toolCall.arguments) ?? parseToolArgumentsSource(preferredArgs))
+                            var call = ToolCall(id: combinedId, name: resolvedName, arguments: [:])
+                            let finalArguments = toolCall.arguments.isEmpty
+                                ? toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
+                                : toolCall.arguments
+                            call.finalizeArguments(from: finalArguments)
                             if let index = blockIndexByOutputIndex[doneEvent.outputIndex] {
                                 output.content[index] = .toolCall(call)
                                 stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
@@ -834,12 +828,15 @@ func convertResponsesMessages(
             let isDifferentModel = assistant.model != model.id &&
                 assistant.provider == model.provider &&
                 assistant.api == model.api
+            var textBlockIndex = 0
             for block in assistant.content {
                 switch block {
                 case .text(let textBlock):
                     let parsed = parseTextSignature(textBlock.textSignature)
                     let resolvedId = parsed?.id
-                    let id = normalizeResponseItemId(resolvedId, fallbackIndex: messageIndex)
+                    let fallbackId = textBlockIndex == 0 ? "msg_pi_\(messageIndex)" : "msg_pi_\(messageIndex)_\(textBlockIndex)"
+                    textBlockIndex += 1
+                    let id = normalizeResponseItemId(resolvedId?.isEmpty == false ? resolvedId : fallbackId, fallbackIndex: messageIndex)
                     let content = Components.Schemas.OutputTextContent(_type: .outputText, text: sanitizeSurrogates(textBlock.text), annotations: [])
                     let outputMessage = Components.Schemas.OutputMessage(
                         id: id,
@@ -1070,14 +1067,6 @@ private func debugOpenAIResponsesError(client: OpenAI, query: CreateModelRespons
             logOpenAIDebug("openai nonstreaming error=\(error.localizedDescription)")
         }
     }
-}
-
-func parseJSONStringArguments(_ json: String) -> [String: AnyCodable] {
-    guard let data = json.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        return [:]
-    }
-    return toolArgumentsWithOrder(object.mapValues { AnyCodable($0) }, argumentsJSON: parseToolArgumentsSource(json))
 }
 
 func encodeTextSignatureV1(id: String, phase: String? = nil) -> String {

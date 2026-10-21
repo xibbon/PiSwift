@@ -233,7 +233,11 @@ private func processProxyEvent(
             return nil
         }
         var toolCall = finalToolCall ?? existing
-        toolCall.argumentsJSON = toolCall.argumentsJSON ?? existing.argumentsJSON
+        if toolCall.argumentsError?.isEmpty != false {
+            toolCall.argumentsJSON = toolCall.argumentsJSON ?? existing.argumentsJSON
+        } else {
+            toolCall.argumentsJSON = nil
+        }
         toolCall.namespace = toolCall.namespace ?? existing.namespace
         toolCall.thoughtSignature = toolCall.thoughtSignature ?? existing.thoughtSignature
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))

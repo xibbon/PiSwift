@@ -1517,12 +1517,15 @@ public struct ToolCall: Sendable {
     public var argumentsJSON: OrderedJSON?
     public var thoughtSignature: String?
     public var namespace: String?
+    /// Final argument parse failure, including the text sent by the model.
+    public var argumentsError: String?
 
-    public init(id: String, name: String, arguments: [String: AnyCodable], thoughtSignature: String? = nil, namespace: String? = nil, argumentsJSON: OrderedJSON? = nil) {
+    public init(id: String, name: String, arguments: [String: AnyCodable], thoughtSignature: String? = nil, namespace: String? = nil, argumentsJSON: OrderedJSON? = nil, argumentsError: String? = nil) {
         self.id = id
         self.name = name
         self.arguments = toolArgumentsWithOrder(arguments, argumentsJSON: argumentsJSON)
         self.argumentsJSON = argumentsJSON ?? toolArgumentsSource(arguments)
+        self.argumentsError = argumentsError
         self.thoughtSignature = thoughtSignature
         self.namespace = namespace
     }

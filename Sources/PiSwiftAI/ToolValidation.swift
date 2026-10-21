@@ -3,6 +3,7 @@ import Foundation
 /// Errors that can occur during tool validation.
 public enum ValidationError: Error, LocalizedError {
     case toolNotFound(String)
+    case invalidArguments(toolName: String, message: String)
     case validationFailed(toolName: String, errors: [SchemaValidationError], receivedArguments: [String: AnyCodable])
     case schemaMissing(String)
     case constrainedSampling(String)
@@ -12,6 +13,8 @@ public enum ValidationError: Error, LocalizedError {
         switch self {
         case .toolNotFound(let name):
             return "Tool \"\(name)\" not found"
+        case .invalidArguments(let toolName, let message):
+            return "Invalid arguments for tool \"\(toolName)\": \(message)"
         case .validationFailed(let toolName, let errors, let receivedArguments):
             let errorMessages = errors.map { $0.errorDescription ?? "Unknown error" }.joined(separator: "\n")
             let argsJson = formatArguments(receivedArguments)
@@ -54,6 +57,10 @@ public func validateToolCall(tools: [AITool], toolCall: ToolCall) throws -> [Str
 /// - Returns: The validated (and potentially coerced) arguments
 /// - Throws: ValidationError with formatted message if validation fails
 public func validateToolArguments(tool: AITool, toolCall: ToolCall) throws -> [String: AnyCodable] {
+    if let argumentsError = toolCall.argumentsError, !argumentsError.isEmpty {
+        throw ValidationError.invalidArguments(toolName: toolCall.name, message: argumentsError)
+    }
+
     guard tool.name == toolCall.name else {
         throw ValidationError.toolNotFound(toolCall.name)
     }

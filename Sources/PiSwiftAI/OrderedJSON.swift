@@ -101,16 +101,21 @@ private struct Parser {
     mutating func object() throws -> OrderedJSON {
         guard take(123) else { throw OrderedJSONError.invalid }
         var pairs: [(String, OrderedJSON)] = []
+        // Streaming reparses each snapshot. Avoid a scan of all earlier keys per member.
+        var positions: [String: Int] = [:]
         if take(125) { return .object(pairs) }
         repeat {
             let name = try string()
             guard take(58) else { throw OrderedJSONError.invalid }
             let member = try value()
-            if let existing = pairs.firstIndex(where: { $0.0 == name }) {
+            if let existing = positions[name] {
                 guard allowDuplicateKeys else { throw OrderedJSONError.invalid }
                 // JSON.parse retains the first key position and the last value.
                 pairs[existing].1 = member
-            } else { pairs.append((name, member)) }
+            } else {
+                positions[name] = pairs.count
+                pairs.append((name, member))
+            }
             if take(125) { return .object(pairs) }
         } while take(44)
         throw OrderedJSONError.invalid

@@ -32,6 +32,7 @@ public func contentBlockToJSONObject(_ block: ContentBlock) -> [String: Any] {
         return ["type": "image", "data": image.data, "mimeType": image.mimeType]
     case .toolCall(let call):
         var dict: [String: Any] = ["type": "toolCall", "id": call.id, "name": call.name, "arguments": call.arguments.mapValues { $0.value }]
+        if let error = call.argumentsError { dict["argumentsError"] = error }
         if let namespace = call.namespace { dict["namespace"] = namespace }
         if let signature = call.thoughtSignature { dict["thoughtSignature"] = signature }
         return dict
@@ -63,8 +64,9 @@ public func contentBlockFromJSONObject(_ dict: [String: Any], ordered: OrderedJS
         guard let id = dict["id"] as? String, let name = dict["name"] as? String else { return nil }
         let args = dict["arguments"] as? [String: Any] ?? [:]
         let anyArgs = args.mapValues { AnyCodable($0) }
-        let source = ordered?["arguments"].map(javascriptPropertyOrder)
-        return .toolCall(ToolCall(id: id, name: name, arguments: anyArgs, thoughtSignature: dict["thoughtSignature"] as? String, namespace: dict["namespace"] as? String, argumentsJSON: source))
+        let hasArgumentsError = (dict["argumentsError"] as? String)?.isEmpty == false
+        let source = hasArgumentsError ? nil : ordered?["arguments"].map(javascriptPropertyOrder)
+        return .toolCall(ToolCall(id: id, name: name, arguments: anyArgs, thoughtSignature: dict["thoughtSignature"] as? String, namespace: dict["namespace"] as? String, argumentsJSON: source, argumentsError: dict["argumentsError"] as? String))
     default:
         return nil
     }

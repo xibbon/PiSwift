@@ -240,7 +240,7 @@ public func streamMistral(
             finishCurrentBlock()
             for (index, args) in toolCallArgsByIndex {
                 if case .toolCall(var block) = output.content[index] {
-                    block.setArguments(from: args)
+                    block.finalizeArguments(from: args)
                     output.content[index] = .toolCall(block)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: block, partial: output))
                 }

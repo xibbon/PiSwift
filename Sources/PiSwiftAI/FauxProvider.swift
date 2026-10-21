@@ -641,8 +641,12 @@ private func streamFauxWithDeltas(
     var message = message
     message.content = message.content.map { block in
         guard case .toolCall(var call) = block else { return block }
-        if call.argumentsJSON == nil { call.argumentsJSON = toolArgumentsToOrderedJSON(call.arguments) }
-        call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+        if call.argumentsError?.isEmpty == false {
+            call.argumentsJSON = nil
+        } else {
+            if call.argumentsJSON == nil { call.argumentsJSON = toolArgumentsToOrderedJSON(call.arguments) }
+            call.arguments = toolArgumentsWithOrder(call.arguments, argumentsJSON: call.argumentsJSON)
+        }
         return .toolCall(call)
     }
     let (minTokenSize, maxTokenSize) = registration.tokenSizes()
@@ -739,7 +743,9 @@ private func streamFauxWithDeltas(
             }
             if case .toolCall(var existing) = partial.content[index] {
                 existing.arguments = toolCall.arguments
-                existing.argumentsJSON = toolCall.argumentsJSON ?? parseToolArgumentsSource(argsJSON)
+                existing.argumentsError = toolCall.argumentsError
+                existing.argumentsJSON = toolCall.argumentsError?.isEmpty == false
+                    ? nil : toolCall.argumentsJSON ?? parseToolArgumentsSource(argsJSON)
                 partial.content[index] = .toolCall(existing)
             }
             if case .toolCall(let finalCall) = partial.content[index] {

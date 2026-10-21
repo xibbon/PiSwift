@@ -112,7 +112,7 @@ public func streamOpenAICompletions(
                         toolCall.arguments = [inputProperty: AnyCodable(currentToolCallArgs)]
                         toolCall.argumentsJSON = toolArgumentsToOrderedJSON(toolCall.arguments)
                     } else {
-                        toolCall.setArguments(from: currentToolCallArgs)
+                        toolCall.finalizeArguments(from: currentToolCallArgs)
                     }
                     output.content[index] = .toolCall(toolCall)
                 default:

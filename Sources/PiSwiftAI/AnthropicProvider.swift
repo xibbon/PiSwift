@@ -421,7 +421,7 @@ public func streamAnthropic(
                         stream.push(.thinkingEnd(contentIndex: contentIndex, content: thinkingBlock.thinking, partial: output))
                     case .toolCall(var toolCall):
                         let partial = toolCallPartials[index] ?? ""
-                        toolCall.setArguments(from: partial)
+                        toolCall.finalizeArguments(from: partial)
                         output.content[contentIndex] = .toolCall(toolCall)
                         stream.push(.toolCallEnd(contentIndex: contentIndex, toolCall: toolCall, partial: output))
                     default:

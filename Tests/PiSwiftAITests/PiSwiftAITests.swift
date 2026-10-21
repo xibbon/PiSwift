@@ -1027,7 +1027,8 @@ private func runCodexSessionRequest(
     #expect(transformedThinking.thinkingSignature == "sig")
 }
 
-@Test func transformMessagesConvertsThinkingAcrossProviders() {
+// Upstream v1.3.0 A3 drops all foreign-model thinking.
+@Test func transformMessagesDropsThinkingAcrossProviders() {
     let model = getModel(provider: .openai, modelId: "gpt-4o-mini")
     let thinking = ThinkingContent(thinking: "Reasoning detail", thinkingSignature: "sig")
     let assistant = AssistantMessage(
@@ -1044,11 +1045,7 @@ private func runCodexSessionRequest(
         #expect(Bool(false), "Expected assistant message")
         return
     }
-    guard case .text(let text) = transformedAssistant.content.first else {
-        #expect(Bool(false), "Expected text content")
-        return
-    }
-    #expect(text.text == "Reasoning detail")
+    #expect(transformedAssistant.content.isEmpty)
 }
 
 @Test func transformMessagesSkipsAbortedAssistants() {

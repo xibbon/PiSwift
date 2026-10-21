@@ -278,20 +278,10 @@ public func streamAzureOpenAIResponses(
                             guard let index = currentBlockIndex,
                                   case .toolCall(let existing) = output.content[index],
                                   existing.id == combinedId else { break }
-                            let preferredArgs = currentToolCallArgs.trimmingCharacters(in: .whitespacesAndNewlines)
-                            var arguments = preferredArgs.isEmpty ? [:] : parseStreamingJSON(preferredArgs)
-                            if arguments.isEmpty {
-                                arguments = parseJSONStringArguments(toolCall.arguments)
-                            }
-                            var resolvedName = toolCall.name
-                            if resolvedName.isEmpty {
-                                resolvedName = existing.name
-                            }
-                            if arguments.isEmpty, !existing.arguments.isEmpty {
-                                arguments = existing.arguments
-                            }
-                            let call = ToolCall(id: combinedId, name: resolvedName, arguments: arguments,
-                                                argumentsJSON: toolArgumentsSource(arguments) ?? parseToolArgumentsSource(toolCall.arguments) ?? parseToolArgumentsSource(preferredArgs))
+                            let resolvedName = toolCall.name.isEmpty ? existing.name : toolCall.name
+                            var call = ToolCall(id: combinedId, name: resolvedName, arguments: [:])
+                            let finalArguments = toolCall.arguments.isEmpty ? currentToolCallArgs : toolCall.arguments
+                            call.finalizeArguments(from: finalArguments)
                             output.content[index] = .toolCall(call)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
                             pendingToolCallIndices.remove(index)

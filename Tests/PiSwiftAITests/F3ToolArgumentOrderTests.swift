@@ -73,8 +73,8 @@ private func f3AssertCall(_ message: AssistantMessage) throws {
     call.setArguments(from: f3ArgumentsText + " trailing text")
     #expect(orderedToolArguments(call).map(\.key) == ["z", "a"])
     call.setArguments(from: #"{"z":1,"a":"#)
-    #expect(call.arguments.isEmpty)
-    #expect(call.argumentsJSON == nil)
+    #expect(call.arguments == ["z": AnyCodable(1)]) // AQ2 / upstream utils/json-parse.ts:139 retains a partial snapshot.
+    #expect(call.argumentsJSON?.objectEntries?.map(\.0) == ["z"])
     call.setArguments(from: "{}")
     #expect(call.argumentsJSON?.objectEntries?.isEmpty == true)
 }
@@ -238,33 +238,35 @@ func f3ObjectValuedProviderArgumentsKeepWireOrder(codex: Bool) async throws {
     try f3AssertCall(await stream.result())
 }
 
-@Test func f3FrameTextRoundTripKeepsOrderWithoutMetadata() throws {
+// Upstream v1.3.0 A18 removes frames. Keep argument-order checks through the shared codec.
+@Test func f3MessageTextRoundTripKeepsOrderWithoutMetadata() throws {
     var call = ToolCall(id: "id", name: "test", arguments: [:])
     call.setArguments(from: f3ArgumentsText)
     let message = AssistantMessage(content: [.toolCall(call)], api: .openAIResponses, provider: "test", model: "test",
         usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0), stopReason: .toolUse)
-    let frames: [AssistantMessageFrame] = [.start(partial: message), .toolCallStart(contentIndex: 0, toolCall: call), .toolCallEnd(contentIndex: 0, toolCall: call)]
-    for frame in frames {
-        let text = encodeAssistantMessageFrameJSON(frame)
-        #expect(!text.contains("argumentsJSON"))
-        let decoded = try decodeAssistantMessageFrameJSON(text)
-        switch decoded {
-        case .start(let partial): try f3AssertCall(partial)
-        case .toolCallStart(_, let tool), .toolCallEnd(_, let tool):
-            #expect(orderedToolArguments(tool).map(\.key) == ["z", "a"])
-        default: Issue.record("Unexpected frame")
-        }
+    let text = assistantMessageToOrderedJSON(message).serialized()
+    #expect(!text.contains("argumentsJSON"))
+    let object = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    try f3AssertCall(assistantMessageFromJSONObject(object, ordered: OrderedJSON.parse(text)))
+    let callText = contentBlockToOrderedJSON(.toolCall(call)).serialized()
+    let callObject = try #require(JSONSerialization.jsonObject(with: Data(callText.utf8)) as? [String: Any])
+    guard case .toolCall(let decoded) = contentBlockFromJSONObject(callObject, ordered: try OrderedJSON.parse(callText)) else {
+        Issue.record("Missing tool call"); return
     }
+    #expect(orderedToolArguments(decoded).map(\.key) == ["z", "a"])
 }
 
-@Test func f3FrameReaderAcceptsRepeatedArgumentKeys() throws {
-    let text = #"{"type":"toolcall_end","contentIndex":0,"id":"id","name":"test","arguments":{"z":1,"a":2,"z":3}}"#
-    guard case .toolCallEnd(_, let call) = try decodeAssistantMessageFrameJSON(text) else {
-        Issue.record("Missing final frame call"); return
+// Upstream v1.3.0 A18 removes frames. The shared codec retains the repeated-key rule.
+@Test func f3MessageReaderAcceptsRepeatedArgumentKeys() throws {
+    let text = #"{"type":"toolCall","id":"id","name":"test","arguments":{"z":1,"a":2,"z":3}}"#
+    let object = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    guard case .toolCall(let call) = contentBlockFromJSONObject(object, ordered: try OrderedJSON.parse(text, allowDuplicateKeys: true)) else {
+        Issue.record("Missing final call"); return
     }
     #expect(orderedToolArguments(call).map(\.key) == ["z", "a"])
     #expect(call.argumentsJSON?["z"]?.serialized() == "3")
-    // Argument values keep the existing dictionary decoder's behavior.
-    let dictionaryFrame = try JSONDecoder().decode(AssistantMessageFrame.self, from: Data(text.utf8))
-    if case .toolCallEnd(_, let dictionaryCall) = dictionaryFrame { #expect(call.arguments == dictionaryCall.arguments) }
+    guard case .toolCall(let dictionaryCall) = contentBlockFromJSONObject(object) else {
+        Issue.record("Missing dictionary call"); return
+    }
+    #expect(call.arguments == dictionaryCall.arguments)
 }
