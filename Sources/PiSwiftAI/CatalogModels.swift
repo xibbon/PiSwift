@@ -11,8 +11,8 @@ public func getClassifierModels(provider: String) -> [ClassifierModel] {
 public func getModelsOfType(_ type: ModelType, provider: String? = nil) -> [AnyModel] {
     switch type {
     case .chat:
-        return (provider.map { Array(ModelsData[$0]?.values ?? [:].values) }
-            ?? ModelsData.values.flatMap { $0.values }).map(AnyModel.chat)
+        return (provider.map { Array(CorrectedModelsData[$0]?.values ?? [:].values) }
+            ?? CorrectedModelsData.values.flatMap { $0.values }).map(AnyModel.chat)
     case .image:
         return (provider.map { Array(ImageModelsData[$0]?.values ?? [:].values) }
             ?? ImageModelsData.values.flatMap { $0.values }).map(AnyModel.image)
@@ -24,7 +24,7 @@ public func getModelsOfType(_ type: ModelType, provider: String? = nil) -> [AnyM
 
 public func getModelOfType(_ type: ModelType, provider: String, modelId: String) -> AnyModel? {
     switch type {
-    case .chat: ModelsData[provider]?[modelId].map(AnyModel.chat)
+    case .chat: CorrectedModelsData[provider]?[modelId].map(AnyModel.chat)
     case .image: ImageModelsData[provider]?[modelId].map(AnyModel.image)
     case .classifier: ClassifierModelsData[provider]?[modelId].map(AnyModel.classifier)
     }
@@ -56,7 +56,7 @@ public func getBuiltinClassifierModel(provider: KnownProvider, modelId: String) 
 }
 
 public func getBuiltinModels(provider: KnownProvider) -> [Model] {
-    Array(ModelsData[provider.rawValue]?.values ?? [:].values)
+    Array(CorrectedModelsData[provider.rawValue]?.values ?? [:].values)
 }
 
 public func getBuiltinImageModels(provider: KnownProvider) -> [ImageModel] {

@@ -6,7 +6,7 @@ public func getBuiltinModelDataGeneratedAt() -> Double? {
 }
 
 public func getModel(provider: KnownProvider, modelId: String) -> Model {
-    guard let model = ModelsData[provider.rawValue]?[modelId] else {
+    guard let model = CorrectedModelsData[provider.rawValue]?[modelId] else {
         // API precondition for known-provider convenience lookup. Use the
         // string-provider overload when the provider/model pair is user input.
         fatalError("Unknown model \(modelId) for provider \(provider.rawValue)")
@@ -15,17 +15,17 @@ public func getModel(provider: KnownProvider, modelId: String) -> Model {
 }
 
 public func getModel(provider: String, modelId: String) -> Model? {
-    ModelsData[provider]?[modelId]
+    CorrectedModelsData[provider]?[modelId]
 }
 
 public func getProviders() -> [KnownProvider] {
-    ModelsData.compactMap { provider, models in
+    CorrectedModelsData.compactMap { provider, models in
         models.isEmpty ? nil : KnownProvider(rawValue: provider)
     }
 }
 
 public func getModels(provider: KnownProvider) -> [Model] {
-    guard let values = ModelsData[provider.rawValue]?.values else {
+    guard let values = CorrectedModelsData[provider.rawValue]?.values else {
         return []
     }
     return Array(values)

@@ -1732,9 +1732,11 @@ public final class ModelRegistry: Sendable {
         let providerOverride = state.configuredProviderOverrides[model.provider]
         let resolvedHeaders = providerOverride?.headers
         let headers = mergeProviderHeaders(model.headers, resolvedHeaders)
+        // pi.dev models carry the same upstream names as the built-in catalog,
+        // so they get the same display-name corrections.
         var configured = Model(
             id: model.id,
-            name: model.name,
+            name: correctedModelName(provider: model.provider, id: model.id, name: model.name),
             api: model.api,
             provider: model.provider,
             baseUrl: providerOverride?.baseUrl ?? model.baseUrl,

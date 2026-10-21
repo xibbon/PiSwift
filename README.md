@@ -238,6 +238,27 @@ When no model is selected, the default fallback order is:
 3. openai-codex: `gpt-5.2-codex`
 4. opencode: `claude-opus-4-5`
 
+## Model catalog
+
+The built-in model catalog is generated from a sibling pi-mono checkout:
+
+```sh
+cd PiSwift
+node Scripts/generate-ai-catalogs.js
+```
+
+It needs `../pi-mono` checked out at the pinned revision, now `6fb2e7815`.
+It writes `Sources/PiSwiftAI/ModelsData.swift`, `ImageModelsData.swift`,
+`ClassifierModelsData.swift`, and the `upstream-*.generated.json` fixtures in
+`Tests/PiSwiftAITests/Resources/`. Do not edit these files by hand. At the
+pinned revision, the output must be identical to the committed files. When
+you move the pin, record the new revision here.
+
+`Sources/PiSwiftAI/ModelNameCorrections.swift` corrects some upstream display
+names. The corrections apply to the built-in catalog and to the pi.dev catalog
+overlay. Names from `models.json` are not changed. See
+`Scripts/model-name-audit.md` for the decisions and sources.
+
 ## Strict concurrency + errors
 
 This port builds with strict concurrency. Some lock-backed wrappers still use

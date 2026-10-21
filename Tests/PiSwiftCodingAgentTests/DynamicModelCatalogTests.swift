@@ -871,3 +871,56 @@ func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) asy
     #expect(parsed.compat?.openRouterRouting?.maxPrice?.completion == 2.5)
     #expect(try await store.read(providerId: "openai", signal: nil)?.models.map(\.id) == ["priced"])
 }
+
+@Test(.timeLimit(.minutes(1))) func remoteCatalogGetsModelNameCorrectionsAndUserNameWins() async throws {
+    let store = InMemoryCodingAgentModelsStore(entries: [
+        "anthropic": ModelsStoreEntry(
+            models: [
+                catalogModel(id: "claude-opus-4-5", name: "Claude Opus 4.5 (latest)", provider: "anthropic"),
+                catalogModel(id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5 (latest)", provider: "anthropic")
+            ],
+            lastModified: 2_100_000_000_000,
+            checkedAt: 2_100_000_000_000
+        )
+    ])
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pi-catalog-names-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let modelsJSON = """
+    {
+      "providers": {
+        "anthropic": {
+          "models": [{
+            "id": "claude-sonnet-4-5",
+            "name": "Claude Sonnet 4.5 (latest)",
+            "reasoning": false,
+            "input": ["text"],
+            "contextWindow": 9000,
+            "maxTokens": 1000,
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+          }]
+        }
+      }
+    }
+    """
+    try modelsJSON.write(
+        to: directory.appendingPathComponent("models.json"),
+        atomically: true,
+        encoding: .utf8
+    )
+    let registry = catalogRegistry(
+        store: store,
+        client: CatalogStubHTTPClient { _ in Issue.record("Unexpected network request"); return ProviderHTTPResponse(statusCode: 500, body: Data()) },
+        modelsDir: directory.path,
+        networkEnabled: false
+    )
+    _ = await registry.refresh(ModelsRefreshOptions(allowNetwork: false, providers: ["anthropic"]))
+
+    let opus = try #require(registry.find("anthropic", "claude-opus-4-5"))
+    #expect(opus.name == "Claude Opus 4.5")
+    // The pi.dev entry is in use, not the built-in one.
+    #expect(opus.baseUrl == "https://api.example.invalid/v1")
+    // models.json is applied after the corrections, so the user's name stays.
+    #expect(registry.find("anthropic", "claude-sonnet-4-5")?.name == "Claude Sonnet 4.5 (latest)")
+}
