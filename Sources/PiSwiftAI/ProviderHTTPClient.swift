@@ -33,6 +33,22 @@ public struct ProviderHTTPResponse: Sendable {
 /// Executes one provider HTTP request. Implementations must be safe to call from concurrent tasks.
 public protocol ProviderHTTPClient: Sendable {
     func send(_ request: URLRequest) async throws -> ProviderHTTPResponse
+    func send(_ request: URLRequest, timeoutPolicy: ProviderHTTPTimeoutPolicy) async throws -> ProviderHTTPResponse
+}
+
+/// Controls HTTP transport timeouts. Provider adapters enforce the response-header deadline.
+public enum ProviderHTTPTimeoutPolicy: Sendable {
+    case request
+    /// Do not apply the request deadline to the response body.
+    case responseHeadersOnly
+}
+
+extension ProviderHTTPClient {
+    /// Existing clients retain their send implementation. Clients with transport timeouts must
+    /// implement this method to keep a response-header deadline from limiting the body.
+    public func send(_ request: URLRequest, timeoutPolicy: ProviderHTTPTimeoutPolicy) async throws -> ProviderHTTPResponse {
+        try await send(request)
+    }
 }
 
 /// Deliver the original parsed JSON before a provider's typed decoder removes unknown fields.
@@ -57,7 +73,18 @@ public struct DefaultProviderHTTPClient: ProviderHTTPClient {
     public init(env: [String: String]? = nil) { self.env = env }
 
     public func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
+        try await send(request, timeoutPolicy: .request)
+    }
+
+    public func send(_ request: URLRequest, timeoutPolicy: ProviderHTTPTimeoutPolicy) async throws -> ProviderHTTPResponse {
         let session = proxySession(for: request.url, env: env)
+        var request = request
+        if case .responseHeadersOnly = timeoutPolicy {
+            // Keep the registered protocols and proxy configuration of this session.
+            // The provider owns the header timer. Raise only the request idle limit;
+            // the shared session's resource limit remains unchanged.
+            request.timeoutInterval = .greatestFiniteMagnitude
+        }
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw StreamError.invalidHTTPResponse

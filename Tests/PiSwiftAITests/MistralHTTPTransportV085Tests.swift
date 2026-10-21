@@ -196,12 +196,14 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
     #expect(message.stopReason == .aborted)
 }
 
-@Test(.timeLimit(.minutes(1))) func mistral085TimeoutAppliesWhileWaitingForSSEChunk() async throws {
-    let client = Mistral085Client(chunks: [], keepOpen: true)
+@Test(.timeLimit(.minutes(1))) func mistral085StreamCanExceedHeaderTimeout() async throws {
+    // Upstream #10609: the timeout ends at response headers; retain all five thinking chunks.
+    let client = Mistral130LongStreamClient()
     let message = await streamMistral(model: mistral085Model(), context: normalizeContext(Context(messages: [])),
-        options: MistralOptions(apiKey: "test", httpClient: client, timeoutMs: 5)).result()
-    #expect(message.stopReason == .error)
-    #expect(message.errorMessage?.lowercased().contains("timeout") == true)
+        options: MistralOptions(apiKey: "test", httpClient: client, timeoutMs: 40)).result()
+    #expect(message.stopReason == .stop)
+    if case .thinking(let thinking)? = message.content.first { #expect(thinking.thinking == "xxxxx") }
+    else { Issue.record("Missing thinking block") }
 }
 
 @Test(.timeLimit(.minutes(1))) func mistral085PreservesHTTPStatusAndResponseBody() async throws {

@@ -40,6 +40,8 @@ public func streamMistral(
             let bodyData = try JSONSerialization.data(withJSONObject: payload, options: [])
 
             var request = URLRequest(url: mistralChatCompletionsUrl(baseUrl: model.baseUrl))
+            // Keep the nominal deadline for custom clients. The transport policy below prevents
+            // this interval from limiting the response body in clients that implement the policy.
             request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
             request.httpMethod = "POST"
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -305,6 +307,14 @@ public enum MistralStreamError: Error, LocalizedError {
         case .invalidStreamingEvent:
             return "Invalid Mistral streaming event"
         }
+    }
+}
+
+private struct MistralResponseHeadersTimeout: Error, LocalizedError {
+    let timeoutMs: Int
+
+    var errorDescription: String? {
+        "Mistral response headers timed out after \(timeoutMs)ms"
     }
 }
 
@@ -682,13 +692,7 @@ private func fetchMistralStream(
     let signal = CancellationToken()
     let timedOut = LockedState(false)
     let externalHandler = options.signal?.addCancellationHandler { signal.cancel() }
-    let timeout = Task {
-        do {
-            try await Task.sleep(for: .milliseconds(max(0, options.timeoutMs ?? 60_000)))
-            timedOut.withLock { $0 = true }
-            signal.cancel()
-        } catch {}
-    }
+    let timeoutMs = options.timeoutMs ?? 60_000
     let response: ProviderHTTPResponse
     do {
         response = try await retryProviderRequest(
@@ -696,7 +700,34 @@ private func fetchMistralStream(
             maxRetryDelayMs: options.maxRetryDelayMs,
             signal: signal
         ) {
-            let response = try await client.send(request)
+            let waitingForHeaders = LockedState(true)
+            let timeout = Task {
+                do {
+                    try await Task.sleep(for: .milliseconds(max(0, timeoutMs)))
+                    let expired = waitingForHeaders.withLock { waiting in
+                        guard waiting else { return false }
+                        waiting = false
+                        timedOut.withLock { $0 = true }
+                        return true
+                    }
+                    if expired { signal.cancel() }
+                } catch {}
+            }
+            func stopHeaderTimeout() {
+                waitingForHeaders.withLock { $0 = false }
+                timeout.cancel()
+            }
+            let response: ProviderHTTPResponse
+            do {
+                response = try await client.send(request, timeoutPolicy: .responseHeadersOnly)
+            } catch {
+                stopHeaderTimeout()
+                throw error
+            }
+            stopHeaderTimeout()
+            if timedOut.withLock({ $0 }) {
+                throw MistralResponseHeadersTimeout(timeoutMs: timeoutMs)
+            }
             options.onResponse?(ResponseSnapshot(statusCode: response.statusCode, headers: response.headers))
             guard (200..<300).contains(response.statusCode) else {
                 throw try await providerHTTPError(from: response)
@@ -704,9 +735,10 @@ private func fetchMistralStream(
             return response
         }
     } catch {
-        timeout.cancel()
         if let externalHandler { options.signal?.removeCancellationHandler(externalHandler) }
-        if timedOut.withLock({ $0 }) { throw MistralStreamError.timeout }
+        if timedOut.withLock({ $0 }), options.signal?.isCancelled != true {
+            throw MistralResponseHeadersTimeout(timeoutMs: timeoutMs)
+        }
         throw error
     }
     let body = AsyncThrowingStream<Data, Error> { continuation in
@@ -722,12 +754,11 @@ private func fetchMistralStream(
             }
         }
         let cancellationHandler = signal.addCancellationHandler {
-            continuation.finish(throwing: timedOut.withLock({ $0 }) ? MistralStreamError.timeout : MistralStreamError.aborted)
+            continuation.finish(throwing: MistralStreamError.aborted)
             reader.cancel()
         }
         continuation.onTermination = { _ in
             reader.cancel()
-            timeout.cancel()
             if let cancellationHandler { signal.removeCancellationHandler(cancellationHandler) }
             if let externalHandler { options.signal?.removeCancellationHandler(externalHandler) }
         }

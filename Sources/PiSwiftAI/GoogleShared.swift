@@ -300,6 +300,7 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false, supports
 func usesGoogleThinkingLevel(model: Model) -> Bool {
     let id = model.id.lowercased()
     return id.range(of: #"gemini-3(?:\.\d+)?-(?:pro|flash)"#, options: .regularExpression) != nil ||
+        id.range(of: #"gemini-(?:[4-9]|[1-9]\d)"#, options: .regularExpression) != nil ||
         id == "gemini-flash-latest" || id == "gemini-flash-lite-latest" ||
         id.range(of: #"gemma-?4"#, options: .regularExpression) != nil
 }

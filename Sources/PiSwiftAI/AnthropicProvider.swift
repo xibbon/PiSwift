@@ -156,7 +156,8 @@ public func streamAnthropic(
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
             stopReason: .pending
         )
-        output.providerThinkingLevel = model.compat?.supportsMidConvoEffort == true ? (options.effort?.rawValue ?? "high") : nil
+        output.providerThinkingLevel = model.compat?.supportsMidConvoEffort == true && !anthropicThinkingDisabled(model: model, options: options)
+            ? (options.effort?.rawValue ?? "high") : nil
         var usageModel = model
         var inputTransformations: [[String: AnyCodable]]?
         var debugService: AnthropicService?
@@ -179,122 +180,153 @@ public func streamAnthropic(
             let initialToolNames = nativeToolChanges
                 ? Set(initialTools.map { isOAuthToken ? toClaudeCodeName($0.name) : $0.name })
                 : Set<String>()
-            let toolDefinitions = try orderedTools.map {
-                try anthropicToolDefinitionJSON($0, isOAuthToken: isOAuthToken,
-                    supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
-                    supportsStrictTools: compat.supportsStrictTools)
-            }
-            let betaHeaders = anthropicBetaFeatures(
-                model: model,
-                context: Context(messages: context.messages, tools: currentTools),
-                options: options,
-                nativeToolChanges: nativeToolChanges
-            )
-            if let betaHeaders {
-                logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
-            } else {
-                logAnthropicDebug("anthropic betaHeaders=none")
-            }
-            var affinityHeaders: ProviderHeaders?
-            if options.cacheRetention != CacheRetention.none, let sessionId = options.sessionId,
-               !sessionId.isEmpty, compat.sendSessionAffinityHeaders {
-                let name = compat.sessionAffinityFormat == .openrouter ? "x-session-id" : "x-session-affinity"
-                affinityHeaders = [name: sessionId]
-            }
-            var mergedHeaders = mergeProviderHeaders(affinityHeaders, model.headers)
-            // Copilot: add dynamic headers for vision and initiator
-            if model.provider == "github-copilot" {
-                let copilotHeaders = buildCopilotDynamicHeaders(messages: context.messages)
-                mergedHeaders = mergeProviderHeaders(mergedHeaders, copilotHeaders)
-            }
-            mergedHeaders = mergeProviderHeaders(mergedHeaders, options.headers)
-            mergedHeaders = openCodeSessionHeaders(model: model, sessionId: options.sessionId, headers: mergedHeaders)
-            // Apply the resolved beta list after user overrides, including explicit deletion.
-            mergedHeaders = mergeProviderHeaders(mergedHeaders, ["anthropic-beta": betaHeaders?.joined(separator: ",")])
-            let (parameters, pendingInsertions) = buildAnthropicParameters(
-                model: model,
-                context: context,
-                options: options,
-                isOAuthToken: isOAuthToken,
-                compat: compat,
-                orderedTools: orderedTools
-            )
-            let systemInsertions = try pendingInsertions.map { insertion in
-                let definitions = nativeToolChanges ? try (insertion.message.toolsAdded ?? []).map {
+            var disablePreferredStrictTools = false
+            let anthropicStream: AsyncThrowingStream<AnthropicDecodedMessageEvent, Error>
+            while true {
+                if options.signal?.isCancelled == true { throw AnthropicStreamError.aborted }
+                let toolDefinitions = try orderedTools.map {
                     try anthropicToolDefinitionJSON($0, isOAuthToken: isOAuthToken,
                         supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
-                        supportsStrictTools: compat.supportsStrictTools)
-                } : []
-                return AnthropicSystemInsertion(index: insertion.index, message: insertion.message,
-                    toolDefinitions: definitions)
-            }
-            let encodedBody = try anthropicJSONBody(parameters)
-            let constrainedBody = injectAnthropicRequestBody(
-                body: encodedBody,
-                ttl: anthropicCacheTtl(baseUrl: model.baseUrl, supportsLongCacheRetention: compat.supportsLongCacheRetention,
-                    cacheRetention: options.cacheRetention, env: options.env),
-                metadataUserId: extractAnthropicMetadataUserId(options.metadata),
-                supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
-                supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
-                thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
-                initialToolNames: initialToolNames,
-                nativeToolChanges: nativeToolChanges,
-                systemInsertions: systemInsertions,
-                isOAuthToken: isOAuthToken,
-                toolDefinitions: toolDefinitions
-            ) ?? encodedBody
-            let rawRequestBody = try prepareAnthropicRawPayload(
-                constrainedBody, model: model, context: Context(messages: context.messages), options: options
-            )
-            emitPayload(options.onPayload, data: rawRequestBody)
-            let httpClient = buildAnthropicHttpClient(
-                providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
-                isOAuthToken: isOAuthToken,
-                isFederated: federation != nil,
-                extraHeaders: mergedHeaders ?? [:],
-                baseUrl: model.baseUrl,
-                metadataUserId: extractAnthropicMetadataUserId(options.metadata),
-                supportsLongCacheRetention: compat.supportsLongCacheRetention,
-                cacheRetention: options.cacheRetention,
-                env: options.env,
-                supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
-                supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
-                thinkingDisabled: model.reasoning && options.thinkingEnabled == false && mappedOffThinkingLevel(model: model) != nil,
-                rawRequestBody: rawRequestBody
-            )
-            let service = AnthropicServiceFactory.service(
-                apiKey: apiKey,
-                basePath: model.baseUrl,
-                betaHeaders: betaHeaders,
-                httpClient: httpClient,
-                debugEnabled: false
-            )
-
-            debugService = service
-            debugParameters = parameters
-            let toolCount = currentTools.count
-            logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
-            let usesBearerTransport = usesAnthropicBearerTransport(apiKey, env: options.env)
-                || providerHeaderValue(mergedHeaders, name: "Authorization")?
-                    .lowercased().hasPrefix("bearer ") == true
-            let anthropicStream = try await retryProviderRequest(
-                maxRetries: options.maxRetries,
-                maxRetryDelayMs: options.maxRetryDelayMs,
-                signal: options.signal
-            ) {
-                try await streamAnthropicMessagesWithFederation(
-                    federation: federation,
-                    federationClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
-                    apiKey: apiKey,
-                    usesBearerTransport: usesBearerTransport,
+                        supportsStrictTools: compat.supportsStrictTools,
+                        disablePreferredStrictTools: disablePreferredStrictTools)
+                }
+                let betaHeaders = anthropicBetaFeatures(
+                    model: model,
+                    context: Context(messages: context.messages, tools: currentTools),
+                    options: options,
+                    nativeToolChanges: nativeToolChanges
+                )
+                if let betaHeaders {
+                    logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
+                } else {
+                    logAnthropicDebug("anthropic betaHeaders=none")
+                }
+                var affinityHeaders: ProviderHeaders?
+                if options.cacheRetention != CacheRetention.none, let sessionId = options.sessionId,
+                   !sessionId.isEmpty, compat.sendSessionAffinityHeaders {
+                    let name = compat.sessionAffinityFormat == .openrouter ? "x-session-id" : "x-session-affinity"
+                    affinityHeaders = [name: sessionId]
+                }
+                var mergedHeaders = mergeProviderHeaders(affinityHeaders, model.headers)
+                // Copilot: add dynamic headers for vision and initiator
+                if model.provider == "github-copilot" {
+                    let copilotHeaders = buildCopilotDynamicHeaders(messages: context.messages)
+                    mergedHeaders = mergeProviderHeaders(mergedHeaders, copilotHeaders)
+                }
+                mergedHeaders = mergeProviderHeaders(mergedHeaders, options.headers)
+                mergedHeaders = openCodeSessionHeaders(model: model, sessionId: options.sessionId, headers: mergedHeaders)
+                // Apply the resolved beta list after user overrides, including explicit deletion.
+                mergedHeaders = mergeProviderHeaders(mergedHeaders, ["anthropic-beta": betaHeaders?.joined(separator: ",")])
+                let (parameters, pendingInsertions) = buildAnthropicParameters(
+                    model: model,
+                    context: context,
+                    options: options,
+                    isOAuthToken: isOAuthToken,
+                    compat: compat,
+                    orderedTools: orderedTools
+                )
+                let systemInsertions = try pendingInsertions.map { insertion in
+                    let definitions = nativeToolChanges ? try (insertion.message.toolsAdded ?? []).map {
+                        try anthropicToolDefinitionJSON($0, isOAuthToken: isOAuthToken,
+                            supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                            supportsStrictTools: compat.supportsStrictTools,
+                            disablePreferredStrictTools: disablePreferredStrictTools)
+                    } : []
+                    return AnthropicSystemInsertion(index: insertion.index, message: insertion.message,
+                        toolDefinitions: definitions)
+                }
+                let encodedBody = try restoreAnthropicToolResultContent(
+                    anthropicJSONBody(parameters), model: model, messages: context.messages
+                )
+                let constrainedBody = injectAnthropicRequestBody(
+                    body: encodedBody,
+                    ttl: anthropicCacheTtl(baseUrl: model.baseUrl, supportsLongCacheRetention: compat.supportsLongCacheRetention,
+                        cacheRetention: options.cacheRetention, env: options.env),
+                    metadataUserId: extractAnthropicMetadataUserId(options.metadata),
+                    supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                    supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
+                    thinkingDisabled: anthropicThinkingDisabled(model: model, options: options),
+                    initialToolNames: initialToolNames,
+                    nativeToolChanges: nativeToolChanges,
+                    systemInsertions: systemInsertions,
+                    isOAuthToken: isOAuthToken,
+                    toolDefinitions: toolDefinitions
+                ) ?? encodedBody
+                let rawRequestBody = try prepareAnthropicRawPayload(
+                    constrainedBody, model: model, context: Context(messages: context.messages), options: options
+                )
+                emitPayload(options.onPayload, data: rawRequestBody)
+                let httpClient = buildAnthropicHttpClient(
+                    providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
+                    isOAuthToken: isOAuthToken,
+                    isFederated: federation != nil,
+                    extraHeaders: mergedHeaders ?? [:],
                     baseUrl: model.baseUrl,
+                    metadataUserId: extractAnthropicMetadataUserId(options.metadata),
+                    supportsLongCacheRetention: compat.supportsLongCacheRetention,
+                    cacheRetention: options.cacheRetention,
+                    env: options.env,
+                    supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                    supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
+                    thinkingDisabled: anthropicThinkingDisabled(model: model, options: options),
+                    rawRequestBody: rawRequestBody
+                )
+                let service = AnthropicServiceFactory.service(
+                    apiKey: apiKey,
+                    basePath: model.baseUrl,
                     betaHeaders: betaHeaders,
                     httpClient: httpClient,
-                    parameters: parameters,
-                    onResponse: options.onResponse,
-                    model: model,
-                    onProviderStreamEvent: options.onProviderStreamEvent
+                    debugEnabled: false
                 )
+
+                debugService = service
+                debugParameters = parameters
+                let toolCount = currentTools.count
+                logAnthropicDebug("anthropic request model=\(model.id) maxTokens=\(parameters.maxTokens) messages=\(parameters.messages.count) system=\(parameters.system != nil) tools=\(toolCount) thinking=\(parameters.thinking != nil)")
+                let usesBearerTransport = usesAnthropicBearerTransport(apiKey, env: options.env)
+                    || providerHeaderValue(mergedHeaders, name: "Authorization")?
+                        .lowercased().hasPrefix("bearer ") == true
+                let hasPreferredStrictTools = zip(orderedTools, toolDefinitions).contains {
+                    isAnthropicPreferredStrictTool($0.0) && $0.1["strict"]?.value as? Bool == true
+                } || zip(pendingInsertions, systemInsertions).contains { pending, converted in
+                    zip(pending.message.toolsAdded ?? [], converted.toolDefinitions).contains {
+                        isAnthropicPreferredStrictTool($0.0) && $0.1["strict"]?.value as? Bool == true
+                    }
+                }
+                do {
+                    anthropicStream = try await retryProviderRequest(
+                        maxRetries: options.maxRetries,
+                        maxRetryDelayMs: options.maxRetryDelayMs,
+                        signal: options.signal
+                    ) {
+                        try await streamAnthropicMessagesWithFederation(
+                            federation: federation,
+                            federationClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
+                            apiKey: apiKey,
+                            usesBearerTransport: usesBearerTransport,
+                            baseUrl: model.baseUrl,
+                            betaHeaders: betaHeaders,
+                            httpClient: httpClient,
+                            parameters: parameters,
+                            onResponse: options.onResponse,
+                            model: model,
+                            onProviderStreamEvent: options.onProviderStreamEvent
+                        )
+                    }
+                    break
+                } catch {
+                    guard options.signal?.isCancelled != true,
+                          !disablePreferredStrictTools, hasPreferredStrictTools,
+                          let message = anthropicStrictToolLimitErrorMessage(error) else { throw error }
+                    disablePreferredStrictTools = true
+                    var diagnostics = output.diagnostics ?? []
+                    diagnostics.append(AssistantMessageDiagnostic(
+                        type: "anthropic_strict_tools_fallback",
+                        details: ["reason": AnyCodable("strict_tool_limits_exceeded")],
+                        error: DiagnosticErrorInfo(message: message)
+                    ))
+                    output.diagnostics = diagnostics
+                }
             }
 
             stream.push(.start(partial: output))
@@ -867,7 +899,6 @@ private func streamAnthropicMessagesTolerant(
     let request = HTTPRequest(url: url, method: .post, headers: headers, body: body)
     let (byteStream, response) = try await httpClient.bytes(for: request)
     let snapshot = anthropicResponseSnapshot(response)
-    onResponse?(snapshot)
     guard snapshot.statusCode == 200 else {
         let body = try await collectAnthropicHTTPBody(byteStream)
         let message = String(data: body, encoding: .utf8) ?? "HTTP \(snapshot.statusCode)"
@@ -877,6 +908,7 @@ private func streamAnthropicMessagesTolerant(
             message: message
         )
     }
+    onResponse?(snapshot)
     return decodeAnthropicSSEStream(byteStream, model: model, onProviderStreamEvent: onProviderStreamEvent)
 }
 
@@ -1119,43 +1151,28 @@ private func convertAnthropicMessages(
             if !contentObjects.isEmpty {
                 params.append(MessageParameter.Message(role: .assistant, content: .list(contentObjects)))
             }
-        case .toolResult(let toolResult):
+        case .toolResult:
             var toolResults: [MessageParameter.Message.Content.ContentObject] = []
-            var imageBlocks: [ImageContent] = []
-            toolResults.append(convertToolResultContent(toolResult: toolResult))
-            imageBlocks.append(contentsOf: toolResult.content.compactMap { block in
-                if case .image(let image) = block { return image }
-                return nil
-            })
-
-            var lookahead = index + 1
-            while lookahead < transformed.count {
-                if case .toolResult(let next) = transformed[lookahead] {
-                    toolResults.append(convertToolResultContent(toolResult: next))
-                    imageBlocks.append(contentsOf: next.content.compactMap { block in
-                        if case .image(let image) = block { return image }
-                        return nil
-                    })
-                    lookahead += 1
-                } else {
-                    break
-                }
-            }
-            index = lookahead - 1
-            params.append(MessageParameter.Message(role: .user, content: .list(toolResults)))
-
-            if !imageBlocks.isEmpty && model.input.contains(.image) {
-                var imageContent: [MessageParameter.Message.Content.ContentObject] = [
-                    .text("Attached image(s) from tool result:")
-                ]
-                for image in imageBlocks {
-                    if let media = anthropicMediaType(from: image.mimeType) {
-                        let source = MessageParameter.Message.Content.ImageSource(type: .base64, mediaType: media, data: image.data)
-                        imageContent.append(.image(source))
+            var errorImages: [MessageParameter.Message.Content.ContentObject] = []
+            var lookahead = index
+            while lookahead < transformed.count, case .toolResult(let tool) = transformed[lookahead] {
+                let split = splitErrorToolResultImages(tool)
+                var result = tool
+                if let split { result.content = split.content }
+                toolResults.append(convertToolResultContent(toolResult: result))
+                if let split {
+                    errorImages.append(.text(split.caption))
+                    for image in split.images {
+                        if let media = anthropicMediaType(from: image.mimeType) {
+                            let source = MessageParameter.Message.Content.ImageSource(type: .base64, mediaType: media, data: image.data)
+                            errorImages.append(.image(source))
+                        }
                     }
                 }
-                params.append(MessageParameter.Message(role: .user, content: .list(imageContent)))
+                lookahead += 1
             }
+            index = lookahead - 1
+            params.append(MessageParameter.Message(role: .user, content: .list(toolResults + errorImages)))
         }
         index += 1
     }
@@ -1242,6 +1259,45 @@ private func convertToolResultContent(toolResult: ToolResultMessage) -> MessageP
         isError: toolResult.isError
     )
     return toolResultObject
+}
+
+// The SDK permits only String tool-result content. Restore the image arrays in
+// the encoded request before payload callbacks and transport use the body.
+func restoreAnthropicToolResultContent(_ body: Data, model: Model, messages: [Message]) throws -> Data {
+    let transformed = transformMessages(messages, model: model) { id, _, _ in
+        String(id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression).prefix(64))
+    }
+    let results = transformed.compactMap { message -> ToolResultMessage? in
+        if case .toolResult(let result) = message { return result }
+        return nil
+    }
+    guard results.contains(where: { !$0.isError && $0.content.contains { if case .image = $0 { return true }; return false } }) else { return body }
+    var payload = try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
+    guard var wireMessages = payload["messages"] as? [[String: Any]] else { return body }
+    var resultIndex = 0
+    for messageIndex in wireMessages.indices {
+        guard var blocks = wireMessages[messageIndex]["content"] as? [[String: Any]] else { continue }
+        for blockIndex in blocks.indices where blocks[blockIndex]["type"] as? String == "tool_result" {
+            guard resultIndex < results.count else { continue }
+            let result = results[resultIndex]
+            resultIndex += 1
+            guard !result.isError, result.content.contains(where: { if case .image = $0 { return true }; return false }) else { continue }
+            var content: [[String: Any]] = result.content.compactMap { block in
+                switch block {
+                case .text(let text): return ["type": "text", "text": sanitizeSurrogates(text.text)]
+                case .image(let image): return ["type": "image", "source": ["type": "base64", "media_type": image.mimeType, "data": image.data]]
+                default: return nil
+                }
+            }
+            if !content.contains(where: { $0["type"] as? String == "text" }) {
+                content.insert(["type": "text", "text": "(see attached image)"], at: 0)
+            }
+            blocks[blockIndex]["content"] = content
+        }
+        wireMessages[messageIndex]["content"] = blocks
+    }
+    payload["messages"] = wireMessages
+    return try JSONSerialization.data(withJSONObject: payload)
 }
 
 private func convertAnthropicTools(_ tools: [AITool], isOAuthToken: Bool) -> [MessageParameter.Tool] {
@@ -1701,14 +1757,38 @@ private let isAnthropicStrictUnsupportedKeyword: UnsupportedStrictSchemaKeywordC
     return false
 }
 
+private func isAnthropicPreferredStrictTool(_ tool: AITool) -> Bool {
+    if case .jsonSchema(strict: .prefer) = tool.constrainedSampling { return true }
+    return false
+}
+
+private func anthropicStrictToolLimitErrorMessage(_ error: Error) -> String? {
+    guard case StreamError.providerRequest(let status, _, let body) = error, status == 400,
+          let data = body.data(using: .utf8),
+          let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let providerError = payload["error"] as? [String: Any],
+          providerError["type"] as? String == "invalid_request_error",
+          let message = providerError["message"] as? String,
+          ["The compiled grammar is too large", "Too many strict tools (",
+           "Schemas contains too many parameters with union types ("].contains(where: message.contains)
+    else { return nil }
+    return message
+}
+
 private func anthropicToolDefinitionJSON(
     _ tool: AITool,
     isOAuthToken: Bool,
     supportsEagerToolInputStreaming: Bool,
-    supportsStrictTools: Bool
+    supportsStrictTools: Bool,
+    disablePreferredStrictTools: Bool = false
 ) throws -> [String: AnyCodable] {
-    let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictTools,
-        isUnsupportedKeyword: isAnthropicStrictUnsupportedKeyword) == true
+    let strict: Bool
+    if disablePreferredStrictTools && isAnthropicPreferredStrictTool(tool) {
+        strict = false
+    } else {
+        strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictTools,
+            isUnsupportedKeyword: isAnthropicStrictUnsupportedKeyword) == true
+    }
     let parameters = try getJsonSchemaToolParameters(tool, strict: strict)
     var schema: [String: AnyCodable] = strict ? parameters : [:]
     schema["type"] = AnyCodable("object")
@@ -1916,12 +1996,22 @@ func anthropicBetaFeatures(
     return features.isEmpty ? nil : features
 }
 
+private func anthropicThinkingDisabled(model: Model, options: AnthropicOptions) -> Bool {
+    guard model.reasoning, options.thinkingEnabled == false else { return false }
+    if case .some(nil) = model.thinkingLevelMap?[.off] { return false }
+    return true
+}
+
 func prepareAnthropicRawPayload(_ data: Data, model: Model, context: Context, options: AnthropicOptions) throws -> Data {
     var payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
     payload["stream"] = true
-    let managed = model.compat?.supportsMidConvoEffort == true
+    let thinkingDisabled = anthropicThinkingDisabled(model: model, options: options)
+    let managed = model.compat?.supportsMidConvoEffort == true && !thinkingDisabled
     let display = options.thinkingDisplay?.rawValue ?? "summarized"
-    if managed {
+    if thinkingDisabled {
+        payload["thinking"] = ["type": "disabled"]
+        payload.removeValue(forKey: "output_config")
+    } else if managed {
         payload["thinking"] = ["type": "adaptive", "display": display,
             "block_binding": ["prefix_mismatch_behavior": "drop_block"]]
         payload["output_config"] = ["effort": "high"]

@@ -69,9 +69,9 @@ func anthropicManagedPreservesNativeEffort(_ effort: ThinkingLevel) throws {
     #expect(markers(payload) == ["low", "low", "low"])
 }
 
-@Test(arguments: [true, false])
-func anthropicManagedAlwaysEnablesBinding(_ enabled: Bool) throws {
-    let payload = try managedPayload(model: managedEffortModel(adaptive: false), enabled: enabled)
+// Upstream v1.3.0: supported off disables thinking and does not use binding.
+@Test func anthropicManagedEnabledUsesBinding() throws {
+    let payload = try managedPayload(model: managedEffortModel(adaptive: false), enabled: true)
     #expect(markers(payload) == ["high"])
     let thinking = try #require(payload["thinking"] as? [String: Any])
     #expect(thinking["type"] as? String == "adaptive")

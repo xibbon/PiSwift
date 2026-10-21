@@ -1,5 +1,36 @@
 import Foundation
 
+/// Error images follow all tool results in the same user message on Claude APIs.
+struct SplitErrorToolResult: Sendable {
+    let content: [ContentBlock]
+    let caption: String
+    let images: [ImageContent]
+}
+
+func splitErrorToolResultImages(_ message: ToolResultMessage) -> SplitErrorToolResult? {
+    guard message.isError else { return nil }
+    let images = message.content.compactMap { block -> ImageContent? in
+        if case .image(let image) = block { return image }
+        return nil
+    }
+    guard !images.isEmpty else { return nil }
+    let placeholder = "(image attached after the tool results)"
+    var content: [ContentBlock] = []
+    var previousWasPlaceholder = false
+    for block in message.content {
+        if case .image = block {
+            if !previousWasPlaceholder { content.append(.text(TextContent(text: placeholder))) }
+            previousWasPlaceholder = true
+        } else {
+            content.append(block)
+            if case .text(let text) = block { previousWasPlaceholder = text.text == placeholder }
+            else { previousWasPlaceholder = false }
+        }
+    }
+    return SplitErrorToolResult(content: content,
+        caption: "Images from the error result of tool call \(message.toolCallId) (\(message.toolName)):", images: images)
+}
+
 public func transformMessages(
     _ messages: [Message],
     model: Model,

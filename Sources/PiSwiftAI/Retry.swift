@@ -36,13 +36,14 @@ private let retryableProviderErrorPatterns = [
     "504",
     "520",
     "524",
-    "service.?unavailable",
+    "service.?(?:is.?)?(?:temporarily.?)?unavailable",
     "server.?error",
     "internal.?error",
 
     // Wrapper/provider text for transient upstream failures.
-    "provider.?returned.?error",
+    "provider.?returned.?(?:an.?)?error",
     "exceeded request buffer limit while retrying upstream",
+    "unable to forward upstream",
 
     // Network, proxy, and fetch transport failures.
     "network.?error",

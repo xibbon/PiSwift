@@ -29,7 +29,9 @@ private func anthropicAuditModel(headers: ProviderHeaders? = nil, provider: Stri
             allowedFallbackModels: [
                 AnthropicAllowedFallbackModel(provider: provider, model: "served-model", cost: ModelCost(input: 10, output: 20, cacheRead: 30, cacheWrite: 40)),
                 AnthropicAllowedFallbackModel(provider: "different-provider", model: "foreign-model", cost: ModelCost(input: 100, output: 200, cacheRead: 300, cacheWrite: 400)),
-            ]))
+            ]),
+        // A12, upstream anthropic-messages.ts:1205-1208: null off keeps managed thinking enabled.
+        thinkingLevelMap: [.off: nil])
 }
 
 private func anthropicAuditEvents(serving: String = "served-model", transformationMode: String = "replace", midOutput: Bool = false, errorAfterStart: Bool = false) -> [[String: Any]] {

@@ -125,7 +125,23 @@ public func assistantMessageToJSONObject(_ message: AssistantMessage) -> [String
     if let value = message.errorMessage { result["errorMessage"] = value }
     if let value = message.rawStopReason { result["rawStopReason"] = value }
     if let values = message.diagnostics {
-        result["diagnostics"] = values.map { ["type": $0.type, "timestamp": Int($0.timestamp), "details": $0.details.mapValues(\.value)] as [String: Any] }
+        result["diagnostics"] = values.map { diagnostic -> [String: Any] in
+            var value: [String: Any] = ["type": diagnostic.type, "timestamp": Int(diagnostic.timestamp),
+                "details": diagnostic.details.mapValues(\.value)]
+            if let error = diagnostic.error {
+                var info: [String: Any] = ["message": error.message]
+                if let name = error.name { info["name"] = name }
+                if let stack = error.stack { info["stack"] = stack }
+                if let code = error.code {
+                    switch code {
+                    case .string(let code): info["code"] = code
+                    case .number(let code): info["code"] = code
+                    }
+                }
+                value["error"] = info
+            }
+            return value
+        }
     }
     if let value = message.deferred {
         var deferred: [String: Any] = ["provider": value.provider, "modelId": value.modelId, "api": value.api, "id": value.id]
@@ -167,7 +183,20 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any], ordered: Order
         diagnostics: (dict["diagnostics"] as? [[String: Any]])?.compactMap {
             guard let type = $0["type"] as? String else { return nil }
             return AssistantMessageDiagnostic(type: type, timestamp: ($0["timestamp"] as? NSNumber)?.int64Value ?? 0,
-                details: ($0["details"] as? [String: Any] ?? [:]).mapValues(AnyCodable.init))
+                details: ($0["details"] as? [String: Any] ?? [:]).mapValues(AnyCodable.init),
+                error: ($0["error"] as? [String: Any]).flatMap { info in
+                    guard let message = info["message"] as? String else { return nil }
+                    let code: DiagnosticErrorCode?
+                    if let value = info["code"] as? String {
+                        code = .string(value)
+                    } else if let value = info["code"] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() {
+                        code = .number(value.doubleValue)
+                    } else {
+                        code = nil
+                    }
+                    return DiagnosticErrorInfo(name: info["name"] as? String, message: message,
+                        stack: info["stack"] as? String, code: code)
+                })
         },
         providerThinkingLevel: dict["providerThinkingLevel"] as? String,
         thinkingLevel: (dict["thinkingLevel"] as? String).flatMap(ModelThinkingLevel.init(rawValue:)),

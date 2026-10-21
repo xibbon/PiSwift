@@ -1554,15 +1554,36 @@ public enum UserContent: Sendable {
     case blocks([ContentBlock])
 }
 
+public enum DiagnosticErrorCode: Sendable, Equatable {
+    case string(String)
+    case number(Double)
+}
+
+public struct DiagnosticErrorInfo: Sendable, Equatable {
+    public var name: String?
+    public var message: String
+    public var stack: String?
+    public var code: DiagnosticErrorCode?
+
+    public init(name: String? = nil, message: String, stack: String? = nil, code: DiagnosticErrorCode? = nil) {
+        self.name = name
+        self.message = message
+        self.stack = stack
+        self.code = code
+    }
+}
+
 public struct AssistantMessageDiagnostic: Sendable, Equatable {
     public var type: String
     public var timestamp: Int64
     public var details: [String: AnyCodable]
+    public var error: DiagnosticErrorInfo?
 
-    public init(type: String, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000), details: [String: AnyCodable]) {
+    public init(type: String, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000), details: [String: AnyCodable], error: DiagnosticErrorInfo? = nil) {
         self.type = type
         self.timestamp = timestamp
         self.details = details
+        self.error = error
     }
 }
 

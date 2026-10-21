@@ -866,21 +866,22 @@ private func convertMessages(context: Context, model: Model, cacheRetention: Cac
             }
         case .toolResult:
             var toolResults: [BedrockContentBlock] = []
-            if case .toolResult(let tool) = message {
-                toolResults.append(makeToolResultBlock(tool))
-            }
-
-            var nextIndex = index + 1
-            while nextIndex < transformed.count {
-                if case .toolResult(let nextTool) = transformed[nextIndex] {
-                    toolResults.append(makeToolResultBlock(nextTool))
-                    nextIndex += 1
-                } else {
-                    break
+            var errorImages: [BedrockContentBlock] = []
+            var nextIndex = index
+            while nextIndex < transformed.count, case .toolResult(let tool) = transformed[nextIndex] {
+                let split = isAnthropicClaudeModel(model) ? splitErrorToolResultImages(tool) : nil
+                var result = tool
+                if let split { result.content = split.content }
+                toolResults.append(makeToolResultBlock(result))
+                if let split {
+                    errorImages.append(BedrockContentBlock(payload: AnyCodable(["text": split.caption])))
+                    errorImages.append(contentsOf: split.images.map {
+                        BedrockContentBlock(payload: AnyCodable(["image": createImageBlock($0)]))
+                    })
                 }
+                nextIndex += 1
             }
-
-            result.append(BedrockMessage(role: "user", content: toolResults))
+            result.append(BedrockMessage(role: "user", content: toolResults + errorImages))
             index = nextIndex - 1
         }
 

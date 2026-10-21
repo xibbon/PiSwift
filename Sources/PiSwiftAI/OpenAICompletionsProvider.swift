@@ -2,6 +2,13 @@ import Foundation
 import CoreFoundation
 import OpenAI
 
+private struct StreamingCompletionsToolCall: Sendable {
+    var streamIndex: Int?
+    var arguments = ""
+    var grammarInputProperty: String?
+    var grammarInputBuffer = GrammarToolInputJsonBuffer()
+}
+
 public func streamOpenAICompletions(
     model: Model,
     context: TranscriptContext,
@@ -84,47 +91,54 @@ public func streamOpenAICompletions(
             }
             stream.push(.start(partial: output))
 
-            var currentBlockIndex: Int? = nil
-            var currentBlockKind: String? = nil
-            var currentToolCallArgs = ""
-            var currentToolCallId: String? = nil
-            var currentToolCallIndex: Int? = nil
-            var toolCallIdByIndex: [Int: String] = [:]
+            var textBlockIndex: Int?
+            var toolCallBlocksByIndex: [Int: Int] = [:]
+            var toolCallBlocksById: [String: Int] = [:]
+            var streamingToolCalls: [Int: StreamingCompletionsToolCall] = [:]
             var hasFinishReason = false
-            var currentGrammarInputProperty: String? = nil
-            var grammarInputBuffer = GrammarToolInputJsonBuffer()
 
-            func finishCurrentBlock() throws {
-                guard let index = currentBlockIndex else { return }
-                switch output.content[index] {
-                case .text, .thinking:
-                    break
-                case .toolCall(var toolCall):
-                    if let inputProperty = currentGrammarInputProperty {
-                        if let delta = try appendGrammarToolInputJsonDelta(
-                            buffer: &grammarInputBuffer,
-                            inputProperty: inputProperty,
-                            nextInput: currentToolCallArgs,
-                            close: true
-                        ) {
-                            stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
-                        }
-                        toolCall.arguments = [inputProperty: AnyCodable(currentToolCallArgs)]
-                        toolCall.argumentsJSON = toolArgumentsToOrderedJSON(toolCall.arguments)
-                    } else {
-                        toolCall.finalizeArguments(from: currentToolCallArgs)
-                    }
-                    output.content[index] = .toolCall(toolCall)
-                default:
-                    break
+            func ensureToolCallBlock(streamIndex: Int?, id: String?, name: String, custom: Bool) -> Int {
+                var contentIndex = streamIndex.flatMap { toolCallBlocksByIndex[$0] }
+                if contentIndex == nil, let id, !id.isEmpty {
+                    contentIndex = toolCallBlocksById[id]
                 }
-                currentBlockIndex = nil
-                currentBlockKind = nil
-                currentToolCallArgs = ""
-                currentToolCallId = nil
-                currentToolCallIndex = nil
-                currentGrammarInputProperty = nil
-                grammarInputBuffer = GrammarToolInputJsonBuffer()
+                if contentIndex == nil {
+                    let index = output.content.count
+                    let inputProperty = custom ? grammarToolInputProperties[name] ?? "input" : nil
+                    let tool = ToolCall(
+                        id: id ?? "",
+                        name: name,
+                        arguments: inputProperty.map { [$0: AnyCodable("")] } ?? [:]
+                    )
+                    output.content.append(.toolCall(tool))
+                    streamingToolCalls[index] = StreamingCompletionsToolCall(
+                        streamIndex: streamIndex,
+                        grammarInputProperty: inputProperty
+                    )
+                    if let streamIndex { toolCallBlocksByIndex[streamIndex] = index }
+                    if let id, !id.isEmpty { toolCallBlocksById[id] = index }
+                    contentIndex = index
+                    stream.push(.toolCallStart(contentIndex: index, partial: output))
+                }
+                let index = contentIndex!
+                if let streamIndex, streamingToolCalls[index]?.streamIndex == nil {
+                    streamingToolCalls[index]?.streamIndex = streamIndex
+                    toolCallBlocksByIndex[streamIndex] = index
+                }
+                if let id, !id.isEmpty { toolCallBlocksById[id] = index }
+                if case .toolCall(var tool) = output.content[index] {
+                    if tool.id.isEmpty, let id, !id.isEmpty { tool.id = id }
+                    if tool.name.isEmpty { tool.name = name }
+                    if custom, streamingToolCalls[index]?.grammarInputProperty == nil {
+                        let inputProperty = grammarToolInputProperties[tool.name] ?? "input"
+                        streamingToolCalls[index]?.grammarInputProperty = inputProperty
+                        streamingToolCalls[index]?.arguments = ""
+                        tool.arguments = [inputProperty: AnyCodable("")]
+                        tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+                    }
+                    output.content[index] = .toolCall(tool)
+                }
+                return index
             }
 
             for try await chunk in openAIStream {
@@ -159,23 +173,6 @@ public func streamOpenAICompletions(
 
                 let delta = choice.delta
 
-                if let content = delta.content, !content.isEmpty {
-                    if currentBlockKind != "text" {
-                        try finishCurrentBlock()
-                        let textBlock = TextContent(text: "")
-                        output.content.append(.text(textBlock))
-                        currentBlockIndex = output.content.count - 1
-                        currentBlockKind = "text"
-                        stream.push(.textStart(contentIndex: currentBlockIndex!, partial: output))
-                    }
-
-                    if let index = currentBlockIndex, case .text(var textContent) = output.content[index] {
-                        textContent.text += content
-                        output.content[index] = .text(textContent)
-                        stream.push(.textDelta(contentIndex: index, delta: content, partial: output))
-                    }
-                }
-
                 if let reasoning = chunk.reasoning, !reasoning.text.isEmpty {
                     let signature = model.provider == "opencode-go" && reasoning.field == "reasoning"
                         ? "reasoning_content" : reasoning.field
@@ -186,100 +183,93 @@ public func streamOpenAICompletions(
                         stream.push(.thinkingDelta(contentIndex: index, delta: reasoning.text, partial: output))
                     }
                 }
-                let functionToolCalls = delta.toolCalls?.filter { $0.type != "custom" }
-                if let toolCalls = functionToolCalls {
-                    for toolCall in toolCalls {
-                        let resolved = resolveToolCallIdentity(
-                            toolCall: toolCall,
-                            currentToolCallId: currentToolCallId,
-                            currentToolCallIndex: currentToolCallIndex,
-                            toolCallIdByIndex: &toolCallIdByIndex,
-                            requiresMistral: false
-                        )
-                        let index = resolved.index
-                        let normalizedId = resolved.id
-
-                        if currentBlockKind != "toolCall" || currentToolCallId != normalizedId {
-                            try finishCurrentBlock()
-                            let tool = ToolCall(id: normalizedId, name: toolCall.function?.name ?? "", arguments: [:])
-                            output.content.append(.toolCall(tool))
-                            currentBlockIndex = output.content.count - 1
-                            currentBlockKind = "toolCall"
-                            currentToolCallArgs = ""
-                            currentToolCallId = normalizedId
-                            currentToolCallIndex = index
-                            stream.push(.toolCallStart(contentIndex: currentBlockIndex!, partial: output))
-                        }
-
-                        if let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
-                            if let name = toolCall.function?.name, !name.isEmpty {
-                                tool.name = name
-                            }
-                            if let argsDelta = toolCall.function?.arguments {
-                                currentToolCallArgs += argsDelta
-                                tool.setArguments(from: currentToolCallArgs)
-                                output.content[index] = .toolCall(tool)
-                                stream.push(.toolCallDelta(contentIndex: index, delta: argsDelta, partial: output))
-                            }
-                        }
-                    }
-                }
-
-                for customCall in chunk.customToolCalls {
-                    let index = customCall.index ?? currentToolCallIndex ?? 0
-                    let normalizedId = customCall.id ?? currentToolCallId ?? ""
-                    if currentBlockKind != "toolCall" || currentToolCallId != normalizedId {
-                        try finishCurrentBlock()
-                        let inputProperty = grammarToolInputProperties[customCall.name] ?? "input"
-                        let tool = ToolCall(
-                            id: normalizedId,
-                            name: customCall.name,
-                            arguments: [inputProperty: AnyCodable("")]
-                        )
-                        output.content.append(.toolCall(tool))
-                        currentBlockIndex = output.content.count - 1
-                        currentBlockKind = "toolCall"
-                        currentToolCallArgs = ""
-                        currentToolCallId = normalizedId
-                        currentToolCallIndex = index
-                        currentGrammarInputProperty = inputProperty
-                        grammarInputBuffer = GrammarToolInputJsonBuffer()
-                        stream.push(.toolCallStart(contentIndex: currentBlockIndex!, partial: output))
-                    }
-                    guard let contentIndex = currentBlockIndex,
-                          let inputProperty = currentGrammarInputProperty else { continue }
-                    let nextInput = currentToolCallArgs + customCall.input
-                    if let jsonDelta = try appendGrammarToolInputJsonDelta(
-                        buffer: &grammarInputBuffer,
-                        inputProperty: inputProperty,
-                        nextInput: nextInput,
-                        close: false
-                    ) {
-                        stream.push(.toolCallDelta(contentIndex: contentIndex, delta: jsonDelta, partial: output))
-                    }
-                    currentToolCallArgs = nextInput
-                    if case .toolCall(var tool) = output.content[contentIndex] {
-                        if tool.name.isEmpty { tool.name = customCall.name }
-                        tool.arguments = [inputProperty: AnyCodable(nextInput)]
-                        tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
-                        output.content[contentIndex] = .toolCall(tool)
-                    }
-                }
                 for detail in chunk.reasoningDetails {
                     _ = ensureThinkingBlock(signature: "")
                     appendOpenAIReasoningDetail(detail, to: &streamedReasoningDetails)
                 }
+
+                if let content = delta.content, !content.isEmpty {
+                    if textBlockIndex == nil {
+                        let index = output.content.count
+                        output.content.append(.text(TextContent(text: "")))
+                        textBlockIndex = index
+                        stream.push(.textStart(contentIndex: index, partial: output))
+                    }
+                    if let index = textBlockIndex, case .text(var textContent) = output.content[index] {
+                        textContent.text += content
+                        output.content[index] = .text(textContent)
+                        stream.push(.textDelta(contentIndex: index, delta: content, partial: output))
+                    }
+                }
+
+                for toolCall in delta.toolCalls ?? [] where toolCall.type != "custom" {
+                    let index = ensureToolCallBlock(
+                        streamIndex: toolCall.index,
+                        id: toolCall.id,
+                        name: toolCall.function?.name ?? "",
+                        custom: false
+                    )
+                    if case .toolCall(var tool) = output.content[index],
+                       var state = streamingToolCalls[index] {
+                        let argsDelta = toolCall.function?.arguments ?? ""
+                        state.arguments += argsDelta
+                        if !argsDelta.isEmpty { tool.setArguments(from: state.arguments) }
+                        streamingToolCalls[index] = state
+                        output.content[index] = .toolCall(tool)
+                        stream.push(.toolCallDelta(contentIndex: index, delta: argsDelta, partial: output))
+                    }
+                }
+
+                for customCall in chunk.customToolCalls {
+                    let index = ensureToolCallBlock(
+                        streamIndex: customCall.index,
+                        id: customCall.id,
+                        name: customCall.name,
+                        custom: true
+                    )
+                    guard var state = streamingToolCalls[index],
+                          let inputProperty = state.grammarInputProperty,
+                          case .toolCall(var tool) = output.content[index] else { continue }
+                    state.arguments += customCall.input
+                    let jsonDelta = customCall.input.isEmpty ? nil : try appendGrammarToolInputJsonDelta(
+                        buffer: &state.grammarInputBuffer,
+                        inputProperty: inputProperty,
+                        nextInput: state.arguments,
+                        close: false
+                    )
+                    tool.arguments = [inputProperty: AnyCodable(state.arguments)]
+                    tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+                    streamingToolCalls[index] = state
+                    output.content[index] = .toolCall(tool)
+                    stream.push(.toolCallDelta(contentIndex: index, delta: jsonDelta ?? "", partial: output))
+                }
             }
 
-            try finishCurrentBlock()
             applyStreamedReasoningDetails()
-            for (index, block) in output.content.enumerated() {
-                switch block {
+            for index in output.content.indices {
+                switch output.content[index] {
                 case .text(let text):
                     stream.push(.textEnd(contentIndex: index, content: text.text, partial: output))
                 case .thinking(let thinking):
                     stream.push(.thinkingEnd(contentIndex: index, content: thinking.thinking, partial: output))
-                case .toolCall(let tool):
+                case .toolCall(var tool):
+                    if var state = streamingToolCalls.removeValue(forKey: index) {
+                        if let inputProperty = state.grammarInputProperty {
+                            if let delta = try appendGrammarToolInputJsonDelta(
+                                buffer: &state.grammarInputBuffer,
+                                inputProperty: inputProperty,
+                                nextInput: state.arguments,
+                                close: true
+                            ) {
+                                stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
+                            }
+                            tool.arguments = [inputProperty: AnyCodable(state.arguments)]
+                            tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+                        } else {
+                            tool.finalizeArguments(from: state.arguments)
+                        }
+                        output.content[index] = .toolCall(tool)
+                    }
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: tool, partial: output))
                 default:
                     break

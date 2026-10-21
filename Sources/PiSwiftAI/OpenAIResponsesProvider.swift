@@ -4,6 +4,22 @@ import OpenAI
 
 private let openAIToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode"]
 private let chatGPTUsageURL = "https://chatgpt.com/settings/usage"
+private let responsesConfigurationUpdateMarker = "\u{0}__PI_CONFIGURATION_EFFORT__:"
+
+/// Return the effort for input updates. A nil value keeps the request-level effort path.
+func responsesConfigurationUpdateEffort(model: Model, options: OpenAIResponsesOptions) -> String? {
+    guard model.compat?.supportsMidConvoEffort == true,
+          let effort = options.reasoningEffort,
+          !isChatGPTSignIn(model: model, apiKey: options.apiKey) else { return nil }
+    if let map = model.thinkingLevelMap, let mapped = map[ModelThinkingLevel(effort)] ?? nil {
+        return mapped
+    }
+    return effort.rawValue
+}
+
+private func responsesConfigurationUpdatePlaceholder(_ effort: String) -> InputItem {
+    .inputMessage(EasyInputMessage(role: .developer, content: .textInput(responsesConfigurationUpdateMarker + effort)))
+}
 
 func isChatGPTSignIn(model: Model, apiKey: String?) -> Bool {
     model.provider == "openai" && model.baseUrl == "https://api.openai.com/v1" &&
@@ -200,6 +216,7 @@ public func streamOpenAIResponses(
     let stream = AssistantMessageEventStream()
 
     Task {
+        let configurationUpdateEffort = responsesConfigurationUpdateEffort(model: model, options: options)
         var output = AssistantMessage(
             content: [],
             api: model.api,
@@ -208,6 +225,7 @@ public func streamOpenAIResponses(
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
             stopReason: .pending
         )
+        output.providerThinkingLevel = configurationUpdateEffort
         var client: OpenAI? = nil
         var query: CreateModelResponseQuery? = nil
 
@@ -226,7 +244,8 @@ public func streamOpenAIResponses(
             )
             let inlineImagesMiddleware = OpenAIResponsesInlineImagesMiddleware()
             let reasoningEffortMiddleware = OpenAIResponsesReasoningEffortMiddleware(
-                effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
+                effort: configurationUpdateEffort == nil
+                    ? rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort) : nil
             )
             let supportsStrictMode = model.compat?.supportsStrictMode ?? false
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
@@ -244,7 +263,7 @@ public func streamOpenAIResponses(
                 inlineImagesMiddleware,
                 reasoningEffortMiddleware,
                 constrainedSamplingMiddleware,
-                try makeResponsesReplayMiddleware(model: model, context: context),
+                try makeResponsesReplayMiddleware(model: model, context: context, configurationUpdateEffort: configurationUpdateEffort),
             ]
             if let samplingParams = options.samplingParams, !samplingParams.isEmpty {
                 // Keep this last so custom keys override all named request fields.
@@ -560,8 +579,10 @@ func buildResponsesQuery(
     context: Context,
     options: OpenAIResponsesOptions
 ) throws -> CreateModelResponseQuery {
+    let configurationUpdateEffort = responsesConfigurationUpdateEffort(model: model, options: options)
     let inputItems = convertResponsesMessages(
         model: model, context: context, allowedToolCallProviders: openAIToolCallProviders,
+        configurationUpdateEffort: configurationUpdateEffort,
         grammarToolInputProperties: try createGrammarToolInputProperties(
             tools: context.tools, supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
         )
@@ -572,7 +593,8 @@ func buildResponsesQuery(
     if model.reasoning {
         if options.reasoningEffort != nil || options.reasoningSummary != nil {
             reasoning = Components.Schemas.Reasoning(
-                effort: mapResponsesReasoningEffort(model: model, requested: options.reasoningEffort) ?? .medium,
+                effort: configurationUpdateEffort == nil
+                    ? (mapResponsesReasoningEffort(model: model, requested: options.reasoningEffort) ?? .medium) : .medium,
                 summary: mapReasoningSummary(options.reasoningSummary) ?? .auto
             )
             include = [.reasoning_encryptedContent]
@@ -756,6 +778,7 @@ func normalizeIdPart(_ raw: String) -> String {
 
 func convertResponsesMessages(
     model: Model, context: Context, allowedToolCallProviders: Set<String>,
+    configurationUpdateEffort: String? = nil,
     grammarToolInputProperties: [String: String] = [:]
 ) -> [InputItem] {
     var messages: [InputItem] = []
@@ -881,6 +904,11 @@ func convertResponsesMessages(
                 }
             }
             if !items.isEmpty {
+                if configurationUpdateEffort != nil,
+                   assistant.provider == model.provider, assistant.api == model.api, assistant.model == model.id,
+                   let effort = assistant.providerThinkingLevel {
+                    messages.append(responsesConfigurationUpdatePlaceholder(effort))
+                }
                 messages.append(contentsOf: items)
             }
         case .toolResult(let toolResult):
@@ -939,6 +967,9 @@ func convertResponsesMessages(
         messageIndex += 1
     }
 
+    if let configurationUpdateEffort {
+        messages.append(responsesConfigurationUpdatePlaceholder(configurationUpdateEffort))
+    }
     return messages
 }
 
@@ -1148,15 +1179,24 @@ func responsesToolAdditionsEnabled(_ model: Model) -> Bool {
     model.compat?.supportsAdditionalTools == true || model.compat?.supportsToolSearch == true
 }
 
-/// The SDK does not represent namespaces or deferred-tool input items.
+/// The SDK does not represent namespaces, effort updates, or deferred-tool input items.
 /// Keep these wire fields in a JSON rewrite after the SDK encodes the request.
 struct ResponsesReplayMiddleware: OpenAIMiddleware {
     let namespaces: [String: String]
     let additions: [Int: Data]
+    var includesConfigurationUpdates = false
 
     func rewriteInput(_ input: [[String: Any]]) -> [[String: Any]] {
         var result: [[String: Any]] = []
         for var item in input {
+            if includesConfigurationUpdates, item["role"] as? String == "developer",
+               let content = item["content"] as? String,
+               content.hasPrefix(responsesConfigurationUpdateMarker) {
+                result.append(["type": "configuration_update", "reasoning": [
+                    "effort": String(content.dropFirst(responsesConfigurationUpdateMarker.count)),
+                ]])
+                continue
+            }
             if let content = item["content"] as? String,
                content.hasPrefix("\u{0}__PI_TRANSCRIPT_TOOLS__:"),
                let index = Int(content.dropFirst("\u{0}__PI_TRANSCRIPT_TOOLS__:".count)),
@@ -1188,6 +1228,7 @@ struct ResponsesReplayMiddleware: OpenAIMiddleware {
 func makeResponsesReplayMiddleware(
     model: Model,
     context: Context,
+    configurationUpdateEffort: String? = nil,
 ) throws -> ResponsesReplayMiddleware {
     var namespaces: [String: String] = [:]
     var additions: [Int: Data] = [:]
@@ -1232,5 +1273,6 @@ func makeResponsesReplayMiddleware(
     return ResponsesReplayMiddleware(
         namespaces: namespaces,
         additions: additions,
+        includesConfigurationUpdates: configurationUpdateEffort != nil,
     )
 }
