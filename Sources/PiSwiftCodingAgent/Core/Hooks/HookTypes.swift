@@ -292,11 +292,13 @@ public struct ToolInfo: Sendable {
     public var sourceInfo: SourceInfo?
     /// The path that owns the executable currently installed in the session.
     public var ownerPath: String?
+    public var reachesTools: CustomToolReachesTools?
 
     public init(name: String, description: String, sourceInfo: SourceInfo? = nil,
                 parameters: [String: AnyCodable]? = nil, promptGuidelines: [String]? = nil,
                 exposure: ToolExposure = .direct, namespace: ToolNamespace? = nil,
-                annotations: ToolAnnotations? = nil, ownerPath: String? = nil) {
+                annotations: ToolAnnotations? = nil, ownerPath: String? = nil,
+                reachesTools: CustomToolReachesTools? = nil) {
         self.name = name
         self.description = description
         self.parameters = parameters
@@ -306,6 +308,7 @@ public struct ToolInfo: Sendable {
         self.annotations = annotations
         self.ownerPath = ownerPath
         self.sourceInfo = sourceInfo
+        self.reachesTools = reachesTools
     }
 }
 
@@ -1200,13 +1203,28 @@ public struct ResourcesDiscoverResult: Sendable {
 }
 
 public struct BeforeAgentStartEvent: HookEvent, Sendable {
-    public let type: String = "before_agent_start"
-    public var prompt: String
-    public var images: [ImageContent]?
+    public enum Payload: Sendable {
+        case user(prompt: String, images: [ImageContent]?)
+        case custom(message: HookMessage)
+    }
 
+    public let type: String = "before_agent_start"
+    public var payload: Payload
+
+    public var messageType: String {
+        switch payload {
+        case .user: "user"
+        case .custom: "custom"
+        }
+    }
+
+    public init(payload: Payload) {
+        self.payload = payload
+    }
+
+    @available(*, deprecated, message: "Use init(payload:) and switch on payload in handlers")
     public init(prompt: String, images: [ImageContent]?) {
-        self.prompt = prompt
-        self.images = images
+        self.payload = .user(prompt: prompt, images: images)
     }
 }
 

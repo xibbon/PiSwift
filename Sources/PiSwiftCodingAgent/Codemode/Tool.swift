@@ -146,6 +146,15 @@ public func prepareCodemodeLoadout(_ loadout: ToolLoadout,
     return ToolLoadoutChanges(descriptions: descriptions, hiddenDeclarations: hidden)
 }
 
+private func codemodeScriptReach(_ input: [String: AnyCodable]) -> ToolReach {
+    guard let code = input["code"]?.value as? String else { return .words([]) }
+    // JavaScript's \w and \b use ASCII word characters here.
+    let wordCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+    let words = code.components(separatedBy: wordCharacters.inverted).filter { !$0.isEmpty }
+    let discovery = Set(["searchTools", "describeNamespace", "describeTool", "ALL_TOOLS"])
+    return words.contains(where: discovery.contains) ? .all : .words(words)
+}
+
 public func createCodemodeToolDefinition(options: CodemodeToolOptions = .init()) -> CustomTool {
     CustomTool(
         name: CODEMODE_TOOL_NAME,
@@ -168,7 +177,8 @@ public func createCodemodeToolDefinition(options: CodemodeToolOptions = .init())
         constrainedSampling: codemodeConstrainedSampling,
         exposure: .modelOnly,
         defaultActive: false,
-        prepareLoadout: { loadout in prepareCodemodeLoadout(loadout, options: options) })
+        prepareLoadout: { loadout in prepareCodemodeLoadout(loadout, options: options) },
+        reachesTools: { codemodeScriptReach($0) })
 }
 
 /// A standalone AgentTool can run scripts without a session. Its nested tool catalog is descriptive;

@@ -53,7 +53,7 @@ private enum BridgeEmission: String, CaseIterable, Sendable {
         case .tool: _ = await runner.emitToolCall(ToolCallEvent(toolName: "read", toolCallId: "1", input: [:]))
         case .bash: _ = try? await runner.emitUserBash(UserBashEvent(command: "pwd", excludeFromContext: false, cwd: "/tmp"))
         case .context: _ = await runner.emitContext([])
-        case .beforeStart: _ = await runner.emitBeforeAgentStart("test", nil)
+        case .beforeStart: _ = await runner.emitBeforeAgentStart(.user(prompt: "test", images: nil))
         }
     }
 }

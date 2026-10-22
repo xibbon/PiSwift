@@ -343,7 +343,8 @@ public func registerPlanModeHook(_ pi: HookAPI) {
         return ContextEventResult(messages: filtered)
     }
 
-    pi.on("before_agent_start") { (_event: BeforeAgentStartEvent, _ctx) in
+    pi.on("before_agent_start") { (event: BeforeAgentStartEvent, _ctx) in
+        guard case .user = event.payload else { return nil }
         let snapshot = await state.snapshot()
         if !snapshot.planModeEnabled && !snapshot.executionMode {
             return nil

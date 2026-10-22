@@ -1151,12 +1151,17 @@ public final class HookRunner: Sendable {
             : BoundaryDispatchResult(entries: [], shouldContinue: false, context: preview, valid: false)
     }
 
+    @available(*, deprecated, message: "Use emitBeforeAgentStart(_:) with a user or custom payload")
     public func emitBeforeAgentStart(_ prompt: String, _ images: [ImageContent]?) async -> BeforeAgentStartCombinedResult? {
+        await emitBeforeAgentStart(.user(prompt: prompt, images: images))
+    }
+
+    public func emitBeforeAgentStart(_ payload: BeforeAgentStartEvent.Payload) async -> BeforeAgentStartCombinedResult? {
         var messages: [HookMessageInput] = []
         var systemPromptAppends: [String] = []
         var forcedSystemPrompt: String?
         var sections: [String: String?] = [:]
-        await dispatchEvent(BeforeAgentStartEvent(prompt: prompt, images: images), consume: { result, _ in
+        await dispatchEvent(BeforeAgentStartEvent(payload: payload), consume: { result, _ in
             if let result = result as? BeforeAgentStartEventResult {
                 if let message = result.message { messages.append(message) }
                 if let append = result.systemPromptAppend, !append.isEmpty { systemPromptAppends.append(append) }

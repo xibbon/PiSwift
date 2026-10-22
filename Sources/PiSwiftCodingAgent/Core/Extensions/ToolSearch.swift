@@ -133,17 +133,18 @@ private func appendSchemaText(_ schema: Any?, to parts: inout [String]) {
     }
 }
 
-/// Match a namespace by its name, script identifier, or suffix after the last `__`.
+/// Match a namespace by its name or script identifier.
 /// Codemode discovery uses this rule for namespace filters and lookups.
 public func matchesToolNamespace(name: String, namespace: String) -> Bool {
-    let identifier = toCodemodeIdentifier(namespace)
+    matchesToolNamespace(name: name, namespace: ToolNamespace(name: namespace))
+}
+
+/// Match the namespace name and its explicit aliases, including their script identifiers.
+public func matchesToolNamespace(name: String, namespace: ToolNamespace) -> Bool {
     let queryIdentifier = toCodemodeIdentifier(name)
-    func suffix(_ value: String) -> String? {
-        guard let range = value.range(of: "__", options: .backwards) else { return nil }
-        return String(value[range.upperBound...])
+    return ([namespace.name] + (namespace.aliases ?? [])).contains { candidate in
+        candidate == name || toCodemodeIdentifier(candidate) == queryIdentifier
     }
-    return namespace == name || identifier == queryIdentifier ||
-        suffix(namespace) == name || suffix(identifier) == queryIdentifier
 }
 
 public func createToolSearchDocument(_ tool: ToolInfo, namespace: ToolNamespace? = nil) -> ToolSearchDocument {
@@ -261,7 +262,7 @@ public func createToolSearchToolDefinition(options: ToolSearchToolOptions = Tool
         },
         promptGuidelines: nil,
         promptSnippet: "Search for tools that are not loaded yet and load the matches",
-        exposure: .modelOnly, defaultActive: false)
+        exposure: .modelOnly, defaultActive: false, reachesTools: { _ in .all })
 }
 
 /// SDK users can pass this factory to `inlineExtensions`.

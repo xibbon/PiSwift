@@ -104,7 +104,7 @@ private func c3PendingResponse(_ model: Model, tool: String? = nil) -> Assistant
 
 private func c3PendingSession(_ pool: C3PendingMcpPool, manager: SessionManager? = nil,
                               extensions: [InlineExtension] = [], configuredServer: Bool = true,
-                              toolNames: [String]? = nil) async throws -> AgentSession {
+                              toolNames: [String]? = nil, noTools: NoToolsMode? = .builtin) async throws -> AgentSession {
     let entry = McpServerEntry(name: "docs", config: McpServerConfig(url: "http://127.0.0.1/mcp",
         exposure: .deferred, timeout: 3), source: "test", scope: .extension)
     let mcp = createMcpExtension(options: McpExtensionOptions(agentDir: pool.directory,
@@ -121,7 +121,7 @@ private func c3PendingSession(_ pool: C3PendingMcpPool, manager: SessionManager?
     // C1 U3: SDK tool-list validation now throws.
     let created = try await createAgentSession(CreateAgentSessionOptions(cwd: pool.directory.path,
         agentDir: pool.directory.path, authStorage: auth, model: model, offline: true,
-        toolNames: toolNames, noTools: .builtin,
+        toolNames: toolNames, noTools: noTools,
         customTools: tools, resourceLoader: TestResourceLoader(),
         inlineExtensions: extensions + [createToolSearchExtension(), mcp],
         sessionManager: manager ?? .inMemory(pool.directory.path), settingsManager: .inMemory()))
@@ -173,8 +173,8 @@ struct C3McpPendingTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func explicitInitialToolNamesPermitDiscoveryAndRestoreLoadedTool() async throws {
-        // The non-empty allowlist keeps unnamed MCP tools. tool_search can activate deferred MCP tools.
+    func explicitInitialToolNamesPermitDiscoveryAndWinOverRecordedTool() async throws {
+        // tool_search can activate unnamed deferred MCP tools, but an explicit list wins on resume.
         let firstPool = try C3PendingMcpPool()
         let first = try await c3PendingSession(firstPool, toolNames: [TOOL_SEARCH_TOOL_NAME])
         defer { first.dispose() }
@@ -185,9 +185,10 @@ struct C3McpPendingTests {
             toolNames: [TOOL_SEARCH_TOOL_NAME])
         defer { second.dispose() }
         secondPool.gate.withLock { $0 = true }
-        #expect(try await c3PendingEventually { second.getActiveToolNames().contains("mcp__docs__search") })
+        #expect(try await c3PendingEventually { second.getAllTools().contains { $0.name == "mcp__docs__search" } })
+        #expect(second.getActiveToolNames() == [TOOL_SEARCH_TOOL_NAME])
         try await second.prompt("use the restored explicit loadout")
-        #expect(c3PendingRemovals(second).isEmpty)
+        #expect(c3PendingRemovals(second).contains("mcp__docs__search"))
         _ = await second.hookRunner?.emit(SessionShutdownEvent(reason: .quit))
         _ = await first.hookRunner?.emit(SessionShutdownEvent(reason: .quit))
         await secondPool.close(); await firstPool.close()
@@ -200,7 +201,7 @@ struct C3McpPendingTests {
         defer { first.dispose() }
         try await c3PendingLoadDocs(first)
         let secondPool = try C3PendingMcpPool(ready: false)
-        let second = try await c3PendingSession(secondPool, manager: first.sessionManager)
+        let second = try await c3PendingSession(secondPool, manager: first.sessionManager, noTools: nil)
         defer { second.dispose() }
         #expect(!second.getAllTools().contains { $0.name == "mcp__docs__search" })
         secondPool.gate.withLock { $0 = true }
@@ -235,7 +236,7 @@ struct C3McpPendingTests {
             }
         }
         let secondPool = try C3PendingMcpPool(ready: false)
-        let second = try await c3PendingSession(secondPool, manager: first.sessionManager, extensions: [change])
+        let second = try await c3PendingSession(secondPool, manager: first.sessionManager, extensions: [change], noTools: nil)
         defer { second.dispose() }
         secondPool.gate.withLock { $0 = true }
         #expect(try await c3PendingEventually { second.getAllTools().contains { $0.name == "mcp__docs__search" } })

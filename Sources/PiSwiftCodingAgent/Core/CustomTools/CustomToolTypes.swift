@@ -26,13 +26,17 @@ public enum ToolNameCollisionPolicy: String, Sendable, Codable {
 
 public struct ToolNamespace: Sendable, Codable {
     public var name: String
+    /// Other names that tools can use to find this namespace.
+    public var aliases: [String]?
     public var description: String?
     public var version: String?
     /// Usage instructions returned when a tool describes this namespace.
     public var instructions: String?
 
-    public init(name: String, description: String? = nil, instructions: String? = nil, version: String? = nil) {
+    public init(name: String, description: String? = nil, instructions: String? = nil, version: String? = nil,
+                aliases: [String]? = nil) {
         self.name = name
+        self.aliases = aliases
         self.description = description
         self.instructions = instructions
         self.version = version
@@ -220,6 +224,14 @@ public typealias CustomToolExecute = @Sendable (
     _ signal: CancellationToken?
 ) async throws -> CustomToolResult
 
+/// The tools or namespaces that a call can reach. Words can match more than one name.
+public enum ToolReach: Sendable, Equatable {
+    case all
+    case words([String])
+}
+
+public typealias CustomToolReachesTools = @Sendable (_ input: [String: AnyCodable]) -> ToolReach
+
 public typealias CustomToolSessionHandler = @Sendable (_ event: CustomToolSessionEvent, _ context: CustomToolContext) async throws -> Void
 public typealias CustomToolRenderCall = @Sendable (_ args: [String: AnyCodable], _ theme: Theme) throws -> HookComponent?
 public typealias CustomToolRenderResult = @Sendable (_ result: CustomToolResult, _ options: RenderResultOptions, _ theme: Theme) throws -> HookComponent?
@@ -277,6 +289,8 @@ public struct CustomTool: Sendable {
     public var defaultActive: Bool?
     public var prepareLoadout: (@Sendable (ToolLoadout) throws -> ToolLoadoutChanges?)?
     public var executionMode: ToolExecutionMode?
+    /// Declares which other tools a call can reach before it executes.
+    public var reachesTools: CustomToolReachesTools?
 
     public init(
         name: String,
@@ -297,7 +311,8 @@ public struct CustomTool: Sendable {
         annotations: ToolAnnotations? = nil,
         defaultActive: Bool? = nil,
         prepareLoadout: (@Sendable (ToolLoadout) throws -> ToolLoadoutChanges?)? = nil,
-        executionMode: ToolExecutionMode? = nil
+        executionMode: ToolExecutionMode? = nil,
+        reachesTools: CustomToolReachesTools? = nil
     ) {
         self.name = name
         self.label = label
@@ -318,6 +333,7 @@ public struct CustomTool: Sendable {
         self.defaultActive = defaultActive
         self.prepareLoadout = prepareLoadout
         self.executionMode = executionMode
+        self.reachesTools = reachesTools
     }
 }
 

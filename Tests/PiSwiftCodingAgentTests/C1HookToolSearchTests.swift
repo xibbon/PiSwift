@@ -129,14 +129,18 @@ import PiSwiftAgent
 
 @Test func c1NamespaceNamesAcceptOriginalIdentifierAndSuffixForms() {
     for namespace in ["mcp__dev-radius", "mcp__dev_radius"] {
-        for query in ["mcp__dev-radius", "mcp__dev_radius", "dev-radius", "dev_radius"] {
+        for query in ["mcp__dev-radius", "mcp__dev_radius"] {
             #expect(matchesToolNamespace(name: query, namespace: namespace))
+        }
+        for query in ["dev-radius", "dev_radius"] {
+            #expect(matchesToolNamespace(name: query, namespace: ToolNamespace(name: namespace, aliases: ["dev-radius"])))
+            #expect(!matchesToolNamespace(name: query, namespace: namespace))
         }
         #expect(!matchesToolNamespace(name: "radius", namespace: namespace))
         #expect(!matchesToolNamespace(name: "mcp__other", namespace: namespace))
     }
     #expect(matchesToolNamespace(name: "plain", namespace: "plain"))
-    #expect(matchesToolNamespace(name: "last", namespace: "outer__inner__last"))
+    #expect(!matchesToolNamespace(name: "last", namespace: "outer__inner__last"))
     #expect(!matchesToolNamespace(name: "inner__last", namespace: "outer__inner__last"))
 }
 

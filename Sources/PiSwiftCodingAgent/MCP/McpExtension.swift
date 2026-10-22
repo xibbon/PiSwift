@@ -355,7 +355,8 @@ public actor McpBuiltinRuntime {
               servers[name]?.entry.config.isEnabled == true else { return }
         let description = server.entry.config.description?.trimmingCharacters(in: .whitespacesAndNewlines)
         let namespace = ToolNamespace(name: mcpNamespace(name),
-            description: description?.isEmpty == false ? description : nil, instructions: instructions)
+            description: description?.isEmpty == false ? description : nil, instructions: instructions,
+            aliases: [name])
         let plain = Set(tools.map(\.name)).map { createMcpToolName(server: name, tool: $0) }
         let collisions = Dictionary(grouping: plain, by: { $0 }).filter { $0.value.count > 1 }
         let previous = serverTools[name] ?? []
@@ -1090,6 +1091,7 @@ public func createMcpExtension(options: McpExtensionOptions = .init()) -> Inline
             return nil
         }
         api.on("before_agent_start") { (_: BeforeAgentStartEvent, context) in
+            // Both user and custom runs need the current MCP server section.
             await runtime.waitForFirstPrompt(context: context)
             return BeforeAgentStartEventResult(sections: [MCP_SERVERS_SECTION: await runtime.serversSection()])
         }

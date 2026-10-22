@@ -67,9 +67,10 @@ public struct AgentSessionConfig: Sendable {
     public var cacheWarmer: CacheWarmer?
     public var skillsSettings: SkillsSettings?
     public var eventBus: EventBus?
-    /// Activate new defaultTools names on reload when the initial selection uses settings.
+    /// Restore recorded tools on resume and activate new defaultTools names on reload
+    /// when the initial selection uses settings.
     public var usesDefaultTools: Bool
-    /// Exact-name modifiers applied to defaults at startup and reload.
+    /// Exact-name modifiers applied to defaults at startup and reload, and to recorded tools on resume.
     public var defaultToolModifiers: [String]
     /// Tool names or patterns to remove. `*` matches any characters.
     public var excludedToolNames: Set<String>
@@ -474,6 +475,8 @@ public final class AgentSession: Sendable {
         var lastToolResultEntryIds: [String: String] = [:]
         var lastAssistantToolResults: [ToolResultMessage] = []
         var lastActivityOutcome: AgentActivityOutcome = .completed
+        var isRunActive = false
+        var isRunPreparing = false
         var agentRunAbortRequested = false
         var isBeforeSettle = false
         var abortDuringBeforeSettle = false
@@ -520,56 +523,71 @@ public final class AgentSession: Sendable {
         var wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])?
     }
 
-    /// Actor-isolated waiter state keeps the public idle API race-free without
-    /// polling or unchecked Sendable storage.
-    private actor AgentSessionIdleWaiter {
-        private var isRunActive = false
-        private var abortRequested = false
-        private var generation = 0
-        private var settlingGeneration: Int?
-        private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// Synchronous registration lets a run reserve its waiters before any suspension.
+    private final class AgentSessionIdleWaiter: Sendable {
+        private struct State: Sendable {
+            var isRunActive = false
+            var abortRequested = false
+            var generation = 0
+            var settlingGeneration: Int?
+            var waiters: [CheckedContinuation<Void, Never>] = []
+        }
+        private let state = LockedState(State())
 
-        func beginRun() {
-            generation += 1
-            settlingGeneration = nil
-            isRunActive = true
-            abortRequested = false
+        func beginRun(joinCurrent: Bool = false) {
+            state.withLock {
+                // Compaction and retries can join the current run.
+                guard !joinCurrent || !$0.isRunActive else { return }
+                $0.generation += 1
+                $0.settlingGeneration = nil
+                $0.isRunActive = true
+                $0.abortRequested = false
+            }
         }
 
         func requestAbort() {
-            if isRunActive { abortRequested = true }
+            state.withLock { if $0.isRunActive { $0.abortRequested = true } }
         }
 
         func wasAborted(_ expectedGeneration: Int) -> Bool {
-            generation == expectedGeneration && abortRequested
+            state.withLock { $0.generation == expectedGeneration && $0.abortRequested }
         }
 
         func waitForIdle() async {
-            guard isRunActive else { return }
             await withCheckedContinuation { continuation in
-                waiters.append(continuation)
+                let waiting = state.withLock {
+                    guard $0.isRunActive else { return false }
+                    $0.waiters.append(continuation)
+                    return true
+                }
+                if !waiting { continuation.resume() }
             }
         }
 
         func settleRun() -> Int? {
-            guard isRunActive, settlingGeneration != generation else { return nil }
-            settlingGeneration = generation
-            return generation
+            state.withLock {
+                guard $0.isRunActive, $0.settlingGeneration != $0.generation else { return nil }
+                $0.settlingGeneration = $0.generation
+                return $0.generation
+            }
         }
 
         func isCurrentRun(_ expectedGeneration: Int) -> Bool {
-            isRunActive && generation == expectedGeneration
+            state.withLock { $0.isRunActive && $0.generation == expectedGeneration }
         }
 
         func cancelSettlement(_ expectedGeneration: Int) {
-            if settlingGeneration == expectedGeneration { settlingGeneration = nil }
+            state.withLock { if $0.settlingGeneration == expectedGeneration { $0.settlingGeneration = nil } }
         }
 
         func resolveWaiters(_ expectedGeneration: Int) {
-            guard generation == expectedGeneration else { return }
-            isRunActive = false
-            let pending = waiters
-            waiters.removeAll()
+            let pending = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+                guard state.generation == expectedGeneration else { return [] }
+                state.isRunActive = false
+                let pending = state.waiters
+                state.waiters.removeAll()
+                return pending
+            }
             for waiter in pending { waiter.resume() }
         }
     }
@@ -959,6 +977,7 @@ public final class AgentSession: Sendable {
         }
         self.agent.prepareRequest = { [weak self] request, signal in
             guard let self else { return nil }
+            if signal?.isCancelled == true { throw CancellationError() }
             let failed = self.failedResponse
             self.failedResponse = nil
             func prepare() async throws -> (AgentRequestUpdate?, AgentContext, SessionProjection) {
@@ -1191,8 +1210,10 @@ public final class AgentSession: Sendable {
             }
         }
         refreshContext()
-        if let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
-            let names = (current.toolsAdded ?? []).map(\.name)
+        if config.usesDefaultTools,
+           let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
+            let names = applyToolModifiers(
+                base: (current.toolsAdded ?? []).map(\.name), entries: config.defaultToolModifiers)
             restoreActiveTools(names)
             let activeNames = getActiveToolNames()
             state.withLock { $0.systemPromptOptions.selectedToolNames = activeNames }
@@ -1433,27 +1454,49 @@ public final class AgentSession: Sendable {
     private func emitAgentSettledIfNeeded() async {
         // `agent_end` may schedule an automatic retry, compaction, or queued
         // continuation. Keep the run active until that follow-up chain finishes.
-        guard pendingPostRunTasks == 0, !isStreaming, !isCompactingInternal, !isBranchSummarizing else { return }
-        guard let generation = await idleWaiter.settleRun() else { return }
+        guard canSettleRun else { return }
+        guard let generation = idleWaiter.settleRun() else { return }
 
         // Agent lifecycle hooks are queued from the Agent callback. Waiting for this
         // queue keeps the observable order `agent_end` then `agent_settled`.
         let previous = _agentEventQueue.withLock { $0 }
         _ = await previous?.value
-        guard pendingPostRunTasks == 0, !isStreaming, !isCompactingInternal, !isBranchSummarizing,
-              await idleWaiter.isCurrentRun(generation) else {
-            await idleWaiter.cancelSettlement(generation)
+        guard canSettleRun,
+              idleWaiter.isCurrentRun(generation) else {
+            idleWaiter.cancelSettlement(generation)
             return
         }
         if await runBeforeSettleBoundary() {
-            await idleWaiter.cancelSettlement(generation)
-            try? await agent.continue()
-            Task { [weak self] in await self?.emitAgentSettledIfNeeded() }
+            let continuing = state.withLock { current in
+                guard !current.agentRunAbortRequested else { return false }
+                current.isRunPreparing = true
+                return true
+            }
+            if continuing {
+                idleWaiter.cancelSettlement(generation)
+                do {
+                    try await agent.continue()
+                } catch {
+                    state.withLock { $0.isRunPreparing = false }
+                }
+                Task { [weak self] in await self?.emitAgentSettledIfNeeded() }
+                return
+            }
+        }
+        let settling = state.withLock { current in
+            guard !current.isRunPreparing, current.pendingPostRunTasks == 0,
+                  !agent.state.isStreaming, !current.isCompactingInternal,
+                  !current.isBranchSummarizing, idleWaiter.isCurrentRun(generation) else { return false }
+            current.isRunActive = false
+            current.isEmittingAgentSettled = true
+            return true
+        }
+        guard settling else {
+            idleWaiter.cancelSettlement(generation)
             return
         }
-        state.withLock { $0.isEmittingAgentSettled = true }
         await cacheWarmer?.onAgentSettled()
-        let aborted = await idleWaiter.wasAborted(generation)
+        let aborted = idleWaiter.wasAborted(generation)
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(AgentSettledEvent(aborted: aborted))
         }
@@ -1464,7 +1507,7 @@ public final class AgentSession: Sendable {
             state.deferredSettledActions.removeAll()
             return actions
         }
-        await idleWaiter.resolveWaiters(generation)
+        idleWaiter.resolveWaiters(generation)
         for action in deferred { await action() }
     }
 
@@ -1482,17 +1525,52 @@ public final class AgentSession: Sendable {
         emit(.entryAppended(.usage(entry)))
     }
 
+    private var canSettleRun: Bool {
+        state.withLock { current in
+            !current.isRunPreparing && current.pendingPostRunTasks == 0 &&
+                !agent.state.isStreaming && !current.isCompactingInternal && !current.isBranchSummarizing
+        }
+    }
+
+    /// Reserve the session and its idle waiters in one synchronous operation.
+    private func reserveRun() -> Bool {
+        state.withLock { current in
+            guard !current.isRunActive, current.pendingPostRunTasks == 0,
+                  !agent.state.isStreaming, !current.isCompactingInternal,
+                  !current.isBranchSummarizing, !current.isEmittingAgentSettled else { return false }
+            current.isRunActive = true
+            current.isRunPreparing = true
+            current.agentRunAbortRequested = false
+            idleWaiter.beginRun()
+            return true
+        }
+    }
+
+    private func cancelRunPreparation() {
+        flushPendingBashMessages()
+        flushPendingCustomMessages()
+        state.withLock { current in
+            if let generation = idleWaiter.settleRun() { idleWaiter.resolveWaiters(generation) }
+            current.isRunActive = false
+            current.isRunPreparing = false
+        }
+    }
+
     private func runUntilSettled<T: Sendable>(
         _ operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        state.withLock { $0.agentRunAbortRequested = false }
-        await idleWaiter.beginRun()
+        guard reserveRun() else { throw AgentSessionError.alreadyProcessingContinue }
         defer {
             Task { [weak self] in
                 await self?.emitAgentSettledIfNeeded()
             }
         }
-        return try await operation()
+        do {
+            return try await operation()
+        } catch {
+            state.withLock { $0.isRunActive = false; $0.isRunPreparing = false }
+            throw error
+        }
     }
 
     private func beginPostRunTask() {
@@ -1507,7 +1585,11 @@ public final class AgentSession: Sendable {
     }
 
     private func handleAgentEvent(_ event: AgentEvent) {
-        if case .agentStart = event { turnIndex = 0 }
+        if case .agentStart = event {
+            turnIndex = 0
+            state.withLock { $0.isRunPreparing = false }
+            if state.withLock({ $0.agentRunAbortRequested }) { agent.abort() }
+        }
         if case .turnEnd(_, let toolResults) = event {
             state.withLock { $0.lastAssistantToolResults = toolResults }
             turnIndex += 1
@@ -1735,7 +1817,7 @@ public final class AgentSession: Sendable {
     /// compaction.  Uses `lastSuccessfulUsage` for threshold checks after
     /// error responses (4D-4) and sets `overflowRecoveryAttempted` so stale
     /// pre-compaction usage doesn't retrigger (4D-3).
-    private func checkAutoCompaction(_ message: AssistantMessage) async {
+    private func checkAutoCompaction(_ message: AssistantMessage, allowRetry: Bool = true) async {
         guard !state.withLock({ $0.agentRunAbortRequested }) else { return }
         guard autoCompactionEnabled, !isCompactingInternal else { return }
         switch message.stopReason {
@@ -1782,7 +1864,7 @@ public final class AgentSession: Sendable {
         // Explicit/silent overflow and a length stop below the intended output
         // limit both get one bounded compact-and-retry recovery attempt.
         if contextOverflow || recoverableLength {
-            let willRetry = message.stopReason != .stop
+            let willRetry = allowRetry && message.stopReason != .stop
             if willRetry {
                 guard !overflowRecoveryAttempted else {
                     await emitCompactionFailure(reason: .overflow, error: contextOverflow ? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model." : "Truncated response recovery failed after one compact-and-retry attempt.", aborted: false, willRetry: false)
@@ -1867,7 +1949,7 @@ public final class AgentSession: Sendable {
     ) async {
         guard !state.withLock({ $0.agentRunAbortRequested }) else { return }
         guard let compactionToken = beginCompaction() else { return }
-        await idleWaiter.beginRun()
+        idleWaiter.beginRun(joinCurrent: true)
         defer { Task { [weak self] in await self?.emitAgentSettledIfNeeded() } }
 
         emit(.autoCompactionStart(reason: reason))
@@ -1913,7 +1995,8 @@ public final class AgentSession: Sendable {
             return
         }
 
-        if !isStreaming, queuedPrompts.isEmpty, pendingMessageCount == 0, agent.hasQueuedMessages() {
+        if !agent.state.isStreaming, !state.withLock({ $0.isRunActive }),
+           queuedPrompts.isEmpty, pendingMessageCount == 0, agent.hasQueuedMessages() {
             try? await agent.continue()
         }
     }
@@ -1957,8 +2040,10 @@ public final class AgentSession: Sendable {
     }
 
     public var isStreaming: Bool {
-        agent.state.isStreaming
+        state.withLock { $0.isRunActive || $0.pendingPostRunTasks > 0 } || agent.state.isStreaming
     }
+
+    var isRunAbortRequested: Bool { state.withLock { $0.agentRunAbortRequested } }
 
     /// Wait until the active agent run has completed its lifecycle hooks.
     /// Returns immediately when the session is already settled.
@@ -2163,7 +2248,7 @@ public final class AgentSession: Sendable {
                             promptGuidelines: definition?.promptGuidelines ?? builtInToolPrompt[tool.name]?.guidelines,
                             exposure: definition?.exposure ?? .direct,
                             namespace: definition?.namespace, annotations: definition?.annotations,
-                            ownerPath: ownerPath)
+                            ownerPath: ownerPath, reachesTools: definition?.reachesTools)
         }
     }
 
@@ -2531,41 +2616,32 @@ public final class AgentSession: Sendable {
         refreshPromptResources()
     }
 
-    private func preparePromptMessages(_ text: String, options: PromptOptions? = nil) async throws -> [AgentMessage] {
-        if isStreaming || isBranchSummarizing {
-            throw AgentSessionError.alreadyProcessingQueue
-        }
-        flushPendingCustomMessages()
-
-        if agent.state.model.id.isEmpty {
-            throw AgentSessionError.noModelSelected(authPath: getAuthPath())
-        }
-
-        if !(await hasAuthForModel(agent.state.model)) {
-            throw AgentSessionError.missingApiKeyForProvider(
-                provider: agent.state.model.provider,
-                authPath: getAuthPath()
-            )
+    private func prepareRun(_ payload: BeforeAgentStartEvent.Payload) async throws -> [AgentMessage] {
+        if case .user = payload {
+            if agent.state.model.id.isEmpty {
+                throw AgentSessionError.noModelSelected(authPath: getAuthPath())
+            }
+            if !(await hasAuthForModel(agent.state.model)) {
+                throw AgentSessionError.missingApiKeyForProvider(
+                    provider: agent.state.model.provider,
+                    authPath: getAuthPath()
+                )
+            }
         }
 
-        let expandedText = expandPromptText(
-            text,
-            expandSlashCommands: options?.expandSlashCommands ?? options?.expandPromptTemplates ?? true,
-            expandPromptTemplates: options?.expandPromptTemplates ?? true
-        )
+        if let last = sessionManager.buildSessionProjection().messages.reversed().compactMap({ message -> AssistantMessage? in
+            if case .assistant(let assistant) = message { return assistant }
+            return nil
+        }).first {
+            await checkAutoCompaction(last, allowRetry: false)
+        }
         var messages: [AgentMessage] = []
+        var handlerMessages: [AgentMessage] = []
         forcedRequestPrompt = state.withLock { $0.systemPromptOptions.forceSystemPrompt }
         state.withLock { $0.runSystemPromptAppend = nil }
-        if !pendingNextTurnMessages.isEmpty {
-            for message in pendingNextTurnMessages {
-                messages.append(makeHookAgentMessage(message))
-            }
-            pendingNextTurnMessages.removeAll()
-        }
-        messages.append(buildUserMessage(text: expandedText, images: options?.images))
         var systemPromptAppend: String?
         if let hookRunner = _hookRunner, hookRunner.hasHandlers("before_agent_start") {
-            if let result = await hookRunner.emitBeforeAgentStart(expandedText, options?.images) {
+            if let result = await hookRunner.emitBeforeAgentStart(payload) {
                 if let hookMessages = result.messages {
                     for message in hookMessages {
                         let hookMessage = HookMessage(
@@ -2575,7 +2651,7 @@ public final class AgentSession: Sendable {
                             details: message.details,
                             timestamp: Int64(Date().timeIntervalSince1970 * 1000)
                         )
-                        messages.append(makeHookAgentMessage(hookMessage))
+                        handlerMessages.append(makeHookAgentMessage(hookMessage))
                     }
                 }
                 systemPromptAppend = result.systemPromptAppend
@@ -2596,9 +2672,12 @@ public final class AgentSession: Sendable {
             state.withLock { $0.runSystemPromptAppend = systemPromptAppend }
         }
         // The hook may select a different model. Apply its image profile only now.
-        if let index = messages.firstIndex(where: { $0.role == "user" }) {
+        switch payload {
+        case .custom(let message):
+            messages.append(makeHookAgentMessage(message))
+        case .user(let expandedText, let originalImages):
             var omitted = 0
-            let images = settingsManager.getAutoResizeImages() ? options?.images?.compactMap { image -> ImageContent? in
+            let images = settingsManager.getAutoResizeImages() ? originalImages?.compactMap { image -> ImageContent? in
                 let limits = ImageResizeOptions(modelProfile: limitsModel.inputLimits?.images?.resize)
                 let resized = resizeImage(image, options: limits)
                 guard imageFitsResizeLimits(resized, options: limits) else {
@@ -2606,12 +2685,56 @@ public final class AgentSession: Sendable {
                     return nil
                 }
                 return ImageContent(data: resized.data, mimeType: resized.mimeType)
-            } : options?.images
+            } : originalImages
             let text = omitted == 0 ? expandedText : expandedText + "\n[\(omitted) image(s) omitted: could not be resized below the inline image size limit.]"
-            messages[index] = buildUserMessage(text: text, images: images)
+            messages.append(buildUserMessage(text: text, images: images))
         }
+        let nextTurnMessages = state.withLock { current in
+            let pending = current.pendingNextTurnMessages
+            current.pendingNextTurnMessages.removeAll()
+            return pending
+        }
+        messages.append(contentsOf: nextTurnMessages.map(makeHookAgentMessage))
+        messages.append(contentsOf: handlerMessages)
         if let update = try preparePromptPatch() { messages.insert(.system(update), at: 0) }
         return messages
+    }
+
+    /// Both run kinds enter here with the session already reserved.
+    private func startReservedRun(
+        _ payload: BeforeAgentStartEvent.Payload,
+        onStarted: (@Sendable () -> Void)? = nil
+    ) async throws -> Task<Void, Error> {
+        let messages: [AgentMessage]
+        do {
+            messages = try await prepareRun(payload)
+        } catch {
+            cancelRunPreparation()
+            throw error
+        }
+        flushPendingBashMessages()
+        flushPendingCustomMessages()
+        failedResponse = nil
+        recordSelection()
+        state.withLock { $0.pendingToolNames.removeAll() }
+        onStarted?()
+        let task = Task { [self] in
+            do {
+                try await agent.prompt(messages)
+            } catch {
+                flushPendingCustomMessages()
+                state.withLock { $0.isRunActive = false; $0.isRunPreparing = false }
+                await emitAgentSettledIfNeeded()
+                throw error
+            }
+            let events = _agentEventQueue.withLock { $0 }
+            await events?.value
+            flushPendingCustomMessages()
+            await emitAgentSettledIfNeeded()
+            await waitForIdle()
+        }
+        await Task.yield()
+        return task
     }
 
     /// Submit a prompt after running all synchronous preflight work, then continue the model
@@ -2638,13 +2761,25 @@ public final class AgentSession: Sendable {
         // K20: extension commands run first; all other prompts reject during compaction.
         if isCompactingInternal { throw AgentSessionError.compactionInProgress }
 
+        var reserved = reserveRun()
         guard let input = await processInput(text, images: options?.images,
                                              source: options?.source ?? .interactive,
-                                             behavior: options?.streamingBehavior) else {
+                                             behavior: options?.streamingBehavior,
+                                             startingRun: reserved) else {
+            if reserved { cancelRunPreparation() }
             options?.preflightResult?(.handled)
             return Task {}
         }
-        if isStreaming {
+        if !reserved { reserved = reserveRun() }
+        if !reserved {
+            let deferred = state.withLock { current in
+                guard current.isEmittingAgentSettled else { return false }
+                current.deferredSettledActions.append { [weak self] in
+                    try? await self?.prompt(input.text, options: options)
+                }
+                return true
+            }
+            if deferred { return Task {} }
             guard let behavior = options?.streamingBehavior else { throw AgentSessionError.alreadyProcessingQueue }
             let expandedText = expandPromptText(input.text)
             let message = buildUserMessage(text: expandedText, images: input.images)
@@ -2659,33 +2794,14 @@ public final class AgentSession: Sendable {
             options?.preflightResult?(.queued)
             return Task {}
         }
-        var processedOptions = options ?? PromptOptions()
-        processedOptions.images = input.images
-        let messages = try await preparePromptMessages(input.text, options: processedOptions)
-        failedResponse = nil
-        recordSelection()
-        state.withLock { $0.pendingToolNames.removeAll() }
-        options?.preflightResult?(.started)
-        state.withLock { $0.agentRunAbortRequested = false }
-        await idleWaiter.beginRun()
-        let task = Task { [weak self, agent] in
-            defer {
-                Task { [weak self] in
-                    await self?.emitAgentSettledIfNeeded()
-                }
-            }
-            do {
-                try await agent.prompt(messages)
-            } catch {
-                self?.flushPendingCustomMessages()
-                throw error
-            }
-            let events = self?._agentEventQueue.withLock { $0 }
-            await events?.value
-            self?.flushPendingCustomMessages()
+        let expandedText = expandPromptText(
+            input.text,
+            expandSlashCommands: options?.expandSlashCommands ?? options?.expandPromptTemplates ?? true,
+            expandPromptTemplates: options?.expandPromptTemplates ?? true
+        )
+        return try await startReservedRun(.user(prompt: expandedText, images: input.images)) {
+            options?.preflightResult?(.started)
         }
-        await Task.yield()
-        return task
     }
 
     public func prompt(_ text: String, options: PromptOptions? = nil) async throws {
@@ -2720,10 +2836,11 @@ public final class AgentSession: Sendable {
     }
 
     private func processInput(_ text: String, images: [ImageContent]?, source: HookInputSource,
-                              behavior: HookInputStreamingBehavior? = nil) async -> (text: String, images: [ImageContent]?)? {
+                              behavior: HookInputStreamingBehavior? = nil,
+                              startingRun: Bool = false) async -> (text: String, images: [ImageContent]?)? {
         guard let runner = _hookRunner, runner.hasHandlers("input") else { return (text, images) }
         let result = await runner.emitInput(InputEvent(text: text, images: images, source: source,
-                                                       streamingBehavior: isStreaming ? behavior : nil))
+                                                       streamingBehavior: isStreaming && !startingRun ? behavior : nil))
         switch result {
         case .continue: return (text, images)
         case .transform(let transformed, let transformedImages): return (transformed, transformedImages ?? images)
@@ -2775,7 +2892,7 @@ public final class AgentSession: Sendable {
         try? await runHookPrompt(prompt)
     }
 
-    private func runHookPrompt(_ prompt: AgentMessage) async throws {
+    private func runHookPrompt(_ prompt: HookMessage) async throws {
         let deferred = state.withLock { state -> Bool in
             guard state.isEmittingAgentSettled else { return false }
             state.deferredSettledActions.append { [weak self] in
@@ -2784,16 +2901,23 @@ public final class AgentSession: Sendable {
             return true
         }
         if deferred { return }
-        failedResponse = nil
-        recordSelection()
-        state.withLock { $0.pendingToolNames.removeAll() }
-        try await runUntilSettled { [agent] in try await agent.prompt(prompt) }
-        let events = _agentEventQueue.withLock { $0 }
-        await events?.value
-        flushPendingCustomMessages()
+        guard reserveRun() else {
+            let deferred = state.withLock { current in
+                guard current.isEmittingAgentSettled else { return false }
+                current.deferredSettledActions.append { [weak self] in
+                    try? await self?.runHookPrompt(prompt)
+                }
+                return true
+            }
+            if deferred { return }
+            agent.steer(makeHookAgentMessage(prompt))
+            return
+        }
+        let task = try await startReservedRun(.custom(message: prompt))
+        try await task.value
     }
 
-    private func prepareHookMessage(_ message: HookMessageInput, options: HookSendMessageOptions?) -> AgentMessage? {
+    private func prepareHookMessage(_ message: HookMessageInput, options: HookSendMessageOptions?) -> HookMessage? {
         let hookMessage = HookMessage(customType: message.customType, content: message.content, display: message.display, details: message.details)
         let agentMessage = makeHookAgentMessage(hookMessage)
         if options?.deliverAs == .nextTurn {
@@ -2807,7 +2931,7 @@ public final class AgentSession: Sendable {
                 agent.steer(agentMessage)
             }
         } else if options?.triggerTurn == true {
-            return agentMessage
+            return hookMessage
         } else {
             appendCustomMessage(hookMessage)
         }
@@ -2841,6 +2965,9 @@ public final class AgentSession: Sendable {
             }
         }
         if isStreaming {
+            guard options?.deliverAs == .steer || options?.deliverAs == .followUp else {
+                throw AgentSessionError.alreadyProcessingQueue
+            }
             let text = expand ? expandPromptText(content) : content
             if options?.deliverAs == .followUp {
                 followUpMessages.append(text)
@@ -2864,8 +2991,8 @@ public final class AgentSession: Sendable {
     }
 
     public func abort() async {
-        await idleWaiter.requestAbort()
         state.withLock { $0.agentRunAbortRequested = true }
+        idleWaiter.requestAbort()
         abortRetry()
         finishCancelledRetry(attempt: retryAttempt)
         agent.abort()
@@ -3447,7 +3574,7 @@ public final class AgentSession: Sendable {
 
         branchSummaryAbort = CancellationToken()
         isBranchSummarizing = true
-        await idleWaiter.beginRun()
+        idleWaiter.beginRun()
         defer {
             isBranchSummarizing = false
             branchSummaryAbort = nil
@@ -3591,7 +3718,7 @@ public final class AgentSession: Sendable {
         guard let compactionToken = beginCompaction() else {
             throw AgentSessionError.compactionInProgress
         }
-        await idleWaiter.beginRun()
+        idleWaiter.beginRun()
         defer { Task { [weak self] in await self?.emitAgentSettledIfNeeded() } }
 
         do {

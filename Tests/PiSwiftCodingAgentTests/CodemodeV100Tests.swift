@@ -156,7 +156,7 @@ func codemodeV100NamespaceLookupAndSearch(name: String) async throws {
     context.setNestedToolHost(tools: [tool]) { name, args, _ in
         AgentToolCallOutcome(toolCall: AgentToolCall(id: "unused", name: name, arguments: args), result: AgentToolResult(content: []), isError: false)
     }
-    let options = CodemodeToolOptions(getToolNamespace: { _ in .init(name: "mcp__dev_radius", description: "Docs", instructions: "Search the guide") })
+    let options = CodemodeToolOptions(getToolNamespace: { _ in .init(name: "mcp__dev_radius", description: "Docs", instructions: "Search the guide", aliases: ["dev-radius"]) })
     let result = try await v100Run("const ns=await describeNamespace('\(name)'); const hits=await searchTools('docs',{namespace:'\(name)'}); return {ns,hits:hits.map(t=>t.name),missing:await describeNamespace('absent')}", context: context, options: options)
     #expect(result.isError != true)
     let object = try #require(JSONSerialization.jsonObject(with: Data(v100Text(result).utf8)) as? [String: Any])

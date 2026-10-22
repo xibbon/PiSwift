@@ -546,7 +546,7 @@ private func handleGlobal(_ call: CodemodeRuntimeCall, callable: [AgentTool],
             let filter = namespace as? String
             let documents = callable.compactMap { tool -> ToolSearchDocument? in
                 let toolNamespace = options.getToolNamespace?(tool.name)
-                if let filter, !filter.isEmpty, !(toolNamespace.map { matchesToolNamespace(name: filter, namespace: $0.name) } ?? false) { return nil }
+                if let filter, !filter.isEmpty, !(toolNamespace.map { matchesToolNamespace(name: filter, namespace: $0) } ?? false) { return nil }
                 let info = ToolInfo(name: tool.name, description: tool.description,
                                     parameters: tool.parameters, namespace: toolNamespace)
                 return createToolSearchDocument(info, namespace: toolNamespace)
@@ -575,7 +575,7 @@ private func handleGlobal(_ call: CodemodeRuntimeCall, callable: [AgentTool],
             var names: [String] = []
             for tool in callable {
                 guard let candidate = options.getToolNamespace?(tool.name),
-                      matchesToolNamespace(name: name, namespace: candidate.name) else { continue }
+                      matchesToolNamespace(name: name, namespace: candidate) else { continue }
                 if namespace == nil { namespace = candidate }
                 names.append(toCodemodeIdentifier(tool.name))
             }
