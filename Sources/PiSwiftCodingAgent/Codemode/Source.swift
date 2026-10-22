@@ -44,6 +44,11 @@ public struct CodemodeSourceError: Error, LocalizedError, Sendable, Equatable {
 
 private let supportedFieldsText = "`max_output_tokens` and `timeout_ms`"
 private let maxSafeInteger = 9_007_199_254_740_991.0
+// ECMAScript whitespace for trimStart(), including the byte order mark.
+private let directiveWhitespace = CharacterSet(charactersIn:
+    "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}" +
+    "\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}" +
+    "\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
 
 private func safeInteger(_ value: Any?) -> Int? {
     guard let number = value as? NSNumber,
@@ -57,6 +62,10 @@ private func safeInteger(_ value: Any?) -> Int? {
 public func parseCodemodeSource(_ input: String) throws -> ParsedCodemodeSource {
     guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
         throw CodemodeSourceError(#"Expected JavaScript source text (non-empty). Provide JS only, optionally with a first line `// @options: {"max_output_tokens": 1000}`."#)
+    }
+    for (index, line) in input.components(separatedBy: "\n").enumerated().dropFirst()
+        where line.trimmingCharacters(in: directiveWhitespace).hasPrefix(codemodeOptionsPrefix) {
+        throw CodemodeSourceError("The // @options: line must be the first line of the input; found one on line \(index + 1)")
     }
     let ns = input as NSString
     let newline = ns.range(of: "\n").location

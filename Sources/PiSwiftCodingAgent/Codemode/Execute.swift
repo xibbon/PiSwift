@@ -277,7 +277,7 @@ private actor CodemodeCallState {
         recordLateCall?(toolCallId, bounded)
     }
 
-    private func publish() {
+    func publish() {
         let rows = calls.map { row -> [String: Any] in
             var fields: [String: Any] = ["id": row.id, "name": row.name, "args": row.args,
                                          "status": row.status.rawValue]
@@ -726,6 +726,8 @@ public func executeCodemode(toolCallId: String, params: [String: AnyCodable],
     }
     let state = CodemodeCallState(toolCallId: toolCallId, onUpdate: onUpdate,
                                   recordLateCall: options.recordLateCall)
+    // Start progress before the sandbox can execute its first statement.
+    await state.publish()
     let limit = ClassifyLimit()
     let byName = Dictionary(callable.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
     let result = await CodemodeSandbox.execute(

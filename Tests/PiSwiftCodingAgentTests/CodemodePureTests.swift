@@ -119,11 +119,16 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
         "structuredContent": ["type": "object", "properties": ["results": ["type": "array", "items": ["type": "string"]]],
                               "required": ["results"]]
     ]]
-    #expect(mcpStructuredContentSchema(schema(result)) != nil)
+    #expect(!renderToolOutputType(schema(result)).contains("CallToolResult"))
     #expect(renderToolSignature(.init(name: "mcp__sample__search", inputSchema: schema(["type": "object", "properties": [:], "additionalProperties": false]),
                                      outputSchema: schema(result))) ==
-            "mcp__sample__search(args: {}): Promise<CallToolResult<{ results: Array<string>; }>>;")
-    #expect(mcpTypescriptPreamble.contains("type CallToolResult<TStructured"))
+            "mcp__sample__search(args: {}): Promise<{ _meta?: { [key: string]: unknown; }; content?: Array<{ [key: string]: unknown; }>; isError?: boolean; structuredContent?: { results: Array<string>; }; }>;")
+    #expect(renderToolSignature(.init(name: "plain", inputSchema: schema(["type": "object", "properties": [:]]),
+                                     outputSchema: schema(["type": "object", "properties": [
+                                        "content": ["type": "array", "items": ["type": "object"]],
+                                        "isError": ["type": "boolean"], "_meta": ["type": "object"]],
+                                        "required": ["content"]]))) ==
+            "plain(args: { [key: string]: unknown; }): Promise<{ _meta?: { [key: string]: unknown; }; content: Array<{ [key: string]: unknown; }>; isError?: boolean; }>;")
     let refResult: [String: Any] = ["type": "object", "properties": [
         "content": ["type": "array", "items": ["type": "object"]],
         "isError": ["type": "boolean"], "_meta": ["type": "object"],
@@ -135,7 +140,7 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
     ]]
     #expect(renderToolSignature(.init(name: "mcp__sample__search", inputSchema: schema(["type": "object", "properties": [:], "additionalProperties": false]),
                                      outputSchema: schema(refResult))) ==
-            "mcp__sample__search(args: {}): Promise<CallToolResult<{ results: Array<{ id: string; score: number; }>; }>>;")
+            "mcp__sample__search(args: {}): Promise<{ _meta?: { [key: string]: unknown; }; content?: Array<{ [key: string]: unknown; }>; isError?: boolean; structuredContent?: { results: Array<unknown>; }; }>;")
 }
 
 @Test func codemodeSourceVectorsMatchUpstream() throws {
@@ -146,7 +151,10 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
     #expect(try parseCodemodeSource("  // @options:{\"max_output_tokens\":0,\"timeout_ms\":1500}\r\ntext(1)").options ==
             .init(maxOutputTokens: 0, timeoutMs: 1500))
     #expect(try parseCodemodeSource("// @options: {}\ntext(1)").code == "\ntext(1)")
-    #expect(try parseCodemodeSource("text(1)\n// @options: {\"timeout_ms\": 1}").options == .init())
+    #expect(throws: CodemodeSourceError("The // @options: line must be the first line of the input; found one on line 2")) {
+        try parseCodemodeSource("text(1)\n// @options: {\"timeout_ms\": 1}")
+    }
+    #expect(try parseCodemodeSource("// @optionsx: {}\ntext(1)").code == "// @optionsx: {}\ntext(1)")
     #expect(codemodeSourceGrammar == "\nstart: options_source | plain_source\noptions_source: OPTIONS_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nOPTIONS_LINE: /[ \\t]*\\/\\/ @options:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n")
     let invalid = ["", "  \n", "// @options:\ntext(1)", "// @options: [1]\ntext(1)",
                    "// @options: {\"yield\":1}\ntext(1)", "// @options: {\"max_output_tokens\":1.5}\ntext(1)",
@@ -186,7 +194,7 @@ private func codemodeTestTool(_ name: String, _ description: String, properties:
             "content": ["type": "array", "items": ["type": "object"]],
             "isError": ["type": "boolean"], "_meta": ["type": "object"]] as [String: Any])])
     let withAPIs = createCodemodeDescription([mcp], options: .init(models: true))
-    #expect(withAPIs.contains("Shared MCP Types:\n```ts\n\(mcpTypescriptPreamble)\n```"))
+    #expect(!withAPIs.contains("Shared MCP Types"))
     #expect(withAPIs.contains("- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first."))
     #expect(!withAPIs.contains("declare const models: {"))
 }

@@ -176,6 +176,7 @@ private let cm1Questions = "{q:{type:'bool',instructions:'Broken?',criteria:{tru
 // Upstream tool-search.test.ts:84-87 and docs/codemode.md v1.1.0.
 @Test func codemodeCM1DescriptionAndBundledDocs() throws {
     let description = createCodemodeDescription([])
+    #expect(description.contains("A tool whose declaration returns an object resolves on failure too when it returned that object; check its fields."))
     for helper in ["await searchTools(query, { limit?, namespace? })", "await describeTool(name)", "await describeNamespace(name)"] {
         #expect(description.contains("`" + helper + "`"))
     }

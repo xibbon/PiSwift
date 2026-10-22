@@ -197,14 +197,27 @@ private func saveCodemodeImages(_ items: [ContentBlock], writer: CodemodeImageWr
 /// Join adjacent text items. Each part starts on its own line.
 func joinAdjacentCodemodeText(_ items: [ContentBlock]) -> [ContentBlock] {
     var joined: [ContentBlock] = []
-    for item in items {
-        if case .text(let next) = item, case .text(let last)? = joined.last {
-            let separator = last.text.isEmpty || last.text.hasSuffix("\n") ? "" : "\n"
-            joined[joined.count - 1] = .text(TextContent(text: last.text + separator + next.text))
-        } else {
-            joined.append(item)
-        }
+    var parts: [String] = []
+    var lastPart = ""
+    func flush() {
+        if !parts.isEmpty { joined.append(.text(TextContent(text: parts.joined()))) }
+        parts = []
+        lastPart = ""
     }
+    for item in items {
+        guard case .text(let next) = item else {
+            flush()
+            joined.append(item)
+            continue
+        }
+        if !lastPart.isEmpty && !lastPart.hasSuffix("\n") {
+            parts.append("\n")
+            lastPart = "\n"
+        }
+        parts.append(next.text)
+        if !next.text.isEmpty { lastPart = next.text }
+    }
+    flush()
     return joined
 }
 

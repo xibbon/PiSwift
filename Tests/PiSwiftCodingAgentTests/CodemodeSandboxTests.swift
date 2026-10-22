@@ -149,6 +149,17 @@ private func sandboxRun(_ code: String, tools: [CodemodeRuntimeTool] = [],
     #expect(result.execution.failure?.kind == .timeout)
 }
 
+// Upstream v1.3.0 shared sandbox suite: interrupt while draining promise jobs.
+@Test(.timeLimit(.minutes(1)), arguments: [false, true])
+func codemodeCM1MicrotaskLoopTimesOut(forceWatchdog: Bool) async {
+    let clock = ContinuousClock()
+    let started = clock.now
+    let result = await sandboxRun("while (true) await null", timeoutMs: 200, forceWatchdog: forceWatchdog)
+    #expect(result.execution.failure?.kind == .timeout)
+    #expect(result.usedWatchdog == !CodemodeSandbox.usesTimeLimit(forceWatchdog: forceWatchdog))
+    #expect(started.duration(to: clock.now) < .seconds(5))
+}
+
 #if os(macOS)
 @Test(.timeLimit(.minutes(1))) func sandboxMacOSTimeLimitInterruptsLoop() async {
     guard CodemodeSandbox.usesTimeLimit(forceWatchdog: false) else {

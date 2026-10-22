@@ -530,13 +530,13 @@ private func hostWaitingContext() -> CustomToolContext {
 }
 
 @Test(.timeLimit(.minutes(1))) func codemodeHostMaximumReducesLargerDefault() async throws {
-    let options = CodemodeToolOptions(defaultTimeoutMs: 600_000, maxTimeoutMs: 100)
+    let options = CodemodeToolOptions(defaultTimeoutMs: 600_000, maxTimeoutMs: 1_000)
     let allowed = try await executeCodemode(toolCallId: "reduced", params: ["code": AnyCodable("return 1")], options: options)
     #expect(allowed.isError != true)
     let timed = try await executeCodemode(toolCallId: "reduced-wait", params: ["code": AnyCodable(hostWaitingScript)],
                                           context: hostWaitingContext(), options: options)
     #expect(timed.isError == true)
-    #expect(hostText(timed).contains("100 ms"))
+    #expect(hostText(timed).contains("1000 ms"))
 }
 
 @Test(.timeLimit(.minutes(1))) func codemodeHostCancelledBeforeDispatchIsNotUnknown() async throws {

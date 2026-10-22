@@ -33,7 +33,8 @@ private func inlineOutputTool() -> AgentTool {
         "content": ["type": "array", "items": ["type": "object"]],
         "isError": ["type": "boolean"], "_meta": ["type": "object"]
     ])]
-    #expect(createCodemodeDescription([tool]).contains("Shared MCP Types"))
+    // Upstream 24382bedd removed the shared MCP preamble.
+    #expect(!createCodemodeDescription([tool]).contains("Shared MCP Types"))
     let lean = createCodemodeDescription([tool], options: .init(omitInlineOutputSchemas: true))
     #expect(!lean.contains("Shared MCP Types"))
     #expect(lean.contains("path: string"))

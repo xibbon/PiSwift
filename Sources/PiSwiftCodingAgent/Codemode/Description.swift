@@ -160,9 +160,6 @@ public func createCodemodeDescription(_ tools: [AgentTool], options: CodemodeDes
     let shown = selected(ordered, budget: options.inlineBudget)
     let intro = codemodeDescriptionIntro.replacingOccurrences(of: "JavaScriptCore sandbox", with: "\(options.sandboxName) sandbox")
     var sections = [intro, describeGlobals(models: options.models, searchResultDetail: options.searchResultDetail)]
-    if declarations.contains(where: { shown.contains($0.name) && mcpStructuredContentSchema($0.outputSchema) != nil }) {
-        sections.append("Shared MCP Types:\n```ts\n\(mcpTypescriptPreamble)\n```")
-    }
     if declarations.isEmpty { return sections.joined(separator: "\n\n") }
     var toolSections = ["Nested tools:"]
     for group in ordered {

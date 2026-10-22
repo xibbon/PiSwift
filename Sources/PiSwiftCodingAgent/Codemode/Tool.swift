@@ -106,16 +106,24 @@ private func codemodeDescriptionOptions(_ options: CodemodeToolOptions,
         searchResultDetail: options.searchResultDetail)
 }
 
+private func describeFields(_ schema: Any?, depth: Int) -> String? {
+    guard let fields = schema as? [String: Any], fields["type"] as? String == "object",
+          let properties = fields["properties"] as? [String: Any] else { return nil }
+    let required = Set(fields["required"] as? [String] ?? [])
+    let names = properties.keys.sorted().map { name in
+        let nested = depth > 0 ? describeFields(properties[name], depth: depth - 1) : nil
+        return name + (required.contains(name) ? "" : "?") + (nested.map { ": " + $0 } ?? "")
+    }
+    return "{ \(names.joined(separator: ", ")) }"
+}
+
 private func describeScriptCall(_ tool: AgentTool) -> String {
     let schema = CodemodeDeclaration(tool: tool).outputSchema
     let type = renderToolOutputType(schema)
     let output: String
     if type == "string" { output = "a string" }
-    else if let fields = schema?.value as? [String: Any], fields["type"] as? String == "object",
-            let properties = fields["properties"] as? [String: Any], mcpStructuredContentSchema(schema) == nil {
-        let required = Set(fields["required"] as? [String] ?? [])
-        let names = properties.keys.sorted().map { required.contains($0) ? $0 : $0 + "?" }
-        output = "`{ \(names.joined(separator: ", ")) }`"
+    else if let fields = describeFields(schema?.value, depth: 1) {
+        output = "`\(fields)`"
     } else { output = "`\(type.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression))`" }
     return tool.description.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\nCodemode: `tools.\(toCodemodeIdentifier(tool.name))(args)` resolves to \(output)."
 }

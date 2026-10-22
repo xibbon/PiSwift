@@ -69,9 +69,67 @@ private func boolean(_ value: Any?) -> Bool? {
     guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
     return number.boolValue
 }
+private func number(_ value: Any?) -> NSNumber? {
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+    return number
+}
 private func jsonString(_ value: Any) -> String? {
     guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes, .sortedKeys]) else { return nil }
     return String(data: data, encoding: .utf8)
+}
+
+// JavaScript uses decimal notation from 1e-6 through values below 1e21.
+private func constraintNumberText(_ number: Double) -> String {
+    if number.isNaN { return "NaN" }
+    if number == .infinity { return "Infinity" }
+    if number == -.infinity { return "-Infinity" }
+    if number == 0 { return "0" }
+    let negative = number < 0 ? "-" : ""
+    let parts = String(abs(number)).lowercased().split(separator: "e")
+    let mantissa = String(parts[0])
+    let exponent = parts.count == 2 ? Int(parts[1]) ?? 0 : 0
+    let decimal = mantissa.split(separator: ".", omittingEmptySubsequences: false)
+    let whole = String(decimal[0])
+    var digits = whole + (decimal.count == 2 ? String(decimal[1]) : "")
+    let decimalPosition = whole.count + exponent
+    while digits.count > 1 && digits.last == "0" { digits.removeLast() }
+    if abs(number) >= 1e-6 && abs(number) < 1e21 {
+        if decimalPosition <= 0 {
+            return negative + "0." + String(repeating: "0", count: -decimalPosition) + digits
+        }
+        if decimalPosition >= digits.count {
+            return negative + digits + String(repeating: "0", count: decimalPosition - digits.count)
+        }
+        let position = digits.index(digits.startIndex, offsetBy: decimalPosition)
+        return negative + digits[..<position] + "." + digits[position...]
+    }
+    let fraction = digits.count > 1 ? "." + digits.dropFirst() : ""
+    return negative + String(digits.prefix(1)) + fraction + "e" + (exponent >= 0 ? "+" : "") + String(exponent)
+}
+
+private func constraintDefaultJSON(_ value: Any) -> String? {
+    if value is NSNull { return "null" }
+    if let flag = boolean(value) { return flag ? "true" : "false" }
+    if let number = number(value) {
+        return number.doubleValue.isFinite ? constraintNumberText(number.doubleValue) : "null"
+    }
+    if let values = array(value) {
+        var items: [String] = []
+        for value in values {
+            guard let item = constraintDefaultJSON(value) else { return nil }
+            items.append(item)
+        }
+        return "[" + items.joined(separator: ",") + "]"
+    }
+    if let fields = object(value) {
+        var members: [String] = []
+        for key in fields.keys.sorted() {
+            guard let name = jsonString(key), let item = constraintDefaultJSON(fields[key]!) else { return nil }
+            members.append(name + ":" + item)
+        }
+        return "{" + members.joined(separator: ",") + "}"
+    }
+    return jsonString(value)
 }
 private func union(_ members: [String]) -> String {
     var unique: [String] = []
@@ -82,6 +140,7 @@ private func union(_ members: [String]) -> String {
 
 private struct SchemaContext {
     let root: Any
+    let tags: Bool
     var resolving: Set<String> = []
     var expansions = 0
 
@@ -99,9 +158,14 @@ private struct SchemaContext {
 }
 
 public func schemaToType(_ schema: AnyCodable, maxChars: Int? = nil) -> String {
-    var context = SchemaContext(root: schema.value)
-    let rendered = typeText(schema.value, &context)
-    return maxChars.map { rendered.utf16.count > $0 ? "unknown" : rendered } ?? rendered
+    func render(tags: Bool) -> String {
+        var context = SchemaContext(root: schema.value, tags: tags)
+        return typeText(schema.value, &context)
+    }
+    let rendered = render(tags: true)
+    guard let maxChars, rendered.utf16.count > maxChars else { return rendered }
+    let untagged = render(tags: false)
+    return untagged.utf16.count <= maxChars ? untagged : "unknown"
 }
 
 public func schemaToType(_ schema: [String: AnyCodable], maxChars: Int? = nil) -> String {
@@ -163,6 +227,67 @@ private func propertyKey(_ name: String) -> String {
     return valid ? name : (jsonString(name) ?? "\"\(name)\"")
 }
 
+private func constraintTags(_ value: Any?) -> String {
+    guard let property = object(value) else { return "" }
+    let variants = array(property["anyOf"]) ?? array(property["oneOf"]) ?? []
+    let nonNull = variants.filter { string(object($0)?["type"]) != "null" }
+    var schemas = [property]
+    if nonNull.count == 1, let branch = object(nonNull[0]) { schemas.append(branch) }
+    // Draft-04 uses boolean exclusive bounds with minimum and maximum.
+    schemas = schemas.map { schema in
+        var copy = schema
+        if boolean(schema["exclusiveMinimum"]) == true {
+            copy["exclusiveMinimum"] = schema["minimum"]
+            copy.removeValue(forKey: "minimum")
+        }
+        if boolean(schema["exclusiveMaximum"]) == true {
+            copy["exclusiveMaximum"] = schema["maximum"]
+            copy.removeValue(forKey: "maximum")
+        }
+        return copy
+    }
+    var tags: [String] = []
+    if schemas.contains(where: { string($0["type"]) == "integer" || (array($0["type"]) ?? []).contains { string($0) == "integer" } }) {
+        tags.append("@integer")
+    }
+    let keywords = ["minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum", "multipleOf",
+                    "minLength", "maxLength", "pattern", "format", "minItems", "maxItems"]
+    let lowerBounds: Set<String> = ["minimum", "exclusiveMinimum", "minLength", "minItems"]
+    let upperBounds: Set<String> = ["maximum", "exclusiveMaximum", "maxLength", "maxItems"]
+    for keyword in keywords {
+        let values = schemas.compactMap { $0[keyword] }
+        if lowerBounds.contains(keyword) || upperBounds.contains(keyword) {
+            let numbers = values.compactMap { number($0)?.doubleValue }
+            let bound = numbers.first { $0.isNaN } ?? (lowerBounds.contains(keyword) ? numbers.max() : numbers.min())
+            if let bound { tags.append("@\(keyword) \(constraintNumberText(bound))") }
+            continue
+        }
+        var seenNumbers: [Double] = []
+        var seenStrings: Set<[UInt16]> = []
+        for value in values {
+            if let number = number(value)?.doubleValue,
+               !seenNumbers.contains(where: { $0 == number || ($0.isNaN && number.isNaN) }) {
+                seenNumbers.append(number)
+                tags.append("@\(keyword) \(constraintNumberText(number))")
+            } else if let text = string(value), seenStrings.insert(Array(text.utf16)).inserted {
+                tags.append("@\(keyword) \(text)")
+            }
+        }
+    }
+    if schemas.contains(where: { boolean($0["uniqueItems"]) == true }) { tags.append("@uniqueItems") }
+    // Annotations come from the property, rather than its nullable branch.
+    if let value = property["default"], !(value is NSNull), let text = constraintDefaultJSON(value) {
+        tags.append("@default \(text)")
+    }
+    if boolean(property["deprecated"]) == true { tags.append("@deprecated") }
+    return tags.filter { $0.utf16.count <= 80 }.map { tag in
+        tag.replacingOccurrences(of: "\r", with: "\\u000d")
+            .replacingOccurrences(of: "\n", with: "\\u000a")
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+    }.joined(separator: " ")
+}
+
 private func objectType(_ schema: [String: Any], _ context: inout SchemaContext) -> String {
     let properties = object(schema["properties"]) ?? [:]
     let required = Set((array(schema["required"]) ?? []).compactMap { string($0) })
@@ -177,15 +302,18 @@ private func objectType(_ schema: [String: Any], _ context: inout SchemaContext)
         members.append("[key: string]: unknown;")
     }
     if members.isEmpty { return "{}" }
-    func description(_ name: String) -> String {
-        (string(object(properties[name])?["description"]) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let comments = names.map { name -> [String] in
+        let description = string(object(properties[name])?["description"]) ?? ""
+        var lines = description.components(separatedBy: CharacterSet(charactersIn: "\r\n\u{2028}\u{2029}"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let tags = context.tags ? constraintTags(properties[name]) : ""
+        if !tags.isEmpty { lines.append(tags) }
+        return lines
     }
-    if !names.contains(where: { !description($0).isEmpty }) { return "{ \(members.joined(separator: " ")) }" }
+    if !comments.contains(where: { !$0.isEmpty }) { return "{ \(members.joined(separator: " ")) }" }
     var lines = ["{"]
-    for (index, name) in names.enumerated() {
-        for line in description(name).replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") where !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            lines.append("  // \(line.trimmingCharacters(in: .whitespacesAndNewlines))")
-        }
+    for (index, comment) in comments.enumerated() {
+        for line in comment { lines.append("  // \(line)") }
         lines.append("  " + members[index].replacingOccurrences(of: "\n", with: "\n  "))
     }
     for member in members.dropFirst(names.count) { lines.append("  " + member) }
@@ -193,6 +321,7 @@ private func objectType(_ schema: [String: Any], _ context: inout SchemaContext)
     return lines.joined(separator: "\n")
 }
 
+@available(*, deprecated, message: "Codemode renders output schemas as plain types.")
 public func mcpStructuredContentSchema(_ schema: AnyCodable?) -> AnyCodable? {
     guard let schema, let properties = object(object(schema.value)?["properties"]),
           let content = object(properties["content"]), string(content["type"]) == "array",
@@ -206,10 +335,6 @@ public func mcpStructuredContentSchema(_ schema: AnyCodable?) -> AnyCodable? {
 }
 
 public func renderToolOutputType(_ schema: AnyCodable?) -> String {
-    if let structured = mcpStructuredContentSchema(schema) {
-        let type = schemaToType(structured)
-        return type == "unknown" ? "CallToolResult" : "CallToolResult<\(type)>"
-    }
     return schema.map { schemaToType($0) } ?? "unknown"
 }
 

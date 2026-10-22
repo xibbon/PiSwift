@@ -132,6 +132,7 @@ private func v100Tool(_ name: String, schema: [String: AnyCodable]? = nil) -> Ag
     #expect(renderToolOutputType(AnyCodable(["type": "string"])) == "string")
     #expect(renderToolOutputType(nil) == "unknown")
     let description = createCodemodeDescription([], options: .init(models: true))
+    #expect(description.contains("A tool whose declaration returns an object resolves on failure too when it returned that object; check its fields."))
     // Upstream v1.1.0: output layout and #10555 async lookup guidance.
     #expect(description == codemodeDescriptionIntro + "\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script. With several text items, each starts with a `==> text N/M <==` line, and `console` lines follow the other output in one `<console_output>` block. `image()` also saves the image to a temp file and the result names its path.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `await searchTools(query, { limit?, namespace? })`, `await describeTool(name)`, `await describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read \(CODEMODE_DOCS_PATH) first.")
     #expect(!createCodemodeDescription([]).contains("- `models`"))
@@ -286,6 +287,17 @@ return {id:model.id,headers:'headers' in model,stopReason:generated.stopReason,f
     ("models.generateImages({provider:'scorer',id:'chat'}, {})", "\"scorer/chat\" is a chat model, not an image model."),
     ("models.generateImages({provider:'scorer',id:'painter'}, {input:[{type:'image',data:'x'}]})", "context.input[0] must be a text or image block, got { type, data }"),
     ("models.classify({provider:'scorer',id:'judge'}, {state:{},questions:{}})", "context.questions must map question IDs to questions, got {}"),
+    // Upstream v1.3.0 agent-session-codemode.test.ts:1001-1024.
+    ("models.classify(['scorer','judge'], {})", "models.classify() expects a classifier model as its first argument, got an array."),
+    ("models.classify({provider:'scorer',id:'judge'}, [])", "models.classify() expects a context object as its second argument, got an empty array."),
+    ("models.classify({provider:'scorer',id:'judge'}, {state:[],questions:{kind:{type:'bool',instructions:'Ok?',criteria:{true:'y',false:'n'}}}})", "models.classify() context.state must be an object, got an empty array."),
+    ("models.classify({provider:'scorer',id:'judge'}, {state:{},questions:[]})", "models.classify() context.questions must map question IDs to questions, got an empty array."),
+    ("models.classify({provider:'scorer',id:'judge'}, {state:{},questions:{kind:[]}})", "models.classify() context.questions.kind must be a question object, got an empty array."),
+    ("models.classify({provider:'scorer',id:'judge'}, {state:{},questions:{kind:{type:'bool',criteria:{true:'y',false:'n'}}}})", "models.classify() context.questions.kind.instructions must be a string."),
+    ("models.classify({provider:'scorer',id:'judge'}, {state:{},questions:{kind:{type:'bool',instructions:'Ok?',criteria:['y','n']}}})", "context.questions.kind is a \"bool\" question, so criteria must be { true: string, false: string }."),
+    ("models.classify({provider:'scorer',id:'judge'}, {state:{},questions:{kind:{type:'rank',instructions:'Rank?'}}})", "context.questions.kind.type must be \"choice\", \"score\", or \"bool\", got \"rank\"."),
+    ("models.generateImages({provider:'scorer',id:'painter'}, [])", "models.generateImages() expects a context object as its second argument, got an empty array."),
+    ("models.generateImages({provider:'scorer',id:'painter'}, {input:[{type:'text',text:'a fox'},{type:'image',data:'aW1hZ2U='}]})", "models.generateImages() context.input[1] must be a text or image block, got { type, data }."),
     ("describeNamespace(42)", "describeNamespace() expects a namespace name"),
     ("searchTools('x',{namespace:42})", "searchTools() namespace must be a string"),
 ]) func codemodeV100ArgumentErrors(expression: String, expected: String) async throws {
