@@ -103,7 +103,8 @@ public func copyToClipboard(_ text: String) -> ClipboardCopyResult {
 }
 
 public func copyToClipboard(_ text: String, platform: ClipboardPlatform, environment: [String: String], backend: ClipboardBackend) -> ClipboardCopyResult {
-    let remote = ["SSH_CONNECTION", "SSH_CLIENT", "MOSH_CONNECTION"].contains { !(environment[$0] ?? "").isEmpty }
+    let remote = environment["PI_CLIPBOARD_OSC52"] == "1" ||
+        ["SSH_CONNECTION", "SSH_CLIENT", "MOSH_CONNECTION"].contains { !(environment[$0] ?? "").isEmpty }
     let display = !(environment["DISPLAY"] ?? "").isEmpty
     let wayland = !(environment["WAYLAND_DISPLAY"] ?? "").isEmpty
     let termux = !(environment["TERMUX_VERSION"] ?? "").isEmpty

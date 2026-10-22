@@ -61,6 +61,10 @@ public struct CompactionSettingsOverrides: Sendable {
     }
 }
 
+public enum SessionShareDestination: String, Sendable, CaseIterable {
+    case auto, gist, radius
+}
+
 public enum CacheWarmingMode: String, Sendable, CaseIterable {
     case off, streaming, idle
 }
@@ -279,6 +283,7 @@ public struct Settings: Sendable {
     public var transport: Transport?
     public var steeringMode: String?
     public var followUpMode: String?
+    public var sessionShareDestination: SessionShareDestination?
     public var theme: String?
     public var defaultProjectTrust: DefaultProjectTrust?
     public var compaction: CompactionSettingsOverrides?
@@ -861,6 +866,16 @@ public final class SettingsManager: Sendable {
     public func setDefaultProjectTrust(_ defaultProjectTrust: DefaultProjectTrust) {
         globalSettings.defaultProjectTrust = defaultProjectTrust
         markModified("defaultProjectTrust")
+        save()
+    }
+
+    public func getSessionShareDestination() -> SessionShareDestination {
+        settings.sessionShareDestination ?? .auto
+    }
+
+    public func setSessionShareDestination(_ destination: SessionShareDestination) {
+        globalSettings.sessionShareDestination = destination
+        markModified("sessionShareDestination")
         save()
     }
 
@@ -1700,6 +1715,9 @@ public final class SettingsManager: Sendable {
         }
         settings.steeringMode = json["steeringMode"] as? String ?? settings.steeringMode
         settings.followUpMode = json["followUpMode"] as? String
+        if let value = json["sessionShareDestination"] {
+            settings.sessionShareDestination = (value as? String).flatMap(SessionShareDestination.init(rawValue:)) ?? .auto
+        }
         settings.theme = json["theme"] as? String
         if let trust = json["defaultProjectTrust"] as? String {
             settings.defaultProjectTrust = DefaultProjectTrust(rawValue: trust)
@@ -2018,6 +2036,7 @@ public final class SettingsManager: Sendable {
         json["transport"] = settings.transport?.rawValue
         json["steeringMode"] = settings.steeringMode
         json["followUpMode"] = settings.followUpMode
+        json["sessionShareDestination"] = settings.sessionShareDestination?.rawValue
         json["theme"] = settings.theme
         json["defaultProjectTrust"] = settings.defaultProjectTrust?.rawValue
         json["hideThinkingBlock"] = settings.hideThinkingBlock
@@ -2249,6 +2268,7 @@ public final class SettingsManager: Sendable {
         if override.transport != nil { result.transport = override.transport }
         if override.steeringMode != nil { result.steeringMode = override.steeringMode }
         if override.followUpMode != nil { result.followUpMode = override.followUpMode }
+        if override.sessionShareDestination != nil { result.sessionShareDestination = override.sessionShareDestination }
         if override.theme != nil { result.theme = override.theme }
         if let value = override.compaction {
             let baseValue = result.compaction ?? CompactionSettingsOverrides()

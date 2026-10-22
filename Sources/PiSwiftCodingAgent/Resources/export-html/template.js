@@ -575,14 +575,7 @@
         switch (name) {
           case 'read': {
             const path = shortenPath(String(args.path || args.file_path || ''));
-            const offset = args.offset;
-            const limit = args.limit;
-            let display = path;
-            if (offset !== undefined || limit !== undefined) {
-              const start = offset ?? 1;
-              const end = limit !== undefined ? start + limit - 1 : '';
-              display += `:${start}${end ? `-${end}` : ''}`;
-            }
+            const display = path + formatReadLineRange(args.offset, args.limit);
             return `[read: ${display}]`;
           }
           case 'write':
@@ -845,6 +838,23 @@
         return null;
       }
 
+      // Mirrors the shared read range display helper.
+      function parseLineNumber(value) {
+        if (typeof value === 'string' && value.trim() !== '') value = Number(value);
+        return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+      }
+
+      function formatReadLineRange(offset, limit) {
+        if (offset == null && limit == null) return '';
+        const start = offset == null ? 1 : parseLineNumber(offset);
+        if (start === undefined) return '';
+        if (limit == null) return `:${start}`;
+        const count = parseLineNumber(limit);
+        if (count === undefined) return '';
+        const end = start + count - 1;
+        return `:${start}${end ? `-${end}` : ''}`;
+      }
+
       function getLanguageFromPath(filePath) {
         const ext = filePath.split('.').pop()?.toLowerCase();
         const extToLang = {
@@ -1048,14 +1058,11 @@
           }
           case 'read': {
             const filePath = str(args.file_path ?? args.path);
-            const offset = args.offset;
-            const limit = args.limit;
+            const range = formatReadLineRange(args.offset, args.limit);
 
             let pathHtml = filePath === null ? invalidArg : escapeHtml(shortenPath(filePath || ''));
-            if (filePath !== null && (offset !== undefined || limit !== undefined)) {
-              const startLine = offset ?? 1;
-              const endLine = limit !== undefined ? startLine + limit - 1 : '';
-              pathHtml += `<span class="line-numbers">:${startLine}${endLine ? '-' + endLine : ''}</span>`;
+            if (filePath !== null && range) {
+              pathHtml += `<span class="line-numbers">${range}</span>`;
             }
 
             html += `<div class="tool-header"><span class="tool-name">read</span> <span class="tool-path">${pathHtml}</span></div>`;
