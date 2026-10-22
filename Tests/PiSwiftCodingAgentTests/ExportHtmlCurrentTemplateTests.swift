@@ -111,8 +111,9 @@ private func currentExportResource(_ ext: String) throws -> String {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = ["node", "-e", script]
     let output = Pipe(); process.standardOutput = output; process.standardError = output
-    try process.run(); process.waitUntilExit()
+    try process.run()
     let message = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    process.waitUntilExit()
     #expect(process.terminationStatus == 0, Comment(rawValue: message))
 }
 

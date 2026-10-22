@@ -1,5 +1,10 @@
 import Foundation
 import PiSwiftAI
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public struct BashExecutorOptions: Sendable {
     public var onChunk: (@Sendable (String) -> Void)?
@@ -190,14 +195,68 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
         buffer.append(data, onChunk: options?.onChunk)
     }
 
-    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-        appendData(handle.availableData)
+    // Each pipe has its own queue. Cancel closes the handle after the last read.
+    let readers = DispatchGroup()
+    func startReader(_ pipe: Pipe, append: @escaping @Sendable (Data) -> Void) -> any DispatchSourceRead {
+        let handle = pipe.fileHandleForReading
+        let source = DispatchSource.makeReadSource(
+            fileDescriptor: handle.fileDescriptor,
+            queue: DispatchQueue(label: "PiSwiftCodingAgent.process.read")
+        )
+        readers.enter()
+        source.setEventHandler { [weak source] in
+            guard let source, !source.isCancelled else { return }
+            do {
+                let count = max(1, Int(min(source.data, 65_536)))
+                let data = try handle.read(upToCount: count) ?? Data()
+                if data.isEmpty { source.cancel() }
+                else { append(data) }
+            } catch {
+                source.cancel()
+            }
+        }
+        source.setCancelHandler {
+            #if canImport(Darwin) || canImport(Glibc)
+            // Read only the bytes now in the pipe. A child can keep its write end open.
+            #if canImport(Darwin)
+            // Darwin's FIONREAD macro is not available in Swift.
+            let request: UInt = 0x4004667f
+            #else
+            let request = UInt(FIONREAD)
+            #endif
+            var remaining: Int32 = 0
+            if ioctl(handle.fileDescriptor, request, &remaining) == 0 {
+                while remaining > 0 {
+                    guard let data = try? handle.read(upToCount: min(Int(remaining), 65_536)),
+                          !data.isEmpty else { break }
+                    append(data)
+                    remaining -= Int32(data.count)
+                }
+            }
+            #endif
+            try? handle.close()
+            readers.leave()
+        }
+        source.resume()
+        return source
     }
-    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-        appendData(handle.availableData)
-    }
+    let stdoutReader = startReader(stdoutPipe, append: appendData)
+    let stderrReader = startReader(stderrPipe, append: appendData)
 
-    try process.run()
+    // Foundation reports exit independently of the queues that drain the pipes.
+    readers.enter()
+    process.terminationHandler = { _ in readers.leave() }
+    do {
+        try process.run()
+    } catch {
+        process.terminationHandler = nil
+        readers.leave()
+        stdoutReader.cancel()
+        stderrReader.cancel()
+        throw error
+    }
+    try? stdoutPipe.fileHandleForWriting.close()
+    try? stderrPipe.fileHandleForWriting.close()
 
     // v0.67.4: track the spawned PID so `killTrackedDetachedChildren()` (called from session
     // teardown / signal handlers) can reap orphans if the user's command spawned detached
@@ -215,6 +274,8 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
             if process.isRunning {
                 killProcessTree(process.processIdentifier)
             }
+            stdoutReader.cancel()
+            stderrReader.cancel()
             cancellationTimer.cancel()
         }
     }
@@ -225,10 +286,12 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
         let timer = DispatchSource.makeTimerSource()
         timer.schedule(deadline: .now() + timeoutSeconds)
         timer.setEventHandler {
+            cancelledFlag.store(true)
             if process.isRunning {
-                cancelledFlag.store(true)
                 killProcessTree(process.processIdentifier)
             }
+            stdoutReader.cancel()
+            stderrReader.cancel()
             timer.cancel()
         }
         timer.resume()
@@ -236,15 +299,9 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
     }
 
     let timeoutTimerRef = timeoutTimer
-    return try await withCheckedThrowingContinuation { continuation in
-        process.terminationHandler = { proc in
+    return await withCheckedContinuation { continuation in
+        readers.notify(queue: .global()) {
             untrackDetachedChildPid(spawnedPid)
-            stdoutPipe.fileHandleForReading.readabilityHandler = nil
-            stderrPipe.fileHandleForReading.readabilityHandler = nil
-            let stdoutRemainder = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrRemainder = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            buffer.append(stdoutRemainder, onChunk: options?.onChunk)
-            buffer.append(stderrRemainder, onChunk: options?.onChunk)
             buffer.flushPending(onChunk: options?.onChunk)
             cancellationTimer.cancel()
             timeoutTimerRef?.cancel()
@@ -267,7 +324,7 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
 
             continuation.resume(returning: BashResult(
                 output: output.isEmpty ? "" : output,
-                exitCode: cancelled ? nil : Int(proc.terminationStatus) + (proc.terminationReason == .uncaughtSignal ? 128 : 0),
+                exitCode: cancelled ? nil : Int(process.terminationStatus) + (process.terminationReason == .uncaughtSignal ? 128 : 0),
                 cancelled: cancelled,
                 truncated: truncated,
                 fullOutputPath: fullOutputPath

@@ -96,6 +96,27 @@ private func storeShellConfig(_ config: ShellConfig) {
     }
 }
 
+#if !canImport(UIKit)
+/// Read both output pipes before waiting for the process to exit.
+func readShellProcessOutput(_ process: Process, stdout: Pipe, stderr: Pipe? = nil) -> (stdout: Data, stderr: Data) {
+    let errorData = LockedState(Data())
+    let readers = DispatchGroup()
+    if let stderr {
+        readers.enter()
+        DispatchQueue.global().async {
+            let data = stderr.fileHandleForReading.readDataToEndOfFile()
+            errorData.withLock { $0 = data }
+            readers.leave()
+        }
+    }
+
+    let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+    readers.wait()
+    process.waitUntilExit()
+    return (outputData, errorData.withLock { $0 })
+}
+#endif
+
 #if !canImport(UIKit) && os(Windows)
 private func findWindowsBashConfig() -> (config: ShellConfig?, searched: [String]) {
     var paths: [String] = []
@@ -131,9 +152,8 @@ private func findBashOnPath() -> String? {
         return nil
     }
 
-    process.waitUntilExit()
+    let data = readShellProcessOutput(process, stdout: output).stdout
     guard process.terminationStatus == 0 else { return nil }
-    let data = output.fileHandleForReading.readDataToEndOfFile()
     let text = String(decoding: data, as: UTF8.self)
     let first = text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).first
     if let match = first {
@@ -158,9 +178,8 @@ private func findBashOnPath() -> String? {
         return nil
     }
 
-    process.waitUntilExit()
+    let data = readShellProcessOutput(process, stdout: output).stdout
     guard process.terminationStatus == 0 else { return nil }
-    let data = output.fileHandleForReading.readDataToEndOfFile()
     let text = String(decoding: data, as: UTF8.self)
     let first = text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).first
     if let match = first {
@@ -202,8 +221,8 @@ public func killProcessTree(_ pid: pid_t) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "taskkill")
     process.arguments = ["/F", "/T", "/PID", String(pid)]
-    process.standardOutput = Pipe()
-    process.standardError = Pipe()
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
     try? process.run()
     #else
     let descendants = collectDescendantPids(of: pid)
@@ -235,10 +254,11 @@ private func childPids(of pid: pid_t) -> [pid_t] {
 
     let process = Process()
     let output = Pipe()
+    let error = Pipe()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = ["-P", String(pid)]
     process.standardOutput = output
-    process.standardError = Pipe()
+    process.standardError = error
 
     do {
         try process.run()
@@ -246,8 +266,7 @@ private func childPids(of pid: pid_t) -> [pid_t] {
         return []
     }
 
-    process.waitUntilExit()
-    let data = output.fileHandleForReading.readDataToEndOfFile()
+    let data = readShellProcessOutput(process, stdout: output, stderr: error).stdout
     let text = String(decoding: data, as: UTF8.self)
     return text
         .split(whereSeparator: { $0 == "\n" || $0 == "\r" || $0 == " " || $0 == "\t" })

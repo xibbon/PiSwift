@@ -119,12 +119,12 @@ public final class FooterDataProvider: @unchecked Sendable, FooterDataProviding 
         process.arguments = ["branch", "--show-current"]
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
         do {
             try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?
+            let captured = readShellProcessOutput(process, stdout: pipe, stderr: errorPipe)
+            let output = String(data: captured.stdout, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let output, !output.isEmpty {
                 return output

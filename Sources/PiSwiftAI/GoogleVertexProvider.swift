@@ -397,13 +397,13 @@ private func runCommandCapture(_ command: String, _ args: [String], env: [String
 
     do {
         try process.run()
-        process.waitUntilExit()
     } catch {
         return nil
     }
 
-    guard process.terminationStatus == 0 else { return nil }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { return nil }
     let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     return output?.isEmpty == false ? output : nil
 }

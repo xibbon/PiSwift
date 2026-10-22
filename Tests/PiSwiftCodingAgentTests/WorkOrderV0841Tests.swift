@@ -584,9 +584,9 @@ private func v0841RunGit(_ arguments: [String], in directory: URL) throws {
     let errorPipe = Pipe()
     process.standardError = errorPipe
     try process.run()
+    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     if process.terminationStatus != 0 {
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
         let errorText = String(decoding: errorData, as: UTF8.self)
         throw V0841TestError.commandFailed("git \(arguments.joined(separator: " ")): \(errorText)")
     }

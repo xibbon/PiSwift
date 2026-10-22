@@ -1,5 +1,10 @@
 import Foundation
 import PiSwiftAI
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public struct ExecOptions: Sendable {
     public var signal: CancellationToken?
@@ -100,8 +105,53 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     let outputExceeded = ManagedAtomic(false)
     let killedFlag = ManagedAtomic(false)
 
-    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-        if !stdoutBuffer.append(handle.availableData) {
+    // Each pipe has its own queue. Cancel closes the handle after the last read.
+    let readers = DispatchGroup()
+    func startReader(_ pipe: Pipe, append: @escaping @Sendable (Data) -> Void) -> any DispatchSourceRead {
+        let handle = pipe.fileHandleForReading
+        let source = DispatchSource.makeReadSource(
+            fileDescriptor: handle.fileDescriptor,
+            queue: DispatchQueue(label: "PiSwiftCodingAgent.process.read")
+        )
+        readers.enter()
+        source.setEventHandler { [weak source] in
+            guard let source, !source.isCancelled else { return }
+            do {
+                let count = max(1, Int(min(source.data, 65_536)))
+                let data = try handle.read(upToCount: count) ?? Data()
+                if data.isEmpty { source.cancel() }
+                else { append(data) }
+            } catch {
+                source.cancel()
+            }
+        }
+        source.setCancelHandler {
+            #if canImport(Darwin) || canImport(Glibc)
+            // Read only the bytes now in the pipe. A child can keep its write end open.
+            #if canImport(Darwin)
+            // Darwin's FIONREAD macro is not available in Swift.
+            let request: UInt = 0x4004667f
+            #else
+            let request = UInt(FIONREAD)
+            #endif
+            var remaining: Int32 = 0
+            if ioctl(handle.fileDescriptor, request, &remaining) == 0 {
+                while remaining > 0 {
+                    guard let data = try? handle.read(upToCount: min(Int(remaining), 65_536)),
+                          !data.isEmpty else { break }
+                    append(data)
+                    remaining -= Int32(data.count)
+                }
+            }
+            #endif
+            try? handle.close()
+            readers.leave()
+        }
+        source.resume()
+        return source
+    }
+    let stdoutReader = startReader(stdoutPipe) { data in
+        if !stdoutBuffer.append(data) {
             outputExceeded.store(true)
             killedFlag.store(true)
             if process.isRunning {
@@ -109,18 +159,35 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             }
         }
     }
-    stderrPipe?.fileHandleForReading.readabilityHandler = { handle in
-        _ = stderrBuffer.append(handle.availableData)
+    let stderrReader = stderrPipe.map { pipe in
+        startReader(pipe) { data in _ = stderrBuffer.append(data) }
     }
+
+    // Foundation reports exit independently of the queues that drain the pipes.
+    readers.enter()
+    process.terminationHandler = { _ in readers.leave() }
+    do {
+        try process.run()
+    } catch {
+        process.terminationHandler = nil
+        readers.leave()
+        stdoutReader.cancel()
+        stderrReader?.cancel()
+        return ExecResult(stdout: "", stderr: error.localizedDescription, code: 1, killed: true)
+    }
+    try? stdoutPipe.fileHandleForWriting.close()
+    try? stderrPipe?.fileHandleForWriting.close()
 
     let cancellationTimer = DispatchSource.makeTimerSource()
     cancellationTimer.schedule(deadline: .now(), repeating: .milliseconds(50))
     cancellationTimer.setEventHandler {
-        if options?.signal?.isCancelled == true {
+        if options?.signal?.isCancelled == true || outputExceeded.load() {
             killedFlag.store(true)
             if process.isRunning {
                 killProcessTree(process.processIdentifier)
             }
+            stdoutReader.cancel()
+            stderrReader?.cancel()
             cancellationTimer.cancel()
         }
     }
@@ -135,29 +202,17 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             if process.isRunning {
                 killProcessTree(process.processIdentifier)
             }
+            stdoutReader.cancel()
+            stderrReader?.cancel()
             timer.cancel()
         }
         timer.resume()
         timeoutTimer = timer
     }
 
-    do {
-        try process.run()
-    } catch {
-        cancellationTimer.cancel()
-        timeoutTimer?.cancel()
-        return ExecResult(stdout: "", stderr: error.localizedDescription, code: 1, killed: true)
-    }
-
     let timeoutTimerRef = timeoutTimer
     return await withCheckedContinuation { continuation in
-        process.terminationHandler = { proc in
-            stdoutPipe.fileHandleForReading.readabilityHandler = nil
-            stderrPipe?.fileHandleForReading.readabilityHandler = nil
-            let stdoutRemainder = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrRemainder = stderrPipe?.fileHandleForReading.readDataToEndOfFile() ?? Data()
-            _ = stdoutBuffer.append(stdoutRemainder)
-            _ = stderrBuffer.append(stderrRemainder)
+        readers.notify(queue: .global()) {
             cancellationTimer.cancel()
             timeoutTimerRef?.cancel()
 
@@ -165,7 +220,7 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             let stderrText = String(decoding: stderrBuffer.snapshot(), as: UTF8.self)
 
             let killed = killedFlag.load()
-            let code = Int(proc.terminationStatus) + (proc.terminationReason == .uncaughtSignal ? 128 : 0)
+            let code = Int(process.terminationStatus) + (process.terminationReason == .uncaughtSignal ? 128 : 0)
 
             continuation.resume(returning: ExecResult(
                 stdout: stdoutText,

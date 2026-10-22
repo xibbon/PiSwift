@@ -1510,9 +1510,8 @@ public final class DefaultPackageManager: PackageManager {
         } catch {
             return ""
         }
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(decoding: data, as: UTF8.self)
+        let output = readShellProcessOutput(process, stdout: pipe)
+        return String(decoding: output.stdout, as: UTF8.self)
         #endif
     }
 

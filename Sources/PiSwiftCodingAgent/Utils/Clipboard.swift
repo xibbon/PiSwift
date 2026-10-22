@@ -315,11 +315,11 @@ private func runClipboardReadCommand(command: String, args: [String]) -> Clipboa
     process.executableURL = URL(fileURLWithPath: command.contains("/") ? command : "/usr/bin/env")
     process.arguments = command.contains("/") ? args : [command] + args
     let pipe = Pipe()
+    let error = Pipe()
     process.standardOutput = pipe
-    process.standardError = Pipe()
+    process.standardError = error
     do { try process.run() } catch { return .unavailable }
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let data = readShellProcessOutput(process, stdout: pipe, stderr: error).stdout
     guard process.terminationStatus == 0 else { return .unavailable }
     guard let text = String(data: data, encoding: .utf8) else { return .error("Clipboard text is not UTF-8") }
     return text.isEmpty ? .empty : .content(text)
@@ -384,8 +384,9 @@ private func runClipboardCommandBinaryResult(command: String, args: [String]) ->
     }
 
     let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
     process.standardOutput = stdoutPipe
-    process.standardError = Pipe()
+    process.standardError = stderrPipe
 
     do {
         try process.run()
@@ -393,8 +394,7 @@ private func runClipboardCommandBinaryResult(command: String, args: [String]) ->
         return .unavailable
     }
 
-    let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let data = readShellProcessOutput(process, stdout: stdoutPipe, stderr: stderrPipe).stdout
 
     guard process.terminationStatus == 0 else { return .unavailable }
     return data.isEmpty ? .empty : .content(data)
@@ -444,8 +444,8 @@ private func runClipboardCommandAsync(command: String, args: [String], input: St
 
     let stdinPipe = Pipe()
     process.standardInput = stdinPipe
-    process.standardOutput = Pipe()
-    process.standardError = Pipe()
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
 
     do {
         try process.run()

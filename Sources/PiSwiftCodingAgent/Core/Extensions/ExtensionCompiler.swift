@@ -231,15 +231,12 @@ public struct ExtensionCompiler {
         process.standardError = stderrPipe
 
         try process.run()
-        process.waitUntilExit()
-
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = readShellProcessOutput(process, stdout: stdoutPipe, stderr: stderrPipe)
 
         return ProcessResult(
             exitCode: process.terminationStatus,
-            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-            stderr: String(data: stderrData, encoding: .utf8) ?? ""
+            stdout: String(data: output.stdout, encoding: .utf8) ?? "",
+            stderr: String(data: output.stderr, encoding: .utf8) ?? ""
         )
         #endif
     }

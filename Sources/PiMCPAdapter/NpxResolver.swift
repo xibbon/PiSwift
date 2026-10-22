@@ -312,9 +312,8 @@ private func forcePopulate(packageSpec: String, binName: String?) async -> (binP
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = ["npm", "exec", "--yes", "--package", packageSpec, "--", "node", "-e", "1"]
 
-    let devNull = Pipe()
-    process.standardOutput = devNull
-    process.standardError = devNull
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
 
     do {
         try process.run()

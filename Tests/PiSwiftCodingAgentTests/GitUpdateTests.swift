@@ -27,9 +27,9 @@ private func git(_ args: [String], cwd: String) throws -> String {
     process.standardError = pipe
 
     try process.run()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
 
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
     let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 
     if process.terminationStatus != 0 {
