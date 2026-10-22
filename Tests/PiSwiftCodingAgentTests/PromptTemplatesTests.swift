@@ -230,8 +230,10 @@ import Testing
 }
 
 @Test func parseCommandArgsQuotedEmptyString() {
-    // Empty quotes are skipped by current implementation
-    #expect(parseCommandArgs("\"\" \" \"") == [" "])
+    // Empty quotes keep their argument position.
+    #expect(parseCommandArgs("\"\" \" \"") == ["", " "])
+    #expect(parseCommandArgs("a '' c") == ["a", "", "c"])
+    #expect(parseCommandArgs("a \"\"") == ["a", ""])
 }
 
 @Test func parseCommandArgsSpecialCharacters() {

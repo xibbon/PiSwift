@@ -88,23 +88,20 @@ public func serializeConversation(_ messages: [Message]) -> String {
             }
         case .assistant(let assistant):
             var textParts: [String] = []
-            var thinkingParts: [String] = []
             var toolCalls: [String] = []
             for block in assistant.content {
                 switch block {
                 case .text(let text):
                     textParts.append(text.text)
-                case .thinking(let thinking):
-                    thinkingParts.append(thinking.thinking)
                 case .toolCall(let call):
-                    let args = call.arguments.map { "\($0.key)=\(String(describing: $0.value.value))" }.joined(separator: ", ")
+                    let arguments = summaryJSONValue(toolArgumentsToOrderedJSON(call.arguments, argumentsJSON: call.argumentsJSON))
+                    let args = (arguments.objectEntries ?? []).map {
+                        "\($0.0)=\($0.1.serialized(escapeSlashes: false))"
+                    }.joined(separator: ", ")
                     toolCalls.append("\(call.name)(\(args))")
-                case .image:
+                case .thinking, .image:
                     break
                 }
-            }
-            if !thinkingParts.isEmpty {
-                parts.append("[Assistant thinking]: \(thinkingParts.joined(separator: "\n"))")
             }
             if !textParts.isEmpty {
                 parts.append("[Assistant]: \(textParts.joined(separator: "\n"))")
@@ -127,6 +124,49 @@ public func serializeConversation(_ messages: [Message]) -> String {
     }
 
     return parts.joined(separator: "\n\n")
+}
+
+private func summaryJSONValue(_ value: OrderedJSON) -> OrderedJSON {
+    switch value {
+    case .number(let text):
+        guard let number = Double(text), number.isFinite else { return .null }
+        return .number(summaryJSONNumber(number))
+    case .array(let values):
+        return .array(values.map(summaryJSONValue))
+    case .object(let pairs):
+        // Object.entries and JSON.stringify put array-index keys before string keys.
+        func arrayIndex(_ key: String) -> UInt32? {
+            guard let index = UInt32(key), index < UInt32.max, String(index) == key else { return nil }
+            return index
+        }
+        let indices = pairs.filter { arrayIndex($0.0) != nil }.sorted { arrayIndex($0.0)! < arrayIndex($1.0)! }
+        let strings = pairs.filter { arrayIndex($0.0) == nil }
+        return .object((indices + strings).map { ($0.0, summaryJSONValue($0.1)) })
+    default:
+        return value
+    }
+}
+
+private func summaryJSONNumber(_ value: Double) -> String {
+    // Use JavaScript's decimal and exponent thresholds, as in PiSwiftChord.JSONValue.
+    if value == 0 { return "0" }
+    let sign = value < 0 ? "-" : ""
+    let parts = String(abs(value)).lowercased().split(separator: "e")
+    let mantissa = parts[0].split(separator: ".", omittingEmptySubsequences: false)
+    let exponent = parts.count == 2 ? Int(parts[1])! : 0
+    var digits = Array(mantissa.joined())
+    var n = mantissa[0].count + exponent
+    while digits.first == "0" { digits.removeFirst(); n -= 1 }
+    while digits.last == "0" { digits.removeLast() }
+    let k = digits.count
+    let text = String(digits)
+    if k <= n && n <= 21 { return sign + text + String(repeating: "0", count: n - k) }
+    if 0 < n && n <= 21 {
+        return sign + String(digits.prefix(n)) + "." + String(digits.dropFirst(n))
+    }
+    if -6 < n && n <= 0 { return sign + "0." + String(repeating: "0", count: -n) + text }
+    let tail = k > 1 ? "." + String(digits.dropFirst()) : ""
+    return sign + String(digits[0]) + tail + "e" + (n - 1 >= 0 ? "+" : "-") + String(abs(n - 1))
 }
 
 public let SUMMARIZATION_SYSTEM_PROMPT = """

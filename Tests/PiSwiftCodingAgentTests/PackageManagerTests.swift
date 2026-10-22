@@ -539,6 +539,73 @@ func resolveTerminatesAtFilesystemRoot(cwd: String) async throws {
 
 // MARK: - pattern filtering in pi manifest tests
 
+// package-manager.test.ts:1616, with all resource types and a + override.
+@Test(.processEnvironment, .timeLimit(.minutes(1)), arguments: ["extensions", "skills", "prompts", "themes"])
+func c1cPackageFiltersExpandTilde(_ resourceType: String) async throws {
+    let fixture = try PackageManagerTestFixture()
+    let homePath = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("home").path
+    let homePointer = try #require(realpath(homePath, nil))
+    let canonicalHome = String(cString: homePointer)
+    free(homePointer)
+    setenv("HOME", canonicalHome, 1)
+    let directory = "home/extra/\(resourceType)"
+    var paths: [String: String] = [:]
+    for name in ["keep", "glob-excluded", "exact-excluded"] {
+        let file: String
+        switch resourceType {
+        case "skills": file = "\(name)/SKILL.md"
+        case "extensions": file = "\(name).ts"
+        case "themes": file = "\(name).json"
+        default: file = "\(name).md"
+        }
+        let path = try fixture.writeFile("\(directory)/\(file)", content: "---\nname: \(name)\ndescription: \(name)\n---\n")
+        let filePointer = try #require(realpath(path, nil))
+        paths[name] = String(cString: filePointer)
+        free(filePointer)
+    }
+    let absoluteDirectory = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent(directory).path
+    let tildeDirectory = "~/extra/\(resourceType)"
+    let exactName = resourceType == "skills" ? "exact-excluded" : URL(fileURLWithPath: paths["exact-excluded"]!).lastPathComponent
+    let globName = resourceType == "skills" ? "glob-excluded" : URL(fileURLWithPath: paths["glob-excluded"]!).lastPathComponent
+
+    func setPaths(_ entries: [String]) {
+        switch resourceType {
+        case "extensions": fixture.settingsManager.setExtensionPaths(entries)
+        case "skills": fixture.settingsManager.setSkillPaths(entries)
+        case "prompts": fixture.settingsManager.setPromptTemplatePaths(entries)
+        default: fixture.settingsManager.setThemePaths(entries)
+        }
+    }
+    func resources(_ result: ResolvedPaths) -> [ResolvedResource] {
+        switch resourceType {
+        case "extensions": result.extensions
+        case "skills": result.skills
+        case "prompts": result.prompts
+        default: result.themes
+        }
+    }
+
+    // Plain path loading uses the existing absolute-path seam. HOME is isolated by the fixture.
+    let entries = [absoluteDirectory, "!\(tildeDirectory)/glob-*", "-\(tildeDirectory)/\(exactName)"]
+    setPaths(entries)
+    let excluded = resources(try await fixture.packageManager.resolve())
+    #expect(excluded.map(\.path).sorted() == paths.values.sorted())
+    #expect(excluded.contains { $0.path == paths["keep"] && $0.enabled })
+    #expect(excluded.contains { $0.path == paths["glob-excluded"] && !$0.enabled })
+    #expect(excluded.contains { $0.path == paths["exact-excluded"] && !$0.enabled })
+
+    setPaths(entries + ["+\(tildeDirectory)/\(globName)"])
+    let restored = resources(try await fixture.packageManager.resolve())
+    #expect(restored.contains { $0.path == paths["glob-excluded"] && $0.enabled })
+    #expect(restored.contains { $0.path == paths["exact-excluded"] && !$0.enabled })
+
+    setPaths([absoluteDirectory, "\(tildeDirectory)/keep*"])
+    let included = resources(try await fixture.packageManager.resolve())
+    #expect(included.contains { $0.path == paths["keep"] && $0.enabled })
+    #expect(included.contains { $0.path == paths["glob-excluded"] && !$0.enabled })
+    #expect(included.contains { $0.path == paths["exact-excluded"] && !$0.enabled })
+}
+
 @Test(.processEnvironment, .timeLimit(.minutes(1))) func manifestSupportGlobPatternsInExtensions() async throws {
     let fixture = try PackageManagerTestFixture()
     _ = try fixture.createDir("manifest-pkg")

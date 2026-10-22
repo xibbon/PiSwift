@@ -2077,18 +2077,28 @@ private func matchesAnyPattern(filePath: String, patterns: [String], baseDir: St
     let parentRel = isSkillFile ? toPosixPath(URL(fileURLWithPath: parentDir!).path.replacingOccurrences(of: baseDir + "/", with: "")) : nil
     let parentName = isSkillFile ? URL(fileURLWithPath: parentDir!).lastPathComponent : nil
 
-    return patterns.contains { pattern in
-        matchesGlob(rel, pattern) || matchesGlob(name, pattern) || matchesGlob(filePath, pattern) || (isSkillFile && (
+    return patterns.contains { rawPattern in
+        let pattern = normalizeResourcePattern(rawPattern)
+        return matchesGlob(rel, pattern) || matchesGlob(name, pattern) || matchesGlob(filePath, pattern) || (isSkillFile && (
             matchesGlob(parentRel ?? "", pattern) || matchesGlob(parentName ?? "", pattern) || matchesGlob(parentDir ?? "", pattern)
         ))
     }
 }
 
+private func normalizeResourcePattern(_ pattern: String) -> String {
+    let homeDir = ProcessInfo.processInfo.environment["HOME"] ?? getHomeDir()
+    if pattern == "~" { return toPosixPath(homeDir) }
+    if pattern.hasPrefix("~/") {
+        return toPosixPath(URL(fileURLWithPath: homeDir).appendingPathComponent(String(pattern.dropFirst(2))).standardized.path)
+    }
+    return toPosixPath(pattern)
+}
+
 private func normalizeExactPattern(_ pattern: String) -> String {
     if pattern.hasPrefix("./") || pattern.hasPrefix(".\\") {
-        return String(pattern.dropFirst(2))
+        return normalizeResourcePattern(String(pattern.dropFirst(2)))
     }
-    return pattern
+    return normalizeResourcePattern(pattern)
 }
 
 private func matchesAnyExactPattern(filePath: String, patterns: [String], baseDir: String) -> Bool {

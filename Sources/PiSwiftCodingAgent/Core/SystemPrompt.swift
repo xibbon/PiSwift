@@ -46,7 +46,8 @@ public func resolvePromptInput(_ input: String?, _ description: String) -> Strin
 }
 
 private func isRegularContextFile(_ path: String) -> Bool {
-    let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey])
+    // Follow a file symlink, as upstream statSync does; callers keep the lexical path.
+    let values = try? URL(fileURLWithPath: path).resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey])
     return values?.isRegularFile == true
 }
 
@@ -150,13 +151,14 @@ public func loadProjectContextFiles(_ options: LoadContextFilesOptions = LoadCon
     }
 
     var ancestorFiles: [ContextFile] = []
-    let shadowedContextPath = findShadowedContextFile(resolvedCwd).map(canonicalContextPath)
+    let shadowedContextPath = findShadowedContextFile(resolvedCwd)
     var currentDir = resolvedCwd
     let root = URL(fileURLWithPath: "/").path
 
     while true {
         if let context = loadContextFileFromDir(currentDir),
-           canonicalContextPath(context.path) != shadowedContextPath,
+           URL(fileURLWithPath: canonicalContextPath(currentDir))
+               .appendingPathComponent(URL(fileURLWithPath: context.path).lastPathComponent).path != shadowedContextPath,
            !seenPaths.contains(context.path) {
             ancestorFiles.insert(context, at: 0)
             seenPaths.insert(context.path)

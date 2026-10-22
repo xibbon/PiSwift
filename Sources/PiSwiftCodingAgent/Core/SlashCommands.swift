@@ -17,32 +17,47 @@ public struct FileSlashCommand: Sendable {
 public func parseCommandArgs(_ argsString: String) -> [String] {
     var args: [String] = []
     var current = ""
-    var inQuote: Character? = nil
+    var hasToken = false
+    var inQuote: Unicode.Scalar? = nil
 
-    for char in argsString {
+    for char in argsString.unicodeScalars {
         if let quote = inQuote {
             if char == quote {
                 inQuote = nil
             } else {
-                current.append(char)
+                current.unicodeScalars.append(char)
             }
         } else if char == "\"" || char == "'" {
             inQuote = char
-        } else if char == " " || char == "\t" {
-            if !current.isEmpty {
+            hasToken = true
+        } else if isCommandArgumentWhitespace(char) {
+            if hasToken {
                 args.append(current)
                 current = ""
+                hasToken = false
             }
         } else {
-            current.append(char)
+            current.unicodeScalars.append(char)
+            hasToken = true
         }
     }
 
-    if !current.isEmpty {
+    if hasToken {
         args.append(current)
     }
 
     return args
+}
+
+private func isCommandArgumentWhitespace(_ char: Unicode.Scalar) -> Bool {
+    // JavaScript's \s character class.
+    switch char.value {
+    case 0x09...0x0D, 0x20, 0xA0, 0x1680, 0x2000...0x200A,
+         0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF:
+        return true
+    default:
+        return false
+    }
 }
 
 public func substituteArgs(_ content: String, _ args: [String]) -> String {
