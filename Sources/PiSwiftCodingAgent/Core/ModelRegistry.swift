@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import PiSwiftAI
 
 private let remoteCatalogSourceId = "pi.dev"
@@ -457,11 +458,148 @@ private func parseModelCostTiers(_ value: Any?) -> [ModelCostTier]? {
     }
 }
 
+/// Focused models.json checks. Compatibility, headers, and sampling levels keep tolerant parsing.
+private struct ModelsConfigValidation {
+    var errors: [String] = []
+
+    mutating func error(_ path: String, _ message: String) {
+        errors.append("  - \(path): \(message)")
+    }
+
+    func number(_ value: Any) -> Double? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        return number.doubleValue
+    }
+
+    mutating func object(_ value: Any, path: String) -> [String: Any]? {
+        guard let dict = value as? [String: Any] else { error(path, "must be object"); return nil }
+        return dict
+    }
+
+    mutating func strings(_ dict: [String: Any], keys: [String], path: String, nonempty: Bool = false) {
+        for key in keys {
+            guard let value = dict[key] else { continue }
+            if let string = value as? String {
+                if nonempty && string.isEmpty { error("\(path).\(key)", "must not have fewer than 1 characters") }
+            } else { error("\(path).\(key)", "must be string") }
+        }
+    }
+
+    mutating func booleans(_ dict: [String: Any], keys: [String], path: String) {
+        for key in keys {
+            guard let value = dict[key] else { continue }
+            if let value = value as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() { continue }
+            error("\(path).\(key)", "must be boolean")
+        }
+    }
+
+    mutating func stringArray(_ value: Any, path: String, allowed: Set<String>? = nil) {
+        guard let values = value as? [Any] else { error(path, "must be array"); return }
+        for (index, value) in values.enumerated() {
+            guard let value = value as? String else { error("\(path).\(index)", "must be string"); continue }
+            if let allowed, !allowed.contains(value) { error("\(path).\(index)", "must match a schema in anyOf") }
+        }
+    }
+
+    mutating func cost(_ value: Any, path: String, partial: Bool) {
+        guard let dict = object(value, path: path) else { return }
+        for key in ["input", "output", "cacheRead", "cacheWrite"] {
+            if let value = dict[key] {
+                if number(value) == nil { error("\(path).\(key)", "must be number") }
+            } else if !partial { error("\(path).\(key)", "must have required properties \(key)") }
+        }
+        if let value = dict["tiers"] {
+            if let tiers = value as? [Any] {
+                for (index, tier) in tiers.enumerated() {
+                    let field = "\(path).tiers.\(index)"
+                    guard let tier = object(tier, path: field) else { continue }
+                    for key in ["inputTokensAbove", "input", "output", "cacheRead", "cacheWrite"] {
+                        if let value = tier[key] {
+                            if number(value) == nil { error("\(field).\(key)", "must be number") }
+                        } else { error("\(field).\(key)", "must have required properties \(key)") }
+                    }
+                }
+            } else { error("\(path).tiers", "must be array") }
+        }
+    }
+
+    mutating func model(_ value: Any, path: String, override: Bool) {
+        guard let dict = object(value, path: path) else { return }
+        if !override && dict["id"] == nil { error("\(path).id", "must have required properties id") }
+        strings(dict, keys: override ? ["name"] : ["id", "name", "api", "baseUrl"], path: path, nonempty: true)
+        booleans(dict, keys: ["reasoning"], path: path)
+        for key in ["contextWindow", "maxTokens"] {
+            if let value = dict[key] {
+                if let value = number(value) {
+                    if value <= 0 { error("\(path).\(key)", "must be > 0") }
+                } else { error("\(path).\(key)", "must be number") }
+            }
+        }
+        if let input = dict["input"] { stringArray(input, path: "\(path).input", allowed: ["text", "image"]) }
+        if let value = dict["cost"] { cost(value, path: "\(path).cost", partial: override) }
+        if let value = dict["samplingParams"] { _ = object(value, path: "\(path).samplingParams") }
+        if let value = dict["thinkingLevelMap"], let levels = object(value, path: "\(path).thinkingLevelMap") {
+            for level in ["off", "minimal", "low", "medium", "high", "xhigh", "max"] {
+                if let value = levels[level], !(value is String || value is NSNull) { error("\(path).thinkingLevelMap.\(level)", "must match a schema in anyOf") }
+            }
+        }
+        if let value = dict["promptCache"], let cache = object(value, path: "\(path).promptCache") {
+            for key in ["short", "long"] {
+                if let value = cache[key] {
+                    if let value = number(value), value > 0 { continue }
+                    error("\(path).promptCache.\(key)", "must be > 0")
+                }
+            }
+        }
+        if let value = dict["inputLimits"], let limits = object(value, path: "\(path).inputLimits") {
+            positiveIntegers(limits, keys: ["maxRequestBytes"], path: "\(path).inputLimits")
+            if let value = limits["images"], let images = object(value, path: "\(path).inputLimits.images") {
+                positiveIntegers(images, keys: ["maxPerMessage", "maxPerRequest"], path: "\(path).inputLimits.images")
+                if let value = images["resize"], let resize = object(value, path: "\(path).inputLimits.images.resize") {
+                    positiveIntegers(resize, keys: ["maxWidth", "maxHeight", "maxBytes", "jpegQuality"], path: "\(path).inputLimits.images.resize")
+                    if let value = resize["jpegQuality"], let quality = number(value), quality > 100 { error("\(path).inputLimits.images.resize.jpegQuality", "must be <= 100") }
+                }
+            }
+        }
+    }
+
+    mutating func positiveIntegers(_ dict: [String: Any], keys: [String], path: String) {
+        for key in keys {
+            if let value = dict[key] {
+                guard let value = number(value), value.rounded() == value else { error("\(path).\(key)", "must be integer"); continue }
+                if value < 1 { error("\(path).\(key)", "must be >= 1") }
+            }
+        }
+    }
+
+    mutating func validate(_ dict: [String: Any]) {
+        if let value = dict["$schema"], !(value is String) { error("$schema", "must be string") }
+        guard let value = dict["providers"] else { error("providers", "must have required properties providers"); return }
+        guard let providers = object(value, path: "providers") else { return }
+        for name in providers.keys.sorted() {
+            let path = "providers.\(name)"
+            guard let provider = object(providers[name]!, path: path) else { continue }
+            // The existing provider-name check keeps its public error text.
+            strings(provider, keys: ["baseUrl", "apiKey", "api"], path: path, nonempty: true)
+            booleans(provider, keys: ["authHeader"], path: path)
+            if let value = provider["models"] {
+                if let models = value as? [Any] {
+                    for (index, value) in models.enumerated() { model(value, path: "\(path).models.\(index)", override: false) }
+                } else { error("\(path).models", "must be array") }
+            }
+            if let value = provider["modelOverrides"], let overrides = object(value, path: "\(path).modelOverrides") {
+                for key in overrides.keys.sorted() { model(overrides[key]!, path: "\(path).modelOverrides.\(key)", override: true) }
+            }
+        }
+    }
+}
+
 private struct CustomModelsResult: Sendable {
     var models: [Model]
     var overrides: [String: ProviderOverride]
     var modelOverrides: [String: [String: ModelOverride]]
     var errorMessage: String?
+    var rawProviders: [String: AnyCodable] = [:]
 }
 
 private func emptyCustomModelsResult(errorMessage: String? = nil) -> CustomModelsResult {
@@ -683,6 +821,7 @@ public final class ModelRegistry: Sendable {
         var userModels: [Model] = []
         var configuredProviderOverrides: [String: ProviderOverride] = [:]
         var configuredModelOverrides: [String: [String: ModelOverride]] = [:]
+        var configuredProviders: [String: AnyCodable] = [:]
         var dynamicModelsBySource: [String: [String: [Model]]] = [:]
         var dynamicNonChatModelsBySource: [String: [String: [AnyModel]]] = [:]
         var remoteModelsByProvider: [String: [AnyModel]] = [:]
@@ -769,6 +908,27 @@ public final class ModelRegistry: Sendable {
         }
         refreshCoordinator.withLock {
             $0 = ModelCatalogRefreshCoordinator(store: modelsStore, sources: sources)
+        }
+    }
+
+    /// Returns configured compatibility values, including custom keys that the typed
+    /// provider API does not use. Model definitions and overrides take precedence.
+    public func getConfiguredCompatibility(provider: String, modelId: String? = nil) -> [String: AnyCodable]? {
+        state.withLock { state in
+            guard let config = state.configuredProviders[provider]?.value as? [String: Any] else { return nil }
+            var compat = config["compat"] as? [String: Any] ?? [:]
+            if let modelId {
+                if let models = config["models"] as? [[String: Any]],
+                   let model = models.first(where: { $0["id"] as? String == modelId }),
+                   let values = model["compat"] as? [String: Any] {
+                    compat.merge(values) { _, value in value }
+                }
+                if let overrides = config["modelOverrides"] as? [String: [String: Any]],
+                   let values = overrides[modelId]?["compat"] as? [String: Any] {
+                    compat.merge(values) { _, value in value }
+                }
+            }
+            return compat.isEmpty ? nil : compat.mapValues(AnyCodable.init)
         }
     }
 
@@ -1651,6 +1811,7 @@ public final class ModelRegistry: Sendable {
             state.userModels = customResult.models
             state.configuredProviderOverrides = customResult.overrides
             state.configuredModelOverrides = customResult.modelOverrides
+            state.configuredProviders = customResult.rawProviders
             rebuildModelsLocked(&state)
         }
     }
@@ -1894,13 +2055,35 @@ public final class ModelRegistry: Sendable {
         do {
             let root = try JSONSerialization.jsonObject(with: stripUTF8BOM(data))
             if let entries = root as? [[String: Any]] {
-            return parseLegacyModels(entries)
-        }
-        guard let dict = root as? [String: Any],
-              let providers = dict["providers"] as? [String: Any] else {
-            return emptyCustomModelsResult(errorMessage: "models.json parse error")
+                var validation = ModelsConfigValidation()
+                for (index, entry) in entries.enumerated() {
+                    // Keep the legacy file format; apply the new token-limit checks.
+                    for key in ["contextWindow", "maxTokens"] {
+                        if let value = entry[key] {
+                            if let value = validation.number(value), value > 0 { continue }
+                            validation.error("models.\(index).\(key)", "must be > 0")
+                        }
+                    }
+                }
+                if !validation.errors.isEmpty {
+                    return emptyCustomModelsResult(errorMessage: "Invalid models.json schema:\n" + validation.errors.joined(separator: "\n") + "\n\nFile: \(path)")
+                }
+                return parseLegacyModels(entries)
             }
-            return parseProviderModels(providers)
+            guard let dict = root as? [String: Any] else {
+                return emptyCustomModelsResult(errorMessage: "models.json parse error")
+            }
+            var validation = ModelsConfigValidation()
+            validation.validate(dict)
+            if !validation.errors.isEmpty {
+                return emptyCustomModelsResult(errorMessage: "Invalid models.json schema:\n" + validation.errors.joined(separator: "\n") + "\n\nFile: \(path)")
+            }
+            guard let providers = dict["providers"] as? [String: Any] else {
+                return emptyCustomModelsResult(errorMessage: "models.json parse error")
+            }
+            var result = parseProviderModels(providers)
+            if result.errorMessage == nil { result.rawProviders = providers.mapValues(AnyCodable.init) }
+            return result
         } catch {
             return emptyCustomModelsResult(errorMessage: "models.json parse error")
         }

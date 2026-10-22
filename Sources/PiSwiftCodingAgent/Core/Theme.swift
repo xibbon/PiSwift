@@ -1,7 +1,18 @@
 import Foundation
+import CoreFoundation
 import PiSwiftAI
 import Dispatch
 import Darwin
+
+/// Editor schemas copied from pi-mono v1.3.0. These resources also load on iOS.
+public enum BundledConfigSchema: String, CaseIterable, Sendable {
+    case settings, models, keybindings, theme
+
+    public var url: URL? {
+        Bundle.module.url(forResource: rawValue + ".schema", withExtension: "json", subdirectory: "schemas")
+            ?? Bundle.module.url(forResource: rawValue + ".schema", withExtension: "json")
+    }
+}
 
 public enum ThemeColor: String, CaseIterable, Sendable {
     case accent
@@ -374,7 +385,7 @@ private func getBuiltinThemeData() -> [String: ThemeJson] {
         }
         let fallbackPath = (getThemesDir() as NSString).appendingPathComponent("\(name).json")
         if let data = try? Data(contentsOf: URL(fileURLWithPath: fallbackPath)),
-           let json = try? decoder.decode(ThemeJson.self, from: data) {
+           let json = try? decodeThemeJson(data, label: name) {
             builtins[name] = json
         }
     }
@@ -383,24 +394,99 @@ private func getBuiltinThemeData() -> [String: ThemeJson] {
     return builtins
 }
 
-private func validateThemeJson(_ json: ThemeJson, name: String) throws {
-    let required = Set(ThemeColor.allCases.map { $0.rawValue } + ThemeBg.allCases.map { $0.rawValue })
-    let present = Set(json.colors.keys)
-    let missing = required.subtracting(present).sorted()
-    if !missing.isEmpty {
-        var message = "Invalid theme \"\(name)\":\n\nMissing required color tokens:\n"
-        message += missing.map { "  - \($0)" }.joined(separator: "\n")
-        message += "\n\nPlease add these colors to your theme's \"colors\" object."
-        message += "\nSee the built-in themes (dark.json, light.json) for reference values."
+/// Check the raw document before Decodable can discard keys or accept null optionals.
+private func decodeThemeJson(_ data: Data, label: String) throws -> ThemeJson {
+    let raw = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+    let json = raw as? [String: Any]
+    if let name = json?["name"] as? String, name.contains("/") {
+        throw ThemeLoadError.invalidTheme("Invalid theme name \"\(name)\": theme names cannot contain \"/\" because it is reserved for automatic light/dark theme settings.")
+    }
+
+    var errors: [String] = []
+    var missing: [String] = []
+    func error(_ path: String, _ message: String) {
+        errors.append("  - \(path): \(message)")
+    }
+    func checkKeys(_ object: [String: Any], allowed: Set<String>, path: String) {
+        let additional = Set(object.keys).subtracting(allowed).sorted()
+        for key in additional { error((path == "/" ? "" : path) + "/" + key, "schema is false") }
+        if !additional.isEmpty { error(path, "must not have additional properties") }
+    }
+    func checkColor(_ value: Any, path: String) {
+        if value is String { return }
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+           number.doubleValue.rounded() == number.doubleValue, (0...255).contains(number.doubleValue) {
+            return
+        }
+        error(path, "must be string")
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+           number.doubleValue.rounded() == number.doubleValue {
+            if number.doubleValue < 0 { error(path, "must be >= 0") }
+            if number.doubleValue > 255 { error(path, "must be <= 255") }
+        } else { error(path, "must be integer") }
+        error(path, "must match a schema in anyOf")
+    }
+
+    if let json {
+        checkKeys(json, allowed: ["$schema", "name", "appearance", "vars", "colors", "export"], path: "/")
+        let required = ["name", "colors"].filter { json[$0] == nil }
+        if !required.isEmpty { error("/", "must have required properties \(required.joined(separator: ", "))") }
+        if let schema = json["$schema"], !(schema is String) { error("/$schema", "must be string") }
+        if let name = json["name"] {
+            if let name = name as? String {
+                if name.isEmpty { error("/name", "must match pattern \"^[^/]+$\"") }
+            } else { error("/name", "must be string") }
+        }
+        if let appearance = json["appearance"],
+           !(appearance is String && ["dark", "light"].contains(appearance as? String ?? "")) {
+            for _ in ["dark", "light"] {
+                if !(appearance is String) { error("/appearance", "must be string") }
+                error("/appearance", "must be equal to constant")
+            }
+            error("/appearance", "must match a schema in anyOf")
+        }
+        if let vars = json["vars"] {
+            if let vars = vars as? [String: Any] {
+                for key in vars.keys.sorted() { checkColor(vars[key]!, path: "/vars/\(key)") }
+            } else { error("/vars", "must be object") }
+        }
+        if let colors = json["colors"] {
+            if let colors = colors as? [String: Any] {
+                let tokens = Set(ThemeColor.allCases.map(\.rawValue) + ThemeBg.allCases.map(\.rawValue))
+                let optional: Set<String> = ["thinkingMax", "scrollbarTrack", "scrollbarThumb", "searchMatchBg", "searchMatchText"]
+                missing = tokens.subtracting(optional).subtracting(colors.keys).sorted()
+                checkKeys(colors, allowed: tokens, path: "/colors")
+                for key in colors.keys.sorted() where tokens.contains(key) {
+                    checkColor(colors[key]!, path: "/colors/\(key)")
+                }
+            } else { error("/colors", "must be object") }
+        }
+        if let export = json["export"] {
+            if let export = export as? [String: Any] {
+                let keys: Set<String> = ["pageBg", "cardBg", "infoBg"]
+                checkKeys(export, allowed: keys, path: "/export")
+                for key in export.keys.sorted() where keys.contains(key) {
+                    checkColor(export[key]!, path: "/export/\(key)")
+                }
+            } else { error("/export", "must be object") }
+        }
+    } else { error("/", "must be object") }
+
+    if !missing.isEmpty || !errors.isEmpty {
+        var message = "Invalid theme \"\(label)\":\n"
+        if !missing.isEmpty {
+            message += "\nMissing required color tokens:\n"
+            message += missing.map { "  - \($0)" }.joined(separator: "\n")
+            message += "\n\nPlease add these colors to your theme's \"colors\" object."
+            message += "\nSee the built-in themes (dark.json, light.json) for reference values."
+        }
+        if !errors.isEmpty { message += "\n\nOther errors:\n" + errors.joined(separator: "\n") }
         throw ThemeLoadError.invalidTheme(message)
     }
-    if json.name.contains("/") {
-        throw ThemeLoadError.invalidTheme("Invalid theme name \"\(json.name)\": theme names cannot contain \"/\" because it is reserved for automatic light/dark theme settings.")
-    }
+    return withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
 }
 
-/// Applies optional theme-token fallbacks before validation so themes written before a
-/// new optional token was introduced remain valid.
+/// Apply optional token fallbacks after raw validation for themes from older versions.
 private func withThemeColorFallbacks(_ json: ThemeJson) -> ThemeJson {
     var resolved = json
     if resolved.colors[ThemeColor.thinkingMax.rawValue] == nil,
@@ -420,8 +506,7 @@ private func loadThemeJson(_ name: String) throws -> ThemeJson {
             throw ThemeLoadError.missingTheme(name)
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: registeredPath))
-        let json = withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
-        try validateThemeJson(json, name: name)
+        let json = try decodeThemeJson(data, label: registeredPath)
         return json
     }
 
@@ -436,8 +521,7 @@ private func loadThemeJson(_ name: String) throws -> ThemeJson {
         throw ThemeLoadError.missingTheme(name)
     }
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    let json = withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
-    try validateThemeJson(json, name: name)
+    let json = try decodeThemeJson(data, label: name)
     return json
 }
 
@@ -485,8 +569,7 @@ public func loadTheme(_ name: String, mode: TerminalColorMode? = nil) throws -> 
 
 public func loadThemeFromPath(_ path: String, mode: TerminalColorMode? = nil) throws -> Theme {
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    let json = withThemeColorFallbacks(try JSONDecoder().decode(ThemeJson.self, from: data))
-    try validateThemeJson(json, name: json.name)
+    let json = try decodeThemeJson(data, label: path)
     return try createTheme(json, mode: mode)
 }
 

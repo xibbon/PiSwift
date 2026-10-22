@@ -278,12 +278,7 @@ private final class ResourceLoaderTestFixture {
 
 @Test func resourceLoaderDiscoversThemesFromAgentDir() async throws {
     let fixture = try ResourceLoaderTestFixture()
-    try fixture.writeAgentFile("themes/dark.json", content: """
-        {
-            "name": "dark",
-            "colors": {}
-        }
-        """)
+    try fixture.writeAgentFile("themes/dark.json", content: c2aThemeText(name: "dark"))
 
     let loader = fixture.createLoader()
     await loader.reload()
@@ -339,7 +334,7 @@ private final class ResourceLoaderTestFixture {
         ---
         Extension prompt content.
         """)
-    try fixture.writeFile("extension-resources/themes/ext-theme.json", content: "{}")
+    try fixture.writeFile("extension-resources/themes/ext-theme.json", content: c2aThemeText(name: "ext-theme"))
 
     let skillPath = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("extension-resources/skills").path
     let promptPath = URL(fileURLWithPath: fixture.tempDir).appendingPathComponent("extension-resources/prompts/ext-prompt.md").path

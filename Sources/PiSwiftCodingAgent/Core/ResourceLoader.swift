@@ -573,14 +573,12 @@ public final class DefaultResourceLoader: ResourceLoader {
             if isDir.boolValue {
                 if let entries = try? FileManager.default.contentsOfDirectory(atPath: path) {
                     for entry in entries where entry.hasSuffix(".json") {
-                        let name = (entry as NSString).deletingPathExtension
                         let fullPath = URL(fileURLWithPath: path).appendingPathComponent(entry).path
-                        themes.append(HookThemeInfo(name: name, path: fullPath))
+                        loadThemeCandidate(fullPath, themes: &themes, diagnostics: &diagnostics)
                     }
                 }
             } else if path.lowercased().hasSuffix(".json") {
-                let name = (path as NSString).lastPathComponent.replacingOccurrences(of: ".json", with: "")
-                themes.append(HookThemeInfo(name: name, path: path))
+                loadThemeCandidate(path, themes: &themes, diagnostics: &diagnostics)
             } else {
                 diagnostics.append(ResourceDiagnostic(type: "warning", message: "theme path is not a json file", path: path))
             }
@@ -589,6 +587,15 @@ public final class DefaultResourceLoader: ResourceLoader {
         let deduped = dedupeThemes(themes)
         diagnostics.append(contentsOf: deduped.diagnostics)
         return (deduped.themes, diagnostics)
+    }
+
+    private func loadThemeCandidate(_ path: String, themes: inout [HookThemeInfo], diagnostics: inout [ResourceDiagnostic]) {
+        do {
+            let loaded = try loadThemeFromPath(path)
+            themes.append(HookThemeInfo(name: loaded.name, path: path))
+        } catch {
+            diagnostics.append(ResourceDiagnostic(type: "warning", message: String(describing: error), path: path))
+        }
     }
 
     private func updateThemesFromPaths(_ paths: [String]) {
