@@ -924,3 +924,34 @@ func remoteCatalogWithNoDecodableEntryKeepsTheCachedCatalog(payload: String) asy
     // models.json is applied after the corrections, so the user's name stays.
     #expect(registry.find("anthropic", "claude-sonnet-4-5")?.name == "Claude Sonnet 4.5 (latest)")
 }
+
+// Port v1.3.0 packages/ai/test/models-runtime.test.ts:442.
+@Test(.timeLimit(.minutes(1))) func a3RefreshPassesTheEffectiveProviderBaseURLToBothPhases() async throws {
+    let baseURL = LockedState("https://regional.example.invalid/v1")
+    let observed = LockedState<[(Bool, String?)]>([])
+    let source = ModelsRefreshSource(id: "a3-base-url", readStoredCredential: { "stored" },
+        resolveCredential: { _ in "resolved" }, baseUrl: { baseURL.withLock { $0 } }, refresh: { context in
+            observed.withLock { $0.append((context.allowNetwork, context.baseUrl)) }
+        })
+    let coordinator = ModelCatalogRefreshCoordinator(store: InMemoryCodingAgentModelsStore(), sources: [source])
+    #expect((await coordinator.refresh()).errors.isEmpty)
+    #expect(observed.withLock { $0.map(\.0) } == [false, true])
+    #expect(observed.withLock { $0.map(\.1) } == [
+        "https://regional.example.invalid/v1", "https://regional.example.invalid/v1"
+    ])
+}
+
+@Test(.timeLimit(.minutes(1))) func a3RefreshReadsTheProviderBaseURLForEachPhase() async throws {
+    let baseURL = LockedState("https://first.example.invalid/v1")
+    let observed = LockedState<[String?]>([])
+    let source = ModelsRefreshSource(id: "a3-live-base-url", readStoredCredential: { "stored" },
+        resolveCredential: { _ in
+            baseURL.withLock { $0 = "https://second.example.invalid/v1" }
+            return "resolved"
+        }, baseUrl: { baseURL.withLock { $0 } }, refresh: { context in
+            observed.withLock { $0.append(context.baseUrl) }
+        })
+    let coordinator = ModelCatalogRefreshCoordinator(store: InMemoryCodingAgentModelsStore(), sources: [source])
+    #expect((await coordinator.refresh()).errors.isEmpty)
+    #expect(observed.withLock { $0 } == ["https://first.example.invalid/v1", "https://second.example.invalid/v1"])
+}

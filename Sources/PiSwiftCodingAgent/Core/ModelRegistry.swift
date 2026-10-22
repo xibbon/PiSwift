@@ -731,11 +731,24 @@ public final class ModelRegistry: Sendable {
 
         let sources = getProviders().map { provider -> ModelsRefreshSource in
             let providerId = provider.rawValue
+            let personalize: PersonalizeCatalog?
+            if provider == .openrouter {
+                personalize = { catalog, context in
+                    try await personalizeOpenRouterCatalog(
+                        catalog, credential: context.credential, baseUrl: context.baseUrl,
+                        client: remoteHTTPClient, signal: context.signal
+                    )
+                }
+            } else {
+                personalize = nil
+            }
             let remote = RemoteCatalogProvider(
                 providerId: providerId,
                 catalogBaseURL: catalogBaseURL,
                 httpClient: remoteHTTPClient,
                 now: now,
+                builtinModels: { PiSwiftAI.getAllModels(provider: providerId) },
+                personalize: personalize,
                 updateOverlay: { [weak self] models in
                     self?.setRemoteCatalogModels(models, providerId: providerId)
                 }
@@ -747,6 +760,9 @@ public final class ModelRegistry: Sendable {
                 },
                 resolveCredential: { [authStorage] signal in
                     await authStorage.getApiKey(providerId, signal: signal)
+                },
+                baseUrl: { [weak self] in
+                    self?.refreshBaseUrl(providerId: providerId)
                 },
                 refresh: remote.refresh
             )
@@ -1641,6 +1657,9 @@ public final class ModelRegistry: Sendable {
                 let configured = (providers[provider] ?? []).map {
                     applyConfiguredRemoteModel($0, state: state)
                 }
+                if provider == "openrouter", state.remoteModelsByProvider[provider]?.isEmpty == false {
+                    combined.removeAll { $0.provider == provider }
+                }
                 combined = mergeCustomModels(builtInModels: combined, customModels: configured)
             }
         }
@@ -1679,6 +1698,9 @@ public final class ModelRegistry: Sendable {
         all.removeAll { $0.type == .chat }
         all += listed.map(AnyModel.chat)
         for provider in state.remoteModelsByProvider.keys.sorted() {
+            if provider == "openrouter", state.remoteModelsByProvider[provider]?.isEmpty == false {
+                all.removeAll { $0.provider == provider && $0.type != .chat }
+            }
             for raw in state.remoteModelsByProvider[provider] ?? [] where raw.type != .chat {
                 let model = applyConfiguredNonChatModel(raw, state: state)
                 if let index = all.firstIndex(where: { $0.type == model.type && $0.provider == model.provider && $0.id == model.id }) {
@@ -1713,6 +1735,17 @@ public final class ModelRegistry: Sendable {
                 provider: value.provider, baseUrl: providerOverride.baseUrl ?? value.baseUrl,
                 input: value.input, cost: value.cost, contextWindow: value.contextWindow,
                 headers: headers, inputLimits: value.inputLimits))
+        }
+    }
+
+    private func refreshBaseUrl(providerId: String) -> String? {
+        state.withLock { state in
+            let extensionConfig = state.dynamicSourceOrder.reversed().compactMap {
+                state.dynamicProviderConfigsBySource[$0]?[providerId]
+            }.first
+            return extensionConfig?.baseUrl
+                ?? state.configuredProviderOverrides[providerId]?.baseUrl
+                ?? PiSwiftAI.getAllModels(provider: providerId).first?.catalog.baseUrl
         }
     }
 

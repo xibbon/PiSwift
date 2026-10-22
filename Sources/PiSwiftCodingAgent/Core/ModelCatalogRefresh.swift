@@ -22,6 +22,8 @@ public struct ModelsPublication: Sendable {
 
 public struct RefreshModelsContext: Sendable {
     public let credential: String?
+    /// Effective provider URL after configuration overrides.
+    public let baseUrl: String?
     /// Immutable snapshot captured before this refresh phase.
     public let stored: ModelsStoreEntry?
     public let allowNetwork: Bool
@@ -37,9 +39,11 @@ public struct RefreshModelsContext: Sendable {
         allowNetwork: Bool,
         force: Bool,
         signal: CancellationToken,
+        baseUrl: String? = nil,
         publish: @escaping @Sendable (ModelsPublication) async -> Bool
     ) {
         self.credential = credential
+        self.baseUrl = baseUrl
         self.stored = stored
         self.allowNetwork = allowNetwork
         self.force = force
@@ -79,6 +83,7 @@ public struct ModelsRefreshResult: Sendable {
 
 public struct ModelsRefreshSource: Sendable {
     public let id: String
+    public let baseUrl: @Sendable () -> String?
     public let readStoredCredential: @Sendable () async throws -> String?
     public let resolveCredential: @Sendable (CancellationToken) async throws -> String?
     public let refresh: @Sendable (RefreshModelsContext) async throws -> Void
@@ -87,9 +92,11 @@ public struct ModelsRefreshSource: Sendable {
         id: String,
         readStoredCredential: @escaping @Sendable () async throws -> String?,
         resolveCredential: @escaping @Sendable (CancellationToken) async throws -> String?,
+        baseUrl: @escaping @Sendable () -> String? = { nil },
         refresh: @escaping @Sendable (RefreshModelsContext) async throws -> Void
     ) {
         self.id = id
+        self.baseUrl = baseUrl
         self.readStoredCredential = readStoredCredential
         self.resolveCredential = resolveCredential
         self.refresh = refresh
@@ -240,6 +247,7 @@ public actor ModelCatalogRefreshCoordinator {
             allowNetwork: allowNetwork,
             force: force,
             signal: signal,
+            baseUrl: source.baseUrl(),
             publish: { [weak self] publication in
                 guard let self else { return false }
                 do {

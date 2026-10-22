@@ -154,13 +154,18 @@ private func managementCancellationMonitor(
     }
 }
 
-/// Refresh implementation for one built-in provider's pi.dev catalog overlay.
+/// Replaces a provider catalog with a credential-specific list.
+public typealias PersonalizeCatalog = @Sendable ([AnyModel], RefreshModelsContext) async throws -> [AnyModel]
+
+/// Refresh implementation for one built-in provider's pi.dev catalog.
 public struct RemoteCatalogProvider: Sendable {
     public let providerId: String
     private let catalogBaseURL: String
     private let localGeneratedAt: Double?
     private let httpClient: any ProviderHTTPClient
     private let now: @Sendable () -> Double
+    private let personalize: PersonalizeCatalog?
+    private let builtinModels: @Sendable () -> [AnyModel]
     private let updateOverlay: @Sendable ([AnyModel]) -> Void
 
     public init(
@@ -169,6 +174,8 @@ public struct RemoteCatalogProvider: Sendable {
         localGeneratedAt: Double? = getBuiltinModelDataGeneratedAt(),
         httpClient: any ProviderHTTPClient = DefaultProviderHTTPClient(),
         now: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 * 1_000 },
+        builtinModels: @escaping @Sendable () -> [AnyModel] = { [] },
+        personalize: PersonalizeCatalog? = nil,
         updateOverlay: @escaping @Sendable ([AnyModel]) -> Void
     ) {
         self.providerId = providerId
@@ -176,10 +183,16 @@ public struct RemoteCatalogProvider: Sendable {
         self.localGeneratedAt = localGeneratedAt
         self.httpClient = httpClient
         self.now = now
+        self.builtinModels = builtinModels
+        self.personalize = personalize
         self.updateOverlay = updateOverlay
     }
 
     public func refresh(_ context: RefreshModelsContext) async throws {
+        if let personalize {
+            try await refreshPersonalized(context, personalize: personalize)
+            return
+        }
         let stored = context.stored
         let restored = remoteModels(stored).filter { $0.provider == providerId }
         guard await context.publish(ModelsPublication(update: {
@@ -194,20 +207,7 @@ public struct RemoteCatalogProvider: Sendable {
             return
         }
 
-        let encodedProvider = providerId.addingPercentEncoding(
-            withAllowedCharacters: CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
-        ) ?? providerId
-        let trimmedBase = catalogBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        var components = URLComponents(string: "\(trimmedBase)/api/models/providers/\(encodedProvider)")
-        components?.queryItems = [URLQueryItem(name: "types", value: "chat,image,classifier")]
-        guard let url = components?.url else {
-            throw RemoteCatalogError.invalidBaseURL(catalogBaseURL)
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(piUserAgent(version: VERSION), forHTTPHeaderField: "User-Agent")
+        var request = try catalogRequest()
         if stored?.models.isEmpty == false, let etag = stored?.etag {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
@@ -264,6 +264,63 @@ public struct RemoteCatalogProvider: Sendable {
         _ = await context.publish(ModelsPublication(persist: .write(entry), update: {
             updateOverlay(published)
         }))
+    }
+
+    private func refreshPersonalized(
+        _ context: RefreshModelsContext,
+        personalize: PersonalizeCatalog
+    ) async throws {
+        // A saved personalized list is complete, even when older than the built-in data.
+        let restored = (context.stored?.models ?? []).filter { $0.provider == providerId }
+        guard await context.publish(ModelsPublication(update: {
+            updateOverlay(restored)
+        })) else { return }
+        guard context.allowNetwork, !context.signal.isCancelled else { return }
+
+        // Always get a body. The saved body is personalized and cannot back a public validator.
+        let response = try await fetchWithRetry(
+            catalogRequest(), client: httpClient,
+            options: .init(attemptTimeoutMs: 4_000), signal: context.signal
+        )
+        if context.signal.isCancelled { return }
+        var remote: [AnyModel] = []
+        if response.statusCode != 404 && response.statusCode != 501 {
+            guard (200..<300).contains(response.statusCode) else {
+                throw RemoteCatalogError.requestFailed(providerId: providerId, statusCode: response.statusCode)
+            }
+            let catalog = try parseCatalog(response.body)
+            if catalog.models.isEmpty, catalog.entries > 0 {
+                throw RemoteCatalogError.invalidCatalog(providerId)
+            }
+            let lastModified = header("last-modified", in: response.headers)
+                .flatMap(parseHTTPDate).map { $0.timeIntervalSince1970 * 1_000 } ?? 0
+            remote = remoteModels(ModelsStoreEntry(models: catalog.models, lastModified: lastModified))
+        }
+        let personalized = try await personalize(
+            mergeModels(baseline: builtinModels(), dynamic: remote), context
+        )
+        if context.signal.isCancelled { return }
+        _ = await context.publish(ModelsPublication(
+            persist: .write(ModelsStoreEntry(models: personalized, checkedAt: now())),
+            update: { updateOverlay(personalized) }
+        ))
+    }
+
+    private func catalogRequest() throws -> URLRequest {
+        let encodedProvider = providerId.addingPercentEncoding(
+            withAllowedCharacters: CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+        ) ?? providerId
+        let trimmedBase = catalogBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        var components = URLComponents(string: "\(trimmedBase)/api/models/providers/\(encodedProvider)")
+        components?.queryItems = [URLQueryItem(name: "types", value: "chat,image,classifier")]
+        guard let url = components?.url else {
+            throw RemoteCatalogError.invalidBaseURL(catalogBaseURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(piUserAgent(version: VERSION), forHTTPHeaderField: "User-Agent")
+        return request
     }
 
     public func mergeModels(baseline: [Model], dynamic: [Model]) -> [Model] {
