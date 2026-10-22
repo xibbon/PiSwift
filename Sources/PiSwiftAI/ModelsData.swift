@@ -4,7 +4,7 @@ import Foundation
 // Do not edit manually.
 
 /// Generation timestamp shared by all built-in provider catalogs (seconds since 1970).
-internal let builtinModelDataGeneratedAt: Double? = 1791480046.977
+internal let builtinModelDataGeneratedAt: Double? = 1792621556.816
 
 internal let ModelsData: [String: [String: Model]] = [
     "amazon-bedrock": providerModels_amazon_bedrock,
@@ -115,6 +115,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -129,6 +130,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -157,6 +159,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625)]),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -213,6 +216,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -227,6 +231,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -241,6 +246,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -284,6 +290,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -298,6 +305,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -377,6 +385,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.11, output: 0.55, cacheRead: 0.011, cacheWrite: 0.1375, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.55, output: 2.75, cacheRead: 0.055, cacheWrite: 0.6875)]),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -406,6 +415,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -420,6 +430,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -434,6 +445,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -448,6 +460,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 4.4, output: 22, cacheRead: 0.22, cacheWrite: 5.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -491,6 +504,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 11, cacheRead: 0.22, cacheWrite: 2.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -595,6 +609,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 11, output: 55, cacheRead: 1.1, cacheWrite: 13.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -623,6 +638,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.11, output: 0.55, cacheRead: 0.011, cacheWrite: 0.1375, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.55, output: 2.75, cacheRead: 0.055, cacheWrite: 0.6875)]),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -666,6 +682,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -680,6 +697,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -694,6 +712,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -708,6 +727,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 4.4, output: 22, cacheRead: 0.22, cacheWrite: 5.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -764,6 +784,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 11, cacheRead: 0.22, cacheWrite: 2.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -778,6 +799,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 11, cacheRead: 0.11, cacheWrite: 2.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -818,6 +840,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -832,6 +855,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -860,6 +884,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625)]),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -903,6 +928,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -917,6 +943,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -931,6 +958,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -945,6 +973,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1001,6 +1030,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1015,6 +1045,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1058,6 +1089,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 8, output: 30, cacheRead: 0.8, cacheWrite: 10)]),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1072,6 +1104,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1284,6 +1317,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 13.2, cacheRead: 0.22, cacheWrite: 2.75, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4.4, output: 19.8, cacheRead: 0.44, cacheWrite: 5.5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1325,6 +1359,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.11, output: 0.55, cacheRead: 0.011, cacheWrite: 0.1375, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.55, output: 2.75, cacheRead: 0.055, cacheWrite: 0.6875)]),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1339,6 +1374,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1353,6 +1389,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1367,6 +1404,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1381,6 +1419,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 4.4, output: 22, cacheRead: 0.22, cacheWrite: 5.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -1424,6 +1463,7 @@ private let providerModels_amazon_bedrock_chunk1: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 11, cacheRead: 0.22, cacheWrite: 2.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2139,6 +2179,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 11, output: 55, cacheRead: 1.1, cacheWrite: 13.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2153,6 +2194,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 11, output: 55, cacheRead: 0.275, cacheWrite: 13.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2181,6 +2223,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 0.11, output: 0.55, cacheRead: 0.011, cacheWrite: 0.1375, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.55, output: 2.75, cacheRead: 0.055, cacheWrite: 0.6875)]),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2237,6 +2280,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2251,6 +2295,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2265,6 +2310,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 5.5, output: 27.5, cacheRead: 0.55, cacheWrite: 6.875),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2279,6 +2325,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 4.4, output: 22, cacheRead: 0.22, cacheWrite: 5.5),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2335,6 +2382,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 11, cacheRead: 0.22, cacheWrite: 2.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2349,6 +2397,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 11, cacheRead: 0.11, cacheWrite: 2.75),
         contextWindow: 1000000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2467,6 +2516,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 4.4, output: 22, cacheRead: 0.44, cacheWrite: 5.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 8.8, output: 33, cacheRead: 0.88, cacheWrite: 11)]),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2481,6 +2531,7 @@ private let providerModels_amazon_bedrock_chunk2: [String: Model] = [
         cost: ModelCost(input: 2.2, output: 13.2, cacheRead: 0.22, cacheWrite: 2.75, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4.4, output: 19.8, cacheRead: 0.44, cacheWrite: 5.5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
+        compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: 20, maxPerRequest: nil))
     ),
@@ -2819,7 +2870,7 @@ private let providerModels_anthropic: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsTemperature: false, supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true, supportsStrictTools: true, forceAdaptiveThinking: true, supportsMidConvoEffort: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 33554432, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 600)),
         promptCache: ModelPromptCache(short: 300, long: 3600)
     ),
@@ -2913,7 +2964,7 @@ private let providerModels_anthropic: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsTemperature: false, supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true, supportsStrictTools: true, forceAdaptiveThinking: true, supportsMidConvoEffort: true),
-        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 33554432, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 600)),
         promptCache: ModelPromptCache(short: 300, long: 3600)
     ),
@@ -3262,21 +3313,6 @@ private let providerModels_azure: [String: Model] = [
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "gpt-5.2-chat-latest": Model(
-        id: "gpt-5.2-chat-latest",
-        name: "GPT-5.2 Chat",
-        api: .azureOpenAIResponses,
-        provider: "azure",
-        baseUrl: "",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 16384,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true),
-        thinkingLevelMap: [.off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "gpt-5.2-pro": Model(
         id: "gpt-5.2-pro",
         name: "GPT-5.2 Pro",
@@ -3288,21 +3324,6 @@ private let providerModels_azure: [String: Model] = [
         cost: ModelCost(input: 21, output: 168, cacheRead: 0, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true),
-        thinkingLevelMap: [.off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "gpt-5.3-chat-latest": Model(
-        id: "gpt-5.3-chat-latest",
-        name: "GPT-5.3 Chat (latest)",
-        api: .azureOpenAIResponses,
-        provider: "azure",
-        baseUrl: "",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 16384,
         compat: OpenAICompat(supportsOpenAIGrammarTools: true),
         thinkingLevelMap: [.off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -3663,21 +3684,7 @@ private let providerModels_baseten: [String: Model] = [
         contextWindow: 1048576,
         maxTokens: 384000,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: "none", .xhigh: "xhigh"]
-    ),
-    "deepseek-ai/DeepSeek-V4-Pro": Model(
-        id: "deepseek-ai/DeepSeek-V4-Pro",
-        name: "DeepSeek V4 Pro",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 1.74, output: 3.48, cacheRead: 0.145, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 262144,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: "none", .xhigh: "xhigh"]
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil]
     ),
     "deepseek-ai/DeepSeek-V4-Pro-0813": Model(
         id: "deepseek-ai/DeepSeek-V4-Pro-0813",
@@ -3687,7 +3694,7 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 1.32, output: 3.96, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 1.32, output: 3.96, cacheRead: 0.132, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
@@ -3701,71 +3708,56 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0),
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.007, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 32768,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017": Model(
+        id: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
+        api: .openAICompletions,
+        provider: "baseten",
+        baseUrl: "https://inference.baseten.co/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.007, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 262144,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017-Fast": Model(
+        id: "deepseek-ai/DeepSeek-V4.1-Flash-1017-Fast",
+        name: "DeepSeek V4.1 Flash 1017 Fast",
+        api: .openAICompletions,
+        provider: "baseten",
+        baseUrl: "https://inference.baseten.co/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.014, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 262144,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "deepseek-ai/DeepSeek-V4.1-Flash-Fast": Model(
         id: "deepseek-ai/DeepSeek-V4.1-Flash-Fast",
-        name: "deepseek-ai/DeepSeek-V4.1-Flash-Fast",
+        name: "DeepSeek V4.1 Flash Fast",
         api: .openAICompletions,
         provider: "baseten",
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.014, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 32768,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "moonshotai/Kimi-K2.5": Model(
-        id: "moonshotai/Kimi-K2.5",
-        name: "Kimi K2.5",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.6, output: 3, cacheRead: 0.12, cacheWrite: 0),
-        contextWindow: 262000,
-        maxTokens: 262000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "moonshotai/Kimi-K2.6": Model(
-        id: "moonshotai/Kimi-K2.6",
-        name: "Kimi K2.6",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0),
-        contextWindow: 262000,
-        maxTokens: 262000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "moonshotai/Kimi-K2.7-Code": Model(
-        id: "moonshotai/Kimi-K2.7-Code",
-        name: "Kimi K2.7 Code",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0),
-        contextWindow: 262000,
-        maxTokens: 262000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "moonshotai/Kimi-K3": Model(
@@ -3776,7 +3768,7 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 3, output: 15, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
@@ -3794,22 +3786,8 @@ private let providerModels_baseten: [String: Model] = [
         cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0),
         contextWindow: 202800,
         maxTokens: 202800,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil]
-    ),
-    "nvidia/Nemotron-120B-A12B": Model(
-        id: "nvidia/Nemotron-120B-A12B",
-        name: "Nemotron Super",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.3, output: 0.75, cacheRead: 0.06, cacheWrite: 0),
-        contextWindow: 202800,
-        maxTokens: 202800,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil]
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "none", .xhigh: nil]
     ),
     "openai/gpt-oss-120b": Model(
         id: "openai/gpt-oss-120b",
@@ -3819,83 +3797,11 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 128072,
         maxTokens: 128072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: "none", .xhigh: "xhigh"]
-    ),
-    "thinkingmachines/inkling": Model(
-        id: "thinkingmachines/inkling",
-        name: "Inkling",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 1, output: 4.05, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: "none", .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "thinkingmachines/inkling-small": Model(
-        id: "thinkingmachines/inkling-small",
-        name: "Inkling Small",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.5, output: 1.2, cacheRead: 0.1, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: "none", .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "zai-org/GLM-4.7": Model(
-        id: "zai-org/GLM-4.7",
-        name: "GLM 4.7",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.6, output: 2.2, cacheRead: 0.12, cacheWrite: 0),
-        contextWindow: 200000,
-        maxTokens: 200000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil]
-    ),
-    "zai-org/GLM-5": Model(
-        id: "zai-org/GLM-5",
-        name: "GLM 5",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.95, output: 3.15, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 202800,
-        maxTokens: 202800,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil]
-    ),
-    "zai-org/GLM-5.1": Model(
-        id: "zai-org/GLM-5.1",
-        name: "GLM 5.1",
-        api: .openAICompletions,
-        provider: "baseten",
-        baseUrl: "https://inference.baseten.co/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 1.3, output: 4.3, cacheRead: 0.26, cacheWrite: 0),
-        contextWindow: 202800,
-        maxTokens: 202800,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil]
     ),
     "zai-org/GLM-5.2": Model(
         id: "zai-org/GLM-5.2",
@@ -3905,7 +3811,7 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.3, cacheWrite: 0),
+        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.14, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .baseten, chatTemplateArgs: ["enable_thinking": .variable(.thinkingEnabled)], supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
@@ -3948,11 +3854,11 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 2.1, output: 6.6, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 2.1, output: 6.6, cacheRead: 0.21, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "zai-org/GLM-5.3-Flash": Model(
@@ -3963,7 +3869,7 @@ private let providerModels_baseten: [String: Model] = [
         baseUrl: "https://inference.baseten.co/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 0.5, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
@@ -3981,7 +3887,7 @@ private let providerModels_cerebras: [String: Model] = [
         baseUrl: "https://api.cerebras.ai/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.35, output: 0.75, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.35, output: 0.75, cacheRead: 0.35, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 40960,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false),
@@ -4047,6 +3953,21 @@ private let providerModels_cloudflare_ai_gateway: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 64000,
         compat: OpenAICompat(sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "claude-haiku-5-5": Model(
+        id: "claude-haiku-5-5",
+        name: "Claude Haiku 5.5",
+        api: .anthropicMessages,
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625)]),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, sendSessionAffinityHeaders: true, forceAdaptiveThinking: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "claude-opus-4-5": Model(
@@ -4594,6 +4515,21 @@ private let providerModels_cloudflare_ai_gateway: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil]
     ),
+    "workers-ai/@cf/deepseek-ai/deepseek-v4.1-flash-1017": Model(
+        id: "workers-ai/@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+        name: "Deepseek V4.1 Flash 1017",
+        api: .openAICompletions,
+        provider: "cloudflare-ai-gateway",
+        baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "workers-ai/@cf/google/gemma-4-26b-a4b-it": Model(
         id: "workers-ai/@cf/google/gemma-4-26b-a4b-it",
         name: "Gemma 4 26B A4B IT",
@@ -4655,11 +4591,12 @@ private let providerModels_cloudflare_ai_gateway: [String: Model] = [
         provider: "cloudflare-ai-gateway",
         baseUrl: "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat",
         reasoning: false,
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0.351, output: 0.555, cacheRead: 0, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true)
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "workers-ai/@cf/moonshotai/kimi-k2.6": Model(
         id: "workers-ai/@cf/moonshotai/kimi-k2.6",
@@ -4839,6 +4776,21 @@ private let providerModels_cloudflare_workers_ai: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, thinkingFormat: .deepseek, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil]
     ),
+    "@cf/deepseek-ai/deepseek-v4.1-flash-1017": Model(
+        id: "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+        name: "Deepseek V4.1 Flash 1017",
+        api: .openAICompletions,
+        provider: "cloudflare-workers-ai",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, thinkingFormat: .deepseek, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: "max", .medium: nil, .minimal: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "@cf/google/gemma-4-26b-a4b-it": Model(
         id: "@cf/google/gemma-4-26b-a4b-it",
         name: "Gemma 4 26B A4B IT",
@@ -4851,7 +4803,6 @@ private let providerModels_cloudflare_workers_ai: [String: Model] = [
         contextWindow: 256000,
         maxTokens: 16384,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "@cf/ibm-granite/granite-4.0-h-micro": Model(
@@ -4901,11 +4852,12 @@ private let providerModels_cloudflare_workers_ai: [String: Model] = [
         provider: "cloudflare-workers-ai",
         baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
         reasoning: false,
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0.351, output: 0.555, cacheRead: 0, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true)
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "@cf/moonshotai/kimi-k2.6": Model(
         id: "@cf/moonshotai/kimi-k2.6",
@@ -4948,7 +4900,7 @@ private let providerModels_cloudflare_workers_ai: [String: Model] = [
         contextWindow: 256000,
         maxTokens: 256000,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, supportsLongCacheRetention: false, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil]
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: nil, .minimal: nil, .off: nil, .xhigh: nil]
     ),
     "@cf/openai/gpt-oss-120b": Model(
         id: "@cf/openai/gpt-oss-120b",
@@ -5112,6 +5064,21 @@ private let providerModels_fireworks: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "accounts/fireworks/models/deepseek-v4p1-flash-1017": Model(
+        id: "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
+        api: .anthropicMessages,
+        provider: "fireworks",
+        baseUrl: "https://api.fireworks.ai/inference",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        compat: OpenAICompat(supportsLongCacheRetention: false, supportsEagerToolInputStreaming: false, sendSessionAffinityHeaders: true, supportsCacheControlOnTools: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "accounts/fireworks/models/ember-1": Model(
         id: "accounts/fireworks/models/ember-1",
         name: "Ember-1",
@@ -5212,6 +5179,21 @@ private let providerModels_fireworks: [String: Model] = [
         maxTokens: 512000,
         compat: OpenAICompat(supportsLongCacheRetention: false, supportsEagerToolInputStreaming: false, sendSessionAffinityHeaders: true, supportsCacheControlOnTools: false, forceAdaptiveThinking: true, allowEmptySignature: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil]
+    ),
+    "accounts/fireworks/models/muse-spark-open": Model(
+        id: "accounts/fireworks/models/muse-spark-open",
+        name: "Muse Spark Open",
+        api: .anthropicMessages,
+        provider: "fireworks",
+        baseUrl: "https://api.fireworks.ai/inference",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsLongCacheRetention: false, supportsEagerToolInputStreaming: false, sendSessionAffinityHeaders: true, supportsCacheControlOnTools: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "accounts/fireworks/models/nemotron-3-ultra-nvfp4": Model(
         id: "accounts/fireworks/models/nemotron-3-ultra-nvfp4",
@@ -5479,22 +5461,6 @@ private let providerModels_github_copilot: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "claude-opus-4.7": Model(
-        id: "claude-opus-4.7",
-        name: "Claude Opus 4.7",
-        api: .anthropicMessages,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
-        contextWindow: 1000000,
-        maxTokens: 32000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true),
-        thinkingLevelMap: [.max: "max", .minimal: "low", .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "claude-opus-4.8": Model(
         id: "claude-opus-4.8",
         name: "Claude Opus 4.8",
@@ -5591,51 +5557,6 @@ private let providerModels_github_copilot: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "gemini-3.5-flash": Model(
-        id: "gemini-3.5-flash",
-        name: "Gemini 3.5 Flash",
-        api: .openAICompletions,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.5, output: 9, cacheRead: 0.15, cacheWrite: 0),
-        contextWindow: 200000,
-        maxTokens: 64000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "gemini-3.6-flash": Model(
-        id: "gemini-3.6-flash",
-        name: "Gemini 3.6 Flash",
-        api: .openAICompletions,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 64000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "gemini-3.7-flash": Model(
-        id: "gemini-3.7-flash",
-        name: "Gemini 3.7 Flash",
-        api: .openAICompletions,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 64000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "gemini-3.8-flash": Model(
         id: "gemini-3.8-flash",
         name: "Gemini 3.8 Flash",
@@ -5651,20 +5572,19 @@ private let providerModels_github_copilot: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "gpt-5-mini": Model(
-        id: "gpt-5-mini",
-        name: "GPT-5 Mini",
-        api: .openAIResponses,
+    "gemini-4-argon": Model(
+        id: "gemini-4-argon",
+        name: "Gemini 4 Argon",
+        api: .openAICompletions,
         provider: "github-copilot",
         baseUrl: "https://api.individual.githubcopilot.com",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0),
-        contextWindow: 264000,
-        maxTokens: 64000,
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 65536,
         headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "low", .off: nil, .xhigh: nil],
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "gpt-5.3-codex": Model(
@@ -5683,38 +5603,6 @@ private let providerModels_github_copilot: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "low", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "gpt-5.4": Model(
-        id: "gpt-5.4",
-        name: "GPT-5.4",
-        api: .openAIResponses,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
-        contextWindow: 1000000,
-        maxTokens: 128000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsAdditionalTools: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "low", .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "gpt-5.4-mini": Model(
-        id: "gpt-5.4-mini",
-        name: "GPT-5.4 mini",
-        api: .openAIResponses,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
-        contextWindow: 400000,
-        maxTokens: 128000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsAdditionalTools: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "low", .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "gpt-5.4-nano": Model(
         id: "gpt-5.4-nano",
         name: "GPT-5.4 nano",
@@ -5728,22 +5616,6 @@ private let providerModels_github_copilot: [String: Model] = [
         maxTokens: 128000,
         headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
         compat: OpenAICompat(supportsOpenAIGrammarTools: true),
-        thinkingLevelMap: [.minimal: "low", .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "gpt-5.5": Model(
-        id: "gpt-5.5",
-        name: "GPT-5.5",
-        api: .openAIResponses,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
-        contextWindow: 1000000,
-        maxTokens: 128000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsAdditionalTools: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "low", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -5904,21 +5776,6 @@ private let providerModels_github_copilot: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "kimi-k2.7-code": Model(
-        id: "kimi-k2.7-code",
-        name: "Kimi K2.7 Code",
-        api: .openAICompletions,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0),
-        contextWindow: 256000,
-        maxTokens: 32000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "kimi-k3": Model(
         id: "kimi-k3",
         name: "Kimi K3",
@@ -5933,20 +5790,6 @@ private let providerModels_github_copilot: [String: Model] = [
         headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, supportsMidConvoSystemMessages: true, supportsStrictMode: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "mai-code-1-flash-picker": Model(
-        id: "mai-code-1-flash-picker",
-        name: "MAI-Code-1-Flash",
-        api: .openAIResponses,
-        provider: "github-copilot",
-        baseUrl: "https://api.individual.githubcopilot.com",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
-        contextWindow: 256000,
-        maxTokens: 128000,
-        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"],
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil]
     ),
     "mai-code-1.1-flash": Model(
         id: "mai-code-1.1-flash",
@@ -6212,6 +6055,20 @@ private let providerModels_google: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: 20971520, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 3600))
     ),
+    "gemini-4-argon": Model(
+        id: "gemini-4-argon",
+        name: "Gemini 4 Argon",
+        api: .googleGenerativeAI,
+        provider: "google",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 32768,
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: 20971520, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 3600))
+    ),
     "gemini-flash-latest": Model(
         id: "gemini-flash-latest",
         name: "Gemini Flash Latest",
@@ -6238,6 +6095,20 @@ private let providerModels_google: [String: Model] = [
         contextWindow: 1048576,
         maxTokens: 65536,
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: 20971520, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 3600))
+    ),
+    "gemini-pro-latest": Model(
+        id: "gemini-pro-latest",
+        name: "Gemini Pro Latest",
+        api: .googleGenerativeAI,
+        provider: "google",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 0)]),
+        contextWindow: 1048576,
+        maxTokens: 65536,
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: 20971520, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 3600))
     ),
     "gemma-4-26b-a4b-it": Model(
@@ -6294,7 +6165,7 @@ private let providerModels_google_vertex: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.4, cacheRead: 0.01, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 65535,
+        maxTokens: 65536,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "gemini-2.5-pro": Model(
@@ -6336,6 +6207,20 @@ private let providerModels_google_vertex: [String: Model] = [
         contextWindow: 1048576,
         maxTokens: 65536,
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "gemini-3.1-flash-lite-image": Model(
+        id: "gemini-3.1-flash-lite-image",
+        name: "Nano Banana 2 Lite",
+        api: .googleVertex,
+        provider: "google-vertex",
+        baseUrl: "https://{location}-aiplatform.googleapis.com",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.25, output: 30, cacheRead: 0.025, cacheWrite: 0),
+        contextWindow: 65536,
+        maxTokens: 4096,
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: "minimal", .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "gemini-3.1-pro-preview": Model(
@@ -6436,32 +6321,18 @@ private let providerModels_google_vertex: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "gemini-flash-latest": Model(
-        id: "gemini-flash-latest",
-        name: "Gemini Flash Latest",
+    "gemini-4-argon": Model(
+        id: "gemini-4-argon",
+        name: "Gemini 4 Argon",
         api: .googleVertex,
         provider: "google-vertex",
         baseUrl: "https://{location}-aiplatform.googleapis.com",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1.5, output: 9, cacheRead: 0.15, cacheWrite: 0),
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 65536,
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "gemini-flash-lite-latest": Model(
-        id: "gemini-flash-lite-latest",
-        name: "Gemini Flash-Lite Latest",
-        api: .googleVertex,
-        provider: "google-vertex",
-        baseUrl: "https://{location}-aiplatform.googleapis.com",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 65536,
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
@@ -6529,7 +6400,7 @@ private let providerModels_groq: [String: Model] = [
         baseUrl: "https://api.groq.com/openai/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.075, output: 0.3, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.075, output: 0.3, cacheRead: 0.0375, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 65536,
         compat: OpenAICompat(supportsStrictMode: true),
@@ -6559,7 +6430,7 @@ private let providerModels_groq: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.8, output: 4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131042,
+        contextWindow: 131072,
         maxTokens: 16384,
         compat: OpenAICompat(supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil],
@@ -6568,6 +6439,19 @@ private let providerModels_groq: [String: Model] = [
 ]
 
 private let providerModels_huggingface: [String: Model] = [
+    "MiniMaxAI/MiniMax-M1-80k": Model(
+        id: "MiniMaxAI/MiniMax-M1-80k",
+        name: "MiniMax M1 80K",
+        api: .openAICompletions,
+        provider: "huggingface",
+        baseUrl: "https://router.huggingface.co/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.55, output: 2.2, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 80000,
+        compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
+    ),
     "MiniMaxAI/MiniMax-M2": Model(
         id: "MiniMaxAI/MiniMax-M2",
         name: "MiniMax-M2",
@@ -6683,7 +6567,7 @@ private let providerModels_huggingface: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 0.3, output: 3, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 131072,
+        maxTokens: 81920,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
     ),
     "Qwen/Qwen3-30B-A3B": Model(
@@ -6712,6 +6596,20 @@ private let providerModels_huggingface: [String: Model] = [
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
     ),
+    "Qwen/Qwen3-8B": Model(
+        id: "Qwen/Qwen3-8B",
+        name: "Qwen3 8B",
+        api: .openAICompletions,
+        provider: "huggingface",
+        baseUrl: "https://router.huggingface.co/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.07, output: 0.18, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 40960,
+        maxTokens: 32768,
+        compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil]
+    ),
     "Qwen/Qwen3-Coder-30B-A3B-Instruct": Model(
         id: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
         name: "Qwen3-Coder 30B-A3B Instruct",
@@ -6735,7 +6633,7 @@ private let providerModels_huggingface: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 2, output: 2, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 66536,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
     ),
     "Qwen/Qwen3-Coder-Next": Model(
@@ -6761,7 +6659,7 @@ private let providerModels_huggingface: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 0.25, output: 1, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 66536,
+        maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
     ),
     "Qwen/Qwen3-Next-80B-A3B-Thinking": Model(
@@ -6770,11 +6668,11 @@ private let providerModels_huggingface: [String: Model] = [
         api: .openAICompletions,
         provider: "huggingface",
         baseUrl: "https://router.huggingface.co/v1",
-        reasoning: false,
+        reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.3, output: 2, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 131072,
+        maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
     ),
     "Qwen/Qwen3-VL-235B-A22B-Instruct": Model(
@@ -6804,6 +6702,20 @@ private let providerModels_huggingface: [String: Model] = [
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "Qwen/Qwen3-VL-30B-A3B-Instruct": Model(
+        id: "Qwen/Qwen3-VL-30B-A3B-Instruct",
+        name: "Qwen3 VL 30B A3B Instruct",
+        api: .openAICompletions,
+        provider: "huggingface",
+        baseUrl: "https://router.huggingface.co/v1",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.2, output: 0.7, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072,
+        maxTokens: 32768,
+        compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "Qwen/Qwen3.5-122B-A10B": Model(
@@ -6998,7 +6910,7 @@ private let providerModels_huggingface: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 3, output: 5, cacheRead: 0, cacheWrite: 0),
         contextWindow: 163840,
-        maxTokens: 163840,
+        maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true)
     ),
     "deepseek-ai/DeepSeek-V3": Model(
@@ -7136,6 +7048,21 @@ private let providerModels_huggingface: [String: Model] = [
         maxTokens: 384000,
         compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017": Model(
+        id: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
+        api: .openAICompletions,
+        provider: "huggingface",
+        baseUrl: "https://router.huggingface.co/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 384000,
+        compat: OpenAICompat(supportsDeveloperRole: false, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "google/gemma-3-12b-it": Model(
@@ -7610,60 +7537,61 @@ private let providerModels_kimi_coding: [String: Model] = [
     "k3": Model(
         id: "k3",
         name: "Kimi K3",
-        api: .anthropicMessages,
+        api: .openAICompletions,
         provider: "kimi-coding",
-        baseUrl: "https://api.kimi.com/coding",
+        baseUrl: "https://api.kimi.com/coding/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true, supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "k3-256k": Model(
         id: "k3-256k",
         name: "Kimi K3-256K",
-        api: .anthropicMessages,
+        api: .openAICompletions,
         provider: "kimi-coding",
-        baseUrl: "https://api.kimi.com/coding",
+        baseUrl: "https://api.kimi.com/coding/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 131072,
-        compat: OpenAICompat(forceAdaptiveThinking: true),
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true, supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "kimi-for-coding": Model(
         id: "kimi-for-coding",
         name: "kimi-for-coding",
-        api: .anthropicMessages,
+        api: .openAICompletions,
         provider: "kimi-coding",
-        baseUrl: "https://api.kimi.com/coding",
+        baseUrl: "https://api.kimi.com/coding/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 32768,
-        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true, supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "kimi-for-coding-highspeed": Model(
         id: "kimi-for-coding-highspeed",
         name: "Kimi For Coding HighSpeed",
-        api: .anthropicMessages,
+        api: .openAICompletions,
         provider: "kimi-coding",
-        baseUrl: "https://api.kimi.com/coding",
+        baseUrl: "https://api.kimi.com/coding/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.9, output: 8, cacheRead: 0.38, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 32768,
-        compat: OpenAICompat(forceAdaptiveThinking: true),
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsMidConvoSystemMessages: true, supportsStrictMode: false),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
@@ -7739,6 +7667,20 @@ private let providerModels_meta: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "muse-wonder-1.0": Model(
+        id: "muse-wonder-1.0",
+        name: "Muse Wonder",
+        api: .openAIResponses,
+        provider: "meta",
+        baseUrl: "https://api.meta.ai/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
 ]
 
 private let providerModels_minimax: [String: Model] = [
@@ -7776,7 +7718,7 @@ private let providerModels_minimax: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 512000, input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0)]),
         contextWindow: 1000000,
-        maxTokens: 512000,
+        maxTokens: 524288,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
@@ -7790,7 +7732,7 @@ private let providerModels_minimax_cn: [String: Model] = [
         baseUrl: "https://api.minimaxi.com/anthropic",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375),
+        cost: ModelCost(input: 0.3137, output: 1.2549, cacheRead: 0.0627, cacheWrite: 0.3922),
         contextWindow: 204800,
         maxTokens: 131072
     ),
@@ -7802,7 +7744,7 @@ private let providerModels_minimax_cn: [String: Model] = [
         baseUrl: "https://api.minimaxi.com/anthropic",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.06, cacheWrite: 0.375),
+        cost: ModelCost(input: 0.6275, output: 2.5098, cacheRead: 0.0627, cacheWrite: 0.3922),
         contextWindow: 204800,
         maxTokens: 131072
     ),
@@ -7814,9 +7756,9 @@ private let providerModels_minimax_cn: [String: Model] = [
         baseUrl: "https://api.minimaxi.com/anthropic",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 512000, input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0)]),
+        cost: ModelCost(input: 0.3137, output: 1.2549, cacheRead: 0.0627, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 512000, input: 0.6275, output: 2.5098, cacheRead: 0.1255, cacheWrite: 0)]),
         contextWindow: 1000000,
-        maxTokens: 512000,
+        maxTokens: 524288,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
@@ -8006,7 +7948,7 @@ private let providerModels_mistral: [String: Model] = [
         baseUrl: "https://api.mistral.ai",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.04, output: 0.04, cacheRead: 0.004, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 0.1, cacheRead: 0.01, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 128000,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -8032,7 +7974,7 @@ private let providerModels_mistral: [String: Model] = [
         baseUrl: "https://api.mistral.ai",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.1, output: 0.1, cacheRead: 0.01, cacheWrite: 0),
+        cost: ModelCost(input: 0.15, output: 0.15, cacheRead: 0.015, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 128000,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -8210,18 +8152,6 @@ private let providerModels_mistral: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "open-mistral-7b": Model(
-        id: "open-mistral-7b",
-        name: "Mistral 7B",
-        api: .mistralConversations,
-        provider: "mistral",
-        baseUrl: "https://api.mistral.ai",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.25, output: 0.25, cacheRead: 0.025, cacheWrite: 0),
-        contextWindow: 8000,
-        maxTokens: 8000
-    ),
     "open-mistral-nemo": Model(
         id: "open-mistral-nemo",
         name: "Open Mistral Nemo",
@@ -8233,30 +8163,6 @@ private let providerModels_mistral: [String: Model] = [
         cost: ModelCost(input: 0.15, output: 0.15, cacheRead: 0.015, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 128000
-    ),
-    "open-mixtral-8x22b": Model(
-        id: "open-mixtral-8x22b",
-        name: "Mixtral 8x22B",
-        api: .mistralConversations,
-        provider: "mistral",
-        baseUrl: "https://api.mistral.ai",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 2, output: 6, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 64000,
-        maxTokens: 64000
-    ),
-    "open-mixtral-8x7b": Model(
-        id: "open-mixtral-8x7b",
-        name: "Mixtral 8x7B",
-        api: .mistralConversations,
-        provider: "mistral",
-        baseUrl: "https://api.mistral.ai",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.7, output: 0.7, cacheRead: 0.07, cacheWrite: 0),
-        contextWindow: 32000,
-        maxTokens: 32000
     ),
     "pixtral-12b": Model(
         id: "pixtral-12b",
@@ -8304,7 +8210,7 @@ private let providerModels_mistral: [String: Model] = [
         baseUrl: "https://api.mistral.ai",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0.01, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 0.4, cacheRead: 0.01, cacheWrite: 0),
         contextWindow: 32768,
         maxTokens: 32000
     ),
@@ -8407,7 +8313,7 @@ private let providerModels_moonshotai_cn: [String: Model] = [
         baseUrl: "https://api.moonshot.cn/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0),
+        cost: ModelCost(input: 0.9711, output: 4.0337, cacheRead: 0.1643, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsMidConvoSystemMessages: true, supportsStrictMode: false),
@@ -8421,7 +8327,7 @@ private let providerModels_moonshotai_cn: [String: Model] = [
         baseUrl: "https://api.moonshot.cn/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0),
+        cost: ModelCost(input: 0.9711, output: 4.0337, cacheRead: 0.1942, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsMidConvoSystemMessages: true, supportsStrictMode: false),
@@ -8436,7 +8342,7 @@ private let providerModels_moonshotai_cn: [String: Model] = [
         baseUrl: "https://api.moonshot.cn/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1.9, output: 8, cacheRead: 0.38, cacheWrite: 0),
+        cost: ModelCost(input: 1.9421, output: 8.0673, cacheRead: 0.3884, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsMidConvoSystemMessages: true, supportsStrictMode: false),
@@ -8596,21 +8502,6 @@ private let providerModels_nvidia: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "moonshotai/kimi-k3": Model(
-        id: "moonshotai/kimi-k3",
-        name: "Kimi K3",
-        api: .openAICompletions,
-        provider: "nvidia",
-        baseUrl: "https://integrate.api.nvidia.com/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        headers: ["NVCF-POLL-SECONDS": "3600"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "nvidia/cosmos-reason2-8b": Model(
         id: "nvidia/cosmos-reason2-8b",
         name: "Cosmos Reason2 8B",
@@ -8669,20 +8560,6 @@ private let providerModels_nvidia: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "nvidia/nemotron-3-super-120b-a12b": Model(
-        id: "nvidia/nemotron-3-super-120b-a12b",
-        name: "Nemotron 3 Super",
-        api: .openAICompletions,
-        provider: "nvidia",
-        baseUrl: "https://integrate.api.nvidia.com/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.2, output: 0.8, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 262144,
-        headers: ["NVCF-POLL-SECONDS": "3600"],
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false)
-    ),
     "nvidia/nemotron-3-ultra-550b-a55b": Model(
         id: "nvidia/nemotron-3-ultra-550b-a55b",
         name: "Nemotron 3 Ultra 550B A55B",
@@ -8691,7 +8568,7 @@ private let providerModels_nvidia: [String: Model] = [
         baseUrl: "https://integrate.api.nvidia.com/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.5, output: 2.5, cacheRead: 0.15, cacheWrite: 0),
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 65536,
         headers: ["NVCF-POLL-SECONDS": "3600"],
@@ -8710,6 +8587,21 @@ private let providerModels_nvidia: [String: Model] = [
         maxTokens: 262144,
         headers: ["NVCF-POLL-SECONDS": "3600"],
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false)
+    ),
+    "nvidia/nemotron-3.5-super-vl-120b-a12b": Model(
+        id: "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        name: "Nemotron 3.5 Super VL 120B A12B",
+        api: .openAICompletions,
+        provider: "nvidia",
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 8192,
+        headers: ["NVCF-POLL-SECONDS": "3600"],
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-oss-20b": Model(
         id: "openai/gpt-oss-20b",
@@ -8738,6 +8630,21 @@ private let providerModels_nvidia: [String: Model] = [
         maxTokens: 16384,
         headers: ["NVCF-POLL-SECONDS": "3600"],
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false)
+    ),
+    "stepfun-ai/step-5-preview": Model(
+        id: "stepfun-ai/step-5-preview",
+        name: "Step 5 Preview",
+        api: .openAICompletions,
+        provider: "nvidia",
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        headers: ["NVCF-POLL-SECONDS": "3600"],
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "z-ai/glm-5.3": Model(
         id: "z-ai/glm-5.3",
@@ -9015,21 +8922,6 @@ private let providerModels_openai: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
-    "gpt-5.2-chat-latest": Model(
-        id: "gpt-5.2-chat-latest",
-        name: "GPT-5.2 Chat",
-        api: .openAIResponses,
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 16384,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsStrictMode: true),
-        thinkingLevelMap: [.high: nil, .low: nil, .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
-    ),
     "gpt-5.2-pro": Model(
         id: "gpt-5.2-pro",
         name: "GPT-5.2 Pro",
@@ -9043,21 +8935,6 @@ private let providerModels_openai: [String: Model] = [
         maxTokens: 128000,
         compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
-    ),
-    "gpt-5.3-chat-latest": Model(
-        id: "gpt-5.3-chat-latest",
-        name: "GPT-5.3 Chat (latest)",
-        api: .openAIResponses,
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
-        contextWindow: 128000,
-        maxTokens: 16384,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsStrictMode: true),
-        thinkingLevelMap: [.off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
     "gpt-5.3-codex": Model(
@@ -9236,7 +9113,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 20, output: 75, cacheRead: 2, cacheWrite: 25)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true, supportsMidConvoEffort: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9251,7 +9128,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true, supportsMidConvoEffort: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9266,7 +9143,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true, supportsMidConvoEffort: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9281,7 +9158,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsExplicitPromptCacheMode: true, supportsAdditionalTools: true, supportsMidConvoEffort: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9550,7 +9427,7 @@ private let providerModels_openai_codex: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5)]),
-        contextWindow: 272000,
+        contextWindow: 500000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsToolSearch: true, supportsAdditionalTools: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "low", .off: nil, .xhigh: "xhigh"],
@@ -9559,12 +9436,26 @@ private let providerModels_openai_codex: [String: Model] = [
 ]
 
 private let providerModels_opencode: [String: Model] = [
+    "beam-free": Model(
+        id: "beam-free",
+        name: "Beam Free",
+        api: .openAICompletions,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/inference/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"]
+    ),
     "big-pickle": Model(
         id: "big-pickle",
         name: "Big Pickle",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -9577,7 +9468,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Fable 5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
@@ -9592,7 +9483,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Fable 5.1",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5),
@@ -9607,7 +9498,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Haiku 4.5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25),
@@ -9620,7 +9511,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Haiku 5.5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625)]),
@@ -9635,7 +9526,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Opus 4.5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
@@ -9648,7 +9539,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Opus 4.6",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
@@ -9663,7 +9554,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Opus 4.7",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
@@ -9678,7 +9569,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Opus 4.8",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
@@ -9693,7 +9584,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Opus 5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
@@ -9708,7 +9599,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Opus 5.5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5),
@@ -9718,25 +9609,12 @@ private let providerModels_opencode: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "claude-sonnet-4": Model(
-        id: "claude-sonnet-4",
-        name: "Claude Sonnet 4",
-        api: .anthropicMessages,
-        provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 6, output: 22.5, cacheRead: 0.6, cacheWrite: 7.5)]),
-        contextWindow: 200000,
-        maxTokens: 64000,
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "claude-sonnet-4-5": Model(
         id: "claude-sonnet-4-5",
         name: "Claude Sonnet 4.5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 6, output: 22.5, cacheRead: 0.6, cacheWrite: 7.5)]),
@@ -9749,7 +9627,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Sonnet 4.6",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
@@ -9764,7 +9642,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Sonnet 5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5),
@@ -9779,7 +9657,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Claude Sonnet 5.5",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5),
@@ -9794,7 +9672,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "DeepSeek V4 Flash",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.028, cacheWrite: 0),
@@ -9803,30 +9681,15 @@ private let providerModels_opencode: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true, supportsLongCacheRetention: false, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil]
     ),
-    "deepseek-v4-flash-vision-exp": Model(
-        id: "deepseek-v4-flash-vision-exp",
-        name: "DeepSeek V4 Flash Vision Exp",
-        api: .openAICompletions,
-        provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.028, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 384000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "deepseek-v4-pro": Model(
         id: "deepseek-v4-pro",
         name: "DeepSeek V4 Pro",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 1.74, output: 3.84, cacheRead: 0.145, cacheWrite: 0),
+        cost: ModelCost(input: 1.74, output: 3.48, cacheRead: 0.145, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 384000,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true, supportsLongCacheRetention: false, requiresReasoningContentOnAssistantMessages: true),
@@ -9837,7 +9700,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "DeepSeek V4.1 Flash",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0),
@@ -9847,27 +9710,41 @@ private let providerModels_opencode: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "exo-free": Model(
-        id: "exo-free",
-        name: "Exo Free",
+    "deepseek-v4.1-flash-free": Model(
+        id: "deepseek-v4.1-flash-free",
+        name: "DeepSeek V4.1 Flash Free",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
-        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
+        contextWindow: 200000,
+        maxTokens: 32000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "flint-40b-free": Model(
+        id: "flint-40b-free",
+        name: "Flint 40B Free",
+        api: .openAICompletions,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/inference/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 65536,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"]
     ),
     "gemini-3-flash": Model(
         id: "gemini-3-flash",
         name: "Gemini 3 Flash",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.5, output: 3, cacheRead: 0.05, cacheWrite: 0),
@@ -9881,7 +9758,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Gemini 3.1 Pro Preview",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 0)]),
@@ -9895,7 +9772,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Gemini 3.5 Flash",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.5, output: 9, cacheRead: 0.15, cacheWrite: 0),
@@ -9909,7 +9786,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Gemini 3.5 Flash Lite",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0),
@@ -9923,7 +9800,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Gemini 3.6 Flash",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 0),
@@ -9937,7 +9814,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Gemini 3.7 Flash",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 0),
@@ -9951,10 +9828,24 @@ private let providerModels_opencode: [String: Model] = [
         name: "Gemini 3.8 Flash",
         api: .googleGenerativeAI,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 65536,
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "gemini-4-argon": Model(
+        id: "gemini-4-argon",
+        name: "Gemini 4 Argon",
+        api: .googleGenerativeAI,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/inference/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 65536,
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
@@ -9965,7 +9856,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GLM-5",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1, output: 3.2, cacheRead: 0.2, cacheWrite: 0),
@@ -9978,7 +9869,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GLM-5.1",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
@@ -9991,7 +9882,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GLM-5.2",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
@@ -10005,7 +9896,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GLM-5.3",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
@@ -10019,7 +9910,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GLM-5.3-Flash",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0),
@@ -10029,12 +9920,27 @@ private let providerModels_opencode: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "glm-5.3-flash-free": Model(
+        id: "glm-5.3-flash-free",
+        name: "GLM-5.3-Flash Free",
+        api: .openAICompletions,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/inference/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 200000,
+        maxTokens: 32000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "gpt-5": Model(
         id: "gpt-5",
         name: "GPT-5",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
@@ -10049,7 +9955,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5 Codex",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
@@ -10064,7 +9970,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5 Nano",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0),
@@ -10079,7 +9985,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.1",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
@@ -10094,7 +10000,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.1 Codex",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0),
@@ -10109,7 +10015,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.1 Codex Max",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0),
@@ -10124,7 +10030,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.1 Codex Mini",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0),
@@ -10139,7 +10045,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.2",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
@@ -10154,7 +10060,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.2 Codex",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
@@ -10169,7 +10075,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.3 Codex",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0),
@@ -10184,7 +10090,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.4",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
@@ -10199,7 +10105,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.4 Mini",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
@@ -10214,7 +10120,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.4 Nano",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0),
@@ -10229,7 +10135,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.4 Pro",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 30, output: 180, cacheRead: 30, cacheWrite: 0),
@@ -10244,7 +10150,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.5",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
@@ -10259,7 +10165,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.5 Pro",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 30, output: 180, cacheRead: 30, cacheWrite: 0),
@@ -10274,7 +10180,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.6 Luna",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.4, output: 1.8, cacheRead: 0.04, cacheWrite: 0.5)]),
@@ -10289,7 +10195,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.6 Sol",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 8, output: 30, cacheRead: 0.8, cacheWrite: 10)]),
@@ -10304,10 +10210,10 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-5.6 Terra",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 6.25)]),
+        cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession, supportsAdditionalTools: true),
@@ -10319,7 +10225,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-6 Astra",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 20, output: 75, cacheRead: 2, cacheWrite: 25)]),
@@ -10334,7 +10240,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-6 Luna",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25)]),
@@ -10349,7 +10255,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-6 Sol",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
@@ -10364,7 +10270,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "GPT-6.1 Sol",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5)]),
@@ -10379,7 +10285,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Grok 4.5",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.3, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 12, cacheRead: 0.6, cacheWrite: 0)]),
@@ -10394,7 +10300,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Grok 4.6",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 12, cacheRead: 1, cacheWrite: 0)]),
@@ -10409,7 +10315,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Grok 4.7",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 12, cacheRead: 1, cacheWrite: 0)]),
@@ -10424,7 +10330,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Grok Build 0.1",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1, output: 2, cacheRead: 0.2, cacheWrite: 0),
@@ -10439,10 +10345,10 @@ private let providerModels_opencode: [String: Model] = [
         name: "Kimi K2.5",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.6, output: 3, cacheRead: 0.08, cacheWrite: 0),
+        cost: ModelCost(input: 0.6, output: 3, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 65536,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true, supportsLongCacheRetention: false),
@@ -10453,7 +10359,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Kimi K2.6",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0),
@@ -10467,7 +10373,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Kimi K2.7 Code",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0),
@@ -10481,48 +10387,22 @@ private let providerModels_opencode: [String: Model] = [
         name: "Kimi K3",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true, supportsStrictMode: true),
-        thinkingLevelMap: [.high: nil, .low: nil, .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "ling-3.0-flash-fin-free": Model(
-        id: "ling-3.0-flash-fin-free",
-        name: "Ling 3.0 Flash Fin Free",
-        api: .openAICompletions,
-        provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true)
-    ),
-    "ling-3.1-flash-free": Model(
-        id: "ling-3.1-flash-free",
-        name: "Ling 3.1 Flash Free",
-        api: .openAICompletions,
-        provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true)
     ),
     "longcat-2.5-preview-free": Model(
         id: "longcat-2.5-preview-free",
         name: "LongCat 2.5 Preview Free",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -10536,7 +10416,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "MiMo-V2.6-Flash Free",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -10550,7 +10430,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "MiniMax-M2.5",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
@@ -10563,7 +10443,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "MiniMax-M2.7",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
@@ -10576,7 +10456,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "MiniMax-M3",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
@@ -10585,12 +10465,27 @@ private let providerModels_opencode: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "minimax-m3.1-flash-free": Model(
+        id: "minimax-m3.1-flash-free",
+        name: "MiniMax M3.1 Flash Free",
+        api: .openAICompletions,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/inference/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 512000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "mistral-large-4": Model(
         id: "mistral-large-4",
         name: "Mistral Large 4",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.68, output: 2.09, cacheRead: 0.07, cacheWrite: 0),
@@ -10605,7 +10500,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Muse Spark 1.2",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
@@ -10620,7 +10515,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Muse Spark 1.3",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
@@ -10630,19 +10525,19 @@ private let providerModels_opencode: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "muse-spark-1.3-contributor-free": Model(
-        id: "muse-spark-1.3-contributor-free",
-        name: "Muse Spark 1.3 Free",
+    "muse-wonder-1.0": Model(
+        id: "muse-wonder-1.0",
+        name: "Muse Wonder",
         api: .openAIResponses,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "nemotron-3-ultra-free": Model(
@@ -10650,7 +10545,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Nemotron 3 Ultra Free",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -10663,7 +10558,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Nemotron 3.5 Lightning Free",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -10671,12 +10566,27 @@ private let providerModels_opencode: [String: Model] = [
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true)
     ),
+    "nemotron-3.5-super-vl-free": Model(
+        id: "nemotron-3.5-super-vl-free",
+        name: "Nemotron 3.5 Super VL Free",
+        api: .openAICompletions,
+        provider: "opencode",
+        baseUrl: "https://opencode.ai/inference/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: "none", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "qwen3.5-plus": Model(
         id: "qwen3.5-plus",
         name: "Qwen3.5 Plus",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25),
@@ -10689,7 +10599,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Qwen3.6 Plus",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.5, output: 3, cacheRead: 0.05, cacheWrite: 0.625),
@@ -10702,7 +10612,7 @@ private let providerModels_opencode: [String: Model] = [
         name: "Qwen3.8 Flash",
         api: .anthropicMessages,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen",
+        baseUrl: "https://opencode.ai/inference",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0.47, cacheRead: 0.016, cacheWrite: 0.2),
@@ -10716,54 +10626,39 @@ private let providerModels_opencode: [String: Model] = [
         name: "Qwen3.8 Max",
         api: .openAICompletions,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.25, cacheWrite: 2.5),
         contextWindow: 262144,
         maxTokens: 131072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "space-bunny-free": Model(
-        id: "space-bunny-free",
-        name: "Space Bunny Free",
-        api: .openAICompletions,
-        provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 524288,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "step-5-preview-free": Model(
-        id: "step-5-preview-free",
-        name: "Step 5 Preview Free",
-        api: .openAICompletions,
-        provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 65536,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        thinkingLevelMap: [.high: nil, .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
 
 private let providerModels_opencode_go: [String: Model] = [
+    "beam-free": Model(
+        id: "beam-free",
+        name: "Beam Free",
+        api: .openAICompletions,
+        provider: "opencode-go",
+        baseUrl: "https://opencode.ai/inference/go/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"]
+    ),
     "claude-haiku-5-5": Model(
         id: "claude-haiku-5-5",
         name: "Claude Haiku 5.5",
         api: .anthropicMessages,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go",
+        baseUrl: "https://opencode.ai/inference/go",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625)]),
@@ -10773,41 +10668,12 @@ private let providerModels_opencode_go: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "deepseek-v4-flash": Model(
-        id: "deepseek-v4-flash",
-        name: "DeepSeek V4 Flash",
-        api: .openAICompletions,
-        provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 384000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil]
-    ),
-    "deepseek-v4-flash-vision-exp": Model(
-        id: "deepseek-v4-flash-vision-exp",
-        name: "DeepSeek V4 Flash Vision Exp",
-        api: .openAICompletions,
-        provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 384000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "deepseek-v4-pro": Model(
         id: "deepseek-v4-pro",
         name: "DeepSeek V4 Pro (New)",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.66, output: 1.98, cacheRead: 0.022, cacheWrite: 0),
@@ -10821,7 +10687,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "DeepSeek V4.1 Flash",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0),
@@ -10831,12 +10697,26 @@ private let providerModels_opencode_go: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "gemini-4-argon-contributor": Model(
+        id: "gemini-4-argon-contributor",
+        name: "Gemini 4 Argon Contributor",
+        api: .googleGenerativeAI,
+        provider: "opencode-go",
+        baseUrl: "https://opencode.ai/inference/go/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 65536,
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "glm-5.2": Model(
         id: "glm-5.2",
         name: "GLM-5.2",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
@@ -10850,7 +10730,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "GLM-5.3",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
@@ -10864,7 +10744,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "GLM-5.3-Flash",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0),
@@ -10879,7 +10759,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "GPT-5.6 Luna",
         api: .openAIResponses,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.4, output: 1.8, cacheRead: 0.04, cacheWrite: 0.5)]),
@@ -10894,7 +10774,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "GPT-6 Luna",
         api: .openAIResponses,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25)]),
@@ -10904,27 +10784,12 @@ private let providerModels_opencode_go: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "grok-4.6": Model(
-        id: "grok-4.6",
-        name: "Grok 4.6",
-        api: .openAIResponses,
-        provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 12, cacheRead: 1, cacheWrite: 0)]),
-        contextWindow: 500000,
-        maxTokens: 500000,
-        compat: OpenAICompat(sessionAffinityFormat: .openaiNosession),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "grok-4.7": Model(
         id: "grok-4.7",
         name: "Grok 4.7",
         api: .openAIResponses,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 12, cacheRead: 1, cacheWrite: 0)]),
@@ -10939,7 +10804,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Hy3",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.14, output: 0.58, cacheRead: 0.035, cacheWrite: 0),
@@ -10953,7 +10818,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Hy4 preview",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.834, output: 2.501, cacheRead: 0.042, cacheWrite: 0),
@@ -10967,7 +10832,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Kimi K2.7 Code",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0),
@@ -10981,7 +10846,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Kimi K3",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0),
@@ -10996,7 +10861,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "LongCat-2.0",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0),
@@ -11009,7 +10874,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "LongCat 2.5 Preview Free",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -11023,7 +10888,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "MiMo V2.5",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
@@ -11037,7 +10902,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "MiMo V2.5 Pro",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0),
@@ -11050,7 +10915,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "MiMo-V2.6-Flash",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
@@ -11064,7 +10929,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "MiMo-V2.6-Pro",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0),
@@ -11073,25 +10938,12 @@ private let providerModels_opencode_go: [String: Model] = [
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "minimax-m2.7": Model(
-        id: "minimax-m2.7",
-        name: "MiniMax-M2.7",
-        api: .openAICompletions,
-        provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375),
-        contextWindow: 204800,
-        maxTokens: 131072,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true)
-    ),
     "minimax-m3": Model(
         id: "minimax-m3",
         name: "MiniMax-M3",
         api: .anthropicMessages,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go",
+        baseUrl: "https://opencode.ai/inference/go",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 512000, input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0)]),
@@ -11099,12 +10951,27 @@ private let providerModels_opencode_go: [String: Model] = [
         maxTokens: 131072,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "minimax-m3.1-flash-free": Model(
+        id: "minimax-m3.1-flash-free",
+        name: "MiniMax M3.1 Flash Free",
+        api: .openAICompletions,
+        provider: "opencode-go",
+        baseUrl: "https://opencode.ai/inference/go/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 512000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "muse-spark-1.2-contributor": Model(
         id: "muse-spark-1.2-contributor",
         name: "Muse Spark 1.2 Contributor",
         api: .openAIResponses,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0),
@@ -11119,7 +10986,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Muse Spark 1.3 Contributor",
         api: .openAIResponses,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0),
@@ -11134,7 +11001,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Qwen3.7 Plus",
         api: .anthropicMessages,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go",
+        baseUrl: "https://opencode.ai/inference/go",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.4, output: 1.6, cacheRead: 0.04, cacheWrite: 0.5, tiers: [ModelCostTier(inputTokensAbove: 256000, input: 1.2, output: 4.8, cacheRead: 0.12, cacheWrite: 1.5)]),
@@ -11147,7 +11014,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Qwen3.8 Flash",
         api: .anthropicMessages,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go",
+        baseUrl: "https://opencode.ai/inference/go",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0.47, cacheRead: 0.016, cacheWrite: 0.2),
@@ -11161,7 +11028,7 @@ private let providerModels_opencode_go: [String: Model] = [
         name: "Qwen3.8 Max",
         api: .anthropicMessages,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go",
+        baseUrl: "https://opencode.ai/inference/go",
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.25, cacheWrite: 2.5),
@@ -11169,30 +11036,15 @@ private let providerModels_opencode_go: [String: Model] = [
         maxTokens: 131072,
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "space-bunny": Model(
-        id: "space-bunny",
-        name: "Space Bunny",
+    "step-5-preview": Model(
+        id: "step-5-preview",
+        name: "Step 5 Preview",
         api: .openAICompletions,
         provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
+        baseUrl: "https://opencode.ai/inference/go/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.03, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 524288,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "step-5-preview-free": Model(
-        id: "step-5-preview-free",
-        name: "Step 5 Preview Free",
-        api: .openAICompletions,
-        provider: "opencode-go",
-        baseUrl: "https://opencode.ai/zen/go/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 1, output: 2.7, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 65536,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, maxTokensField: .maxTokens, supportsStrictMode: true),
@@ -11442,7 +11294,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, supportsMidConvoEffort: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "anthropic/claude-haiku-5.5:batch": Model(
@@ -11664,19 +11516,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "anthropic/claude-sonnet-4": Model(
-        id: "anthropic/claude-sonnet-4",
-        name: "Anthropic: Claude Sonnet 4",
-        api: .anthropicMessages,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 6, output: 22.5, cacheRead: 0.6, cacheWrite: 7.5)]),
-        contextWindow: 200000,
-        maxTokens: 64000,
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "anthropic/claude-sonnet-4.5": Model(
         id: "anthropic/claude-sonnet-4.5",
         name: "Anthropic: Claude Sonnet 4.5",
@@ -11793,19 +11632,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, cacheControlFormat: .anthropic, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "apodex/apodex-1.1-mini:free": Model(
-        id: "apodex/apodex-1.1-mini:free",
-        name: "Apodex: Apodex 1.1 Mini (free)",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 235929,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "arcee-ai/trinity-large-thinking": Model(
         id: "arcee-ai/trinity-large-thinking",
@@ -12014,20 +11840,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
-    "deepseek/deepseek-r1": Model(
-        id: "deepseek/deepseek-r1",
-        name: "DeepSeek: R1",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.7, output: 2.5, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 64000,
-        maxTokens: 16000,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.off: nil]
-    ),
     "deepseek/deepseek-r1-0528": Model(
         id: "deepseek/deepseek-r1-0528",
         name: "DeepSeek: R1 0528",
@@ -12063,9 +11875,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.259, output: 0.42, cacheRead: 0.135, cacheWrite: 0),
-        contextWindow: 163840,
-        maxTokens: 147456,
+        cost: ModelCost(input: 0.28, output: 0.42, cacheRead: 0.028, cacheWrite: 0),
+        contextWindow: 131072,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "deepseek/deepseek-v3.2-exp": Model(
@@ -12089,9 +11901,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.0057, output: 1.28, cacheRead: 0.0057, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 943718,
+        cost: ModelCost(input: 0.091, output: 0.182, cacheRead: 0.0182, cacheWrite: 0),
+        contextWindow: 1048575,
+        maxTokens: 943717,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "none", .xhigh: "xhigh"]
     ),
@@ -12103,9 +11915,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.0137, output: 1.28, cacheRead: 0.0137, cacheWrite: 0),
+        cost: ModelCost(input: 0.04444, output: 0.13332, cacheRead: 0.001414, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 943718,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil]
     ),
@@ -12132,7 +11944,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.29232, output: 0.58464, cacheRead: 0.02436, cacheWrite: 0),
+        cost: ModelCost(input: 0.392022, output: 0.784044, cacheRead: 0.032668, cacheWrite: 0),
         contextWindow: 1024000,
         maxTokens: 384000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
@@ -12160,9 +11972,24 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.0283, output: 1, cacheRead: 0.01, cacheWrite: 0),
+        cost: ModelCost(input: 0.0342, output: 0.1368, cacheRead: 0.000684, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 943718,
+        maxTokens: 393216,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek/deepseek-v4.1-flash-1017": Model(
+        id: "deepseek/deepseek-v4.1-flash-1017",
+        name: "DeepSeek: DeepSeek V4.1 Flash 1017",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 393216,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -12175,9 +12002,9 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.112, output: 0.336, cacheRead: 0.00336, cacheWrite: 0),
+        cost: ModelCost(input: 0.05, output: 0.15, cacheRead: 0.004, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 131072,
+        maxTokens: 384000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: "none", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -12193,6 +12020,20 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 512000,
         maxTokens: 460800,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "elorian/glimpse": Model(
+        id: "elorian/glimpse",
+        name: "Elorian: Glimpse",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.6, output: 3, cacheRead: 0.06, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 256000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -12239,34 +12080,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "google/gemini-2.5-flash-lite:batch": Model(
-        id: "google/gemini-2.5-flash-lite:batch",
-        name: "Google: Gemini 2.5 Flash Lite (batch)",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.05, output: 0.2, cacheRead: 0.01, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 65535,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "google/gemini-2.5-flash:batch": Model(
-        id: "google/gemini-2.5-flash:batch",
-        name: "Google: Gemini 2.5 Flash (batch)",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 1.25, cacheRead: 0.03, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 65535,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "google/gemini-2.5-pro": Model(
         id: "google/gemini-2.5-pro",
         name: "Google: Gemini 2.5 Pro",
@@ -12291,21 +12104,6 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0.375, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0.375)]),
-        contextWindow: 1048576,
-        maxTokens: 65536,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.off: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "google/gemini-2.5-pro:batch": Model(
-        id: "google/gemini-2.5-pro:batch",
-        name: "Google: Gemini 2.5 Pro (batch)",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.625, output: 5, cacheRead: 0.125, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 1.25, output: 7.5, cacheRead: 0.25, cacheWrite: 0)]),
         contextWindow: 1048576,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -12575,7 +12373,7 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.041667),
+        cost: ModelCost(input: 0.825, output: 4.125, cacheRead: 0.0825, cacheWrite: 0.041667),
         contextWindow: 1048576,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -12593,6 +12391,36 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.375, output: 1.875, cacheRead: 0.0375, cacheWrite: 0.041667),
         contextWindow: 1048576,
         maxTokens: 65536,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-4-argon": Model(
+        id: "google/gemini-4-argon",
+        name: "Google: Gemini 4 Argon",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0.1875),
+        contextWindow: 1048576,
+        maxTokens: 943718,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-4-argon:batch": Model(
+        id: "google/gemini-4-argon:batch",
+        name: "Google: Gemini 4 Argon (batch)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.05, cacheWrite: 0.1875),
+        contextWindow: 1048576,
+        maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -12634,15 +12462,12 @@ private let providerModels_openrouter_chunk1: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.08, output: 0.45, cacheRead: 0.04, cacheWrite: 0),
+        cost: ModelCost(input: 0.08, output: 0.35, cacheRead: 0.04, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 117964,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-]
-
-private let providerModels_openrouter_chunk2: [String: Model] = [
     "google/gemma-4-26b-a4b-it": Model(
         id: "google/gemma-4-26b-a4b-it",
         name: "Google: Gemma 4 26B A4B ",
@@ -12651,7 +12476,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.09, output: 0.3, cacheRead: 0.05, cacheWrite: 0),
+        cost: ModelCost(input: 0.0765, output: 0.255, cacheRead: 0.0425, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -12671,6 +12496,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+]
+
+private let providerModels_openrouter_chunk2: [String: Model] = [
     "google/gemma-4-31b-it": Model(
         id: "google/gemma-4-31b-it",
         name: "Google: Gemma 4 31B",
@@ -12679,7 +12507,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.09, output: 0.34, cacheRead: 0.05, cacheWrite: 0),
+        cost: ModelCost(input: 0.2, output: 0.4, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -12741,6 +12569,20 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil]
     ),
+    "inception/mercury-3": Model(
+        id: "inception/mercury-3",
+        name: "Inception: Mercury 3",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.1, output: 0.35, cacheRead: 0.01, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil]
+    ),
     "inclusionai/ling-3.0-flash": Model(
         id: "inclusionai/ling-3.0-flash",
         name: "inclusionAI: Ling 3.0 Flash",
@@ -12754,32 +12596,6 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
-    "inclusionai/ling-3.0-flash-fin": Model(
-        id: "inclusionai/ling-3.0-flash-fin",
-        name: "inclusionAI: Ling 3.0 Flash Fin",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.042, output: 0.1232, cacheRead: 0.0084, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-    "inclusionai/ling-3.0-flash-sante": Model(
-        id: "inclusionai/ling-3.0-flash-sante",
-        name: "inclusionAI: Ling 3.0 Flash Sante",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.042, output: 0.1232, cacheRead: 0.0084, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
     "inclusionai/ling-3.0-flash-vl": Model(
         id: "inclusionai/ling-3.0-flash-vl",
         name: "inclusionAI: Ling 3.0 Flash VL",
@@ -12788,8 +12604,8 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.021, output: 0.0616, cacheRead: 0.0042, cacheWrite: 0),
-        contextWindow: 262144,
+        cost: ModelCost(input: 0.06, output: 0.18, cacheRead: 0.012, cacheWrite: 0),
+        contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -12802,9 +12618,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.075, output: 0.225, cacheRead: 0.015, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 32768,
+        maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "liquid/lfm-2.5-2.6b:free": Model(
@@ -12817,6 +12633,20 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 65536,
+        maxTokens: 8192,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil]
+    ),
+    "liquid/lfm-2.5-24b-a2b": Model(
+        id: "liquid/lfm-2.5-24b-a2b",
+        name: "LiquidAI: LFM2.5-24B-A2B",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.05, output: 0.7, cacheRead: 0.025, cacheWrite: 0),
+        contextWindow: 128000,
         maxTokens: 8192,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
@@ -12991,6 +12821,36 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "meta/muse-spark-open": Model(
+        id: "meta/muse-spark-open",
+        name: "Meta: Muse Spark Open",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 943718,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "meta/muse-wonder": Model(
+        id: "meta/muse-wonder",
+        name: "Meta: Muse Wonder",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 943718,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "minimax/minimax-m1": Model(
         id: "minimax/minimax-m1",
         name: "MiniMax: MiniMax M1",
@@ -13012,9 +12872,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 196608,
-        maxTokens: 176947,
+        cost: ModelCost(input: 0.255, output: 1.02, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 204800,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
     ),
@@ -13040,9 +12900,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.27, output: 1.08, cacheRead: 0.027, cacheWrite: 0),
-        contextWindow: 200000,
-        maxTokens: 128000,
+        cost: ModelCost(input: 0.27, output: 0.95, cacheRead: 0.03, cacheWrite: 0),
+        contextWindow: 198000,
+        maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
     ),
@@ -13054,9 +12914,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.21, output: 0.84, cacheRead: 0.042, cacheWrite: 0),
-        contextWindow: 196608,
-        maxTokens: 176947,
+        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
+        contextWindow: 204800,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
     ),
@@ -13072,6 +12932,21 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         contextWindow: 524288,
         maxTokens: 512000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "minimax/minimax-m3.1-flash:free": Model(
+        id: "minimax/minimax-m3.1-flash:free",
+        name: "MiniMax: MiniMax M3.1 Flash (free)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 524288,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "mistralai/codestral-2508": Model(
@@ -13231,7 +13106,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.68, output: 2.09, cacheRead: 0.07, cacheWrite: 0),
+        cost: ModelCost(input: 1.36, output: 4.18, cacheRead: 0.14, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 262144,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -13318,7 +13193,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.019, output: 0.03, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.029, output: 0.03, cacheRead: 0, cacheWrite: 0),
         contextWindow: 131072,
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
@@ -13454,9 +13329,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.6, output: 2.5, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 235929,
+        maxTokens: 98304,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
     ),
@@ -13482,7 +13357,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.4375, output: 2.45, cacheRead: 0.1211, cacheWrite: 0),
+        cost: ModelCost(input: 0.65, output: 3.41, cacheRead: 0.15, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
@@ -13511,7 +13386,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.62, output: 12.3, cacheRead: 0.43, cacheWrite: 0),
+        cost: ModelCost(input: 0.239, output: 11.936, cacheRead: 0.21, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -13583,7 +13458,7 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.08, output: 0.45, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.3, output: 2.4, cacheRead: 0.15, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -13611,9 +13486,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.5, output: 2.2, cacheRead: 0.1, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 16384,
+        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.12, cacheWrite: 0),
+        contextWindow: 202800,
+        maxTokens: 182520,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil]
     ),
@@ -13639,9 +13514,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.049, output: 0.14, cacheRead: 0.0245, cacheWrite: 0),
+        cost: ModelCost(input: 0.07, output: 0.2, cacheRead: 0.04, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 131072,
+        maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "nvidia/nemotron-3.5-lightning:free": Model(
@@ -13656,6 +13531,34 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
+    ),
+    "nvidia/nemotron-3.5-super-vl": Model(
+        id: "nvidia/nemotron-3.5-super-vl",
+        name: "NVIDIA: Nemotron 3.5 Super VL",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 0.5, cacheRead: 0.02, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 235929,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "nvidia/nemotron-3.5-super-vl:free": Model(
+        id: "nvidia/nemotron-3.5-super-vl:free",
+        name: "NVIDIA: Nemotron 3.5 Super VL (free)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-3.5-turbo": Model(
         id: "openai/gpt-3.5-turbo",
@@ -13991,6 +13894,9 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: "minimal", .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+]
+
+private let providerModels_openrouter_chunk3: [String: Model] = [
     "openai/gpt-5-nano": Model(
         id: "openai/gpt-5-nano",
         name: "OpenAI: GPT-5 Nano",
@@ -14036,9 +13942,6 @@ private let providerModels_openrouter_chunk2: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-]
-
-private let providerModels_openrouter_chunk3: [String: Model] = [
     "openai/gpt-5-pro:batch": Model(
         id: "openai/gpt-5-pro:batch",
         name: "OpenAI: GPT-5 Pro (batch)",
@@ -14111,7 +14014,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 400000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-5.1:batch": Model(
@@ -14482,7 +14385,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 8, output: 30, cacheRead: 0.8, cacheWrite: 10)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsMidConvoSystemMessages: true, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -14497,7 +14400,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 8, output: 30, cacheRead: 0.8, cacheWrite: 10)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -14512,7 +14415,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 7.5, cacheRead: 0.2, cacheWrite: 2.5)]),
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -14527,7 +14430,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 7.5, cacheRead: 0.2, cacheWrite: 2.5)]),
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -14819,6 +14722,36 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-6.1-sol-pro:batch": Model(
+        id: "openai/gpt-6.1-sol-pro:batch",
+        name: "OpenAI: GPT-6.1 Sol Pro (batch)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 7.5, cacheRead: 0.1, cacheWrite: 2.5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-6.1-sol:batch": Model(
+        id: "openai/gpt-6.1-sol:batch",
+        name: "OpenAI: GPT-6.1 Sol (batch)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 7.5, cacheRead: 0.1, cacheWrite: 2.5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-audio": Model(
         id: "openai/gpt-audio",
         name: "OpenAI: GPT Audio",
@@ -14867,9 +14800,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.037, output: 0.17, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 131072,
-        maxTokens: 117964,
+        maxTokens: 65536,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil]
     ),
@@ -14941,6 +14874,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 100000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/o3": Model(
@@ -14955,6 +14889,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 100000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/o3-mini": Model(
@@ -14968,7 +14903,8 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         cost: ModelCost(input: 1.1, output: 4.4, cacheRead: 0.55, cacheWrite: 0),
         contextWindow: 200000,
         maxTokens: 100000,
-        compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
+        compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil]
     ),
     "openai/o3-mini-high": Model(
         id: "openai/o3-mini-high",
@@ -14995,7 +14931,8 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         cost: ModelCost(input: 0.55, output: 2.2, cacheRead: 0.275, cacheWrite: 0),
         contextWindow: 200000,
         maxTokens: 100000,
-        compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
+        compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil]
     ),
     "openai/o3-pro": Model(
         id: "openai/o3-pro",
@@ -15009,6 +14946,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 100000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/o3:batch": Model(
@@ -15023,6 +14961,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 100000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/o4-mini": Model(
@@ -15037,6 +14976,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 100000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/o4-mini-high": Model(
@@ -15066,6 +15006,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         contextWindow: 200000,
         maxTokens: 100000,
         compat: OpenAICompat(thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openrouter/auto": Model(
@@ -15076,7 +15017,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 2000000,
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -15090,7 +15031,7 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 2000000,
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -15121,6 +15062,19 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 30000,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
+    ),
+    "openrouter/pareto-code": Model(
+        id: "openrouter/pareto-code",
+        name: "Pareto Code Router",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 2000000,
+        maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "perceptron/perceptron-mk1.5": Model(
@@ -15244,19 +15198,6 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
-    "qwen/qwen-plus-2025-07-28": Model(
-        id: "qwen/qwen-plus-2025-07-28",
-        name: "Qwen: Qwen Plus 0728",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.26, output: 0.78, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 256000, input: 0.78, output: 2.34, cacheRead: 0, cacheWrite: 0)]),
-        contextWindow: 1000000,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
     "qwen/qwen3-14b": Model(
         id: "qwen/qwen3-14b",
         name: "Qwen: Qwen3 14B",
@@ -15268,19 +15209,6 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         cost: ModelCost(input: 0.12, output: 0.24, cacheRead: 0, cacheWrite: 0),
         contextWindow: 40960,
         maxTokens: 16384,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-    "qwen/qwen3-235b-a22b": Model(
-        id: "qwen/qwen3-235b-a22b",
-        name: "Qwen: Qwen3 235B A22B",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.455, output: 1.82, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 8192,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "qwen/qwen3-235b-a22b-2507": Model(
@@ -15304,9 +15232,9 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.23, output: 2.3, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 117964,
+        cost: ModelCost(input: 0.45, output: 3.5, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
     ),
@@ -15331,24 +15259,10 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.09, output: 0.3, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-    "qwen/qwen3-30b-a3b-thinking-2507": Model(
-        id: "qwen/qwen3-30b-a3b-thinking-2507",
-        name: "Qwen: Qwen3 30B A3B Thinking 2507",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.2, output: 2.4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 81920,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.off: nil]
     ),
     "qwen/qwen3-32b": Model(
         id: "qwen/qwen3-32b",
@@ -15361,19 +15275,6 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         cost: ModelCost(input: 0.08, output: 0.28, cacheRead: 0, cacheWrite: 0),
         contextWindow: 40960,
         maxTokens: 16384,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-    "qwen/qwen3-8b": Model(
-        id: "qwen/qwen3-8b",
-        name: "Qwen: Qwen3 8B",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.117, output: 0.455, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 8192,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "qwen/qwen3-coder": Model(
@@ -15428,48 +15329,6 @@ private let providerModels_openrouter_chunk3: [String: Model] = [
         maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
-    "qwen/qwen3-coder-plus": Model(
-        id: "qwen/qwen3-coder-plus",
-        name: "Qwen: Qwen3 Coder Plus",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.65, output: 3.25, cacheRead: 0.13, cacheWrite: 0.8125, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 1.17, output: 5.85, cacheRead: 0.234, cacheWrite: 1.4625), ModelCostTier(inputTokensAbove: 128000, input: 1.95, output: 9.75, cacheRead: 0.39, cacheWrite: 2.4375)]),
-        contextWindow: 1000000,
-        maxTokens: 65536,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-    "qwen/qwen3-max": Model(
-        id: "qwen/qwen3-max",
-        name: "Qwen: Qwen3 Max",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.78, output: 3.9, cacheRead: 0.156, cacheWrite: 0.975, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 1.56, output: 7.8, cacheRead: 0.312, cacheWrite: 1.95), ModelCostTier(inputTokensAbove: 128000, input: 1.95, output: 9.75, cacheRead: 0.39, cacheWrite: 2.4375)]),
-        contextWindow: 262144,
-        maxTokens: 65536,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-    "qwen/qwen3-max-thinking": Model(
-        id: "qwen/qwen3-max-thinking",
-        name: "Qwen: Qwen3 Max Thinking",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.78, output: 3.9, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 1.56, output: 7.8, cacheRead: 0, cacheWrite: 0), ModelCostTier(inputTokensAbove: 128000, input: 1.95, output: 9.75, cacheRead: 0, cacheWrite: 0)]),
-        contextWindow: 262144,
-        maxTokens: 65536,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
-    ),
-]
-
-private let providerModels_openrouter_chunk4: [String: Model] = [
     "qwen/qwen3-next-80b-a3b-instruct": Model(
         id: "qwen/qwen3-next-80b-a3b-instruct",
         name: "Qwen: Qwen3 Next 80B A3B Instruct",
@@ -15483,6 +15342,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         maxTokens: 16384,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
+]
+
+private let providerModels_openrouter_chunk4: [String: Model] = [
     "qwen/qwen3-next-80b-a3b-thinking": Model(
         id: "qwen/qwen3-next-80b-a3b-thinking",
         name: "Qwen: Qwen3 Next 80B A3B Thinking",
@@ -15492,8 +15354,8 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.15, output: 1.2, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
+        contextWindow: 262144,
+        maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil]
     ),
@@ -15509,21 +15371,6 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         contextWindow: 131072,
         maxTokens: 32768,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "qwen/qwen3-vl-235b-a22b-thinking": Model(
-        id: "qwen/qwen3-vl-235b-a22b-thinking",
-        name: "Qwen: Qwen3 VL 235B A22B Thinking",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.4, output: 4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "qwen/qwen3-vl-30b-a3b-instruct": Model(
@@ -15548,25 +15395,11 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.2, output: 2.4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
+        cost: ModelCost(input: 0.29, output: 1, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.off: nil],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "qwen/qwen3-vl-32b-instruct": Model(
-        id: "qwen/qwen3-vl-32b-instruct",
-        name: "Qwen: Qwen3 VL 32B Instruct",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.104, output: 0.416, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "qwen/qwen3-vl-8b-instruct": Model(
@@ -15577,25 +15410,10 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.117, output: 0.455, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
+        cost: ModelCost(input: 0.25, output: 0.75, cacheRead: 0.12, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "qwen/qwen3-vl-8b-thinking": Model(
-        id: "qwen/qwen3-vl-8b-thinking",
-        name: "Qwen: Qwen3 VL 8B Thinking",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.18, output: 2.1, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        thinkingLevelMap: [.off: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "qwen/qwen3.5-122b-a10b": Model(
@@ -15620,9 +15438,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.26, output: 2.6, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.27, output: 2.16, cacheRead: 0.27, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 81920,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -15634,9 +15452,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 1, cacheRead: 0.05, cacheWrite: 0),
+        cost: ModelCost(input: 0.14, output: 1, cacheRead: 0.05, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 235929,
+        maxTokens: 81920,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -15648,9 +15466,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.45, output: 3, cacheRead: 0.22, cacheWrite: 0),
+        cost: ModelCost(input: 0.39, output: 2.34, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 81920,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -15662,9 +15480,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.1, output: 0.15, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 256000,
-        maxTokens: 32768,
+        cost: ModelCost(input: 0.08, output: 0.13, cacheRead: 0.04, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -15718,7 +15536,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.3, output: 2, cacheRead: 0.03, cacheWrite: 0),
+        cost: ModelCost(input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -15732,7 +15550,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 1, cacheRead: 0.05, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 0.95, cacheRead: 0.05, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 235929,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -15751,19 +15569,6 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "qwen/qwen3.6-max-preview": Model(
-        id: "qwen/qwen3.6-max-preview",
-        name: "Qwen: Qwen3.6 Max Preview",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 1.027, output: 6.162, cacheRead: 0, cacheWrite: 1.28375, tiers: [ModelCostTier(inputTokensAbove: 128000, input: 1.58, output: 9.48, cacheRead: 0, cacheWrite: 1.975)]),
-        contextWindow: 262144,
-        maxTokens: 65536,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "qwen/qwen3.6-plus": Model(
         id: "qwen/qwen3.6-plus",
@@ -15820,6 +15625,20 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "qwen/qwen3.7-plus:batch": Model(
+        id: "qwen/qwen3.7-plus:batch",
+        name: "Qwen: Qwen3.7 Plus (batch)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.23, output: 0.92, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "qwen/qwen3.8-2.4t-a95b": Model(
         id: "qwen/qwen3.8-2.4t-a95b",
         name: "Qwen: Qwen3.8 2.4T A95B",
@@ -15829,8 +15648,8 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 2, output: 6, cacheRead: 0.25, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
+        contextWindow: 1010000,
+        maxTokens: 909000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: nil, .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"]
     ),
@@ -15842,9 +15661,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.425, output: 2.55, cacheRead: 0.085, cacheWrite: 0.53125),
-        contextWindow: 1000000,
-        maxTokens: 131072,
+        cost: ModelCost(input: 0.04, output: 1.35, cacheRead: 0.018, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: nil, .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -15857,7 +15676,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.15, output: 0.47, cacheRead: 0.016, cacheWrite: 0.2),
+        cost: ModelCost(input: 0.15, output: 0.47, cacheRead: 0.016, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -15871,7 +15690,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 2, output: 6, cacheRead: 0.25, cacheWrite: 2.5),
+        cost: ModelCost(input: 2, output: 6, cacheRead: 0.25, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -15906,6 +15725,34 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "recursive/flint-v1.0:free": Model(
+        id: "recursive/flint-v1.0:free",
+        name: "Recursive: Flint (free)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 235929,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.off: nil]
+    ),
+    "reflection/beam-1.0-501b-a23b": Model(
+        id: "reflection/beam-1.0-501b-a23b",
+        name: "Reflection: Beam 1.0 501B A23B",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.3, output: 1, cacheRead: 0.04, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 943718,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"]
     ),
     "rekaai/reka-edge": Model(
         id: "rekaai/reka-edge",
@@ -16031,7 +15878,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 1, output: 2.7, cacheRead: 0.05, cacheWrite: 0),
+        cost: ModelCost(input: 1, output: 2.7, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 64000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16148,29 +15995,15 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 4096,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "unbiased/pareto": Model(
-        id: "unbiased/pareto",
-        name: "Pareto",
-        api: .openAICompletions,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 2.5, output: 7.5, cacheRead: 0.25, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 131072,
-        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "unbiased/pareto-26.10-preview": Model(
-        id: "unbiased/pareto-26.10-preview",
-        name: "Pareto 26.10 Preview",
+    "unbiased/pareto-26.10": Model(
+        id: "unbiased/pareto-26.10",
+        name: "Pareto 26.10",
         api: .openAICompletions,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -16178,6 +16011,20 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 0.8, output: 3.2, cacheRead: 0.03, cacheWrite: 0),
         contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "unbiased/pareto-26.9": Model(
+        id: "unbiased/pareto-26.9",
+        name: "Pareto 26.9",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 7.5, cacheRead: 0.25, cacheWrite: 0),
+        contextWindow: 262144,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -16218,7 +16065,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.09, output: 0.36, cacheRead: 0.018, cacheWrite: 0),
+        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0.03, cacheWrite: 0),
         contextWindow: 524288,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16336,9 +16183,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
+        cost: ModelCost(input: 0.119, output: 0.238, cacheRead: 0.00255, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 945000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -16350,9 +16197,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.435, output: 0.87, cacheRead: 0.0036, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
+        cost: ModelCost(input: 0.3045, output: 0.609, cacheRead: 0.0028, cacheWrite: 0),
+        contextWindow: 1050000,
+        maxTokens: 945000,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "xiaomi/mimo-v2.6-flash": Model(
@@ -16396,6 +16243,19 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "xingchen-agi/xing4.0-29b-a4b:free": Model(
+        id: "xingchen-agi/xing4.0-29b-a4b:free",
+        name: "XingChen: Xing4.0 29B A4B (free)",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 235929,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "z-ai/glm-4.5": Model(
         id: "z-ai/glm-4.5",
@@ -16445,9 +16305,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.43, output: 1.75, cacheRead: 0.08, cacheWrite: 0),
-        contextWindow: 198000,
-        maxTokens: 16384,
+        cost: ModelCost(input: 0.55, output: 2.2, cacheRead: 0.11, cacheWrite: 0),
+        contextWindow: 204800,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "z-ai/glm-4.6v": Model(
@@ -16472,8 +16332,8 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.6, output: 2.2, cacheRead: 0.11, cacheWrite: 0),
-        contextWindow: 202752,
+        cost: ModelCost(input: 0.54, output: 1.98, cacheRead: 0.099, cacheWrite: 0),
+        contextWindow: 204800,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
@@ -16499,8 +16359,8 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 0.6, output: 1.9, cacheRead: 0.119, cacheWrite: 0),
-        contextWindow: 198000,
-        maxTokens: 128000,
+        contextWindow: 202752,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "z-ai/glm-5-turbo": Model(
@@ -16524,9 +16384,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.966, output: 3.036, cacheRead: 0.1794, cacheWrite: 0),
-        contextWindow: 200000,
-        maxTokens: 128000,
+        cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
+        contextWindow: 202752,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true)
     ),
     "z-ai/glm-5.2": Model(
@@ -16537,9 +16397,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.03, output: 10, cacheRead: 0.03, cacheWrite: 0),
+        cost: ModelCost(input: 0.0341, output: 7, cacheRead: 0.033, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 131072,
+        maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "none", .xhigh: "xhigh"]
     ),
@@ -16551,7 +16411,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.095, output: 4.2, cacheRead: 0.048, cacheWrite: 0),
+        cost: ModelCost(input: 0.079, output: 1.4, cacheRead: 0.078, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16580,7 +16440,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.06, output: 0.2, cacheRead: 0.012, cacheWrite: 0),
+        cost: ModelCost(input: 0.05, output: 0.18, cacheRead: 0.01, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16712,7 +16572,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.0283, output: 1, cacheRead: 0.01, cacheWrite: 0),
+        cost: ModelCost(input: 0.07, output: 0.5, cacheRead: 0.008, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16727,7 +16587,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.1271, output: 8, cacheRead: 0.0953, cacheWrite: 0),
+        cost: ModelCost(input: 0.1307, output: 8, cacheRead: 0.13, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 393216,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16741,7 +16601,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.01096, output: 0.610116, cacheRead: 0.01096, cacheWrite: 0),
+        cost: ModelCost(input: 0.0422, output: 0.1729, cacheRead: 0.0275, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true, requiresReasoningContentOnAssistantMessages: true),
@@ -16770,9 +16630,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0.375, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 0.375)]),
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0.1875),
         contextWindow: 1048576,
-        maxTokens: 65536,
+        maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -16785,7 +16645,7 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.61, output: 13, cacheRead: 0.45, cacheWrite: 0),
+        cost: ModelCost(input: 0.238, output: 16, cacheRead: 0.228, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
@@ -16867,6 +16727,20 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "~unbiased/pareto-latest": Model(
+        id: "~unbiased/pareto-latest",
+        name: "Pareto Latest",
+        api: .openAICompletions,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.8, output: 3.2, cacheRead: 0.03, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "~x-ai/grok-latest": Model(
         id: "~x-ai/grok-latest",
         name: "xAI: Grok Latest",
@@ -16890,9 +16764,9 @@ private let providerModels_openrouter_chunk4: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.032, output: 4.35179, cacheRead: 0.02, cacheWrite: 0),
+        cost: ModelCost(input: 0.0063, output: 0.1789, cacheRead: 0.0063, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 943718,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
@@ -16908,9 +16782,9 @@ private let providerModels_openrouter_chunk5: [String: Model] = [
         baseUrl: "https://openrouter.ai/api/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.06, output: 12, cacheRead: 0.0558, cacheWrite: 0),
+        cost: ModelCost(input: 0.079, output: 1.4, cacheRead: 0.078, cacheWrite: 0),
         contextWindow: 1048576,
-        maxTokens: 131072,
+        maxTokens: 943718,
         compat: OpenAICompat(supportsDeveloperRole: false, thinkingFormat: .openrouter, supportsStrictMode: true, sendSessionAffinityHeaders: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil]
     ),
@@ -17002,6 +16876,21 @@ private let providerModels_qwen_token_plan: [String: Model] = [
     "deepseek-v4.1-flash": Model(
         id: "deepseek-v4.1-flash",
         name: "DeepSeek V4.1 Flash",
+        api: .openAICompletions,
+        provider: "qwen-token-plan",
+        baseUrl: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, thinkingFormat: .qwen, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek-v4.1-flash-1017": Model(
+        id: "deepseek-v4.1-flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
         api: .openAICompletions,
         provider: "qwen-token-plan",
         baseUrl: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
@@ -17285,6 +17174,21 @@ private let providerModels_qwen_token_plan_cn: [String: Model] = [
     "deepseek-v4.1-flash": Model(
         id: "deepseek-v4.1-flash",
         name: "DeepSeek V4.1 Flash",
+        api: .openAICompletions,
+        provider: "qwen-token-plan-cn",
+        baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, thinkingFormat: .qwen, supportsStrictMode: true),
+        thinkingLevelMap: [.high: "high", .low: "low", .max: "max", .medium: nil, .minimal: nil, .off: nil, .xhigh: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek-v4.1-flash-1017": Model(
+        id: "deepseek-v4.1-flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
         api: .openAICompletions,
         provider: "qwen-token-plan-cn",
         baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
@@ -17613,20 +17517,6 @@ private let providerModels_qwen_token_plan_individual: [String: Model] = [
 ]
 
 private let providerModels_together: [String: Model] = [
-    "MiniMaxAI/MiniMax-M2.7": Model(
-        id: "MiniMaxAI/MiniMax-M2.7",
-        name: "MiniMax-M2.7",
-        api: .openAICompletions,
-        provider: "together",
-        baseUrl: "https://api.together.ai/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
-        contextWindow: 196608,
-        maxTokens: 131072,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, supportsStrictMode: false, supportsLongCacheRetention: false),
-        thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil, .off: nil]
-    ),
     "MiniMaxAI/MiniMax-M3": Model(
         id: "MiniMaxAI/MiniMax-M3",
         name: "MiniMax-M3",
@@ -17637,23 +17527,10 @@ private let providerModels_together: [String: Model] = [
         input: [.text, .image],
         cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 524288,
-        maxTokens: 250000,
+        maxTokens: 524288,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
         thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "Qwen/Qwen2.5-7B-Instruct-Turbo": Model(
-        id: "Qwen/Qwen2.5-7B-Instruct-Turbo",
-        name: "Qwen 2.5 7B Instruct Turbo",
-        api: .openAICompletions,
-        provider: "together",
-        baseUrl: "https://api.together.ai/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 0.3, output: 0.3, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32768,
-        maxTokens: 32768,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false)
     ),
     "Qwen/Qwen3.5-9B": Model(
         id: "Qwen/Qwen3.5-9B",
@@ -17680,7 +17557,7 @@ private let providerModels_together: [String: Model] = [
         input: [.text],
         cost: ModelCost(input: 0.5, output: 3, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1000000,
-        maxTokens: 500000,
+        maxTokens: 65536,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
         thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil]
     ),
@@ -17690,24 +17567,11 @@ private let providerModels_together: [String: Model] = [
         api: .openAICompletions,
         provider: "together",
         baseUrl: "https://api.together.ai/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 1.25, output: 3.75, cacheRead: 0.125, cacheWrite: 0),
-        contextWindow: 1000000,
-        maxTokens: 500000,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false)
-    ),
-    "deepseek-ai/DeepSeek-V4-Flash-0731": Model(
-        id: "deepseek-ai/DeepSeek-V4-Flash-0731",
-        name: "DeepSeek V4 Flash 0731",
-        api: .openAICompletions,
-        provider: "together",
-        baseUrl: "https://api.together.ai/v1",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.03, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 384000,
+        cost: ModelCost(input: 2.5, output: 7.5, cacheRead: 0.5, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 131072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
         thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil]
     ),
@@ -17740,18 +17604,20 @@ private let providerModels_together: [String: Model] = [
         thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "meta-llama/Llama-3.3-70B-Instruct-Turbo": Model(
-        id: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-        name: "Llama 3.3 70B",
+    "meta-models/Muse-Spark-Open-816B-A42B": Model(
+        id: "meta-models/Muse-Spark-Open-816B-A42B",
+        name: "Muse Spark Open",
         api: .openAICompletions,
         provider: "together",
         baseUrl: "https://api.together.ai/v1",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 1.04, output: 1.04, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false)
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
+        thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "moonshotai/Kimi-K3": Model(
         id: "moonshotai/Kimi-K3",
@@ -17768,19 +17634,20 @@ private let providerModels_together: [String: Model] = [
         thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "nvidia/nemotron-3-ultra-550b-a55b": Model(
-        id: "nvidia/nemotron-3-ultra-550b-a55b",
-        name: "Nemotron 3 Ultra 550B A55B",
+    "nvidia/NVIDIA-Nemotron-3.5-Super-VL": Model(
+        id: "nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+        name: "Nemotron 3.5 Super VL 120B A12B",
         api: .openAICompletions,
         provider: "together",
         baseUrl: "https://api.together.ai/v1",
         reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.6, output: 3.6, cacheRead: 0.2, cacheWrite: 0),
-        contextWindow: 512300,
-        maxTokens: 512300,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 0.5, cacheRead: 0.02, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
-        thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil]
+        thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-oss-120b": Model(
         id: "openai/gpt-oss-120b",
@@ -17795,6 +17662,20 @@ private let providerModels_together: [String: Model] = [
         maxTokens: 131072,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true, maxTokensField: .maxTokens, thinkingFormat: .openai, supportsStrictMode: false, supportsLongCacheRetention: false),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil]
+    ),
+    "reflection/Beam-1.0-501B-A23B": Model(
+        id: "reflection/Beam-1.0-501B-A23B",
+        name: "Beam 1.0 501B A23B",
+        api: .openAICompletions,
+        provider: "together",
+        baseUrl: "https://api.together.ai/v1",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.4, output: 1.2, cacheRead: 0.04, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
+        thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil]
     ),
     "thinkingmachines/Inkling": Model(
         id: "thinkingmachines/Inkling",
@@ -17834,7 +17715,7 @@ private let providerModels_together: [String: Model] = [
         reasoning: true,
         input: [.text],
         cost: ModelCost(input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0),
-        contextWindow: 1048576,
+        contextWindow: 1048575,
         maxTokens: 262144,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .together, supportsStrictMode: false, supportsLongCacheRetention: false),
         thinkingLevelMap: [.low: nil, .medium: nil, .minimal: nil]
@@ -17858,7 +17739,7 @@ private let providerModels_together: [String: Model] = [
 
 private let providerModels_typesafe: [String: Model] = [:]
 
-private let providerModels_vercel_ai_gateway: [String: Model] = providerModels_vercel_ai_gateway_chunk1.merging(providerModels_vercel_ai_gateway_chunk2) { _, new in new }.merging(providerModels_vercel_ai_gateway_chunk3) { _, new in new }
+private let providerModels_vercel_ai_gateway: [String: Model] = providerModels_vercel_ai_gateway_chunk1.merging(providerModels_vercel_ai_gateway_chunk2) { _, new in new }.merging(providerModels_vercel_ai_gateway_chunk3) { _, new in new }.merging(providerModels_vercel_ai_gateway_chunk4) { _, new in new }
 
 private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
     "alibaba/qwen-3-14b": Model(
@@ -17880,7 +17761,7 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
+        reasoning: false,
         input: [.text],
         cost: ModelCost(input: 0.22, output: 0.88, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
@@ -17908,37 +17789,10 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.16, output: 0.64, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 8192,
         compat: OpenAICompat(allowEmptySignature: true)
-    ),
-    "alibaba/qwen-3.6-max-preview": Model(
-        id: "alibaba/qwen-3.6-max-preview",
-        name: "Qwen 3.6 Max Preview",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 1.3, output: 7.8, cacheRead: 0.13, cacheWrite: 1.625, tiers: [ModelCostTier(inputTokensAbove: 127999, input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5)]),
-        contextWindow: 240000,
-        maxTokens: 64000,
-        compat: OpenAICompat(allowEmptySignature: true)
-    ),
-    "alibaba/qwen3-235b-a22b-thinking": Model(
-        id: "alibaba/qwen3-235b-a22b-thinking",
-        name: "Qwen3 VL 235B A22B Thinking",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.4, output: 4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
-        compat: OpenAICompat(allowEmptySignature: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "alibaba/qwen3-coder": Model(
         id: "alibaba/qwen3-coder",
@@ -17948,9 +17802,9 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0.3, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 2.7, output: 13.5, cacheRead: 0.54, cacheWrite: 0), ModelCostTier(inputTokensAbove: 128000, input: 4.5, output: 22.5, cacheRead: 0.9, cacheWrite: 0)]),
+        cost: ModelCost(input: 0.22, output: 1.8, cacheRead: 0.022, cacheWrite: 0),
         contextWindow: 262144,
-        maxTokens: 65536,
+        maxTokens: 32768,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
     "alibaba/qwen3-coder-30b-a3b": Model(
@@ -17977,45 +17831,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.5, output: 1.2, cacheRead: 0, cacheWrite: 0),
         contextWindow: 256000,
         maxTokens: 256000,
-        compat: OpenAICompat(allowEmptySignature: true)
-    ),
-    "alibaba/qwen3-coder-plus": Model(
-        id: "alibaba/qwen3-coder-plus",
-        name: "Qwen3 Coder Plus",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 1, output: 5, cacheRead: 0.2, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 1.8, output: 9, cacheRead: 0.36, cacheWrite: 0), ModelCostTier(inputTokensAbove: 128000, input: 3, output: 15, cacheRead: 0.6, cacheWrite: 0), ModelCostTier(inputTokensAbove: 256000, input: 6, output: 60, cacheRead: 1.2, cacheWrite: 0)]),
-        contextWindow: 1000000,
-        maxTokens: 65536,
-        compat: OpenAICompat(allowEmptySignature: true)
-    ),
-    "alibaba/qwen3-max": Model(
-        id: "alibaba/qwen3-max",
-        name: "Qwen3 Max",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 1.2, output: 6, cacheRead: 0.24, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 2.4, output: 12, cacheRead: 0.48, cacheWrite: 0), ModelCostTier(inputTokensAbove: 128000, input: 3, output: 15, cacheRead: 0.6, cacheWrite: 0)]),
-        contextWindow: 262144,
-        maxTokens: 32768,
-        compat: OpenAICompat(allowEmptySignature: true)
-    ),
-    "alibaba/qwen3-max-preview": Model(
-        id: "alibaba/qwen3-max-preview",
-        name: "Qwen3 Max Preview",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text],
-        cost: ModelCost(input: 1.2, output: 6, cacheRead: 0.24, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 32000, input: 2.4, output: 12, cacheRead: 0.48, cacheWrite: 0), ModelCostTier(inputTokensAbove: 128000, input: 3, output: 15, cacheRead: 0.6, cacheWrite: 0)]),
-        contextWindow: 262144,
-        maxTokens: 32768,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
     "alibaba/qwen3-max-thinking": Model(
@@ -18057,20 +17872,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         maxTokens: 262144,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
-    "alibaba/qwen3-vl-235b-a22b-instruct": Model(
-        id: "alibaba/qwen3-vl-235b-a22b-instruct",
-        name: "Qwen3 VL 235B A22B Instruct",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.4, output: 1.6, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 129024,
-        compat: OpenAICompat(allowEmptySignature: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "alibaba/qwen3-vl-instruct": Model(
         id: "alibaba/qwen3-vl-instruct",
         name: "Qwen3 VL 235B A22B Instruct",
@@ -18079,23 +17880,9 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: false,
         input: [.text, .image],
-        cost: ModelCost(input: 0.4, output: 1.6, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 129024,
-        compat: OpenAICompat(allowEmptySignature: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "alibaba/qwen3-vl-thinking": Model(
-        id: "alibaba/qwen3-vl-thinking",
-        name: "Qwen3 VL 235B A22B Thinking",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.4, output: 4, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072,
-        maxTokens: 32768,
+        cost: ModelCost(input: 0.2, output: 0.88, cacheRead: 0.11, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 262144,
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -18349,20 +18136,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "anthropic/claude-3-haiku": Model(
-        id: "anthropic/claude-3-haiku",
-        name: "Claude 3 Haiku",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: false,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.25, output: 1.25, cacheRead: 0.03, cacheWrite: 0.3),
-        contextWindow: 200000,
-        maxTokens: 4096,
-        compat: OpenAICompat(allowEmptySignature: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
     "anthropic/claude-fable-5": Model(
         id: "anthropic/claude-fable-5",
         name: "Claude Fable 5",
@@ -18372,6 +18145,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "anthropic/claude-fable-5-batch": Model(
+        id: "anthropic/claude-fable-5-batch",
+        name: "Claude Fable 5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
@@ -18393,6 +18181,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-fable-5.1-batch": Model(
+        id: "anthropic/claude-fable-5.1-batch",
+        name: "Claude Fable 5.1 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 25, cacheRead: 0.125, cacheWrite: 6.25),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .off: nil, .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-haiku-4.5": Model(
         id: "anthropic/claude-haiku-4.5",
         name: "Claude Haiku 4.5",
@@ -18402,6 +18205,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25),
+        contextWindow: 200000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "anthropic/claude-haiku-4.5-batch": Model(
+        id: "anthropic/claude-haiku-4.5-batch",
+        name: "Claude Haiku 4.5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625),
         contextWindow: 200000,
         maxTokens: 64000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -18422,18 +18239,19 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "anthropic/claude-opus-4": Model(
-        id: "anthropic/claude-opus-4",
-        name: "Claude Opus 4",
+    "anthropic/claude-haiku-5.5-batch": Model(
+        id: "anthropic/claude-haiku-5.5-batch",
+        name: "Claude Haiku 5.5 (Batch)",
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75),
-        contextWindow: 200000,
-        maxTokens: 32000,
-        compat: OpenAICompat(allowEmptySignature: true),
+        cost: ModelCost(input: 0.05, output: 0.25, cacheRead: 0.005, cacheWrite: 0.0625, tiers: [ModelCostTier(inputTokensAbove: 100000, input: 0.25, output: 1.25, cacheRead: 0.025, cacheWrite: 0.3125)]),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "anthropic/claude-opus-4.5": Model(
@@ -18450,6 +18268,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-opus-4.5-batch": Model(
+        id: "anthropic/claude-opus-4.5-batch",
+        name: "Claude Opus 4.5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 12.5, cacheRead: 0.25, cacheWrite: 3.125),
+        contextWindow: 200000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-opus-4.6": Model(
         id: "anthropic/claude-opus-4.6",
         name: "Claude Opus 4.6",
@@ -18459,6 +18291,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "anthropic/claude-opus-4.6-batch": Model(
+        id: "anthropic/claude-opus-4.6-batch",
+        name: "Claude Opus 4.6 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 12.5, cacheRead: 0.25, cacheWrite: 3.125),
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
@@ -18480,6 +18327,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-opus-4.7-batch": Model(
+        id: "anthropic/claude-opus-4.7-batch",
+        name: "Claude Opus 4.7 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 12.5, cacheRead: 0.25, cacheWrite: 3.125),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-opus-4.8": Model(
         id: "anthropic/claude-opus-4.8",
         name: "Claude Opus 4.8",
@@ -18489,6 +18351,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "anthropic/claude-opus-4.8-batch": Model(
+        id: "anthropic/claude-opus-4.8-batch",
+        name: "Claude Opus 4.8 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 12.5, cacheRead: 0.25, cacheWrite: 3.125),
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
@@ -18525,6 +18402,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-opus-5-batch": Model(
+        id: "anthropic/claude-opus-5-batch",
+        name: "Claude Opus 5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 12.5, cacheRead: 0.25, cacheWrite: 3.125),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-opus-5-fast": Model(
         id: "anthropic/claude-opus-5-fast",
         name: "Claude Opus 5 (Fast)",
@@ -18555,6 +18447,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-opus-5.5-batch": Model(
+        id: "anthropic/claude-opus-5.5-batch",
+        name: "Claude Opus 5.5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-opus-5.5-fast": Model(
         id: "anthropic/claude-opus-5.5-fast",
         name: "Claude Opus 5.5 (Fast)",
@@ -18568,20 +18475,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         maxTokens: 128000,
         compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "anthropic/claude-sonnet-4": Model(
-        id: "anthropic/claude-sonnet-4",
-        name: "Claude Sonnet 4",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 6, output: 22.5, cacheRead: 0.6, cacheWrite: 7.5)]),
-        contextWindow: 1000000,
-        maxTokens: 64000,
-        compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "anthropic/claude-sonnet-4.5": Model(
@@ -18598,6 +18491,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-sonnet-4.5-batch": Model(
+        id: "anthropic/claude-sonnet-4.5-batch",
+        name: "Claude Sonnet 4.5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 1.875, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 3, output: 11.25, cacheRead: 0.3, cacheWrite: 3.75)]),
+        contextWindow: 1000000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-sonnet-4.6": Model(
         id: "anthropic/claude-sonnet-4.6",
         name: "Claude Sonnet 4.6",
@@ -18607,6 +18514,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "anthropic/claude-sonnet-4.6-batch": Model(
+        id: "anthropic/claude-sonnet-4.6-batch",
+        name: "Claude Sonnet 4.6 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 1.875),
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
@@ -18628,6 +18550,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-sonnet-5-batch": Model(
+        id: "anthropic/claude-sonnet-5-batch",
+        name: "Claude Sonnet 5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "anthropic/claude-sonnet-5.5": Model(
         id: "anthropic/claude-sonnet-5.5",
         name: "Claude Sonnet 5.5",
@@ -18643,6 +18580,21 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "anthropic/claude-sonnet-5.5-batch": Model(
+        id: "anthropic/claude-sonnet-5.5-batch",
+        name: "Claude Sonnet 5.5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(supportsTemperature: false, forceAdaptiveThinking: true, allowEmptySignature: true),
+        thinkingLevelMap: [.max: "max", .xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "arcee-ai/trinity-large-thinking": Model(
         id: "arcee-ai/trinity-large-thinking",
         name: "Trinity Large Thinking",
@@ -18651,7 +18603,7 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.25, output: 0.8, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.25, output: 0.8, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 262100,
         maxTokens: 80000,
         compat: OpenAICompat(allowEmptySignature: true)
@@ -18695,6 +18647,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.5, output: 2.5, cacheRead: 0.1, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 262144,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "callstack/apex": Model(
+        id: "callstack/apex",
+        name: "Apex",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.5, output: 3, cacheRead: 0.2, cacheWrite: 0),
+        contextWindow: 262144,
+        maxTokens: 131072,
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -18837,7 +18803,49 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.3, output: 1.2, cacheRead: 0.007, cacheWrite: 0),
+        cost: ModelCost(input: 0.075, output: 0.3, cacheRead: 0.0015, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 32768,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek/deepseek-v4.1-flash-1017": Model(
+        id: "deepseek/deepseek-v4.1-flash-1017",
+        name: "DeepSeek V4.1 Flash 1017",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.075, output: 0.3, cacheRead: 0.0015, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek/deepseek-v4.1-flash-1017-fast": Model(
+        id: "deepseek/deepseek-v4.1-flash-1017-fast",
+        name: "DeepSeek V4.1 Flash 1017 Fast",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.014, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 262144,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "deepseek/deepseek-v4.1-flash-fast": Model(
+        id: "deepseek/deepseek-v4.1-flash-fast",
+        name: "DeepSeek V4.1 Flash Fast",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.6, output: 2.4, cacheRead: 0.014, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 32768,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -18871,6 +18879,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-2.5-flash-batch": Model(
+        id: "google/gemini-2.5-flash-batch",
+        name: "Gemini 2.5 Flash (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 1.25, cacheRead: 0.03, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "google/gemini-2.5-flash-lite": Model(
         id: "google/gemini-2.5-flash-lite",
         name: "Gemini 2.5 Flash Lite",
@@ -18880,6 +18902,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.4, cacheRead: 0.01, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 65535,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-2.5-flash-lite-batch": Model(
+        id: "google/gemini-2.5-flash-lite-batch",
+        name: "Gemini 2.5 Flash Lite (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.05, output: 0.2, cacheRead: 0.01, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 65535,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -18899,6 +18935,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-2.5-pro-batch": Model(
+        id: "google/gemini-2.5-pro-batch",
+        name: "Gemini 2.5 Pro (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.625, output: 5, cacheRead: 0.125, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 1.25, output: 7.5, cacheRead: 0.25, cacheWrite: 0)]),
+        contextWindow: 1048576,
+        maxTokens: 65535,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "google/gemini-3-flash": Model(
         id: "google/gemini-3-flash",
         name: "Gemini 3 Flash",
@@ -18913,6 +18963,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-3-flash-batch": Model(
+        id: "google/gemini-3-flash-batch",
+        name: "Gemini 3 Flash (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0.05, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 0.25, output: 1.5, cacheRead: 0.05, cacheWrite: 0)]),
+        contextWindow: 1000000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "google/gemini-3.1-flash-lite": Model(
         id: "google/gemini-3.1-flash-lite",
         name: "Gemini 3.1 Flash Lite",
@@ -18922,6 +18986,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.25, output: 1.5, cacheRead: 0.03, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 65000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-3.1-flash-lite-batch": Model(
+        id: "google/gemini-3.1-flash-lite-batch",
+        name: "Gemini 3.1 Flash Lite (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.125, output: 0.75, cacheRead: 0.015, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 65000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -18941,6 +19019,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-3.1-pro-preview-batch": Model(
+        id: "google/gemini-3.1-pro-preview-batch",
+        name: "Gemini 3.1 Pro Preview (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 6, cacheRead: 0.2, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2, output: 9, cacheRead: 0.4, cacheWrite: 0)]),
+        contextWindow: 1000000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "google/gemini-3.5-flash": Model(
         id: "google/gemini-3.5-flash",
         name: "Gemini 3.5 Flash",
@@ -18950,6 +19042,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.5, output: 9, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-3.5-flash-batch": Model(
+        id: "google/gemini-3.5-flash-batch",
+        name: "Gemini 3.5 Flash (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 64000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -18969,6 +19075,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-3.5-flash-lite-batch": Model(
+        id: "google/gemini-3.5-flash-lite-batch",
+        name: "Gemini 3.5 Flash Lite (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 1.25, cacheRead: 0.015, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 65000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "google/gemini-3.6-flash": Model(
         id: "google/gemini-3.6-flash",
         name: "Gemini 3.6 Flash",
@@ -18978,6 +19098,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 64000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-3.6-flash-batch": Model(
+        id: "google/gemini-3.6-flash-batch",
+        name: "Gemini 3.6 Flash (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.375, output: 1.875, cacheRead: 0.0375, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 64000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -18997,6 +19131,23 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "google/gemini-3.7-flash-batch": Model(
+        id: "google/gemini-3.7-flash-batch",
+        name: "Gemini 3.7 Flash (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.375, output: 1.875, cacheRead: 0.0375, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 65535,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+]
+
+private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
     "google/gemini-3.8-flash": Model(
         id: "google/gemini-3.8-flash",
         name: "Gemini 3.8 Flash",
@@ -19008,6 +19159,20 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 1000000,
         maxTokens: 65535,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "google/gemini-4-argon": Model(
+        id: "google/gemini-4-argon",
+        name: "Gemini 4 Argon",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 1000000,
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -19063,6 +19228,19 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         cost: ModelCost(input: 0.04, output: 0.15, cacheRead: 0.004, cacheWrite: 0),
         contextWindow: 260000,
         maxTokens: 65536,
+        compat: OpenAICompat(allowEmptySignature: true)
+    ),
+    "inception/mercury-3": Model(
+        id: "inception/mercury-3",
+        name: "Mercury 3",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.1, output: 0.35, cacheRead: 0.01, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 131072,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
     "inception/mercury-coder-small": Model(
@@ -19139,20 +19317,7 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144,
-        maxTokens: 32768,
-        compat: OpenAICompat(allowEmptySignature: true)
-    ),
-    "inclusionai/ling-3.1-flash-free": Model(
-        id: "inclusionai/ling-3.1-flash-free",
-        name: "Ling 3.1 Flash (Free)",
-        api: .anthropicMessages,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.3, output: 0.9, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 262144,
         maxTokens: 32768,
         compat: OpenAICompat(allowEmptySignature: true)
@@ -19170,6 +19335,19 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         maxTokens: 32000,
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "liquid/lfm2.5-24b-a2b": Model(
+        id: "liquid/lfm2.5-24b-a2b",
+        name: "LFM2.5-24B-A2B",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0.05, output: 0.7, cacheRead: 0.025, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 8200,
+        compat: OpenAICompat(allowEmptySignature: true)
     ),
     "meituan/longcat-2.5-preview": Model(
         id: "meituan/longcat-2.5-preview",
@@ -19238,9 +19416,6 @@ private let providerModels_vercel_ai_gateway_chunk1: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-]
-
-private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
     "meta/llama-4-scout": Model(
         id: "meta/llama-4-scout",
         name: "Llama 4 Scout 17B Instruct",
@@ -19334,6 +19509,34 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "meta/muse-spark-open": Model(
+        id: "meta/muse-spark-open",
+        name: "Muse Spark Open",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "meta/muse-wonder-1.0": Model(
+        id: "meta/muse-wonder-1.0",
+        name: "Muse Wonder",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 1048576,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -19444,6 +19647,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "minimax/minimax-m3.1-flash": Model(
+        id: "minimax/minimax-m3.1-flash",
+        name: "MiniMax-M3.1-Flash",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 524288,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "mistral/codestral": Model(
         id: "mistral/codestral",
         name: "Mistral Codestral",
@@ -19521,7 +19738,7 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.68, output: 2.09, cacheRead: 0.07, cacheWrite: 0),
+        cost: ModelCost(input: 1.36, output: 4.18, cacheRead: 0.14, cacheWrite: 0),
         contextWindow: 524288,
         maxTokens: 262144,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -19549,9 +19766,9 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: false,
         input: [.text],
-        cost: ModelCost(input: 0.04, output: 0.17, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 60288,
-        maxTokens: 16000,
+        cost: ModelCost(input: 0.029, output: 0.03, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072,
+        maxTokens: 131072,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
     "mistral/mistral-small": Model(
@@ -19730,6 +19947,33 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         maxTokens: 131072,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
+    "nvidia/nemotron-3.5-lightning-free": Model(
+        id: "nvidia/nemotron-3.5-lightning-free",
+        name: "Nemotron 3.5 Lightning Free",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000,
+        maxTokens: 65000,
+        compat: OpenAICompat(allowEmptySignature: true)
+    ),
+    "nvidia/nemotron-3.5-super-vl": Model(
+        id: "nvidia/nemotron-3.5-super-vl",
+        name: "NVIDIA Nemotron 3.5 Super VL",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.2, output: 0.5, cacheRead: 0.04, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "nvidia/nemotron-nano-12b-v2-vl": Model(
         id: "nvidia/nemotron-nano-12b-v2-vl",
         name: "Nvidia Nemotron Nano 12B V2 VL",
@@ -19798,6 +20042,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-4.1-batch": Model(
+        id: "openai/gpt-4.1-batch",
+        name: "GPT-4.1 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 4, cacheRead: 0.25, cacheWrite: 0),
+        contextWindow: 1047576,
+        maxTokens: 32768,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-4.1-fast": Model(
         id: "openai/gpt-4.1-fast",
         name: "GPT-4.1 (Fast)",
@@ -19821,6 +20079,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 0.4, output: 1.6, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1047576,
+        maxTokens: 32768,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-4.1-mini-batch": Model(
+        id: "openai/gpt-4.1-mini-batch",
+        name: "GPT-4.1 mini (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.2, output: 0.8, cacheRead: 0.05, cacheWrite: 0),
         contextWindow: 1047576,
         maxTokens: 32768,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -19854,6 +20126,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-4.1-nano-batch": Model(
+        id: "openai/gpt-4.1-nano-batch",
+        name: "GPT-4.1 nano (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.05, output: 0.2, cacheRead: 0.0125, cacheWrite: 0),
+        contextWindow: 1047576,
+        maxTokens: 32768,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-4.1-nano-fast": Model(
         id: "openai/gpt-4.1-nano-fast",
         name: "GPT-4.1 nano (Fast)",
@@ -19877,6 +20163,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 2.5, output: 10, cacheRead: 1.25, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 16384,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-4o-batch": Model(
+        id: "openai/gpt-4o-batch",
+        name: "GPT-4o (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 5, cacheRead: 0.625, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 16384,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -19910,6 +20210,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-4o-mini-batch": Model(
+        id: "openai/gpt-4o-mini-batch",
+        name: "GPT-4o mini (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.075, output: 0.3, cacheRead: 0.0375, cacheWrite: 0),
+        contextWindow: 128000,
+        maxTokens: 16384,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-4o-mini-fast": Model(
         id: "openai/gpt-4o-mini-fast",
         name: "GPT-4o mini (Fast)",
@@ -19933,6 +20247,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-5-batch": Model(
+        id: "openai/gpt-5-batch",
+        name: "GPT-5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.625, output: 5, cacheRead: 0.0625, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -19980,6 +20308,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5-mini-batch": Model(
+        id: "openai/gpt-5-mini-batch",
+        name: "GPT-5 mini (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.125, output: 1, cacheRead: 0.0125, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5-mini-fast": Model(
         id: "openai/gpt-5-mini-fast",
         name: "GPT-5 mini (Fast)",
@@ -20008,6 +20350,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5-nano-batch": Model(
+        id: "openai/gpt-5-nano-batch",
+        name: "GPT-5 nano (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.025, output: 0.2, cacheRead: 0.0025, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5-pro": Model(
         id: "openai/gpt-5-pro",
         name: "GPT-5 pro",
@@ -20017,6 +20373,20 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 15, output: 120, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 272000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-5-pro-batch": Model(
+        id: "openai/gpt-5-pro-batch",
+        name: "GPT-5 pro (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 7.5, output: 60, cacheRead: 0, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 272000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20107,6 +20477,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5.2-batch": Model(
+        id: "openai/gpt-5.2-batch",
+        name: "GPT 5.2 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.875, output: 7, cacheRead: 0.0875, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5.2-codex": Model(
         id: "openai/gpt-5.2-codex",
         name: "GPT 5.2 Codex",
@@ -20137,6 +20522,9 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+]
+
+private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
     "openai/gpt-5.2-pro": Model(
         id: "openai/gpt-5.2-pro",
         name: "GPT 5.2 ",
@@ -20197,6 +20585,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5.4-batch": Model(
+        id: "openai/gpt-5.4-batch",
+        name: "GPT 5.4 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1.25, output: 7.5, cacheRead: 0.125, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 2.5, output: 11.25, cacheRead: 0.25, cacheWrite: 0)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5.4-fast": Model(
         id: "openai/gpt-5.4-fast",
         name: "GPT 5.4 (Fast)",
@@ -20221,6 +20624,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-5.4-mini-batch": Model(
+        id: "openai/gpt-5.4-mini-batch",
+        name: "GPT 5.4 Mini (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.375, output: 2.25, cacheRead: 0.0375, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20257,6 +20675,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5.4-nano-batch": Model(
+        id: "openai/gpt-5.4-nano-batch",
+        name: "GPT 5.4 Nano (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0.625, cacheRead: 0.01, cacheWrite: 0),
+        contextWindow: 400000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5.4-pro": Model(
         id: "openai/gpt-5.4-pro",
         name: "GPT 5.4 Pro",
@@ -20281,6 +20714,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-5.5-batch": Model(
+        id: "openai/gpt-5.5-batch",
+        name: "GPT 5.5 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
         contextWindow: 1000000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20317,6 +20765,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.low: nil, .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5.5-pro-batch": Model(
+        id: "openai/gpt-5.5-pro-batch",
+        name: "GPT 5.5 Pro (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 15, output: 90, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 30, output: 135, cacheRead: 0, cacheWrite: 0)]),
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5.6-luna": Model(
         id: "openai/gpt-5.6-luna",
         name: "GPT 5.6 Luna",
@@ -20326,6 +20789,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 0.4, output: 1.8, cacheRead: 0.04, cacheWrite: 0.5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-5.6-luna-batch": Model(
+        id: "openai/gpt-5.6-luna-batch",
+        name: "GPT 5.6 Luna (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0.6, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 0.2, output: 0.9, cacheRead: 0.02, cacheWrite: 0.25)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20362,6 +20840,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-5.6-sol-batch": Model(
+        id: "openai/gpt-5.6-sol-batch",
+        name: "GPT 5.6 Sol (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-5.6-sol-fast": Model(
         id: "openai/gpt-5.6-sol-fast",
         name: "GPT 5.6 Sol (Fast)",
@@ -20386,6 +20879,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-5.6-terra-batch": Model(
+        id: "openai/gpt-5.6-terra-batch",
+        name: "GPT 5.6 Terra (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 271999, input: 2, output: 9, cacheRead: 0.2, cacheWrite: 2.5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20422,6 +20930,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-6-astra-batch": Model(
+        id: "openai/gpt-6-astra-batch",
+        name: "GPT-6 Astra (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 37.5, cacheRead: 1, cacheWrite: 12.5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-6-astra-fast": Model(
         id: "openai/gpt-6-astra-fast",
         name: "GPT-6 Astra (Fast)",
@@ -20446,6 +20969,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-6-luna-batch": Model(
+        id: "openai/gpt-6-luna-batch",
+        name: "GPT-6 Luna (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 0.05, output: 0.25, cacheRead: 0.005, cacheWrite: 0.0625, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.1, output: 0.375, cacheRead: 0.01, cacheWrite: 0.125)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20482,6 +21020,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         thinkingLevelMap: [.xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-6-sol-batch": Model(
+        id: "openai/gpt-6-sol-batch",
+        name: "GPT-6 Sol (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 7.5, cacheRead: 0.2, cacheWrite: 2.5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openai/gpt-6-sol-fast": Model(
         id: "openai/gpt-6-sol-fast",
         name: "GPT-6 Sol (Fast)",
@@ -20506,6 +21059,21 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5)]),
+        contextWindow: 1050000,
+        maxTokens: 128000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        thinkingLevelMap: [.xhigh: "xhigh"],
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-6.1-sol-batch": Model(
+        id: "openai/gpt-6.1-sol-batch",
+        name: "GPT-6.1 Sol (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 2, output: 7.5, cacheRead: 0.1, cacheWrite: 2.5)]),
         contextWindow: 1050000,
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20648,9 +21216,6 @@ private let providerModels_vercel_ai_gateway_chunk2: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-]
-
-private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
     "openai/o4-mini": Model(
         id: "openai/o4-mini",
         name: "o4-mini",
@@ -20732,6 +21297,32 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         maxTokens: 131072,
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "reflection/beam": Model(
+        id: "reflection/beam",
+        name: "Beam 1.0",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(allowEmptySignature: true)
+    ),
+    "reflection/beam-free": Model(
+        id: "reflection/beam-free",
+        name: "Beam 1.0 (Free)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 131072,
+        compat: OpenAICompat(allowEmptySignature: true)
     ),
     "sakana/fugu-max": Model(
         id: "sakana/fugu-max",
@@ -20831,6 +21422,20 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "spacexai/grok-4.20-multi-agent-batch": Model(
+        id: "spacexai/grok-4.20-multi-agent-batch",
+        name: "Grok 4.20 Multi-Agent (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 2, cacheRead: 0.16, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2, output: 4, cacheRead: 0.32, cacheWrite: 0)]),
+        contextWindow: 2000000,
+        maxTokens: 2000000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "spacexai/grok-4.20-multi-agent-beta": Model(
         id: "spacexai/grok-4.20-multi-agent-beta",
         name: "Grok 4.20 Multi Agent Beta",
@@ -20854,6 +21459,20 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         reasoning: false,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2.5, output: 5, cacheRead: 0.4, cacheWrite: 0)]),
+        contextWindow: 2000000,
+        maxTokens: 2000000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "spacexai/grok-4.20-non-reasoning-batch": Model(
+        id: "spacexai/grok-4.20-non-reasoning-batch",
+        name: "Grok 4.20 Non-Reasoning (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: false,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 2, cacheRead: 0.16, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2, output: 4, cacheRead: 0.32, cacheWrite: 0)]),
         contextWindow: 2000000,
         maxTokens: 2000000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20887,6 +21506,20 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "spacexai/grok-4.20-reasoning-batch": Model(
+        id: "spacexai/grok-4.20-reasoning-batch",
+        name: "Grok 4.20 Reasoning (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 2, cacheRead: 0.16, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2, output: 4, cacheRead: 0.32, cacheWrite: 0)]),
+        contextWindow: 2000000,
+        maxTokens: 2000000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "spacexai/grok-4.20-reasoning-beta": Model(
         id: "spacexai/grok-4.20-reasoning-beta",
         name: "Grok 4.20 Beta Reasoning",
@@ -20910,6 +21543,20 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         reasoning: true,
         input: [.text, .image],
         cost: ModelCost(input: 1.25, output: 2.5, cacheRead: 0.2, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2.5, output: 5, cacheRead: 0.4, cacheWrite: 0)]),
+        contextWindow: 1000000,
+        maxTokens: 1000000,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "spacexai/grok-4.3-batch": Model(
+        id: "spacexai/grok-4.3-batch",
+        name: "Grok 4.3 (Batch)",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 2, cacheRead: 0.16, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 200000, input: 2, output: 4, cacheRead: 0.32, cacheWrite: 0)]),
         contextWindow: 1000000,
         maxTokens: 1000000,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -20998,6 +21645,20 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         compat: OpenAICompat(allowEmptySignature: true),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "stepfun/step-5-preview": Model(
+        id: "stepfun/step-5-preview",
+        name: "Step 5 Preview",
+        api: .anthropicMessages,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh",
+        reasoning: true,
+        input: [.text, .image],
+        cost: ModelCost(input: 1, output: 2.7, cacheRead: 0.1, cacheWrite: 0),
+        contextWindow: 1048576,
+        maxTokens: 1048576,
+        compat: OpenAICompat(allowEmptySignature: true),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "tencent/hy3": Model(
         id: "tencent/hy3",
         name: "Hy3",
@@ -21060,7 +21721,7 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
+        cost: ModelCost(input: 0.119, output: 0.238, cacheRead: 0.0025, cacheWrite: 0),
         contextWindow: 1050000,
         maxTokens: 131100,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -21074,7 +21735,7 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text],
-        cost: ModelCost(input: 0.435, output: 0.87, cacheRead: 0.0036, cacheWrite: 0),
+        cost: ModelCost(input: 0.3045, output: 0.609, cacheRead: 0.0028, cacheWrite: 0),
         contextWindow: 1050000,
         maxTokens: 131000,
         compat: OpenAICompat(allowEmptySignature: true)
@@ -21087,7 +21748,7 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         baseUrl: "https://ai-gateway.vercel.sh",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.04, output: 1.28, cacheRead: 0.04, cacheWrite: 0),
+        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
         compat: OpenAICompat(allowEmptySignature: true),
@@ -21278,6 +21939,9 @@ private let providerModels_vercel_ai_gateway_chunk3: [String: Model] = [
         maxTokens: 128000,
         compat: OpenAICompat(allowEmptySignature: true)
     ),
+]
+
+private let providerModels_vercel_ai_gateway_chunk4: [String: Model] = [
     "zai/glm-5.3": Model(
         id: "zai/glm-5.3",
         name: "GLM 5.3",
@@ -21361,7 +22025,7 @@ private let providerModels_xai: [String: Model] = [
         contextWindow: 1000000,
         maxTokens: 30000,
         compat: OpenAICompat(supportsLongCacheRetention: false),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "grok-4.5": Model(
@@ -21376,7 +22040,7 @@ private let providerModels_xai: [String: Model] = [
         contextWindow: 500000,
         maxTokens: 500000,
         compat: OpenAICompat(supportsLongCacheRetention: false),
-        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: nil],
+        thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "grok-4.6": Model(
@@ -21412,46 +22076,6 @@ private let providerModels_xai: [String: Model] = [
 ]
 
 private let providerModels_xiaomi: [String: Model] = [
-    "mimo-v2.5": Model(
-        id: "mimo-v2.5",
-        name: "MiMo-V2.5",
-        api: .openAICompletions,
-        provider: "xiaomi",
-        baseUrl: "https://api.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "mimo-v2.5-pro": Model(
-        id: "mimo-v2.5-pro",
-        name: "MiMo-V2.5-Pro",
-        api: .openAICompletions,
-        provider: "xiaomi",
-        baseUrl: "https://api.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0.435, output: 0.87, cacheRead: 0.0036, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true)
-    ),
-    "mimo-v2.5-pro-ultraspeed": Model(
-        id: "mimo-v2.5-pro-ultraspeed",
-        name: "MiMo-V2.5-Pro-UltraSpeed",
-        api: .openAICompletions,
-        provider: "xiaomi",
-        baseUrl: "https://api.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 1.305, output: 2.61, cacheRead: 0.0108, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true)
-    ),
     "mimo-v2.6-flash": Model(
         id: "mimo-v2.6-flash",
         name: "MiMo-V2.6-Flash",
@@ -21463,7 +22087,8 @@ private let providerModels_xiaomi: [String: Model] = [
         cost: ModelCost(input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "mimo-v2.6-pro": Model(
@@ -21477,7 +22102,8 @@ private let providerModels_xiaomi: [String: Model] = [
         cost: ModelCost(input: 0.435, output: 0.87, cacheRead: 0.0036, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "mimo-v2.6-pro-ultraspeed": Model(
@@ -21491,39 +22117,13 @@ private let providerModels_xiaomi: [String: Model] = [
         cost: ModelCost(input: 4.35, output: 8.7, cacheRead: 0.036, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
 
 private let providerModels_xiaomi_token_plan_ams: [String: Model] = [
-    "mimo-v2.5": Model(
-        id: "mimo-v2.5",
-        name: "MiMo-V2.5",
-        api: .openAICompletions,
-        provider: "xiaomi-token-plan-ams",
-        baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "mimo-v2.5-pro": Model(
-        id: "mimo-v2.5-pro",
-        name: "MiMo-V2.5-Pro",
-        api: .openAICompletions,
-        provider: "xiaomi-token-plan-ams",
-        baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true)
-    ),
     "mimo-v2.6-flash": Model(
         id: "mimo-v2.6-flash",
         name: "MiMo-V2.6-Flash",
@@ -21535,7 +22135,8 @@ private let providerModels_xiaomi_token_plan_ams: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "mimo-v2.6-pro": Model(
@@ -21549,39 +22150,13 @@ private let providerModels_xiaomi_token_plan_ams: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
 
 private let providerModels_xiaomi_token_plan_cn: [String: Model] = [
-    "mimo-v2.5": Model(
-        id: "mimo-v2.5",
-        name: "MiMo-V2.5",
-        api: .openAICompletions,
-        provider: "xiaomi-token-plan-cn",
-        baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "mimo-v2.5-pro": Model(
-        id: "mimo-v2.5-pro",
-        name: "MiMo-V2.5-Pro",
-        api: .openAICompletions,
-        provider: "xiaomi-token-plan-cn",
-        baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true)
-    ),
     "mimo-v2.6-flash": Model(
         id: "mimo-v2.6-flash",
         name: "MiMo-V2.6-Flash",
@@ -21593,7 +22168,8 @@ private let providerModels_xiaomi_token_plan_cn: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "mimo-v2.6-pro": Model(
@@ -21607,39 +22183,13 @@ private let providerModels_xiaomi_token_plan_cn: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
 
 private let providerModels_xiaomi_token_plan_sgp: [String: Model] = [
-    "mimo-v2.5": Model(
-        id: "mimo-v2.5",
-        name: "MiMo-V2.5",
-        api: .openAICompletions,
-        provider: "xiaomi-token-plan-sgp",
-        baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "mimo-v2.5-pro": Model(
-        id: "mimo-v2.5-pro",
-        name: "MiMo-V2.5-Pro",
-        api: .openAICompletions,
-        provider: "xiaomi-token-plan-sgp",
-        baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
-        reasoning: true,
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1048576,
-        maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true)
-    ),
     "mimo-v2.6-flash": Model(
         id: "mimo-v2.6-flash",
         name: "MiMo-V2.6-Flash",
@@ -21651,7 +22201,8 @@ private let providerModels_xiaomi_token_plan_sgp: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "mimo-v2.6-pro": Model(
@@ -21665,7 +22216,8 @@ private let providerModels_xiaomi_token_plan_sgp: [String: Model] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1048576,
         maxTokens: 131072,
-        compat: OpenAICompat(thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        compat: OpenAICompat(supportsReasoningEffort: false, thinkingFormat: .deepseek, supportsStrictMode: true, requiresReasoningContentOnAssistantMessages: true),
+        thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: nil, .minimal: nil, .off: "off", .xhigh: nil],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
 ]
@@ -21779,7 +22331,7 @@ private let providerModels_zai_coding_cn: [String: Model] = [
         baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
         reasoning: true,
         input: [.text, .image],
-        cost: ModelCost(input: 0.3, output: 0.9, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.3, output: 0.9, cacheRead: 0.05, cacheWrite: 0),
         contextWindow: 128000,
         maxTokens: 32768,
         compat: OpenAICompat(supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false, maxTokensField: .maxTokens, thinkingFormat: .zai, supportsStrictMode: true, zaiToolStream: true),

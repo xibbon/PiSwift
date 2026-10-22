@@ -64,7 +64,7 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
         name: "Jev 1.13",
         api: .typesafeSystemOne,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32000
@@ -74,7 +74,7 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
         name: "Jev 1.13 Free",
         api: .typesafeSystemOne,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/zen/v1",
+        baseUrl: "https://opencode.ai/inference/v1",
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32000
@@ -99,8 +99,28 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.021, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 16384
+        cost: ModelCost(input: 0.038, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 24576
+    ),
+    "cloudflare/clef-omni": ClassifierModel(
+        id: "cloudflare/clef-omni",
+        name: "Cloudflare: Clef Omni",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
+    "inception/mercury-decide": ClassifierModel(
+        id: "inception/mercury-decide",
+        name: "Inception: Mercury Decide",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
     ),
     "inception/mercury-decide:free": ClassifierModel(
         id: "inception/mercury-decide:free",
@@ -108,9 +128,9 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32768
+        contextWindow: 65536
     ),
     "jaredpalmer/kev-4b": ClassifierModel(
         id: "jaredpalmer/kev-4b",
@@ -128,9 +148,59 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
-        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0.04, cacheWrite: 0),
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0.02, cacheWrite: 0),
         contextWindow: 65536
+    ),
+    "liquid/d1-ultra": ClassifierModel(
+        id: "liquid/d1-ultra",
+        name: "LiquidAI: d1-ultra",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0.042, cacheWrite: 0),
+        contextWindow: 32768
+    ),
+    "microsoft/microsoft-decision-1": ClassifierModel(
+        id: "microsoft/microsoft-decision-1",
+        name: "Microsoft: Microsoft-Decision-1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768
+    ),
+    "nace-ai/drex-max": ClassifierModel(
+        id: "nace-ai/drex-max",
+        name: "Nace.AI: Drex Max",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.06, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "nace-ai/drex-v1.5": ClassifierModel(
+        id: "nace-ai/drex-v1.5",
+        name: "Nace.AI: Drex v1.5",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072
+    ),
+    "nace-ai/drex-v2.0": ClassifierModel(
+        id: "nace-ai/drex-v2.0",
+        name: "Nace.AI: Drex v2.0",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.06, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072
     ),
     "openai/gpt-6-luna-decisions": ClassifierModel(
         id: "openai/gpt-6-luna-decisions",
@@ -142,9 +212,19 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1050000
     ),
-    "perplexity/pplx-decider-v1.1-27b": ClassifierModel(
-        id: "perplexity/pplx-decider-v1.1-27b",
-        name: "Perplexity: Decider V1.1 27B",
+    "perplexity/pplx-decider-flash-v1.2": ClassifierModel(
+        id: "perplexity/pplx-decider-flash-v1.2",
+        name: "Perplexity: Decider Flash V1.2",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "perplexity/pplx-decider-v1.2": ClassifierModel(
+        id: "perplexity/pplx-decider-v1.2",
+        name: "Perplexity: Decider V1.2",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -182,6 +262,26 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 4096
     ),
+    "respan/span-02": ClassifierModel(
+        id: "respan/span-02",
+        name: "Respan: Span-02",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072
+    ),
+    "scaledown/classify-1": ClassifierModel(
+        id: "scaledown/classify-1",
+        name: "ScaleDown: Classify-1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 1000000
+    ),
     "togethercomputer/tev1-4b-experimental": ClassifierModel(
         id: "togethercomputer/tev1-4b-experimental",
         name: "Together: Tev1 4B Experimental",
@@ -198,9 +298,19 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 64000
+        contextWindow: 262144
+    ),
+    "typesafe/jev-1.14": ClassifierModel(
+        id: "typesafe/jev-1.14",
+        name: "TypeSafe: Jev 1.14",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
     ),
     "upstage/solar-decide": ClassifierModel(
         id: "upstage/solar-decide",
@@ -222,15 +332,35 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         cost: ModelCost(input: 0.05, output: 0, cacheRead: 0.05, cacheWrite: 0),
         contextWindow: 524288
     ),
+    "~perplexity/pplx-decider-flash-latest": ClassifierModel(
+        id: "~perplexity/pplx-decider-flash-latest",
+        name: "Perplexity: Decider Flash Latest",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "~perplexity/pplx-decider-latest": ClassifierModel(
+        id: "~perplexity/pplx-decider-latest",
+        name: "Perplexity: Decider Latest",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
     "~typesafe/jev-latest": ClassifierModel(
         id: "~typesafe/jev-latest",
         name: "TypeSafe: Jev Latest",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 64000
+        contextWindow: 262144
     ),
 ]
 
@@ -248,6 +378,26 @@ private let providerModels_classifier_typesafe: [String: ClassifierModel] = [
 ]
 
 private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierModel] = [
+    "baseten/elephant-1": ClassifierModel(
+        id: "baseten/elephant-1",
+        name: "Elephant-1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384
+    ),
+    "baseten/mammoth-1": ClassifierModel(
+        id: "baseten/mammoth-1",
+        name: "Mammoth-1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384
+    ),
     "convaiinnovations/laya": ClassifierModel(
         id: "convaiinnovations/laya",
         name: "Laya",
@@ -275,8 +425,28 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
         input: [.text],
-        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 65536
+    ),
+    "liquid/d1-ultra": ClassifierModel(
+        id: "liquid/d1-ultra",
+        name: "Liquid d1 Ultra",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768
+    ),
+    "microsoft/microsoft-decision-1": ClassifierModel(
+        id: "microsoft/microsoft-decision-1",
+        name: "Decision-1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768
     ),
     "openai/gpt-6-luna-decisions": ClassifierModel(
         id: "openai/gpt-6-luna-decisions",
@@ -288,9 +458,59 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1050000
     ),
+    "perplexity/pplx-decider-flash-v1.2": ClassifierModel(
+        id: "perplexity/pplx-decider-flash-v1.2",
+        name: "Decider Flash V1.2 4B",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "perplexity/pplx-decider-v1.2": ClassifierModel(
+        id: "perplexity/pplx-decider-v1.2",
+        name: "Decider V1.2 27B",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "scaledown/scaledown-classify-1": ClassifierModel(
+        id: "scaledown/scaledown-classify-1",
+        name: "Classify-1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.05, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 4096
+    ),
     "typesafe-ai/jev": ClassifierModel(
         id: "typesafe-ai/jev",
         name: "Jev",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32000
+    ),
+    "typesafe-ai/jev-1.13.0": ClassifierModel(
+        id: "typesafe-ai/jev-1.13.0",
+        name: "Jev 1.13.0",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32000
+    ),
+    "typesafe-ai/jev-1.14.0": ClassifierModel(
+        id: "typesafe-ai/jev-1.14.0",
+        name: "Jev 1.14.0",
         api: .typesafeSystemOne,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",

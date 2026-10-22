@@ -37,7 +37,7 @@ private func withSamplingRegistry(
                     "low": ["temperature": 0.5, "top_k": 20],
                     "max": ["temperature": 1],
                 ]],
-                "anthropic/claude-sonnet-4": [
+                "anthropic/claude-sonnet-4.5": [
                     "samplingParams": ["top_p": 0.9],
                     "samplingParamsByThinkingLevel": ["high": ["temperature": 0.8]],
                 ],
@@ -50,7 +50,7 @@ private func withSamplingRegistry(
                 .high: ["temperature": AnyCodable(0.8)],
                 .max: ["temperature": AnyCodable(1)],
             ])
-            let sonnet = try #require(registry.find("openrouter", "anthropic/claude-sonnet-4"))
+            let sonnet = try #require(registry.find("openrouter", "anthropic/claude-sonnet-4.5"))
             #expect(sonnet.samplingParams == ["top_p": AnyCodable(0.9)])
             #expect(sonnet.samplingParamsByThinkingLevel == [.high: ["temperature": AnyCodable(0.8)]])
             let opus = try #require(registry.find("openrouter", "anthropic/claude-opus-4.1"))

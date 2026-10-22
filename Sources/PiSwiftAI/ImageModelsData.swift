@@ -10,7 +10,18 @@ internal let ImageModelsData: [String: [String: ImageModel]] = [
 private let providerModels_image_openrouter: [String: ImageModel] = [
     "black-forest-labs/flux-3-image": ImageModel(
         id: "black-forest-labs/flux-3-image",
-        name: "Black Forest Labs: FLUX.3 Image",
+        name: "Black Forest Labs: FLUX 3 Image",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "black-forest-labs/flux-3-image-klein": ImageModel(
+        id: "black-forest-labs/flux-3-image-klein",
+        name: "Black Forest Labs: FLUX 3 Image Klein",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -184,19 +195,9 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         cost: ModelCost(input: 1.5, output: 7.5, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
-    "inclusionai/ming-image-0.1-design": ImageModel(
-        id: "inclusionai/ming-image-0.1-design",
-        name: "inclusionAI: Ming Image 0.1 Design",
-        api: .openrouterImages,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
-        output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
-    ),
-    "inclusionai/ming-image-0.1-design-layer": ImageModel(
-        id: "inclusionai/ming-image-0.1-design-layer",
-        name: "inclusionAI: Ming Image 0.1 Design Layer",
+    "krea/k3-edit": ImageModel(
+        id: "krea/k3-edit",
+        name: "Krea: K3 Edit",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -389,7 +390,7 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openrouter/auto-beta": ImageModel(
@@ -400,7 +401,29 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         output: [.text, .image],
-        cost: ModelCost(input: -1000000, output: -1000000, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "qwen/qwen-image-2.1-pro": ImageModel(
+        id: "qwen/qwen-image-2.1-pro",
+        name: "Qwen: Qwen Image 2.1 Pro",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "qwen/qwen-image-2.1-turbo": ImageModel(
+        id: "qwen/qwen-image-2.1-turbo",
+        name: "Qwen: Qwen Image 2.1 Turbo",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "qwen/qwen-image-3": ImageModel(

@@ -85,10 +85,11 @@ func catalog085Qwen38SendsXhighEffort(_ provider: String, _ id: String) async th
 }
 
 @Test(arguments: ["deepseek", "opencode-go"])
-func catalog085DeepSeekV4FlashHasLowHighMaxAndOff(_ provider: String) throws {
-    let id = provider == "deepseek" ? "deepseek-flash" : "deepseek-v4-flash"
+func catalog085DeepSeekFlashHasCatalogThinkingLevels(_ provider: String) throws {
+    let id = provider == "deepseek" ? "deepseek-flash" : "deepseek-v4.1-flash"
     let model = try #require(getModel(provider: provider, modelId: id))
-    #expect(getSupportedThinkingLevels(model) == [.off, .low, .high, .max])
+    let expected: [ModelThinkingLevel] = provider == "deepseek" ? [.off, .low, .high, .max] : [.low, .high, .max]
+    #expect(getSupportedThinkingLevels(model) == expected)
 }
 
 @Test func catalog085Grok46HasXhighWithoutOffOrMax() throws {
@@ -101,7 +102,7 @@ func catalog085XiaomiReplacesDeprecatedModels(_ name: String) throws {
     let provider = try #require(KnownProvider(rawValue: name))
     let ids = Set(getModels(provider: provider).map(\.id))
     for retired in ["mimo-v2-flash", "mimo-v2-omni", "mimo-v2-pro"] { #expect(!ids.contains(retired)) }
-    for replacement in ["mimo-v2.5", "mimo-v2.5-pro"] { #expect(ids.contains(replacement)) }
+    for replacement in ["mimo-v2.6-flash", "mimo-v2.6-pro"] { #expect(ids.contains(replacement)) }
 }
 
 @Test func catalog085ZaiChinaCodingPlanVision() throws {
@@ -112,7 +113,7 @@ func catalog085XiaomiReplacesDeprecatedModels(_ name: String) throws {
     #expect(model.baseUrl == "https://open.bigmodel.cn/api/coding/paas/v4")
     #expect(model.reasoning)
     #expect(model.input == [.text, .image])
-    #expect(model.cost == ModelCost(input: 0.3, output: 0.9, cacheRead: 0, cacheWrite: 0))
+    #expect(model.cost == ModelCost(input: 0.3, output: 0.9, cacheRead: 0.05, cacheWrite: 0))
     #expect(model.contextWindow == 128_000)
     #expect(model.maxTokens == 32_768)
     #expect(model.compat?.maxTokensField == .maxTokens)

@@ -111,8 +111,8 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
 @Test(.timeLimit(.minutes(1))) func systemOneCatalogRoutesVercelAndOpenCode() async throws {
     let rows: [(String, String, String)] = [
         ("vercel-ai-gateway", "typesafe-ai/jev", "https://ai-gateway.vercel.sh/typesafe/v1/systemone"),
-        ("opencode", "jev-1.13", "https://opencode.ai/zen/v1/systemone"),
-        ("opencode", "jev-1.13-free", "https://opencode.ai/zen/v1/systemone")
+        ("opencode", "jev-1.13", "https://opencode.ai/inference/v1/systemone"),
+        ("opencode", "jev-1.13-free", "https://opencode.ai/inference/v1/systemone")
     ]
     for (provider, id, expectedURL) in rows {
         let model = try #require(getClassifierModel(provider: provider, modelId: id))

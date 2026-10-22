@@ -24,7 +24,38 @@
           }
         }
       },
-      "name": "Black Forest Labs: FLUX.3 Image",
+      "name": "Black Forest Labs: FLUX 3 Image",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "black-forest-labs/flux-3-image-klein": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "black-forest-labs/flux-3-image-klein",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Black Forest Labs: FLUX 3 Image Klein",
       "output": [
         "image"
       ],
@@ -503,7 +534,7 @@
       "provider": "openrouter",
       "type": "image"
     },
-    "inclusionai/ming-image-0.1-design": {
+    "krea/k3-edit": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
       "cost": {
@@ -512,27 +543,7 @@
         "input": 0,
         "output": 0
       },
-      "id": "inclusionai/ming-image-0.1-design",
-      "input": [
-        "text"
-      ],
-      "name": "inclusionAI: Ming Image 0.1 Design",
-      "output": [
-        "image"
-      ],
-      "provider": "openrouter",
-      "type": "image"
-    },
-    "inclusionai/ming-image-0.1-design-layer": {
-      "api": "openrouter-images",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "inclusionai/ming-image-0.1-design-layer",
+      "id": "krea/k3-edit",
       "input": [
         "text",
         "image"
@@ -547,7 +558,7 @@
           }
         }
       },
-      "name": "inclusionAI: Ming Image 0.1 Design Layer",
+      "name": "Krea: K3 Edit",
       "output": [
         "image"
       ],
@@ -1059,8 +1070,8 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": -1000000,
-        "output": -1000000
+        "input": 0,
+        "output": 0
       },
       "id": "openrouter/auto",
       "input": [
@@ -1091,8 +1102,8 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": -1000000,
-        "output": -1000000
+        "input": 0,
+        "output": 0
       },
       "id": "openrouter/auto-beta",
       "input": [
@@ -1112,6 +1123,68 @@
       "name": "Auto Router (Beta)",
       "output": [
         "text",
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "qwen/qwen-image-2.1-pro": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "qwen/qwen-image-2.1-pro",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Qwen: Qwen Image 2.1 Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "qwen/qwen-image-2.1-turbo": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "qwen/qwen-image-2.1-turbo",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Qwen: Qwen Image 2.1 Turbo",
+      "output": [
         "image"
       ],
       "provider": "openrouter",

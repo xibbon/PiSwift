@@ -52,7 +52,7 @@ private func modelJSONWithoutName(_ model: Model) throws -> String {
 @Test func rollingAliasesKeepUpstreamNames() throws {
     let aliases = [
         ("mistral", "mistral-large-latest"),
-        ("openai", "gpt-5.3-chat-latest"),
+        ("openai", "gpt-5-chat-latest"),
         ("google", "gemini-flash-latest"),
         ("openrouter", "~anthropic/claude-opus-latest"),
     ]

@@ -333,8 +333,8 @@ import PiSwiftCodingAgent
 @Test func modelRegistryAppliesGitHubCopilotCompatWithoutChangingGPTEndpoint() throws {
     let authStorage = AuthStorage(":memory:")
     let registry = ModelRegistry(authStorage)
-    guard let model = registry.find("github-copilot", "gpt-5.4") else {
-        #expect(Bool(false), "Expected GitHub Copilot gpt-5.4 model to be available")
+    guard let model = registry.find("github-copilot", "gpt-6.1-sol") else {
+        #expect(Bool(false), "Expected GitHub Copilot gpt-6.1-sol model to be available")
         return
     }
 

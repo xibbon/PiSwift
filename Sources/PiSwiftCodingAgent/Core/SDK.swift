@@ -272,7 +272,7 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.deepseek, "deepseek-v4-pro"),
     (.google, "gemini-3.1-pro-preview"),
     (.googleVertex, "gemini-3.1-pro-preview"),
-    (.githubCopilot, "gpt-5.4"),
+    (.githubCopilot, "gpt-6.1-sol"),
     (.openrouter, "moonshotai/kimi-k2.6"),
     (.vercelAiGateway, "zai/glm-5.1"),
     (.xai, "grok-4.7"),
@@ -298,10 +298,10 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.qwenTokenPlan, "qwen3.7-max"),
     (.qwenTokenPlanCn, "qwen3.7-max"),
     (.qwenTokenPlanIndividual, "qwen3.8-max"),
-    (.xiaomi, "mimo-v2.5-pro"),
-    (.xiaomiTokenPlanCn, "mimo-v2.5-pro"),
-    (.xiaomiTokenPlanAms, "mimo-v2.5-pro"),
-    (.xiaomiTokenPlanSgp, "mimo-v2.5-pro"),
+    (.xiaomi, "mimo-v2.6-pro"),
+    (.xiaomiTokenPlanCn, "mimo-v2.6-pro"),
+    (.xiaomiTokenPlanAms, "mimo-v2.6-pro"),
+    (.xiaomiTokenPlanSgp, "mimo-v2.6-pro"),
 ]
 
 public func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
