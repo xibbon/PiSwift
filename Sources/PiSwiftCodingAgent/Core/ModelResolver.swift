@@ -28,273 +28,209 @@ public struct ResolveCliModelResult: Sendable {
     public var error: String?
 }
 
-private func isAlias(_ id: String) -> Bool {
-    if id.hasSuffix("-latest") { return true }
-    let pattern = try? NSRegularExpression(pattern: "-\\d{8}$", options: [])
-    let range = NSRange(location: 0, length: id.utf16.count)
-    if let pattern, pattern.firstMatch(in: id, options: [], range: range) != nil {
-        return false
-    }
-    return true
-}
-
-private func tryMatchModel(_ modelPattern: String, availableModels: [Model]) -> Model? {
-    if let slashIndex = modelPattern.firstIndex(of: "/") {
-        let provider = String(modelPattern[..<slashIndex])
-        let modelId = String(modelPattern[modelPattern.index(after: slashIndex)...])
-        if let providerMatch = availableModels.first(where: { $0.provider.lowercased() == provider.lowercased() && $0.id.lowercased() == modelId.lowercased() }) {
-            return providerMatch
-        }
-    }
-
-    let exactMatches = availableModels.filter { $0.id.lowercased() == modelPattern.lowercased() }
-    if !exactMatches.isEmpty {
-        let providers = Set(exactMatches.map { $0.provider })
-        if providers.count > 1 {
-            return nil  // Ambiguous: same modelId in multiple providers
-        }
-        return exactMatches.first
-    }
-
-    let matches: [Model]
-    if modelPattern.isEmpty {
-        matches = availableModels
-    } else {
-        matches = availableModels.filter {
-            $0.id.lowercased().contains(modelPattern.lowercased()) ||
-            $0.name.lowercased().contains(modelPattern.lowercased())
-        }
-    }
-
-    if matches.isEmpty {
-        return nil
-    }
-
-    let aliases = matches.filter { isAlias($0.id) }.sorted { $0.id > $1.id }
-    if let alias = aliases.first {
-        return alias
-    }
-
-    let dated = matches.filter { !isAlias($0.id) }.sorted { $0.id > $1.id }
-    return dated.first
-}
-
+/// Compatibility view of the model-reference result. Ambiguity has no model in this view.
+@available(*, deprecated, message: "Use resolveModelReference to handle ambiguity and optional thinking levels.")
 public func parseModelPattern(
     _ pattern: String,
     _ availableModels: [Model],
     allowInvalidThinkingLevelFallback: Bool = true
 ) -> ParsedModelResult {
-    if let exact = tryMatchModel(pattern, availableModels: availableModels) {
-        return ParsedModelResult(model: exact, thinkingLevel: .off, isThinkingExplicit: false, warning: nil)
-    }
-
-    guard let lastColon = pattern.lastIndex(of: ":") else {
-        return ParsedModelResult(model: nil, thinkingLevel: .off, isThinkingExplicit: false, warning: nil)
-    }
-
-    let prefix = String(pattern[..<lastColon])
-    let suffix = String(pattern[pattern.index(after: lastColon)...])
-
-    if isValidThinkingLevel(suffix) {
-        let result = parseModelPattern(prefix, availableModels, allowInvalidThinkingLevelFallback: allowInvalidThinkingLevelFallback)
-        if let model = result.model {
-            let level = ThinkingLevel(rawValue: suffix) ?? .off
-            if result.warning == nil {
-                return ParsedModelResult(model: model, thinkingLevel: level, isThinkingExplicit: true, warning: nil)
-            }
-            return ParsedModelResult(model: model, thinkingLevel: .off, isThinkingExplicit: false, warning: result.warning)
-        }
-        return result
-    } else {
-        if !allowInvalidThinkingLevelFallback {
-            return ParsedModelResult(model: nil, thinkingLevel: .off, isThinkingExplicit: false, warning: nil)
-        }
-
-        let result = parseModelPattern(prefix, availableModels, allowInvalidThinkingLevelFallback: allowInvalidThinkingLevelFallback)
-        if let model = result.model {
-            return ParsedModelResult(
-                model: model,
-                thinkingLevel: .off,
-                isThinkingExplicit: false,
-                warning: "Invalid thinking level \"\(suffix)\" in pattern \"\(pattern)\". Using \"off\" instead."
-            )
-        }
-        return result
-    }
+    let result = resolveModelReference(
+        ModelReferenceRequest(text: pattern, thinkingSuffix: allowInvalidThinkingLevelFallback ? .lenient : .strict),
+        availableModels,
+        usable: { _ in true }
+    )
+    return ParsedModelResult(model: result.model, thinkingLevel: result.thinkingLevel ?? .off,
+                             isThinkingExplicit: result.thinkingLevel != nil, warning: result.warning)
 }
 
+@available(*, deprecated, message: "Pass cliThinking and inlineApiKey to use custom model fallback.")
 public func resolveCliModel(
     cliProvider: String? = nil,
     cliModel: String? = nil,
     modelRegistry: ModelRegistry
 ) -> ResolveCliModelResult {
-    resolveCliModel(
-        cliProvider: cliProvider,
-        cliModel: cliModel,
-        availableModels: modelRegistry.getAll(),
-        hasConfiguredAuth: modelRegistry.hasConfiguredAuth
+    let models = modelRegistry.getAll()
+    return resolveCliModelReference(
+        cliProvider: cliProvider, cliModel: cliModel, cliThinking: nil, inlineApiKey: false,
+        availableModels: models,
+        usable: { provider in models.contains { $0.provider == provider && modelRegistry.hasConfiguredAuth($0) } },
+        allowCustomFallback: false
+    )
+}
+
+@available(*, deprecated, message: "Pass cliThinking and inlineApiKey to use custom model fallback.")
+public func resolveCliModel(
+    cliProvider: String? = nil,
+    cliModel: String? = nil,
+    availableModels: [Model]
+) -> ResolveCliModelResult {
+    resolveCliModelReference(cliProvider: cliProvider, cliModel: cliModel, cliThinking: nil, inlineApiKey: false,
+                             availableModels: availableModels, usable: { _ in false }, allowCustomFallback: false)
+}
+
+public func resolveCliModel(
+    cliProvider: String? = nil,
+    cliModel: String? = nil,
+    cliThinking: ThinkingLevel?,
+    inlineApiKey: Bool,
+    modelRegistry: ModelRegistry
+) -> ResolveCliModelResult {
+    let models = modelRegistry.getAll()
+    return resolveCliModel(
+        cliProvider: cliProvider, cliModel: cliModel, cliThinking: cliThinking, inlineApiKey: inlineApiKey,
+        availableModels: models,
+        usable: { provider in models.contains { $0.provider == provider && modelRegistry.hasConfiguredAuth($0) } }
     )
 }
 
 public func resolveCliModel(
     cliProvider: String? = nil,
     cliModel: String? = nil,
-    availableModels: [Model]
+    cliThinking: ThinkingLevel?,
+    inlineApiKey: Bool,
+    availableModels: [Model],
+    usable: (String) -> Bool = { _ in false }
 ) -> ResolveCliModelResult {
-    resolveCliModel(
-        cliProvider: cliProvider,
-        cliModel: cliModel,
-        availableModels: availableModels,
-        hasConfiguredAuth: { _ in false }
-    )
+    resolveCliModelReference(cliProvider: cliProvider, cliModel: cliModel, cliThinking: cliThinking,
+                             inlineApiKey: inlineApiKey, availableModels: availableModels,
+                             usable: usable, allowCustomFallback: true)
 }
 
-private func resolveCliModel(
-    cliProvider: String?,
-    cliModel: String?,
-    availableModels: [Model],
-    hasConfiguredAuth: (Model) -> Bool
+private func resolveCliModelReference(
+    cliProvider: String?, cliModel: String?, cliThinking: ThinkingLevel?, inlineApiKey: Bool,
+    availableModels: [Model], usable: (String) -> Bool, allowCustomFallback: Bool
 ) -> ResolveCliModelResult {
     guard let cliModel, !cliModel.isEmpty else {
         return ResolveCliModelResult(model: nil, thinkingLevel: nil, warning: nil, error: nil)
     }
-
-    if availableModels.isEmpty {
-        return ResolveCliModelResult(
-            model: nil,
-            thinkingLevel: nil,
-            warning: nil,
-            error: "No models available. Check your installation or add models to models.json."
-        )
+    guard !availableModels.isEmpty else {
+        return ResolveCliModelResult(model: nil, thinkingLevel: nil, warning: nil,
+            error: "No models available. Check your installation or add models to models.json.")
     }
-
-    var providerLookup: [String: String] = [:]
-    for model in availableModels {
-        providerLookup[model.provider.lowercased()] = model.provider
+    let provider = cliProvider.flatMap { requested in
+        availableModels.first { $0.provider.lowercased() == requested.lowercased() }?.provider
     }
-
-    var provider: String?
-    if let cliProvider, !cliProvider.isEmpty {
-        guard let canonicalProvider = providerLookup[cliProvider.lowercased()] else {
-            return ResolveCliModelResult(
-                model: nil,
-                thinkingLevel: nil,
-                warning: nil,
-                error: "Unknown provider \"\(cliProvider)\". Use --list-models to see available providers/models."
-            )
-        }
-        provider = canonicalProvider
+    if let cliProvider, !cliProvider.isEmpty, provider == nil {
+        return ResolveCliModelResult(model: nil, thinkingLevel: nil, warning: nil,
+            error: "Unknown provider \"\(cliProvider)\". Use --list-models to see available providers/models.")
     }
-
-    // Check the complete ID before treating a leading path component as a
-    // provider. Some gateway model IDs contain a slash that is part of the ID.
-    // Bare exact IDs can also exist under more than one provider.
-    if provider == nil {
-        let lower = cliModel.lowercased()
-        let exactMatches = availableModels.filter { $0.id.lowercased() == lower }
-        if exactMatches.count == 1 {
-            return ResolveCliModelResult(model: exactMatches[0], thinkingLevel: nil, warning: nil, error: nil)
-        }
-        if exactMatches.count > 1 {
-            let authenticatedMatches = exactMatches.filter(hasConfiguredAuth)
-            if authenticatedMatches.count == 1 {
-                return ResolveCliModelResult(model: authenticatedMatches[0], thinkingLevel: nil, warning: nil, error: nil)
-            }
-            let matches = exactMatches
-                .map { "\($0.provider)/\($0.id)" }
-                .sorted()
-                .joined(separator: ", ")
-            let authHint = authenticatedMatches.isEmpty
-                ? "No matching provider is authenticated."
-                : "More than one matching provider is authenticated."
-            return ResolveCliModelResult(
-                model: nil,
-                thinkingLevel: nil,
-                warning: nil,
-                error: "Model \"\(cliModel)\" is ambiguous across providers: \(matches). \(authHint) Use --provider or provider/model."
-            )
-        }
-    }
-
-    var pattern = cliModel
-    if provider == nil, let slashIndex = cliModel.firstIndex(of: "/") {
-        let maybeProvider = String(cliModel[..<slashIndex])
-        if let canonicalProvider = providerLookup[maybeProvider.lowercased()] {
-            provider = canonicalProvider
-            pattern = String(cliModel[cliModel.index(after: slashIndex)...])
-        }
-    } else if let provider {
-        let prefix = "\(provider)/"
-        if cliModel.lowercased().hasPrefix(prefix.lowercased()) {
-            pattern = String(cliModel.dropFirst(prefix.count))
-        }
-    }
-
-    let candidates: [Model]
-    if let provider {
-        candidates = availableModels.filter { $0.provider == provider }
-    } else {
-        candidates = availableModels
-    }
-
-    let parsed = parseModelPattern(
-        pattern,
-        candidates,
-        allowInvalidThinkingLevelFallback: false
+    let result = resolveModelReference(
+        ModelReferenceRequest(text: cliModel, provider: provider, thinkingSuffix: .strict, fuzzy: true),
+        availableModels,
+        usable: { !inlineApiKey && usable($0) }
     )
-
-    guard let model = parsed.model else {
-        let display = provider.map { "\($0)/\(pattern)" } ?? cliModel
-        return ResolveCliModelResult(
-            model: nil,
-            thinkingLevel: nil,
-            warning: parsed.warning,
-            error: "Model \"\(display)\" not found. Use --list-models to see available models."
-        )
+    switch result {
+    case .resolved(let model, let thinking, let warning):
+        return ResolveCliModelResult(model: model, thinkingLevel: thinking, warning: warning, error: nil)
+    case .ambiguous(let candidates, let usableCount, _, _):
+        let matches = candidates.map { "\($0.provider)/\($0.id)" }.sorted().joined(separator: ", ")
+        let authHint = inlineApiKey ? "--api-key does not choose a provider."
+            : usableCount == 0 ? "No matching provider is authenticated." : "More than one matching provider is authenticated."
+        return ResolveCliModelResult(model: nil, thinkingLevel: nil, warning: nil,
+            error: "Model \"\(cliModel)\" is ambiguous across providers: \(matches). \(authHint) Use --provider or provider/model.")
+    case .notFound(let target):
+        guard allowCustomFallback, let target else {
+            let display = target.map { "\($0.provider)/\($0.modelText)" } ?? cliModel
+            return ResolveCliModelResult(model: nil, thinkingLevel: nil, warning: nil,
+                error: "Model \"\(display)\" not found. Use --list-models to see available models.")
+        }
+        let modelId = cliThinking != nil ? target.modelText : target.modelId
+        let thinking = cliThinking == nil ? target.thinkingLevel : nil
+        let requestedThinking = cliThinking ?? thinking
+        let model = buildFallbackModel(target, modelId: modelId, reasoning: requestedThinking.map { $0 != .off } ?? false)
+        return ResolveCliModelResult(model: model, thinkingLevel: thinking,
+            warning: "Model \"\(modelId)\" not found for provider \"\(target.provider)\". Using custom model id.", error: nil)
     }
-
-    let thinking = parsed.isThinkingExplicit ? parsed.thinkingLevel : nil
-    return ResolveCliModelResult(model: model, thinkingLevel: thinking, warning: parsed.warning, error: nil)
 }
 
-public func resolveModelScope(_ patterns: [String], _ modelRegistry: ModelRegistry) async -> [ScopedModel] {
-    let available = await modelRegistry.getAvailable()
+private func buildFallbackModel(_ target: ModelReferenceTarget, modelId: String, reasoning: Bool) -> Model {
+    // The target is built only when this provider has at least one catalog model.
+    let defaultId = defaultModelPerProvider.first { $0.0.rawValue == target.provider }?.1
+    let base = target.providerModels.first { $0.id == defaultId } ?? target.providerModels[0]
+    return Model(
+        id: modelId, name: modelId, api: base.api, provider: base.provider, baseUrl: base.baseUrl,
+        reasoning: reasoning || base.reasoning, input: base.input, cost: base.cost,
+        contextWindow: base.contextWindow, maxTokens: base.maxTokens, samplingParams: base.samplingParams,
+        headers: base.headers, compat: base.compat, thinkingLevelMap: base.thinkingLevelMap,
+        inputLimits: base.inputLimits, promptCache: base.promptCache,
+        samplingParamsByThinkingLevel: base.samplingParamsByThinkingLevel
+    )
+}
+
+public struct ModelScopeDiagnostic: Sendable, Equatable {
+    public enum DiagnosticType: String, Sendable { case warning }
+    public enum Code: String, Sendable {
+        case noMatch = "no-match"
+        case invalidThinkingLevel = "invalid-thinking-level"
+        case ambiguous
+    }
+    public let type: DiagnosticType = .warning
+    public let code: Code
+    public let message: String
+    public let pattern: String
+}
+
+public struct ResolveModelScopeResult: Sendable {
+    public let scopedModels: [ScopedModel]
+    public let diagnostics: [ModelScopeDiagnostic]
+}
+
+public func resolveModelScopeFromModels(_ patterns: [String], _ models: [Model]) -> ResolveModelScopeResult {
     var scoped: [ScopedModel] = []
-
-    for pattern in patterns {
-        if pattern.contains("*") || pattern.contains("?") || pattern.contains("[") {
-            var globPattern = pattern
-            var thinkingLevel: ThinkingLevel = .off
-            var isThinkingExplicit = false
-            if let colon = pattern.lastIndex(of: ":") {
-                let suffix = String(pattern[pattern.index(after: colon)...])
-                if isValidThinkingLevel(suffix) {
-                    thinkingLevel = ThinkingLevel(rawValue: suffix) ?? .off
-                    globPattern = String(pattern[..<colon])
-                    isThinkingExplicit = true
-                }
-            }
-
-            for model in available {
-                let fullId = "\(model.provider)/\(model.id)"
-                if matchesGlob(fullId, globPattern) || matchesGlob(model.id, globPattern) {
-                    if !scoped.contains(where: { modelsAreEqual($0.model, model) }) {
-                        scoped.append(ScopedModel(model: model, thinkingLevel: thinkingLevel, isThinkingExplicit: isThinkingExplicit))
-                    }
-                }
-            }
-            continue
-        }
-
-        let parsed = parseModelPattern(pattern, available)
-        if let model = parsed.model {
-            if !scoped.contains(where: { modelsAreEqual($0.model, model) }) {
-                scoped.append(ScopedModel(model: model, thinkingLevel: parsed.thinkingLevel, isThinkingExplicit: parsed.isThinkingExplicit))
-            }
+    var diagnostics: [ModelScopeDiagnostic] = []
+    func add(_ matches: [Model], thinking: ThinkingLevel?) {
+        for model in matches where !scoped.contains(where: { modelsAreEqual($0.model, model) }) {
+            scoped.append(ScopedModel(model: model, thinkingLevel: thinking, isThinkingExplicit: thinking != nil))
         }
     }
+    func noMatch(_ pattern: String) {
+        diagnostics.append(ModelScopeDiagnostic(code: .noMatch, message: "No models match pattern \"\(pattern)\"", pattern: pattern))
+    }
+    func ambiguous(_ pattern: String, _ candidates: [Model]) {
+        let providers = Set(candidates.map(\.provider)).sorted().joined(separator: ", ")
+        diagnostics.append(ModelScopeDiagnostic(code: .ambiguous,
+            message: "Pattern \"\(pattern)\" matches several providers: \(providers). Use provider/id to choose one.", pattern: pattern))
+    }
+    for pattern in patterns {
+        if pattern.contains("*") || pattern.contains("?") || pattern.contains("[") {
+            let thinking = splitModelThinkingSuffix(pattern)
+            let glob = thinking?.base ?? pattern
+            let exact = resolveModelReference(ModelReferenceRequest(text: glob, thinkingSuffix: .none, fuzzy: false), models, usable: { _ in true })
+            let matches: [Model]
+            switch exact {
+            case .resolved(let model, _, _): matches = [model]
+            case .ambiguous(let candidates, _, _, _):
+                matches = candidates
+                ambiguous(pattern, candidates)
+            case .notFound:
+                matches = models.filter { matchesModelScopeGlob("\($0.provider)/\($0.id)", glob) || matchesModelScopeGlob($0.id, glob) }
+            }
+            if matches.isEmpty { noMatch(pattern) }
+            add(matches, thinking: thinking?.thinkingLevel)
+            continue
+        }
+        let result = resolveModelReference(ModelReferenceRequest(text: pattern, thinkingSuffix: .lenient), models, usable: { _ in true })
+        if result.status == .notFound {
+            noMatch(pattern)
+            continue
+        }
+        if let warning = result.warning {
+            diagnostics.append(ModelScopeDiagnostic(code: .invalidThinkingLevel, message: warning, pattern: pattern))
+        }
+        if result.status == .ambiguous { ambiguous(pattern, result.candidates) }
+        add(result.model.map { [$0] } ?? result.candidates, thinking: result.thinkingLevel)
+    }
+    return ResolveModelScopeResult(scopedModels: scoped, diagnostics: diagnostics)
+}
 
-    return scoped
+public func resolveModelScopeWithDiagnostics(_ patterns: [String], _ modelRegistry: ModelRegistry) async -> ResolveModelScopeResult {
+    resolveModelScopeFromModels(patterns, await modelRegistry.getAvailable())
+}
+
+@available(*, deprecated, message: "Use resolveModelScopeWithDiagnostics and display its diagnostics in the host.")
+public func resolveModelScope(_ patterns: [String], _ modelRegistry: ModelRegistry) async -> [ScopedModel] {
+    await resolveModelScopeWithDiagnostics(patterns, modelRegistry).scopedModels
 }
 
 public struct InitialModelResult: Sendable {

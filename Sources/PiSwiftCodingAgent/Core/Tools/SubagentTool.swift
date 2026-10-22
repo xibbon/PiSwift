@@ -178,10 +178,18 @@ private func resolveModel(
 ) async -> (model: Model, thinking: ThinkingLevel, error: String?) {
     if let modelPattern = agent.model, !modelPattern.isEmpty {
         let available = await dependencies.modelRegistry.getAvailable()
-        let parsed = parseModelPattern(modelPattern, available)
+        // All models in this pool are available. Ambiguity must require a provider.
+        let parsed = resolveModelReference(
+            ModelReferenceRequest(text: modelPattern, thinkingSuffix: .lenient), available, usable: { _ in true }
+        )
         if let model = parsed.model {
-            let thinking = resolveThinkingLevel(parsed.thinkingLevel, model: model)
+            let thinking = resolveThinkingLevel(parsed.thinkingLevel ?? .off, model: model)
             return (model, thinking, nil)
+        }
+        if parsed.status == .ambiguous {
+            let matches = parsed.candidates.map { "\($0.provider)/\($0.id)" }.sorted().joined(separator: ", ")
+            return (dependencies.defaultModel, dependencies.defaultThinkingLevel,
+                    "Model \"\(modelPattern)\" is ambiguous across providers: \(matches). Use provider/model.")
         }
         return (dependencies.defaultModel, dependencies.defaultThinkingLevel, "Unknown model: \(modelPattern)")
     }

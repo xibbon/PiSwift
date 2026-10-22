@@ -1063,7 +1063,12 @@ public final class ModelRegistry: Sendable {
     }
 
     public func isAvailable(_ model: Model) async -> Bool {
-        guard hasConfiguredAuth(model) else { return false }
+        await isAvailable(model, inlineApiKey: false)
+    }
+
+    /// Check account support after provider selection. An inline key can supply first-time auth.
+    public func isAvailable(_ model: Model, inlineApiKey: Bool) async -> Bool {
+        guard inlineApiKey || hasConfiguredAuth(model) else { return false }
         if isVirtualModel(model) { return true }
         guard model.provider == OAuthProvider.githubCopilot.rawValue else { return true }
         guard let supportedIds = await githubCopilotSupportedModelIds() else { return true }

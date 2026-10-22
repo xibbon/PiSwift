@@ -155,7 +155,7 @@ private func mockModels() -> [Model] {
 @Test func parseModelPatternEdgeCases() {
     let models = mockModels()
     let empty = parseModelPattern("", models)
-    #expect(empty.model != nil)
+    #expect(empty.model == nil)
     #expect(empty.thinkingLevel == .off)
     #expect(empty.isThinkingExplicit == false)
 
