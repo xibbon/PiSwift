@@ -154,7 +154,10 @@ private func sandboxRun(_ code: String, tools: [CodemodeRuntimeTool] = [],
 func codemodeCM1MicrotaskLoopTimesOut(forceWatchdog: Bool) async {
     let clock = ContinuousClock()
     let started = clock.now
-    let result = await sandboxRun("while (true) await null", timeoutMs: 200, forceWatchdog: forceWatchdog)
+    // The loop outlives the 200 ms timeout but ends by itself, so the thread that the
+    // watchdog abandons does not spin for the rest of the test process.
+    let result = await sandboxRun("const end = Date.now() + 3000; while (Date.now() < end) await null",
+                                  timeoutMs: 200, forceWatchdog: forceWatchdog)
     #expect(result.execution.failure?.kind == .timeout)
     #expect(result.usedWatchdog == !CodemodeSandbox.usesTimeLimit(forceWatchdog: forceWatchdog))
     #expect(started.duration(to: clock.now) < .seconds(5))

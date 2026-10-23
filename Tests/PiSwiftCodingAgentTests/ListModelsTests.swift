@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 @testable import PiSwiftCodingAgent
 
@@ -24,21 +25,46 @@ private func captureFD(_ fd: Int32, operation: () async -> Void) async -> String
         return ""
     }
 
+    // Drain the pipe while the operation runs. The descriptor is process-wide, so a
+    // large listing or any other writer can fill the pipe and block (X1).
+    let readFD = pipeFDs[0]
+    let reader = CapturedPipeReader(readFD)
+
     await operation()
     fflush(fd == STDOUT_FILENO ? stdout : stderr)
     _ = dup2(savedFD, fd)
     close(savedFD)
     close(pipeFDs[1])
 
-    var data = Data()
-    var buffer = [UInt8](repeating: 0, count: 4096)
-    while true {
-        let count = read(pipeFDs[0], &buffer, buffer.count)
-        if count <= 0 { break }
-        data.append(buffer, count: Int(count))
-    }
-    close(pipeFDs[0])
+    let data = await reader.finish()
+    close(readFD)
     return String(decoding: data, as: UTF8.self)
+}
+
+/// Reads a descriptor to EOF on a background queue.
+private final class CapturedPipeReader: Sendable {
+    private let data = Mutex(Data())
+    private let done = DispatchGroup()
+
+    nonisolated init(_ fd: Int32) {
+        done.enter()
+        DispatchQueue.global().async { [self] in
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = read(fd, &buffer, buffer.count)
+                if count <= 0 { break }
+                data.withLock { $0.append(buffer, count: Int(count)) }
+            }
+            done.leave()
+        }
+    }
+
+    nonisolated func finish() async -> Data {
+        await withCheckedContinuation { continuation in
+            done.notify(queue: .global()) { continuation.resume() }
+        }
+        return data.withLock { $0 }
+    }
 }
 
 @MainActor
