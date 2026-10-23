@@ -64,6 +64,8 @@ public struct GenerationCheckpoint: TaskCheckpoint {
     public var compacted: TaskID?
     /// Whether the model context exceeded the request limit.
     public var overflow: String?
+    /// Whether this generation waited for a blocking threshold compaction.
+    public var threshold: Bool?
     /// The stored provider and model reference or entry model contribution.
     public var model: ModelRef?
     /// The reasoning effort selected for the model.
@@ -85,12 +87,12 @@ public struct GenerationCheckpoint: TaskCheckpoint {
     /// The work waiting for execution or publication.
     public var pending: [String]?
     /// Saves the generation phase and optional request, retry, and tool state.
-    public init(phase: Phase, attempt: Int? = nil, compacted: TaskID? = nil, overflow: String? = nil,
+    public init(phase: Phase, attempt: Int? = nil, compacted: TaskID? = nil, overflow: String? = nil, threshold: Bool? = nil,
                 model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
                 streamOptions: ConversationStreamOptions? = nil, cutoff: EntryID? = nil,
                 until: Int64? = nil, handle: GenerationDeferredHandle? = nil, pollAt: Int64? = nil,
                 assistant: EntryID? = nil, tools: [TaskID]? = nil, pending: [String]? = nil) {
-        self.phase = phase; self.attempt = attempt; self.compacted = compacted; self.overflow = overflow
+        self.phase = phase; self.attempt = attempt; self.compacted = compacted; self.overflow = overflow; self.threshold = threshold
         self.model = model; self.thinkingLevel = thinkingLevel; self.streamOptions = streamOptions
         self.cutoff = cutoff; self.until = until; self.handle = handle; self.pollAt = pollAt
         self.assistant = assistant; self.tools = tools; self.pending = pending
@@ -162,6 +164,12 @@ private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
             return try await failGeneration(runtime, modelError: overflow, context: context)
         }
     }
+    if let compacted = checkpoint.compacted, checkpoint.threshold == true,
+       let outcome = try await runtime.outcomes([compacted], context: context).first {
+        if let text = blockingCompactionFailure(outcome) {
+            return try await failGeneration(runtime, modelError: text, context: context)
+        }
+    }
     let view = try await runtime.context(runtime.conversationId, context: context)
     let shown = replaySections(view.messages)
     var env: (any ExecutionEnv)?
@@ -177,7 +185,7 @@ private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
     if threshold == .blocking {
         try await runtime.commit({ tx, _ in
             let child = try await createGenerationCompaction(tx: tx, conversationId: runtime.conversationId, reason: .threshold, owner: runtime.taskId)
-            return try generationTask.waiting(GenerationCheckpoint(phase: .prepare, attempt: attempt, compacted: child), on: [child], policy: .allSettled)
+            return try generationTask.waiting(GenerationCheckpoint(phase: .prepare, attempt: attempt, compacted: child, threshold: true), on: [child], policy: .allSettled)
         }, context: context)
         return
     }
@@ -261,4 +269,14 @@ private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Task
         try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "aborted"))
         return .terminal(outcome: .aborted())
     }, context: context)
+}
+
+/// Maps a blocking compaction outcome to the generation failure text.
+internal func blockingCompactionFailure(_ outcome: TaskOutcome) -> String? {
+    switch outcome {
+    case .completed: nil
+    case .failed(let error, _, _), .faulted(let error, _): "Compaction failed: \(error.message)"
+    case .orphaned(let reason, _): "Compaction failed: \(reason)"
+    case .aborted: "Compaction was aborted"
+    }
 }

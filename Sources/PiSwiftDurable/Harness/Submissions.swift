@@ -13,14 +13,31 @@ public enum WhenBusy: String, Sendable {
     /// Rejects input while the conversation has active work.
     case reject
 }
+/// The application kind and data used to store a user input.
+public struct InputEntry: Sendable, Equatable, Codable {
+    /// The application entry kind. It must be nonempty and must not start with `pi.`.
+    public let kind: String
+    /// Application data stored with the user message.
+    public let data: JSONValue?
+    /// Sets the application kind and optional data.
+    public init(kind: String, data: JSONValue? = nil) { self.kind = kind; self.data = data }
+    private enum Keys: String, CodingKey { case kind, data }
+    /// Decodes only the application kind and data. Explicit null data is retained.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        if container.contains(.data) { data = try container.decode(JSONValue.self, forKey: .data) }
+        else { data = nil }
+    }
+}
 /// User input or an entry write offered to a conversation.
 public enum SubmissionDraft: Sendable {
     /// Offers user content with an optional busy policy and request key.
-    case input(content: UserInput, whenBusy: WhenBusy? = nil, requestId: String? = nil)
+    case input(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil, requestId: String? = nil)
     /// Offers an entry draft with an optional request key.
     case write(entry: EntryDraft, requestId: String? = nil)
     /// An optional conversation-scoped key that makes request admission idempotent.
-    public var requestId: String? { switch self { case .input(_, _, let id), .write(_, let id): id } }
+    public var requestId: String? { switch self { case .input(_, _, _, let id), .write(_, let id): id } }
     /// The stored input or write submission tag.
     public var type: String { switch self { case .input: "input"; case .write: "write" } }
 }
@@ -161,13 +178,24 @@ internal final class Submissions: Sendable {
 private func isSettled(_ record: SubmissionRecord) -> Bool { record.status == "done" || record.status == "unanswered" }
 
 internal func admitSubmission(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft, now: Int64, queueModes: Settings) async throws -> SubmissionID {
+    if case .input(_, let entry?, _, _) = draft,
+       entry.kind.isEmpty || entry.kind.hasPrefix("pi.") {
+        throw SessionError.message("An input entry's kind must be a non-empty string not starting with \"pi.\", got \(entry.kind)")
+    }
     if let requestId = draft.requestId, let existing = try await tx.submissionByRequest(conversationId, requestId: requestId) {
         guard existing.type == draft.type else { throw SessionError.message("Request \(requestId) already identifies a submission of type \(existing.type)") }
         return existing.id
     }
+    if case .write(let entry, let requestId) = draft, isDisplayOnly(entry) {
+        let inbox = try await tx.doc(InboxDoc, conversationId: conversationId)
+        if !hasQueuedReset(try inbox.snapshot().decode(InboxState.self).items) {
+            let appended = try await tx.appendEntry(conversationId, value: entry)
+            return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
+        }
+    }
     let live = try await tx.doc(LiveDoc, conversationId: conversationId)
     let busy = try live.get("run") != nil
-    if busy, case .input(_, .reject, _) = draft { throw ConversationBusy(conversationId: conversationId) }
+    if busy, case .input(_, _, .reject, _) = draft { throw ConversationBusy(conversationId: conversationId) }
     let boundary = busy ? nil : try await prepareBoundary(tx: tx, conversationId: conversationId, modes: queueModes)
     let queued = try boundary?.inbox.child("items")?.count() ?? 0
     if boundary == nil || queued > 0 {
@@ -176,8 +204,8 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
         if let boundary { inbox = boundary.inbox } else { inbox = try await tx.doc(InboxDoc, conversationId: conversationId) }
         let item: InboxItem
         switch draft {
-        case .input(let content, let whenBusy, _):
-            item = InboxItem(id: record.id, mode: whenBusy == .steer ? .steer : .followUp, content: try inputContentJSON(content))
+        case .input(let content, let entry, let whenBusy, _):
+            item = InboxItem(id: record.id, mode: whenBusy == .steer ? .steer : .followUp, content: try inputContentJSON(content), inputEntry: entry)
         case .write(let entry, _): item = InboxItem(id: record.id, mode: .write, entry: entry)
         }
         try inbox.child("items")!.append(JSONValue(encoding: item))
@@ -194,9 +222,8 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
         }
         let appended = try await tx.appendEntry(conversationId, value: entry)
         return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
-    case .input(let content, _, let requestId):
-        let messages = try EntryRecord.encodeMessages([.user(UserMessage(content: content, timestamp: now))])
-        let entry = try await tx.appendEntry(conversationId, value: EntryDraft(kind: userEntry.kind, model: messages))
+    case .input(let content, let inputEntry, _, let requestId):
+        let entry = try await appendInput(tx: tx, conversationId: conversationId, content: inputContentJSON(content), entry: inputEntry, now: now)
         let record = try await tx.createSubmission(.input(conversationId: conversationId, requestId: requestId, state: .placed(entry: entry.id)))
         try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: [record.id])
         return record.id

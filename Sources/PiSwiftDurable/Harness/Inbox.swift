@@ -19,9 +19,11 @@ public struct InboxItem: Sendable, Equatable, Codable {
     public var content: JSONValue?
     /// The queued entry draft for a write submission.
     public var entry: EntryDraft?
+    /// The application kind and data of a queued input.
+    public var inputEntry: InputEntry?
     /// Pairs a queued submission with its admission mode and input or entry content.
-    public init(id: SubmissionID, mode: Mode, content: JSONValue? = nil, entry: EntryDraft? = nil) {
-        self.id = id; self.mode = mode; self.content = content; self.entry = entry
+    public init(id: SubmissionID, mode: Mode, content: JSONValue? = nil, entry: EntryDraft? = nil, inputEntry: InputEntry? = nil) {
+        self.id = id; self.mode = mode; self.content = content; self.entry = entry; self.inputEntry = inputEntry
     }
     private enum Keys: String, CodingKey { case id, mode, content, entry }
     /// Decodes this value from its durable JSON representation.
@@ -30,9 +32,21 @@ public struct InboxItem: Sendable, Equatable, Codable {
         id = try container.decode(SubmissionID.self, forKey: .id)
         mode = try container.decode(Mode.self, forKey: .mode)
         if mode == .write {
-            entry = try container.decode(EntryDraft.self, forKey: .entry); content = nil
+            entry = try container.decode(EntryDraft.self, forKey: .entry); content = nil; inputEntry = nil
         } else {
             content = try container.decode(JSONValue.self, forKey: .content); entry = nil
+            inputEntry = try container.decodeIfPresent(InputEntry.self, forKey: .entry)
+        }
+    }
+    /// Encodes input metadata or a write draft under the shared entry key.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: Keys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(mode, forKey: .mode)
+        if mode == .write { try container.encode(entry, forKey: .entry) }
+        else {
+            try container.encode(content, forKey: .content)
+            try container.encodeIfPresent(inputEntry, forKey: .entry)
         }
     }
 }
@@ -88,7 +102,7 @@ public func applyBoundary(tx: Transaction, boundary: Boundary, at: BoundaryPoint
     var boundary = boundary
     let values = try boundary.inbox.snapshot().decode(InboxState.self).items
     let items = try boundary.inbox.child("items")!
-    let reset = values.contains { $0.mode == .write && $0.entry?.head == .self }
+    let reset = hasQueuedReset(values)
     func pick(_ mode: InboxItem.Mode, _ queue: QueueMode) -> [Int] {
         let indexes = values.indices.filter { values[$0].mode == mode }
         return queue == .all ? indexes : Array(indexes.prefix(1))
@@ -105,8 +119,7 @@ public func applyBoundary(tx: Transaction, boundary: Boundary, at: BoundaryPoint
     var placed: [SubmissionID] = []
     for index in users {
         let item = values[index]
-        let message: JSONValue = .object(["role": .string("user"), "content": item.content!, "timestamp": .number(Double(now))])
-        let entry = try await tx.appendEntry(boundary.conversationId, value: EntryDraft(kind: userEntry.kind, model: [message]))
+        let entry = try await appendInput(tx: tx, conversationId: boundary.conversationId, content: item.content!, entry: item.inputEntry, now: now)
         try tx.placeSubmission(item.id, entry: entry.id); placed.append(item.id)
     }
     for index in (writes + users).sorted(by: >) { try items.splice(index, deleteCount: 1) }
@@ -127,4 +140,16 @@ public func withdrawQueuedInputs(tx: Transaction, conversationId: ConversationID
         try tx.settleSubmission(values[index].id, settlement: .unanswered(reason: "aborted"))
         try items.splice(index, deleteCount: 1)
     }
+}
+
+/// Appends one input with its application metadata and user model message.
+internal func appendInput(tx: Transaction, conversationId: ConversationID, content: JSONValue, entry: InputEntry?, now: Int64) async throws -> EntryRecord {
+    let message: JSONValue = .object(["role": .string("user"), "content": content, "timestamp": .number(Double(now))])
+    return try await tx.appendEntry(conversationId, value: EntryDraft(kind: entry?.kind ?? userEntry.kind, model: [message], data: entry?.data))
+}
+internal func isDisplayOnly(_ entry: EntryDraft) -> Bool {
+    entry.model == nil && entry.head == nil && entry.edits == nil
+}
+internal func hasQueuedReset(_ items: [InboxItem]) -> Bool {
+    items.contains { $0.mode == .write && $0.entry?.head == .self }
 }

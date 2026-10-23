@@ -34,9 +34,9 @@ struct HarnessCompactionManualTests {
         #expect(try await compactionInputUsage(chat) > usageBefore)
         try await compactionTurn(chat, "next", "done")
         let agent = try #require(chat.script.agentRequests.last).messages
-        #expect(agent.map(\.role) == ["user", "user", "assistant", "user", "system"])
-        if case .system(let system) = agent[4] { #expect(system.sections?["preamble"] == "You are helpful.") }
-        else { Issue.record("The last message must be the system baseline") }
+        #expect(agent.map(\.role) == ["system", "user", "user", "assistant", "user"])
+        if case .system(let system) = agent[0] { #expect(system.sections?["preamble"] == "You are helpful.") }
+        else { Issue.record("The first message must be the system baseline") }
         try await chat.harness.close(context: .background)
     }
     // harness-compaction.test.ts:416
@@ -65,8 +65,8 @@ struct HarnessCompactionManualTests {
         #expect(try await compactionKinds(chat.root).suffix(3) == ["pi.user", "pi.assistant", "pi.compaction"])
         try await chat.harness.close(context: .background)
     }
-    // harness-compaction.test.ts:450. H7 supplies the real tool runtime.
-    @Test(.disabled("H7 dependency: the real pi.tool task handler is not available"))
+    // harness-compaction.test.ts:487–488.
+    @Test
     func queuedSummaryAtPostToolsChangesContinuationContext() async throws {
         let chat = try await compactionOpen()
         let tool = try ToolRegistration(name: "wait", description: "wait", parameters: [:]) { _, _, _ in ToolExecutionResult(output: [.text(TextContent(text: "waited"))]) }
@@ -79,7 +79,9 @@ struct HarnessCompactionManualTests {
         chat.script.appendSummary([.message(chatAssistant("SUMMARY"))])
         _ = try await compactionOutcome(chat, chat.root.compact(context: .background)); gate.release()
         #expect(try await input.wait(context: .background).status == "done")
-        #expect(compactionFirstUser(try #require(chat.script.agentRequests.last).messages).contains("<summary>\nSUMMARY\n</summary>"))
+        let continuation = try #require(chat.script.agentRequests.last).messages
+        #expect(continuation.first?.role == "system")
+        #expect(compactionFirstUser(continuation).contains("<summary>\nSUMMARY\n</summary>"))
         #expect(try await compactionKinds(chat.root).suffix(4) == ["pi.tool-result", "pi.compaction", "pi.system", "pi.assistant"])
         try await chat.harness.close(context: .background)
     }

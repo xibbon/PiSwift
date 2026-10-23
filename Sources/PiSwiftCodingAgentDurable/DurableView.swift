@@ -204,6 +204,13 @@ public func decodeAgentOf(_ view: ConversationView) throws -> PiSwiftDurable.Age
     return try JSONValue.object(document).decode(PiSwiftDurable.AgentState.self)
 }
 
+/// Reads live tool and compaction state. An absent document has no live work.
+/// Invalid data throws so a host can show the decoding error.
+public func decodeLiveOf(_ view: ConversationView) throws -> LiveState {
+    guard let document = view.docs["pi.live"] else { return LiveState() }
+    return try JSONValue.object(document).decode(LiveState.self)
+}
+
 /// Returns an empty state if the agent document is absent or cannot be decoded.
 /// Use decodeAgentOf to receive a document decoding error.
 public func agentOf(_ view: ConversationView) -> PiSwiftDurable.AgentState {

@@ -131,7 +131,7 @@ func compactionNewInput(_ chat: CompactionChat, tokens: Int = 200) async throws 
     }
     // Upstream 1072, 1084: both loop paths and direct abort.
     @Test(arguments: ["declines", "fails", "aborted directly"])
-    func failedBlockingCompactionStillSendsRequest(how: String) async throws {
+    func blockingCompactionOutcomeControlsRequest(how: String) async throws {
         let chat = try await compactionOpen(contextWindow: 1000)
         try await compactionHistory(chat)
         compactionSetPolicy(chat, compactionBlockingPolicy)
@@ -140,14 +140,30 @@ func compactionNewInput(_ chat: CompactionChat, tokens: Int = 200) async throws 
             try chat.setup.registry.install(Extension(name: "decline", hooks: [hook(CompactionHooks(beforeCompact: { _, _, _ in .decline }))]))
         } else { chat.script.appendSummary([how == "fails" ? .message(compactionFailure("bad request")) : gate.step]) }
         chat.script.appendAgent([.message(chatAssistant("a4"))])
+        let requests = chat.script.agentRequests.count
         let input = try await compactionNewInput(chat)
         if how == "aborted directly" {
             await gate.reached.wait()
             _ = try await chat.harness.abortTask(id: #require(await compactionTasks(chat).first).id, context: .background)
         }
-        #expect(try await input.wait(context: .background).status == "done")
+        let receipt = try await input.wait(context: .background)
+        let live = try await compactionLive(chat)
+        if how == "declines" {
+            #expect(receipt.status == "done")
+            #expect(compactionFirstUser(try #require(chat.script.agentRequests.last).messages) == compactionText("u1", 100))
+            #expect(live.compactionFailure == nil)
+        } else {
+            let text = how == "fails" ? "Compaction failed: Summarization failed: bad request" : "Compaction was aborted"
+            #expect(receipt.status == "unanswered" && receipt.reason == "model_error")
+            #expect(try JSONValue(encoding: receipt.record)["detail"] == .string(text))
+            #expect(chat.script.agentRequests.count == requests)
+            #expect(try await compactionKinds(chat.root).last == "pi.user")
+            #expect(live.compactions == nil)
+            if how == "fails" {
+                #expect(live.compactionFailure?.reason == .threshold && live.compactionFailure?.error == "Summarization failed: bad request")
+            } else { #expect(live.compactionFailure == nil) }
+        }
         #expect(try await !compactionKinds(chat.root).contains("pi.compaction"))
-        #expect(compactionFirstUser(try #require(chat.script.agentRequests.last).messages) == compactionText("u1", 100))
         try await chat.harness.close(context: .background)
     }
     // Upstream 1100: task and run outcomes; H9 event order is not available.

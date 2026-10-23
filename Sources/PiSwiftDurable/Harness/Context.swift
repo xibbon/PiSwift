@@ -40,7 +40,27 @@ public func deriveContext(entries: [EntryRecord], at: EntryID? = nil) throws -> 
 
 /// Derives the range from captured bounds. Edits on older head markers still count.
 public func deriveContext(bounds: ContextBounds?, entries: [EntryRecord]) throws -> ContextView {
-    guard let bounds else { return ContextView() }
+    try deriveContextData(bounds: bounds, entries: entries).view
+}
+
+/// A message's source preserves the identity that JavaScript object references supply.
+internal struct ContextMessageSource: Sendable, Equatable {
+    let entry: EntryID
+    let offset: Int
+    let replacement: Bool
+}
+internal enum ContextBaseline: Sendable, Equatable {
+    case pending
+    case absent
+    case message(ContextMessageSource)
+}
+internal struct ContextData: Sendable {
+    let view: ContextView
+    let baseline: ContextBaseline
+    let firstSystem: ContextMessageSource?
+}
+internal func deriveContextData(bounds: ContextBounds?, entries: [EntryRecord]) throws -> ContextData {
+    guard let bounds else { return ContextData(view: ContextView(), baseline: .pending, firstSystem: nil) }
     let range = entries.filter { $0.id <= bounds.tail && (bounds.head?.head == nil || $0.id >= bounds.head!.head!) }
     var edits: [EntryID: ContextEdit] = [:]
     for entry in range {
@@ -52,12 +72,16 @@ public func deriveContext(bounds: ContextBounds?, entries: [EntryRecord]) throws
     }
     let active = bounds.head.map { [$0] + range.filter { $0.head == nil } } ?? range
     var rawContributions: [JSONValue] = []
+    var firstSystem: ContextMessageSource?
     let contributions = try active.map { entry -> [Message] in
         let raw: [JSONValue]?
         switch edits[entry.id] {
         case .omit?: return []
         case .replace(_, let messages, _)?: raw = messages
         case nil: raw = entry.model
+        }
+        if firstSystem == nil, let offset = raw?.firstIndex(where: { $0["role"] == "system" }) {
+            firstSystem = ContextMessageSource(entry: entry.id, offset: offset, replacement: edits[entry.id] != nil)
         }
         rawContributions.append(contentsOf: raw ?? [])
         let typed = try EntryRecord(id: entry.id, conversationId: entry.conversationId, kind: entry.kind, model: raw).messages() ?? []
@@ -66,12 +90,39 @@ public func deriveContext(bounds: ContextBounds?, entries: [EntryRecord]) throws
             return ![StopReason.aborted, .error, .deferred].contains(answer.stopReason)
         }
     }
-    var messages = orderToolResults(contributions.flatMap { $0 })
-    if let first = messages.firstIndex(where: { $0.role != "user" }), first > 0, messages[first].role == "system" {
-        let system = messages.remove(at: first)
-        messages.insert(system, at: 0)
+    let baseline = findContextBaseline(head: bounds.head, entries: active)
+    let messages = leadContextWithSystem(orderToolResults(contributions.flatMap { $0 }), baseline: baseline, firstSystem: firstSystem)
+    let view = ContextView(head: bounds.head, entries: active, contributions: contributions, messages: messages, rawContributions: rawContributions)
+    return ContextData(view: view, baseline: baseline, firstSystem: firstSystem)
+}
+
+/// Finds the first built-in system entry written after the head marker.
+internal func findContextBaseline(head: EntryRecord?, entries: [EntryRecord]) -> ContextBaseline {
+    for entry in entries {
+        if let head, entry.id <= head.id { continue }
+        if entry.kind.utf8.elementsEqual("pi.system".utf8) {
+            guard let offset = entry.model?.firstIndex(where: { $0["role"] == "system" }) else { return .absent }
+            return .message(ContextMessageSource(entry: entry.id, offset: offset, replacement: false))
+        }
+        if head == nil {
+            if entry.model?.contains(where: { $0["role"] == "system" }) == true { return .absent }
+            for edit in entry.edits ?? [] {
+                if case .replace(_, let messages, _) = edit, messages.contains(where: { $0["role"] == "system" }) { return .absent }
+            }
+        }
     }
-    return ContextView(head: bounds.head, entries: active, contributions: contributions, messages: messages, rawContributions: rawContributions)
+    return .pending
+}
+
+/// Moves only the first system message, if it is the baseline or follows only users.
+internal func leadContextWithSystem(_ messages: [Message], baseline: ContextBaseline, firstSystem: ContextMessageSource?) -> [Message] {
+    guard let first = messages.firstIndex(where: { $0.role == "system" }), first > 0 else { return messages }
+    let isBaseline: Bool
+    if case .message(let source) = baseline { isBaseline = source == firstSystem } else { isBaseline = false }
+    if !isBaseline && messages[..<first].contains(where: { $0.role != "user" }) { return messages }
+    var messages = messages
+    let system = messages.remove(at: first); messages.insert(system, at: 0)
+    return messages
 }
 
 /// Places results directly after their assistant, in call order. First result wins.

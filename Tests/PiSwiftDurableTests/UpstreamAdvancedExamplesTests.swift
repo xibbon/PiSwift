@@ -81,8 +81,8 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
         }
         #expect(try await withdrawn.abort(context: .background) == .aborted)
         let inbox = try #require(try await chat.harness.snapshot(InboxDoc, conversationId: chat.root.id, context: .background))
-        #expect(inbox.items.map(\.id) == [followUp.id, steer.id, note.id])
-        #expect(inbox.items.map(\.mode) == [.followUp, .steer, .write])
+        #expect(inbox.items.map(\.id) == [followUp.id, steer.id])
+        #expect(inbox.items.map(\.mode) == [.followUp, .steer])
         firstAnswer.release()
         let settledFirst = try await first.wait(context: .background)
         let settledFollowUp = try await followUp.wait(context: .background)
@@ -95,7 +95,7 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
         #expect(try await note.wait(context: .background).status == "done")
         #expect(try await withdrawn.wait(context: .background).status == "unanswered")
         #expect(try await withdrawn.wait(context: .background).reason == "aborted")
-        #expect(try await allEntries(chat.root).map(\.kind) == ["pi.user", "pi.assistant", "app.note", "pi.user", "pi.user", "pi.assistant"])
+        #expect(try await allEntries(chat.root).map(\.kind) == ["pi.user", "app.note", "pi.assistant", "pi.user", "pi.user", "pi.assistant"])
         #expect(try await advancedTexts(chat.root, role: "assistant") == ["Answer to the first question.", "Answer to the follow-up and the steer."])
         try await chat.harness.close(context: .background)
     }
@@ -637,20 +637,20 @@ extension UpstreamAdvancedExamplesTests {
                 "  user      Which day trips?", tripsLine],
             "Any museums?": [
                 "after \"Any museums?\" (answered): 7 messages in context, 10 entries stored",
-                "  (threshold compaction summary first)", summaryLine, eatLine,
-                "  user      Which day trips?", tripsLine, "  user      Any museums?", systemLine, museumsLine],
+                "  (threshold compaction summary first)", systemLine, summaryLine, eatLine,
+                "  user      Which day trips?", tripsLine, "  user      Any museums?", museumsLine],
             "Nightlife?": [
                 "after \"Nightlife?\" (answered): 5 messages in context, 14 entries stored",
-                "  (threshold compaction summary first)", summaryLine, museumsLine,
-                "  user      Nightlife?", systemLine, nightlifeLine],
+                "  (threshold compaction summary first)", systemLine, summaryLine, museumsLine,
+                "  user      Nightlife?", nightlifeLine],
             "What should we pack?": [
                 "after \"What should we pack?\" (answered): 7 messages in context, 20 entries stored",
-                "  (manual compaction summary first)", summaryLine, nightlifeLine,
-                "  user      How do we get around?", aroundLine, "  user      What should we pack?", systemLine, packLine],
+                "  (manual compaction summary first)", systemLine, summaryLine, nightlifeLine,
+                "  user      How do we get around?", aroundLine, "  user      What should we pack?", packLine],
             "Summarize the plan for my partner": [
                 "after \"Summarize the plan for my partner\" (model_error): 4 messages in context, 24 entries stored",
-                "  (threshold compaction summary first)", summaryLine, packLine,
-                "  user      Summarize the plan for my partner", systemLine]
+                "  (threshold compaction summary first)", systemLine, summaryLine, packLine,
+                "  user      Summarize the plan for my partner"]
         ]
         func ask(_ question: String, expectedStatus: String = "done", expectedReason: String? = nil) async throws -> ContextView {
             let record = try await root.submit(.input(content: .text(question)), context: .background).wait(context: .background)

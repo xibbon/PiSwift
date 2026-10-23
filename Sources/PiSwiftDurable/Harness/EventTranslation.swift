@@ -19,7 +19,7 @@ private func queuedEvents(_ inbox: InboxState?) -> [DurableQueuedItem] {
 internal func durableEventSnapshot(_ view: ConversationView) throws -> DurableAgentSnapshot {
     let parts = try EventParts(view)
     return DurableAgentSnapshot(entries: view.entries, run: parts.live.run.map { .init(inputs: $0.inputs) },
-        generation: parts.live.generation, tools: parts.live.tools ?? [], nestedTools: parts.live.nestedTools ?? [], compactions: parts.live.compactions ?? [],
+        generation: parts.live.generation, tools: parts.live.tools ?? [], nestedTools: parts.live.nestedTools ?? [], compactions: parts.live.compactions ?? [], compactionFailure: parts.live.compactionFailure,
         inbox: queuedEvents(parts.inbox), agent: parts.agent ?? .init(), usage: parts.usage ?? ["models": [:], "tools": [:]])
 }
 
@@ -194,7 +194,10 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
     }
     for end in toolEnds where end.entry == nil { events.append(.toolExecutionEnd(toolCallId: end.id, toolName: end.name, taskId: end.taskId)) }
     let compactionsBefore = was.live.compactions ?? []; let compactions = now.live.compactions ?? []
-    for old in compactionsBefore where !compactions.contains(where: { $0.taskId == old.taskId }) { events.append(.compactionEnd(taskId: old.taskId, reason: old.reason)) }
+    for old in compactionsBefore where !compactions.contains(where: { $0.taskId == old.taskId }) {
+        let failure = now.live.compactionFailure
+        events.append(.compactionEnd(taskId: old.taskId, reason: old.reason, error: failure?.taskId == old.taskId ? failure?.error : nil))
+    }
     var turnEnded = false
     for id in taskOrder {
         let task = tasks[id]!

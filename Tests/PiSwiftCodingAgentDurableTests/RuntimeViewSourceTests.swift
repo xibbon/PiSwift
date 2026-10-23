@@ -158,3 +158,44 @@ private struct ViewReportError: Error, LocalizedError {
                                              "content": .string("\u{FEFF}Read\u{00A0}the\u{2028}file.\u{0085}Keep\u{200B}this\u{FEFF}")])])
     #expect(runtimeTitle(of: entry) == "Read the file.\u{0085}Keep\u{200B}this")
 }
+
+@Test func applicationInputTitlesUseUserMessagesAndKeepApplicationData() throws {
+    let child = try ConversationID(2)
+    let application = try EntryRecord.withMessages(id: EntryID(3), conversationId: child,
+        kind: "app.prompt", messages: [
+            .system(.init(content: .text("Ignore this heading"))),
+            .user(.init(content: .text("  Check\n the file.  ")))
+        ], data: ["label": "Unrelated display text"])
+    #expect(runtimeTitle(of: application) == "Check the file.")
+    let source = RuntimeViewSource(runtimeView(), schedule: { _ in })
+    source.record(.init(seq: try Seq(1), changes: [.conversation(.init(id: child)), .entry(application)]))
+    #expect(source.current().conversations.last?.title == "Check the file.")
+    let conversation = ConversationView(conversation: .init(id: child), entries: [application], docs: [:])
+    source.updateConversation(conversation)
+    #expect(source.current().conversation.entries == [application])
+    #expect(source.current().conversation.entries.first?.data == ["label": "Unrelated display text"])
+}
+
+@Test func applicationDisplayOrMalformedContributionsDoNotSetTitles() throws {
+    let id = try EntryID(2)
+    for entry in [
+        EntryRecord(id: id, conversationId: rootConversationID, kind: "app.display", data: "Display only"),
+        EntryRecord(id: id, conversationId: rootConversationID, kind: "app.prompt", model: [
+            ["role": "user", "content": 3]
+        ]),
+        EntryRecord(id: id, conversationId: rootConversationID, kind: "app.prompt", model: [
+            ["role": "invalid", "content": "Ignore"]
+        ]),
+        EntryRecord(id: id, conversationId: rootConversationID, kind: "app.prompt", model: [
+            ["role": "user", "content": [["type": "text", "text": 3]]]
+        ]),
+        EntryRecord(id: id, conversationId: rootConversationID, kind: "app.prompt", model: [
+            ["role": "user", "content": [3]]
+        ]),
+        EntryRecord(id: id, conversationId: rootConversationID, kind: "", model: [
+            ["role": "user", "content": "Ignore"]
+        ])
+    ] {
+        #expect(runtimeTitle(of: entry) == nil)
+    }
+}

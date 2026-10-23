@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import PiSwiftAI
 import PiSwiftChord
 import PiSwiftDurable
 import Synchronization
@@ -69,7 +70,7 @@ internal final class RuntimeViewSource: DurableViewSource {
                     summaries.append(ConversationSummary(
                         id: record.id,
                         label: record.id == rootConversationID ? "main" : "subagent \(record.id.rawValue)"))
-                case .entry(let entry) where entry.kind == "pi.user":
+                case .entry(let entry):
                     guard let title = runtimeTitle(of: entry) else { continue }
                     summaries = summaries.map { summary in
                         guard summary.id == entry.conversationId, summary.title == nil else { return summary }
@@ -207,20 +208,40 @@ internal final class RuntimeReports: Sendable {
 
 /// Gets the text from the first user model message and removes extra spaces.
 internal func runtimeTitle(of entry: EntryRecord) -> String? {
-    guard entry.kind == "pi.user", let message = entry.model?.first?.objectValue,
-          message["role"] == .string("user") else { return nil }
-    let text: String
-    switch message["content"] {
-    case .string(let value): text = value
-    case .array(let blocks):
-        text = blocks.compactMap { block -> String? in
-            guard let object = block.objectValue, object["type"] == .string("text"),
-                  case .string(let value) = object["text"] else { return nil }
-            return value
-        }.joined(separator: " ")
-    default: return nil
+    guard entry.kind == "pi.user" || (!entry.kind.isEmpty && !entry.kind.hasPrefix("pi.")),
+          let raw = entry.model else { return nil }
+    // Decode the complete contribution before selecting its first user message.
+    // A malformed contribution cannot supply a conversation title.
+    let messages: [Message]
+    do { messages = try entry.messages() ?? [] }
+    catch { return nil }
+    for (value, message) in zip(raw, messages) {
+        guard case .user(let user) = message else { continue }
+        guard let content = value.objectValue?["content"] else { return nil }
+        let text: String
+        switch (content, user.content) {
+        case (.string, .text(let value)): text = value
+        case (.array(let rawBlocks), .blocks(let blocks)):
+            if entry.kind != "pi.user" {
+                guard rawBlocks.allSatisfy({ block in
+                    guard let object = block.objectValue else { return false }
+                    switch object["type"] {
+                    case .string("text"): return object["text"]?.stringValue != nil
+                    case .string("image"):
+                        return object["data"]?.stringValue != nil && object["mimeType"]?.stringValue != nil
+                    default: return false
+                    }
+                }) else { return nil }
+            }
+            text = blocks.compactMap { block -> String? in
+                if case .text(let value) = block { return value.text }
+                return nil
+            }.joined(separator: " ")
+        default: return nil
+        }
+        return text.unicodeScalars.split(whereSeparator: runtimeTitleSpace).map(String.init).joined(separator: " ")
     }
-    return text.unicodeScalars.split(whereSeparator: runtimeTitleSpace).map(String.init).joined(separator: " ")
+    return nil
 }
 
 /// Uses the ECMAScript whitespace and line terminator set.

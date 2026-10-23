@@ -203,6 +203,19 @@ public struct CompactionStatus: Sendable, Equatable, Codable {
         self.taskId = taskId; self.reason = reason; self.blocking = blocking; self.attempt = attempt; self.retry = retry
     }
 }
+/// The newest compaction failure since a compaction produced a summary.
+public struct CompactionFailure: Sendable, Equatable, Codable {
+    /// The task that failed.
+    public var taskId: TaskID
+    /// The cause of the compaction.
+    public var reason: CompactionReason
+    /// The error message or reason the scheduler orphaned the task.
+    public var error: String
+    /// Records the task, cause, and failure text.
+    public init(taskId: TaskID, reason: CompactionReason, error: String) {
+        self.taskId = taskId; self.reason = reason; self.error = error
+    }
+}
 /// The active generation, tools, and compactions of one conversation.
 public struct LiveState: Sendable, Equatable, Codable {
     /// The active generation task and the input submissions it admitted.
@@ -215,9 +228,11 @@ public struct LiveState: Sendable, Equatable, Codable {
     public var nestedTools: [NestedToolSlot]?
     /// The active compaction tasks and their progress.
     public var compactions: [CompactionStatus]?
+    /// The newest failure, retained until a compaction produces a summary.
+    public var compactionFailure: CompactionFailure?
     /// Creates the visible state of active generation, tools, and compactions.
-    public init(run: LiveRun? = nil, generation: LiveGeneration? = nil, tools: [ToolSlot]? = nil, nestedTools: [NestedToolSlot]? = nil, compactions: [CompactionStatus]? = nil) {
-        self.run = run; self.generation = generation; self.tools = tools; self.nestedTools = nestedTools; self.compactions = compactions
+    public init(run: LiveRun? = nil, generation: LiveGeneration? = nil, tools: [ToolSlot]? = nil, nestedTools: [NestedToolSlot]? = nil, compactions: [CompactionStatus]? = nil, compactionFailure: CompactionFailure? = nil) {
+        self.run = run; self.generation = generation; self.tools = tools; self.nestedTools = nestedTools; self.compactions = compactions; self.compactionFailure = compactionFailure
     }
 }
 /// The typed token for the built-in live conversation document.
@@ -301,6 +316,13 @@ internal func removeCompactionStatus(live: JSONDraft, taskId: TaskID) throws {
     }
     if try statuses.count() == 0 { try live.remove("compactions") }
 }
+internal func failCompactionStatus(live: JSONDraft, taskId: TaskID, error: String) throws {
+    if let status = try compactionStatus(live: live, taskId: taskId) {
+        let value = try status.snapshot().decode(CompactionStatus.self)
+        try live.set("compactionFailure", JSONValue(encoding: CompactionFailure(taskId: value.taskId, reason: value.reason, error: error)))
+    }
+    try removeCompactionStatus(live: live, taskId: taskId)
+}
 internal func settleSchedulerOutcome(tx: Transaction, record: TaskRecord, outcome: TaskOutcome) async throws {
     guard ["pi.generation", "pi.tool", "pi.compaction"].contains(record.kind) else { return }
     let live = try await tx.doc(LiveDoc, conversationId: record.conversationId)
@@ -308,7 +330,14 @@ internal func settleSchedulerOutcome(tx: Transaction, record: TaskRecord, outcom
         if let slot = try toolSlot(live: live, taskId: record.id) { try finishSlot(slot: slot, entry: nil) }
         try removeNestedSlots(live: live, taskId: record.id); return
     }
-    if record.kind == "pi.compaction" { try removeCompactionStatus(live: live, taskId: record.id); return }
+    if record.kind == "pi.compaction" {
+        switch outcome {
+        case .faulted(let error, _): try failCompactionStatus(live: live, taskId: record.id, error: error.message)
+        case .orphaned(let reason, _): try failCompactionStatus(live: live, taskId: record.id, error: reason)
+        default: break
+        }
+        return
+    }
     guard try live.get("run")?.decode(LiveRun.self).taskId == record.id else { return }
     try await convertPartial(tx: tx, live: live, conversationId: record.conversationId)
     let settlement: SubmissionSettlement

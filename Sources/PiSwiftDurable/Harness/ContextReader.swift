@@ -8,6 +8,8 @@ internal struct ContextRange: Sendable {
     let edited: Set<EntryID>
     let settled: [Message]
     let open: [Message]
+    let baseline: ContextBaseline
+    let firstSystem: ContextMessageSource?
 }
 
 /// Capture immutable bounds on the line, then scan only the missing range off the line.
@@ -50,12 +52,13 @@ internal func readContextFrom(session: Session, storage: any DurableStorage, id:
 }
 
 private func deriveContextRange(_ bounds: ContextBounds, entries: [EntryRecord]) throws -> ContextRange {
-    let view = try deriveContext(bounds: bounds, entries: entries)
+    let data = try deriveContextData(bounds: bounds, entries: entries)
+    let view = data.view
     let parts = settleContext([], open: view.contributions.flatMap { $0 })
     let edited = Set(entries.flatMap { entry in (entry.edits ?? []).map { edit -> EntryID in
         switch edit { case .omit(let target, _), .replace(let target, _, _): target }
     } })
-    return ContextRange(bounds: bounds, entries: entries, view: view, edited: edited, settled: parts.settled, open: parts.open)
+    return ContextRange(bounds: bounds, entries: entries, view: view, edited: edited, settled: parts.settled, open: parts.open, baseline: data.baseline, firstSystem: data.firstSystem)
 }
 
 /// Edits can affect earlier contributions. Plain appended entries affect only the open suffix.
@@ -64,22 +67,19 @@ private func extendContextRange(_ previous: ContextRange, bounds: ContextBounds,
     if added.contains(where: { $0.edits != nil || $0.head != nil || previous.edited.contains($0.id) }) {
         return try deriveContextRange(bounds, entries: entries)
     }
-    let contributions = try deriveContext(entries: added)
+    let data = try deriveContextData(bounds: ContextBounds(head: nil, tail: bounds.tail), entries: added)
+    let contributions = data.view
+    let baseline = previous.baseline == .pending ? findContextBaseline(head: bounds.head, entries: added) : previous.baseline
+    let firstSystem = previous.firstSystem ?? data.firstSystem
     let parts = settleContext(previous.settled, open: previous.open + contributions.contributions.flatMap { $0 })
     let view = ContextView(head: bounds.head, entries: previous.view.entries + added,
                           contributions: previous.view.contributions + contributions.contributions,
-                          messages: leadContextWithSystem(parts.settled + orderToolResults(parts.open)),
+                          messages: leadContextWithSystem(parts.settled + orderToolResults(parts.open), baseline: baseline, firstSystem: firstSystem),
                           rawContributions: (previous.view.rawContributions ?? []) + (contributions.rawContributions ?? []))
-    return ContextRange(bounds: bounds, entries: entries, view: view, edited: previous.edited, settled: parts.settled, open: parts.open)
+    return ContextRange(bounds: bounds, entries: entries, view: view, edited: previous.edited, settled: parts.settled, open: parts.open, baseline: baseline, firstSystem: firstSystem)
 }
 
 private func settleContext(_ settled: [Message], open: [Message]) -> (settled: [Message], open: [Message]) {
     guard let last = open.lastIndex(where: { $0.role == "assistant" }), last > 0 else { return (settled, open) }
     return (settled + orderToolResults(Array(open[..<last])), Array(open[last...]))
-}
-private func leadContextWithSystem(_ messages: [Message]) -> [Message] {
-    guard let first = messages.firstIndex(where: { $0.role != "user" }), first > 0, messages[first].role == "system" else { return messages }
-    var messages = messages
-    let system = messages.remove(at: first); messages.insert(system, at: 0)
-    return messages
 }

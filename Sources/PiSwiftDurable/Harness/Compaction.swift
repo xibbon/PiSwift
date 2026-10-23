@@ -215,8 +215,9 @@ private func summarizeCompaction(_ task: RunningTask<CompactionInput, Compaction
             }
             return try compactionTask.running(.retry(request, until: until))
         }
-        try removeCompactionStatus(live: live, taskId: runtime.taskId)
-        return .terminal(outcome: .failed(error: TaskOutcomeError(message: compactionSummaryFailure(message),
+        let text = compactionSummaryFailure(message)
+        try failCompactionStatus(live: live, taskId: runtime.taskId, error: text)
+        return .terminal(outcome: .failed(error: TaskOutcomeError(message: text,
             detail: .object(["reason": .string("model_error")]))))
     }, context: context)
 }
@@ -235,7 +236,9 @@ private func compactionStreamOptions(_ request: SummaryRequest, signal: Cancella
 
 private func placeCompactionSummary(_ tx: Transaction, _ runtime: TaskRuntime, _ current: TaskRecord,
                                     firstKept: EntryID, summary: String) async throws -> TaskState {
-    try removeCompactionStatus(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId)
+    let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
+    try removeCompactionStatus(live: live, taskId: runtime.taskId)
+    try live.remove("compactionFailure")
     let text = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n\(summary)\n</summary>"
     let input = try current.input.decode(CompactionInput.self)
     let entry = try EntryDraft(kind: compactionEntry.kind,
@@ -261,7 +264,7 @@ private func completeCompaction(_ runtime: TaskRuntime, context: ChordContext) a
 private func failCompactionNoModel(_ runtime: TaskRuntime, ref: ModelRef?, context: ChordContext) async throws {
     let message = ref.map { "Model \($0.provider)/\($0.modelId) is not available" } ?? "No model is configured"
     try await runtime.commit({ tx, _ in
-        try removeCompactionStatus(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId)
+        try failCompactionStatus(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId, error: message)
         return .terminal(outcome: .failed(error: TaskOutcomeError(message: message, detail: .object(["reason": .string("no_model")]))))
     }, context: context)
 }

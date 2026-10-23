@@ -209,49 +209,85 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
     @Test func incrementalReadsMatchWholeReadsThroughMixedTranscriptChanges() async throws {
         let (harness, registry, root, _, _) = try await h6ContextSetup()
         let definition = harnessOneStep("test.h6-mixed-context") { _, runtime, context in
-            var written: [EntryRecord] = []
-            var seed: UInt32 = 7
+            var written: [EntryRecord] = [], calls: [String] = []
+            var seed: UInt32 = 7, next = 0
+            var seen: [String: Int] = [:]
+            func count(_ category: String) { seen[category, default: 0] += 1 }
             func random(_ maximum: Int) -> Int {
                 seed = seed &* 1_664_525 &+ 1_013_904_223
                 return Int((UInt64(seed) * UInt64(maximum)) >> 32)
             }
-            for index in 0..<150 {
+            func draft() throws -> EntryDraft {
                 let pick = random(14)
-                let draft: EntryDraft
-                switch pick {
-                case 0...2: draft = try h6User("u\(index)")
-                case 3...4:
-                    draft = try h6Assistant("a\(index)", calls: index.isMultiple(of: 2) ? ["c\(index)"] : [], reason: [.stop, .aborted, .error, .deferred][random(4)])
-                case 5...7:
-                    draft = EntryDraft(kind: "message", model: try EntryRecord.encodeMessages([.toolResult(ToolResultMessage(toolCallId: "c\(index - 1)", toolName: "tool", content: [.text(TextContent(text: "result"))], isError: false, timestamp: 1))]))
-                case 8:
-                    draft = EntryDraft(kind: "message", model: try EntryRecord.encodeMessages([.system(SystemMessage(content: .text(""), sections: .init([("s", "v\(index)")]), timestamp: 1))]))
-                case 9: draft = EntryDraft(kind: "note")
-                case 10...11 where !written.isEmpty:
-                    let target = written[random(written.count)].id
-                    draft = EntryDraft(kind: "edit", edits: pick == 10 ? [.omit(target: target)] : [.replace(target: target, messages: try h6User("r\(index)").model!)])
-                case 12 where !written.isEmpty:
-                    draft = EntryDraft(kind: "summary", model: try h6User("h\(index)").model, head: .entry(written[random(written.count)].id))
-                default: draft = try h6User("u\(index)")
+                if pick < 3 { count("user"); defer { next += 1 }; return try h6User("u\(next)") }
+                if pick < 5 {
+                    let ids = (0..<random(3)).map { _ -> String in defer { next += 1 }; return "c\(next)" }
+                    calls += ids
+                    let reasons: [StopReason] = [.aborted, .error, .deferred]
+                    let index = random(9), reason: StopReason = index < reasons.count ? reasons[index] : .stop
+                    count(reason == .stop ? "assistant" : reason.rawValue)
+                    defer { next += 1 }
+                    return try h6Assistant("a\(next)", calls: ids, reason: reason)
                 }
-                try await runtime.commit({ tx, _ in
-                    _ = try await tx.appendEntry(root.id, value: draft); return nil
-                }, context: context)
-                let view = try await runtime.context(root.id, context: context)
-                #expect(try h6SameView(view, await root.context(context: context)))
-                written = try await allEntries(root, context: context)
-                if index.isMultiple(of: 10) {
+                if pick < 8 {
+                    let matched = !calls.isEmpty && random(5) > 0
+                    count(matched ? "result" : "stray result")
+                    let id: String
+                    if matched { id = calls.remove(at: random(calls.count)) }
+                    else { id = "stray\(next)"; next += 1 }
+                    return EntryDraft(kind: "message", model: try EntryRecord.encodeMessages([.toolResult(ToolResultMessage(toolCallId: id, toolName: "tool", content: [.text(TextContent(text: "result"))], isError: false, timestamp: 1))]))
+                }
+                if pick < 9 {
+                    let kind = random(2) == 0 ? "pi.system" : "message"
+                    count(kind == "pi.system" ? "baseline system" : "system")
+                    defer { next += 1 }
+                    return EntryDraft(kind: kind, model: try EntryRecord.encodeMessages([.system(SystemMessage(content: .text(""), sections: .init([("s", "v\(next)")]), timestamp: 1))]))
+                }
+                if pick < 10 { count("note"); defer { next += 1 }; return EntryDraft(kind: "note", data: ["n": .number(Double(next))]) }
+                let target = written.isEmpty ? nil : written[random(written.count)]
+                if pick < 12, let target {
+                    let omit = random(2) == 0
+                    count(omit ? "omit" : "replace")
+                    if omit { return EntryDraft(kind: "edit", edits: [.omit(target: target.id)]) }
+                    defer { next += 1 }
+                    return EntryDraft(kind: "edit", edits: [.replace(target: target.id, messages: try h6User("r\(next)").model!)])
+                }
+                if pick < 13, let target { count("head"); defer { next += 1 }; return EntryDraft(kind: "summary", model: try h6User("h\(next)").model, head: .entry(target.id)) }
+                count("user"); defer { next += 1 }; return try h6User("u\(next)")
+            }
+            func append(_ id: ConversationID) async throws {
+                let added = 1 + random(3)
+                for _ in 0..<added {
+                    let value = try draft(), appended = SessionTestLog<EntryRecord>()
+                    try await runtime.commit({ tx, _ in
+                        appended.append(try await tx.appendEntry(id, value: value)); return nil
+                    }, context: context)
+                    written.append(try #require(appended.values.first))
+                }
+            }
+            for step in 0..<150 {
+                try await append(root.id)
+                let whole = try await root.context(context: context)
+                #expect(try h6SameView(await runtime.context(root.id, context: context), whole))
+                let contributed = whole.contributions.flatMap { $0 }
+                if let first = contributed.firstIndex(where: { $0.role == "system" }), first > 0,
+                   contributed[..<first].contains(where: { $0.role == "assistant" }),
+                   try EntryRecord.encodeMessages(Array(whole.messages.prefix(1))) == EntryRecord.encodeMessages([contributed[first]]) { count("baseline past assistant") }
+                if step % 10 == 9 {
                     let at = written[random(written.count)].id
-                    async let whole = runtime.context(root.id, context: context)
+                    async let current = runtime.context(root.id, context: context)
                     async let cut = runtime.context(root.id, at: at, context: context)
-                    #expect(try h6SameView(await whole, await root.context(context: context)))
+                    #expect(try h6SameView(await current, await root.context(context: context)))
                     #expect(try h6SameView(await cut, await root.context(at: at, context: context)))
                 }
             }
             let fork = try await root.fork(at: written[random(written.count)].id, options: .init(ownership: .ownerless()), context: context)
-            for index in 0..<20 {
+            for _ in 0..<20 {
                 #expect(try h6SameView(await runtime.context(fork.id, context: context), await fork.context(context: context)))
-                try await runtime.commit({ tx, _ in _ = try await tx.appendEntry(fork.id, value: h6User("fork \(index)")); return nil }, context: context)
+                try await append(fork.id)
+            }
+            for category in ["user", "assistant", "aborted", "error", "deferred", "result", "stray result", "system", "baseline system", "baseline past assistant", "note", "omit", "replace", "head"] {
+                #expect(seen[category, default: 0] > 0, "Missing context category: \(category)")
             }
             try await runtime.commit({ _, _ in try completed(1) }, context: context)
         }

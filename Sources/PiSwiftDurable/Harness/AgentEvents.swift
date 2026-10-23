@@ -33,6 +33,8 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
     public var nestedTools: [NestedToolSlot]
     /// The active compaction tasks and their progress.
     public var compactions: [CompactionStatus]
+    /// The newest compaction failure since a summary was produced.
+    public var compactionFailure: CompactionFailure?
     /// The queued conversation submissions.
     public var inbox: [DurableQueuedItem]
     /// The stored agent configuration at snapshot acquisition.
@@ -43,10 +45,10 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
     public var type: String { "snapshot" }
     /// Creates a detached snapshot of entries, live progress, queues, and usage.
     public init(entries: [EntryRecord] = [], run: DurableSnapshotRun? = nil, generation: LiveGeneration? = nil,
-                tools: [ToolSlot] = [], nestedTools: [NestedToolSlot] = [], compactions: [CompactionStatus] = [], inbox: [DurableQueuedItem] = [],
+                tools: [ToolSlot] = [], nestedTools: [NestedToolSlot] = [], compactions: [CompactionStatus] = [], compactionFailure: CompactionFailure? = nil, inbox: [DurableQueuedItem] = [],
                 agent: AgentState = .init(), usage: JSONObject = ["models": [:], "tools": [:]]) {
         self.entries = entries; self.run = run; self.generation = generation; self.tools = tools
-        self.nestedTools = nestedTools; self.compactions = compactions; self.inbox = inbox; self.agent = agent; self.usage = usage
+        self.nestedTools = nestedTools; self.compactions = compactions; self.compactionFailure = compactionFailure; self.inbox = inbox; self.agent = agent; self.usage = usage
     }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
@@ -54,7 +56,7 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
         entries = try recordRequired(o, "entries"); run = try recordOptional(o, "run")
         generation = try recordOptional(o, "generation"); tools = try recordRequired(o, "tools")
         nestedTools = try recordOptional(o, "nestedTools") ?? []
-        compactions = try recordRequired(o, "compactions"); inbox = try recordRequired(o, "inbox")
+        compactions = try recordRequired(o, "compactions"); compactionFailure = try recordOptional(o, "compactionFailure"); inbox = try recordRequired(o, "inbox")
         agent = try recordRequired(o, "agent"); usage = try recordRequired(o, "usage")
     }
     /// Encodes this value with the durable JSON representation.
@@ -62,7 +64,7 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
         var o: JSONObject = ["type": .string(type)]
         try recordSet(&o, "entries", entries); try recordSetOptional(&o, "run", run)
         try recordSetOptional(&o, "generation", generation); try recordSet(&o, "tools", tools)
-        try recordSet(&o, "nestedTools", nestedTools); try recordSet(&o, "compactions", compactions); try recordSet(&o, "inbox", inbox)
+        try recordSet(&o, "nestedTools", nestedTools); try recordSet(&o, "compactions", compactions); try recordSetOptional(&o, "compactionFailure", compactionFailure); try recordSet(&o, "inbox", inbox)
         try recordSet(&o, "agent", agent); try recordSet(&o, "usage", usage)
         try o.encode(to: encoder)
     }
@@ -212,8 +214,8 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
     case taskFailed(taskId: TaskID, kind: String, message: String)
     /// Reports an active compaction and whether the generation must wait for it.
     case compactionStart(taskId: TaskID, reason: CompactionReason, blocking: Bool)
-    /// Reports the end of a compaction with its task ID and trigger.
-    case compactionEnd(taskId: TaskID, reason: CompactionReason)
+    /// Reports the end of a compaction. Includes failure, fault, or orphan error text.
+    case compactionEnd(taskId: TaskID, reason: CompactionReason, error: String? = nil)
     /// The change or event tag used in encoded JSON.
     public var type: String {
         switch self {
@@ -272,7 +274,7 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case "usage_changed": self = .usageChanged(usage: try recordRequired(o, "usage"))
         case "task_failed": self = .taskFailed(taskId: try recordRequired(o, "taskId"), kind: try recordRequired(o, "kind"), message: try recordRequired(o, "message"))
         case "compaction_start": self = .compactionStart(taskId: try recordRequired(o, "taskId"), reason: try recordRequired(o, "reason"), blocking: try recordRequired(o, "blocking"))
-        case "compaction_end": self = .compactionEnd(taskId: try recordRequired(o, "taskId"), reason: try recordRequired(o, "reason"))
+        case "compaction_end": self = .compactionEnd(taskId: try recordRequired(o, "taskId"), reason: try recordRequired(o, "reason"), error: try recordOptional(o, "error"))
         default: throw recordUnknown("type", type)
         }
     }
@@ -309,7 +311,7 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case .usageChanged(let usage): try recordSet(&o, "usage", usage)
         case let .taskFailed(id, kind, message): try recordSet(&o, "taskId", id); o["kind"] = .string(kind); o["message"] = .string(message)
         case let .compactionStart(id, reason, blocking): try recordSet(&o, "taskId", id); try recordSet(&o, "reason", reason); try recordSet(&o, "blocking", blocking)
-        case let .compactionEnd(id, reason): try recordSet(&o, "taskId", id); try recordSet(&o, "reason", reason)
+        case let .compactionEnd(id, reason, error): try recordSet(&o, "taskId", id); try recordSet(&o, "reason", reason); try recordSetOptional(&o, "error", error)
         }
         try o.encode(to: encoder)
     }

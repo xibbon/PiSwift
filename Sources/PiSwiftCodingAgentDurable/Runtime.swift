@@ -185,7 +185,7 @@ private func runtimeSummaries(_ harness: Harness) async throws -> [ConversationS
                 var first: EntryRecord?
                 repeat {
                     let entries = try await conversation.entries(limit: 256, cursor: entriesCursor, context: .background)
-                    first = entries.items.last { $0.kind == "pi.user" } ?? first
+                    first = entries.items.last { runtimeTitle(of: $0) != nil } ?? first
                     entriesCursor = entries.next
                 } while entriesCursor != nil
                 title = first.flatMap { runtimeTitle(of: $0) }

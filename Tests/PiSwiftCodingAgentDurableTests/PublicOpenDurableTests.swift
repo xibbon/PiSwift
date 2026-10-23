@@ -1,9 +1,38 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftChord
 import PiSwiftCodingAgent
 import PiSwiftCodingAgentDurable
 import PiSwiftDurable
 import Testing
+
+@Test func publicLiveDecoderPreservesNestedStateAndReportsInvalidData() throws {
+    var nested = try NestedToolSlot(callId: "opaque/child/id", name: "probe", parentCallId: "opaque/parent/id",
+        parentTaskId: TaskID(2), taskId: TaskID(3), arguments: ["input": true], status: .done,
+        summary: .init(isError: true, durationMs: 12, error: "Nested failure"))
+    nested.details = .null
+    nested.diagnostics = []
+    let live = try LiveState(nestedTools: [nested], compactionFailure:
+        .init(taskId: TaskID(4), reason: .manual, error: "Summary failure"))
+    let document = try #require(JSONValue(encoding: live).objectValue)
+    let conversation = ConversationView(conversation: .init(id: rootConversationID), entries: [],
+        docs: ["pi.live": document])
+    let view = DurableView(session: .init(id: "session", directory: "/session", cwd: "/repo"),
+        conversation: conversation, conversations: [], models: [], terminal: .failed(message: "Backend failure"))
+    let decoded = try JSONValue(encoding: view).decode(DurableView.self)
+    #expect(try decodeLiveOf(decoded.conversation) == live)
+    #expect(decoded.terminal == view.terminal)
+    let absent = ConversationView(conversation: .init(id: rootConversationID), entries: [], docs: [:])
+    #expect(try decodeLiveOf(absent) == LiveState())
+    for invalid: JSONObject in [
+        ["nestedTools": [["taskId": 3]]],
+        ["compactionFailure": ["taskId": 4, "reason": "manual", "error": false]]
+    ] {
+        let malformed = ConversationView(conversation: .init(id: rootConversationID), entries: [],
+            docs: ["pi.live": invalid])
+        #expect(throws: (any Error).self) { try decodeLiveOf(malformed) }
+    }
+}
 
 #if os(macOS)
 import Darwin

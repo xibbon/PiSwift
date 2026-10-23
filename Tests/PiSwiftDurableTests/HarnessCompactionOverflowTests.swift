@@ -21,6 +21,7 @@ import PiSwiftDurableTesting
         #expect(try await input.wait(context: .background).status == "done")
         #expect(try await compactionKinds(chat.root).suffix(5) == ["pi.user", "pi.assistant", "pi.compaction", "pi.system", "pi.assistant"])
         let request = try #require(chat.script.agentRequests.last)
+        #expect(request.messages.first?.role == "system")
         #expect(compactionFirstUser(request.messages).contains("SUMMARY"))
         #expect(!request.messages.contains { if case .assistant(let value) = $0 { return value.stopReason == .error }; return false })
         let entry = try #require(await allEntries(chat.root).first { $0.kind == "pi.compaction" })

@@ -443,6 +443,37 @@ private func runtimeToolCall(_ name: String, arguments: [String: AnyCodable]) ->
         }
     }
 
+    @Test func retainedCompactionFailureSurvivesViewCommandsAndContinue() async throws {
+        let paths = try RuntimePaths()
+        defer { paths.remove() }
+        let models = runtimeModels()
+        let first = try await paths.open(models)
+        let failure: CompactionFailure
+        do {
+            try await runtimeHistory(first, models: models)
+            models.setResponses([.message(chatAssistant("", reason: .error, error: "Cannot summarize"))])
+            await first.controller.compact(instructions: nil)
+            try await eventually { try decodeLiveOf(first.view.current().conversation).compactionFailure != nil }
+            failure = try #require(decodeLiveOf(first.view.current().conversation).compactionFailure)
+            #expect(failure.reason == .manual)
+            #expect(failure.error == "Summarization failed: Cannot summarize")
+            await first.controller.toggleTasks()
+            await first.controller.toggleTasks()
+            await first.controller.cycleThinking()
+            #expect(try decodeLiveOf(first.view.current().conversation).compactionFailure == failure)
+        } catch { await first.close(); throw error }
+        await first.close()
+        let second = try await paths.open(models, continueSession: true)
+        do {
+            #expect(try decodeLiveOf(second.view.current().conversation).compactionFailure == failure)
+            models.setResponses([.message(chatAssistant("Recovered summary"))])
+            await second.controller.compact(instructions: nil)
+            try await eventually { second.view.current().notices.contains { $0.message == "Compacted." } }
+            #expect(try decodeLiveOf(second.view.current().conversation).compactionFailure == nil)
+        } catch { await second.close(); throw error }
+        await second.close()
+    }
+
     @Test func closeTwiceReleasesSessionLock() async throws {
         let paths = try RuntimePaths()
         defer { paths.remove() }

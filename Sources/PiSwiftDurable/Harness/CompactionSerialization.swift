@@ -47,7 +47,7 @@ func summaryPrompt(messages: [Message], instructions: String?) -> String {
     return "<conversation>\n\(serializeConversation(messages))\n</conversation>\n\n\(summarizationPrompt)\(focus)"
 }
 
-/// Read the transcript as text. Do not include system messages.
+/// Reads the transcript as text. Omits system messages and thinking.
 public func serializeConversation(_ messages: [Message]) -> String {
     var parts: [String] = []
     for message in messages {
@@ -60,9 +60,6 @@ public func serializeConversation(_ messages: [Message]) -> String {
             }
             if !text.isEmpty { parts.append("[User]: \(text)") }
         case .assistant(let assistant):
-            let thinking = assistant.content.compactMap { block -> String? in
-                if case .thinking(let value) = block { return value.thinking }; return nil
-            }
             let text = assistant.content.compactMap { block -> String? in
                 if case .text(let value) = block { return value.text }; return nil
             }
@@ -73,7 +70,6 @@ public func serializeConversation(_ messages: [Message]) -> String {
                 let arguments = pairs.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")
                 return "\(call.name)(\(arguments))"
             }
-            if !thinking.isEmpty { parts.append("[Assistant thinking]: \(thinking.joined(separator: "\n"))") }
             if !text.isEmpty { parts.append("[Assistant]: \(text.joined(separator: "\n"))") }
             if !calls.isEmpty { parts.append("[Assistant tool calls]: \(calls.joined(separator: "; "))") }
         case .toolResult(let result):

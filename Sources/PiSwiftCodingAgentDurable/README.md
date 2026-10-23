@@ -127,6 +127,12 @@ The wait returns after environments are clean and the session lock is released.
 `session.failure` gives the first backend error, if one occurred.
 An explicit close and an automatic close share one cleanup operation.
 
+Use `decodeAgentOf` and `decodeLiveOf` to read built-in view documents.
+These functions throw on invalid data. Show the error instead of an empty state.
+Live state includes nested tools and the last compaction failure.
+Application input entries retain their kind, data, and user model contribution.
+Conversation titles use the first user contribution from a built-in or application input.
+
 iOS supports the local file tools. It has no local shell. Local `bash` returns `shellUnavailable`.
 `openDurable` always uses local environments and includes `bash`. It has no environment override.
 For a remote `ExecutionEnv`, build a Harness with the public settings, model, prompt, and subagent helpers.
@@ -146,7 +152,7 @@ Use `createPiPrompt` for that registry. `createCodingRegistry` includes `bash`.
 - Deferred requests use PiSwiftAI API providers. Request options have no header-transform callback.
 - Native failures use Swift error text. The task panel sorts task IDs numerically.
 - Controller and close failures appear as notices. Close still cleans resources and releases the lock.
-- Swift decodes built-in documents. Invalid agent data produces an empty agent state.
+- Swift decodes built-in documents. The compatibility helper `agentOf` returns an empty state on invalid data; `decodeAgentOf` reports the error.
 - `ctrl+d` requires an empty editor to exit. `ctrl+c` cancels a selector when it has focus.
 
 Not here: session list and resume picker, forks and tree navigation, extensions, prompt templates, images, `/login`.

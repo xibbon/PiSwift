@@ -289,7 +289,7 @@ private func exampleShow(_ message: Message) -> String {
         }, context: .background)
         let view = try await transcript.context(context: .background)
         #expect(view.entries.map(\.kind) == ["message", "message", "message", "message", "pi.system", "message", "message", "edit", "note"])
-        #expect(view.messages.map(exampleShow) == ["user: read files a and b", "assistant: reading call(a) call(b)", "result(a)", "result(b)", "system: {\"cwd\":\"<cwd>/repo</cwd>\"}", "assistant: a and b look fine"])
+        #expect(view.messages.map(exampleShow) == ["system: {\"cwd\":\"<cwd>/repo</cwd>\"}", "user: read files a and b", "assistant: reading call(a) call(b)", "result(a)", "result(b)", "assistant: a and b look fine"])
         let cut = try await transcript.fork(at: calls.id, options: .init(ownership: .ownerless()), context: .background)
         #expect(try await cut.context(context: .background).messages.map(exampleShow) == ["user: read a and b", "assistant: reading call(a) call(b)", "result(a) error", "result(b) error"])
         try await transcript.commit({ tx in

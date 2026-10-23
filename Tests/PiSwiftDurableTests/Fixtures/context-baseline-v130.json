@@ -1,0 +1,7372 @@
+{
+  "tag": "v1.3.0",
+  "provenance": {
+    "source": "unmodified packages/durable/src/harness/context.ts at v1.3.0",
+    "construction": "Constructed immutable transcript records; a read-only scan supplies each range. No Session or scheduler runs."
+  },
+  "cases": [
+    {
+      "name": "late baseline after assistant",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline after kept assistant and head",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "head": 3,
+          "model": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          4,
+          3,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "summary",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            4,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            4,
+            3,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "retained system before head is not baseline",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "head": 2,
+          "model": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "new baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          4,
+          2,
+          3,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "new baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "summary",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "new baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            4,
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            4,
+            2,
+            3,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "new baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "new baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "first positional system prevents later baseline moving",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "head": 3,
+          "model": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "app.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          4,
+          3,
+          5,
+          6
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "summary",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "positional",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            4,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            4,
+            3,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 6,
+          "ids": [
+            4,
+            3,
+            5,
+            6
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "earlier application system disqualifies baseline without head",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "app.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "positional",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "only users before first system permits move",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "app.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "positional",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "omitted baseline does not select later system",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "omit",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "later",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [],
+          [],
+          [
+            {
+              "role": "system",
+              "content": "later",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "later",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            []
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 6,
+          "ids": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            [],
+            [
+              {
+                "role": "system",
+                "content": "later",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "later",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "equal replacement is not the original baseline",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "replace",
+              "target": 4,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "baseline",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ],
+          []
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ],
+            []
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "replacement baseline stays after assistant",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "replace",
+              "target": 4,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "replacement",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            }
+          ],
+          []
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "replacement",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "replacement",
+                "timestamp": 1
+              }
+            ],
+            []
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "omitted application system still disqualifies baseline",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "app.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "omit",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [],
+          [],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "positional",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "positional",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            []
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 6,
+          "ids": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            [],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "earlier replacement system disqualifies baseline",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "replace",
+              "target": 2,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "replacement",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "replacement",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "system",
+                "content": "replacement",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            []
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "system",
+                "content": "replacement",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "edited away earlier replacement still disqualifies baseline",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "replace",
+              "target": 2,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "replacement",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "replace",
+              "target": 2,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "restored",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "restored",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [],
+          [],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "restored",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "system",
+                "content": "replacement",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            []
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "restored",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            []
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "restored",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 6,
+          "ids": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "restored",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            [],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "restored",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "first system in multi-message baseline",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "user",
+              "content": "prefix",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "second",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "user",
+              "content": "prefix",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "second",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "prefix",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "second",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "user",
+                "content": "prefix",
+                "timestamp": 1
+              },
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              },
+              {
+                "role": "system",
+                "content": "second",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "prefix",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "second",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline kind without system prevents later substitution",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "user",
+              "content": "no system",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "user",
+              "content": "no system",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "question",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "no system",
+            "timestamp": 1
+          },
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "user",
+                "content": "no system",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "no system",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "user",
+                "content": "no system",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "no system",
+              "timestamp": 1
+            },
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "head ignores earlier edited application system",
+      "entries": [
+        {
+          "id": 2,
+          "conversationId": 1,
+          "kind": "pi.user",
+          "model": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "conversationId": 1,
+          "kind": "pi.assistant",
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "conversationId": 1,
+          "kind": "edit",
+          "edits": [
+            {
+              "action": "replace",
+              "target": 2,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "replacement",
+                  "timestamp": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "head": 3,
+          "model": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "conversationId": 1,
+          "kind": "pi.system",
+          "model": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "ids": [
+          5,
+          3,
+          4,
+          6
+        ],
+        "contributions": [
+          [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            }
+          ],
+          [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ],
+          [],
+          [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            }
+          ]
+        ],
+        "messages": [
+          {
+            "role": "system",
+            "content": "baseline",
+            "timestamp": 1
+          },
+          {
+            "role": "user",
+            "content": "summary",
+            "timestamp": 1
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "kept answer"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "fixture",
+            "model": "fixture",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1
+          }
+        ]
+      },
+      "historical": [
+        {
+          "at": 2,
+          "ids": [
+            2
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 3,
+          "ids": [
+            2,
+            3
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "question",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "question",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 4,
+          "ids": [
+            2,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "system",
+                "content": "replacement",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            []
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "replacement",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 5,
+          "ids": [
+            5,
+            3,
+            4
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            []
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        },
+        {
+          "at": 6,
+          "ids": [
+            5,
+            3,
+            4,
+            6
+          ],
+          "contributions": [
+            [
+              {
+                "role": "user",
+                "content": "summary",
+                "timestamp": 1
+              }
+            ],
+            [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "kept answer"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1
+              }
+            ],
+            [],
+            [
+              {
+                "role": "system",
+                "content": "baseline",
+                "timestamp": 1
+              }
+            ]
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "baseline",
+              "timestamp": 1
+            },
+            {
+              "role": "user",
+              "content": "summary",
+              "timestamp": 1
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept answer"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

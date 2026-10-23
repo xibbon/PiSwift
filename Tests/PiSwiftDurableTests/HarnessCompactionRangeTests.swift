@@ -116,7 +116,7 @@ struct HarnessCompactionRangeTests {
         ])
         #expect(!serialized.contains("hidden"))
         #expect(serialized.contains("[User]: hello"))
-        #expect(serialized.contains("[Assistant thinking]: hmm"))
+        #expect(!serialized.contains("hmm") && !serialized.contains("[Assistant thinking]"))
         #expect(serialized.contains("[Assistant]: sure"))
         #expect(serialized.contains("[Assistant tool calls]: read(path=\"a.ts\")"))
         #expect(serialized.contains("[Tool result]: " + String(repeating: "y", count: 2000) + "\n\n[... 500 more characters truncated]"))

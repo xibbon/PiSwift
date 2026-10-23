@@ -129,4 +129,41 @@ private struct BoundaryDirectory: Sendable {
             try runtimeCompactionNotice(.completed(result: .string("invalid result")), submissionStatus: nil)
         }
     }
+
+    @Test func continuedCustomInputKeepsItsTitleAndApplicationData() async throws {
+        let directory = try BoundaryDirectory()
+        defer { directory.remove() }
+        let models = FakeDurableModels(responses: [.message(chatAssistant("Saved answer"))])
+        let location = try await selectSession(directory.cwd, continueSession: false, agentDirectory: directory.agent)
+        let harness = try await Harness.open(storage: SqliteStorage.open(path: location.database),
+            options: .init(models: models, registry: createRegistry()), context: .background)
+        _ = try await harness.root(context: .background)
+        let child = try await harness.createConversation(options: .init(ownership: .ownerless(),
+            agent: .init(model: .set(.init(provider: "faux", modelId: "faux-1")))), context: .background)
+        let submission = try await child.submit(.input(content: .text("  Saved\n application task  "),
+            entry: .init(kind: "app.task", data: ["issue": 42])), context: .background)
+        _ = try await submission.wait(context: .background)
+        try await harness.close(context: .background)
+        location.release()
+        let result = try await openDurable(.init(cwd: directory.cwd, continueSession: true),
+            dependencies: directory.dependencies(models))
+        do {
+            #expect(result.view.current().conversations.first { $0.id == child.id }?.title == "Saved application task")
+            await result.controller.switchConversation(child.id)
+            let entry = try #require(result.view.current().conversation.entries.first { $0.kind == "app.task" })
+            #expect(entry.data == ["issue": 42])
+            guard case .user(let message) = try entry.messages()?.first else {
+                Issue.record("Expected the saved application user message")
+                await result.close()
+                return
+            }
+            guard case .text(let text) = message.content else {
+                Issue.record("Expected text input")
+                await result.close()
+                return
+            }
+            #expect(text == "  Saved\n application task  ")
+        } catch { await result.close(); throw error }
+        await result.close()
+    }
 }

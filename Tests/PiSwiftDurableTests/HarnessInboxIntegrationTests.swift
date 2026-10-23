@@ -14,7 +14,7 @@ import PiSwiftDurableTesting
         let chat = try await openChat(setup: setup)
         let input = try await chat.root.submit(.input(content: .text("a")), context: .background); await first.reached.wait()
         let f1 = try await chat.root.submit(.input(content: .text("f1")), context: .background)
-        let write = try await chat.root.submit(.write(entry: EntryDraft(kind: "note", data: .string("w"))), context: .background)
+        let write = try await chat.root.submit(.write(entry: queuedInputNote("w")), context: .background)
         let f2 = try await chat.root.submit(.input(content: .text("f2"), whenBusy: .followUp), context: .background)
         first.release()
         let original = try await input.wait(context: .background), one = try await f1.wait(context: .background), two = try await f2.wait(context: .background)
@@ -22,6 +22,7 @@ import PiSwiftDurableTesting
         #expect((one.answer == two.answer) == (mode == .all))
         #expect(try await write.wait(context: .background).status == "done")
         let entries = try await allEntries(chat.root)
+        #expect(try entries.first { $0.kind == "note" }?.messages().flatMap { textOf($0.first) } == "w")
         #expect(Array(entries.prefix(5)).map(\.kind) == ["pi.user", "pi.assistant", "note", "pi.user", mode == .all ? "pi.user" : "pi.assistant"])
         #expect(try await chat.harness.snapshot(InboxDoc, conversationId: chat.root.id, context: .background)?.items.isEmpty == true)
         try await chat.harness.close(context: .background)
@@ -57,7 +58,7 @@ import PiSwiftDurableTesting
         let setup = HarnessChatSetup(); let first = HarnessGatedResponse(message: chatAssistant("answer"))
         setup.models.setResponses([first.step]); let chat = try await openChat(setup: setup)
         let input = try await chat.root.submit(.input(content: .text("a")), context: .background); await first.reached.wait()
-        let write = try await chat.root.submit(.write(entry: EntryDraft(kind: "note")), context: .background)
+        let write = try await chat.root.submit(.write(entry: queuedInputNote("w")), context: .background)
         let withdrawn = try await chat.root.submit(.input(content: .text("follow")), context: .background)
         #expect(try await withdrawn.abort(context: .background) == .aborted)
         #expect(try await withdrawn.wait(context: .background).reason == "aborted")
@@ -111,7 +112,7 @@ import PiSwiftDurableTesting
         let input = try await chat.root.submit(.input(content: .text("a")), context: .background); await first.reached.wait()
         var followUp: Submission?
         switch boundary {
-        case "write": _ = try await chat.root.submit(.write(entry: EntryDraft(kind: "note")), context: .background)
+        case "write": _ = try await chat.root.submit(.write(entry: queuedInputNote("w")), context: .background)
         case "reset": try await chat.root.reset(context: .background)
         default: followUp = try await chat.root.submit(.input(content: .text("follow")), context: .background)
         }
@@ -120,6 +121,7 @@ import PiSwiftDurableTesting
         let entries = try await allEntries(chat.root)
         let assistant = try entries.first { $0.id == settled.answer }?.messages()?.first
         #expect(textOf(assistant) == (boundary == "write" ? "second" : "first"))
+        if boundary == "write" { #expect(try entries.first { $0.kind == "note" }?.messages().flatMap { textOf($0.first) } == "w") }
         let texts = try entries.filter { $0.kind == "pi.user" }.flatMap { try $0.messages() ?? [] }.map { textOf($0) }
         #expect(texts == (boundary == "write" ? ["a", "continue"] : boundary == "reset" ? ["a"] : ["a", "follow"]))
         try await chat.harness.close(context: .background)
