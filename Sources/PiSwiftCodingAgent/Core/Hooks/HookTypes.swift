@@ -125,6 +125,8 @@ public struct HookOverlayOptions: Sendable {
     public var row: HookOverlaySize?
     public var col: HookOverlaySize?
     public var margin: HookOverlayMargin?
+    /// Show the overlay without taking input focus (upstream `OverlayOptions.nonCapturing`).
+    public var nonCapturing: Bool
 
     public init(
         width: HookOverlaySize? = nil,
@@ -135,7 +137,8 @@ public struct HookOverlayOptions: Sendable {
         offsetY: Int? = nil,
         row: HookOverlaySize? = nil,
         col: HookOverlaySize? = nil,
-        margin: HookOverlayMargin? = nil
+        margin: HookOverlayMargin? = nil,
+        nonCapturing: Bool = false
     ) {
         self.width = width
         self.minWidth = minWidth
@@ -146,6 +149,7 @@ public struct HookOverlayOptions: Sendable {
         self.row = row
         self.col = col
         self.margin = margin
+        self.nonCapturing = nonCapturing
     }
 }
 
