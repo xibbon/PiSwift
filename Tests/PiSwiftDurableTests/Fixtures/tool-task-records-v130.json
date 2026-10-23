@@ -1,0 +1,1171 @@
+{
+  "tag": "v1.3.0",
+  "provenance": {
+    "source": "unmodified v1.3.0 Session, ToolTask migration, appendToolResult, and storage adapters",
+    "legacy": "v1 model input has no kind; a v1 completing result keeps its legacy shape",
+    "transcript": "ToolExecutionResult.output becomes ToolResultMessage.content; structuredOutput is not transcript content"
+  },
+  "batches": [
+    {
+      "seq": 1,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "seq": 2,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "writes": [
+        {
+          "type": "entry",
+          "value": {
+            "model": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "toolCall",
+                    "id": "mixed-1",
+                    "name": "fixture.echo",
+                    "arguments": {
+                      "index": 0
+                    }
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "mixed-2",
+                    "name": "fixture.echo",
+                    "arguments": {
+                      "index": 1
+                    }
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "mixed-3",
+                    "name": "fixture.echo",
+                    "arguments": {
+                      "index": 2
+                    }
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "mixed-4",
+                    "name": "fixture.echo",
+                    "arguments": {
+                      "index": 3
+                    }
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "mixed-5",
+                    "name": "fixture.echo",
+                    "arguments": {
+                      "index": 4
+                    }
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "mixed-6",
+                    "name": "fixture.echo",
+                    "arguments": {
+                      "index": 5
+                    }
+                  }
+                ],
+                "api": "openai-completions",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "toolUse",
+                "timestamp": 1700000000000
+              }
+            ],
+            "kind": "pi.assistant",
+            "id": 3,
+            "conversationId": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-1"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-2"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-3"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-4"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 8,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-5"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-6"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "writes": [
+        {
+          "type": "entry",
+          "value": {
+            "model": [
+              {
+                "role": "toolResult",
+                "toolCallId": "mixed-5",
+                "toolName": "fixture.echo",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "result 4"
+                  },
+                  {
+                    "type": "text",
+                    "text": "<harness>\n[info] detail 4\n</harness>"
+                  }
+                ],
+                "details": {
+                  "index": 4
+                },
+                "isError": false,
+                "durationMs": 4,
+                "timestamp": 1700000000000
+              }
+            ],
+            "data": {
+              "diagnostics": [
+                {
+                  "severity": "info",
+                  "message": "detail 4"
+                }
+              ]
+            },
+            "kind": "pi.tool-result",
+            "id": 11,
+            "conversationId": 2
+          }
+        },
+        {
+          "type": "entry",
+          "value": {
+            "model": [
+              {
+                "role": "toolResult",
+                "toolCallId": "mixed-6",
+                "toolName": "fixture.echo",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "result 5"
+                  },
+                  {
+                    "type": "text",
+                    "text": "<harness>\n[info] detail 5\n</harness>"
+                  }
+                ],
+                "details": {
+                  "index": 5
+                },
+                "isError": false,
+                "durationMs": 5,
+                "timestamp": 1700000000000
+              }
+            ],
+            "data": {
+              "diagnostics": [
+                {
+                  "severity": "info",
+                  "message": "detail 5"
+                }
+              ]
+            },
+            "kind": "pi.tool-result",
+            "id": 12,
+            "conversationId": 2
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-3"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {
+                  "index": 2,
+                  "prepared": true
+                },
+                "replay": "safe"
+              }
+            },
+            "memos": {
+              "fixture.retained": {
+                "index": 2
+              }
+            },
+            "startedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-4"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {
+                  "index": 3,
+                  "prepared": true
+                },
+                "replay": "unsafe"
+              }
+            },
+            "memos": {
+              "fixture.retained": {
+                "index": 3
+              }
+            },
+            "startedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 8,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-5"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "completing",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11,
+                  "control": {
+                    "addTools": [
+                      "fixture.extra"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-6"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "completing",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "kind": "model",
+                  "entryId": 12,
+                  "control": {
+                    "addTools": [
+                      "fixture.extra"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 10,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 2
+            },
+            "history": "latest",
+            "fork": "initial"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "tools": [
+                {
+                  "callId": "mixed-1",
+                  "name": "fixture.echo",
+                  "taskId": 4,
+                  "status": "pending"
+                },
+                {
+                  "callId": "mixed-2",
+                  "name": "fixture.echo",
+                  "taskId": 5,
+                  "status": "pending"
+                },
+                {
+                  "callId": "mixed-3",
+                  "name": "fixture.echo",
+                  "taskId": 6,
+                  "status": "running",
+                  "output": "partial 2",
+                  "details": {
+                    "index": 2
+                  },
+                  "droppedBytes": 7,
+                  "droppedLines": 1
+                },
+                {
+                  "callId": "mixed-4",
+                  "name": "fixture.echo",
+                  "taskId": 7,
+                  "status": "running",
+                  "output": "partial 3",
+                  "details": {
+                    "index": 3
+                  },
+                  "droppedBytes": 7,
+                  "droppedLines": 1
+                },
+                {
+                  "callId": "mixed-5",
+                  "name": "fixture.echo",
+                  "taskId": 8,
+                  "status": "done",
+                  "entry": 11
+                },
+                {
+                  "callId": "mixed-6",
+                  "name": "fixture.echo",
+                  "taskId": 9,
+                  "status": "done",
+                  "entry": 12
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "reads": [
+    {
+      "method": "task",
+      "arguments": [
+        4
+      ],
+      "result": {
+        "id": 4,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 1,
+        "input": {
+          "assistant": 3,
+          "callId": "mixed-1"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "call"
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        5
+      ],
+      "result": {
+        "id": 5,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "model",
+          "assistant": 3,
+          "callId": "mixed-2"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "call"
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        6
+      ],
+      "result": {
+        "id": 6,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 1,
+        "input": {
+          "assistant": 3,
+          "callId": "mixed-3"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "running",
+          "checkpoint": {
+            "phase": "execute",
+            "arguments": {
+              "index": 2,
+              "prepared": true
+            },
+            "replay": "safe"
+          }
+        },
+        "memos": {
+          "fixture.retained": {
+            "index": 2
+          }
+        },
+        "startedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        7
+      ],
+      "result": {
+        "id": 7,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "model",
+          "assistant": 3,
+          "callId": "mixed-4"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "running",
+          "checkpoint": {
+            "phase": "execute",
+            "arguments": {
+              "index": 3,
+              "prepared": true
+            },
+            "replay": "unsafe"
+          }
+        },
+        "memos": {
+          "fixture.retained": {
+            "index": 3
+          }
+        },
+        "startedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        8
+      ],
+      "result": {
+        "id": 8,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 1,
+        "input": {
+          "assistant": 3,
+          "callId": "mixed-5"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "completing",
+          "outcome": {
+            "status": "completed",
+            "result": {
+              "entryId": 11,
+              "control": {
+                "addTools": [
+                  "fixture.extra"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        9
+      ],
+      "result": {
+        "id": 9,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "model",
+          "assistant": 3,
+          "callId": "mixed-6"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "completing",
+          "outcome": {
+            "status": "completed",
+            "result": {
+              "kind": "model",
+              "entryId": 12,
+              "control": {
+                "addTools": [
+                  "fixture.extra"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        3
+      ],
+      "result": {
+        "entry": {
+          "model": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "toolCall",
+                  "id": "mixed-1",
+                  "name": "fixture.echo",
+                  "arguments": {
+                    "index": 0
+                  }
+                },
+                {
+                  "type": "toolCall",
+                  "id": "mixed-2",
+                  "name": "fixture.echo",
+                  "arguments": {
+                    "index": 1
+                  }
+                },
+                {
+                  "type": "toolCall",
+                  "id": "mixed-3",
+                  "name": "fixture.echo",
+                  "arguments": {
+                    "index": 2
+                  }
+                },
+                {
+                  "type": "toolCall",
+                  "id": "mixed-4",
+                  "name": "fixture.echo",
+                  "arguments": {
+                    "index": 3
+                  }
+                },
+                {
+                  "type": "toolCall",
+                  "id": "mixed-5",
+                  "name": "fixture.echo",
+                  "arguments": {
+                    "index": 4
+                  }
+                },
+                {
+                  "type": "toolCall",
+                  "id": "mixed-6",
+                  "name": "fixture.echo",
+                  "arguments": {
+                    "index": 5
+                  }
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "fixture",
+              "model": "fixture",
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 0,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "toolUse",
+              "timestamp": 1700000000000
+            }
+          ],
+          "kind": "pi.assistant",
+          "id": 3,
+          "conversationId": 2
+        },
+        "commitSeq": 3
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        11
+      ],
+      "result": {
+        "entry": {
+          "model": [
+            {
+              "role": "toolResult",
+              "toolCallId": "mixed-5",
+              "toolName": "fixture.echo",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "result 4"
+                },
+                {
+                  "type": "text",
+                  "text": "<harness>\n[info] detail 4\n</harness>"
+                }
+              ],
+              "details": {
+                "index": 4
+              },
+              "isError": false,
+              "durationMs": 4,
+              "timestamp": 1700000000000
+            }
+          ],
+          "data": {
+            "diagnostics": [
+              {
+                "severity": "info",
+                "message": "detail 4"
+              }
+            ]
+          },
+          "kind": "pi.tool-result",
+          "id": 11,
+          "conversationId": 2
+        },
+        "commitSeq": 5
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        12
+      ],
+      "result": {
+        "entry": {
+          "model": [
+            {
+              "role": "toolResult",
+              "toolCallId": "mixed-6",
+              "toolName": "fixture.echo",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "result 5"
+                },
+                {
+                  "type": "text",
+                  "text": "<harness>\n[info] detail 5\n</harness>"
+                }
+              ],
+              "details": {
+                "index": 5
+              },
+              "isError": false,
+              "durationMs": 5,
+              "timestamp": 1700000000000
+            }
+          ],
+          "data": {
+            "diagnostics": [
+              {
+                "severity": "info",
+                "message": "detail 5"
+              }
+            ]
+          },
+          "kind": "pi.tool-result",
+          "id": 12,
+          "conversationId": 2
+        },
+        "commitSeq": 5
+      }
+    },
+    {
+      "method": "scanTasks",
+      "arguments": [
+        {
+          "conversationId": 2,
+          "kind": "pi.tool",
+          "order": "ascending"
+        },
+        20,
+        null
+      ],
+      "result": {
+        "items": [
+          {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-1"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          },
+          {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-2"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          },
+          {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-3"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {
+                  "index": 2,
+                  "prepared": true
+                },
+                "replay": "safe"
+              }
+            },
+            "memos": {
+              "fixture.retained": {
+                "index": 2
+              }
+            },
+            "startedAt": 1700000000000
+          },
+          {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-4"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {
+                  "index": 3,
+                  "prepared": true
+                },
+                "replay": "unsafe"
+              }
+            },
+            "memos": {
+              "fixture.retained": {
+                "index": 3
+              }
+            },
+            "startedAt": 1700000000000
+          },
+          {
+            "id": 8,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 1,
+            "input": {
+              "assistant": 3,
+              "callId": "mixed-5"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "completing",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "entryId": 11,
+                  "control": {
+                    "addTools": [
+                      "fixture.extra"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "mixed-6"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "completing",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "kind": "model",
+                  "entryId": 12,
+                  "control": {
+                    "addTools": [
+                      "fixture.extra"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        10,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 10,
+          "kind": "pi.live",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          },
+          "history": "latest",
+          "fork": "initial",
+          "createdAt": 5
+        },
+        "version": 1,
+        "value": {
+          "tools": [
+            {
+              "callId": "mixed-1",
+              "name": "fixture.echo",
+              "taskId": 4,
+              "status": "pending"
+            },
+            {
+              "callId": "mixed-2",
+              "name": "fixture.echo",
+              "taskId": 5,
+              "status": "pending"
+            },
+            {
+              "callId": "mixed-3",
+              "name": "fixture.echo",
+              "taskId": 6,
+              "status": "running",
+              "output": "partial 2",
+              "details": {
+                "index": 2
+              },
+              "droppedBytes": 7,
+              "droppedLines": 1
+            },
+            {
+              "callId": "mixed-4",
+              "name": "fixture.echo",
+              "taskId": 7,
+              "status": "running",
+              "output": "partial 3",
+              "details": {
+                "index": 3
+              },
+              "droppedBytes": 7,
+              "droppedLines": 1
+            },
+            {
+              "callId": "mixed-5",
+              "name": "fixture.echo",
+              "taskId": 8,
+              "status": "done",
+              "entry": 11
+            },
+            {
+              "callId": "mixed-6",
+              "name": "fixture.echo",
+              "taskId": 9,
+              "status": "done",
+              "entry": 12
+            }
+          ]
+        },
+        "deltasSinceBase": 0
+      }
+    }
+  ],
+  "migrations": [
+    {
+      "taskId": 4,
+      "fromVersion": 1,
+      "input": {
+        "kind": "model",
+        "assistant": 3,
+        "callId": "mixed-1"
+      },
+      "checkpoint": {
+        "phase": "call"
+      }
+    },
+    {
+      "taskId": 6,
+      "fromVersion": 1,
+      "input": {
+        "kind": "model",
+        "assistant": 3,
+        "callId": "mixed-3"
+      },
+      "checkpoint": {
+        "phase": "execute",
+        "arguments": {
+          "index": 2,
+          "prepared": true
+        },
+        "replay": "safe"
+      }
+    }
+  ]
+}

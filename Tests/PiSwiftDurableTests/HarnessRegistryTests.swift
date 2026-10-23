@@ -9,7 +9,7 @@ import PiSwiftDurableTesting
 private func registryTool(_ name: String, description: String? = nil) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: description ?? "\(name) tool",
                          parameters: ["type": .string("object"), "properties": .object([:])]) { _, _, _ in
-        ToolExecutionResult(content: [])
+        ToolExecutionResult(output: [])
     }
 }
 private func registryCoding() throws -> Extension {

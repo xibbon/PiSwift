@@ -74,7 +74,7 @@ import PiSwiftDurableTesting
         let env = FakeExecutionEnv()
         try await env.writeFile("image.txt", content: .bytes(Array(png)), context: context).get()
         let result = try await createReadTool().execute(["path": "image.txt"], toolTestApi(env: env), context)
-        #expect(result.content?.isEmpty == true); #expect(result.isError == true)
+        #expect(result.output?.isEmpty == true); #expect(result.isError == true)
         #expect(result.diagnostics == [.init(severity: .error, message: "image.txt is an image (image/png); reading images is not supported", code: "unsupported_image")])
     }
     @Test("reads a rewritten file again once and closes the reader")

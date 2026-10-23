@@ -160,7 +160,7 @@ private final class RecoveryBlockingTool: Sendable {
         let setup = HarnessChatSetup(), reached = HarnessChatSignal()
         let attempts = Mutex(0), runs = Mutex(0), decisions = SessionTestLog<JSONValue?>()
         try recoveryInstall(setup, tool: recoveryTool { _, _, _ in
-            runs.withLock { $0 += 1 }; return ToolExecutionResult(content: [])
+            runs.withLock { $0 += 1 }; return ToolExecutionResult(output: [])
         })
         try setup.registry.install(Extension(name: "recovery-hook", hooks: [hook(ToolHooks(beforeTool: { _, api, context in
             let attempt = attempts.withLock { $0 += 1; return $0 }
@@ -187,7 +187,7 @@ private final class RecoveryBlockingTool: Sendable {
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("after-tools.sqlite").path
         let setup = HarnessChatSetup(), reached = HarnessChatSignal(), observations = Mutex(0)
-        try recoveryInstall(setup, tool: recoveryTool { _, _, _ in ToolExecutionResult(content: []) })
+        try recoveryInstall(setup, tool: recoveryTool { _, _, _ in ToolExecutionResult(output: []) })
         try setup.registry.install(Extension(name: "recovery-generation-hook", hooks: [hook(GenerationHooks(afterTools: { _, _, _, context in
             let observed = observations.withLock { $0 += 1; return $0 }
             if observed == 1 { reached.signal(); try await recoveryAborted(context) }
@@ -217,8 +217,10 @@ private final class RecoveryBlockingTool: Sendable {
         let receipt = try await opened.harness.waitForTask(id: taskID, context: .background)
         #expect(receipt.outcome.status == "aborted")
         guard case .aborted(_, let result, _) = receipt.outcome else { Issue.record("Expected aborted result"); return }
-        let durableResult = try #require(result).decode(ToolTaskResult.self)
-        #expect(try await opened.harness.commit({ tx in try await tx.entry(durableResult.entryId) }, context: .background) != nil)
+        guard case .model(let resultEntryId, _) = try #require(result).decode(ToolTaskResult.self) else {
+            Issue.record("Expected model tool result"); return
+        }
+        #expect(try await opened.harness.commit({ tx in try await tx.entry(resultEntryId) }, context: .background) != nil)
         #expect(try await submission.wait(context: .background).status == "done")
         #expect(try await recoveryText(recoveryResults(opened).first) == "run 1\n|<harness>\n[error] Tool work was aborted\n</harness>")
         try await opened.harness.close(context: .background)
@@ -227,7 +229,7 @@ private final class RecoveryBlockingTool: Sendable {
     // harness-tools-recovery.test.ts:310. Swift cannot store a function in JSONValue; infinity is also invalid strict JSON.
     @Test func faultedResultGetsContextFallbackAndRunContinues() async throws {
         let setup = HarnessChatSetup(), requests = SessionTestLog<String>()
-        try recoveryInstall(setup, tool: recoveryTool("bad") { _, _, _ in ToolExecutionResult(content: [], details: .number(.infinity)) })
+        try recoveryInstall(setup, tool: recoveryTool("bad") { _, _, _ in ToolExecutionResult(output: [], details: .number(.infinity)) })
         setup.models.setResponses([.message(recoveryCall("bad")), .factory { transcript, _, _, _ in
             let result = transcript.messages.compactMap { message -> ToolResultMessage? in
                 if case .toolResult(let result) = message { return result }; return nil

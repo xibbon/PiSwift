@@ -1,0 +1,2327 @@
+{
+  "tag": "v1.3.0",
+  "dependency": "typebox@1.3.27",
+  "provenance": {
+    "source": "unmodified pinned typebox Compile, Check, and Errors in an isolated mirror",
+    "purpose": "schema acceptance and first-error oracle for tool structured output"
+  },
+  "cases": [
+    {
+      "name": "count-broken",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": "broken"
+      },
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#/properties/count",
+        "instancePath": "/count",
+        "params": {
+          "type": "integer"
+        },
+        "message": "must be integer"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#/properties/count",
+          "instancePath": "/count",
+          "params": {
+            "type": "integer"
+          },
+          "message": "must be integer"
+        }
+      ]
+    },
+    {
+      "name": "count-missing",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {},
+      "check": false,
+      "first": {
+        "keyword": "required",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "requiredProperties": [
+            "count"
+          ]
+        },
+        "message": "must have required properties count"
+      },
+      "errors": [
+        {
+          "keyword": "required",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "requiredProperties": [
+              "count"
+            ]
+          },
+          "message": "must have required properties count"
+        }
+      ]
+    },
+    {
+      "name": "count-null",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": null,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "object"
+        },
+        "message": "must be object"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "object"
+          },
+          "message": "must be object"
+        }
+      ]
+    },
+    {
+      "name": "count-null-member",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": null
+      },
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#/properties/count",
+        "instancePath": "/count",
+        "params": {
+          "type": "integer"
+        },
+        "message": "must be integer"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#/properties/count",
+          "instancePath": "/count",
+          "params": {
+            "type": "integer"
+          },
+          "message": "must be integer"
+        }
+      ]
+    },
+    {
+      "name": "count-large-integer",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": 100000000000000000000
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "count-fraction",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": 1.5
+      },
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#/properties/count",
+        "instancePath": "/count",
+        "params": {
+          "type": "integer"
+        },
+        "message": "must be integer"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#/properties/count",
+          "instancePath": "/count",
+          "params": {
+            "type": "integer"
+          },
+          "message": "must be integer"
+        }
+      ]
+    },
+    {
+      "name": "type-boolean-0",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": true,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "type-boolean-1",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": false,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "type-boolean-2",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": 0,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "boolean"
+        },
+        "message": "must be boolean"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "boolean"
+          },
+          "message": "must be boolean"
+        }
+      ]
+    },
+    {
+      "name": "type-boolean-3",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": 1,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "boolean"
+        },
+        "message": "must be boolean"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "boolean"
+          },
+          "message": "must be boolean"
+        }
+      ]
+    },
+    {
+      "name": "type-boolean-4",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": "true",
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "boolean"
+        },
+        "message": "must be boolean"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "boolean"
+          },
+          "message": "must be boolean"
+        }
+      ]
+    },
+    {
+      "name": "type-boolean-5",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": null,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "boolean"
+        },
+        "message": "must be boolean"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "boolean"
+          },
+          "message": "must be boolean"
+        }
+      ]
+    },
+    {
+      "name": "type-string-0",
+      "schema": {
+        "type": "string"
+      },
+      "value": "",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "type-string-1",
+      "schema": {
+        "type": "string"
+      },
+      "value": true,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "string"
+        },
+        "message": "must be string"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "string"
+          },
+          "message": "must be string"
+        }
+      ]
+    },
+    {
+      "name": "type-string-2",
+      "schema": {
+        "type": "string"
+      },
+      "value": 1,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "string"
+        },
+        "message": "must be string"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "string"
+          },
+          "message": "must be string"
+        }
+      ]
+    },
+    {
+      "name": "type-string-3",
+      "schema": {
+        "type": "string"
+      },
+      "value": [],
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "string"
+        },
+        "message": "must be string"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "string"
+          },
+          "message": "must be string"
+        }
+      ]
+    },
+    {
+      "name": "type-string-4",
+      "schema": {
+        "type": "string"
+      },
+      "value": null,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "string"
+        },
+        "message": "must be string"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "string"
+          },
+          "message": "must be string"
+        }
+      ]
+    },
+    {
+      "name": "type-array-0",
+      "schema": {
+        "type": "array"
+      },
+      "value": [],
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "type-array-1",
+      "schema": {
+        "type": "array"
+      },
+      "value": {},
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "array"
+        },
+        "message": "must be array"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "array"
+          },
+          "message": "must be array"
+        }
+      ]
+    },
+    {
+      "name": "type-array-2",
+      "schema": {
+        "type": "array"
+      },
+      "value": "x",
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "array"
+        },
+        "message": "must be array"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "array"
+          },
+          "message": "must be array"
+        }
+      ]
+    },
+    {
+      "name": "type-array-3",
+      "schema": {
+        "type": "array"
+      },
+      "value": null,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "type": "array"
+        },
+        "message": "must be array"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "type": "array"
+          },
+          "message": "must be array"
+        }
+      ]
+    },
+    {
+      "name": "minimum-0",
+      "schema": {
+        "type": "number",
+        "minimum": 2
+      },
+      "value": 1,
+      "check": false,
+      "first": {
+        "keyword": "minimum",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "comparison": ">=",
+          "limit": 2
+        },
+        "message": "must be >= 2"
+      },
+      "errors": [
+        {
+          "keyword": "minimum",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "comparison": ">=",
+            "limit": 2
+          },
+          "message": "must be >= 2"
+        }
+      ]
+    },
+    {
+      "name": "minimum-1",
+      "schema": {
+        "type": "number",
+        "minimum": 2
+      },
+      "value": 2,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "maximum-0",
+      "schema": {
+        "type": "number",
+        "maximum": 2
+      },
+      "value": 3,
+      "check": false,
+      "first": {
+        "keyword": "maximum",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "comparison": "<=",
+          "limit": 2
+        },
+        "message": "must be <= 2"
+      },
+      "errors": [
+        {
+          "keyword": "maximum",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "comparison": "<=",
+            "limit": 2
+          },
+          "message": "must be <= 2"
+        }
+      ]
+    },
+    {
+      "name": "maximum-1",
+      "schema": {
+        "type": "number",
+        "maximum": 2
+      },
+      "value": 2,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "exclusiveMinimum-0",
+      "schema": {
+        "type": "number",
+        "exclusiveMinimum": 2
+      },
+      "value": 2,
+      "check": false,
+      "first": {
+        "keyword": "exclusiveMinimum",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "comparison": ">",
+          "limit": 2
+        },
+        "message": "must be > 2"
+      },
+      "errors": [
+        {
+          "keyword": "exclusiveMinimum",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "comparison": ">",
+            "limit": 2
+          },
+          "message": "must be > 2"
+        }
+      ]
+    },
+    {
+      "name": "exclusiveMinimum-1",
+      "schema": {
+        "type": "number",
+        "exclusiveMinimum": 2
+      },
+      "value": 3,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "exclusiveMaximum-0",
+      "schema": {
+        "type": "number",
+        "exclusiveMaximum": 2
+      },
+      "value": 2,
+      "check": false,
+      "first": {
+        "keyword": "exclusiveMaximum",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "comparison": "<",
+          "limit": 2
+        },
+        "message": "must be < 2"
+      },
+      "errors": [
+        {
+          "keyword": "exclusiveMaximum",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "comparison": "<",
+            "limit": 2
+          },
+          "message": "must be < 2"
+        }
+      ]
+    },
+    {
+      "name": "exclusiveMaximum-1",
+      "schema": {
+        "type": "number",
+        "exclusiveMaximum": 2
+      },
+      "value": 1,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "multipleOf-0",
+      "schema": {
+        "type": "number",
+        "multipleOf": 0.1
+      },
+      "value": 0.3,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "multipleOf-1",
+      "schema": {
+        "type": "number",
+        "multipleOf": 0.1
+      },
+      "value": 0.31,
+      "check": false,
+      "first": {
+        "keyword": "multipleOf",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "multipleOf": 0.1
+        },
+        "message": "must be multiple of 0.1"
+      },
+      "errors": [
+        {
+          "keyword": "multipleOf",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "multipleOf": 0.1
+          },
+          "message": "must be multiple of 0.1"
+        }
+      ]
+    },
+    {
+      "name": "enum-0",
+      "schema": {
+        "enum": [
+          "a",
+          2,
+          null,
+          {
+            "x": 1
+          }
+        ]
+      },
+      "value": "b",
+      "check": false,
+      "first": {
+        "keyword": "enum",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "allowedValues": [
+            "a",
+            2,
+            null,
+            {
+              "x": 1
+            }
+          ]
+        },
+        "message": "must be equal to one of the allowed values"
+      },
+      "errors": [
+        {
+          "keyword": "enum",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "allowedValues": [
+              "a",
+              2,
+              null,
+              {
+                "x": 1
+              }
+            ]
+          },
+          "message": "must be equal to one of the allowed values"
+        }
+      ]
+    },
+    {
+      "name": "enum-1",
+      "schema": {
+        "enum": [
+          "a",
+          2,
+          null,
+          {
+            "x": 1
+          }
+        ]
+      },
+      "value": "a",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "enum-2",
+      "schema": {
+        "enum": [
+          "a",
+          2,
+          null,
+          {
+            "x": 1
+          }
+        ]
+      },
+      "value": {
+        "x": 1
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "const-0",
+      "schema": {
+        "const": {
+          "x": 1
+        }
+      },
+      "value": {
+        "x": 2
+      },
+      "check": false,
+      "first": {
+        "keyword": "const",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "allowedValue": {
+            "x": 1
+          }
+        },
+        "message": "must be equal to constant"
+      },
+      "errors": [
+        {
+          "keyword": "const",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "allowedValue": {
+              "x": 1
+            }
+          },
+          "message": "must be equal to constant"
+        }
+      ]
+    },
+    {
+      "name": "const-1",
+      "schema": {
+        "const": {
+          "x": 1
+        }
+      },
+      "value": {
+        "x": 1
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "anyOf-0",
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "value": true,
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#/anyOf/0",
+        "instancePath": "",
+        "params": {
+          "type": "string"
+        },
+        "message": "must be string"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#/anyOf/0",
+          "instancePath": "",
+          "params": {
+            "type": "string"
+          },
+          "message": "must be string"
+        },
+        {
+          "keyword": "type",
+          "schemaPath": "#/anyOf/1",
+          "instancePath": "",
+          "params": {
+            "type": "integer"
+          },
+          "message": "must be integer"
+        },
+        {
+          "keyword": "anyOf",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {},
+          "message": "must match a schema in anyOf"
+        }
+      ]
+    },
+    {
+      "name": "anyOf-1",
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "value": "x",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "anyOf-2",
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "value": 1,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "allOf-0",
+      "schema": {
+        "allOf": [
+          {
+            "type": "number",
+            "minimum": 1
+          },
+          {
+            "type": "number",
+            "maximum": 3
+          }
+        ]
+      },
+      "value": 0,
+      "check": false,
+      "first": {
+        "keyword": "minimum",
+        "schemaPath": "#/allOf/0",
+        "instancePath": "",
+        "params": {
+          "comparison": ">=",
+          "limit": 1
+        },
+        "message": "must be >= 1"
+      },
+      "errors": [
+        {
+          "keyword": "minimum",
+          "schemaPath": "#/allOf/0",
+          "instancePath": "",
+          "params": {
+            "comparison": ">=",
+            "limit": 1
+          },
+          "message": "must be >= 1"
+        }
+      ]
+    },
+    {
+      "name": "allOf-1",
+      "schema": {
+        "allOf": [
+          {
+            "type": "number",
+            "minimum": 1
+          },
+          {
+            "type": "number",
+            "maximum": 3
+          }
+        ]
+      },
+      "value": 4,
+      "check": false,
+      "first": {
+        "keyword": "maximum",
+        "schemaPath": "#/allOf/1",
+        "instancePath": "",
+        "params": {
+          "comparison": "<=",
+          "limit": 3
+        },
+        "message": "must be <= 3"
+      },
+      "errors": [
+        {
+          "keyword": "maximum",
+          "schemaPath": "#/allOf/1",
+          "instancePath": "",
+          "params": {
+            "comparison": "<=",
+            "limit": 3
+          },
+          "message": "must be <= 3"
+        }
+      ]
+    },
+    {
+      "name": "allOf-2",
+      "schema": {
+        "allOf": [
+          {
+            "type": "number",
+            "minimum": 1
+          },
+          {
+            "type": "number",
+            "maximum": 3
+          }
+        ]
+      },
+      "value": 2,
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unknown-format-0",
+      "schema": {
+        "type": "string",
+        "format": "unknown-fixture-format"
+      },
+      "value": "text",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unknown-format-1",
+      "schema": {
+        "type": "string",
+        "format": "unknown-fixture-format"
+      },
+      "value": "",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "known-format-email-0",
+      "schema": {
+        "type": "string",
+        "format": "email"
+      },
+      "value": "broken",
+      "check": false,
+      "first": {
+        "keyword": "format",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "format": "email"
+        },
+        "message": "must match format \"email\""
+      },
+      "errors": [
+        {
+          "keyword": "format",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "format": "email"
+          },
+          "message": "must match format \"email\""
+        }
+      ]
+    },
+    {
+      "name": "known-format-email-1",
+      "schema": {
+        "type": "string",
+        "format": "email"
+      },
+      "value": "a@b.example",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "if-then-else-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": true
+      },
+      "check": false,
+      "first": {
+        "keyword": "if",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "failingKeyword": "then"
+        },
+        "message": "must match \"then\" schema"
+      },
+      "errors": [
+        {
+          "keyword": "if",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "failingKeyword": "then"
+          },
+          "message": "must match \"then\" schema"
+        }
+      ]
+    },
+    {
+      "name": "if-then-else-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": true,
+        "count": 1
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "if-then-else-2",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": false,
+        "count": 1
+      },
+      "check": false,
+      "first": {
+        "keyword": "maximum",
+        "schemaPath": "#/else/properties/count",
+        "instancePath": "/count",
+        "params": {
+          "comparison": "<=",
+          "limit": 0
+        },
+        "message": "must be <= 0"
+      },
+      "errors": [
+        {
+          "keyword": "maximum",
+          "schemaPath": "#/else/properties/count",
+          "instancePath": "/count",
+          "params": {
+            "comparison": "<=",
+            "limit": 0
+          },
+          "message": "must be <= 0"
+        },
+        {
+          "keyword": "if",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "failingKeyword": "else"
+          },
+          "message": "must match \"else\" schema"
+        }
+      ]
+    },
+    {
+      "name": "if-then-else-3",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": false,
+        "count": 0
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "dependentRequired-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "credit": {
+            "type": "string"
+          },
+          "billing": {
+            "type": "string"
+          }
+        },
+        "dependentRequired": {
+          "credit": [
+            "billing"
+          ]
+        }
+      },
+      "value": {
+        "credit": "x"
+      },
+      "check": false,
+      "first": {
+        "keyword": "dependentRequired",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "property": "credit",
+          "dependencies": [
+            "billing"
+          ]
+        },
+        "message": "must have properties billing when property credit is present"
+      },
+      "errors": [
+        {
+          "keyword": "dependentRequired",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "property": "credit",
+            "dependencies": [
+              "billing"
+            ]
+          },
+          "message": "must have properties billing when property credit is present"
+        }
+      ]
+    },
+    {
+      "name": "dependentRequired-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "credit": {
+            "type": "string"
+          },
+          "billing": {
+            "type": "string"
+          }
+        },
+        "dependentRequired": {
+          "credit": [
+            "billing"
+          ]
+        }
+      },
+      "value": {
+        "credit": "x",
+        "billing": "y"
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "dependentRequired-2",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "credit": {
+            "type": "string"
+          },
+          "billing": {
+            "type": "string"
+          }
+        },
+        "dependentRequired": {
+          "credit": [
+            "billing"
+          ]
+        }
+      },
+      "value": {},
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "dependentSchemas-0",
+      "schema": {
+        "type": "object",
+        "dependentSchemas": {
+          "credit": {
+            "required": [
+              "billing"
+            ]
+          }
+        }
+      },
+      "value": {
+        "credit": "x"
+      },
+      "check": false,
+      "first": {
+        "keyword": "required",
+        "schemaPath": "#/dependentSchemas/credit",
+        "instancePath": "",
+        "params": {
+          "requiredProperties": [
+            "billing"
+          ]
+        },
+        "message": "must have required properties billing"
+      },
+      "errors": [
+        {
+          "keyword": "required",
+          "schemaPath": "#/dependentSchemas/credit",
+          "instancePath": "",
+          "params": {
+            "requiredProperties": [
+              "billing"
+            ]
+          },
+          "message": "must have required properties billing"
+        }
+      ]
+    },
+    {
+      "name": "dependentSchemas-1",
+      "schema": {
+        "type": "object",
+        "dependentSchemas": {
+          "credit": {
+            "required": [
+              "billing"
+            ]
+          }
+        }
+      },
+      "value": {
+        "credit": "x",
+        "billing": "y"
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unevaluatedProperties-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unevaluatedProperties-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1,
+        "y": 2
+      },
+      "check": false,
+      "first": {
+        "keyword": "unevaluatedProperties",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "unevaluatedProperties": [
+            "y"
+          ]
+        },
+        "message": "must not have unevaluated properties"
+      },
+      "errors": [
+        {
+          "keyword": "unevaluatedProperties",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "unevaluatedProperties": [
+              "y"
+            ]
+          },
+          "message": "must not have unevaluated properties"
+        }
+      ]
+    },
+    {
+      "name": "unevaluatedProperties-allOf-0",
+      "schema": {
+        "type": "object",
+        "allOf": [
+          {
+            "properties": {
+              "x": {
+                "type": "number"
+              }
+            }
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unevaluatedProperties-allOf-1",
+      "schema": {
+        "type": "object",
+        "allOf": [
+          {
+            "properties": {
+              "x": {
+                "type": "number"
+              }
+            }
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1,
+        "y": 2
+      },
+      "check": false,
+      "first": {
+        "keyword": "unevaluatedProperties",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "unevaluatedProperties": [
+            "y"
+          ]
+        },
+        "message": "must not have unevaluated properties"
+      },
+      "errors": [
+        {
+          "keyword": "unevaluatedProperties",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "unevaluatedProperties": [
+              "y"
+            ]
+          },
+          "message": "must not have unevaluated properties"
+        }
+      ]
+    },
+    {
+      "name": "unevaluatedItems-0",
+      "schema": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number"
+          }
+        ],
+        "unevaluatedItems": false
+      },
+      "value": [
+        1
+      ],
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unevaluatedItems-1",
+      "schema": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number"
+          }
+        ],
+        "unevaluatedItems": false
+      },
+      "value": [
+        1,
+        2
+      ],
+      "check": false,
+      "first": {
+        "keyword": "unevaluatedItems",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "unevaluatedItems": [
+            1
+          ]
+        },
+        "message": "must not have unevaluated items"
+      },
+      "errors": [
+        {
+          "keyword": "unevaluatedItems",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "unevaluatedItems": [
+              1
+            ]
+          },
+          "message": "must not have unevaluated items"
+        }
+      ]
+    },
+    {
+      "name": "additionalProperties-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "value": {
+        "x": 1
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "additionalProperties-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "value": {
+        "x": 1,
+        "y": 2
+      },
+      "check": false,
+      "first": {
+        "keyword": "boolean",
+        "schemaPath": "#/additionalProperties",
+        "instancePath": "/y",
+        "params": {},
+        "message": "schema is false"
+      },
+      "errors": [
+        {
+          "keyword": "boolean",
+          "schemaPath": "#/additionalProperties",
+          "instancePath": "/y",
+          "params": {},
+          "message": "schema is false"
+        },
+        {
+          "keyword": "additionalProperties",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "additionalProperties": [
+              "y"
+            ]
+          },
+          "message": "must not have additional properties"
+        }
+      ]
+    },
+    {
+      "name": "pattern-0",
+      "schema": {
+        "type": "string",
+        "pattern": "^a+$"
+      },
+      "value": "aaa",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "pattern-1",
+      "schema": {
+        "type": "string",
+        "pattern": "^a+$"
+      },
+      "value": "b",
+      "check": false,
+      "first": {
+        "keyword": "pattern",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "pattern": "^a+$"
+        },
+        "message": "must match pattern \"^a+$\""
+      },
+      "errors": [
+        {
+          "keyword": "pattern",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "pattern": "^a+$"
+          },
+          "message": "must match pattern \"^a+$\""
+        }
+      ]
+    },
+    {
+      "name": "minItems-0",
+      "schema": {
+        "type": "array",
+        "minItems": 2
+      },
+      "value": [
+        1
+      ],
+      "check": false,
+      "first": {
+        "keyword": "minItems",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "limit": 2
+        },
+        "message": "must not have fewer than 2 items"
+      },
+      "errors": [
+        {
+          "keyword": "minItems",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "limit": 2
+          },
+          "message": "must not have fewer than 2 items"
+        }
+      ]
+    },
+    {
+      "name": "minItems-1",
+      "schema": {
+        "type": "array",
+        "minItems": 2
+      },
+      "value": [
+        1,
+        2
+      ],
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "maxItems-0",
+      "schema": {
+        "type": "array",
+        "maxItems": 1
+      },
+      "value": [
+        1
+      ],
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "maxItems-1",
+      "schema": {
+        "type": "array",
+        "maxItems": 1
+      },
+      "value": [
+        1,
+        2
+      ],
+      "check": false,
+      "first": {
+        "keyword": "maxItems",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "limit": 1
+        },
+        "message": "must not have more than 1 items"
+      },
+      "errors": [
+        {
+          "keyword": "maxItems",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "limit": 1
+          },
+          "message": "must not have more than 1 items"
+        }
+      ]
+    },
+    {
+      "name": "uniqueItems-0",
+      "schema": {
+        "type": "array",
+        "uniqueItems": true
+      },
+      "value": [
+        1,
+        1
+      ],
+      "check": false,
+      "first": {
+        "keyword": "uniqueItems",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "duplicateItems": [
+            1
+          ]
+        },
+        "message": "must not have duplicate items"
+      },
+      "errors": [
+        {
+          "keyword": "uniqueItems",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "duplicateItems": [
+              1
+            ]
+          },
+          "message": "must not have duplicate items"
+        }
+      ]
+    },
+    {
+      "name": "uniqueItems-1",
+      "schema": {
+        "type": "array",
+        "uniqueItems": true
+      },
+      "value": [
+        1,
+        2
+      ],
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "contains-0",
+      "schema": {
+        "type": "array",
+        "contains": {
+          "type": "integer"
+        }
+      },
+      "value": [
+        "x"
+      ],
+      "check": false,
+      "first": {
+        "keyword": "contains",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "minContains": 1
+        },
+        "message": "must contain at least 1 valid item"
+      },
+      "errors": [
+        {
+          "keyword": "contains",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "minContains": 1
+          },
+          "message": "must contain at least 1 valid item"
+        }
+      ]
+    },
+    {
+      "name": "contains-1",
+      "schema": {
+        "type": "array",
+        "contains": {
+          "type": "integer"
+        }
+      },
+      "value": [
+        "x",
+        1
+      ],
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "nested-array-valid",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      },
+      "value": {
+        "rows": [
+          {
+            "id": 1
+          }
+        ]
+      },
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "nested-array-invalid",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      },
+      "value": {
+        "rows": [
+          {
+            "id": "broken"
+          }
+        ]
+      },
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#/properties/rows/items/properties/id",
+        "instancePath": "/rows/0/id",
+        "params": {
+          "type": "integer"
+        },
+        "message": "must be integer"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#/properties/rows/items/properties/id",
+          "instancePath": "/rows/0/id",
+          "params": {
+            "type": "integer"
+          },
+          "message": "must be integer"
+        }
+      ]
+    },
+    {
+      "name": "root-array-invalid",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "value": [
+        "broken"
+      ],
+      "check": false,
+      "first": {
+        "keyword": "type",
+        "schemaPath": "#/items",
+        "instancePath": "/0",
+        "params": {
+          "type": "integer"
+        },
+        "message": "must be integer"
+      },
+      "errors": [
+        {
+          "keyword": "type",
+          "schemaPath": "#/items",
+          "instancePath": "/0",
+          "params": {
+            "type": "integer"
+          },
+          "message": "must be integer"
+        }
+      ]
+    },
+    {
+      "name": "unicode-emoji-minLength-1",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "value": "😀",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-emoji-maxLength-1",
+      "schema": {
+        "type": "string",
+        "maxLength": 1
+      },
+      "value": "😀",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-emoji-minLength-2",
+      "schema": {
+        "type": "string",
+        "minLength": 2
+      },
+      "value": "😀",
+      "check": false,
+      "first": {
+        "keyword": "minLength",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "limit": 2
+        },
+        "message": "must not have fewer than 2 characters"
+      },
+      "errors": [
+        {
+          "keyword": "minLength",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "limit": 2
+          },
+          "message": "must not have fewer than 2 characters"
+        }
+      ]
+    },
+    {
+      "name": "unicode-emoji-maxLength-2",
+      "schema": {
+        "type": "string",
+        "maxLength": 2
+      },
+      "value": "😀",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-emoji-minLength-3",
+      "schema": {
+        "type": "string",
+        "minLength": 3
+      },
+      "value": "😀",
+      "check": false,
+      "first": {
+        "keyword": "minLength",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "limit": 3
+        },
+        "message": "must not have fewer than 3 characters"
+      },
+      "errors": [
+        {
+          "keyword": "minLength",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "limit": 3
+          },
+          "message": "must not have fewer than 3 characters"
+        }
+      ]
+    },
+    {
+      "name": "unicode-emoji-maxLength-3",
+      "schema": {
+        "type": "string",
+        "maxLength": 3
+      },
+      "value": "😀",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-combining-minLength-1",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "value": "é",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-combining-maxLength-1",
+      "schema": {
+        "type": "string",
+        "maxLength": 1
+      },
+      "value": "é",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-combining-minLength-2",
+      "schema": {
+        "type": "string",
+        "minLength": 2
+      },
+      "value": "é",
+      "check": false,
+      "first": {
+        "keyword": "minLength",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "limit": 2
+        },
+        "message": "must not have fewer than 2 characters"
+      },
+      "errors": [
+        {
+          "keyword": "minLength",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "limit": 2
+          },
+          "message": "must not have fewer than 2 characters"
+        }
+      ]
+    },
+    {
+      "name": "unicode-combining-maxLength-2",
+      "schema": {
+        "type": "string",
+        "maxLength": 2
+      },
+      "value": "é",
+      "check": true,
+      "first": null,
+      "errors": []
+    },
+    {
+      "name": "unicode-combining-minLength-3",
+      "schema": {
+        "type": "string",
+        "minLength": 3
+      },
+      "value": "é",
+      "check": false,
+      "first": {
+        "keyword": "minLength",
+        "schemaPath": "#",
+        "instancePath": "",
+        "params": {
+          "limit": 3
+        },
+        "message": "must not have fewer than 3 characters"
+      },
+      "errors": [
+        {
+          "keyword": "minLength",
+          "schemaPath": "#",
+          "instancePath": "",
+          "params": {
+            "limit": 3
+          },
+          "message": "must not have fewer than 3 characters"
+        }
+      ]
+    },
+    {
+      "name": "unicode-combining-maxLength-3",
+      "schema": {
+        "type": "string",
+        "maxLength": 3
+      },
+      "value": "é",
+      "check": true,
+      "first": null,
+      "errors": []
+    }
+  ]
+}

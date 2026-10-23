@@ -11,7 +11,7 @@ struct HarnessToolResultTests {
     @Test func fullRoundAndRequestHistory() async throws {
         let setup = HarnessChatSetup(), checked = Mutex(false)
         try installHarnessTool(harnessTestTool(execute: { args, _, _ in
-            .init(content: [.text(TextContent(text: "echo \(args["text"]?.stringValue ?? "")"))])
+            .init(output: [.text(TextContent(text: "echo \(args["text"]?.stringValue ?? "")"))])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", ["text": "hi"], "c1")])), .factory { request, _, _, _ in
             guard case .toolResult(let result) = request.messages.last,
@@ -59,7 +59,7 @@ struct HarnessToolResultTests {
         let setup = HarnessChatSetup(), extra = try harnessTestTool("extra")
         try installHarnessTool(extra, setup: setup)
         try installHarnessTool(harnessTestTool("grow", execute: { _, _, _ in
-            .init(content: [], control: .init(addTools: ["extra"], terminate: nil))
+            .init(output: [], control: .init(addTools: ["extra"], terminate: nil))
         }), setup: setup)
         let opened = try await openChat(setup: setup)
         try await opened.root.configure(change: .init(tools: .set(.remove([extra]))), context: .background)
@@ -77,7 +77,7 @@ struct HarnessToolResultTests {
         try setup.registry.install(Extension(name: "after", hooks: [hook(ToolHooks(afterTool: { _, result, _, _ in
             if mode == "none" { return nil }
             var copy = result
-            if mode == "replace" { copy.content = [.text(TextContent(text: "a\n"))] }
+            if mode == "replace" { copy.output = [.text(TextContent(text: "a\n"))] }
             else { copy.details = ["copied": true] }
             return copy
         }))]))
@@ -92,7 +92,7 @@ struct HarnessToolResultTests {
         let setup = HarnessChatSetup()
         try installHarnessTool(harnessTestTool(execute: { _, api, _ in
             guard api.env != nil else { throw NoExecutionEnvironmentError() }
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         let (opened, entries) = try await runHarnessTools(setup)
         let result = try #require(harnessToolResults(entries).first)
@@ -111,7 +111,7 @@ struct HarnessToolResultTests {
             caller.cancel(TaskDefinitionError("details caller cancelled"))
             await #expect(throws: (any Error).self) { try await waiting.value }
             #expect(context.abortSignal?.aborted == false)
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         let (opened, entries) = try await runHarnessTools(setup)
         let result = try #require(harnessToolResults(entries).first)

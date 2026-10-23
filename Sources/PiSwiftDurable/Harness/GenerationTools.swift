@@ -2,14 +2,7 @@ import PiSwiftAI
 import PiSwiftChord
 
 /// The saved tool call and model context required for a tool task.
-public struct GenerationToolInput: Codable, Sendable {
-    /// The assistant entry that supplied this tool call.
-    public var assistant: EntryID
-    /// The model-supplied identifier of the tool call.
-    public var callId: String
-    /// Identifies the assistant entry and call ID that created the tool task.
-    public init(assistant: EntryID, callId: String) { self.assistant = assistant; self.callId = callId }
-}
+public typealias GenerationToolInput = ToolTaskInput
 let generationToolKind = toolTask.kind
 func createGenerationTool(tx: Transaction, runtime: TaskRuntime, assistant: EntryID, callId: String) async throws -> TaskID {
     try await tx.createTask(generationToolKind, input: GenerationToolInput(assistant: assistant, callId: callId),
@@ -61,8 +54,13 @@ internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [
     let outcomes = try await runtime.outcomes(tools, context: context)
     var controls: [ToolControl?] = []
     for outcome in outcomes {
-        if case .completed(let result, _) = outcome { controls.append(try result["control"]?.decode(ToolControl.self)) }
-        else { controls.append(nil) }
+        if case .completed(let result, _) = outcome {
+            // Generation consumes only control. A held v1 receipt can omit the tag.
+            guard result["kind"] == nil || result["kind"] == .string("model") else {
+                throw TaskDefinitionError("Invalid tool task result kind")
+            }
+            controls.append(try result["control"]?.decode(ToolControl.self))
+        } else { controls.append(nil) }
     }
     let slots = try await runtime.snapshot(LiveDoc, conversationId: runtime.conversationId, context: context)?.tools ?? []
     let results = slots.compactMap(\.entry)

@@ -3,7 +3,27 @@ import PiSwiftAI
 import PiSwiftChord
 
 /// The saved call and context consumed by the built-in tool task.
-public typealias ToolTaskInput = GenerationToolInput
+public enum ToolTaskInput: Codable, Sendable, Equatable {
+    /// A call from a saved assistant message.
+    case model(assistant: EntryID, callId: String)
+
+    /// Creates a model-issued call.
+    public init(assistant: EntryID, callId: String) { self = .model(assistant: assistant, callId: callId) }
+    /// Decodes a tagged v2 input. Only the migration accepts untagged v1 input.
+    public init(from decoder: any Decoder) throws {
+        let object = try JSONObject(from: decoder)
+        guard object["kind"] == .string("model") else { throw TaskDefinitionError("Invalid tool task input kind") }
+        self = .model(assistant: try recordRequired(object, "assistant"), callId: try recordRequired(object, "callId"))
+    }
+    /// Writes the model tag and saved call identity.
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .model(let assistant, let callId):
+            let object: JSONObject = ["kind": "model", "assistant": try JSONValue(encoding: assistant), "callId": .string(callId)]
+            try object.encode(to: encoder)
+        }
+    }
+}
 /// The persisted prepare or execute phase of a tool task.
 public struct ToolTaskCheckpoint: TaskCheckpoint {
     /// The persisted phase used to resume this built-in task.
@@ -25,34 +45,55 @@ public struct ToolTaskCheckpoint: TaskCheckpoint {
     }
 }
 /// The tool result entry produced by a completed tool task.
-public struct ToolTaskResult: Codable, Sendable {
-    /// The ID of the saved result entry.
-    public var entryId: EntryID
-    /// Optional run control returned by the tool.
-    public var control: ToolControl?
-    /// Records the saved tool result entry and optional run control.
-    public init(entryId: EntryID, control: ToolControl? = nil) { self.entryId = entryId; self.control = control }
+public enum ToolTaskResult: Codable, Sendable, Equatable {
+    /// The model-visible transcript result and optional run control.
+    case model(entryId: EntryID, control: ToolControl? = nil)
+    /// Creates a tagged model result.
+    public init(entryId: EntryID, control: ToolControl? = nil) { self = .model(entryId: entryId, control: control) }
+    /// Also accepts an untagged result held by a completing v1 task.
+    public init(from decoder: any Decoder) throws {
+        let object = try JSONObject(from: decoder)
+        guard object["kind"] == nil || object["kind"] == .string("model") else { throw TaskDefinitionError("Invalid tool task result kind") }
+        self = .model(entryId: try recordRequired(object, "entryId"), control: try recordOptional(object, "control"))
+    }
+    /// New results always contain the model tag.
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .model(let entryId, let control):
+            var object: JSONObject = ["kind": "model", "entryId": try JSONValue(encoding: entryId)]
+            try recordSetOptional(&object, "control", control)
+            try object.encode(to: encoder)
+        }
+    }
 }
 /// The built-in tool definition installed in every registry.
 public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTaskResult, ToolHooks>(
-    name: "pi.tool", version: 1, initial: { _ in ToolTaskCheckpoint(phase: .call) },
+    name: "pi.tool", version: 2, initial: { _ in ToolTaskCheckpoint(phase: .call) },
     phase: { task, runtime, context in try await runToolTask(task, runtime, context) },
     abort: { task, runtime, context in
         let call = try await readToolCall(runtime, task.input, context)
         try await settleTool(runtime, call, .aborted, context: context) { slot in
             toolResultFromSlot(slot, code: "aborted", message: "Tool \(call.name) was aborted")
         }
+    },
+    migrate: { input, checkpoint, _ in
+        guard case .object(var object) = input else { throw TaskDefinitionError("Tool task input must be an object") }
+        if object["kind"] == nil { object["kind"] = "model" }
+        return (try JSONValue.object(object).decode(ToolTaskInput.self), try checkpoint.decode(ToolTaskCheckpoint.self))
     }
 )
 internal enum ToolEnding { case completed, failed(String), aborted }
 private func readToolCall(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ context: ChordContext) async throws -> ToolCall {
-    if let entry = try await runtime.entry(assistantEntry, id: input.assistant, context: context),
-       case .assistant(let message) = try entry.record.messages()?.first {
-        for block in message.content {
-            if case .toolCall(let call) = block, harnessNamesEqual(call.id, input.callId) { return call }
+    switch input {
+    case .model(let assistant, let callId):
+        if let entry = try await runtime.entry(assistantEntry, id: assistant, context: context),
+           case .assistant(let message) = try entry.record.messages()?.first {
+            for block in message.content {
+                if case .toolCall(let call) = block, harnessNamesEqual(call.id, callId) { return call }
+            }
         }
+        throw TaskDefinitionError("Entry \(assistant.rawValue) has no tool call \(callId)")
     }
-    throw TaskDefinitionError("Entry \(input.assistant.rawValue) has no tool call \(input.callId)")
 }
 private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ value: JSONValue) throws -> JSONObject {
     guard let object = try foundationJSON(from: value) as? [String: Any] else {
@@ -131,7 +172,7 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
     try await executeTool(runtime, call, tool, final, context)
 }
 internal func harnessToolError(code: String, message: String) -> ToolExecutionResult {
-    ToolExecutionResult(content: [], isError: true, diagnostics: [ToolDiagnostic(severity: .error, message: message, code: code)])
+    ToolExecutionResult(output: [], isError: true, diagnostics: [ToolDiagnostic(severity: .error, message: message, code: code)])
 }
 internal func toolTruncated(_ bytes: Int, _ lines: Int, retain: OutputRetention? = nil) -> ToolDiagnostic {
     let kept = retain.map { " to its \($0 == .head ? "beginning" : "end")" } ?? ""
@@ -141,7 +182,7 @@ internal func toolResultFromSlot(_ slot: ToolSlot?, code: String, message: Strin
     var diagnostics = slot?.diagnostics ?? []
     if let bytes = slot?.droppedBytes, bytes > 0 { diagnostics.append(toolTruncated(bytes, slot?.droppedLines ?? 0)) }
     diagnostics.append(ToolDiagnostic(severity: .error, message: message, code: code))
-    return ToolExecutionResult(content: slot?.output.flatMap { $0.isEmpty ? nil : [.text(TextContent(text: $0))] } ?? [],
+    return ToolExecutionResult(output: slot?.output.flatMap { $0.isEmpty ? nil : [.text(TextContent(text: $0))] } ?? [],
                                isError: true, details: slot?.details, diagnostics: diagnostics)
 }
 internal func settleTool(_ runtime: TaskRuntime, _ call: ToolCall, _ ending: ToolEnding,
@@ -165,7 +206,7 @@ internal func settleTool(_ runtime: TaskRuntime, _ call: ToolCall, _ ending: Too
 internal func appendToolResult(tx: Transaction, conversationId: ConversationID, call: ToolCall,
                              result: ToolExecutionResult, timestamp: Int64, durationMs: Int? = nil) async throws -> EntryRecord {
     let diagnostics = result.diagnostics ?? []
-    var content = result.content ?? []
+    var content = result.output ?? []
     if !diagnostics.isEmpty {
         content.append(.text(TextContent(text: "<harness>\n" + diagnostics.map { "[\($0.severity.rawValue)] \($0.message)" }.joined(separator: "\n") + "\n</harness>")))
     }

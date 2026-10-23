@@ -60,7 +60,11 @@ public func createBashTool(options: BashToolOptions = .init()) throws -> ToolReg
         parameters: ["type": "object", "properties": [
             "command": ["type": "string", "description": "Bash command to execute"],
             "timeout": ["type": "number", "description": "Timeout in seconds (optional, no default timeout)"]
-        ], "required": ["command"]], args: BashToolInput.self, outputLimits: .init(retain: .tail)) { args, api, context in
+        ], "required": ["command"]], args: BashToolInput.self, outputLimits: .init(retain: .tail), structuredOutputSchema: [
+            "type": "object", "properties": [
+                "output": ["type": "string"], "truncated": ["type": "boolean"],
+                "fullOutputPath": ["type": "string"], "exitCode": ["type": "number"]
+            ], "required": ["output", "truncated", "exitCode"]]) { args, api, context in
             let timeout = try bashTimeout(args.timeout)
             let env = try requireEnv(api)
             let prefix = options.commandPrefix.flatMap { $0.isEmpty ? nil : $0 }
@@ -88,8 +92,13 @@ public func createBashTool(options: BashToolOptions = .init()) throws -> ToolReg
                 if error.code == .aborted { throw DurableToolError(message: "Command aborted") }
                 throw error
             case .success(let value):
-                if value.exitCode != 0 { throw DurableToolError(message: "Command exited with code \(value.exitCode)") }
+                let retained = try api.retainedOutput()
+                var structured: JSONObject = ["output": .string(retained.text), "truncated": .bool(retained.truncated),
+                                              "exitCode": .number(Double(value.exitCode))]
+                if let spillPath { structured["fullOutputPath"] = .string(spillPath) }
+                if value.exitCode == 0 { return ToolExecutionResult(structuredOutput: .object(structured)) }
+                return ToolExecutionResult(structuredOutput: .object(structured), isError: true,
+                    diagnostics: [.init(severity: .error, message: "Command exited with code \(value.exitCode)", code: "exit_code")])
             }
-            return ToolExecutionResult()
         }
 }

@@ -9,7 +9,7 @@ import PiSwiftDurableTesting
 private struct RuntimePing: Sendable { let call: @Sendable () throws -> Void }
 private func runtimeTool(_ name: String) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: name,
-        parameters: ["type": .string("object")]) { _, _, _ in ToolExecutionResult(content: []) }
+        parameters: ["type": .string("object")]) { _, _, _ in ToolExecutionResult(output: []) }
 }
 private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) async {
     do { _ = try await operation(); Issue.record("Ended invocation operation returned") }

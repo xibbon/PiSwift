@@ -100,7 +100,7 @@ public func createEditTool() throws -> ToolRegistration {
                 var details: JSONObject = ["diff": .string(diff.diff),
                     "patch": .string(generateUnifiedPatch(args.path, oldContent: applied.baseContent, newContent: applied.newContent))]
                 if let first = diff.firstChangedLine { details["firstChangedLine"] = .number(Double(first)) }
-                return ToolExecutionResult(content: [.text(TextContent(text: "Successfully replaced \(args.edits.count) block(s) in \(args.path)."))], details: .object(details))
+                return ToolExecutionResult(output: [.text(TextContent(text: "Successfully replaced \(args.edits.count) block(s) in \(args.path)."))], details: .object(details))
             }
         }
 }

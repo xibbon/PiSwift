@@ -32,7 +32,7 @@ import PiSwiftChord
     private func outcome(_ body: () async throws -> ToolExecutionResult) async throws -> JSONValue {
         do {
             let result = try await body()
-            var object: JSONObject = ["content": .array((result.content ?? []).map { block in
+            var object: JSONObject = ["output": .array((result.output ?? []).map { block in
                 if case .text(let text) = block { return .object(["type": "text", "text": .string(text.text)]) }
                 return .null
             })]

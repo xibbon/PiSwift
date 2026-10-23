@@ -72,11 +72,11 @@ private func structuredLabels(_ log: HarnessEventLog) -> [String] {
         try installHarnessTool(harnessTestTool("one", execute: { _, _, context in
             started.signal()
             try await harnessToolAwaitAbort(context)
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         try installHarnessTool(harnessTestTool("two", execute: { _, _, _ in
             Issue.record("An unstarted sequential call ran")
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("one", [:], "c1"), ("two", [:], "c2"), ("two", [:], "c3")]))])
         let chat = try await openChat(setup: setup), (stream, log) = try await eventListen(chat)
@@ -124,9 +124,9 @@ private func structuredLabels(_ log: HarnessEventLog) -> [String] {
             if fault {
                 var usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
                 usage.cost.total = .nan
-                return .init(content: [], usage: usage)
+                return .init(output: [], usage: usage)
             }
-            return .init(content: [.text(TextContent(text: "started"))])
+            return .init(output: [.text(TextContent(text: "started"))])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([(fault ? "broken" : "delegate", [:], "c1")])), .message(chatAssistant("done"))])
         let chat = try await openChat(setup: setup), (stream, log) = try await eventListen(chat)

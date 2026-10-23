@@ -31,8 +31,8 @@ struct HarnessLiveDeltaDriver: Sendable {
         try installHarnessTool(harnessTestTool("drive", limits: limits, execute: { _, api, context in
             let remove = context.abortSignal?.addAbortListener { _ in actions.continuation.finish() }
             defer { if let remove { context.abortSignal?.removeAbortListener(remove) } }
-            for await action in actions.stream { if try await !action(api, context) { return .init(content: []) } }
-            try context.abortSignal?.throwIfAborted(); return .init(content: [])
+            for await action in actions.stream { if try await !action(api, context) { return .init(output: []) } }
+            try context.abortSignal?.throwIfAborted(); return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("drive", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog()

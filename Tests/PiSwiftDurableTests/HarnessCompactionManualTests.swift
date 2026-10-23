@@ -69,7 +69,7 @@ struct HarnessCompactionManualTests {
     @Test(.disabled("H7 dependency: the real pi.tool task handler is not available"))
     func queuedSummaryAtPostToolsChangesContinuationContext() async throws {
         let chat = try await compactionOpen()
-        let tool = try ToolRegistration(name: "wait", description: "wait", parameters: [:]) { _, _, _ in ToolExecutionResult(content: [.text(TextContent(text: "waited"))]) }
+        let tool = try ToolRegistration(name: "wait", description: "wait", parameters: [:]) { _, _, _ in ToolExecutionResult(output: [.text(TextContent(text: "waited"))]) }
         try chat.setup.registry.install(Extension(name: "wait-tool", tools: [tool]))
         try await chat.root.configure(change: .init(tools: .set(.exact([tool]))), context: .background)
         try await compactionHistory(chat)

@@ -98,7 +98,7 @@ struct HarnessCompactionOutcomeTests {
     // harness-compaction.test.ts:864
     @Test func summaryCapsOutputBudgetAndOmitsTools() async throws {
         let chat = try await compactionOpen()
-        let tool = try ToolRegistration(name: "read", description: "read", parameters: [:]) { _, _, _ in ToolExecutionResult(content: []) }
+        let tool = try ToolRegistration(name: "read", description: "read", parameters: [:]) { _, _, _ in ToolExecutionResult(output: []) }
         try chat.setup.registry.install(Extension(name: "read-tool", tools: [tool]))
         try await chat.root.configure(change: .init(tools: .set(.exact([tool]))), context: .background)
         try await compactionHistory(chat)

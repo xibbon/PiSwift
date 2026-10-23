@@ -112,7 +112,7 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
                 await Task.yield()
             }
             counted.signal(); await finish.wait()
-            return .init(content: [])
+            return .init(output: [])
         }
         try setup.registry.install(Extension(name: "count", tools: [count]))
         let answer = "Counted to ten, and this answer streams slowly."
@@ -168,7 +168,7 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
                     }
                 default: break
                 }
-                if case .toolExecutionUpdate(_, _, let change?, _, _) = event {
+                if case .toolExecutionUpdate(_, _, let change?, _, _, _) = event {
                     output.withLock { value in
                         switch change {
                         case .set(let text): value = text
@@ -233,7 +233,7 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
                 let entry = try await tx.entry(answer)
                 return try textOf(entry?.messages()?.first)
             }, context: context)
-            return .init(content: [.text(TextContent(text: try #require(text)))], details: ["conversationId": .number(Double(child.rawValue))])
+            return .init(output: [.text(TextContent(text: try #require(text)))], details: ["conversationId": .number(Double(child.rawValue))])
         }
         try setup.registry.install(Extension(name: extensionName, tools: [tool]))
         setup.models.setResponses([.message(try advancedCall("subagent", ["task": "Name three prime numbers."])),
@@ -248,12 +248,12 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
         try await chat.harness.waitForIdle(context: .background)
         await watch.waitUntilIdle()
         for childWatch in childWatches.values { await childWatch.waitUntilIdle(); _ = await childWatch.stop() }
-        #expect(parentEvents.values.contains { if case .toolExecutionStart(_, "subagent", let args) = $0 { return args["task"] == "Name three prime numbers." }; return false })
+        #expect(parentEvents.values.contains { if case .toolExecutionStart(_, "subagent", let args, _) = $0 { return args["task"] == "Name three prime numbers." }; return false })
         #expect(parentEvents.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == "The subagent says: 2, 3, and 5." }; return false })
         #expect(childEvents.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == "2, 3, and 5." }; return false })
         let childID = try #require(childIDs.values.first)
         #expect(parentEvents.values.contains {
-            if case .toolExecutionUpdate(_, "subagent", _, let details, _) = $0 {
+            if case .toolExecutionUpdate(_, "subagent", _, let details, _, _) = $0 {
                 return details?["conversationId"] == .number(Double(childID.rawValue))
             }
             return false
@@ -348,7 +348,7 @@ private func advancedSubagentExtension(_ token: ConversationDocToken<AdvancedSub
         let name = args["name"]?.stringValue
         let state = try await api.snapshot(token, conversationId: api.conversationId, context: context) ?? .init()
         func reply(_ text: String, child: ConversationID? = nil) -> ToolExecutionResult {
-            .init(content: [.text(TextContent(text: text))], details: child.map {
+            .init(output: [.text(TextContent(text: text))], details: child.map {
                 ["name": .string(name ?? ""), "conversationId": .number(Double($0.rawValue))]
             })
         }
@@ -732,7 +732,7 @@ extension UpstreamAdvancedExamplesTests {
         func versioned(_ version: String, held: Bool = false) throws -> Extension {
             let tool = try advancedTool("version") { _, _, _ in
                 if held { started.signal(); await release.wait() }
-                return .init(content: [.text(TextContent(text: version))])
+                return .init(output: [.text(TextContent(text: version))])
             }
             return Extension(name: "versioned", tools: [tool])
         }

@@ -70,7 +70,7 @@ private final class IntegrationUsageModels: DurableModels {
             try installHarnessTool(harnessTestTool(name, execute: { _, _, context in
                 starts.append(name)
                 try await integrationWaitForAbort(context)
-                return .init(content: [])
+                return .init(output: [])
             }), setup: setup)
         }
         setup.models.setResponses([.message(try toolCalls([("a", [:], "a"), ("b", [:], "b"), ("c", [:], "c")]))])
@@ -117,9 +117,9 @@ private final class IntegrationUsageModels: DurableModels {
             if fail {
                 var invalid = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0)
                 invalid.cost.total = .nan
-                return .init(content: [], usage: invalid)
+                return .init(output: [], usage: invalid)
             }
-            return .init(content: [.text(TextContent(text: "held result"))])
+            return .init(output: [.text(TextContent(text: "held result"))])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("done"))])
         let chat = try await openChat(setup: setup)
@@ -150,7 +150,7 @@ private final class IntegrationUsageModels: DurableModels {
         let pause: @Sendable () async -> Void = { entered.signal(); await release.wait(); exited.signal() }
         try installHarnessTool(harnessTestTool(execute: { _, _, _ in
             if held == "execute" { await pause() }
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         try setup.registry.install(Extension(name: "held-hooks", hooks: [hook(ToolHooks(beforeTool: { _, _, _ in
             if held == "beforeTool" { await pause() }; return nil
@@ -182,7 +182,7 @@ private final class IntegrationUsageModels: DurableModels {
             let submission = try await handle.submit(.input(content: .text("child"), requestId: "stable"), context: context)
             submissions.append(submission)
             #expect(try await submission.wait(context: context).status == "done")
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("child answer")), .message(chatAssistant("done"))])
         let chat = try await openChat(setup: setup)
@@ -212,7 +212,7 @@ private final class IntegrationUsageModels: DurableModels {
             do {
                 let answer = try await submission.wait(context: context)
                 #expect(childOnly && answer.reason == "aborted")
-                return .init(content: [.text(TextContent(text: "child aborted"))])
+                return .init(output: [.text(TextContent(text: "child aborted"))])
             } catch { rejected.signal(); throw error }
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), childRun.step, .message(chatAssistant("done"))])
@@ -234,7 +234,7 @@ private final class IntegrationUsageModels: DurableModels {
         let setup = HarnessChatSetup(settings: .init(steeringMode: mode))
         let entered = HarnessChatSignal(), release = HarnessChatSignal()
         defer { release.signal() }
-        try installHarnessTool(harnessTestTool(execute: { _, _, _ in entered.signal(); await release.wait(); return .init(content: []) }), setup: setup)
+        try installHarnessTool(harnessTestTool(execute: { _, _, _ in entered.signal(); await release.wait(); return .init(output: []) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("after tools")), .message(chatAssistant("follow up"))])
         let chat = try await openChat(setup: setup)
         let input = try await chat.root.submit(.input(content: .text("a")), context: .background); await entered.wait()
@@ -259,10 +259,10 @@ private final class IntegrationUsageModels: DurableModels {
         let requests = SessionTestLog<[String]>()
         try installHarnessTool(harnessTestTool(execute: { _, _, _ in
             entered.signal(); await release.wait()
-            return .init(content: [], control: mode == "terminate" ? .init(terminate: true) : mode.contains("handoff") ? .init(handoff: "one") : nil)
+            return .init(output: [], control: mode == "terminate" ? .init(terminate: true) : mode.contains("handoff") ? .init(handoff: "one") : nil)
         }), setup: setup)
         if mode == "last-handoff" {
-            try installHarnessTool(harnessTestTool("later", execute: { _, _, _ in .init(content: [], control: .init(handoff: "two")) }), setup: setup)
+            try installHarnessTool(harnessTestTool("later", execute: { _, _, _ in .init(output: [], control: .init(handoff: "two")) }), setup: setup)
         }
         let calls: [(String, JSONObject, String)] = mode == "last-handoff" ? [("echo", [:], "c1"), ("later", [:], "c2")] : [("echo", [:], "c1")]
         setup.models.setResponses([.message(try toolCalls(calls)), .factory { request, _, _, _ in
@@ -303,7 +303,7 @@ private final class IntegrationUsageModels: DurableModels {
         let spent = Usage(input: 1, output: 2, cacheRead: 3, cacheWrite: 4, totalTokens: 10,
                           cost: .init(input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1))
         let replaced = Usage(input: 5, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 5)
-        try installHarnessTool(harnessTestTool(execute: { _, _, _ in .init(content: [], usage: spent) }), setup: setup)
+        try installHarnessTool(harnessTestTool(execute: { _, _, _ in .init(output: [], usage: spent) }), setup: setup)
         if replacement {
             try setup.registry.install(Extension(name: "usage", hooks: [hook(ToolHooks(afterTool: { _, result, _, _ in
                 var result = result; result.usage = replaced; return result
@@ -383,7 +383,7 @@ extension HarnessToolIntegrationTests {
             operations.append(submitting)
             queued.signal()
             try await integrationWaitForAbort(context)
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("done"))])
         let chat = try await openChat(setup: setup)
@@ -463,7 +463,7 @@ extension HarnessToolIntegrationTests {
             let input = try await handle.submit(.input(content: .text("child"), requestId: "subagent:\(api.taskId.rawValue)"), context: context)
             submissions.append(input.id)
             let answer = try await input.wait(context: context)
-            return .init(content: [.text(TextContent(text: answer.status))])
+            return .init(output: [.text(TextContent(text: answer.status))])
         })
         tool.replay = .safe
         try installHarnessTool(tool, setup: setup)

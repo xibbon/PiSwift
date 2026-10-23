@@ -19,7 +19,8 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolCall, _ tool: Tool
             outputWindow: limits.retain == .tail ? ShellOutputWindow(maxBytes: limits.maxBytes, maxLines: limits.maxLines,
                 minIntervalMs: runtime.settings.progress.outputIntervalMs, bytesPerSecond: progressBytesPerSecond) : nil,
             runtime: runtime, lifetime: lifetime, agent: { try await runtime.agent(context: $0) },
-            output: { try reporter.output($0, skipped: $1) }, diagnostic: { try reporter.diagnostic($0) },
+            output: { try reporter.output($0, skipped: $1) },
+            retainedOutput: { let output = reporter.snapshot().output; return .init(text: output.text, truncated: output.droppedBytes > 0) }, diagnostic: { try reporter.diagnostic($0) },
             details: { try await reporter.details($0, context: $1) },
             memo: { try await runtime.memo($0, value: $1, context: $2) })
         api.pendingDetailsCount = { reporter.pendingDetailsCount }
@@ -42,7 +43,7 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolCall, _ tool: Tool
     }
     let pending = await reporter.stop()
     do {
-        let final = try await finalToolResult(runtime, call, result, reporter, context)
+        let final = try await finalToolResult(runtime, call, tool, result, reporter, context)
         try await settleTool(runtime, call, ending, durationMs: durationMs, context: context) { _ in final }
         for waiter in pending { waiter.resolve() }
     } catch {
@@ -54,27 +55,31 @@ private func toolDurationMs(_ duration: Duration) -> Int {
     let value = Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
     return max(0, Int(value.rounded()))
 }
-private func finalToolResult(_ runtime: TaskRuntime, _ call: ToolCall, _ result: ToolExecutionResult,
+private func finalToolResult(_ runtime: TaskRuntime, _ call: ToolCall, _ tool: ToolRegistration, _ result: ToolExecutionResult,
                              _ reporter: ToolReporter, _ context: ChordContext) async throws -> ToolExecutionResult {
     let reported = reporter.snapshot()
-    let retained = result.content == nil ? reported.output : nil
+    let retained = result.output == nil ? reported.output : nil
     var final = result
-    if let retained { final.content = retained.text.isEmpty ? [] : [.text(TextContent(text: retained.text))] }
+    if let retained { final.output = retained.text.isEmpty ? [] : [.text(TextContent(text: retained.text))] }
     if final.details == nil { final.details = reported.details }
     final.diagnostics = reported.diagnostics + (result.diagnostics ?? [])
-    let retainedIdentity = final.contentIdentity
+    let retainedIdentity = final.outputIdentity
     try await runtime.hooks.each(ToolHooks.self, context: context) { hooks in
         if let replacement = try await hooks.afterTool?(call, final, runtime.hookApi, context) {
             final = replacement
         }
     }
     var diagnostics = final.diagnostics ?? []
-    if final.contentIdentity == retainedIdentity, let retained, retained.droppedBytes > 0 {
+    if final.outputIdentity == retainedIdentity, let retained, retained.droppedBytes > 0 {
         diagnostics.append(toolTruncated(retained.droppedBytes, retained.droppedLines, retain: reporter.limits.retain))
     }
-    let bounded = boundToolContent(final.content ?? [], limits: reporter.limits)
+    let bounded = boundToolContent(final.output ?? [], limits: reporter.limits)
     if bounded.droppedBytes > 0 { diagnostics.append(toolTruncated(bounded.droppedBytes, bounded.droppedLines, retain: reporter.limits.retain)) }
-    final.content = bounded.content; final.diagnostics = diagnostics
+    if let broken = try structuredOutputError(tool, final) {
+        final.structuredOutput = nil
+        runtime.scheduler.report(TaskDefinitionError(broken))
+    }
+    final.output = bounded.content; final.diagnostics = diagnostics
     return final
 }
 internal func boundToolContent(_ content: [ContentBlock], limits: OutputLimits) -> (content: [ContentBlock], droppedBytes: Int, droppedLines: Int) {

@@ -12,7 +12,7 @@ struct HarnessToolTests {
         let setup = HarnessChatSetup(), seen = Mutex(0)
         try installHarnessTool(harnessTestTool(execute: { args, api, _ in
             #expect((api.models as? FakeDurableModels) === setup.models); seen.withLock { $0 += 1 }
-            return ToolExecutionResult(content: [.text(TextContent(text: "echo hi"))])
+            return ToolExecutionResult(output: [.text(TextContent(text: "echo hi"))])
         }), setup: setup)
         try setup.registry.install(Extension(name: "audit", hooks: [hook(ToolHooks(beforeTool: { _, api, _ in
             #expect((api.models as? FakeDurableModels) === setup.models); seen.withLock { $0 += 1 }; return nil
@@ -42,10 +42,10 @@ struct HarnessToolTests {
     // :162,188,213.
     @Test(arguments: ["deactivate", "unregister", "late"]) func unavailableAtExecution(change: String) async throws {
         let setup = HarnessChatSetup(), ran = Mutex(0)
-        try installHarnessTool(harnessTestTool(execute: { _, _, _ in ran.withLock { $0 += 1 }; return .init(content: []) }), setup: setup)
+        try installHarnessTool(harnessTestTool(execute: { _, _, _ in ran.withLock { $0 += 1 }; return .init(output: []) }), setup: setup)
         if change == "late" {
             try installHarnessTool(harnessTestTool("first", mode: .sequential, execute: { _, _, _ in
-                setup.registry.uninstall(name: "tool:echo"); return .init(content: [])
+                setup.registry.uninstall(name: "tool:echo"); return .init(output: [])
             }), setup: setup)
             let (opened, entries) = try await runHarnessTools(setup, calls: [("first", [:], "first"), ("echo", [:], "echo")])
             #expect(ran.withLock { $0 } == 0)
@@ -82,7 +82,7 @@ struct HarnessToolTests {
             try installHarnessTool(harnessTestTool(name, mode: mode == "tool" && name == "a" ? .sequential : nil, execute: { _, _, _ in
                 events.withLock { $0.append("start \(name)") }
                 if name == "a" { firstStarted.signal(); await release.wait() }
-                events.withLock { $0.append("end \(name)") }; return .init(content: [])
+                events.withLock { $0.append("end \(name)") }; return .init(output: [])
             }), setup: setup)
         }
         setup.models.setResponses([.factory { _, _, _, _ in
@@ -124,7 +124,7 @@ struct HarnessToolTests {
                 try api.output(.text("a\u{7}b\r\n"), nil); try await api.details(["ready": true], context)
                 #expect(try await api.snapshot(LiveDoc, conversationId: api.conversationId, context: context)?.tools?.first?.output == "ab\n")
                 return .init()
-            case "null": try await api.details(["old": 1], context); return .init(content: [], details: .null)
+            case "null": try await api.details(["old": 1], context); return .init(output: [], details: .null)
             default:
                 let detailsContext: ChordContext = mode == "coalesceInvocation" ? context : .background
                 let first = Task { try await api.details(["n": 1], detailsContext); settled.withLock { $0.append(1) } }
@@ -134,7 +134,7 @@ struct HarnessToolTests {
                 let third = Task { try await api.details(["n": 3], detailsContext); settled.withLock { $0.append(3) } }
                 try await eventually { api.pendingDetailsCount() == 2 }
                 pending.withLock { $0 = [second, third] }
-                return .init(content: [])
+                return .init(output: [])
             }
         }), setup: setup)
         if mode == "tail" {
@@ -163,7 +163,7 @@ struct HarnessToolTests {
     @Test func explicitContentLimitsAndControls() async throws {
         let setup = HarnessChatSetup()
         try installHarnessTool(harnessTestTool(limits: .init(maxLines: 2, retain: .tail), execute: { _, _, _ in
-            .init(content: [.text(TextContent(text: "a\nb\n")), .image(ImageContent(data: "AAAA", mimeType: "image/png")), .text(TextContent(text: "c\u{1b}d\ne\n"))])
+            .init(output: [.text(TextContent(text: "a\nb\n")), .image(ImageContent(data: "AAAA", mimeType: "image/png")), .text(TextContent(text: "c\u{1b}d\ne\n"))])
         }), setup: setup)
         let (opened, entries) = try await runHarnessTools(setup)
         let text = harnessToolText(try #require(harnessToolResults(entries).first))
@@ -177,7 +177,7 @@ struct HarnessToolTests {
             if args["text"] == "repair-throw" { throw TaskDefinitionError("cannot repair") }
             if args["text"] == 7 { return ["text": "#7"] }
             return args
-        }, execute: { args, _, _ in seen.withLock { $0.append(args) }; return .init(content: []) }), setup: setup)
+        }, execute: { args, _, _ in seen.withLock { $0.append(args) }; return .init(output: []) }), setup: setup)
         try setup.registry.install(Extension(name: "first", hooks: [hook(ToolHooks(beforeTool: { call, _, _ in
             if call.id == "block" { return .init(block: "first says no") }
             if call.id == "throw" { throw TaskDefinitionError("hook failed") }
@@ -210,15 +210,15 @@ struct HarnessToolTests {
     // :573,778.
     @Test func replacementChainRoundHookAndMemos() async throws {
         let setup = HarnessChatSetup(), observed = Mutex<[EntryID]>([]), assistantId = Mutex<EntryID?>(nil)
-        try installHarnessTool(harnessTestTool(execute: { _, _, _ in .init(content: [.text(TextContent(text: "raw"))]) }), setup: setup)
+        try installHarnessTool(harnessTestTool(execute: { _, _, _ in .init(output: [.text(TextContent(text: "raw"))]) }), setup: setup)
         try setup.registry.install(Extension(name: "first", hooks: [hook(ToolHooks(beforeTool: { _, api, context in
             let first = try await api.memo("decision", "approved", context)
             #expect(first == .string("approved"))
             let second = try await api.memo("decision", "denied", context)
             #expect(second == .string("approved")); return nil
-        }, afterTool: { _, result, _, _ in var next = result; next.content = [.text(TextContent(text: "first"))]; return next }))]))
+        }, afterTool: { _, result, _, _ in var next = result; next.output = [.text(TextContent(text: "first"))]; return next }))]))
         try setup.registry.install(Extension(name: "second", hooks: [hook(ToolHooks(afterTool: { _, result, _, _ in
-            var next = result; next.details = ["replaced": "first"]; #expect(result.content?.count == 1); return next
+            var next = result; next.details = ["replaced": "first"]; #expect(result.output?.count == 1); return next
         })), hook(GenerationHooks(afterTools: { assistant, ids, _, _ in assistantId.withLock { $0 = assistant }; observed.withLock { $0 = ids } }))]))
         let (opened, entries) = try await runHarnessTools(setup), result = try #require(harnessToolResults(entries).first)
         #expect(harnessToolText(result) == "first" && harnessToolDetails(result) == ["replaced": "first"])
@@ -229,8 +229,8 @@ struct HarnessToolTests {
     // :641,983. Swift optional values omit absent control members.
     @Test(arguments: [false, true]) func controlsAndTermination(allStop: Bool) async throws {
         let setup = HarnessChatSetup()
-        try installHarnessTool(harnessTestTool("stop", execute: { _, _, _ in .init(content: [], control: .init(terminate: true)) }), setup: setup)
-        try installHarnessTool(harnessTestTool("grow", execute: { _, _, _ in .init(content: [], control: .init(addTools: ["extra", "stop"])) }), setup: setup)
+        try installHarnessTool(harnessTestTool("stop", execute: { _, _, _ in .init(output: [], control: .init(terminate: true)) }), setup: setup)
+        try installHarnessTool(harnessTestTool("grow", execute: { _, _, _ in .init(output: [], control: .init(addTools: ["extra", "stop"])) }), setup: setup)
         try installHarnessTool(harnessTestTool("extra"), setup: setup)
         setup.models.setResponses([.message(try toolCalls(allStop ? [("stop", [:], "stop")] : [("stop", [:], "stop"), ("grow", [:], "grow")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup)
@@ -250,11 +250,11 @@ struct HarnessToolTests {
             Extension(name: "prompt", sections: [section("mode") { _, _ in version }], hooks: [hook(GenerationHooks(beforeRequest: { _, _, _ in versions.withLock { $0.append(version) }; return nil }))])
         }
         try setup.registry.install(prompt("v1"))
-        try installHarnessTool(harnessTestTool("work", execute: { _, _, _ in started.signal(); await release.wait(); return .init(content: [.text(TextContent(text: "v1"))]) }), setup: setup)
+        try installHarnessTool(harnessTestTool("work", execute: { _, _, _ in started.signal(); await release.wait(); return .init(output: [.text(TextContent(text: "v1"))]) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("work", [:], "work")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), submission = try await opened.root.submit(.input(content: .text("go")), context: .background)
         await started.wait()
-        try installHarnessTool(harnessTestTool("work", execute: { _, _, _ in .init(content: [.text(TextContent(text: "v2"))]) }), setup: setup)
+        try installHarnessTool(harnessTestTool("work", execute: { _, _, _ in .init(output: [.text(TextContent(text: "v2"))]) }), setup: setup)
         try setup.registry.install(prompt("v2")); release.signal()
         _ = try await submission.wait(context: .background)
         #expect(harnessToolText(try #require(harnessToolResults(await allEntries(opened.root)).first)) == "v1")

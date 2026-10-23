@@ -97,7 +97,7 @@ import PiSwiftDurableTesting
 
     @Test func storageWritesBaseExactlyWhenNoGenerationOrRunningTool() async throws {
         let storage = ControlledStorage(), setup = HarnessChatSetup(settings: .init(toolExecution: .sequential)), log = HarnessLiveDeltaLog()
-        for name in ["first", "second"] { try installHarnessTool(harnessTestTool(name, execute: { _, api, context in try api.output(.text("\(name) output\n"), nil); try await api.details(["n": 1], context); return .init(content: []) }), setup: setup) }
+        for name in ["first", "second"] { try installHarnessTool(harnessTestTool(name, execute: { _, api, context in try api.output(.text("\(name) output\n"), nil); try await api.details(["n": 1], context); return .init(output: []) }), setup: setup) }
         setup.models.setResponses([.message(try toolCalls([("first", [:], "a"), ("second", [:], "b")])), .message(chatAssistant("done"))])
         let opened = try await openChat(storage: storage, setup: setup), listener = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
         let doc = try #require(await storage.findDocument(.init(kind: "pi.live", scope: .conversation(conversationId: opened.root.id)), at: .current, context: .background))
@@ -114,7 +114,7 @@ import PiSwiftDurableTesting
     }
 
     @Test func unofferedCallsStartDoneFaultedSlotOnlyWritesStatus() async throws {
-        let setup = HarnessChatSetup(); try installHarnessTool(harnessTestTool("bad", execute: { _, _, _ in var usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0); usage.cost.total = .nan; return .init(content: [], usage: usage) }), setup: setup)
+        let setup = HarnessChatSetup(); try installHarnessTool(harnessTestTool("bad", execute: { _, _, _ in var usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0); usage.cost.total = .nan; return .init(output: [], usage: usage) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("ghost", [:], "g"), ("bad", [:], "b")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog(), listener = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
         let input = try await generationSubmit(opened); _ = try await input.wait(context: .background)

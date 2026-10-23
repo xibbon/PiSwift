@@ -40,8 +40,16 @@ public struct ToolDiagnostic: Sendable, Equatable, Codable {
 /// Tool content, details, diagnostics, usage, and optional run control.
 public struct ToolExecutionResult: Sendable {
     /// The text or content blocks supplied by this result.
-    public var content: [ContentBlock]? { didSet { contentIdentity = UUID() } }
-    internal var contentIdentity = UUID()
+    public var output: [ContentBlock]? { didSet { outputIdentity = UUID() } }
+    /// The tool value for programs. A declared schema validates this value.
+    public var structuredOutput: JSONValue?
+    /// Use output for execution results. Transcript messages still use content.
+    @available(*, deprecated, renamed: "output")
+    public var content: [ContentBlock]? {
+        get { output }
+        set { output = newValue }
+    }
+    internal var outputIdentity = UUID()
     /// Whether the tool content reports an execution failure.
     public var isError: Bool?
     /// Application-defined JSON details reported by a tool.
@@ -53,10 +61,16 @@ public struct ToolExecutionResult: Sendable {
     /// Optional run control returned by the tool.
     public var control: ToolControl?
     /// Creates a tool result with optional content, details, diagnostics, usage, and control.
-    public init(content: [ContentBlock]? = nil, isError: Bool? = nil, details: JSONValue? = nil,
+    public init(output: [ContentBlock]? = nil, structuredOutput: JSONValue? = nil, isError: Bool? = nil, details: JSONValue? = nil,
                 diagnostics: [ToolDiagnostic]? = nil, usage: Usage? = nil, control: ToolControl? = nil) {
-        self.content = content; self.isError = isError; self.details = details
+        self.output = output; self.structuredOutput = structuredOutput; self.isError = isError; self.details = details
         self.diagnostics = diagnostics; self.usage = usage; self.control = control
+    }
+    /// Creates a result with the former execution-output label.
+    @available(*, deprecated, message: "Use init(output:) for tool execution results")
+    public init(content: [ContentBlock]?, isError: Bool? = nil, details: JSONValue? = nil,
+                diagnostics: [ToolDiagnostic]? = nil, usage: Usage? = nil, control: ToolControl? = nil) {
+        self.init(output: content, isError: isError, details: details, diagnostics: diagnostics, usage: usage, control: control)
     }
 }
 
@@ -66,6 +80,16 @@ public enum ToolOutputChunk: Sendable {
     case text(String)
     /// The byte limit removed output.
     case bytes(Data)
+}
+
+/// The retained text and whether output limits removed earlier content.
+public struct RetainedToolOutput: Sendable, Equatable {
+    /// The bounded text supplied to the model when a result omits output.
+    public let text: String
+    /// Whether output limits removed text.
+    public let truncated: Bool
+    /// Creates a retained output snapshot.
+    public init(text: String, truncated: Bool) { self.text = text; self.truncated = truncated }
 }
 
 /// Tool operations bound to a task invocation.
@@ -91,6 +115,8 @@ public struct ToolExecutionApi: Sendable {
     public var read: HarnessDocumentReader
     /// Publishes incremental output from this tool invocation.
     public var output: @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void
+    /// Reads the bounded output buffer while this invocation is live.
+    public var retainedOutput: @Sendable () throws -> RetainedToolOutput
     /// The requested output window passed to the environment.
     public var outputWindow: ShellOutputWindow?
     /// Publishes a tool diagnostic during execution.
@@ -105,13 +131,14 @@ public struct ToolExecutionApi: Sendable {
                 outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
                 agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                 output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void = { _, _ in },
+                retainedOutput: @escaping @Sendable () throws -> RetainedToolOutput = { .init(text: "", truncated: false) },
                 diagnostic: @escaping @Sendable (ToolDiagnostic) throws -> Void = { _ in },
                 details: @escaping @Sendable (JSONValue, ChordContext) async throws -> Void = { _, _ in },
                 memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil }) {
         self.runtime = runtime
         self.taskId = taskId; self.conversationId = conversationId; self.callId = callId; self.registry = registry
         self.models = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
-        self.output = output; self.diagnostic = diagnostic; self.details = details; self.memo = memo
+        self.output = output; self.retainedOutput = retainedOutput; self.diagnostic = diagnostic; self.details = details; self.memo = memo
     }
     internal init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                   models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
@@ -119,6 +146,7 @@ public struct ToolExecutionApi: Sendable {
                   lifetime: ToolInvocationLifetime,
                   agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                   output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void,
+                  retainedOutput: @escaping @Sendable () throws -> RetainedToolOutput,
                   diagnostic: @escaping @Sendable (ToolDiagnostic) throws -> Void,
                   details: @escaping @Sendable (JSONValue, ChordContext) async throws -> Void,
                   memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?) {
@@ -130,6 +158,7 @@ public struct ToolExecutionApi: Sendable {
                   outputWindow: outputWindow, runtime: runtime,
                   agent: { context in try check(); return try await agent(context) },
                   output: { chunk, skipped in try lifetime.check(); try check(); try output(chunk, skipped) },
+                  retainedOutput: { try lifetime.check(); try check(); return try retainedOutput() },
                   diagnostic: { value in try lifetime.check(); try check(); try diagnostic(value) },
                   details: { value, context in try lifetime.check(); try check(); try await details(value, context) },
                   memo: { name, candidate, context in try check(); return try await memo(name, candidate, context) })
@@ -156,6 +185,8 @@ public struct ToolRegistration: Sendable {
     public var prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)?
     /// Optional per-tool limits for retained output.
     public var outputLimits: OutputLimitOverrides?
+    /// The schema for the separate program value. This schema is not sent to the model.
+    public var structuredOutputSchema: JSONObject?
     /// The caller supplies repaired and validated arguments. defineTool also checks at the typed boundary.
     public var execute: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
     /// The stable name used to resolve this definition in the registry.
@@ -181,26 +212,26 @@ public struct ToolRegistration: Sendable {
     public init(declaration: AITool, orderedDeclaration: JSONObject? = nil,
                 replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
-                outputLimits: OutputLimitOverrides? = nil,
+                outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
                 execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
         self.declaration = declaration
         self.orderedDeclaration = try orderedDeclaration ?? JSONObject([
             ("name", .string(declaration.name)), ("description", .string(declaration.description)),
             ("parameters", durableJSON(fromFoundation: declaration.parameters.mapValues(\.value)))])
         self.replay = replay; self.executionMode = executionMode; self.prepareArguments = prepareArguments
-        self.outputLimits = outputLimits; self.execute = execute
+        self.outputLimits = outputLimits; self.structuredOutputSchema = structuredOutputSchema; self.execute = execute
     }
     /// Creates a tool declaration and its execution callback, preserving schema member order.
     public init(name: String, description: String, parameters: JSONObject,
                 replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
-                outputLimits: OutputLimitOverrides? = nil,
+                outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
                 execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
         let dictionary = try foundationJSON(from: .object(parameters)) as! [String: Any]
         try self.init(declaration: AITool(name: name, description: description, parameters: dictionary.mapValues(AnyCodable.init)),
             orderedDeclaration: ["name": .string(name), "description": .string(description), "parameters": .object(parameters)],
             replay: replay, executionMode: executionMode, prepareArguments: prepareArguments,
-            outputLimits: outputLimits, execute: execute)
+            outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema, execute: execute)
     }
 }
 
@@ -240,14 +271,14 @@ public func defineTool<Args: Decodable & Sendable>(
     name: String, description: String, parameters: JSONObject, args: Args.Type = Args.self,
     replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
     prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
-    outputLimits: OutputLimitOverrides? = nil,
+    outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
     execute: @escaping @Sendable (Args, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
 ) throws -> ToolRegistration {
     let schema = try foundationJSON(from: .object(parameters)) as! [String: Any]
     let declaration = AITool(name: name, description: description, parameters: schema.mapValues(AnyCodable.init))
     return try ToolRegistration(name: name, description: description, parameters: parameters,
         replay: replay, executionMode: executionMode, prepareArguments: prepareArguments,
-        outputLimits: outputLimits) { value, api, context in
+        outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema) { value, api, context in
             guard let object = try foundationJSON(from: value) as? [String: Any] else {
                 throw HarnessDefinitionError.argumentsMustBeObject(name)
             }

@@ -178,13 +178,13 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
     case messageUpdate(usage: JSONObject, changes: [DurableMessageChange])
     /// Reports the committed entry of a completed assistant message.
     case messageEnd(entry: EntryRecord)
-    /// Reports the start of a tool call with its name and prepared arguments.
-    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONObject)
-    /// Reports visible output, details, or diagnostics from a tool call.
+    /// Reports a tool call start. The task ID is absent if the call has no task.
+    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONObject, taskId: TaskID? = nil)
+    /// Reports tool output, details, or diagnostics with the task ID when present.
     case toolExecutionUpdate(toolCallId: String, toolName: String, output: DurableToolOutputChange? = nil,
-                             details: JSONValue? = nil, diagnostics: [ToolDiagnostic]? = nil)
-    /// Reports the end of a tool call and its result entry when present.
-    case toolExecutionEnd(toolCallId: String, toolName: String, entry: EntryRecord? = nil)
+                             details: JSONValue? = nil, diagnostics: [ToolDiagnostic]? = nil, taskId: TaskID? = nil)
+    /// Reports a tool call end with its task ID and result entry when present.
+    case toolExecutionEnd(toolCallId: String, toolName: String, entry: EntryRecord? = nil, taskId: TaskID? = nil)
     /// Reports the current queued submission IDs and admission modes.
     case inboxUpdate(items: [DurableQueuedItem])
     /// Reports the new durable state of a submission.
@@ -247,11 +247,11 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case "message_start": self = .messageStart(message: try recordRequired(o, "message"))
         case "message_update": self = .messageUpdate(usage: try recordRequired(o, "usage"), changes: try recordRequired(o, "changes"))
         case "message_end": self = .messageEnd(entry: try recordRequired(o, "entry"))
-        case "tool_execution_start": self = .toolExecutionStart(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), args: try recordRequired(o, "args"))
+        case "tool_execution_start": self = .toolExecutionStart(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), args: try recordRequired(o, "args"), taskId: try recordOptional(o, "taskId"))
         case "tool_execution_update":
             self = .toolExecutionUpdate(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"),
-                output: try recordOptional(o, "output"), details: o["details"], diagnostics: try recordOptional(o, "diagnostics"))
-        case "tool_execution_end": self = .toolExecutionEnd(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), entry: try recordOptional(o, "entry"))
+                output: try recordOptional(o, "output"), details: o["details"], diagnostics: try recordOptional(o, "diagnostics"), taskId: try recordOptional(o, "taskId"))
+        case "tool_execution_end": self = .toolExecutionEnd(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), entry: try recordOptional(o, "entry"), taskId: try recordOptional(o, "taskId"))
         case "inbox_update": self = .inboxUpdate(items: try recordRequired(o, "items"))
         case "submission": self = .submission(record: try recordRequired(o, "record"))
         case "auto_retry_start": self = .autoRetryStart(attempt: try recordRequired(o, "attempt"), at: try recordRequired(o, "at"), errorMessage: try recordRequired(o, "errorMessage"))
@@ -276,11 +276,16 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case .messageStart(let message): o["message"] = .object(message)
         case let .messageUpdate(usage, changes): o["usage"] = .object(usage); try recordSet(&o, "changes", changes)
         case .messageEnd(let entry), .entryAppended(let entry): try recordSet(&o, "entry", entry)
-        case let .toolExecutionStart(id, name, args): o["toolCallId"] = .string(id); o["toolName"] = .string(name); o["args"] = .object(args)
-        case let .toolExecutionUpdate(id, name, output, details, diagnostics):
+        case let .toolExecutionStart(id, name, args, taskId):
+            o["toolCallId"] = .string(id); o["toolName"] = .string(name); o["args"] = .object(args)
+            try recordSetOptional(&o, "taskId", taskId)
+        case let .toolExecutionUpdate(id, name, output, details, diagnostics, taskId):
             o["toolCallId"] = .string(id); o["toolName"] = .string(name)
             try recordSetOptional(&o, "output", output); o["details"] = details; try recordSetOptional(&o, "diagnostics", diagnostics)
-        case let .toolExecutionEnd(id, name, entry): o["toolCallId"] = .string(id); o["toolName"] = .string(name); try recordSetOptional(&o, "entry", entry)
+            try recordSetOptional(&o, "taskId", taskId)
+        case let .toolExecutionEnd(id, name, entry, taskId):
+            o["toolCallId"] = .string(id); o["toolName"] = .string(name); try recordSetOptional(&o, "entry", entry)
+            try recordSetOptional(&o, "taskId", taskId)
         case .inboxUpdate(let items): try recordSet(&o, "items", items)
         case .submission(let record): try recordSet(&o, "record", record)
         case let .autoRetryStart(attempt, at, error): try recordSet(&o, "attempt", attempt); try recordSet(&o, "at", at); o["errorMessage"] = .string(error)

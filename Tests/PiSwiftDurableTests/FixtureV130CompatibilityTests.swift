@@ -14,7 +14,7 @@ import PiSwiftChord
         let previous = try fixture("read-differential")
         let current = try fixture("read-differential-v130")
         #expect(current["tag"] == "v1.3.0")
-        #expect(current["provenance"]?["resultEnvelope"] == "top-level output renamed to content for current Swift tests")
+        #expect(current["provenance"]?["resultEnvelope"] == "unmodified top-level output")
         for key in ["seeds", "trialsPerSeed", "differences", "files"] {
             #expect(current[key] == previous[key], "read field \(key)")
         }

@@ -127,7 +127,7 @@ struct ToolWriteBashTests {
         let tool = try createBashTool()
         #expect(tool.outputLimits?.retain == .tail)
         let result = try await tool.execute(["command": "anything"], reports.api(env: env, outputWindow: window), .background)
-        #expect(result.content == nil)
+        #expect(result.output == nil)
         #expect(reports.text == "tail\n")
         #expect(reports.skips == [skipped])
     }
@@ -208,14 +208,16 @@ struct ToolWriteBashTests {
         let reports = ToolTestReports()
         let tool = try createBashTool()
         let result = try await tool.execute(["command": "printf out; printf err >&2"], reports.api(env: env), .background)
-        #expect(result.content == nil)
+        #expect(result.output == nil)
         #expect(reports.text.contains("out"))
         #expect(reports.text.contains("err"))
+        #expect(result.structuredOutput == ["output": .string(reports.text), "truncated": false, "exitCode": 0])
         let failure = ToolTestReports()
-        do {
-            _ = try await tool.execute(["command": "printf failed; exit 7"], failure.api(env: env), .background)
-            Issue.record("Expected nonzero exit")
-        } catch { #expect(String(describing: error) == "Command exited with code 7") }
+        let failed = try await tool.execute(["command": "printf failed; exit 7"], failure.api(env: env), .background)
+        #expect(failed.isError == true)
+        #expect(failed.output == nil)
+        #expect(failed.structuredOutput == ["output": "failed", "truncated": false, "exitCode": 7])
+        #expect(failed.diagnostics == [.init(severity: .error, message: "Command exited with code 7", code: "exit_code")])
         #expect(failure.text == "failed")
         do {
             _ = try await tool.execute(["command": "sleep 2", "timeout": 0.01], reports.api(env: env), .background)

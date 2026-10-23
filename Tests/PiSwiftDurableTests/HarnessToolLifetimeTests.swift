@@ -11,7 +11,7 @@ struct HarnessToolLifetimeTests {
     @Test func executeDurationExcludesBlockedCalls() async throws {
         let setup = HarnessChatSetup(settings: .init(toolExecution: .sequential)), time = Mutex<Duration>(.zero)
         try installHarnessTool(harnessTestTool(execute: { _, _, _ in
-            time.withLock { $0 += .milliseconds(30) }; return .init(content: [])
+            time.withLock { $0 += .milliseconds(30) }; return .init(output: [])
         }), setup: setup)
         try installHarnessTool(harnessTestTool("thrower", execute: { _, _, _ in
             time.withLock { $0 += .milliseconds(45) }; throw TaskDefinitionError("boom")
@@ -74,7 +74,7 @@ struct HarnessToolLifetimeTests {
             #expect(entry.byTaskId == api.taskId)
             let firstMemo = try await api.memo("m", 1, context), secondMemo = try await api.memo("m", 2, context)
             #expect(firstMemo == .number(1) && secondMemo == .number(1))
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "first"), ("echo", [:], "second")])), .message(chatAssistant("done"))])
         let harness = try await Harness.open(storage: MemoryStorage(), options: .init(models: setup.models, registry: setup.registry,
@@ -152,7 +152,7 @@ struct HarnessToolLifetimeTests {
             retainedWatch.withLock { $0 = nil }
             let watch = try await api.watchDoc(LiveDoc, conversationId: api.conversationId, context: context)
             retainedWatch.withLock { $0 = watch }
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         let (opened, _) = try await runHarnessTools(setup)
         let wait = try #require(detached.withLock { $0 })

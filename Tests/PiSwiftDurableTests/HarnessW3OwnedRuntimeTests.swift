@@ -110,7 +110,7 @@ import PiSwiftDurableTesting
             try await api.abortOwned(id: child, context: context)
             #expect(try await api.waitForTask(id: child, context: context).outcome.status == "aborted")
             #expect(try await api.ownedTasks(context: context).isEmpty)
-            return .init(content: [])
+            return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "owned")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup)

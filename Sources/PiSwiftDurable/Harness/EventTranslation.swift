@@ -108,7 +108,7 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
             default: break
             }
         }
-        events.append(.toolExecutionStart(toolCallId: slot.callId, toolName: slot.name, args: args))
+        events.append(.toolExecutionStart(toolCallId: slot.callId, toolName: slot.name, args: args, taskId: slot.taskId))
     }
     let partialBefore = was.live.generation?.message; let partial = now.live.generation?.message
     if let partial, partialBefore == nil { events.append(.messageStart(message: partial)) }
@@ -120,7 +120,7 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
         guard slot.status == .running, let previous = slotsBefore[Array(slot.callId.utf16)], previous.status == .running,
               let update = durableToolUpdate(viewOps, index: index, slot: slot, previous: previous) else { continue }
         events.append(.toolExecutionUpdate(toolCallId: slot.callId, toolName: slot.name, output: update.output,
-            details: update.details, diagnostics: update.diagnostics))
+            details: update.details, diagnostics: update.diagnostics, taskId: slot.taskId))
     }
     let generation = now.live.generation; let generationBefore = was.live.generation
     if let retry = generation?.retry, generationBefore?.retry == nil {
@@ -129,25 +129,25 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
     if generationBefore?.retry != nil, generation?.retry == nil { events.append(.autoRetryEnd(attempt: generationBefore!.attempt)) }
     if let deferred = generation?.deferred, deferred.pollAt != generationBefore?.deferred?.pollAt { events.append(.deferredPoll(pollAt: deferred.pollAt)) }
 
-    struct ToolEnd { let id: String; let name: String; let entry: EntryRecord? }
+    struct ToolEnd { let id: String; let name: String; let entry: EntryRecord?; let taskId: TaskID? }
     var toolEnds: [ToolEnd] = []
-    func endTool(_ id: String, _ name: String, _ entryId: EntryID?) {
-        toolEnds.append(ToolEnd(id: id, name: name, entry: entries.first { $0.id == entryId }))
+    func endTool(_ slot: ToolSlot, _ entryId: EntryID?) {
+        toolEnds.append(ToolEnd(id: slot.callId, name: slot.name, entry: entries.first { $0.id == entryId }, taskId: slot.taskId))
     }
     for id in slotOrder {
         let previous = slotsBefore[id]!
         if previous.status == .done { continue }
         let slot = slots.first { harnessNamesEqual($0.callId, previous.callId) }
-        if slot?.status == .done { endTool(previous.callId, previous.name, slot?.entry) }
+        if let slot, slot.status == .done { endTool(slot, slot.entry) }
         else if slot == nil {
             let result = entries.first { $0.model?.first?.objectValue?["role"] == .string("toolResult") && $0.model?.first?.objectValue?["toolCallId"] == .string(previous.callId) }
-            endTool(previous.callId, previous.name, result?.id)
+            endTool(previous, result?.id)
         }
     }
-    for slot in slots where slot.status == .done && slotsBefore[Array(slot.callId.utf16)] == nil { endTool(slot.callId, slot.name, slot.entry) }
+    for slot in slots where slot.status == .done && slotsBefore[Array(slot.callId.utf16)] == nil { endTool(slot, slot.entry) }
     var assistantAppended = false
     for entry in entries {
-        for end in toolEnds where end.entry?.id == entry.id { events.append(.toolExecutionEnd(toolCallId: end.id, toolName: end.name, entry: end.entry)) }
+        for end in toolEnds where end.entry?.id == entry.id { events.append(.toolExecutionEnd(toolCallId: end.id, toolName: end.name, entry: end.entry, taskId: end.taskId)) }
         guard let message = entry.model?.first?.objectValue else { events.append(.entryAppended(entry: entry)); continue }
         let assistant = message["role"] == .string("assistant")
         let streamed = assistant && partialBefore != nil && !assistantAppended
@@ -155,7 +155,7 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
         if !streamed { events.append(.messageStart(message: message)) }
         events.append(.messageEnd(entry: entry))
     }
-    for end in toolEnds where end.entry == nil { events.append(.toolExecutionEnd(toolCallId: end.id, toolName: end.name)) }
+    for end in toolEnds where end.entry == nil { events.append(.toolExecutionEnd(toolCallId: end.id, toolName: end.name, taskId: end.taskId)) }
     let compactionsBefore = was.live.compactions ?? []; let compactions = now.live.compactions ?? []
     for old in compactionsBefore where !compactions.contains(where: { $0.taskId == old.taskId }) { events.append(.compactionEnd(taskId: old.taskId, reason: old.reason)) }
     var turnEnded = false

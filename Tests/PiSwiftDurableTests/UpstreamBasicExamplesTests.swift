@@ -61,7 +61,7 @@ private func exampleHarness(registry: Registry = createRegistry(), models: FakeD
 private func exampleTool(_ name: String, _ description: String) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: description,
         parameters: ["type": "object", "properties": .object(["path": .object(["type": "string"])])]) { args, _, _ in
-        ToolExecutionResult(content: [.text(TextContent(text: "\(name) \(args["path"]?.stringValue ?? "")"))])
+        ToolExecutionResult(output: [.text(TextContent(text: "\(name) \(args["path"]?.stringValue ?? "")"))])
     }
 }
 private func exampleAssistant(_ text: String, calls: [String] = [], reason: StopReason? = nil) -> AssistantMessage {
@@ -322,7 +322,7 @@ private func exampleShow(_ message: Message) -> String {
         let todo = try ToolRegistration(name: "todo", description: "Add an item to your todo list", parameters: ["type": "object", "properties": .object(["item": .object(["type": "string"])])]) { args, api, context in
             let item = args["item"]?.stringValue ?? ""
             try await api.commit({ tx in try await tx.doc(todos, conversationId: api.conversationId).child("items")!.append(.string(item)) }, context: context)
-            return ToolExecutionResult(content: [.text(TextContent(text: "added \(item)"))])
+            return ToolExecutionResult(output: [.text(TextContent(text: "added \(item)"))])
         }
         let registry = createRegistry()
         try registry.install(Extension(name: "todo", tools: [todo], sections: [section("todos") { input, context in

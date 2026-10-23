@@ -83,7 +83,7 @@ import PiSwiftDurableTesting
             parameters: ["type": "object", "properties": .object([
                 "text": .object(["type": "string"])
             ]), "required": .array(["text"])], replay: .safe) { args, _, _ in
-                ToolExecutionResult(content: [.text(TextContent(
+                ToolExecutionResult(output: [.text(TextContent(
                     text: args["text"]?.stringValue ?? ""))])
             }
         try registry.install(Extension(name: "echo", tools: [echo]))

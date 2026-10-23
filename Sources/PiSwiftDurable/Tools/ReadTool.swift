@@ -109,7 +109,7 @@ private func readText(_ reader: any BinaryReader, info: FileInfo, args: ReadTool
     if let mime = try await detectSupportedImageMimeTypeOf(.init(size: info.size, read: { position, length in
         try await reader.read(offset: position, length: length, context: context).get()
     })) {
-        return .init(content: [], isError: true, diagnostics: [
+        return .init(output: [], isError: true, diagnostics: [
             .init(severity: .error, message: "\(args.path) is an image (\(mime)); reading images is not supported", code: "unsupported_image")
         ])
     }
@@ -168,7 +168,7 @@ private func readText(_ reader: any BinaryReader, info: FileInfo, args: ReadTool
         let remaining = Double(totalFileLines) - (startLine + userLimitedLines)
         diagnostics.append(.init(severity: .info, message: "\(numberText(remaining)) more lines in file. Use offset=\(numberText(startLine + userLimitedLines + 1)) to continue."))
     }
-    return .init(content: output.isEmpty ? [] : [.text(TextContent(text: output))], details: details, diagnostics: diagnostics)
+    return .init(output: output.isEmpty ? [] : [.text(TextContent(text: output))], details: details, diagnostics: diagnostics)
 }
 
 private func truncationDetails(_ result: TruncationResult, outputLines: Int? = nil,

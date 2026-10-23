@@ -70,7 +70,7 @@ private func codingSystemText(_ messages: [Message]) -> String {
                     let draft = try await tx.doc(token, conversationId: api.conversationId)
                     try draft.set("steps", .array(steps.map(JSONValue.string)))
                 }, context: context)
-                return .init(content: [.text(.init(text: "Plan submitted."))], control: .init(terminate: true))
+                return .init(output: [.text(.init(text: "Plan submitted."))], control: .init(terminate: true))
             }
         let plan = Extension(name: "plan", tools: [submit], sections: [section("plan_mode") { _, _ in "You are in plan mode. Read the code, then call submit_plan. Change nothing." }])
         let coding = try CodingTools

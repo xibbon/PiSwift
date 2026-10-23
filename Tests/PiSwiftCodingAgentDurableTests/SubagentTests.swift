@@ -31,7 +31,7 @@ private func subagentSetup(invocations: SubagentInvocations = SubagentInvocation
     try setup.registry.install(extensionValue)
     try setup.registry.install(Extension(name: "other", tools: [try defineTool(
         name: "other", description: "Other tool", parameters: ["type": "object"], args: SubagentEmptyInput.self
-    ) { _, _, _ in ToolExecutionResult(content: []) }]))
+    ) { _, _, _ in ToolExecutionResult(output: []) }]))
     return setup
 }
 

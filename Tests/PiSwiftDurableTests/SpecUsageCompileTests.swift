@@ -121,7 +121,7 @@ private func specExtensions(_ app: SpecDependencies) throws -> (extensions: [Ext
             let submission = try await handle.submit(.input(content: .text(args.task), requestId: "subagent:\(api.taskId.rawValue)"), context: context)
             let settled = try await submission.wait(context: context)
             guard settled.status == "done", let answer = settled.answer else { throw SpecUsageError.absentAnswer }
-            return ToolExecutionResult(content: [.text(TextContent(text: try await app.answerText(api, answer, context)))])
+            return ToolExecutionResult(output: [.text(TextContent(text: try await app.answerText(api, answer, context)))])
         }])
     let anchor = TaskDefinition<JSONValue, SpecHold, JSONValue, NoTaskHooks>(name: "app.anchor", version: 1,
         initial: { _ in SpecHold() }, phase: { _, _, _ in }, abort: { _, _, _ in })

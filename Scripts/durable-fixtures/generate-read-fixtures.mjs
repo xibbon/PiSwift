@@ -28,13 +28,7 @@ try {
     const env = new NodeExecutionEnv({ cwd });
     const api = { env, output() {}, diagnostic() {}, async details() {}, async agent() { return {}; } };
     const tool = createReadTool();
-    // Preserve the v1 Swift fixture envelope. Only the top-level output channel is renamed.
-    const normalize = value => {
-        const result = JSON.parse(JSON.stringify(value));
-        if (Object.hasOwn(result, 'output')) { const { output, ...rest } = result; return { content: output, ...rest }; }
-        return result;
-    };
-    const outcome = async run => { try { return normalize(await run()); } catch (error) { return { error: error.message }; } };
+    const outcome = async run => { try { return JSON.parse(JSON.stringify(await run())); } catch (error) { return { error: error.message }; } };
     const argument = value => value === undefined ? null : Number.isNaN(value) ? 'NaN' : value;
     const files = [];
     let differences = 0;
@@ -69,7 +63,7 @@ try {
         return JSON.stringify(packed).length < value.length ? packed : value;
     }
     // Escape FEFF so parsers cannot treat a raw string segment as a byte-order mark.
-    const fixture = JSON.stringify(pack({ tag: upstreamTag, provenance: { source: 'unmodified isolated git archive', resultEnvelope: 'top-level output renamed to content for current Swift tests', images: 'deferred' }, seeds: 400, trialsPerSeed: 4, differences, files })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
+    const fixture = JSON.stringify(pack({ tag: upstreamTag, provenance: { source: 'unmodified isolated git archive', resultEnvelope: 'unmodified top-level output', images: 'deferred' }, seeds: 400, trialsPerSeed: 4, differences, files })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
     const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v130.json', import.meta.url));
     if (process.argv.includes('--check')) {
         if (await readFile(path, 'utf8') !== fixture) throw new Error('Read fixtures differ. Run without --check.');

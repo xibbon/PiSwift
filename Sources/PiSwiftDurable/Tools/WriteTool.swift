@@ -24,7 +24,7 @@ public func createWriteTool() throws -> ToolRegistration {
                 try checkToolAbort(context)
                 try await env.writeFile(absolutePath, content: .text(args.content), context: context).get()
                 try checkToolAbort(context)
-                return ToolExecutionResult(content: [.text(TextContent(text: "Successfully wrote to \(args.path)"))])
+                return ToolExecutionResult(output: [.text(TextContent(text: "Successfully wrote to \(args.path)"))])
             }
         }
 }

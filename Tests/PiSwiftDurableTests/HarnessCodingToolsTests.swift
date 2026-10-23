@@ -35,7 +35,7 @@ func codingChat(storage: any DurableStorage = MemoryStorage(), setup: HarnessCha
         #expect(text.hasPrefix("line-1001\n"))
         let data = try #require(entry.data)
         let diagnostics = try data.decode(ToolResultEntryData.self).diagnostics
-        #expect(diagnostics.map(\.code) == ["full_output", "tool_error", "truncated"])
+        #expect(diagnostics.map(\.code) == ["full_output", "exit_code", "truncated"])
         #expect(text.contains("line-3000\n|<harness>\n[info] Full output: "))
         #expect(text.contains("\n[error] Command exited with code 7\n[warn] Output truncated to its end: 1000 lines, "))
         if let spill = diagnostics.first?.message.components(separatedBy: "Full output: ").last {

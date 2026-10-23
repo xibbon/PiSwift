@@ -38,17 +38,20 @@ import PiSwiftDurableTesting
 
     @Test func toolStartsOutputAppendsAndResultPrecedesMessage() async throws {
         let setup = HarnessChatSetup(), first = HarnessChatSignal(), second = HarnessChatSignal(), release = HarnessChatSignal()
+        let taskId = Mutex<TaskID?>(nil)
         try installHarnessTool(harnessTestTool("print", execute: { _, api, context in
+            taskId.withLock { $0 = api.taskId }
             try api.output(.text("one\n"), nil); try await api.details(["step": 1], context); first.signal()
             await second.wait(); try api.output(.text("two\n"), nil); try await api.details(["step": 2], context)
-            await release.wait(); return .init(content: [])
+            await release.wait(); return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("print", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), (stream, log) = try await eventListen(opened), input = try await generationSubmit(opened)
         await first.wait(); second.signal(); try await eventually { log.events.contains { $0["output"]?["append"] == "two\n" } }
         release.signal(); _ = try await input.wait(context: .background); try await log.waitForDone(input.id)
         let tool = log.events.filter { ($0["type"]?.stringValue ?? "").hasPrefix("tool_execution") }
-        #expect(tool.first?["type"] == "tool_execution_start" && tool.first?["args"] == [:])
+        let startedTaskId = try #require(taskId.withLock { $0 })
+        #expect(tool.first?["type"] == "tool_execution_start" && tool.first?["args"] == [:] && tool.first?["taskId"] == .number(Double(startedTaskId.rawValue)))
         let end = try #require(log.types.firstIndex(of: "tool_execution_end"))
         #expect(Array(log.types[end...].prefix(3)) == ["tool_execution_end", "message_start", "message_end"])
         #expect(log.events[end + 1]["message"]?["toolCallId"] == "c1")
@@ -125,7 +128,7 @@ import PiSwiftDurableTesting
 
     @Test func neverOfferedCallAndAbortedToolEndBeforeResult() async throws {
         let setup = HarnessChatSetup(), entered = HarnessChatSignal()
-        try installHarnessTool(harnessTestTool("wait", execute: { _, _, context in entered.signal(); try await harnessToolAwaitAbort(context); return .init(content: []) }), setup: setup)
+        try installHarnessTool(harnessTestTool("wait", execute: { _, _, context in entered.signal(); try await harnessToolAwaitAbort(context); return .init(output: []) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("ghost", [:], "c1"), ("wait", [:], "c2")]))])
         let opened = try await openChat(setup: setup), (stream, log) = try await eventListen(opened), input = try await generationSubmit(opened)
         await entered.wait(); try await log.waitForType("tool_execution_start"); try await opened.root.abort(context: .background)
@@ -139,7 +142,7 @@ import PiSwiftDurableTesting
 
     @Test func steerResetAndOtherConversations() async throws {
         let setup = HarnessChatSetup(), held = HarnessChatSignal(), release = HarnessChatSignal()
-        try installHarnessTool(harnessTestTool("hold", execute: { _, _, _ in held.signal(); await release.wait(); return .init(content: []) }), setup: setup)
+        try installHarnessTool(harnessTestTool("hold", execute: { _, _, _ in held.signal(); await release.wait(); return .init(output: []) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("hold", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), (stream, log) = try await eventListen(opened)
         let other = try await opened.harness.createConversation(options: .init(ownership: .ownerless()), context: .background)
@@ -212,7 +215,7 @@ import PiSwiftDurableTesting
 
     @Test func jsonExampleMemoryRunWithToolHasFullEventTypeSequence() async throws {
         let setup = HarnessChatSetup()
-        try installHarnessTool(harnessTestTool("bash", execute: { _, _, _ in .init(content: [.text(TextContent(text: "sources tests docs"))]) }), setup: setup)
+        try installHarnessTool(harnessTestTool("bash", execute: { _, _, _ in .init(output: [.text(TextContent(text: "sources tests docs"))]) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("bash", [:], "call-1")])), .message(chatAssistant("This directory holds the durable package sources, tests, and docs."))])
         let opened = try await openChat(storage: MemoryStorage(), setup: setup), (stream, log) = try await eventListen(opened)
         let input = try await generationSubmit(opened, "What is in this directory?"); _ = try await input.wait(context: .background); try await log.waitForDone(input.id)
@@ -237,7 +240,7 @@ import PiSwiftDurableTesting
             for number in 1...5 { try api.output(.text("\(number)\n"), nil) }
             try await api.details(["count": 5], context); reached.signal(); await release.wait()
             for number in 6...10 { try api.output(.text("\(number)\n"), nil) }
-            try await api.details(["count": 10], context); return .init(content: [])
+            try await api.details(["count": 10], context); return .init(output: [])
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("count", [:], "call-1")])), .message(chatAssistant("Counted to ten."))])
         let opened = try await openChat(setup: setup), input = try await generationSubmit(opened); await reached.wait()

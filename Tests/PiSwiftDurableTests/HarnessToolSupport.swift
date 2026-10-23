@@ -17,7 +17,7 @@ func toolCalls(_ calls: [(String, JSONObject, String)]) throws -> AssistantMessa
 func harnessTestTool(_ name: String = "echo", limits: OutputLimitOverrides? = nil,
                      mode: ToolExecutionMode? = nil,
                      prepare: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
-                     execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult = { _, _, _ in ToolExecutionResult(content: []) }) throws -> ToolRegistration {
+                     execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult = { _, _, _ in ToolExecutionResult(output: []) }) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: "The \(name) tool", parameters: ["type": "object", "properties": ["text": ["type": "string"]]],
         executionMode: mode, prepareArguments: prepare, outputLimits: limits, execute: execute)
 }

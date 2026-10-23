@@ -45,7 +45,7 @@ public func subagentExtension() throws -> Extension {
             throw SessionError.message("Subagent \(child.rawValue) failed: \(settled.status)")
         }
         let text = try await subagentAnswerText(api: api, answer: answer, context: context)
-        return ToolExecutionResult(content: [.text(TextContent(text: text))], details: details)
+        return ToolExecutionResult(output: [.text(TextContent(text: text))], details: details)
     }
     return Extension(name: "subagent", tools: [tool])
 }
