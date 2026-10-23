@@ -116,21 +116,28 @@ import PiSwiftDurableTesting
     }
 
     // upstream harness-tasks.test.ts:746,774,797
-    @Test func storageRejectedReservationRetriesOnNextCommit() async throws {
-        let storage = ControlledStorage()
-        let opened = try await openTasks(storage: storage, tasks: [])
-        let root = try await opened.harness.root(context: .background)
+    @Test func storageFailureDuringReservationRequiresReopen() async throws {
+        let storage = FailureProbeStorage(), runs = Mutex(0)
         let definition = harnessOneStep("test.retry") { _, runtime, context in
+            runs.withLock { $0 += 1 }
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
+        let opened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(definition)])
+        let root = try await opened.harness.root(context: .background)
         let id = try await harnessStart(root, definition)
-        await storage.failNextCommit(StorageRejected("rejected reservation"))
-        try opened.registry.install(Extension(name: "tasks", tasks: [AnyTaskDefinition(definition)]))
+        let failure = HarnessStorageFailure("rejected reservation")
+        await storage.base.failNextCommit(failure)
+        let waiting = Task { try await opened.harness.waitForTask(id: id, context: .background) }
         try opened.harness.resume()
-        try await harnessEventually { opened.reports.count > 0 }
-        #expect(try await opened.harness.getTask(id: id, context: .background)?.state.status == "pending")
-        _ = try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "wake")) }, context: .background)
-        #expect(try await opened.harness.waitForTask(id: id, context: .background).outcome.status == "completed")
-        try await opened.harness.close(context: .background)
+        await expectFailedEnd(opened.harness, failure)
+        await expectSessionFailure(failure) { try await waiting.value }
+        await expectSessionFailure(failure) { try await opened.harness.getTask(id: id, context: .background) }
+        await expectSessionFailure(failure) { try await root.submit(.input(content: .text("wake")), context: .background) }
+        #expect(runs.withLock { $0 } == 0)
+        #expect(opened.reports.count == 1)
+        let reopened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(definition)])
+        #expect(try await reopened.harness.waitForTask(id: id, context: .background).outcome.status == "completed")
+        #expect(runs.withLock { $0 } == 1)
+        try await reopened.harness.close(context: .background)
     }
 }

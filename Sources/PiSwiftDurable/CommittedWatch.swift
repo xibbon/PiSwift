@@ -9,6 +9,8 @@ public enum WatchEnd: Sendable {
     case cancelled
     /// The session closed and ended its watches.
     case sessionClosed
+    /// Storage failed and ended the Session.
+    case sessionFailed(any Error)
     /// The watched document incarnation ended.
     case retired
     /// A watch listener failed while processing an update.
@@ -45,15 +47,18 @@ public final class CommittedWatch<Value: Sendable>: Sendable {
     private let storage: Mutex<State>
     private let replacement: @Sendable (Value) -> JSONValue
     private let replace: (@Sendable () -> Value)?
+    private let report: @Sendable (any Error) -> Void
     private let detach: @Sendable () -> Void
 
     package init(value: Value, replacement: @escaping @Sendable (Value) -> JSONValue,
                  detach: @escaping @Sendable () -> Void,
-                 replace: (@Sendable () -> Value)? = nil) {
+                 replace: (@Sendable () -> Value)? = nil,
+                 report: @escaping @Sendable (any Error) -> Void = { _ in }) {
         storage = Mutex(State(value: value))
         self.replacement = replacement
         self.replace = replace
         self.detach = detach
+        self.report = report
     }
 
     /// The acquisition value, followed by the value of the last delivered frame.
@@ -117,8 +122,10 @@ public final class CommittedWatch<Value: Sendable>: Sendable {
     }
 
     package func cancel() { terminate(.cancelled) }
-    package func closeSession() { terminate(.sessionClosed) }
-    package func fail(_ error: any Error) { terminate(.listenerError(error)) }
+    package func closeSession(_ error: (any Error)? = nil) {
+        terminate(error.map { .sessionFailed($0) } ?? .sessionClosed)
+    }
+    package func fail(_ error: any Error) { report(error); terminate(.listenerError(error)) }
 
     /// Keep at most 100 pending frames. Overflow replaces only the pending suffix.
     package func advance(value: Value, ops: [Delta.Op], context: ChordContext,
@@ -199,7 +206,7 @@ public final class CommittedWatch<Value: Sendable>: Sendable {
                 return
             }
             do { try await listener(frame.value, frame.ops, frame.context) }
-            catch { terminate(.listenerError(error)) }
+            catch { fail(error) }
             if frame.retired { terminate(.retired) }
         }
     }

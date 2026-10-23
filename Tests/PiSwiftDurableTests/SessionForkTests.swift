@@ -246,16 +246,23 @@ private func forkCopies(_ writes: [StorageWrite]) -> [(DocumentCreate, DocumentC
     }
 
     // :553
-    @Test func ForkStorageRejectedKeepsSessionUsable() async throws {
-        let h = try await openTestSession(); let parent = try await createConversation(h.session); let copied = try forkAsOf()
-        let point = try await h.session.commit({ tx in _ = try await tx.doc(copied, conversationId: parent); return try await tx.appendEntry(parent, value: EntryDraft(kind: "point")).id }, context: .background)
-        await h.storage.failNextCommit(StorageRejected("copy rejected"))
+    @Test func ForkStorageFailureRequiresReopen() async throws {
+        let storage = FailureProbeStorage()
+        let session = try await Session.open(storage: storage, context: .background)
+        let parent = try await createConversation(session), copied = try forkAsOf()
+        let point = try await session.commit({ tx in _ = try await tx.doc(copied, conversationId: parent); return try await tx.appendEntry(parent, value: EntryDraft(kind: "point")).id }, context: .background)
+        await storage.base.failNextCommit(SessionError.message("copy rejected"))
         let ids = SessionTestLog<ConversationID>()
         await forkExpectError("copy rejected") {
-            try await h.session.commit({ tx in ids.append(try await tx.forkConversation(parent, at: point, ownership: .ownerless()).id) }, context: .background)
+            try await session.commit({ tx in ids.append(try await tx.forkConversation(parent, at: point, ownership: .ownerless()).id) }, context: .background)
         }
-        #expect(try await h.storage.conversation(ids.values[0], context: .background) == nil)
-        let next = try await createConversation(h.session); #expect(try await h.storage.conversation(next, context: .background) != nil)
+        _ = await session.closed
+        #expect(try await storage.conversation(ids.values[0], context: .background) == nil)
+        await #expect(throws: SessionFailed.self) { try await createConversation(session) }
+        let reopened = try await Session.open(storage: storage, context: .background)
+        let next = try await createConversation(reopened)
+        #expect(try await storage.conversation(next, context: .background) != nil)
+        try await reopened.close(context: .background)
     }
 
     // :581

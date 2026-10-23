@@ -164,7 +164,7 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         let blocking = Task { _ = try await viewNote(chat.root, "block") }; await hold.waitUntilEntered()
         let caller = ChordContext.background.withCancel()
         let cancelled = Task { try await chat.root.watch(context: caller.context) }
-        try await eventually { chat.harness.session.line.queuedCount >= 1 }; caller.cancel(StorageRejected("cancelled"))
+        try await eventually { chat.harness.session.line.queuedCount >= 1 }; caller.cancel(D2TestError("cancelled"))
         await hold.release(); _ = try await blocking.value
         do { _ = try await cancelled.value; Issue.record("Cancelled watch was acquired") } catch { #expect(String(describing: error).contains("cancelled")) }
         let secondHold = await storage.holdCommits(), second = Task { _ = try await viewNote(chat.root, "block2") }
@@ -178,7 +178,7 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     @Test func sharedMountIsolatesFailingListener() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), failing = try await chat.root.watch(context: .background), recorder = try await ViewTestRecorder(chat.root), shared = try await chat.root.viewState(context: .background)
         #expect(failing.value == shared.value); shared.dispose()
-        try failing.start { _, _, _ in throw StorageRejected("listener failed") }
+        try failing.start { _, _, _ in throw D2TestError("listener failed") }
         _ = try await viewNote(chat.root, "one"); _ = try await viewNote(chat.root, "two"); await recorder.drain()
         if case .listenerError = await failing.closed {} else { Issue.record("Listener error did not end watch") }
         #expect(recorder.frames.count == 2)

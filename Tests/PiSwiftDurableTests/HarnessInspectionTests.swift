@@ -26,7 +26,7 @@ import PiSwiftDurableTesting
             migrations.withLock { $0 += 1 }; return (try input.decode(Int.self), HarnessTaskCheckpoint())
         })
         let noMigration = harnessOneStep("h5.inspect-no-migration", version: 2) { _, _, _ in Issue.record("Blocked task ran") }
-        let failing = HarnessTestTask(name: "h5.inspect-failing", version: 2, initial: { _ in HarnessTaskCheckpoint() }, phase: { _, _, _ in Issue.record("Blocked task ran") }, abort: { _, _, _ in }, migrate: { _, _, _ in throw StorageRejected("cannot migrate") })
+        let failing = HarnessTestTask(name: "h5.inspect-failing", version: 2, initial: { _ in HarnessTaskCheckpoint() }, phase: { _, _, _ in Issue.record("Blocked task ran") }, abort: { _, _, _ in }, migrate: { _, _, _ in throw D2TestError("cannot migrate") })
         let tooOld = harnessOneStep("h5.inspect-too-old", version: 1) { _, _, _ in Issue.record("Blocked task ran") }
         let opened = try await openTasks(tasks: [gated, dependent, migrating, noMigration, failing, tooOld].map(AnyTaskDefinition.init))
         let root = try await opened.harness.root(context: .background)

@@ -44,7 +44,7 @@ extension Harness {
             let initialSnapshot = try durableEventSnapshot(initial)
             let current = Mutex(initialSnapshot)
             let watch = CommittedWatch<[DurableAgentEvent]>(value: [], replacement: { _ in .array([]) }, detach: release,
-                replace: { [.snapshot(current.withLock { $0 })] })
+                replace: { [.snapshot(current.withLock { $0 })] }, report: self.session.report)
             backing.withLock { $0 = watch }
             result.withLock { $0 = DurableAgentEventWatch(snapshot: initialSnapshot, watch: watch) }
             return ConversationViewObserver(publication: { before, after, ops, publication, context in
@@ -57,7 +57,7 @@ extension Harness {
                     }
                     if !events.isEmpty { watch.advance(value: events, ops: [], context: context) }
                 } catch { watch.fail(error) }
-            }, closeSession: { watch.closeSession() })
+            }, closeSession: { watch.closeSession(self.session.failure) })
         }
         let watch = backing.withLock { $0! }
         do {

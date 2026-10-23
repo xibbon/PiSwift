@@ -105,9 +105,9 @@ internal final class Submissions: Sendable {
     init(session: Session, storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
          settings: @escaping @Sendable () -> Settings, resume: @escaping @Sendable () -> Void) throws {
         self.session = session; self.storage = storage; self.now = now; self.settings = settings; self.resume = resume
-        let commits = try session.subscribeCommits { [weak self] publication, _ in self?.observe(publication) }
+        let commits = try session.observeCommits { [weak self] publication, _ in self?.observe(publication) }
         let close = try session.subscribeClose { [weak self] in
-            self?.state.withLock { $0.closed = true }; self?.waiters.rejectAll(closedError())
+            self?.state.withLock { $0.closed = true }; self?.waiters.rejectAll(session.failure.map { SessionFailed($0) } ?? closedError())
         }
         state.withLock { $0.subscriptions = [commits, close] }
     }

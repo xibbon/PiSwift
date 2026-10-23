@@ -19,7 +19,7 @@ extension TaskScheduler {
         // Upstream abortTask does not enable scheduling (harness.ts:275-277, scheduler.ts:282-304).
         if let invocation = marked.1 {
             let work = Task { try await invocation.done.value() }
-            try await awaitWithContext(work, context)
+            try await session.awaitHealthy(work, context: context)
         }
         return marked.0
     }

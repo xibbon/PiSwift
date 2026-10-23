@@ -75,7 +75,7 @@ public actor MemoryStorage: DurableStorage {
     /// Returns a page of conversations that match all query filters.
     public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<ConversationRecord, Cursor> {
         try assertOpen()
-        let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
+        let start = try storageScanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         let ids: [ConversationID]
         if let owner = query.ownerTaskId { ids = tables.conversationIdsByOwnerTask[owner] ?? [] }
         else if let owner = query.ownerConversationId { ids = tables.conversationIdsByOwnerConversation[owner] ?? [] }
@@ -113,7 +113,7 @@ public actor MemoryStorage: DurableStorage {
     /// Returns a page of entries in the visible ancestry and requested range.
     public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<EntryRecord, Cursor> {
         try assertOpen()
-        let start = try scanStart(requested: query.order, cursor: cursor, fallback: .descending)
+        let start = try storageScanStart(requested: query.order, cursor: cursor, fallback: .descending)
         var minimum = query.minEntryId?.rawValue ?? Int64.min
         var maximum = query.maxEntryId?.rawValue ?? Int64.max
         if let after = start.after {
@@ -129,7 +129,7 @@ public actor MemoryStorage: DurableStorage {
     /// Returns a page of tasks that match all query filters.
     public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<TaskRecord, Cursor> {
         try assertOpen()
-        let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
+        let start = try storageScanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         let ids = query.status.map { tables.taskIdsByStatus[$0.rawValue] ?? [] } ?? tables.taskIds
         let values = scan(ids, start: start).compactMap { tables.tasks[$0] }.filter {
             (query.conversationId == nil || $0.conversationId == query.conversationId) &&
@@ -145,7 +145,7 @@ public actor MemoryStorage: DurableStorage {
     /// Returns a page of submissions that match all query filters.
     public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<SubmissionRecord, Cursor> {
         try assertOpen()
-        let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
+        let start = try storageScanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         let ids = query.status.map { tables.submissionIdsByStatus[$0.rawValue] ?? [] } ?? tables.submissionIds
         let values = scan(ids, start: start).compactMap { tables.submissions[$0] }.filter {
             query.conversationId == nil || $0.conversationId == query.conversationId
@@ -177,7 +177,7 @@ public actor MemoryStorage: DurableStorage {
         var after: Int64?
         if let value = cursor?["after"] {
             guard let number = value.numberValue, let integer = Int64(exactly: number),
-                  integer >= -Seq.maximumRawValue, integer <= Seq.maximumRawValue else { throw DurableStorageError.invalidCursor }
+                  integer >= -Seq.maximumRawValue, integer <= Seq.maximumRawValue else { throw StorageRequestError(DurableStorageError.invalidCursor.description) }
             after = integer
         }
         let ids = tables.documentIdsByScope[MemoryScopeKey(query.scope)] ?? []
@@ -192,7 +192,7 @@ public actor MemoryStorage: DurableStorage {
 
     private func assertOpen() throws { if closed { throw DurableStorageError.closed(backend: "MemoryStorage") } }
     private func checkConversation(_ id: ConversationID) throws {
-        if tables.conversations[id] == nil { throw DurableStorageError.unknownConversation(id) }
+        if tables.conversations[id] == nil { throw StorageRequestError(DurableStorageError.unknownConversation(id).description) }
     }
     private func visibleEntries(_ conversationId: ConversationID, minimum: Int64, maximum: Int64, order: ScanOrder) throws -> [EntryRecord] {
         try checkConversation(conversationId)

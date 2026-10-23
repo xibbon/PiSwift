@@ -115,7 +115,7 @@ struct SqliteStorageTests {
         // supplies the failure after an earlier SQL row was inserted in the transaction.
         try await withFile { storage, path in
             try await root(storage)
-            await #expect(throws: StorageRejected.self) {
+            await #expect(throws: DocumentCopyFailure.self) {
                 _ = try await commit(storage, [sqliteEntry(2), ["type": "document.copy", "record": ["id": 4, "kind": "missing", "scope": ["kind": "conversation", "conversationId": 1], "history": "rewindable", "fork": "asOf"], "source": ["id": 999, "at": "current"]]])
             }
             #expect(try await storage.entry(EntryID(2), context: .background) == nil)

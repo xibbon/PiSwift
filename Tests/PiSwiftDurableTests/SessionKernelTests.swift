@@ -6,7 +6,7 @@ import PiSwiftChord
 private enum SessionKernelFailure: Error, Equatable { case storage, callback }
 
 @Suite struct SessionKernelTests {
-    @Test func SessionPoisonAfterStorageAdmission() async throws {
+    @Test func SessionFailureAfterStorageAdmission() async throws {
         let harness = try await openTestSession()
         let token = try SessionDocToken<JSONObject>(kind: "poison", version: 1, initial: { ["count": 0] })
         try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
@@ -20,32 +20,48 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
         }
         #expect(harness.publications.count == published)
         #expect(before == ["count": 0])
-        await #expect(throws: SessionError.poisoned) {
+        await #expect(throws: SessionFailed.self) {
             try await harness.session.snapshot(token, context: .background)
         }
-        await #expect(throws: SessionError.poisoned) {
+        await #expect(throws: SessionFailed.self) {
             try await harness.session.commit({ _ in }, context: .background)
         }
         try await harness.session.close(context: .background)
     }
 
-    @Test func SessionStorageRejectedRollsBackAndRemainsUsable() async throws {
-        let harness = try await openTestSession()
-        let conversation = try await createConversation(harness.session)
-        let published = harness.publications.count
-        await harness.storage.failNextCommit(StorageRejected("rejected"))
-        await #expect(throws: StorageRejected("rejected")) {
-            try await harness.session.commit({ tx in
+    @Test func SessionStorageFailureRollsBackAndRequiresReopen() async throws {
+        let storage = FailureProbeStorage()
+        let session = try await Session.open(storage: storage, context: .background)
+        let conversation = try await createConversation(session)
+        let publications = SessionTestLog<CommitPublication>()
+        _ = try session.subscribeCommits { publication, _ in publications.append(publication) }
+        let published = publications.count
+        await storage.base.failNextCommit(SessionKernelFailure.storage)
+        await #expect(throws: SessionKernelFailure.storage) {
+            try await session.commit({ tx in
                 try await tx.appendEntry(conversation, value: EntryDraft(kind: "rejected"))
             }, context: .background)
         }
-        #expect(harness.publications.count == published)
-        let entry = try await harness.session.commit({ tx in
+        #expect(publications.count == published)
+        do {
+            try await session.commit({ _ in }, context: .background)
+            Issue.record("Failed Session accepted a commit")
+        } catch {
+            #expect((error as? SessionFailed)?.cause as? SessionKernelFailure == .storage)
+        }
+        guard case .failed(let cause) = await session.closed else {
+            Issue.record("Session did not close with its storage failure"); return
+        }
+        #expect(cause as? SessionKernelFailure == .storage)
+        #expect(try await storage.scanEntries(.init(conversationId: conversation), limit: 256, cursor: nil, context: .background).items.isEmpty)
+        let reopened = try await Session.open(storage: storage, context: .background)
+        _ = try reopened.subscribeCommits { publication, _ in publications.append(publication) }
+        let entry = try await reopened.commit({ tx in
             try await tx.appendEntry(conversation, value: EntryDraft(kind: "accepted"))
         }, context: .background)
-        #expect(try await harness.storage.entry(entry.id, context: .background)?.entry == entry)
-        #expect(harness.publications.count == published + 1)
-        try await harness.session.close(context: .background)
+        #expect(try await storage.entry(entry.id, context: .background)?.entry == entry)
+        #expect(publications.count == published + 1)
+        try await reopened.close(context: .background)
     }
 
     @Test func SessionPublicationIsSynchronousAndCarriesContext() async throws {

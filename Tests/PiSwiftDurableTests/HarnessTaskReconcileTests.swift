@@ -7,8 +7,9 @@ import PiSwiftDurableTesting
 @Suite struct HarnessTaskReconcileTests {
     // upstream structured:1428; ownership:522,559
     @Test(arguments: ["cascade", "finalization"])
-    func rejectedReconcileWriteRetriesOnNextCommit(mode: String) async throws {
-        let storage = HarnessSelectiveStorage()
+    func failedReconcileWriteRecoversAfterReopen(mode: String) async throws {
+        let probe = FailureProbeStorage()
+        let storage = HarnessSelectiveStorage(probe)
         let clock = TestClock()
         let definition = harnessHoldingTask(clock: clock)
         let opened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(definition)], clock: clock)
@@ -29,14 +30,21 @@ import PiSwiftDurableTesting
                 try tx.setTask(child.replacing(state: .terminal(outcome: .completed(result: .number(2)))))
             } else { try tx.setTask(parent.replacing(state: .completing(outcome: .failed(error: .init(message: "held failure"))))) }
         }, context: .background)
-        try await harnessEventually { opened.reports.count > 0 }
-        #expect(try await harness.getTask(id: tree.owner, context: .background)?.state.status == "completing")
-        if mode != "finalization" { #expect(try await harness.getTask(id: tree.child, context: .background)?.abortRequested == false) }
-        _ = try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "retry")) }, context: .background)
-        let receipt = try await harness.waitForTask(id: tree.owner, context: .background)
-        #expect(receipt.outcome.status == (mode == "finalization" ? "completed" : "failed"))
-        if mode != "finalization" { #expect(try await harness.waitForTask(id: tree.child, context: .background).outcome.status == "aborted") }
+        let failure = D2TestError("selected write rejected")
+        try await harnessEventually { opened.reports.values.contains { $0 as? D2TestError == failure } }
+        await expectD2SessionFailure(failure) { try await harness.getTask(id: tree.owner, context: .background) }
+        await expectD2FailedEnd(harness, failure)
         try await harness.close(context: .background)
+        let reopenedStorage = FailureProbeStorage(base: probe.base)
+        #expect(try await reopenedStorage.task(tree.owner, context: .background)?.state.status == "completing")
+        if mode != "finalization" { #expect(try await reopenedStorage.task(tree.child, context: .background)?.abortRequested == false) }
+        let recovered = try await openTasks(storage: reopenedStorage, tasks: [AnyTaskDefinition(definition)], clock: clock)
+        let recoveredRoot = try await recovered.harness.root(context: .background)
+        _ = try await recoveredRoot.commit({ tx in try await tx.appendEntry(recoveredRoot.id, value: EntryDraft(kind: "retry")) }, context: .background)
+        let receipt = try await recovered.harness.waitForTask(id: tree.owner, context: .background)
+        #expect(receipt.outcome.status == (mode == "finalization" ? "completed" : "failed"))
+        if mode != "finalization" { #expect(try await recovered.harness.waitForTask(id: tree.child, context: .background).outcome.status == "aborted") }
+        try await recovered.harness.close(context: .background)
     }
 
     // upstream ownership:492
@@ -71,8 +79,8 @@ import PiSwiftDurableTesting
         #expect(try await harness.waitForTask(id: parent, context: .background).outcome.status == "aborted")
         try await harness.close(context: .background)
     }
-    // upstream ownership:522; loaded owner edges are restored from SQLite before the rejected mark.
-    @Test func reopenedOwnerEdgeMarkRetriesAfterStorageRejection() async throws {
+    // upstream ownership:522; loaded owner edges recover after a failed mark and reopen.
+    @Test func reopenedOwnerEdgeMarkRecoversAfterStorageFailure() async throws {
         let directory = try sqliteTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("edge-retry.sqlite").path
@@ -93,13 +101,19 @@ import PiSwiftDurableTesting
         let clock = TestClock()
         let definition = harnessHoldingTask(clock: clock)
         let opened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(definition)], clock: clock)
-        try await harnessEventually { opened.reports.count > 0 }
-        #expect(try await opened.harness.getTask(id: child, context: .background)?.abortRequested == false)
-        let root = try await opened.harness.root(context: .background)
-        _ = try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "retry")) }, context: .background)
-        #expect(try await opened.harness.waitForTask(id: child, context: .background).outcome.status == "aborted")
-        #expect(try await opened.harness.waitForTask(id: parent, context: .background).outcome.status == "failed")
+        let failure = D2TestError("selected write rejected")
+        try await harnessEventually { opened.reports.values.contains { $0 as? D2TestError == failure } }
+        await expectD2SessionFailure(failure) { try await opened.harness.getTask(id: child, context: .background) }
+        await expectD2FailedEnd(opened.harness, failure)
         try await opened.harness.close(context: .background)
+        let recoveredStorage = try await SqliteStorage.open(path: path)
+        #expect(try await recoveredStorage.task(child, context: .background)?.abortRequested == false)
+        let recovered = try await openTasks(storage: recoveredStorage, tasks: [AnyTaskDefinition(definition)], clock: clock)
+        let root = try await recovered.harness.root(context: .background)
+        _ = try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "retry")) }, context: .background)
+        #expect(try await recovered.harness.waitForTask(id: child, context: .background).outcome.status == "aborted")
+        #expect(try await recovered.harness.waitForTask(id: parent, context: .background).outcome.status == "failed")
+        try await recovered.harness.close(context: .background)
     }
 
 }

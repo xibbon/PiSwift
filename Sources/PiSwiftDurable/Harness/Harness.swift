@@ -30,7 +30,7 @@ public final class Harness: Sendable {
     internal let submissions: Submissions
     internal let views: ConversationViews
     internal let graph: TaskGraphView
-    private let closed = Mutex(false)
+    private let closeStarted = Mutex(false)
     private init(session: Session, storage: any DurableStorage, options: HarnessOptions,
                  tasks: TaskScheduler, submissions: Submissions) throws {
         self.session = session; self.storage = storage; self.options = options; self.tasks = tasks; self.submissions = submissions
@@ -47,7 +47,8 @@ public final class Harness: Sendable {
             if !missing.isEmpty { throw HarnessOpenError.missingBuiltins(missing) }
             let hooks = HarnessSessionHooks(app: options.conversationCreated)
             let now = options.now ?? { options.clock.now() }
-            let session = try await Session.open(storage: storage, now: now, hooks: hooks, context: context)
+            let session = try await Session.open(storage: storage, now: now, hooks: hooks, onReport: options.onReport ?? { _ in }, context: context)
+            let storage = session.storage
             let report: @Sendable (any Error) -> Void = options.onReport ?? { _ in }
             let settings: @Sendable () -> Settings = { options.settings?.resolve() ?? resolveSettings() }
             let reference = Mutex(WeakHarness())
@@ -74,18 +75,26 @@ public final class Harness: Sendable {
             reference.withLock { $0.value = harness }
             do { try await scheduler.open(context: context) }
             catch {
-                do { try await harness.close(context: context.withoutAbortSignal()) } catch { report(error) }
+                try? await harness.close(context: context.withoutAbortSignal())
                 throw error
             }
             return harness
         }
     }
-    internal func assertOpen() throws { if closed.withLock({ $0 }) { throw closedError() } }
+    internal func assertOpen() throws {
+        try session.assertHealthy()
+        if closeStarted.withLock({ $0 }) { throw closedError() }
+        try session.assertUsable()
+    }
+    /// The first Session failure, if one occurred.
+    public var failure: (any Error)? { session.failure }
+    /// The terminal result after backend close.
+    public var closed: SessionCloseResult { get async { await session.closed } }
     /// Starts task scheduling after a harness is opened or paused.
     public func resume() throws { try assertOpen(); tasks.resume() }
     /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {
-        closed.withLock { $0 = true }
+        closeStarted.withLock { $0 = true }
         try await withTaskCancellationContext(context) { try await session.close(context: $0) }
     }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.

@@ -132,24 +132,44 @@ func interactionBlockingRun(_ chat: CompactionChat) async throws -> (Submission,
         gate.release(); #expect(try await compactionOutcome(chat, id).status == "completed")
         try await chat.harness.close(context: .background)
     }
-    // Upstream :1456, :1880. A rejected response commit replaces a throwing model call in Swift.
+    // Upstream :1456, :1880. A failed response commit requires the Session to reopen.
     @Test(arguments: [false, true])
-    func faultedCompactionRemovesStatusAndBlockingGenerationContinues(blocking: Bool) async throws {
-        let storage = ControlledStorage(), chat = try await compactionOpen(contextWindow: 1000, storage: storage)
+    func failedCompactionCommitReopensAndBlockingGenerationContinues(blocking: Bool) async throws {
+        let storage = ControlledStorage(), probe = FailureProbeStorage(base: storage)
+        let chat = try await compactionOpen(contextWindow: 1000, storage: probe)
         try await compactionHistory(chat)
+        let failure = D2TestError("response commit failed")
         chat.script.appendSummary([.factory { _, _, _, _ in
-            await storage.failNextCommit(StorageRejected("models broke"))
+            await storage.failNextCommit(failure)
             return chatAssistant("SUMMARY")
         }])
+        let submissionId: SubmissionID?
+        let taskId: TaskID?
         if blocking {
             chat.setup.updateSettings { $0.compaction = .init(enabled: true, reserveTokens: 500, keepRecentTokens: 150, backgroundTokens: 0) }
-            try await compactionTurn(chat, compactionText("u4", 200), "a4")
+            chat.script.appendAgent([.message(chatAssistant("a4"))])
+            let submission = try await chat.root.submit(.input(content: .text(compactionText("u4", 200))), context: .background)
+            submissionId = submission.id; taskId = nil
+            await expectD2SessionFailure(failure) { try await submission.wait(context: .background) }
         } else {
-            #expect(try await compactionOutcome(chat, chat.root.compact(context: .background)).status == "faulted")
+            let id = try await chat.root.compact(context: .background)
+            submissionId = nil; taskId = id
+            await expectD2SessionFailure(failure) { try await compactionOutcome(chat, id) }
         }
-        #expect(try await compactionLive(chat).compactions == nil)
-        #expect(try await !compactionKinds(chat.root).contains("pi.compaction"))
+        await expectD2FailedEnd(chat.harness, failure)
         try await chat.harness.close(context: .background)
+        let reopened = try await compactionOpen(contextWindow: 1000, storage: probe, setup: chat.setup, script: chat.script, resume: false)
+        #expect(try await !compactionKinds(reopened.root).contains("pi.compaction"))
+        reopened.script.appendSummary([.message(chatAssistant("SUMMARY"))])
+        if let submissionId {
+            reopened.setup.updateSettings { $0.compaction = .init(enabled: true, reserveTokens: 500, keepRecentTokens: 150, backgroundTokens: 0) }
+            let submission = try #require(try await reopened.harness.submission(id: submissionId, context: .background))
+            #expect(try await submission.wait(context: .background).status == "done")
+        } else if let taskId {
+            #expect(try await compactionOutcome(reopened, taskId).status == "completed")
+        }
+        #expect(try await compactionLive(reopened).compactions == nil)
+        try await reopened.harness.close(context: .background)
     }
     // Upstream :1492; H9 events adapted to fresh pi.live snapshots.
     @Test func retryStatusIsVisibleToLateReaderAndRemovedOnAbort() async throws {

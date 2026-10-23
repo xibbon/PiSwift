@@ -66,7 +66,7 @@ extension Session {
             let value = try loaded.snapshot(Value.self)
             let revision = ObservationRevision(version: loaded.valueVersion, value: loaded.tracker.value.objectValue!)
             let subscriptions = ObservationSubscriptions()
-            let watch = CommittedWatch<Value?>(value: value, replacement: { _ in revision.tree }, detach: { subscriptions.release() })
+            let watch = CommittedWatch<Value?>(value: value, replacement: { _ in revision.tree }, detach: { subscriptions.release() }, report: report)
             do {
                 try attachObservation(recordID: loaded.record.id, revision: revision, subscriptions: subscriptions,
                     advance: { change, ops, context in
@@ -74,7 +74,7 @@ extension Session {
                             let value = try change.value.map { try JSONValue.object($0).decode(Value.self) }
                             watch.advance(value: value, ops: ops, context: context, retired: change.value == nil)
                         } catch { watch.fail(error) }
-                    }, close: { watch.closeSession() })
+                    }, close: { watch.closeSession(self.failure) })
                 if let signal = context.abortSignal { try watch.observeCancellation(signal) }
                 try context.abortSignal?.throwIfAborted()
                 return watch
@@ -112,9 +112,9 @@ extension Session {
                         do {
                             let value = try change.value.map { try JSONValue.object($0).decode(Value.self) }
                             source.advance(value: value, ops: ops, context: context, retired: change.value == nil)
-                        } catch { source.closeSession() }
+                        } catch { self.report(error); source.closeSession() }
                     }, close: { source.closeSession() })
-                let state = try replicatedState(source)
+                let state = try replicatedState(source, onError: report)
                 do { try context.abortSignal?.throwIfAborted() }
                 catch { state.dispose(); throw error }
                 return state
@@ -131,7 +131,7 @@ extension Session {
         advance: @escaping @Sendable (DocumentCommitChange, [Delta.Op], ChordContext) -> Void,
         close: @escaping @Sendable () -> Void
     ) throws {
-        subscriptions.add(try subscribeCommits { publication, context in
+        subscriptions.add(try observeCommits { publication, context in
             for change in publication.changes {
                 guard case .document(let document) = change,
                       document.source == nil, document.record.id == recordID else { continue }

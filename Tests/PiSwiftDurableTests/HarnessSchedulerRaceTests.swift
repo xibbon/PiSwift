@@ -32,9 +32,9 @@ import PiSwiftDurableTesting
         try await harness.close(context: .background)
     }
 
-    // upstream harness-tasks.test.ts:774
-    @Test func wakeupDuringRejectedReservationIsKept() async throws {
-        let storage = ControlledStorage(), registry = Registry()
+    // The v1.1.0 wakeup/retry case was deleted. Failure requires reopen.
+    @Test func wakeupDuringFailedReservationRequiresReopen() async throws {
+        let storage = FailureProbeStorage(), registry = Registry()
         let first = harnessOneStep("test.wake-first") { _, runtime, context in
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }
@@ -44,31 +44,38 @@ import PiSwiftDurableTesting
         let opened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(first)], registry: registry)
         let harness = opened.harness, root = try await harness.root(context: .background)
         let firstID = try await harnessStart(root, first), lateID = try await harnessStart(root, late)
-        let held = await storage.holdCommits()
-        await storage.failNextCommit(StorageRejected("busy"))
+        let held = await storage.base.holdCommits(), failure = HarnessStorageFailure("busy")
+        await storage.base.failNextCommit(failure)
         try harness.resume(); await held.waitUntilEntered()
         try registry.install(Extension(name: "late", tasks: [AnyTaskDefinition(late)]))
         await held.release()
-        #expect(try await harness.waitForTask(id: firstID, context: .background).outcome.status == "completed")
-        #expect(try await harness.waitForTask(id: lateID, context: .background).outcome.status == "completed")
+        await expectFailedEnd(harness, failure)
+        await expectSessionFailure(failure) { try await harness.waitForTask(id: firstID, context: .background) }
         #expect(opened.reports.count == 1)
-        try await harness.close(context: .background)
+        let reopened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(first), AnyTaskDefinition(late)])
+        #expect(try await reopened.harness.waitForTask(id: firstID, context: .background).outcome.status == "completed")
+        #expect(try await reopened.harness.waitForTask(id: lateID, context: .background).outcome.status == "completed")
+        try await reopened.harness.close(context: .background)
     }
 
-    // upstream harness-tasks.test.ts:797
-    @Test func rejectedFaultWriteRerunsTheTask() async throws {
-        let storage = ControlledStorage(), runs = Mutex(0)
+    // upstream harness-tasks.test.ts:777
+    @Test func failedFaultWriteRequiresReopenBeforeTaskRunsAgain() async throws {
+        let storage = FailureProbeStorage(), runs = Mutex(0), failure = HarnessStorageFailure("busy")
         let definition = harnessOneStep("test.retry-fault") { _, _, _ in
             let run = runs.withLock { $0 += 1; return $0 }
-            if run == 1 { await storage.failNextCommit(StorageRejected("busy")) }
+            if run == 1 { await storage.base.failNextCommit(failure) }
             throw TaskDefinitionError("boom")
         }
         let opened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(definition)])
         let harness = opened.harness, root = try await harness.root(context: .background), id = try await harnessStart(root, definition)
-        #expect(try await harness.waitForTask(id: id, context: .background).outcome == .faulted(error: .init(message: "boom")))
-        #expect(runs.withLock { $0 } == 2)
+        try harness.resume()
+        await expectFailedEnd(harness, failure)
+        #expect(runs.withLock { $0 } == 1)
         #expect(opened.reports.count == 1)
-        try await harness.close(context: .background)
+        let reopened = try await openTasks(storage: storage, tasks: [AnyTaskDefinition(definition)])
+        #expect(try await reopened.harness.waitForTask(id: id, context: .background).outcome == .faulted(error: .init(message: "boom")))
+        #expect(runs.withLock { $0 } == 2)
+        try await reopened.harness.close(context: .background)
     }
 
     // upstream harness-tasks.test.ts:1067

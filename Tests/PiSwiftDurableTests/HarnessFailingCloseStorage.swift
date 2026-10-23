@@ -64,5 +64,5 @@ struct HarnessFailingCloseStorage: DurableStorage {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
-    func close(context: ChordContext) async throws { try await base.close(context: context); throw StorageRejected("close failed") }
+    func close(context: ChordContext) async throws { try await base.close(context: context); throw D2TestError("close failed") }
 }

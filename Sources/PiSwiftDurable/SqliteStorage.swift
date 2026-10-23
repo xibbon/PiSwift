@@ -57,7 +57,7 @@ public actor SqliteStorage: DurableStorage {
     /// Returns a page of conversations that match all query filters.
     public func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<ConversationRecord, Cursor> {
         try assertOpen()
-        let start = try scanStart(requested: query.order, cursor: cursor, fallback: .ascending)
+        let start = try storageScanStart(requested: query.order, cursor: cursor, fallback: .ascending)
         var scan = SqliteScan(start)
         scan.add("owner_conversation_id", query.ownerConversationId.map { .integer($0.rawValue) })
         scan.add("owner_task_id", query.ownerTaskId.map { .integer($0.rawValue) })
@@ -66,7 +66,7 @@ public actor SqliteStorage: DurableStorage {
     /// Returns a page of tasks that match all query filters.
     public func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<TaskRecord, Cursor> {
         try assertOpen()
-        var scan = SqliteScan(try scanStart(requested: query.order, cursor: cursor, fallback: .ascending))
+        var scan = SqliteScan(try storageScanStart(requested: query.order, cursor: cursor, fallback: .ascending))
         scan.add("conversation_id", query.conversationId.map { .integer($0.rawValue) })
         scan.add("kind", try query.kind.map(indexed))
         scan.add("status", query.status.map { .text($0.rawValue) })
@@ -77,7 +77,7 @@ public actor SqliteStorage: DurableStorage {
     /// Returns a page of submissions that match all query filters.
     public func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<SubmissionRecord, Cursor> {
         try assertOpen()
-        var scan = SqliteScan(try scanStart(requested: query.order, cursor: cursor, fallback: .ascending))
+        var scan = SqliteScan(try storageScanStart(requested: query.order, cursor: cursor, fallback: .ascending))
         scan.add("conversation_id", query.conversationId.map { .integer($0.rawValue) })
         scan.add("status", query.status.map { .text($0.rawValue) })
         return try scanRecords("submissions", scan: scan, limit: limit, id: { $0.id.rawValue })
@@ -113,7 +113,7 @@ public actor SqliteStorage: DurableStorage {
     /// Returns a page of entries in the visible ancestry and requested range.
     public func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) throws -> Page<EntryRecord, Cursor> {
         try assertOpen()
-        let start = try scanStart(requested: query.order, cursor: cursor, fallback: .descending)
+        let start = try storageScanStart(requested: query.order, cursor: cursor, fallback: .descending)
         var upper = query.maxEntryId?.rawValue
         var conversation = try requireConversation(query.conversationId)
         var values: [EntryRecord] = []
@@ -171,7 +171,7 @@ public actor SqliteStorage: DurableStorage {
         try assertOpen()
         let after: Int64
         if let value = cursor?["after"] {
-            guard let number = value.numberValue, let integer = Int64(exactly: number), integer >= -Seq.maximumRawValue, integer <= Seq.maximumRawValue else { throw DurableStorageError.invalidCursor }
+            guard let number = value.numberValue, let integer = Int64(exactly: number), integer >= -Seq.maximumRawValue, integer <= Seq.maximumRawValue else { throw StorageRequestError(DurableStorageError.invalidCursor.description) }
             after = integer
         } else { after = -1 }
         var params = scopeValues(query.scope) + [.integer(after)]
@@ -197,7 +197,7 @@ public actor SqliteStorage: DurableStorage {
         try db.get("SELECT record FROM \(table) WHERE id = ?", [.integer(id)]).map { try decodeRecord($0) }
     }
     func requireConversation(_ id: ConversationID) throws -> ConversationRecord {
-        guard let record: ConversationRecord = try readRecord("conversations", id: id.rawValue) else { throw DurableStorageError.unknownConversation(id) }
+        guard let record: ConversationRecord = try readRecord("conversations", id: id.rawValue) else { throw StorageRequestError(DurableStorageError.unknownConversation(id).description) }
         return record
     }
     func readEntry(_ id: EntryID) throws -> EntryLookup? {
@@ -210,7 +210,7 @@ public actor SqliteStorage: DurableStorage {
     func materialize(_ executor: any SqliteExecutor, id: DocumentID, at: DocumentPoint) throws -> StoredDocument? {
         guard let row = try executor.get("SELECT record FROM documents WHERE id = ?", [.integer(id.rawValue)]) else { return nil }
         let record: DocumentRecord = try decodeRecord(row)
-        if case .sequence = at, record.memoryCurrentOnly { throw DurableStorageError.documentDoesNotRetainHistory(id) }
+        if case .sequence = at, record.memoryCurrentOnly { throw StorageRequestError(DurableStorageError.documentDoesNotRetainHistory(id).description) }
         guard record.memoryAlive(at) else { return nil }
         let upper: Int64 = if case .sequence(let seq) = at { seq.rawValue } else { Seq.maximumRawValue }
         guard let base = try executor.get("SELECT seq, kind, version, content FROM document_revisions WHERE document_id = ? AND kind = 'base' AND seq <= ? ORDER BY seq DESC LIMIT 1", [.integer(id.rawValue), .integer(upper)]) else { throw DurableStorageError.documentMissingBase(id) }

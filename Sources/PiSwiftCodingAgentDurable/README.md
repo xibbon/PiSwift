@@ -118,6 +118,15 @@ Call `cancel()` on each subscription. Call `await session.close()` when the host
 Closing preserves pending work for a later continue. It does not abort that work.
 To continue from a host, pass `.init(cwd: cwd, continueSession: true)` to `openDurable`.
 
+A backend failure stops command admission and closes the runtime automatically.
+The final view has `terminal` set to `.closed` or `.failed(message:)`.
+A failure also adds an error notice with the first cause.
+View listeners receive the final snapshot on the same private serial queue.
+Use `await session.closed` to wait for the final `SessionCloseResult` and cleanup.
+The wait returns after environments are clean and the session lock is released.
+`session.failure` gives the first backend error, if one occurred.
+An explicit close and an automatic close share one cleanup operation.
+
 iOS supports the local file tools. It has no local shell. Local `bash` returns `shellUnavailable`.
 `openDurable` always uses local environments and includes `bash`. It has no environment override.
 For a remote `ExecutionEnv`, build a Harness with the public settings, model, prompt, and subagent helpers.

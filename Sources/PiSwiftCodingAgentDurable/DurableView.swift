@@ -83,6 +83,14 @@ public struct DurableSessionView: Sendable, Equatable, Codable {
     }
 }
 
+/// The final session state for display. Nil means that the session is open.
+public enum DurableSessionTerminal: Sendable, Equatable, Codable {
+    /// The session closed without a storage failure.
+    case closed
+    /// The session failed. The message describes the first cause.
+    case failed(message: String)
+}
+
 /// The values shown by a durable session interface.
 public struct DurableView: Sendable, Equatable, Codable {
     /// The session location.
@@ -97,17 +105,21 @@ public struct DurableView: Sendable, Equatable, Codable {
     public let notices: [Notice]
     /// The live task graph, when the task panel is open.
     public let tasks: TaskGraph?
+    /// The final session state, when the session has ended.
+    public let terminal: DurableSessionTerminal?
 
     /// Creates a view snapshot for a session interface.
     public init(session: DurableSessionView, conversation: ConversationView,
                 conversations: [ConversationSummary], models: [ModelSummary],
-                notices: [Notice] = [], tasks: TaskGraph? = nil) {
+                notices: [Notice] = [], tasks: TaskGraph? = nil,
+                terminal: DurableSessionTerminal? = nil) {
         self.session = session
         self.conversation = conversation
         self.conversations = conversations
         self.models = models
         self.notices = notices
         self.tasks = tasks
+        self.terminal = terminal
     }
 }
 
@@ -138,7 +150,8 @@ public protocol DurableViewSource: Sendable {
     /// Adds a change listener. Call `cancel()` on the returned subscription to remove it.
     /// The openDurable source groups changes and calls listeners on a private serial queue.
     /// A UI host must transfer UI work to its main actor. Read `current()` for the new view.
-    /// Close removes listeners. A callback that has started can finish after cancellation.
+    /// Close schedules a final notification and removes listeners.
+    /// A callback already selected for delivery can finish after cancellation.
     func subscribe(_ listener: @escaping @Sendable () -> Void) -> DurableViewSubscription
 }
 

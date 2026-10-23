@@ -1,13 +1,3 @@
-/// A batch was rejected before any durable effect. The owning Session can continue.
-public struct StorageRejected: Error, Sendable, Equatable, CustomStringConvertible {
-    /// Text that describes the error, diagnostic, or model response.
-    public let message: String
-    /// Stores a rejection message for a batch with no durable effect.
-    public init(_ message: String) { self.message = message }
-    /// Text that describes this value or error to the caller.
-    public var description: String { message }
-}
-
 /// Storage contract failures. Descriptions use the upstream backend error text.
 public enum DurableStorageError: Error, Sendable, Equatable, CustomStringConvertible {
     /// the supplied value is closed.
@@ -94,4 +84,11 @@ public enum DurableStorageError: Error, Sendable, Equatable, CustomStringConvert
         case .preparedDocumentCopyNotResolved: "Prepared document copy was not resolved"
         }
     }
+}
+
+/// A document copy failed before storage changed.
+struct DocumentCopyFailure: Error, Sendable, CustomStringConvertible {
+    let message: String
+    let cause: any Error
+    var description: String { message }
 }

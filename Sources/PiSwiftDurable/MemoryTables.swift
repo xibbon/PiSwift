@@ -115,7 +115,7 @@ struct MemoryTables: Sendable {
                 // Upstream builds a new command. Copy-command extension fields are not retained.
                 return .documentCreate(record: record, content: DocumentBaseContent(version: stored.version, value: stored.value))
             } catch {
-                throw StorageRejected("Document copy \(record.id.rawValue) was rejected")
+                throw DocumentCopyFailure(message: "Document copy \(record.id.rawValue) was rejected", cause: error)
             }
         }
     }
@@ -287,7 +287,7 @@ struct MemoryTables: Sendable {
 
     func materialize(_ id: DocumentID, at: DocumentPoint) throws -> StoredDocument? {
         guard let stored = documents[id] else { return nil }
-        if case .sequence = at, stored.record.memoryCurrentOnly { throw DurableStorageError.documentDoesNotRetainHistory(id) }
+        if case .sequence = at, stored.record.memoryCurrentOnly { throw StorageRequestError(DurableStorageError.documentDoesNotRetainHistory(id).description) }
         guard stored.record.memoryAlive(at) else { return nil }
         let revisions = stored.revisions.filter { revision in
             if case .sequence(let seq) = at { return revision.seq <= seq }

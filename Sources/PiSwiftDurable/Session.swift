@@ -24,6 +24,8 @@ public struct DefaultSessionHooks: SessionHooks {
 /// One mutation line over one storage backend.
 public final class Session: Sendable {
     internal let storage: any DurableStorage
+    private let failureLatch: SessionFailureLatch
+    internal let report: @Sendable (any Error) -> Void
     internal let now: @Sendable () -> Int64
     internal let hooks: any SessionHooks
     internal let line = SessionLine()
@@ -31,13 +33,19 @@ public final class Session: Sendable {
         let id: Int
         let call: @Sendable (CommitPublication, ChordContext) -> Void
     }
+    private struct InternalListener: Sendable {
+        let id: Int
+        let call: @Sendable (CommitPublication, ChordContext) throws -> Void
+    }
     private struct CloseListener: Sendable {
         let id: Int
         let call: @Sendable () -> Void
     }
     private struct State: Sendable {
-        var poison: (any Error)?
         var closing: Task<Void, any Error>?
+        var terminal: SessionCloseResult?
+        var terminalWaiters: [CheckedContinuation<SessionCloseResult, Never>] = []
+        var internals: [InternalListener] = []
         var nextListener = 0
         var commits: [CommitListener] = []
         var closes: [CloseListener] = []
@@ -46,25 +54,34 @@ public final class Session: Sendable {
     private let state = Mutex(State())
     // Capture cached revisions atomically with all adoption, eviction, and installation.
     private let committedRead = Mutex(())
-    private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64, hooks: any SessionHooks) {
-        self.storage = storage; self.now = now; self.hooks = hooks
+    private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64, hooks: any SessionHooks, report: @escaping @Sendable (any Error) -> Void) {
+        let latch = SessionFailureLatch()
+        self.failureLatch = latch
+        self.storage = GuardedStorage(storage, latch: latch); self.now = now; self.hooks = hooks; self.report = report
     }
     /// Creates a session over the supplied storage without reading persisted records.
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             hooks: any SessionHooks = DefaultSessionHooks(),
+                            onReport: @escaping @Sendable (any Error) -> Void = { _ in },
                             context: ChordContext) async throws -> Session {
-        Session(storage: storage, now: now, hooks: hooks)
+        let session = Session(storage: storage, now: now, hooks: hooks, report: onReport)
+        session.failureLatch.install { [weak session] error in
+            guard let session else { return }
+            _ = session.beginClose(context: .background)
+            session.report(error)
+        }
+        return session
     }
     private func admit() throws -> SessionLine.Ticket {
         try state.withLock {
+            try failureLatch.check()
             if $0.closing != nil { throw SessionError.closed }
-            if $0.poison != nil { throw SessionError.poisoned }
             return line.reserve()
         }
     }
     internal func assertHealthy() throws {
-        try state.withLock { if $0.poison != nil { throw SessionError.poisoned } }
+        try failureLatch.check()
     }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T,
@@ -81,7 +98,7 @@ public final class Session: Sendable {
         try context.abortSignal?.throwIfAborted()
         let tx = Transaction(session: self, context: context, scope: scope)
         let result: T
-        do { result = try await change(tx) }
+        do { result = try await change(tx); try assertHealthy() }
         catch { await tx.settleFailure(); throw error }
         let writes = try await tx.settleSuccess()
         if writes.isEmpty { tx.discard(); return result }
@@ -89,12 +106,11 @@ public final class Session: Sendable {
         do { seq = try await storage.commit(writes, context: context.withoutAbortSignal()) }
         catch {
             tx.discard()
-            if !(error is StorageRejected) { state.withLock { $0.poison = error } }
             throw error
         }
         let documents: [DocumentCommitChange]
         do { documents = try committedRead.withLock { _ in try tx.adopt(seq) } }
-        catch { state.withLock { $0.poison = error }; throw error }
+        catch { fail(error); throw error }
         var changes: [CommitChange] = []
         for write in writes {
             switch write {
@@ -107,6 +123,10 @@ public final class Session: Sendable {
         }
         changes.append(contentsOf: documents.map(CommitChange.document))
         let publication = CommitPublication(seq: seq, changes: changes)
+        let internalListeners = state.withLock { $0.internals }
+        for listener in internalListeners {
+            do { try listener.call(publication, context) } catch { fail(error) }
+        }
         let listeners = state.withLock { $0.commits }
         for listener in listeners { listener.call(publication, context) }
         return result
@@ -128,8 +148,8 @@ public final class Session: Sendable {
     /// The listener runs on the line after adoption. It must not block or call Session operations.
     public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
         let id = try state.withLock { state in
+            try failureLatch.check()
             if state.closing != nil { throw SessionError.closed }
-            if state.poison != nil { throw SessionError.poisoned }
             state.nextListener += 1
             let id = state.nextListener
             state.commits.append(CommitListener(id: id, call: listener)); return id
@@ -139,16 +159,55 @@ public final class Session: Sendable {
     /// The listener runs when close seals admission. It must not block or call Session operations.
     public func subscribeClose(_ listener: @escaping @Sendable () -> Void) throws -> SessionSubscription {
         let id = try state.withLock { state in
+            try failureLatch.check()
             if state.closing != nil { throw SessionError.closed }
-            if state.poison != nil { throw SessionError.poisoned }
             state.nextListener += 1
             let id = state.nextListener
             state.closes.append(CloseListener(id: id, call: listener)); return id
         }
         return SessionSubscription { [weak self] in self?.state.withLock { $0.closes.removeAll { $0.id == id } } }
     }
-    /// Releases this object's resources and rejects later operations.
+    /// The first cause of Session failure.
+    public var failure: (any Error)? { failureLatch.failure }
+
+    /// Resolves after backend close has finished, including a failed close.
+    public var closed: SessionCloseResult {
+        get async {
+            await withCheckedContinuation { continuation in
+                let result = state.withLock { state -> SessionCloseResult? in
+                    if let terminal = state.terminal { return terminal }
+                    state.terminalWaiters.append(continuation)
+                    return nil
+                }
+                if let result { continuation.resume(returning: result) }
+            }
+        }
+    }
+    internal func fail(_ error: any Error) { failureLatch.fail(error) }
+    internal func awaitHealthy<Value: Sendable>(_ work: Task<Value, any Error>, context: ChordContext) async throws -> Value {
+        try await failureLatch.awaitHealthy(work, context: context)
+    }
+    internal func assertUsable() throws {
+        try state.withLock { state in
+            try failureLatch.check()
+            if state.closing != nil { throw SessionError.closed }
+        }
+    }
+    internal func observeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) throws -> Void) throws -> SessionSubscription {
+        let id = try state.withLock { state in
+            try failureLatch.check()
+            if state.closing != nil { throw SessionError.closed }
+            state.nextListener += 1
+            let id = state.nextListener
+            state.internals.append(InternalListener(id: id, call: listener)); return id
+        }
+        return SessionSubscription { [weak self] in self?.state.withLock { $0.internals.removeAll { $0.id == id } } }
+    }
+    /// Releases resources. Repeated calls wait for the same backend close.
     public func close(context: ChordContext) async throws {
+        try await awaitWithContext(beginClose(context: context), context)
+    }
+    private func beginClose(context: ChordContext) -> Task<Void, any Error> {
         let begin = SessionLine.Ticket()
         let (task, listeners) = state.withLock { state -> (Task<Void, any Error>, [CloseListener]) in
             if let closing = state.closing { return (closing, []) }
@@ -158,9 +217,10 @@ public final class Session: Sendable {
                 await self.hooks.beforeClose()
                 let ticket = self.line.reserve()
                 await ticket.wait()
-                defer { self.line.release() }
-                self.state.withLock { $0.commits.removeAll(); $0.documents.removeAll() }
-                try await self.storage.close(context: cleanup)
+                defer { self.line.release(); self.finishClose() }
+                self.state.withLock { $0.commits.removeAll(); $0.internals.removeAll(); $0.documents.removeAll() }
+                do { try await self.storage.close(context: cleanup) }
+                catch { self.fail(error); throw error }
             }
             state.closing = task
             let listeners = state.closes; state.closes.removeAll()
@@ -168,7 +228,15 @@ public final class Session: Sendable {
         }
         for listener in listeners { listener.call() }
         begin.grant()
-        try await awaitWithContext(task, context)
+        return task
+    }
+    private func finishClose() {
+        let result: SessionCloseResult = failure.map { .failed($0) } ?? .closed
+        let waiters = state.withLock { state in
+            state.terminal = result
+            let waiters = state.terminalWaiters; state.terminalWaiters.removeAll(); return waiters
+        }
+        for waiter in waiters { waiter.resume(returning: result) }
     }
     internal func loadDocument(_ definition: DocumentDefinition, address: DocumentAddress,
                                context: ChordContext) async throws -> LoadedDocument? {
@@ -191,8 +259,8 @@ public final class Session: Sendable {
                         address: DocumentAddress, context: ChordContext) async throws -> Value? {
         let captured = try committedRead.withLock { _ -> (LoadedDocument, Int, JSONValue)? in
             let cached = try state.withLock { state -> LoadedDocument? in
+                try failureLatch.check()
                 if state.closing != nil { throw SessionError.closed }
-                if state.poison != nil { throw SessionError.poisoned }
                 return state.documents[Array(documentAddressID(address).utf8)]
             }
             guard let cached, cached.valueVersion == definition.version else { return nil }

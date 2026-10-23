@@ -15,11 +15,15 @@ public struct EntryLookup: Sendable, Equatable, Codable {
 /// global ID ownership, immutable conversation and entry creation, document consistency,
 /// and detached values. Index keys (`kind`, document `key`, and `requestId`) must be
 /// compared by code units. Swift canonical string equality is not the index rule.
+/// A storage error fails the Session. A read can reject an invalid request with
+/// `StorageRequestError`, with no durable effect, or reject because its context was
+/// aborted; these errors fail only that read. Every commit or mint error is fatal.
+/// Retry temporary failures inside the storage method.
 /// Context is the Chord context; Swift task cancellation does not replace it.
 public protocol DurableStorage: Sendable {
     /// Atomically stores the batch and returns a strictly increasing sequence; gaps are permitted.
-    /// Later reads see the batch after this returns. `StorageRejected` is permitted only
-    /// when no durable effect occurred. An unknown failure can have uncertain commit state.
+    /// Later reads see the batch after this returns. Every commit error fails the Session,
+    /// including an error with no durable effect. Reopen the Session after an error.
     /// Document copies read committed pre-batch state. Content precedes retirement regardless
     /// of write order; version changes require bases. The Session serializes these calls.
     func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq

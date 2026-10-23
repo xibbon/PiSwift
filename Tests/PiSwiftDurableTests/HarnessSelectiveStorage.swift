@@ -13,7 +13,7 @@ final class HarnessSelectiveStorage: DurableStorage, Sendable {
             guard let check = predicate, check(writes) else { return false }
             predicate = nil; return true
         }
-        if reject { throw StorageRejected("selected write rejected") }
+        if reject { throw D2TestError("selected write rejected") }
         return try await base.commit(writes, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {

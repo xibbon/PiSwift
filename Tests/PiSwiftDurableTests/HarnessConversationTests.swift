@@ -74,7 +74,7 @@ private let dormantKind = TaskKind<JSONObject, JSONObject>(name: "h5.dormant", v
         }), context: .background)
         #expect(await storage.commits.count == 1); #expect(try await harnessEntries(created) == ["seed"])
         await facadeError("init failed") {
-            _ = try await h.harness.createConversation(options: .init(ownership: .ownerless(), agent: .init(thinkingLevel: .set(.high)), initialize: { _, _ in throw StorageRejected("init failed") }), context: .background)
+            _ = try await h.harness.createConversation(options: .init(ownership: .ownerless(), agent: .init(thinkingLevel: .set(.high)), initialize: { _, _ in throw D2TestError("init failed") }), context: .background)
         }
         #expect(await storage.commits.count == 1)
         try h.registry.install(Extension(name: "live")); #expect(try await created.agent(context: .background).extensions.map(\.name) == ["live"])
@@ -133,7 +133,7 @@ private let dormantKind = TaskKind<JSONObject, JSONObject>(name: "h5.dormant", v
             let value = try await tx.doc(AgentDoc, conversationId: record.id).snapshot()
             seen.withLock { $0.append(value["cwd"]?.stringValue ?? "empty") }
             try await tx.doc(note, conversationId: record.id).set("text", "created")
-            if value["cwd"] == "/fail" { throw StorageRejected("no") }
+            if value["cwd"] == "/fail" { throw D2TestError("no") }
         }), context: .background)
         let root = try await harness.root(options: .init(agent: .init(cwd: .set("/root")), initialize: { tx, id in
             let value = try await tx.doc(note, conversationId: id).snapshot()

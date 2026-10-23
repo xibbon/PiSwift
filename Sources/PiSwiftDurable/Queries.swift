@@ -215,3 +215,9 @@ public func scanStart(requested: ScanOrder?, cursor: Cursor?, fallback: ScanOrde
 public func nextCursor<Kind: DurableIDKind>(_ id: DurableID<Kind>, order: ScanOrder) -> Cursor {
     ["after": .number(Double(id.rawValue)), "order": .string(order.rawValue)]
 }
+
+/// Native reads mark invalid requests without changing the public scan helper's errors.
+internal func storageScanStart(requested: ScanOrder?, cursor: Cursor?, fallback: ScanOrder) throws -> ScanStart {
+    do { return try scanStart(requested: requested, cursor: cursor, fallback: fallback) }
+    catch { throw StorageRequestError(String(describing: error)) }
+}

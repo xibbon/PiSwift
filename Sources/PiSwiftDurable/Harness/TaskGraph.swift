@@ -120,10 +120,10 @@ private enum TaskGraphObserver: Sendable {
         case .watch(let watch): watch.advance(value: value, ops: ops, context: context)
         }
     }
-    func close() {
+    func close(_ error: (any Error)? = nil) {
         switch self {
         case .state(let source): source.closeSession()
-        case .watch(let watch): watch.closeSession()
+        case .watch(let watch): watch.closeSession(error)
         }
     }
 }
@@ -143,7 +143,7 @@ internal final class TaskGraphView: Sendable {
 
     init(session: Session, storage: any DurableStorage) throws {
         self.session = session; self.storage = storage
-        let commits = try session.subscribeCommits { [weak self] publication, context in self?.advance(publication, context) }
+        let commits = try session.observeCommits { [weak self] publication, context in self?.advance(publication, context) }
         subscriptions.withLock { $0.append(commits) }
         do {
             let close = try session.subscribeClose { [weak self] in self?.close() }
@@ -159,7 +159,7 @@ internal final class TaskGraphView: Sendable {
                 return (source, .state(source))
             }
             do {
-                let attached = try replicatedState(source)
+                let attached = try replicatedState(source, onError: session.report)
                 do { try context.abortSignal?.throwIfAborted() }
                 catch { attached.dispose(); throw error }
                 return attached
@@ -169,7 +169,7 @@ internal final class TaskGraphView: Sendable {
     func watch(context: ChordContext) async throws -> TaskGraphWatch {
         let watch = try await session.readOnLine {
             try await attach(context: context) { value, release in
-                let watch = TaskGraphWatch(value: value, replacement: { $0.json }, detach: release)
+                let watch = TaskGraphWatch(value: value, replacement: { $0.json }, detach: release, report: session.report)
                 return (watch, .watch(watch))
             }
         }
@@ -219,7 +219,7 @@ internal final class TaskGraphView: Sendable {
             return mount
         }
         let observers = mount?.storage.withLock { Array($0.observers.values) } ?? []
-        for observer in observers { observer.close() }
+        for observer in observers { observer.close(session.failure) }
     }
     private func build(_ context: ChordContext) async throws -> TaskGraph {
         var records: [TaskRecord] = []

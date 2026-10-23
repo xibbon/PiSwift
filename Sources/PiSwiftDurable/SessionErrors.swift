@@ -32,3 +32,23 @@ public enum SessionError: Error, Sendable, Equatable, CustomStringConvertible {
         }
     }
 }
+
+/// A read request is invalid. This error does not mean that storage failed.
+public struct StorageRequestError: Error, Sendable, Equatable, CustomStringConvertible {
+    public let message: String
+    public init(_ message: String) { self.message = message }
+    public var description: String { message }
+}
+
+/// The Session has failed. The first error remains the cause.
+public struct SessionFailed: Error, Sendable, CustomStringConvertible {
+    public let cause: any Error
+    public init(_ cause: any Error) { self.cause = cause }
+    public var description: String { "Session failed after a storage error; close and reopen it" }
+}
+
+/// The terminal result, available after storage close has finished.
+public enum SessionCloseResult: Sendable {
+    case closed
+    case failed(any Error)
+}

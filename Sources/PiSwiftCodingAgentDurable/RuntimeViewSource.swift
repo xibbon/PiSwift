@@ -48,7 +48,7 @@ internal final class RuntimeViewSource: DurableViewSource {
         update { view in
             view = DurableView(session: view.session, conversation: value,
                                conversations: view.conversations, models: view.models,
-                               notices: view.notices, tasks: view.tasks)
+                               notices: view.notices, tasks: view.tasks, terminal: view.terminal)
         }
     }
 
@@ -56,7 +56,7 @@ internal final class RuntimeViewSource: DurableViewSource {
         update { view in
             view = DurableView(session: view.session, conversation: view.conversation,
                                conversations: view.conversations, models: view.models,
-                               notices: view.notices, tasks: value)
+                               notices: view.notices, tasks: value, terminal: view.terminal)
         }
     }
 
@@ -80,7 +80,7 @@ internal final class RuntimeViewSource: DurableViewSource {
             }
             view = DurableView(session: view.session, conversation: view.conversation,
                                conversations: summaries, models: view.models,
-                               notices: view.notices, tasks: view.tasks)
+                               notices: view.notices, tasks: view.tasks, terminal: view.terminal)
         }
     }
 
@@ -91,18 +91,45 @@ internal final class RuntimeViewSource: DurableViewSource {
             state.nextNotice += 1
             state.view = DurableView(session: view.session, conversation: view.conversation,
                                      conversations: view.conversations, models: view.models,
-                                     notices: Array((view.notices + [notice]).suffix(20)), tasks: view.tasks)
+                                     notices: Array((view.notices + [notice]).suffix(20)), tasks: view.tasks,
+                                     terminal: view.terminal)
         }
     }
 
     func fail(_ error: any Error) { notice(.error, runtimeErrorMessage(error)) }
 
-    func finish() {
-        state.withLock {
-            $0.finished = true
-            $0.scheduled = false
-            $0.listeners.removeAll()
+    /// Records the first terminal result and its failure notice in one change.
+    func terminate(_ result: SessionCloseResult) {
+        change { state in
+            let view = state.view
+            guard view.terminal == nil else { return }
+            let terminal: DurableSessionTerminal
+            var notices = view.notices
+            switch result {
+            case .closed: terminal = .closed
+            case .failed(let error):
+                let message = runtimeErrorMessage(error)
+                terminal = .failed(message: message)
+                notices = Array((notices + [Notice(id: state.nextNotice, level: .error, message: message)]).suffix(20))
+                state.nextNotice += 1
+            }
+            state.view = DurableView(session: view.session, conversation: view.conversation,
+                                     conversations: view.conversations, models: view.models,
+                                     notices: notices, tasks: view.tasks, terminal: terminal)
         }
+    }
+
+    func finish(deliverFinal: Bool = false) {
+        let listeners = state.withLock { state -> [@Sendable () -> Void] in
+            guard !state.finished else { return [] }
+            let deliverPending = deliverFinal && state.scheduled
+            state.finished = true
+            state.scheduled = false
+            let listeners = deliverPending ? state.listeners.sorted { $0.key < $1.key }.map(\.value) : []
+            state.listeners.removeAll()
+            return listeners
+        }
+        if !listeners.isEmpty { schedule { for listener in listeners { listener() } } }
     }
 
     private func update(_ body: (inout DurableView) -> Void) {
@@ -207,6 +234,7 @@ private func runtimeTitleSpace(_ scalar: Unicode.Scalar) -> Bool {
     }
 }
 
-private func runtimeErrorMessage(_ error: any Error) -> String {
-    (error as? any LocalizedError)?.errorDescription ?? String(describing: error)
+internal func runtimeErrorMessage(_ error: any Error) -> String {
+    if let failed = error as? SessionFailed { return runtimeErrorMessage(failed.cause) }
+    return (error as? any LocalizedError)?.errorDescription ?? String(describing: error)
 }

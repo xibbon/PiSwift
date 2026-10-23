@@ -20,7 +20,7 @@ private final class RejectingSettlementExecutor: SqliteExecutor {
     func transaction<T>(_ body: (any SqliteExecutor) throws -> T) throws -> T {
         try delegate.transaction { handle in
             let value = try body(handle)
-            if reject { reject = false; throw StorageRejected("controlled settlement rejection") }
+            if reject { reject = false; throw D2TestError("controlled settlement rejection") }
             return value
         }
     }
@@ -120,14 +120,14 @@ struct SqliteFacadeTests {
             try database.transaction { transaction in
                 try transaction.exec("INSERT INTO rollback_probe (value) VALUES (1)")
                 try transaction.exec("COMMIT")
-                throw StorageRejected("rejected after an escaped commit")
+                throw D2TestError("rejected after an escaped commit")
             }
             Issue.record("Rollback failure accepted")
         } catch {
             let rollback = try #require(error as? SqliteRollbackError)
-            #expect(rollback.transactionError as? StorageRejected == StorageRejected("rejected after an escaped commit"))
+            #expect(rollback.transactionError as? D2TestError == D2TestError("rejected after an escaped commit"))
             #expect(rollback.rollbackError is SqliteError)
-            #expect(!(error is StorageRejected))
+            #expect(!(error is D2TestError))
         }
         #expect(try database.get("SELECT value FROM rollback_probe") == ["value": .integer(1)])
     }
@@ -135,7 +135,7 @@ struct SqliteFacadeTests {
     @Test func adoptsIDsOnlyAfterSuccessfulSettlement() async throws {
         let storage = try await SqliteStorage.open(executor: RejectingSettlementExecutor())
         await storage.rejectNextSettlement()
-        await #expect(throws: StorageRejected.self) {
+        await #expect(throws: D2TestError.self) {
             _ = try await storage.commit([.entry(value: EntryRecord(id: EntryID(200), conversationId: rootConversationID, kind: "rejected"))], context: .background)
         }
         let first: EntryID = try await storage.mintId()

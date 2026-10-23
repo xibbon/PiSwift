@@ -102,7 +102,7 @@ internal final class TaskScheduler: Sendable {
     func records() -> [TaskRecord] { state.withLock { state in state.order.compactMap { state.live[$0] } } }
     func current(_ id: TaskID) -> TaskRecord? { state.withLock { $0.live[id] } }
     func open(context: ChordContext) async throws {
-        let commits = try session.subscribeCommits { [weak self] publication, _ in self?.observe(publication) }
+        let commits = try session.observeCommits { [weak self] publication, _ in self?.observe(publication) }
         let close = try session.subscribeClose { [weak self] in self?.seal() }
         let unsubscribe = registry.subscribe { [weak self] in self?.kick() }
         state.withLock { $0.subscriptions = [commits, close]; $0.unsubscribe = unsubscribe }
@@ -124,20 +124,22 @@ internal final class TaskScheduler: Sendable {
     func resume() { state.withLock { $0.enabled = true }; kick() }
     func join() async {
         let (invocations, worker, reconciles) = state.withLock { (Array($0.joining.values), $0.worker, Array($0.reconciles.values)) }
+        // Session close listeners end watches before cleanup aborts task signals.
+        for invocation in invocations { invocation.controller.abort() }
         for invocation in invocations { _ = try? await invocation.done.value() }
         await worker?.value
         for work in reconciles { await work.value }
     }
     private func seal() {
-        let (invocations, expiry, unsubscribe) = state.withLock { state in
+        let (expiry, unsubscribe) = state.withLock { state in
             state.closing = true; state.contexts = [:]
             let expiry = state.expiry; state.expiry = nil; state.expiryAt = nil
             let unsubscribe = state.unsubscribe; state.unsubscribe = nil
-            return (Array(state.joining.values), expiry, unsubscribe)
+            return (expiry, unsubscribe)
         }
         unsubscribe?(); expiry?.cancel()
-        taskWaiters.rejectAll(closedError()); idleWaiters.rejectAll(closedError())
-        for invocation in invocations { invocation.controller.abort() }
+        let error: any Error = session.failure.map { SessionFailed($0) } ?? closedError()
+        taskWaiters.rejectAll(error); idleWaiters.rejectAll(error)
     }
     private func observe(_ publication: CommitPublication) {
         var aborts: [TaskInvocation] = [], settled: [TaskRecord] = [], updated: [TaskRecord] = []
@@ -216,7 +218,7 @@ internal final class TaskScheduler: Sendable {
                     let reservations = try await reserve()
                     for reservation in reservations { start(reservation) }
                 }
-            } catch { if !closing { report(error) } }
+            } catch { if !closing { session.fail(error) } }
             settleIdle()
         }
     }
@@ -230,7 +232,7 @@ internal final class TaskScheduler: Sendable {
                 guard let self else { return }
                 self.state.withLock { $0.reconcileScheduled = false; $0.cascadePending = false }
                 do { try await self.reconcile() }
-                catch { self.state.withLock { $0.cascadePending = true }; if !self.closing { self.report(error) } }
+                catch { if !self.closing { self.session.fail(error) } }
                 self.settleIdle()
                 _ = self.state.withLock { $0.reconciles.removeValue(forKey: id) }
             }
@@ -450,7 +452,7 @@ internal final class TaskScheduler: Sendable {
                     return nil
                 }
             }, context: context)
-        } catch { end(invocation); if !closing { report(error) }; return nil }
+        } catch { end(invocation); if !closing { session.fail(error) }; return nil }
     }
     private func run(_ reservation: Reservation) async {
         let invocation = reservation.invocation, phase = RuntimePhase(reservation.definition, reservation.snapshot)

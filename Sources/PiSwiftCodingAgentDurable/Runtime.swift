@@ -6,6 +6,7 @@ import PiSwiftDurable
 import Synchronization
 
 /// An open durable session. Call close() to release its resources and session lock.
+/// A storage failure also closes the session and releases its resources.
 public final class OpenDurableResult: Sendable {
     /// The plain view. Its listeners run once per burst of changes on a private serial queue.
     public let view: any DurableViewSource
@@ -13,6 +14,13 @@ public final class OpenDurableResult: Sendable {
     public let controller: any DurableController
     /// The loaded settings, also available to a host for theme and terminal setup.
     public let settings: SettingsManager
+    /// The first storage failure, if one has occurred.
+    public var failure: (any Error)? { runtime.harness.failure }
+    /// Waits for the final result and for environment and session lock cleanup.
+    /// Cancellation of this wait does not cancel cleanup.
+    public var closed: SessionCloseResult {
+        get async { await runtime.waitUntilClosed() }
+    }
     private let runtime: DurableRuntime
     private let commands: RuntimeController
     private let closing = Mutex<Task<Void, Never>?>(nil)
@@ -61,6 +69,20 @@ internal struct DurableRuntimeModels: Sendable {
 internal struct OpenDurableDependencies: Sendable {
     let agentDirectory: String
     let makeModels: @Sendable (String) async throws -> DurableRuntimeModels
+    let makeStorage: @Sendable (String) async throws -> any DurableStorage
+    let makeEnvs: @Sendable (String) -> ExecutionEnvs
+
+    init(agentDirectory: String,
+         makeModels: @escaping @Sendable (String) async throws -> DurableRuntimeModels,
+         makeStorage: @escaping @Sendable (String) async throws -> any DurableStorage = {
+             try await SqliteStorage.open(path: $0)
+         },
+         makeEnvs: @escaping @Sendable (String) -> ExecutionEnvs = { ExecutionEnvs(defaultCwd: $0) }) {
+        self.agentDirectory = agentDirectory
+        self.makeModels = makeModels
+        self.makeStorage = makeStorage
+        self.makeEnvs = makeEnvs
+    }
 
     static var live: Self {
         Self(agentDirectory: getAgentDir(), makeModels: { directory in
@@ -78,8 +100,8 @@ internal func openDurable(_ options: OpenDurableOptions,
     let location = try await selectSession(options.cwd ?? FileManager.default.currentDirectoryPath,
                                            continueSession: options.continueSession,
                                            agentDirectory: dependencies.agentDirectory)
-    let envs = ExecutionEnvs(defaultCwd: location.cwd)
-    var storage: SqliteStorage?
+    let envs = dependencies.makeEnvs(location.cwd)
+    var storage: (any DurableStorage)?
     var harness: Harness?
     var runtime: DurableRuntime?
     do {
@@ -90,7 +112,7 @@ internal func openDurable(_ options: OpenDurableOptions,
                                                  agentDirectory: dependencies.agentDirectory)
         try registry.install(try subagentExtension())
         let reports = RuntimeReports()
-        let sqlite = try await SqliteStorage.open(path: location.database)
+        let sqlite = try await dependencies.makeStorage(location.database)
         storage = sqlite
         let opened = try await Harness.open(storage: sqlite,
             options: HarnessOptions(models: models.models, registry: registry, settings: settings,
@@ -115,6 +137,7 @@ internal func openDurable(_ options: OpenDurableOptions,
         try await live.attach()
         reports.attach(source)
         let controller = RuntimeController(runtime: live, source: source)
+        await live.observeTermination { [weak controller] in controller?.seal() }
         let saved = agentOf(source.current().conversation).model
         if let saved {
             if models.models.getModel(provider: saved.provider, modelId: saved.modelId) == nil {
@@ -188,12 +211,12 @@ private final class RuntimeController: DurableController {
     func seal() { queue.withLock { $0.sealed = true } }
     private func command(_ operation: @escaping @Sendable (DurableRuntime) async throws -> Void) async {
         let task = queue.withLock { queue -> Task<Void, Never>? in
-            guard !queue.sealed else { return nil }
+            guard !queue.sealed, runtime.harness.failure == nil else { return nil }
             let previous = queue.tail
             let task = Task {
                 await previous?.value
                 do { try await operation(runtime) }
-                catch { source.fail(error) }
+                catch { report(error) }
             }
             queue.tail = task
             return task
@@ -205,8 +228,15 @@ private final class RuntimeController: DurableController {
     }
     func compact(instructions: String?) async { await command { try await $0.compact(instructions: instructions) } }
     func abort() async {
+        guard queue.withLock({ !$0.sealed }), runtime.harness.failure == nil else { return }
         do { try await runtime.abort() }
-        catch { source.fail(error) }
+        catch { report(error) }
+    }
+    private func report(_ error: any Error) {
+        if let cause = runtime.harness.failure {
+            seal()
+            source.terminate(.failed(cause))
+        } else { source.fail(error) }
     }
     func cycleThinking() async { await command { try await $0.cycleThinking() } }
     func setModel(_ model: ModelRef) async { await command { try await $0.setModel(model) } }
@@ -230,6 +260,8 @@ private actor DurableRuntime {
     var taskGeneration = 0
     var watches: [UUID: Task<Void, Never>] = [:]
     var closed = false
+    var closing: Task<Void, Never>?
+    var terminalObserver: Task<Void, Never>?
 
     init(harness: Harness, envs: ExecutionEnvs, location: SessionLocation,
          models: any DurableModels, source: RuntimeViewSource, current: Conversation,
@@ -241,7 +273,24 @@ private actor DurableRuntime {
         attachConversation()
         commits = try harness.subscribeCommits { [source] publication, _ in source.record(publication) }
     }
+    func observeTermination(seal: @escaping @Sendable () -> Void) {
+        terminalObserver = Task { [weak self, harness] in
+            let result = await harness.closed
+            seal()
+            await self?.backendClosed(result)
+        }
+    }
+    private func backendClosed(_ result: SessionCloseResult) async {
+        source.terminate(result)
+        await close()
+    }
+    func waitUntilClosed() async -> SessionCloseResult {
+        let result = await harness.closed
+        await backendClosed(result)
+        return result
+    }
     private func assertOpen() throws {
+        if let failure = harness.failure { throw SessionFailed(failure) }
         if closed { throw SessionError.message("Durable session is closed") }
     }
     private func attachConversation() {
@@ -279,7 +328,11 @@ private actor DurableRuntime {
             await self?.watchFinished(id)
         }
     }
-    private func watchFailed(_ error: any Error) { if !closed { source.fail(error) } }
+    private func watchFailed(_ error: any Error) {
+        guard !closed else { return }
+        if let cause = harness.failure { source.terminate(.failed(cause)) }
+        else { source.fail(error) }
+    }
     private func watchFinished(_ id: UUID) { watches.removeValue(forKey: id) }
     func compact(instructions: String?) async throws {
         try assertOpen()
@@ -356,7 +409,7 @@ private actor DurableRuntime {
         attachConversation()
     }
     func close() async {
-        guard !closed else { return }
+        if let closing { await closing.value; return }
         closed = true
         conversationGeneration += 1
         conversationSubscription?.cancel(); conversationSubscription = nil
@@ -365,12 +418,19 @@ private actor DurableRuntime {
         closeTasks()
         let pending = Array(watches.values)
         for task in pending { task.cancel() }
+        let task = Task { await self.finishClose(pending: pending) }
+        closing = task
+        await task.value
+    }
+    private func finishClose(pending: [Task<Void, Never>]) async {
         do { try await harness.close(context: .background) }
-        catch { source.fail(error) }
+        catch { /* The terminal result retains the first storage failure. */ }
+        source.terminate(await harness.closed)
         await envs.cleanup(context: .background)
         location.release()
         for task in pending { await task.value }
-        source.finish()
+        source.finish(deliverFinal: true)
+        terminalObserver = nil
     }
 }
 

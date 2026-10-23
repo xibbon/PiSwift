@@ -59,8 +59,8 @@ internal final class ConversationViews: Sendable {
     }
     init(session: Session, storage: any DurableStorage) throws {
         self.session = session; self.storage = storage
-        let commits = try session.subscribeCommits { [weak self] publication, context in
-            self?.advance(publication, context: context)
+        let commits = try session.observeCommits { [weak self] publication, context in
+            try self?.advance(publication, context: context)
         }
         do {
             let close = try session.subscribeClose { [weak self] in self?.close() }
@@ -98,12 +98,12 @@ internal final class ConversationViews: Sendable {
         let result = Mutex<CommittedWatch<ConversationView>?>(nil)
         _ = try await attach(id: id, context: context) { value, release, _ in
             let tree = Mutex(try JSONValue(encoding: value))
-            let watch = CommittedWatch(value: value, replacement: { _ in tree.withLock { $0 } }, detach: release)
+            let watch = CommittedWatch(value: value, replacement: { _ in tree.withLock { $0 } }, detach: release, report: self.session.report)
             result.withLock { $0 = watch }
             return ConversationViewObserver(advance: { value, ops, context in
                 do { let next = try JSONValue(encoding: value); tree.withLock { $0 = next }; watch.advance(value: value, ops: ops, context: context) }
                 catch { watch.fail(error) }
-            }, closeSession: { watch.closeSession() })
+            }, closeSession: { watch.closeSession(self.session.failure) })
         }
         let watch = result.withLock { $0! }
         do {
@@ -122,7 +122,7 @@ internal final class ConversationViews: Sendable {
         }
         let source = result.withLock { $0! }
         do {
-            let attached = try replicatedState(source)
+            let attached = try replicatedState(source, onError: session.report)
             do { try context.abortSignal?.throwIfAborted() }
             catch { attached.dispose(); throw error }
             return attached
@@ -167,7 +167,7 @@ internal final class ConversationViews: Sendable {
             for observer in observers { observer.closeSession() }
         }
     }
-    private func advance(_ publication: CommitPublication, context: ChordContext) {
+    private func advance(_ publication: CommitPublication, context: ChordContext) throws {
         let mounts = state.withLock { Array($0.mounts) }
         for (id, mount) in mounts {
             do {
@@ -222,8 +222,7 @@ internal final class ConversationViews: Sendable {
                 if !next.2.isEmpty { for observer in next.3 { observer.advance?(next.1, next.2, frameContext) } }
                 for observer in next.3 { observer.publication?(next.0, next.1, next.2, publication, frameContext) }
             } catch {
-                let observers = mount.state.withLock { Array($0.observers.values) }
-                for observer in observers { observer.closeSession() }
+                throw error
             }
         }
     }

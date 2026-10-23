@@ -78,7 +78,7 @@ extension SqliteStorage {
         let changed = Set(actions.map { $0.0 })
         var liveCounts: [MemoryAddressKey: Int] = [:]
         for (id, action) in actions {
-            if let source = action.copy, changed.contains(source.id) { throw StorageRejected("Document copy \(id.rawValue) source is changed in the copy batch") }
+            if let source = action.copy, changed.contains(source.id) { throw DocumentCopyFailure(message: "Document copy \(id.rawValue) source is changed in the copy batch", cause: DurableStorageError.forkSourceChangedInCopyBatch(source.id)) }
             let existing: DocumentRecord? = try executor.get("SELECT record FROM documents WHERE id = ?", [.integer(id.rawValue)]).map { try decodeRecord($0) }
             if action.create == nil, existing == nil { throw DurableStorageError.unknownDocument(id) }
             if action.create != nil, existing != nil { throw DurableStorageError.documentAlreadyExists(id) }
@@ -145,8 +145,7 @@ extension SqliteStorage {
                           stored.record.key.map(MemoryStringKey.init) == create.key.map(MemoryStringKey.init),
                           stored.record.history == create.history, stored.record.fork == create.fork else { throw DurableStorageError.forkSourceDoesNotMatch(source.id) }
                     content = .base(version: stored.version, value: stored.value)
-                } catch let error as StorageRejected { throw error }
-                catch { throw StorageRejected("Document copy \(id.rawValue) was rejected") }
+                } catch { throw DocumentCopyFailure(message: "Document copy \(id.rawValue) was rejected", cause: error) }
             }
             var record: DocumentRecord
             if let create = action.create {
