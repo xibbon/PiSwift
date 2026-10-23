@@ -155,6 +155,8 @@ public struct Agent: Sendable {
     public var tools: [ToolRegistration]
     /// The enabled tools that nested calls can execute.
     public var callable: [ToolRegistration]
+    /// The enabled deferred model tools that are not yet offered.
+    public var deferred: [ToolRegistration]
     /// The ordered prompt sections selected for the agent.
     public var sections: [PromptSection]
     /// Additional agent or compaction instructions.
@@ -163,9 +165,11 @@ public struct Agent: Sendable {
     public var cwd: String?
     /// Creates the resolved model, tools, sections, instructions, and working directory.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel = .off,
-                extensions: [Extension] = [], tools: [ToolRegistration] = [], callable: [ToolRegistration] = [], sections: [PromptSection] = [],
+                extensions: [Extension] = [], tools: [ToolRegistration] = [], callable: [ToolRegistration] = [],
+                deferred: [ToolRegistration] = [], sections: [PromptSection] = [],
                 instructions: String? = nil, cwd: String? = nil) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
-        self.tools = tools; self.callable = callable; self.sections = sections; self.instructions = instructions; self.cwd = cwd
+        self.tools = tools; self.callable = callable; self.deferred = deferred
+        self.sections = sections; self.instructions = instructions; self.cwd = cwd
     }
 }

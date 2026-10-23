@@ -340,17 +340,25 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
     case .remove(let names): tools = tools.filter { tool in !names.contains { harnessNamesEqual($0, tool.name) } }
     }
     let callable = tools.filter { $0.callers?.contains(.tools) ?? true }
-    tools = tools.filter { $0.callers?.contains(.model) ?? true }
+    let modelCallable = tools.filter { $0.callers?.contains(.model) ?? true }
     switch state?.modelTools {
-    case nil: break
+    case nil: tools = modelCallable.filter { $0.deferred != true }
     case .exact(let names):
-        tools = uniqueHarnessNames(names).compactMap { name in tools.first { harnessNamesEqual($0.name, name) } }
-    case .edit(_, let remove):
-        tools = tools.filter { tool in !(remove ?? []).contains { harnessNamesEqual($0, tool.name) } }
+        tools = uniqueHarnessNames(names).compactMap { name in modelCallable.first { harnessNamesEqual($0.name, name) } }
+    case .edit(let add, let remove):
+        let available = modelCallable.filter { tool in !(remove ?? []).contains { harnessNamesEqual($0, tool.name) } }
+        tools = available.filter { $0.deferred != true }
+        tools += uniqueHarnessNames(add ?? []).compactMap { name in
+            available.first { $0.deferred == true && harnessNamesEqual($0.name, name) }
+        }
+    }
+    let deferred = modelCallable.filter { tool in
+        tool.deferred == true && !tools.contains { harnessNamesEqual($0.name, tool.name) }
     }
     if let instructions = state?.instructions { sections.append(section(instructionsKey) { _, _ in instructions }) }
     return Agent(model: state?.model, thinkingLevel: state?.thinkingLevel ?? .off, extensions: extensions,
-                 tools: tools, callable: callable, sections: sections, instructions: state?.instructions, cwd: state?.cwd)
+                 tools: tools, callable: callable, deferred: deferred, sections: sections,
+                 instructions: state?.instructions, cwd: state?.cwd)
 }
 
 private func applyWrap<Value>(_ values: inout [Value], name: String, nameOf: (Value) -> String,
