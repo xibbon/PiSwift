@@ -269,6 +269,9 @@ private final class DraftNode {
     var head = 0
     var slotsReady = false
     var structural = false
+    // Base slots before this index have not moved. Structural edits only
+    // shorten this prefix; the remaining plan is built once at diff time.
+    var orderedPrefix = 0
     var overrideOrder: [Int] = []
     var overrides: Set<Int> = []
     var dirty = false
@@ -318,6 +321,7 @@ private struct DraftState {
         let node = nodes[id]
         guard !node.slotsReady else { return }
         node.slotsReady = true
+        node.orderedPrefix = node.base.arrayValue!.count
         for (index, value) in node.base.arrayValue!.enumerated() {
             node.slots.append(DraftSlot(id: nextSlot, baseIndex: index, ref: DraftRef(value: value)))
             nextSlot += 1
@@ -443,6 +447,7 @@ private struct DraftState {
                 node.slots.removeFirst(node.head); node.head = 0
             }
         } else { node.slots.replaceSubrange(absolute..<(absolute + remove), with: additions) }
+        node.orderedPrefix = min(node.orderedPrefix, start)
         node.structural = true
         mark(id)
         return removed
@@ -646,6 +651,7 @@ public final class JSONDraft: Sendable {
             if target.count < 2 { return }
             if target.head != 0 { target.slots.removeFirst(target.head); target.head = 0 }
             target.slots.reverse()
+            target.orderedPrefix = 0
             target.structural = true
             draft.mark(node)
         }
@@ -872,8 +878,20 @@ private extension DraftState {
             ops.append(.splice(path, index: region.start, remove: region.length, items: items))
         }
         var locations: [Int: Int] = [:]
-        for index in 0..<node.count { locations[node.slots[node.head + index].id] = index }
-        if node.structural {
+        if !node.overrideOrder.isEmpty {
+            for index in 0..<node.count { locations[node.slots[node.head + index].id] = index }
+        }
+        if node.structural, let plan = orderedArrayPlan(node, baseCount: base.count) {
+            for run in plan.removals.reversed() {
+                if ops.count > 4096 { return }
+                ops.append(.splice(path, index: run.lowerBound, remove: run.count, items: []))
+            }
+            for run in plan.insertions {
+                if ops.count > 4096 { return }
+                let items = node.slots[(node.head + run.lowerBound)..<(node.head + run.upperBound)].map { snapshotRef($0.ref) }
+                ops.append(.splice(path, index: run.lowerBound, remove: 0, items: items))
+            }
+        } else if node.structural {
             var retained = [Bool](repeating: false, count: base.count)
             var targetBase: [Int] = []
             for slot in node.slots[node.head...] {
@@ -911,6 +929,29 @@ private extension DraftState {
             let slot = node.slots[node.head + index]
             changed(path + [.index(index)], base[slot.baseIndex!], snapshotRef(slot.ref), &ops)
         }
+    }
+    // Build from the final slots once. Append skips the unchanged base prefix.
+    // Return nil when retained base elements have changed order.
+    private func orderedArrayPlan(_ node: DraftNode, baseCount: Int) -> (removals: [Range<Int>], insertions: [Range<Int>])? {
+        var removals: [Range<Int>] = []
+        var insertions: [Range<Int>] = []
+        var nextBase = node.orderedPrefix
+        var index = node.orderedPrefix
+        while index < node.count {
+            if let baseIndex = node.slots[node.head + index].baseIndex {
+                if baseIndex < nextBase { return nil }
+                if baseIndex > nextBase { removals.append(nextBase..<baseIndex) }
+                nextBase = baseIndex + 1
+                index += 1
+            } else {
+                let start = index
+                repeat { index += 1 }
+                while index < node.count && node.slots[node.head + index].baseIndex == nil
+                insertions.append(start..<index)
+            }
+        }
+        if nextBase < baseCount { removals.append(nextBase..<baseCount) }
+        return (removals, insertions)
     }
     func changed(_ path: Delta.Path, _ before: JSONValue?, _ after: JSONValue, _ ops: inout [Delta.Op]) {
         if before == after { return }

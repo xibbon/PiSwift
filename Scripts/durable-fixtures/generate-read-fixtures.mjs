@@ -12,24 +12,28 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
     const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
     process.exit(run.status ?? 1);
 }
-const source = await mirror();
+const source = await mirror({ dependencies: ['typebox@1.3.27'] });
 const cwd = await mkdtemp(join(tmpdir(), 'piswift-read-oracle-'));
 try {
     // Only the isolated mirror receives this dependency. Upstream source remains unchanged.
-    execFileSync('npm', ['install', '--prefix', source.directory, '--no-audit', '--no-fund', '--ignore-scripts', 'typebox@1.3.27'], { stdio: 'ignore' });
     const upstream = execFileSync('git', ['-C', upstreamRepository, 'show', `${upstreamTag}:packages/durable/test/tools-read-differential.test.ts`], { encoding: 'utf8' });
     const reference = stripTypeScriptTypes(upstream.slice(upstream.indexOf('function referenceRead('), upstream.indexOf('function apiFor(')));
     const url = path => pathToFileURL(join(source.directory, path)).href;
     const modulePath = join(source.directory, 'read-reference.mjs');
-    await writeFile(modulePath, `import { detectSupportedImageMimeType } from '${url('packages/durable/src/tools/image.ts')}';\nimport { DEFAULT_MAX_BYTES, formatSize, truncateHead } from '${url('packages/durable/src/truncate.ts')}';\nimport { characterEnd } from '${url('packages/durable/src/harness/output.ts')}';\n${reference}\nexport { referenceRead, random, randomFile, OFFSETS, LIMITS };\n`);
+    await writeFile(modulePath, `import { detectSupportedImageMimeType } from '${url('packages/durable/src/tools/image.ts')}';\nimport { DEFAULT_MAX_BYTES, formatSize, truncateHead } from '${url('packages/durable/src/truncate.ts')}';\nimport { characterEnd } from '${url('packages/chord/src/output.ts')}';\n${reference}\nexport { referenceRead, random, randomFile, OFFSETS, LIMITS };\n`);
     const { referenceRead, random, randomFile, OFFSETS, LIMITS } = await import(pathToFileURL(modulePath).href);
     const { NodeExecutionEnv } = await source.import('packages/durable/src/env/node.ts');
     const { createReadTool } = await source.import('packages/durable/src/tools/read.ts');
     const { BACKGROUND_CONTEXT } = await source.import('packages/chord/src/context/index.ts');
     const env = new NodeExecutionEnv({ cwd });
-    const api = { env, output() {}, diagnostic() {}, async details() {} };
+    const api = { env, output() {}, diagnostic() {}, async details() {}, async agent() { return {}; } };
     const tool = createReadTool();
-    const normalize = value => JSON.parse(JSON.stringify(value));
+    // Preserve the v1 Swift fixture envelope. Only the top-level output channel is renamed.
+    const normalize = value => {
+        const result = JSON.parse(JSON.stringify(value));
+        if (Object.hasOwn(result, 'output')) { const { output, ...rest } = result; return { content: output, ...rest }; }
+        return result;
+    };
     const outcome = async run => { try { return normalize(await run()); } catch (error) { return { error: error.message }; } };
     const argument = value => value === undefined ? null : Number.isNaN(value) ? 'NaN' : value;
     const files = [];
@@ -65,8 +69,8 @@ try {
         return JSON.stringify(packed).length < value.length ? packed : value;
     }
     // Escape FEFF so parsers cannot treat a raw string segment as a byte-order mark.
-    const fixture = JSON.stringify(pack({ tag: upstreamTag, seeds: 400, trialsPerSeed: 4, differences, files })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
-    const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential.json', import.meta.url));
+    const fixture = JSON.stringify(pack({ tag: upstreamTag, provenance: { source: 'unmodified isolated git archive', resultEnvelope: 'top-level output renamed to content for current Swift tests', images: 'deferred' }, seeds: 400, trialsPerSeed: 4, differences, files })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
+    const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v130.json', import.meta.url));
     if (process.argv.includes('--check')) {
         if (await readFile(path, 'utf8') !== fixture) throw new Error('Read fixtures differ. Run without --check.');
     } else { await writeFile(path, fixture); }

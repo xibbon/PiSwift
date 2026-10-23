@@ -1,10 +1,10 @@
-// Expected values come from unmodified v1.1.0 code and pinned npm diff releases.
+// Expected values come from unmodified v1.3.0 code and its pinned isolated diff 8.0.4 release.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { mirror, upstreamTag, upstreamRepository } from './mirror.mjs';
+import { fileURLToPath } from 'node:url';
+import { mirror, upstreamTag } from './mirror.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
@@ -17,27 +17,15 @@ function run(command, args) {
 const directory = await mkdtemp(join(tmpdir(), 'piswift-edit-oracle-'));
 const source = await mirror();
 try {
-  for (const version of ['8.0.3', '8.0.4']) {
-    const target = join(directory, version);
-    await mkdir(target);
-    run('npm', ['pack', `diff@${version}`, '--pack-destination', target, '--silent']);
-    run('tar', ['-xzf', join(target, `diff-${version}.tgz`), '-C', target]);
-    const manifest = JSON.parse(await readFile(join(target, 'package/package.json'), 'utf8'));
-    if (manifest.version !== version) throw new Error('Unexpected npm diff version');
-  }
-  // These are all the implementation files used by this oracle. 8.0.4 changes
-  // diffWords only; line diffs, path selection, and patch formatting are identical.
-  for (const file of ['libesm/diff/base.js', 'libesm/diff/line.js', 'libesm/patch/create.js']) {
-    if (await readFile(join(directory, '8.0.3/package', file), 'utf8') !== await readFile(join(directory, '8.0.4/package', file), 'utf8')) {
-      throw new Error(`diff 8.0.3 and 8.0.4 differ in ${file}`);
-    }
-  }
-  const checkoutDiff = join(upstreamRepository, 'node_modules/diff');
-  const checkoutManifest = JSON.parse(await readFile(join(checkoutDiff, 'package.json'), 'utf8'));
-  if (checkoutManifest.version !== '8.0.3') throw new Error('The upstream checkout must supply diff 8.0.3');
-  await symlink(checkoutDiff, join(source.directory, 'node_modules/diff'));
+  const version = '8.0.4';
+  const target = join(directory, version);
+  await mkdir(target);
+  run('npm', ['pack', `diff@${version}`, '--pack-destination', target, '--silent']);
+  run('tar', ['-xzf', join(target, `diff-${version}.tgz`), '-C', target]);
+  const manifest = JSON.parse(await readFile(join(target, 'package/package.json'), 'utf8'));
+  if (manifest.version !== version) throw new Error('Unexpected npm diff version');
+  await symlink(join(target, 'package'), join(source.directory, 'node_modules/diff'));
   const upstream = await source.import('packages/durable/src/tools/edit-diff.ts');
-  const compatible = await import(pathToFileURL(join(directory, '8.0.4/package/libesm/index.js')).href);
   const edits = [];
   function edit(name, content, replacements) {
     const normalized = upstream.normalizeToLF(content);
@@ -84,9 +72,6 @@ try {
   function diff(name, oldContent, newContent, contextLines = 4, path = 'fixture.txt') {
     const display = upstream.generateDiffString(oldContent, newContent, contextLines);
     const patch = upstream.generateUnifiedPatch(path, oldContent, newContent, contextLines);
-    const patch804 = compatible.createTwoFilesPatch(path, path, oldContent, newContent, undefined, undefined,
-      { context: contextLines, headerOptions: compatible.FILE_HEADERS_ONLY });
-    if (patch !== patch804) throw new Error(`diff release patch change: ${name}`);
     diffs.push({ name, path, oldContent, newContent, contextLines, diff: display.diff,
       firstChangedLine: display.firstChangedLine ?? null, patch });
   }
@@ -116,12 +101,12 @@ try {
     return { content, bom: stripped.bom, text: stripped.text, ending, normalized: upstream.normalizeToLF(stripped.text),
       fuzzy: upstream.normalizeForFuzzyMatch(stripped.text), restored: upstream.restoreLineEndings(upstream.normalizeToLF(stripped.text), ending) };
   });
-  const fixture = JSON.stringify({ tag: upstreamTag, diffVersion: '8.0.3', compatibleDiffVersion: '8.0.4', edits, diffs, normalization,
+  const fixture = JSON.stringify({ tag: upstreamTag, diffVersion: '8.0.4', provenance: { source: 'unmodified isolated git archive', dependency: 'isolated npm diff@8.0.4' }, edits, diffs, normalization,
     counts: { edits: edits.length, diffs: diffs.length, normalization: normalization.length } }, null, 2) + '\n';
-  const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/edit-fixtures.json', import.meta.url));
+  const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/edit-fixtures-v130.json', import.meta.url));
   if (process.argv.includes('--check')) {
     if (await readFile(path, 'utf8') !== fixture) throw new Error('Edit fixtures differ. Run this script without --check.');
-    console.log(`Edit fixtures match: ${edits.length} edit cases, ${diffs.length} diff cases, ${normalization.length} normalization cases. diff 8.0.3 and 8.0.4 outputs match.`);
+    console.log(`Edit fixtures match: ${edits.length} edit cases, ${diffs.length} diff cases, ${normalization.length} normalization cases. isolated diff 8.0.4.`);
   } else {
     await mkdir(fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/', import.meta.url)), { recursive: true });
     await writeFile(path, fixture);

@@ -1,8 +1,17 @@
+import { assertFixtureBudget } from './fixture-budget.mjs';
 // Node 22 reference cases for the PiSwiftChord delta tests.
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, mkdtempSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+
+if (!process.execArgv.includes('--experimental-strip-types')) {
+  const result = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  process.exit(result.status ?? 1);
+}
 
 // Write one case per line. Keep each case and its nested arrays compact.
 function fixtureJSON(value) {
@@ -13,234 +22,19 @@ function fixtureJSON(value) {
 // Digest only expected output. Inputs remain available for replay.
 function expectedText(text) {
   const length = Buffer.byteLength(text, 'utf8');
-  return length > 4096 ? { sha256: createHash('sha256').update(text, 'utf8').digest('hex'), length } : text;
+  return length > 2048 ? { sha256: createHash('sha256').update(text, 'utf8').digest('hex'), length } : text;
 }
 
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/overlap-fixtures.json', import.meta.url));
 
-// Source: pi-mono v1.1.0, packages/chord/src/delta/index.ts.
-// overlap (lines 87–110) is copied verbatim, with only its TypeScript
-// parameter and result annotations removed. The function body is unchanged.
-function overlap(a, b, scan, probe = 64, maxCandidates = 8) {
-	if (a.length === 0 || b.length === 0 || scan === 0) return 0;
-	const tail = a.length > scan ? a.slice(a.length - scan) : a;
-
-	// A probe of length h can only find overlaps of at least h — the head must
-	// actually occur in `a`. So try a long head first (few candidates, and it
-	// catches the large overlaps a rolling window produces), then fall back to one
-	// character, which finds any overlap at the cost of more candidates.
-	//
-	// Candidates are bounded because repetitive output — a build log, or any run of
-	// one character — makes a long head match at thousands of positions. Giving up
-	// returns 0, which emits a set: larger, never wrong.
-	for (const h of [Math.min(probe, b.length), 1]) {
-		const head = b.slice(0, h);
-		let tried = 0;
-		for (let k = tail.indexOf(head); k !== -1; k = tail.indexOf(head, k + 1)) {
-			if (++tried > maxCandidates) break;
-			const n = tail.length - k;
-			if (n <= b.length && tail.slice(k) === b.slice(0, n)) return n;
-		}
-		if (h === 1) break;
-	}
-	return 0;
-}
-
-// applyOps (lines 330–406) and its helpers are copied with only TypeScript
-// annotations, casts, non-null assertions, and export keywords removed.
-// Helpers: isObj (line 5), RESERVED_SEGMENTS and UnsafePathError (131–142),
-// assertValidOp/assertPathArg/assertPermutation (152–208), assertSafePath
-// (279–287), assertIndexInRange (304–306), PathError (310–317), and
-// resolveValue/resolve (484–501). No executable statement is changed.
-const isObj = (value) => value !== null && typeof value === "object";
-const RESERVED_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);
-
-class UnsafePathError extends Error {
-	// Not a parameter property: Node's --experimental-strip-types rejects those,
-	// and these files are meant to run under it directly.
-	constructor(segment) {
-		super(`unsafe path segment: ${String(segment)}`);
-		this.segment = segment;
-		this.name = "UnsafePathError";
-	}
-}
-
-function assertValidOp(op) {
-	if (!Array.isArray(op) || op.length === 0) throw new TypeError("op is not a tuple");
-	switch (op[0]) {
-		case "r":
-			if (op.length !== 2) throw new TypeError("r arity");
-			return;
-		case "s":
-			if (op.length !== 3) throw new TypeError("s arity");
-			assertPathArg(op[1], true);
-			return;
-		case "d":
-			if (op.length !== 2) throw new TypeError("d arity");
-			assertPathArg(op[1], true);
-			return;
-		case "a":
-			if (op.length !== 3 || typeof op[2] !== "string") throw new TypeError("a shape");
-			assertPathArg(op[1], true);
-			return;
-		case "t":
-			if (op.length !== 3 || !Number.isInteger(op[2]) || op[2] < 0) throw new TypeError("t shape");
-			assertPathArg(op[1], true);
-			return;
-		case "p": {
-			if (op.length !== 5) throw new TypeError("p arity");
-			assertPathArg(op[1]);
-			if (!Number.isInteger(op[2]) || op[2] < 0) throw new TypeError("p index");
-			if (!Number.isInteger(op[3]) || op[3] < 0) throw new TypeError("p remove");
-			if (!Array.isArray(op[4])) throw new TypeError("p items");
-			return;
-		}
-		case "m":
-			if (op.length !== 3) throw new TypeError("m arity");
-			assertPathArg(op[1]);
-			assertPermutation(op[2]);
-			return;
-		// Silently skipping an unknown verb is how a newer producer's op vanishes.
-		default:
-			throw new TypeError(`unknown op verb: ${String(op[0])}`);
-	}
-}
-
-function assertPathArg(p, nonEmpty = false) {
-	if (!Array.isArray(p)) throw new TypeError("path is not an array");
-	if (nonEmpty && p.length === 0) throw new TypeError("path is empty");
-	assertSafePath(p);
-}
-
-function assertPermutation(value) {
-	if (!Array.isArray(value)) throw new TypeError("m permutation is not an array");
-	const seen = new Uint8Array(value.length);
-	for (const index of value) {
-		if (!Number.isInteger(index) || index < 0 || index >= value.length || seen[index] !== 0) {
-			throw new TypeError("m permutation is not a bijection");
-		}
-		seen[index] = 1;
-	}
-}
-
-function assertSafePath(path) {
-	for (const seg of path) {
-		if (typeof seg === "string") {
-			if (RESERVED_SEGMENTS.has(seg)) throw new UnsafePathError(seg);
-		} else if (!Number.isInteger(seg) || seg < 0) {
-			throw new UnsafePathError(seg);
-		}
-	}
-}
-function assertIndexInRange(parent, index) {
-	if (index > parent.length) throw new UnsafePathError(index);
-}
-class PathError extends Error {
-	constructor(path) {
-		super(`unresolvable path: ${JSON.stringify(path)}`);
-		this.path = path;
-		this.name = "PathError";
-	}
-}
-
-function applyOps(target, ops) {
-	let root = target;
-
-	for (const op of ops) {
-		assertValidOp(op);
-		if (op[0] === "r") {
-			// Adopted, not copied. The consumer owns the batch it was handed.
-			//
-			// Fanning one batch out to several consumers in-process therefore makes
-			// their replicas alias each other. That is an ownership rule, not a
-			// defect: copy the batch at the fan-out point, or let each consumer
-			// decode its own. A batch that crosses a real boundary is already
-			// distinct, because serialisation produces fresh objects.
-			root = op[1];
-			continue;
-		}
-
-		const path = op[1];
-		assertSafePath(path);
-
-		if (op[0] === "p") {
-			const target_ = path.length === 0 ? root : resolve(root, path);
-			if (!Array.isArray(target_)) throw new PathError(path);
-			target_.splice(op[2], op[3]);
-			const chunkSize = 10_000;
-			for (let offset = 0; offset < op[4].length; offset += chunkSize) {
-				target_.splice(op[2] + offset, 0, ...op[4].slice(offset, offset + chunkSize));
-			}
-			continue;
-		}
-		if (op[0] === "m") {
-			const target_ = path.length === 0 ? root : resolve(root, path);
-			if (!Array.isArray(target_) || target_.length !== op[2].length) throw new PathError(path);
-			const previous = target_.slice();
-			for (let index = 0; index < op[2].length; index++) target_[index] = previous[op[2][index]];
-			continue;
-		}
-
-		// s/d/a/t can never target the root — the type forbids it.
-		const parent = resolve(root, path.slice(0, -1));
-		const key = path[path.length - 1];
-		if (Array.isArray(parent)) {
-			if (typeof key !== "number") throw new UnsafePathError(key);
-			assertIndexInRange(parent, key);
-		}
-		// defineProperty rather than assignment: a setter inherited from the prototype
-		// chain would otherwise run on write.
-		const write = (value) => {
-			Object.defineProperty(parent, key, { value, writable: true, enumerable: true, configurable: true });
-		};
-		const read = () => (Object.hasOwn(parent, key) ? parent[key] : undefined);
-		switch (op[0]) {
-			case "s":
-				write(op[2]);
-				break;
-			case "d":
-				if (Array.isArray(parent)) {
-					if (typeof key !== "number" || key >= parent.length) throw new PathError(path);
-					(parent).splice(key, 1);
-				} else delete parent[key];
-				break;
-			case "a": {
-				const current = read();
-				if (typeof current !== "string") throw new PathError(path);
-				write(`${current}${op[2]}`);
-				break;
-			}
-			case "t": {
-				const current = read();
-				if (typeof current !== "string") throw new PathError(path);
-				write(current.slice(op[2]));
-				break;
-			}
-		}
-	}
-	return root;
-}
-
-function resolveValue(root, path) {
-	let node = root;
-	for (const seg of path) {
-		if (!isObj(node)) throw new PathError(path);
-		if (Array.isArray(node) && typeof seg !== "number") throw new UnsafePathError(seg);
-		// Own properties only: an inherited getter must not run, and a walk must not
-		// escape the value into the prototype chain.
-		if (!Object.hasOwn(node, seg)) throw new PathError(path);
-		node = (node)[seg];
-	}
-	return node;
-}
-
-function resolve(root, path) {
-	const node = resolveValue(root, path);
-	if (!isObj(node)) throw new PathError(path);
-	return node;
-}
-
-// Xorshift32 gives a fixed sequence on each Node 22 run.
+// Import the full tag source. No copied algorithm is an oracle.
+const temporary = mkdtempSync(join(tmpdir(), 'chord-delta-'));
+try {
+const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.3.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
+execFileSync('tar', ['-x', '-C', temporary], { input: archive });
+const { overlap, apply: applyOps, applyImmutable } = await import(pathToFileURL(join(temporary, 'packages/chord/src/delta/index.ts')).href);
+const isObj = value => value !== null && typeof value === 'object';
+const RESERVED_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
 let seed = 0x3c71a5d9;
 function randomWord() {
   seed ^= seed << 13;
@@ -424,7 +218,31 @@ addApply('verb-object-blocks-string-conversion', {}, [[{ toString: 1 }]]);
 addApply('verb-object-valueOf-keeps-default-string', {}, [[{ valueOf: 1 }]]);
 
 
-const output = fixtureJSON({ upstream: 'pi-mono v1.1.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }) + '\n';
+const additions = [];
+function addImmutable(name, initial, ops) {
+  const entry = { name, initialText: JSON.stringify(initial), ops };
+  try { entry.resultText = expectedText(JSON.stringify(applyImmutable(initial, ops))); }
+  catch (error) { entry.errorKind = error.name; entry.errorText = error.message; }
+  additions.push(entry);
+}
+addImmutable('nested-two-appends', { log: { entries: Array.from({ length: 1000 }, (_, index) => ({ index })), meta: { count: 1000 } }, other: { value: 1 } }, [
+  ['p', ['log', 'entries'], 1000, 0, [{ index: 1000 }]], ['p', ['log', 'entries'], 1001, 0, [{ index: 1001 }]],
+]);
+addImmutable('root-append', [1,2], [['p', [], 2, 0, [3]]]);
+addImmutable('root-array-item-append', [1,2], [['p', [], 2, 0, [[3,4]]]]);
+addImmutable('non-append-general-path', [1,2], [['p', [], 1, 0, [9]]]);
+for (const [index, path] of [['values','missing'], ['missing'], ['values',0], ['__proto__'], ['list','x'], ['text'], ['list',-1], ['list',1.5], ['list',0,'constructor']].entries()) {
+  addImmutable(`invalid-append-path-${index}`, { values: [], list: [[1]], text: 'a' }, [['p', path, 0, 0, []]]);
+}
+const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/delta-v130-fixtures.json', import.meta.url));
+const additionsOutput = fixtureJSON({ upstream: 'pi-mono v1.3.0', source: 'packages/chord/test/delta-apply-immutable.test.ts', apply: additions }) + '\n';
+
+const output = fixtureJSON({ upstream: 'pi-mono v1.3.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }) + '\n';
+assertFixtureBudget({ 'overlap-fixtures.json': output, 'delta-v130-fixtures.json': additionsOutput });
+if (process.argv.includes('--check')) {
+  if (readFileSync(additionsPath, 'utf8') !== additionsOutput) throw new Error('v1.3 delta fixtures differ');
+} else writeFileSync(additionsPath, additionsOutput);
+
 const counts = `${overlapCases.length} overlap cases, ${applyCases.length} apply cases (${applyCases.filter(entry => entry.errorKind).length} invalid)`;
 if (process.argv.includes('--check')) {
   const temporaryPath = fileURLToPath(new URL(`.delta-fixtures-${process.pid}.tmp`, import.meta.url));
@@ -439,3 +257,5 @@ if (process.argv.includes('--check')) {
   writeFileSync(fixturePath, output);
   console.log(`Wrote ${counts}.`);
 }
+
+} finally { rmSync(temporary, { recursive: true, force: true }); }

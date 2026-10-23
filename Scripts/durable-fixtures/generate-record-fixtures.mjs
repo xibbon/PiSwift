@@ -1,4 +1,4 @@
-// All record JSON below comes from v1.1.0 Session and MemoryStorage results.
+// All record JSON below comes from v1.3.0 Session and MemoryStorage results.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, copyFile, cp, stat, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,7 +13,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(run.status ?? 1);
 }
 
-const source = await mirror();
+const source = await mirror({ dependencies: ['typebox@1.3.27'] });
 try {
   const { MemoryStorage } = await source.import('packages/durable/src/storage/memory.ts');
   const { createSession } = await source.import('packages/durable/src/session/session.ts');

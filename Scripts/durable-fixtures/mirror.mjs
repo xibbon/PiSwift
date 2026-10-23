@@ -1,12 +1,12 @@
 // Use unmodified source files from the upstream tag. Never write to pi-mono.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const upstreamRepository = '/Users/miguel/cvs/pi/pi-mono';
-export const upstreamTag = 'v1.1.0';
+export const upstreamTag = 'v1.3.0';
 
 function completion(child) {
   return new Promise((resolve, reject) => {
@@ -15,7 +15,7 @@ function completion(child) {
   });
 }
 
-export async function mirror() {
+export async function mirror({ dependencies = [] } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'piswift-durable-fixtures-'));
   try {
     const archive = spawn('git', ['-C', upstreamRepository, 'archive', upstreamTag,
@@ -23,8 +23,10 @@ export async function mirror() {
     const extract = spawn('tar', ['-x', '-C', directory], { stdio: ['pipe', 'inherit', 'inherit'] });
     archive.stdout.pipe(extract.stdin);
     await Promise.all([completion(archive), completion(extract)]);
+    // Install first: npm prunes package links that are not in its manifest.
+    if (dependencies.length) execFileSync('npm', ['install', '--prefix', directory, '--no-audit', '--no-fund', '--ignore-scripts', ...dependencies], { stdio: 'ignore' });
     const packages = {
-      chord: { '.': './src/index.ts', './delta': './src/delta/index.ts', './context': './src/context/index.ts' },
+      chord: { '.': './src/index.ts', './delta': './src/delta/index.ts', './context': './src/context/index.ts', './output': './src/output.ts' },
       ai: { '.': './src/index.ts', './utils/*': './src/utils/*.ts' },
     };
     await mkdir(join(directory, 'node_modules/@earendil-works'), { recursive: true });

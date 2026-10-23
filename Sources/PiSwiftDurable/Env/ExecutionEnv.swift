@@ -346,16 +346,7 @@ public struct ShellOutputWindow: Sendable, Equatable {
     }
 }
 /// The counts and newline state of omitted output.
-public struct ShellOutputSkip: Sendable, Equatable {
-    /// The number of omitted output bytes.
-    public var bytes: Int
-    /// The number of newline characters in the omitted output.
-    public var newlines: Int
-    /// Whether the omitted output ends with a newline.
-    public var endsWithNewline: Bool
-    /// Creates ShellOutputSkip with the supplied values.
-    public init(bytes: Int, newlines: Int, endsWithNewline: Bool) { self.bytes = bytes; self.newlines = newlines; self.endsWithNewline = endsWithNewline }
-}
+public typealias ShellOutputSkip = PiSwiftChord.OutputSkip
 /// The command stream that produced an output chunk.
 public enum ShellOutputStream: String, Sendable {
     /// Standard output.

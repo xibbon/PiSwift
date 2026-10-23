@@ -1,4 +1,4 @@
-{"numbers":[
+{"provenance":{"oracle":"Node JSON.stringify, JSON.parse and Object.keys","node":"v22.23.1","reviewedAgainst":"pi-mono v1.3.0","upstreamSourceExecuted":false},"numbers":[
 {"bits":"0000000000000000","text":"0"},
 {"bits":"8000000000000000","text":"0"},
 {"bits":"3ff0000000000000","text":"1"},

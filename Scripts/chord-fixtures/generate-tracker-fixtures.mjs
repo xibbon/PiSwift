@@ -1,5 +1,6 @@
+import { assertFixtureBudget } from './fixture-budget.mjs';
 // Node 22 oracle. Load the tag's complete tracker; never load the working tree.
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -20,13 +21,13 @@ function fixtureJSON(value) {
 // Digest only expected output. Inputs remain available for replay.
 function expectedText(text) {
   const length = Buffer.byteLength(text, 'utf8');
-  return length > 4096 ? { sha256: createHash('sha256').update(text, 'utf8').digest('hex'), length } : text;
+  return length > 2048 ? { sha256: createHash('sha256').update(text, 'utf8').digest('hex'), length } : text;
 }
 
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-fixtures.json', import.meta.url));
 const temporary = mkdtempSync(join(tmpdir(), 'chord-tracker-'));
 try {
-  const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.1.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
+  const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.3.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
   execFileSync('tar', ['-x', '-C', temporary], { input: archive });
   const { track } = await import(pathToFileURL(join(temporary, 'packages/chord/src/delta/tracker.ts')).href);
   let seed = 0x43a71e29;
@@ -111,12 +112,12 @@ try {
           case 'begin': changes.set(step.name, tracker.beginChange()); break;
           case 'prepare': {
             const value = change.prepare(); prepared.set(step.name, value);
-            event.ops = Buffer.byteLength(JSON.stringify(value.ops), 'utf8') > 4096 ? expectedText(JSON.stringify(value.ops)) : clone(value.ops); event.valueText = expectedText(JSON.stringify(value.value)); event.baseRevision = value.baseRevision;
+            event.ops = Buffer.byteLength(JSON.stringify(value.ops), 'utf8') > 2048 ? expectedText(JSON.stringify(value.ops)) : clone(value.ops); event.valueText = expectedText(JSON.stringify(value.value)); event.baseRevision = value.baseRevision;
             break;
           }
           case 'replace': {
             const value = tracker.prepareReplace(clone(step.value)); prepared.set(step.name, value);
-            event.ops = Buffer.byteLength(JSON.stringify(value.ops), 'utf8') > 4096 ? expectedText(JSON.stringify(value.ops)) : clone(value.ops); event.valueText = expectedText(JSON.stringify(value.value)); event.baseRevision = value.baseRevision;
+            event.ops = Buffer.byteLength(JSON.stringify(value.ops), 'utf8') > 2048 ? expectedText(JSON.stringify(value.ops)) : clone(value.ops); event.valueText = expectedText(JSON.stringify(value.value)); event.baseRevision = value.baseRevision;
             break;
           }
           case 'adopt': tracker.adopt(prepared.get(step.name)); event.valueText = expectedText(JSON.stringify(tracker.value)); event.revision = tracker.revision; break;
@@ -316,12 +317,36 @@ try {
       set('n', 999, ['xs', 800]), set('outside', 1)];
     add('multiple-disjoint-dense-regions-preserve-outside-operations', 'source-cases', base, [...steps, ...finish]);
   }
-  const output = fixtureJSON({ upstream: 'pi-mono v1.1.0', seed: '0x43a71e29', counts, cases }) + '\n';
-  const fixtureDirectory = new URL('../../Tests/PiSwiftChordTests/Fixtures/', import.meta.url);
-  const fixtureBytes = Buffer.byteLength(output, 'utf8') + readdirSync(fixtureDirectory)
-    .filter(name => name !== 'tracker-fixtures.json' && statSync(new URL(name, fixtureDirectory)).isFile())
-    .reduce((sum, name) => sum + statSync(new URL(name, fixtureDirectory)).size, 0);
-  if (fixtureBytes > 3_000_000) throw new Error(`Fixture budget exceeded: ${fixtureBytes} bytes`);
+  // New v1.3 cases have their own file. The old replay test keeps 925 cases.
+  const existingCases = cases.splice(0);
+  const existingCounts = { ...counts };
+  for (const key of Object.keys(counts)) delete counts[key];
+  add('append-10000-one-insert', 'ordered-plan', { values: Array.from({ length: 10000 }, (_, i) => i) }, [
+    { op: 'push', path: ['values'], values: [-1] }, ...finish,
+  ]);
+  add('ordered-removals-then-inserts-exact-six-ops', 'ordered-plan', { values: [0,1,2,3,4,5,6,7,8,9] }, [
+    { op: 'shift', path: ['values'] }, { op: 'splice', path: ['values'], start: 1, deleteCount: 2, values: [20] },
+    { op: 'splice', path: ['values'], start: 5, deleteCount: 1 }, { op: 'pop', path: ['values'] },
+    { op: 'push', path: ['values'], values: [30] }, ...finish,
+  ]);
+  add('reordered-kept-elements-permutation', 'ordered-plan', { values: [0,1,2,3,4] }, [
+    { op: 'reverse', path: ['values'] }, ...finish,
+  ]);
+  add('disjoint-dense-regions-exact-six-ops', 'ordered-plan', { values: Array.from({ length: 1400 }, (_, value) => ({ value })) }, [
+    ...[97,358,897,1158].map(i => set('value', -i - 1, ['values', i])),
+    repeat(256, set('value', ix(-1, -1), ['values', ix()]), 100),
+    repeat(256, set('value', ix(-1, -1), ['values', ix()]), 900), ...finish,
+  ]);
+  const additions = fixtureJSON({ upstream: 'pi-mono v1.3.0', source: 'packages/chord/test/delta-tracker/tracker.test.ts', counts, cases }) + '\n';
+  const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-v130-fixtures.json', import.meta.url));
+  cases.splice(0, cases.length, ...existingCases);
+  for (const key of Object.keys(counts)) delete counts[key];
+  Object.assign(counts, existingCounts);
+  const output = fixtureJSON({ upstream: 'pi-mono v1.3.0', seed: '0x43a71e29', counts, cases }) + '\n';
+  assertFixtureBudget({ 'tracker-fixtures.json': output, 'tracker-v130-fixtures.json': additions });
+  if (process.argv.includes('--check')) {
+    if (readFileSync(additionsPath, 'utf8') !== additions) throw new Error('v1.3 tracker fixtures differ');
+  } else writeFileSync(additionsPath, additions);
   if (process.argv.includes('--check')) {
     if (readFileSync(fixturePath, 'utf8') !== output) {
       console.error('Tracker fixture differs from the upstream Node tracker.'); process.exitCode = 1;

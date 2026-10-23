@@ -1,4 +1,4 @@
-// Use unmodified v1.1.0 JSONL source to write and read the recorded scenario.
+// Use unmodified v1.3.0 JSONL source to write and read the recorded scenario.
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readRecordedCalls, compareRecordedReads } from './sqlite-fixtures.mjs';
