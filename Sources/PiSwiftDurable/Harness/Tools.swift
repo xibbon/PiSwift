@@ -94,6 +94,8 @@ public struct RetainedToolOutput: Sendable, Equatable {
 
 /// Tool operations bound to a task invocation.
 public struct ToolExecutionApi: Sendable {
+    internal var nestedCalls: NestedToolCalls?
+    internal var abandonCreatedTasks = false
     internal var pendingDetailsCount: @Sendable () -> Int = { 0 }
     /// The optional task runtime bound to this tool invocation.
     public var runtime: TaskRuntime?
@@ -166,6 +168,14 @@ public struct ToolExecutionApi: Sendable {
 
 }
 
+/// A caller that can execute an enabled tool.
+public enum ToolCaller: String, Sendable, Equatable, Codable {
+    /// A call from the model.
+    case model
+    /// A nested call from another tool.
+    case tools
+}
+
 /// A tool declaration and execution callback with replay and output policies.
 public struct ToolRegistration: Sendable {
     /// The model-facing tool name, description, and argument schema.
@@ -179,6 +189,8 @@ public struct ToolRegistration: Sendable {
     public var orderedDeclaration: JSONObject
     /// An optional override of the tool replay policy.
     public var replay: ToolReplay?
+    /// Permitted callers. Nil permits both caller types; an empty list permits none.
+    public var callers: [ToolCaller]?
     /// An optional per-tool execution policy.
     public var executionMode: ToolExecutionMode?
     /// An optional repair callback applied before tool argument validation.
@@ -210,7 +222,7 @@ public struct ToolRegistration: Sendable {
     }
     /// Creates a tool declaration and its execution callback, preserving schema member order.
     public init(declaration: AITool, orderedDeclaration: JSONObject? = nil,
-                replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
+                replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
                 outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
                 execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
@@ -218,19 +230,19 @@ public struct ToolRegistration: Sendable {
         self.orderedDeclaration = try orderedDeclaration ?? JSONObject([
             ("name", .string(declaration.name)), ("description", .string(declaration.description)),
             ("parameters", durableJSON(fromFoundation: declaration.parameters.mapValues(\.value)))])
-        self.replay = replay; self.executionMode = executionMode; self.prepareArguments = prepareArguments
+        self.replay = replay; self.callers = callers; self.executionMode = executionMode; self.prepareArguments = prepareArguments
         self.outputLimits = outputLimits; self.structuredOutputSchema = structuredOutputSchema; self.execute = execute
     }
     /// Creates a tool declaration and its execution callback, preserving schema member order.
     public init(name: String, description: String, parameters: JSONObject,
-                replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
+                replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
                 outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
                 execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
         let dictionary = try foundationJSON(from: .object(parameters)) as! [String: Any]
         try self.init(declaration: AITool(name: name, description: description, parameters: dictionary.mapValues(AnyCodable.init)),
             orderedDeclaration: ["name": .string(name), "description": .string(description), "parameters": .object(parameters)],
-            replay: replay, executionMode: executionMode, prepareArguments: prepareArguments,
+            replay: replay, callers: callers, executionMode: executionMode, prepareArguments: prepareArguments,
             outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema, execute: execute)
     }
 }
@@ -269,7 +281,7 @@ public struct OutputLimitOverrides: Sendable, Equatable {
 /// Creates a tool that validates its schema arguments before decoding them for execution.
 public func defineTool<Args: Decodable & Sendable>(
     name: String, description: String, parameters: JSONObject, args: Args.Type = Args.self,
-    replay: ToolReplay? = nil, executionMode: ToolExecutionMode? = nil,
+    replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, executionMode: ToolExecutionMode? = nil,
     prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
     outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
     execute: @escaping @Sendable (Args, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
@@ -277,7 +289,7 @@ public func defineTool<Args: Decodable & Sendable>(
     let schema = try foundationJSON(from: .object(parameters)) as! [String: Any]
     let declaration = AITool(name: name, description: description, parameters: schema.mapValues(AnyCodable.init))
     return try ToolRegistration(name: name, description: description, parameters: parameters,
-        replay: replay, executionMode: executionMode, prepareArguments: prepareArguments,
+        replay: replay, callers: callers, executionMode: executionMode, prepareArguments: prepareArguments,
         outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema) { value, api, context in
             guard let object = try foundationJSON(from: value) as? [String: Any] else {
                 throw HarnessDefinitionError.argumentsMustBeObject(name)

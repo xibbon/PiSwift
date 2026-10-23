@@ -168,7 +168,7 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
                     }
                 default: break
                 }
-                if case .toolExecutionUpdate(_, _, let change?, _, _, _) = event {
+                if case .toolExecutionUpdate(_, _, let change?, _, _, _, _, _) = event {
                     output.withLock { value in
                         switch change {
                         case .set(let text): value = text
@@ -248,12 +248,12 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
         try await chat.harness.waitForIdle(context: .background)
         await watch.waitUntilIdle()
         for childWatch in childWatches.values { await childWatch.waitUntilIdle(); _ = await childWatch.stop() }
-        #expect(parentEvents.values.contains { if case .toolExecutionStart(_, "subagent", let args, _) = $0 { return args["task"] == "Name three prime numbers." }; return false })
+        #expect(parentEvents.values.contains { if case .toolExecutionStart(_, "subagent", let args, _, _, _) = $0 { return args["task"] == "Name three prime numbers." }; return false })
         #expect(parentEvents.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == "The subagent says: 2, 3, and 5." }; return false })
         #expect(childEvents.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == "2, 3, and 5." }; return false })
         let childID = try #require(childIDs.values.first)
         #expect(parentEvents.values.contains {
-            if case .toolExecutionUpdate(_, "subagent", _, let details, _, _) = $0 {
+            if case .toolExecutionUpdate(_, "subagent", _, let details, _, _, _, _) = $0 {
                 return details?["conversationId"] == .number(Double(childID.rawValue))
             }
             return false

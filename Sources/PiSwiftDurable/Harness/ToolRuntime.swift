@@ -18,14 +18,29 @@ extension ToolExecutionApi {
     /// Creates a typed task and stores its encoded input and initial checkpoint.
     public func createTask<Input, Checkpoint>(_ task: TaskKind<Input, Checkpoint>, input: Input,
                                              options: TaskOptions, context: ChordContext) async throws -> TaskID {
-        try await commit({ tx in try await tx.createTask(task, input: input, options: options) }, context: context)
+        let selected = childOptions(options)
+        return try await commit({ tx in try await tx.createTask(task, input: input, options: selected) }, context: context)
     }
     /// Creates a typed task and stores its encoded input and initial checkpoint.
     public func createTask<Input, Checkpoint, Result, Hooks>(
         _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input,
         options: TaskOptions, context: ChordContext
     ) async throws -> TaskID {
-        try await commit({ tx in try await tx.createTask(task, input: input, options: options) }, context: context)
+        let selected = childOptions(options)
+        return try await commit({ tx in try await tx.createTask(task, input: input, options: selected) }, context: context)
+    }
+    private func childOptions(_ options: TaskOptions) -> TaskOptions {
+        guard abandonCreatedTasks, !options.hasRestartPolicy, case .task = options.ownership else { return options }
+        return TaskOptions(ownership: options.ownership, conversationId: options.conversationId,
+                           background: options.background, abandonOnRestart: true)
+    }
+    /// Calls a tool by key and waits for its program result. Cancelling this wait leaves the child running.
+    public func executeTool(_ name: String, arguments: JSONObject, context: ChordContext,
+                            options: NestedToolOptions = .init()) async throws -> NestedToolExecutionResult {
+        guard let nestedCalls else { throw TaskDefinitionError("Tool execution API has no nested call service") }
+        return try await withTaskCancellationContext(context) { context in
+            try await nestedCalls.execute(name, arguments: arguments, context: context, options: options)
+        }
     }
     /// Returns the current durable task record, or nil when it is absent.
     public func getTask(id: TaskID, context: ChordContext) async throws -> TaskRecord? {

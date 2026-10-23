@@ -198,11 +198,15 @@ public struct OpenDurableOptions: Sendable, Equatable, Codable {
     }
 }
 
+/// Reads the agent document. An absent document has no overrides.
+public func decodeAgentOf(_ view: ConversationView) throws -> PiSwiftDurable.AgentState {
+    guard let document = view.docs["pi.agent"] else { return PiSwiftDurable.AgentState() }
+    return try JSONValue.object(document).decode(PiSwiftDurable.AgentState.self)
+}
+
 /// Returns an empty state if the agent document is absent or cannot be decoded.
+/// Use decodeAgentOf to receive a document decoding error.
 public func agentOf(_ view: ConversationView) -> PiSwiftDurable.AgentState {
-    guard let document = view.docs["pi.agent"],
-          let state = try? JSONValue.object(document).decode(PiSwiftDurable.AgentState.self) else {
-        return PiSwiftDurable.AgentState()
-    }
-    return state
+    do { return try decodeAgentOf(view) }
+    catch { return PiSwiftDurable.AgentState() }
 }

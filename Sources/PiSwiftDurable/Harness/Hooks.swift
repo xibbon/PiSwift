@@ -68,14 +68,30 @@ public struct BeforeToolResult: Sendable {
 /// Callbacks that can block a tool or replace its arguments and result.
 public struct ToolHooks: Sendable {
     /// Can change arguments or block the tool before execution.
-    public var beforeTool: (@Sendable (ToolCall, HookApi, ChordContext) async throws -> BeforeToolResult?)?
+    public var beforeTool: (@Sendable (ToolHookCall, HookApi, ChordContext) async throws -> BeforeToolResult?)?
     /// Can replace the result after tool execution.
-    public var afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)?
+    public var afterTool: (@Sendable (ToolHookCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)?
     /// Selects optional callbacks before and after tool execution.
     public init(
-        beforeTool: (@Sendable (ToolCall, HookApi, ChordContext) async throws -> BeforeToolResult?)? = nil,
-        afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)? = nil
+        beforeTool: (@Sendable (ToolHookCall, HookApi, ChordContext) async throws -> BeforeToolResult?)? = nil,
+        afterTool: (@Sendable (ToolHookCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)? = nil
     ) { self.beforeTool = beforeTool; self.afterTool = afterTool }
+
+    /// Supports existing hooks that accept the model call type.
+    @_disfavoredOverload
+    public init(beforeTool: @escaping @Sendable (ToolCall, HookApi, ChordContext) async throws -> BeforeToolResult?,
+                afterTool: (@Sendable (ToolCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?)? = nil) {
+        self.beforeTool = { call, api, context in try await beforeTool(call.call, api, context) }
+        if let afterTool {
+            self.afterTool = { call, result, api, context in try await afterTool(call.call, result, api, context) }
+        } else { self.afterTool = nil }
+    }
+    /// Supports existing result hooks that accept the model call type.
+    @_disfavoredOverload
+    public init(afterTool: @escaping @Sendable (ToolCall, ToolExecutionResult, HookApi, ChordContext) async throws -> ToolExecutionResult?) {
+        beforeTool = nil
+        self.afterTool = { call, result, api, context in try await afterTool(call.call, result, api, context) }
+    }
 }
 /// The context range and instructions offered to a compaction hook.
 public struct CompactionHookInput: Sendable {

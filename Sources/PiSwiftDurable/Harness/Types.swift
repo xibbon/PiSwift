@@ -151,8 +151,10 @@ public struct Agent: Sendable {
     public var thinkingLevel: ModelThinkingLevel
     /// The selected extensions or extension-selection change.
     public var extensions: [Extension]
-    /// The tool registrations or live tool slots in this value.
+    /// The enabled tools offered to the model, in declaration order.
     public var tools: [ToolRegistration]
+    /// The enabled tools that nested calls can execute.
+    public var callable: [ToolRegistration]
     /// The ordered prompt sections selected for the agent.
     public var sections: [PromptSection]
     /// Additional agent or compaction instructions.
@@ -161,9 +163,9 @@ public struct Agent: Sendable {
     public var cwd: String?
     /// Creates the resolved model, tools, sections, instructions, and working directory.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel = .off,
-                extensions: [Extension] = [], tools: [ToolRegistration] = [], sections: [PromptSection] = [],
+                extensions: [Extension] = [], tools: [ToolRegistration] = [], callable: [ToolRegistration] = [], sections: [PromptSection] = [],
                 instructions: String? = nil, cwd: String? = nil) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
-        self.tools = tools; self.sections = sections; self.instructions = instructions; self.cwd = cwd
+        self.tools = tools; self.callable = callable; self.sections = sections; self.instructions = instructions; self.cwd = cwd
     }
 }

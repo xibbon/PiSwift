@@ -27,12 +27,14 @@ public struct TaskOptions: Sendable {
     public let background: Bool
     /// Abort this task before a later Harness runs it.
     public let abandonOnRestart: Bool
+    internal let hasRestartPolicy: Bool
     /// Selects task ownership, conversation, and lifetime.
-    public init(ownership: TaskOwnership, conversationId: ConversationID? = nil, background: Bool = false, abandonOnRestart: Bool = false) {
+    public init(ownership: TaskOwnership, conversationId: ConversationID? = nil, background: Bool = false, abandonOnRestart: Bool? = nil) {
         self.ownership = ownership
         self.conversationId = conversationId
         self.background = background
-        self.abandonOnRestart = abandonOnRestart
+        self.abandonOnRestart = abandonOnRestart ?? false
+        self.hasRestartPolicy = abandonOnRestart != nil
     }
 }
 

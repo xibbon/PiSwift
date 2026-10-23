@@ -29,6 +29,8 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
     public var generation: LiveGeneration?
     /// The visible tool-call slots and their current progress.
     public var tools: [ToolSlot]
+    /// The visible nested tool calls in creation order.
+    public var nestedTools: [NestedToolSlot]
     /// The active compaction tasks and their progress.
     public var compactions: [CompactionStatus]
     /// The queued conversation submissions.
@@ -41,16 +43,17 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
     public var type: String { "snapshot" }
     /// Creates a detached snapshot of entries, live progress, queues, and usage.
     public init(entries: [EntryRecord] = [], run: DurableSnapshotRun? = nil, generation: LiveGeneration? = nil,
-                tools: [ToolSlot] = [], compactions: [CompactionStatus] = [], inbox: [DurableQueuedItem] = [],
+                tools: [ToolSlot] = [], nestedTools: [NestedToolSlot] = [], compactions: [CompactionStatus] = [], inbox: [DurableQueuedItem] = [],
                 agent: AgentState = .init(), usage: JSONObject = ["models": [:], "tools": [:]]) {
         self.entries = entries; self.run = run; self.generation = generation; self.tools = tools
-        self.compactions = compactions; self.inbox = inbox; self.agent = agent; self.usage = usage
+        self.nestedTools = nestedTools; self.compactions = compactions; self.inbox = inbox; self.agent = agent; self.usage = usage
     }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let o = try recordObject(decoder)
         entries = try recordRequired(o, "entries"); run = try recordOptional(o, "run")
         generation = try recordOptional(o, "generation"); tools = try recordRequired(o, "tools")
+        nestedTools = try recordOptional(o, "nestedTools") ?? []
         compactions = try recordRequired(o, "compactions"); inbox = try recordRequired(o, "inbox")
         agent = try recordRequired(o, "agent"); usage = try recordRequired(o, "usage")
     }
@@ -59,7 +62,7 @@ public struct DurableAgentSnapshot: Sendable, Equatable, Codable {
         var o: JSONObject = ["type": .string(type)]
         try recordSet(&o, "entries", entries); try recordSetOptional(&o, "run", run)
         try recordSetOptional(&o, "generation", generation); try recordSet(&o, "tools", tools)
-        try recordSet(&o, "compactions", compactions); try recordSet(&o, "inbox", inbox)
+        try recordSet(&o, "nestedTools", nestedTools); try recordSet(&o, "compactions", compactions); try recordSet(&o, "inbox", inbox)
         try recordSet(&o, "agent", agent); try recordSet(&o, "usage", usage)
         try o.encode(to: encoder)
     }
@@ -179,12 +182,16 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
     /// Reports the committed entry of a completed assistant message.
     case messageEnd(entry: EntryRecord)
     /// Reports a tool call start. The task ID is absent if the call has no task.
-    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONObject, taskId: TaskID? = nil)
+    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONObject, taskId: TaskID? = nil,
+                            parentToolCallId: String? = nil, parentTaskId: TaskID? = nil)
     /// Reports tool output, details, or diagnostics with the task ID when present.
     case toolExecutionUpdate(toolCallId: String, toolName: String, output: DurableToolOutputChange? = nil,
-                             details: JSONValue? = nil, diagnostics: [ToolDiagnostic]? = nil, taskId: TaskID? = nil)
-    /// Reports a tool call end with its task ID and result entry when present.
-    case toolExecutionEnd(toolCallId: String, toolName: String, entry: EntryRecord? = nil, taskId: TaskID? = nil)
+                             details: JSONValue? = nil, diagnostics: [ToolDiagnostic]? = nil, taskId: TaskID? = nil,
+                             parentToolCallId: String? = nil, parentTaskId: TaskID? = nil)
+    /// Reports a call end. Model calls have an entry; nested calls have a result.
+    /// Call IDs are opaque. Use parent IDs to relate nested calls to their caller.
+    case toolExecutionEnd(toolCallId: String, toolName: String, entry: EntryRecord? = nil, taskId: TaskID? = nil,
+                          parentToolCallId: String? = nil, parentTaskId: TaskID? = nil, result: NestedToolExecutionResult? = nil)
     /// Reports the current queued submission IDs and admission modes.
     case inboxUpdate(items: [DurableQueuedItem])
     /// Reports the new durable state of a submission.
@@ -247,11 +254,14 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case "message_start": self = .messageStart(message: try recordRequired(o, "message"))
         case "message_update": self = .messageUpdate(usage: try recordRequired(o, "usage"), changes: try recordRequired(o, "changes"))
         case "message_end": self = .messageEnd(entry: try recordRequired(o, "entry"))
-        case "tool_execution_start": self = .toolExecutionStart(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), args: try recordRequired(o, "args"), taskId: try recordOptional(o, "taskId"))
+        case "tool_execution_start": self = .toolExecutionStart(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), args: try recordRequired(o, "args"), taskId: try recordOptional(o, "taskId"),
+                parentToolCallId: try recordOptional(o, "parentToolCallId"), parentTaskId: try recordOptional(o, "parentTaskId"))
         case "tool_execution_update":
             self = .toolExecutionUpdate(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"),
-                output: try recordOptional(o, "output"), details: o["details"], diagnostics: try recordOptional(o, "diagnostics"), taskId: try recordOptional(o, "taskId"))
-        case "tool_execution_end": self = .toolExecutionEnd(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), entry: try recordOptional(o, "entry"), taskId: try recordOptional(o, "taskId"))
+                output: try recordOptional(o, "output"), details: o["details"], diagnostics: try recordOptional(o, "diagnostics"), taskId: try recordOptional(o, "taskId"),
+                parentToolCallId: try recordOptional(o, "parentToolCallId"), parentTaskId: try recordOptional(o, "parentTaskId"))
+        case "tool_execution_end": self = .toolExecutionEnd(toolCallId: try recordRequired(o, "toolCallId"), toolName: try recordRequired(o, "toolName"), entry: try recordOptional(o, "entry"), taskId: try recordOptional(o, "taskId"),
+                parentToolCallId: try recordOptional(o, "parentToolCallId"), parentTaskId: try recordOptional(o, "parentTaskId"), result: try recordOptional(o, "result"))
         case "inbox_update": self = .inboxUpdate(items: try recordRequired(o, "items"))
         case "submission": self = .submission(record: try recordRequired(o, "record"))
         case "auto_retry_start": self = .autoRetryStart(attempt: try recordRequired(o, "attempt"), at: try recordRequired(o, "at"), errorMessage: try recordRequired(o, "errorMessage"))
@@ -276,16 +286,20 @@ public enum DurableAgentEvent: Sendable, Equatable, Codable {
         case .messageStart(let message): o["message"] = .object(message)
         case let .messageUpdate(usage, changes): o["usage"] = .object(usage); try recordSet(&o, "changes", changes)
         case .messageEnd(let entry), .entryAppended(let entry): try recordSet(&o, "entry", entry)
-        case let .toolExecutionStart(id, name, args, taskId):
+        case let .toolExecutionStart(id, name, args, taskId, parentCallId, parentTaskId):
             o["toolCallId"] = .string(id); o["toolName"] = .string(name); o["args"] = .object(args)
             try recordSetOptional(&o, "taskId", taskId)
-        case let .toolExecutionUpdate(id, name, output, details, diagnostics, taskId):
+            try recordSetOptional(&o, "parentToolCallId", parentCallId); try recordSetOptional(&o, "parentTaskId", parentTaskId)
+        case let .toolExecutionUpdate(id, name, output, details, diagnostics, taskId, parentCallId, parentTaskId):
             o["toolCallId"] = .string(id); o["toolName"] = .string(name)
             try recordSetOptional(&o, "output", output); o["details"] = details; try recordSetOptional(&o, "diagnostics", diagnostics)
             try recordSetOptional(&o, "taskId", taskId)
-        case let .toolExecutionEnd(id, name, entry, taskId):
+            try recordSetOptional(&o, "parentToolCallId", parentCallId); try recordSetOptional(&o, "parentTaskId", parentTaskId)
+        case let .toolExecutionEnd(id, name, entry, taskId, parentCallId, parentTaskId, result):
             o["toolCallId"] = .string(id); o["toolName"] = .string(name); try recordSetOptional(&o, "entry", entry)
             try recordSetOptional(&o, "taskId", taskId)
+            try recordSetOptional(&o, "parentToolCallId", parentCallId); try recordSetOptional(&o, "parentTaskId", parentTaskId)
+            try recordSetOptional(&o, "result", result)
         case .inboxUpdate(let items): try recordSet(&o, "items", items)
         case .submission(let record): try recordSet(&o, "record", record)
         case let .autoRetryStart(attempt, at, error): try recordSet(&o, "attempt", attempt); try recordSet(&o, "at", at); o["errorMessage"] = .string(error)

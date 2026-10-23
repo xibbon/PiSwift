@@ -52,6 +52,38 @@ public enum ToolSelection: Sendable, Equatable, Codable {
     private enum Keys: String, CodingKey { case remove }
 }
 
+/// The stored model tool filter. An object changes the default offer list.
+public enum ModelToolSelection: Sendable, Equatable, Codable {
+    /// Offers these enabled model tools in this order.
+    case exact([String])
+    /// Removes names or records names loaded by a tool.
+    case edit(add: [String]? = nil, remove: [String]? = nil)
+    /// Reads an exact list or an object filter.
+    public init(from decoder: any Decoder) throws {
+        let value = try JSONValue(from: decoder)
+        if let names = value.arrayValue {
+            self = .exact(try names.map { try $0.decode(String.self) })
+            return
+        }
+        guard value.objectValue != nil else {
+            throw DecodingError.typeMismatch(ModelToolSelection.self, .init(codingPath: decoder.codingPath,
+                debugDescription: "Model tools must be an array or an object"))
+        }
+        self = .edit(add: try value["add"]?.decode([String].self),
+                     remove: try value["remove"]?.decode([String].self))
+    }
+    /// Writes the durable filter shape.
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case let .exact(names): var c = encoder.singleValueContainer(); try c.encode(names)
+        case let .edit(add, remove):
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encodeIfPresent(remove, forKey: .remove); try c.encodeIfPresent(add, forKey: .add)
+        }
+    }
+    private enum Keys: String, CodingKey { case add, remove }
+}
+
 /// The pi.agent document value.
 public struct AgentState: Sendable, Equatable, Codable {
     /// The stored provider and model reference or entry model contribution.
@@ -62,16 +94,18 @@ public struct AgentState: Sendable, Equatable, Codable {
     public var extensions: ExtensionSelection?
     /// The tool registrations or live tool slots in this value.
     public var tools: ToolSelection?
+    /// The enabled tools offered to the model.
+    public var modelTools: ModelToolSelection?
     /// Additional agent or compaction instructions.
     public var instructions: String?
     /// The working directory used by this conversation or command.
     public var cwd: String?
     /// Creates stored agent overrides. Absent fields use host defaults.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
-                extensions: ExtensionSelection? = nil, tools: ToolSelection? = nil,
+                extensions: ExtensionSelection? = nil, tools: ToolSelection? = nil, modelTools: ModelToolSelection? = nil,
                 instructions: String? = nil, cwd: String? = nil) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
-        self.tools = tools; self.instructions = instructions; self.cwd = cwd
+        self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd
     }
 }
 
@@ -91,6 +125,7 @@ public func configure(tx: Transaction, conversationId: ConversationID, change: A
     try applyAgentField(draft, key: "thinkingLevel", change: change.thinkingLevel, value: value)
     try applyAgentField(draft, key: "extensions", change: change.extensions, value: value)
     try applyAgentField(draft, key: "tools", change: change.tools, value: value)
+    try applyAgentField(draft, key: "modelTools", change: change.modelTools, value: value)
     try applyAgentField(draft, key: "instructions", change: change.instructions, value: value)
     try applyAgentField(draft, key: "cwd", change: change.cwd, value: value)
 }
@@ -140,6 +175,13 @@ public enum ToolChange: Sendable {
     /// Excludes these names or definitions from the default selection.
     case remove([ToolRegistration])
 }
+/// Changes the model offer filter without changing nested tool access.
+public enum ModelToolChange: Sendable {
+    /// Offers these enabled model tools in this order.
+    case exact([ToolRegistration])
+    /// Replaces the object filter with these names.
+    case edit(add: [ToolRegistration]? = nil, remove: [ToolRegistration]? = nil)
+}
 /// A partial change to stored agent configuration. Clear restores the default for a field.
 public struct AgentChange: Sendable {
     /// Whether to keep, clear, or replace the saved model reference.
@@ -150,6 +192,8 @@ public struct AgentChange: Sendable {
     public var extensions: AgentFieldChange<ExtensionChange>
     /// Whether to keep, clear, or replace the saved tool offer policy.
     public var tools: AgentFieldChange<ToolChange>
+    /// Whether to keep, clear, or replace the model offer filter.
+    public var modelTools: AgentFieldChange<ModelToolChange>
     /// Whether to keep, clear, or replace the saved agent instructions.
     public var instructions: AgentFieldChange<String>
     /// Whether to keep, clear, or replace the saved working directory.
@@ -157,9 +201,10 @@ public struct AgentChange: Sendable {
     /// Selects the fields to keep, clear, or replace in stored agent configuration.
     public init(model: AgentFieldChange<ModelRef> = .unchanged, thinkingLevel: AgentFieldChange<ModelThinkingLevel> = .unchanged,
                 extensions: AgentFieldChange<ExtensionChange> = .unchanged, tools: AgentFieldChange<ToolChange> = .unchanged,
+                modelTools: AgentFieldChange<ModelToolChange> = .unchanged,
                 instructions: AgentFieldChange<String> = .unchanged, cwd: AgentFieldChange<String> = .unchanged) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
-        self.tools = tools; self.instructions = instructions; self.cwd = cwd
+        self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd
     }
 }
 
@@ -178,12 +223,19 @@ public func applyAgentChange(_ state: inout AgentState, _ change: AgentChange) {
     case .set(.exact(let items)): state.tools = .exact(items.map(\.name))
     case .set(.remove(let items)): state.tools = .remove(items.map(\.name))
     }
+    switch change.modelTools {
+    case .unchanged: break
+    case .clear: state.modelTools = nil
+    case .set(.exact(let items)): state.modelTools = .exact(items.map(\.name))
+    case .set(.edit(let add, let remove)):
+        state.modelTools = .edit(add: add?.map(\.name), remove: remove?.map(\.name))
+    }
     apply(&state.instructions, change.instructions); apply(&state.cwd, change.cwd)
 }
 private func apply<Value>(_ value: inout Value?, _ change: AgentFieldChange<Value>) {
     switch change { case .unchanged: break; case .clear: value = nil; case .set(let next): value = next }
 }
-/// Adds tool names to the stored offer policy without duplicate names.
+/// Adds tool names to the enabled and model offer filters without duplicate names.
 public func addAgentTools(_ state: inout AgentState, _ added: [String]) {
     switch state.tools {
     case nil: break
@@ -193,6 +245,48 @@ public func addAgentTools(_ state: inout AgentState, _ added: [String]) {
     case .remove(let names):
         let removed = names.filter { name in !added.contains { harnessNamesEqual($0, name) } }
         if removed.count != names.count { state.tools = .remove(removed) }
+    }
+    switch state.modelTools {
+    case .exact(var names):
+        for name in added where !names.contains(where: { harnessNamesEqual($0, name) }) { names.append(name) }
+        state.modelTools = .exact(names)
+    case .edit(let add, let remove):
+        state.modelTools = loadedModelTools(add: add, remove: remove, added: added)
+    case nil:
+        state.modelTools = loadedModelTools(add: nil, remove: nil, added: added)
+    }
+}
+private func loadedModelTools(add: [String]?, remove: [String]?, added: [String]) -> ModelToolSelection {
+    let removed = (remove ?? []).filter { name in !added.contains { harnessNamesEqual($0, name) } }
+    var names = add ?? []
+    for name in added where !names.contains(where: { harnessNamesEqual($0, name) }) { names.append(name) }
+    return .edit(add: names, remove: removed.isEmpty ? nil : removed)
+}
+
+/// Adds names to the enabled and model offer filters in one transaction.
+public func addTools(tx: Transaction, conversationId: ConversationID, added: [String]) async throws {
+    let draft = try await tx.doc(AgentDoc, conversationId: conversationId)
+    let original = try draft.snapshot().decode(AgentState.self)
+    var state = original
+    addAgentTools(&state, added)
+    let value = try documentObject(state)
+    switch original.tools {
+    case .exact(let names): try appendAgentToolNames(draft, key: "tools", names: names, added: added)
+    case .remove(let names):
+        if case .remove(let kept) = state.tools, kept.count != names.count, let tools = value["tools"] {
+            try draft.set("tools", tools)
+        }
+    case nil: break
+    }
+    if case .exact(let names) = original.modelTools {
+        try appendAgentToolNames(draft, key: "modelTools", names: names, added: added)
+    } else if let modelTools = value["modelTools"] { try draft.set("modelTools", modelTools) }
+}
+private func appendAgentToolNames(_ draft: JSONDraft, key: String, names: [String], added: [String]) throws {
+    guard let array = try draft.child(key) else { throw TaskDefinitionError("Agent field \(key) is absent") }
+    var selected = names
+    for name in added where !selected.contains(where: { harnessNamesEqual($0, name) }) {
+        try array.append(.string(name)); selected.append(name)
     }
 }
 
@@ -245,9 +339,18 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
     case .exact(let names): tools = uniqueHarnessNames(names).compactMap { name in tools.first { harnessNamesEqual($0.name, name) } }
     case .remove(let names): tools = tools.filter { tool in !names.contains { harnessNamesEqual($0, tool.name) } }
     }
+    let callable = tools.filter { $0.callers?.contains(.tools) ?? true }
+    tools = tools.filter { $0.callers?.contains(.model) ?? true }
+    switch state?.modelTools {
+    case nil: break
+    case .exact(let names):
+        tools = uniqueHarnessNames(names).compactMap { name in tools.first { harnessNamesEqual($0.name, name) } }
+    case .edit(_, let remove):
+        tools = tools.filter { tool in !(remove ?? []).contains { harnessNamesEqual($0, tool.name) } }
+    }
     if let instructions = state?.instructions { sections.append(section(instructionsKey) { _, _ in instructions }) }
     return Agent(model: state?.model, thinkingLevel: state?.thinkingLevel ?? .off, extensions: extensions,
-                 tools: tools, sections: sections, instructions: state?.instructions, cwd: state?.cwd)
+                 tools: tools, callable: callable, sections: sections, instructions: state?.instructions, cwd: state?.cwd)
 }
 
 private func applyWrap<Value>(_ values: inout [Value], name: String, nameOf: (Value) -> String,

@@ -90,7 +90,7 @@ public struct ProviderState: Sendable, Equatable, Codable {
     }
 }
 
-private func durableUsage(_ value: JSONValue) throws -> Usage {
+internal func durableUsage(_ value: JSONValue) throws -> Usage {
     guard let object = value.objectValue else { throw DocumentDefinitionError("Usage must be an object") }
     let cost: JSONObject = try recordRequired(object, "cost")
     return Usage(input: try recordRequired(object, "input"), output: try recordRequired(object, "output"),
@@ -101,7 +101,7 @@ private func durableUsage(_ value: JSONValue) throws -> Usage {
                                  cacheRead: try recordRequired(cost, "cacheRead"), cacheWrite: try recordRequired(cost, "cacheWrite"),
                                  total: try recordRequired(cost, "total")))
 }
-private func usageValue(_ usage: Usage) -> JSONValue {
+internal func usageValue(_ usage: Usage) -> JSONValue {
     var object: JSONObject = ["input": .number(Double(usage.input)), "output": .number(Double(usage.output)),
         "cacheRead": .number(Double(usage.cacheRead)), "cacheWrite": .number(Double(usage.cacheWrite)),
         "totalTokens": .number(Double(usage.totalTokens)), "cost": .object([

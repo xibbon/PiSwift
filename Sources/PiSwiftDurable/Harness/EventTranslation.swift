@@ -19,7 +19,7 @@ private func queuedEvents(_ inbox: InboxState?) -> [DurableQueuedItem] {
 internal func durableEventSnapshot(_ view: ConversationView) throws -> DurableAgentSnapshot {
     let parts = try EventParts(view)
     return DurableAgentSnapshot(entries: view.entries, run: parts.live.run.map { .init(inputs: $0.inputs) },
-        generation: parts.live.generation, tools: parts.live.tools ?? [], compactions: parts.live.compactions ?? [],
+        generation: parts.live.generation, tools: parts.live.tools ?? [], nestedTools: parts.live.nestedTools ?? [], compactions: parts.live.compactions ?? [],
         inbox: queuedEvents(parts.inbox), agent: parts.agent ?? .init(), usage: parts.usage ?? ["models": [:], "tools": [:]])
 }
 
@@ -80,8 +80,15 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
 ) throws -> [DurableAgentEvent] {
     var entries: [EntryRecord] = []; var tasks: [TaskID: TaskRecord] = [:]; var taskOrder: [TaskID] = []
     var submissions: [SubmissionRecord] = []
+    // Read results before a later change retires the caller documents.
+    var nestedResults: [TaskID: NestedToolExecutionResult] = [:]
     for change in publication.changes {
         switch change {
+        case .document(let change) where change.record.kind == NestedCallDoc.definition.kind && change.conversationId == conversationId:
+            if let value = change.value {
+                let state = try JSONValue.object(value).decode(NestedCallState.self)
+                if let id = state.taskId, let result = state.result { nestedResults[id] = result }
+            }
         case .entry(let record) where record.conversationId == conversationId: entries.append(record)
         case .task(let record) where record.conversationId == conversationId:
             if tasks[record.id] == nil { taskOrder.append(record.id) }; tasks[record.id] = record
@@ -94,6 +101,11 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
     let was = try EventParts(before); let now = try EventParts(after)
     var events: [DurableAgentEvent] = []
     let oldSlots = was.live.tools ?? []; let slots = now.live.tools ?? []
+    let oldNested = was.live.nestedTools ?? []; let nested = now.live.nestedTools ?? []
+    var nestedBefore: [TaskID: NestedToolSlot] = [:]; var nestedOrder: [TaskID] = []
+    for slot in oldNested {
+        if nestedBefore[slot.taskId] == nil { nestedOrder.append(slot.taskId) }; nestedBefore[slot.taskId] = slot
+    }
     var slotsBefore: [[UInt16]: ToolSlot] = [:]; var slotOrder: [[UInt16]] = []
     for slot in oldSlots {
         let key = Array(slot.callId.utf16)
@@ -110,6 +122,10 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
         }
         events.append(.toolExecutionStart(toolCallId: slot.callId, toolName: slot.name, args: args, taskId: slot.taskId))
     }
+    for slot in nested where slot.status == .running && nestedBefore[slot.taskId]?.status != .running {
+        events.append(.toolExecutionStart(toolCallId: slot.callId, toolName: slot.name, args: slot.arguments,
+            taskId: slot.taskId, parentToolCallId: slot.parentCallId, parentTaskId: slot.parentTaskId))
+    }
     let partialBefore = was.live.generation?.message; let partial = now.live.generation?.message
     if let partial, partialBefore == nil { events.append(.messageStart(message: partial)) }
     else if let partial, partial != partialBefore {
@@ -121,6 +137,13 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
               let update = durableToolUpdate(viewOps, index: index, slot: slot, previous: previous) else { continue }
         events.append(.toolExecutionUpdate(toolCallId: slot.callId, toolName: slot.name, output: update.output,
             details: update.details, diagnostics: update.diagnostics, taskId: slot.taskId))
+    }
+    for (index, slot) in nested.enumerated() {
+        guard slot.status == .running, let previous = nestedBefore[slot.taskId], previous.status == .running,
+              let update = durableToolUpdate(viewOps, field: "nestedTools", index: index, slot: slot.progress, previous: previous.progress) else { continue }
+        events.append(.toolExecutionUpdate(toolCallId: slot.callId, toolName: slot.name, output: update.output,
+            details: update.details, diagnostics: update.diagnostics, taskId: slot.taskId,
+            parentToolCallId: slot.parentCallId, parentTaskId: slot.parentTaskId))
     }
     let generation = now.live.generation; let generationBefore = was.live.generation
     if let retry = generation?.retry, generationBefore?.retry == nil {
@@ -145,6 +168,20 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
         }
     }
     for slot in slots where slot.status == .done && slotsBefore[Array(slot.callId.utf16)] == nil { endTool(slot, slot.entry) }
+    // Creation order has parents first. Reverse it so children end before their callers.
+    func endNested(_ slot: NestedToolSlot) {
+        events.append(.toolExecutionEnd(toolCallId: slot.callId, toolName: slot.name, taskId: slot.taskId,
+            parentToolCallId: slot.parentCallId, parentTaskId: slot.parentTaskId, result: nestedResults[slot.taskId]))
+    }
+    var nestedNow: [TaskID: NestedToolSlot] = [:]
+    for slot in nested { nestedNow[slot.taskId] = slot }
+    for id in nestedOrder.reversed() {
+        let previous = nestedBefore[id]!
+        if previous.status == .done { continue }
+        let slot = nestedNow[id]
+        if slot == nil || slot?.status == .done { endNested(slot ?? previous) }
+    }
+    for slot in nested.reversed() where slot.status == .done && nestedBefore[slot.taskId] == nil { endNested(slot) }
     var assistantAppended = false
     for entry in entries {
         for end in toolEnds where end.entry?.id == entry.id { events.append(.toolExecutionEnd(toolCallId: end.id, toolName: end.name, entry: end.entry, taskId: end.taskId)) }
@@ -242,8 +279,8 @@ internal struct DurableToolUpdate: Sendable {
     let details: JSONValue?
     let diagnostics: [ToolDiagnostic]?
 }
-internal func durableToolUpdate(_ ops: [Delta.Op], index: Int, slot: ToolSlot, previous: ToolSlot) -> DurableToolUpdate? {
-    let path: Delta.Path = ["docs", "pi.live", "tools", .index(index), "output"]
+internal func durableToolUpdate(_ ops: [Delta.Op], field: String = "tools", index: Int, slot: ToolSlot, previous: ToolSlot) -> DurableToolUpdate? {
+    let path: Delta.Path = ["docs", "pi.live", .key(field), .index(index), "output"]
     var trim = 0; var append = ""; var set = false
     for op in ops where eventPathStarts(eventOpPath(op), path) {
         switch op { case .trim(_, let n): trim += n; case .append(_, let text): append += text; default: set = true }

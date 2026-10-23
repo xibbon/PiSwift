@@ -68,11 +68,11 @@ internal final class ToolReporter: Sendable {
     private let lifetime: ToolInvocationLifetime
     private let events: AsyncStream<Event>.Continuation
     private let drain: Task<[ProgressWaiter], Never>
-    init(runtime: TaskRuntime, lifetime: ToolInvocationLifetime, limits: OutputLimits, context: ChordContext) {
+    init(runtime: TaskRuntime, lifetime: ToolInvocationLifetime, limits: OutputLimits, enabled: Bool = true, context: ChordContext) {
         self.limits = limits; self.lifetime = lifetime
         let reported = ToolReported(limits); self.reported = reported
         let writer = ToolProgressWriter(runtime: runtime, reported: reported, context: context)
-        let progress = Progress(write: { try await writer.write() }, onError: { error in
+        let progress = Progress(write: { enabled ? try await writer.write() : 0 }, onError: { error in
             if !runtime.signal.aborted { runtime.scheduler.report(error) }
         }, minIntervalMs: runtime.settings.progress.outputIntervalMs, clock: runtime.scheduler.clock)
         let stream = AsyncStream<Event>.makeStream()

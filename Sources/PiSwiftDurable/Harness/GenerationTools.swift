@@ -55,7 +55,8 @@ internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [
     var controls: [ToolControl?] = []
     for outcome in outcomes {
         if case .completed(let result, _) = outcome {
-            // Generation consumes only control. A held v1 receipt can omit the tag.
+            // Nested receipts never control a model round. Held v1 model receipts can omit the tag.
+            if result["kind"] == .string("nested") { controls.append(nil); continue }
             guard result["kind"] == nil || result["kind"] == .string("model") else {
                 throw TaskDefinitionError("Invalid tool task result kind")
             }
@@ -102,19 +103,7 @@ internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [
     }, context: context)
 }
 
-/// Append selected tools in place, as agent.ts:85-97 requires.
+/// Updates both stored tool filters, as agent.ts:90-108 requires.
 func addGenerationTools(tx: Transaction, conversationId: ConversationID, added: [String]) async throws {
-    let agent = try await tx.doc(AgentDoc, conversationId: conversationId)
-    guard let tools = try agent.get("tools") else { return }
-    if let values = tools.arrayValue, let draft = try agent.child("tools") {
-        var names = values.compactMap(\.stringValue)
-        for name in added where !names.contains(where: { harnessNamesEqual($0, name) }) {
-            try draft.append(.string(name)); names.append(name)
-        }
-    } else if let removed = tools["remove"]?.arrayValue {
-        let names = removed.compactMap(\.stringValue)
-        if names.contains(where: { name in added.contains { harnessNamesEqual($0, name) } }) {
-            try agent.set("tools", .object(["remove": .array(names.filter { name in !added.contains { harnessNamesEqual($0, name) } }.map(JSONValue.string))]))
-        }
-    }
+    try await addTools(tx: tx, conversationId: conversationId, added: added)
 }

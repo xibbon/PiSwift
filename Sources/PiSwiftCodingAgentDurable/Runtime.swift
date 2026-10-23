@@ -138,7 +138,7 @@ internal func openDurable(_ options: OpenDurableOptions,
         reports.attach(source)
         let controller = RuntimeController(runtime: live, source: source)
         await live.observeTermination { [weak controller] in controller?.seal() }
-        let saved = agentOf(source.current().conversation).model
+        let saved = try decodeAgentOf(source.current().conversation).model
         if let saved {
             if models.models.getModel(provider: saved.provider, modelId: saved.modelId) == nil {
                 source.notice(.warning, "Saved model is unavailable: \(saved.provider)/\(saved.modelId)")
@@ -351,7 +351,7 @@ private actor DurableRuntime {
     }
     func abort() async throws { try assertOpen(); try await current.abort(context: .background) }
     private func agentModel() throws -> Model {
-        guard let ref = agentOf(conversation.value).model else { throw SessionError.message("No model selected") }
+        guard let ref = try decodeAgentOf(conversation.value).model else { throw SessionError.message("No model selected") }
         guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else {
             throw SessionError.message("Current model is unavailable")
         }
@@ -362,7 +362,7 @@ private actor DurableRuntime {
         let model = try agentModel()
         guard model.reasoning else { throw SessionError.message("Current model does not support thinking") }
         let levels = getSupportedThinkingLevels(model)
-        let level = agentOf(conversation.value).thinkingLevel ?? .off
+        let level = try decodeAgentOf(conversation.value).thinkingLevel ?? .off
         let index = levels.firstIndex(of: level).map { $0 + 1 } ?? 0
         let next = levels.isEmpty ? .off : levels[index % levels.count]
         try await current.configure(change: .init(thinkingLevel: .set(next)), context: .background)
@@ -373,7 +373,7 @@ private actor DurableRuntime {
         guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else {
             throw SessionError.message("Unknown model: \(ref.provider)/\(ref.modelId)")
         }
-        let level = agentOf(conversation.value).thinkingLevel ?? .off
+        let level = try decodeAgentOf(conversation.value).thinkingLevel ?? .off
         try await current.configure(change: .init(model: .set(ref),
             thinkingLevel: .set(clampThinkingLevel(model: model, requested: level))), context: .background)
         source.updateConversation(conversation.value)
