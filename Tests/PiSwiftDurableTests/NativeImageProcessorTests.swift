@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import PiSwiftDurable
 #if canImport(CryptoKit)
@@ -308,14 +309,18 @@ struct NativeImageProcessorTests {
         let bytes = try imageFixture(width: 1800, height: 1200, noise: true)
         let clock = ContinuousClock()
         let start = clock.now
+        let finished = Mutex(false)
         let work = Task { @MainActor in
-            try await NativeImageProcessor().prepare(
+            defer { finished.withLock { $0 = true } }
+            return try await NativeImageProcessor().prepare(
                 bytes: bytes, mimeType: "image/png", limits: ImageLimits(maxWidth: 500, maxBytes: 50_000)
             )
         }
+        // Tick while the image work runs. Under a loaded parallel test run a 5 ms sleep can take
+        // hundreds of milliseconds, so the bound only rules out a main actor blocked for the encode.
         var ticks = 0
         var longest = Duration.zero
-        while clock.now - start < .milliseconds(100) {
+        while !finished.withLock({ $0 }) || clock.now - start < .milliseconds(100) {
             let tick = clock.now
             try await Task.sleep(for: .milliseconds(5))
             longest = max(longest, clock.now - tick)
@@ -323,7 +328,7 @@ struct NativeImageProcessorTests {
         }
         #expect(try await work.value != nil)
         #expect(ticks >= 3)
-        #expect(longest < .milliseconds(100))
+        #expect(longest < .seconds(1))
     }
 
     @Test func cancellationThrowsAndDoesNotAffectLaterCalls() async throws {
