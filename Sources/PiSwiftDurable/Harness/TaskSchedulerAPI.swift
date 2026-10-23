@@ -2,18 +2,19 @@ import Foundation
 import PiSwiftChord
 
 extension TaskScheduler {
-    func abort(id: TaskID, context: ChordContext) async throws -> TaskAbortResult {
+    func abort(id: TaskID, context: ChordContext, keepRestart: Bool = false) async throws -> TaskAbortResult {
         let marked: (TaskAbortResult, TaskInvocation?) = try await session.commit({ tx in
             guard let record = try await tx.task(id) else { throw SessionError.message("Task \(id.rawValue) does not exist") }
             if record.state.status == "terminal" { return (.terminal, nil) }
             let invocation = state.withLock { $0.invocations[id] }
+            if keepRestart && record.abortReason == .restart { return (.marked, nil) }
             if invocation == nil && record.state.status != "completing" {
                 try await loadScopes()
                 if !ownedLive().contains(id), let reason = fit(record, definition: registry.snapshot().task(name: record.kind)).reason {
                     try await terminate(tx, record: record, outcome: .orphaned(reason: reason)); return (.marked, nil)
                 }
             }
-            if !record.abortRequested { try tx.setTask(record.replacing(abortRequested: true)) }
+            if !record.abortRequested || record.abortReason != nil { try tx.setTask(record.withAbortMark()) }
             return (.marked, invocation?.abort == false ? invocation : nil)
         }, context: context)
         // Upstream abortTask does not enable scheduling (harness.ts:275-277, scheduler.ts:282-304).
@@ -60,7 +61,7 @@ extension TaskScheduler {
                 if record.background && !background { continue }
                 if inScope(record.parent, conversationId: id, background: background) != true { continue }
                 reached.append(record.id)
-                if !record.abortRequested { try tx.setTask(record.replacing(abortRequested: true)) }
+                if !record.abortRequested || record.abortReason != nil { try tx.setTask(record.withAbortMark()) }
             }
             for queuedID in queued where inScope(.conversation(queuedID), conversationId: id, background: background) == true { try await withdrawInputs(tx, queuedID) }
             return reached
@@ -116,17 +117,7 @@ extension TaskScheduler {
     }
     func commitState(_ tx: Transaction, invocation: TaskInvocation, current: TaskRecord, next: TaskState) async throws {
         if case .waiting(_, let on, let policy, _) = next {
-            if invocation.abort { throw SessionError.message("Abort handler of task \(current.id.rawValue) cannot wait") }
-            let overlay = try TaskOverlay(tx)
-            try await loadChain(current.parent, overlay: overlay)
-            let owners = Set(above(current.parent, overlay: overlay).compactMap { step -> TaskID? in if case .task(let record) = step { return record.id }; return nil })
-            for id in on {
-                if id == current.id || owners.contains(id) { throw SessionError.message("Task \(current.id.rawValue) cannot wait on itself or its owner \(id.rawValue)") }
-                let record: TaskRecord?
-                if let found = overlay.tasks[id] ?? self.current(id) { record = found } else { record = try await storage.task(id, context: context) }
-                guard let record else { throw SessionError.message("Task \(id.rawValue) does not exist") }
-                if policy == .failFast && record.owner != current.id { throw SessionError.message("Task \(current.id.rawValue) can wait failFast only on tasks it owns; \(id.rawValue) is not one") }
-            }
+            try await validateWait(tx, invocation: invocation, current: current, on: on, policy: policy)
         }
         switch next {
         case .terminal(let outcome, _):

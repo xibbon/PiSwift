@@ -202,7 +202,7 @@ extension Transaction {
             try assertOpen()
             let record = TaskRecord(id: id, conversationId: conversationId, kind: task.name, version: task.version,
                                     input: inputValue, state: .pending(checkpoint: checkpoint), owner: owner?.id,
-                                    background: options.background)
+                                    background: options.background, abandonOnRestart: options.abandonOnRestart ? true : nil)
             try validateTableJSON(record)
             tableState.withLock { state in
                 if state.tasks[id] == nil { state.taskOrder.append(id) }
@@ -259,7 +259,8 @@ extension Transaction {
                 let endedAt = candidate?.endedAt ?? value.endedAt ?? (value.state.status == "terminal" ? Double(now()) : nil)
                 let record = TaskRecord(id: value.id, conversationId: value.conversationId, kind: value.kind, version: value.version,
                                         input: value.input, state: value.state, owner: value.owner, background: value.background,
-                                        abortRequested: value.abortRequested, startedAt: startedAt, endedAt: endedAt,
+                                        abortRequested: value.abortRequested, abortReason: value.abortReason,
+                                        abandonOnRestart: value.abandonOnRestart, startedAt: startedAt, endedAt: endedAt,
                                         memos: value.memos, extensionFields: value.extensionFields)
                 try validateTableJSON(record)
                 task.write = record

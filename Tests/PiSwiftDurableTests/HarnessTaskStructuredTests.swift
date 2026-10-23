@@ -100,6 +100,11 @@ import PiSwiftDurableTesting
         if mode == "abort-wait" { _ = try await harness.abortTask(id: id, context: .background) }
         let receipt = try await harness.waitForTask(id: id, context: .background)
         #expect(receipt.outcome.status == "faulted")
+        if mode == "self" {
+            #expect(receipt.outcome == .faulted(error: .init(message: "Task \(id.rawValue) cannot wait on \(id.rawValue): \(id.rawValue) -> \(id.rawValue) is a wait cycle")))
+        } else if mode == "owner" {
+            #expect(receipt.outcome == .faulted(error: .init(message: "Task \(id.rawValue) cannot wait on \(otherID.rawValue): \(id.rawValue) -> \(otherID.rawValue) -> \(id.rawValue) is a wait cycle")))
+        }
         try await harness.close(context: .background)
     }
 

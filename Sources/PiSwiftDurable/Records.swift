@@ -502,6 +502,12 @@ public enum TaskState: Sendable, Equatable, Codable {
     }
 }
 
+/// The cause of an abort mark that did not come from an abort request.
+public enum TaskAbortReason: String, Sendable, Equatable, Codable {
+    /// The task was abandoned after its creating Harness stopped.
+    case restart
+}
+
 /// Complete replacement task record. Input, checkpoints, results, and memos retain opaque JSON.
 public struct TaskRecord: Sendable, Equatable, Codable {
     /// The stable identifier of this record or handle.
@@ -522,6 +528,10 @@ public struct TaskRecord: Sendable, Equatable, Codable {
     public let background: Bool
     /// Whether an abort request has been saved for this task.
     public let abortRequested: Bool
+    /// The cause of an abort mark that did not come from an abort request.
+    public let abortReason: TaskAbortReason?
+    /// Whether a later Harness must abort this task before it can run.
+    public let abandonOnRestart: Bool?
     /// The time at which task execution started, in milliseconds.
     public let startedAt: Double?
     /// The time at which task execution ended, in milliseconds.
@@ -531,7 +541,7 @@ public struct TaskRecord: Sendable, Equatable, Codable {
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
     /// Creates a complete stored task record, including ownership and execution state.
-    public init(id: TaskID, conversationId: ConversationID, kind: String, version: Double, input: JSONValue, state: TaskState, owner: TaskID? = nil, background: Bool = false, abortRequested: Bool = false, startedAt: Double? = nil, endedAt: Double? = nil, memos: JSONObject? = nil, extensionFields: JSONObject = [:]) {
+    public init(id: TaskID, conversationId: ConversationID, kind: String, version: Double, input: JSONValue, state: TaskState, owner: TaskID? = nil, background: Bool = false, abortRequested: Bool = false, abortReason: TaskAbortReason? = nil, abandonOnRestart: Bool? = nil, startedAt: Double? = nil, endedAt: Double? = nil, memos: JSONObject? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.conversationId = conversationId
         self.kind = kind
@@ -541,6 +551,8 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         self.owner = owner
         self.background = background
         self.abortRequested = abortRequested
+        self.abortReason = abortReason
+        self.abandonOnRestart = abandonOnRestart
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.memos = memos
@@ -558,11 +570,13 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         owner = try recordOptional(object, "owner")
         background = try recordRequired(object, "background")
         abortRequested = try recordRequired(object, "abortRequested")
+        abortReason = try recordOptional(object, "abortReason")
+        abandonOnRestart = try recordOptional(object, "abandonOnRestart")
         startedAt = try recordOptional(object, "startedAt")
         endedAt = try recordOptional(object, "endedAt")
         memos = try recordOptional(object, "memos")
         if state.status == "completing" || state.status == "terminal" { try recordForbid(object, ["memos"]) }
-        extensionFields = recordExtensions(object, excluding: ["id", "conversationId", "kind", "version", "input", "state", "owner", "background", "abortRequested", "startedAt", "endedAt", "memos"])
+        extensionFields = recordExtensions(object, excluding: ["id", "conversationId", "kind", "version", "input", "state", "owner", "background", "abortRequested", "abortReason", "abandonOnRestart", "startedAt", "endedAt", "memos"])
     }
     /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
@@ -579,6 +593,8 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         try recordSetOptional(&object, "owner", owner)
         try recordSet(&object, "background", background)
         try recordSet(&object, "abortRequested", abortRequested)
+        try recordSetOptional(&object, "abortReason", abortReason)
+        try recordSetOptional(&object, "abandonOnRestart", abandonOnRestart)
         try recordSetOptional(&object, "startedAt", startedAt)
         try recordSetOptional(&object, "endedAt", endedAt)
         try recordSetOptional(&object, "memos", memos)

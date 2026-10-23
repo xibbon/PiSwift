@@ -1,0 +1,717 @@
+{
+  "tag": "v1.3.0",
+  "provenance": {
+    "source": "unmodified v1.3.0 Session and MemoryStorage",
+    "rawFalse": "TaskRecord types declare true only; raw Session and storage copies also preserve false"
+  },
+  "batches": [
+    {
+      "seq": 1,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "seq": 2,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 3,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 0
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 1
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 2
+            },
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 3
+            },
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 3
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 4
+            },
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 4
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 8,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 5
+            },
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 5
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "child": true
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "child": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 2
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 2
+                }
+              }
+            },
+            "abortReason": "restart",
+            "extension": {
+              "retained": true
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 3
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "cleanup"
+              }
+            },
+            "abortReason": "restart",
+            "startedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 4
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "reason": "restart"
+              }
+            },
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 8,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 5
+            },
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 5
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "child": true
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "child": true
+                }
+              }
+            },
+            "abortReason": "restart"
+          }
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 3
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "cleanup"
+              }
+            },
+            "startedAt": 1700000000000
+          }
+        }
+      ]
+    }
+  ],
+  "reads": [
+    {
+      "method": "task",
+      "arguments": [
+        3
+      ],
+      "result": {
+        "id": 3,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "index": 0
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "ready",
+            "input": {
+              "index": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        4
+      ],
+      "result": {
+        "id": 4,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "index": 1
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "ready",
+            "input": {
+              "index": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        5
+      ],
+      "result": {
+        "id": 5,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "index": 2
+        },
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "ready",
+            "input": {
+              "index": 2
+            }
+          }
+        },
+        "abortReason": "restart",
+        "extension": {
+          "retained": true
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        6
+      ],
+      "result": {
+        "id": 6,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "index": 3
+        },
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "running",
+          "checkpoint": {
+            "phase": "cleanup"
+          }
+        },
+        "startedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        7
+      ],
+      "result": {
+        "id": 7,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "index": 4
+        },
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "terminal",
+          "outcome": {
+            "status": "aborted",
+            "reason": "restart"
+          }
+        },
+        "abortReason": "restart",
+        "endedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        8
+      ],
+      "result": {
+        "id": 8,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "index": 5
+        },
+        "background": false,
+        "abortRequested": false,
+        "abandonOnRestart": false,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "ready",
+            "input": {
+              "index": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        9
+      ],
+      "result": {
+        "id": 9,
+        "conversationId": 2,
+        "kind": "fixture.restart",
+        "version": 1,
+        "input": {
+          "child": true
+        },
+        "owner": 5,
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "ready",
+            "input": {
+              "child": true
+            }
+          }
+        },
+        "abortReason": "restart"
+      }
+    },
+    {
+      "method": "scanTasks",
+      "arguments": [
+        {
+          "conversationId": 2,
+          "order": "ascending"
+        },
+        20,
+        null
+      ],
+      "result": {
+        "items": [
+          {
+            "id": 3,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 0
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 0
+                }
+              }
+            }
+          },
+          {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 1
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 1
+                }
+              }
+            }
+          },
+          {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 2
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 2
+                }
+              }
+            },
+            "abortReason": "restart",
+            "extension": {
+              "retained": true
+            }
+          },
+          {
+            "id": 6,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 3
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "cleanup"
+              }
+            },
+            "startedAt": 1700000000000
+          },
+          {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 4
+            },
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "reason": "restart"
+              }
+            },
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          },
+          {
+            "id": 8,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "index": 5
+            },
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "index": 5
+                }
+              }
+            }
+          },
+          {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "fixture.restart",
+            "version": 1,
+            "input": {
+              "child": true
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "ready",
+                "input": {
+                  "child": true
+                }
+              }
+            },
+            "abortReason": "restart"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -61,6 +61,9 @@ internal final class TaskScheduler: Sendable {
         var live: [TaskID: TaskRecord] = [:]
         var order: [TaskID] = []
         var nodes: [TaskID: TaskRecord] = [:]
+        var waitOwnership = TaskWaitOwnershipIndex()
+        var directOwned: [TaskID: Set<TaskID>] = [:]
+        var abandoned = Set<TaskID>()
         // An entry with nil owner is a loaded, ownerless conversation.
         var edges: [ConversationID: ConversationRecord] = [:]
         var invocations: [TaskID: TaskInvocation] = [:]
@@ -112,7 +115,12 @@ internal final class TaskScheduler: Sendable {
                 found += try await scanAll { cursor in try await tx.scanTasks(.init(status: status), limit: 256, cursor: cursor) }
             }
             state.withLock { state in
-                for record in found { state.live[record.id] = record; state.nodes[record.id] = record; state.order.append(record.id) }
+                for record in found {
+                    state.live[record.id] = record; state.nodes[record.id] = record; state.order.append(record.id)
+                    state.waitOwnership.add(record); state.waitOwnership.pending.insert(record.id)
+                    if let owner = record.owner { state.directOwned[owner, default: []].insert(record.id) }
+                    if record.abandonOnRestart == true { state.abandoned.insert(record.id) }
+                }
             }
             for record in found {
                 if case .running(let checkpoint, _) = record.state { try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint))) }
@@ -152,24 +160,37 @@ internal final class TaskScheduler: Sendable {
                     let previous = state.live[record.id]
                     if record.failedOutcome && previous?.failedOutcome != true { failed.insert(record.id) }
                     state.nodes[record.id] = record
+                    state.waitOwnership.add(record)
                     if record.state.status == "terminal" {
-                        if !state.edges.values.contains(where: { $0.owner?.taskId == record.id }) { state.nodes.removeValue(forKey: record.id) }
+                        state.waitOwnership.pending.remove(record.id)
+                        if !state.edges.values.contains(where: { $0.owner?.taskId == record.id }) {
+                            state.nodes.removeValue(forKey: record.id); state.waitOwnership.remove(record)
+                        }
                         state.live.removeValue(forKey: record.id); state.order.removeAll { $0 == record.id }
+                        if let owner = previous?.owner ?? record.owner {
+                            state.directOwned[owner]?.remove(record.id)
+                            if state.directOwned[owner]?.isEmpty == true { state.directOwned.removeValue(forKey: owner) }
+                        }
                         state.failedMigrations.removeValue(forKey: record.id); settled.append(record); repair = true
                     } else {
-                        if previous == nil { state.order.append(record.id) }
+                        if previous == nil {
+                            state.order.append(record.id)
+                            state.waitOwnership.pending.insert(record.id)
+                            if let owner = record.owner { state.directOwned[owner, default: []].insert(record.id) }
+                        }
                         state.live[record.id] = record; updated.append(record)
                         if record.abortRequested && previous?.abortRequested != true {
                             state.cascadePending = true
                             if let invocation = state.invocations[record.id], !invocation.abort { aborts.append(invocation) }
                         }
+                        if previous?.abortReason != nil && record.abortReason == nil { state.cascadePending = true }
                         if record.state.status == "completing" && previous?.state.status != "completing" {
                             repair = true
                             if record.abortRequested || record.failedOutcome { state.cascadePending = true }
                         }
                         if case .waiting(_, _, .failFast, _) = record.state, previous?.state.status != "waiting" { repair = true }
                     }
-                case .conversation(let record): state.edges[record.id] = record
+                case .conversation(let record): state.edges[record.id] = record; state.waitOwnership.add(record)
                 default: break
                 }
             }
@@ -247,20 +268,25 @@ internal final class TaskScheduler: Sendable {
                 var record = overlay.tasks[id] ?? state.withLock { $0.nodes[id] }
                 if record == nil {
                     record = try await storage.task(id, context: context)
-                    if let record { state.withLock { $0.nodes[id] = record } }
+                    if let record { state.withLock { $0.nodes[id] = record; $0.waitOwnership.add(record) } }
                 }
                 guard let record else { return }; at = record.parent
             case .conversation(let id):
                 var record = overlay.conversations[id] ?? state.withLock { $0.edges[id] }
                 if record == nil {
                     record = try await storage.conversation(id, context: context)
-                    if let record { state.withLock { $0.edges[id] = record } }
+                    if let record { state.withLock { $0.edges[id] = record; $0.waitOwnership.add(record) } }
                 }
                 at = record?.owner.map { .task($0.taskId) }
             }
         }
     }
-    func loadScopes() async throws { for record in records() { try await loadChain(record.parent) } }
+    func loadScopes() async throws {
+        for record in records() {
+            try await loadChain(record.parent)
+            _ = state.withLock { $0.waitOwnership.pending.remove(record.id) }
+        }
+    }
     func loadQueuedScopes() async throws -> Set<ConversationID> {
         let submissions = try await scanAll { cursor in
             try await storage.scanSubmissions(.init(status: .queued), limit: 256, cursor: cursor, context: context)
@@ -312,15 +338,16 @@ internal final class TaskScheduler: Sendable {
         }
         return conversationId == nil
     }
-    func belowCancelled(_ start: OwnershipUp) -> Bool {
+    func cancellingOwner(_ start: OwnershipUp) -> TaskRecord? {
         for step in above(start) {
             if case .task(let record) = step {
-                if let live = current(record.id), live.abortRequested || live.failedOutcome { return true }
-                if record.background { return false }
+                if let live = current(record.id), live.abortRequested || live.failedOutcome { return live }
+                if record.background { return nil }
             }
         }
-        return false
+        return nil
     }
+    func belowCancelled(_ start: OwnershipUp) -> Bool { cancellingOwner(start) != nil }
     func idle(_ id: ConversationID?) -> Bool { !records().contains { !$0.background && inScope($0.parent, conversationId: id) != false } }
     func waitingOn(_ record: TaskRecord, owned: Set<TaskID>) -> [TaskID] {
         if record.abortRequested { return owned.contains(record.id) ? (ownedWork()[record.id] ?? []) : [] }
@@ -332,9 +359,16 @@ internal final class TaskScheduler: Sendable {
             guard !closing else { return }
             try await loadScopes()
             let queued = try await loadQueuedScopes()
-            var marks = Set<TaskID>()
+            var marks: [TaskID: (record: TaskRecord, reason: TaskAbortReason?)] = [:]
+            func mark(_ record: TaskRecord, reason: TaskAbortReason?) {
+                if let staged = marks[record.id], staged.reason == nil { return }
+                if record.abortRequested && (record.abortReason == nil || reason != nil) { return }
+                marks[record.id] = (record, reason)
+            }
             for record in records() {
-                if !record.background && belowCancelled(record.parent) { marks.insert(record.id) }
+                if !record.background, let owner = cancellingOwner(record.parent) {
+                    mark(record, reason: owner.abortReason == .restart && !owner.failedOutcome ? .restart : nil)
+                }
                 if case .waiting(_, let on, .failFast, _) = record.state {
                     var failed = false
                     for id in on {
@@ -342,10 +376,10 @@ internal final class TaskScheduler: Sendable {
                         if let live = current(id) { found = live } else { found = try await storage.task(id, context: context) }
                         if found?.failedOutcome == true { failed = true; break }
                     }
-                    if failed { for id in on { if let live = current(id), !live.failedOutcome { marks.insert(id) } } }
+                    if failed { for id in on { if let live = current(id), !live.failedOutcome { mark(live, reason: nil) } } }
                 }
             }
-            for id in marks { if let record = current(id), !record.abortRequested { try tx.setTask(record.replacing(abortRequested: true)) } }
+            for marked in marks.values { try tx.setTask(marked.record.withAbortMark(marked.reason)) }
             for id in queued where belowCancelled(.conversation(id)) { try await withdrawInputs(tx, id) }
             while true {
                 let overlay = try TaskOverlay(tx), owned = ownedLive(overlay)
@@ -378,13 +412,26 @@ internal final class TaskScheduler: Sendable {
     struct Reservation: Sendable { let invocation: TaskInvocation; let definition: AnyTaskDefinition; let snapshot: RegistrySnapshot; let joinID: UUID }
     private func reserve() async throws -> [Reservation] {
         var reservations: [Reservation] = []
+        var abandoned: Set<TaskID> = []
         do {
             try await session.commit({ tx in
                 guard !closing else { return }
+                abandoned = state.withLock { $0.abandoned }
+                // Commit all restart marks before a descendant can reserve a run invocation.
+                if !abandoned.isEmpty {
+                    for id in abandoned {
+                        if let record = current(id), !record.abortRequested { try tx.setTask(record.withAbortMark(.restart)) }
+                    }
+                    return
+                }
                 try await loadScopes()
                 let owned = ownedLive(), snapshot = registry.snapshot()
                 for original in records() {
                     if state.withLock({ $0.invocations[original.id] != nil }) || original.state.status == "completing" || !waitingOn(original, owned: owned).isEmpty { continue }
+                    if !original.abortRequested && !original.background && belowCancelled(original.parent) {
+                        state.withLock { $0.cascadePending = true }; scheduleReconcile()
+                        continue
+                    }
                     var record = original
                     let definition = snapshot.task(name: record.kind)
                     var resolution = fit(record, definition: definition)
@@ -399,7 +446,7 @@ internal final class TaskScheduler: Sendable {
                         }
                     }
                     if let reason = resolution.reason {
-                        if record.abortRequested { try await terminate(tx, record: record, outcome: .orphaned(reason: reason)) }
+                        if record.abortRequested && record.abortReason == nil { try await terminate(tx, record: record, outcome: .orphaned(reason: reason)) }
                         continue
                     }
                     guard let definition, let checkpoint = record.state.checkpoint else { continue }
@@ -411,6 +458,9 @@ internal final class TaskScheduler: Sendable {
                     reservations.append(Reservation(invocation: invocation, definition: definition, snapshot: snapshot, joinID: id))
                 }
             }, context: context)
+            if !abandoned.isEmpty {
+                state.withLock { $0.abandoned.subtract(abandoned); $0.dirty = true }
+            }
             return reservations
         } catch {
             for reservation in reservations { end(reservation.invocation); finish(reservation) }
@@ -468,6 +518,11 @@ internal final class TaskScheduler: Sendable {
         while true {
             let found = await step(invocation) { tx, current in
                 if current.abortRequested { return .end }
+                // The owner's mark can commit before this task's cascade mark.
+                if !current.background && belowCancelled(current.parent) {
+                    state.withLock { $0.cascadePending = true }; scheduleReconcile()
+                    return .end
+                }
                 guard let previous else { return .proceed }
                 if let failure { return .fault(failure) }
                 if jsonStructurallyEqual(current.state.checkpoint!, previous) {
@@ -518,12 +573,19 @@ internal extension TaskState {
 internal extension TaskRecord {
     var parent: OwnershipUp { owner.map(OwnershipUp.task) ?? .conversation(conversationId) }
     var failedOutcome: Bool { state.outcome.map { $0.status != "completed" } ?? false }
+    func withAbortMark(_ reason: TaskAbortReason? = nil) -> TaskRecord {
+        TaskRecord(id: id, conversationId: conversationId, kind: kind, version: version,
+                   input: input, state: state, owner: owner, background: background,
+                   abortRequested: true, abortReason: reason, abandonOnRestart: abandonOnRestart,
+                   startedAt: startedAt, endedAt: endedAt, memos: memos, extensionFields: extensionFields)
+    }
     func replacing(input: JSONValue? = nil, version: Double? = nil, state: TaskState? = nil,
                    abortRequested: Bool? = nil, memos: JSONObject? = nil) -> TaskRecord {
         let next = state ?? self.state
         return TaskRecord(id: id, conversationId: conversationId, kind: kind, version: version ?? self.version,
                           input: input ?? self.input, state: next, owner: owner, background: background,
-                          abortRequested: abortRequested ?? self.abortRequested, startedAt: startedAt, endedAt: endedAt,
+                          abortRequested: abortRequested ?? self.abortRequested, abortReason: abortReason,
+                          abandonOnRestart: abandonOnRestart, startedAt: startedAt, endedAt: endedAt,
                           memos: next.outcome == nil ? (memos ?? self.memos) : nil, extensionFields: extensionFields)
     }
 }

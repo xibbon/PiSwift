@@ -35,6 +35,14 @@ extension ToolExecutionApi {
     public func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await taskRuntime().waitForTask(id, context: context)
     }
+    /// Returns direct live children from all invocations, in ID order.
+    public func ownedTasks(context: ChordContext) async throws -> [TaskRecord] {
+        try await taskRuntime().ownedTasks(context: context)
+    }
+    /// Marks a direct child for abort and waits for its terminal receipt.
+    public func abortOwned(id: TaskID, context: ChordContext) async throws {
+        try await taskRuntime().abortOwned(id, context: context)
+    }
     /// Returns a conversation by ID, or nil when that ID is absent.
     public func conversation(id: ConversationID, context: ChordContext) async throws -> ConversationHandle? {
         try await taskRuntime().conversation(id, context: context)

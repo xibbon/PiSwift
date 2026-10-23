@@ -1,0 +1,1 @@
+{"format":1,"type":"record","seq":3,"ordinal":1,"payload":{"type":"task","value":{"id":4,"conversationId":2,"kind":"fixture.restart","version":1,"input":{"index":1},"background":false,"abortRequested":false,"state":{"status":"pending","checkpoint":{"phase":"ready","input":{"index":1}}}}}}
