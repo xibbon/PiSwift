@@ -5,9 +5,12 @@ import Foundation
 import PiSwiftChord
 import Synchronization
 
-/// Internal hooks count kernel event waits for each command. The callback runs outside locks.
+/// Internal hooks observe event waits and control child readiness in tests. Callbacks run outside locks.
 internal struct LocalShellHooks: Sendable {
     var loopWoke: @Sendable () -> Void = {}
+    var waitForChild: @Sendable (pid_t, inout Int32, Int32) -> pid_t = { pid, status, options in
+        waitpid(pid, &status, options)
+    }
 }
 
 /// Formats a timeout in seconds. Whole seconds omit the fraction; other values use Double's shortest text.
@@ -317,7 +320,7 @@ internal final class LocalShell: Sendable {
         func reap(blocking: Bool = false) {
             guard !exited else { return }
             var waited: pid_t
-            repeat { waited = waitpid(pid, &status, blocking ? 0 : WNOHANG) }
+            repeat { waited = hooks.waitForChild(pid, &status, blocking ? 0 : WNOHANG) }
             while waited < 0 && errno == EINTR
             if waited == pid {
                 exited = true; process.reaped(); idleSince = DispatchTime.now().uptimeNanoseconds
@@ -430,6 +433,13 @@ internal final class LocalShell: Sendable {
             wasBackpressured = paused
             if !readData {
                 var nextDeadline = deadlineReached ? nil : deadline
+                if !exited {
+                    // NOTE_EXIT can precede waitpid readiness. Its one-shot event can be gone,
+                    // and EOF can remove both read filters. Always retry reaping within 250 ms,
+                    // including when exit occurred before process filter registration.
+                    let reapDeadline = DispatchTime.now().uptimeNanoseconds + 250_000_000
+                    nextDeadline = nextDeadline.map { min($0, reapDeadline) } ?? reapDeadline
+                }
                 if exited && !paused {
                     let graceDeadline = idleSince + 100_000_000
                     nextDeadline = nextDeadline.map { min($0, graceDeadline) } ?? graceDeadline
