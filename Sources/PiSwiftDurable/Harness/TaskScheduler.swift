@@ -59,13 +59,25 @@ internal final class TaskScheduler: Sendable {
     struct KeptContext: Sendable { let range: ContextRange; var idleSince: Int64? }
     struct State: Sendable {
         var live: [TaskID: TaskRecord] = [:]
-        var order: [TaskID] = []
-        var nodes: [TaskID: TaskRecord] = [:]
-        var waitOwnership = TaskWaitOwnershipIndex()
+        var nodes: [TaskID: TaskNode] = [:]
+        var liveOrder: [TaskID: UInt64] = [:]
+        var nextOrder: UInt64 = 0
+        var below: [OwnershipUp: Set<OwnershipUp>] = [:]
+        var roots = Set<ConversationID>()
+        var unloaded = Set<TaskID>()
+        var dropQueue = Set<OwnershipUp>()
+        var intent = Set<TaskID>()
+        var runnable = Set<TaskID>()
+        var finalizeChecks = Set<TaskID>()
+        var waiters: [TaskID: Set<TaskID>] = [:]
+        var failFastChecks = Set<TaskID>()
+        var sweepScheduled = false
+        var sweepWork: Task<Void, Never>?
+        var candidateEntries = 0
         var directOwned: [TaskID: Set<TaskID>] = [:]
         var abandoned = Set<TaskID>()
         // An entry with nil owner is a loaded, ownerless conversation.
-        var edges: [ConversationID: ConversationRecord] = [:]
+        var edges: [ConversationID: TaskOwnershipEdge] = [:]
         var invocations: [TaskID: TaskInvocation] = [:]
         var joining: [UUID: TaskInvocation] = [:]
         var failedMigrations: [TaskID: (UUID, any Error)] = [:]
@@ -102,7 +114,9 @@ internal final class TaskScheduler: Sendable {
         self.settleOutcome = settleOutcome; self.withdrawInputs = withdrawInputs
     }
     var closing: Bool { state.withLock { $0.closing } }
-    func records() -> [TaskRecord] { state.withLock { state in state.order.compactMap { state.live[$0] } } }
+    func records() -> [TaskRecord] {
+        state.withLock { state in state.live.values.sorted { state.liveOrder[$0.id, default: 0] < state.liveOrder[$1.id, default: 0] } }
+    }
     func current(_ id: TaskID) -> TaskRecord? { state.withLock { $0.live[id] } }
     func open(context: ChordContext) async throws {
         let commits = try session.observeCommits { [weak self] publication, _ in self?.observe(publication) }
@@ -116,9 +130,8 @@ internal final class TaskScheduler: Sendable {
             }
             state.withLock { state in
                 for record in found {
-                    state.live[record.id] = record; state.nodes[record.id] = record; state.order.append(record.id)
-                    state.waitOwnership.add(record); state.waitOwnership.pending.insert(record.id)
-                    if let owner = record.owner { state.directOwned[owner, default: []].insert(record.id) }
+                    state.track(record)
+                    if case .waiting(_, _, .failFast, _) = record.state { state.failFastChecks.insert(record.id) }
                     if record.abandonOnRestart == true { state.abandoned.insert(record.id) }
                 }
             }
@@ -153,70 +166,63 @@ internal final class TaskScheduler: Sendable {
         var aborts: [TaskInvocation] = [], settled: [TaskRecord] = [], updated: [TaskRecord] = []
         var failed = Set<TaskID>(), repair = false, changed = false
         state.withLock { state in
+            // Install conversation edges before the tasks that need them.
             for change in publication.changes {
-                switch change {
-                case .task(let record):
-                    changed = true
-                    let previous = state.live[record.id]
-                    if record.failedOutcome && previous?.failedOutcome != true { failed.insert(record.id) }
-                    state.nodes[record.id] = record
-                    state.waitOwnership.add(record)
-                    if record.state.status == "terminal" {
-                        state.waitOwnership.pending.remove(record.id)
-                        if !state.edges.values.contains(where: { $0.owner?.taskId == record.id }) {
-                            state.nodes.removeValue(forKey: record.id); state.waitOwnership.remove(record)
-                        }
-                        state.live.removeValue(forKey: record.id); state.order.removeAll { $0 == record.id }
-                        if let owner = previous?.owner ?? record.owner {
-                            state.directOwned[owner]?.remove(record.id)
-                            if state.directOwned[owner]?.isEmpty == true { state.directOwned.removeValue(forKey: owner) }
-                        }
-                        state.failedMigrations.removeValue(forKey: record.id); settled.append(record); repair = true
-                    } else {
-                        if previous == nil {
-                            state.order.append(record.id)
-                            state.waitOwnership.pending.insert(record.id)
-                            if let owner = record.owner { state.directOwned[owner, default: []].insert(record.id) }
-                        }
-                        state.live[record.id] = record; updated.append(record)
-                        if record.abortRequested && previous?.abortRequested != true {
-                            state.cascadePending = true
-                            if let invocation = state.invocations[record.id], !invocation.abort { aborts.append(invocation) }
-                        }
-                        if previous?.abortReason != nil && record.abortReason == nil { state.cascadePending = true }
-                        if record.state.status == "completing" && previous?.state.status != "completing" {
-                            repair = true
-                            if record.abortRequested || record.failedOutcome { state.cascadePending = true }
-                        }
-                        if case .waiting(_, _, .failFast, _) = record.state, previous?.state.status != "waiting" { repair = true }
-                    }
-                case .conversation(let record): state.edges[record.id] = record; state.waitOwnership.add(record)
-                default: break
+                if case .conversation(let record) = change, state.edges[record.id] == nil { state.setEdge(record) }
+            }
+            for change in publication.changes {
+                guard case .task(let record) = change else { continue }
+                changed = true
+                let previous = state.live[record.id]
+                if record.failedOutcome && previous?.failedOutcome != true { failed.insert(record.id) }
+                state.track(record)
+                if record.state.status == "terminal" {
+                    state.failedMigrations.removeValue(forKey: record.id); state.failFastChecks.remove(record.id)
+                    settled.append(record); repair = true
+                    continue
+                }
+                if previous == nil { updated.append(record) }
+                if record.abortRequested && previous?.abortRequested != true {
+                    state.cascadePending = true
+                    if let invocation = state.invocations[record.id], !invocation.abort { aborts.append(invocation) }
+                }
+                if previous?.abortReason != nil && record.abortReason == nil { state.cascadePending = true }
+                if record.state.status == "completing" && previous?.state.status != "completing" {
+                    repair = true
+                    if record.abortRequested || record.failedOutcome { state.cascadePending = true }
+                }
+                if case .waiting(_, _, .failFast, _) = record.state, previous?.state.status != "waiting" {
+                    state.failFastChecks.insert(record.id); repair = true
                 }
             }
-            if !failed.isEmpty {
-                for record in state.live.values {
-                    if case .waiting(_, let on, .failFast, _) = record.state, on.contains(where: { failed.contains($0) }) { repair = true }
+            for id in failed {
+                let waiters = state.waiters[id] ?? []
+                state.candidateEntries += waiters.count
+                for waiter in waiters {
+                    if case .waiting(_, _, .failFast, _) = state.live[waiter]?.state {
+                        state.failFastChecks.insert(waiter); repair = true
+                    }
                 }
             }
         }
         for record in updated {
-            if above(record.parent).contains(where: { if case .unknown = $0 { return true }; return false }) { repair = true }
+            if state.withLock({ $0.unloaded.contains(record.id) }) { repair = true }
             else if !record.background && !record.abortRequested && belowCancelled(record.parent) {
                 state.withLock { $0.cascadePending = true }
             }
         }
-        for change in publication.changes {
-            if case .submission(let input) = change, input.type == "input", input.status == "queued" {
-                let up = OwnershipUp.conversation(input.conversationId)
-                if above(up).contains(where: { if case .unknown = $0 { return true }; return false }) || belowCancelled(up) {
-                    state.withLock { $0.cascadePending = true }
+        if state.withLock({ !$0.intent.isEmpty }) {
+            for change in publication.changes {
+                if case .submission(let input) = change, input.type == "input", input.status == "queued" {
+                    let up = OwnershipUp.conversation(input.conversationId)
+                    if !state.withLock({ $0.known(up) }) || belowCancelled(up) { state.withLock { $0.cascadePending = true } }
                 }
             }
         }
         for invocation in aborts { invocation.controller.abort() }
-        for record in settled { taskWaiters.resolve(record.id, value: SettledTask(record: record)) }
         if repair || state.withLock({ $0.cascadePending }) { scheduleReconcile() }
+        state.withLock { $0.sweep() }
+        for record in settled { taskWaiters.resolve(record.id, value: SettledTask(record: record)) }
         if changed { settleIdle(); kick() }
     }
     /// A Task is created under the lock. It cannot enter the pump until the lock is released.
@@ -251,7 +257,7 @@ internal final class TaskScheduler: Sendable {
             let id = UUID()
             state.reconciles[id] = Task { [weak self] in
                 guard let self else { return }
-                self.state.withLock { $0.reconcileScheduled = false; $0.cascadePending = false }
+                self.state.withLock { $0.reconcileScheduled = false }
                 do { try await self.reconcile() }
                 catch { if !self.closing { self.session.fail(error) } }
                 self.settleIdle()
@@ -259,146 +265,74 @@ internal final class TaskScheduler: Sendable {
             }
         }
     }
-    func loadChain(_ start: OwnershipUp, overlay: TaskOverlay = .empty) async throws {
-        var at: OwnershipUp? = start
-        var seen = Set<OwnershipUp>()
-        while let step = at, seen.insert(step).inserted {
-            switch step {
-            case .task(let id):
-                var record = overlay.tasks[id] ?? state.withLock { $0.nodes[id] }
-                if record == nil {
-                    record = try await storage.task(id, context: context)
-                    if let record { state.withLock { $0.nodes[id] = record; $0.waitOwnership.add(record) } }
-                }
-                guard let record else { return }; at = record.parent
-            case .conversation(let id):
-                var record = overlay.conversations[id] ?? state.withLock { $0.edges[id] }
-                if record == nil {
-                    record = try await storage.conversation(id, context: context)
-                    if let record { state.withLock { $0.edges[id] = record; $0.waitOwnership.add(record) } }
-                }
-                at = record?.owner.map { .task($0.taskId) }
-            }
-        }
-    }
-    func loadScopes() async throws {
-        for record in records() {
-            try await loadChain(record.parent)
-            _ = state.withLock { $0.waitOwnership.pending.remove(record.id) }
-        }
-    }
-    func loadQueuedScopes() async throws -> Set<ConversationID> {
-        let submissions = try await scanAll { cursor in
-            try await storage.scanSubmissions(.init(status: .queued), limit: 256, cursor: cursor, context: context)
-        }
-        let ids = Set(submissions.map(\.conversationId))
-        for id in ids { try await loadChain(.conversation(id)) }
-        return ids
-    }
-    func above(_ start: OwnershipUp, overlay: TaskOverlay = .empty) -> [OwnershipStep] {
-        state.withLock { state in
-            var result: [OwnershipStep] = [], at: OwnershipUp? = start, seen = Set<OwnershipUp>()
-            while let step = at, seen.insert(step).inserted {
-                switch step {
-                case .task(let id):
-                    guard let record = overlay.tasks[id] ?? state.nodes[id] else { result.append(.unknown); return result }
-                    result.append(.task(record)); at = record.parent
-                case .conversation(let id):
-                    result.append(.conversation(id))
-                    guard let record = overlay.conversations[id] ?? state.edges[id] else { result.append(.unknown); return result }
-                    at = record.owner.map { .task($0.taskId) }
-                }
-            }
-            return result
-        }
-    }
-    func liveRecords(_ overlay: TaskOverlay = .empty) -> [TaskRecord] {
-        var records = records().map { overlay.tasks[$0.id] ?? $0 }
-        let ids = Set(records.map(\.id))
-        records += overlay.tasks.values.filter { !ids.contains($0.id) }
-        return records.filter { $0.state.status != "terminal" }
-    }
-    func ownedWork(_ overlay: TaskOverlay = .empty) -> [TaskID: [TaskID]] {
-        var owned: [TaskID: [TaskID]] = [:]
-        for record in liveRecords(overlay) where !record.background {
-            for step in above(record.parent, overlay: overlay) {
-                if case .task(let owner) = step { owned[owner.id, default: []].append(record.id); if owner.background { break } }
-            }
-        }
-        return owned
-    }
-    func ownedLive(_ overlay: TaskOverlay = .empty) -> Set<TaskID> { Set(ownedWork(overlay).keys) }
-    func inScope(_ start: OwnershipUp, conversationId: ConversationID?, background: Bool = false) -> Bool? {
-        for step in above(start) {
-            switch step {
-            case .unknown: return nil
-            case .conversation(let id): if id == conversationId { return true }
-            case .task(let record): if record.background && !background { return false }
-            }
-        }
-        return conversationId == nil
-    }
-    func cancellingOwner(_ start: OwnershipUp) -> TaskRecord? {
-        for step in above(start) {
-            if case .task(let record) = step {
-                if let live = current(record.id), live.abortRequested || live.failedOutcome { return live }
-                if record.background { return nil }
-            }
-        }
-        return nil
-    }
-    func belowCancelled(_ start: OwnershipUp) -> Bool { cancellingOwner(start) != nil }
-    func idle(_ id: ConversationID?) -> Bool { !records().contains { !$0.background && inScope($0.parent, conversationId: id) != false } }
-    func waitingOn(_ record: TaskRecord, owned: Set<TaskID>) -> [TaskID] {
-        if record.abortRequested { return owned.contains(record.id) ? (ownedWork()[record.id] ?? []) : [] }
-        if case .waiting(_, let on, _, _) = record.state { return on.filter { current($0) != nil } }
-        return []
-    }
     private func reconcile() async throws {
+        let (cascade, checks) = state.withLock { state in
+            let cascade = state.cascadePending, checks = Array(state.failFastChecks)
+            state.candidateEntries += checks.count
+            state.cascadePending = false; state.failFastChecks.removeAll()
+            return (cascade, checks)
+        }
         try await session.commit({ tx in
             guard !closing else { return }
             try await loadScopes()
-            let queued = try await loadQueuedScopes()
+            let queued = cascade ? try await loadQueuedScopes() : []
             var marks: [TaskID: (record: TaskRecord, reason: TaskAbortReason?)] = [:]
             func mark(_ record: TaskRecord, reason: TaskAbortReason?) {
                 if let staged = marks[record.id], staged.reason == nil { return }
                 if record.abortRequested && (record.abortReason == nil || reason != nil) { return }
                 marks[record.id] = (record, reason)
             }
-            for record in records() {
-                if !record.background, let owner = cancellingOwner(record.parent) {
-                    mark(record, reason: owner.abortReason == .restart && !owner.failedOutcome ? .restart : nil)
+            let intents = state.withLock { state in state.candidateEntries += state.intent.count; return state.intent }
+            for id in intents {
+                guard let owner = current(id) else { continue }
+                let restart = owner.abortReason == .restart && !owner.failedOutcome
+                walkDown(.task(id), enter: { !intents.contains($0) }) { step in
+                    if let live = step.live, !step.node.background { mark(live, reason: restart ? .restart : nil) }
+                    return false
                 }
-                if case .waiting(_, let on, .failFast, _) = record.state {
-                    var failed = false
-                    for id in on {
-                        let found: TaskRecord?
-                        if let live = current(id) { found = live } else { found = try await storage.task(id, context: context) }
-                        if found?.failedOutcome == true { failed = true; break }
-                    }
-                    if failed { for id in on { if let live = current(id), !live.failedOutcome { mark(live, reason: nil) } } }
+            }
+            for id in checks {
+                guard let record = current(id), case .waiting(_, let on, _, _) = record.state else { continue }
+                var failed = false
+                for id in on {
+                    let found: TaskRecord?
+                    if let live = current(id) { found = live } else { found = try await storage.task(id, context: context) }
+                    if found?.failedOutcome == true { failed = true; break }
                 }
+                if failed { for id in on { if let live = current(id), !live.failedOutcome { mark(live, reason: nil) } } }
             }
             for marked in marks.values { try tx.setTask(marked.record.withAbortMark(marked.reason)) }
             for id in queued where belowCancelled(.conversation(id)) { try await withdrawInputs(tx, id) }
-            while true {
-                let overlay = try TaskOverlay(tx), owned = ownedLive(overlay)
-                let done = liveRecords(overlay).filter { $0.state.status == "completing" && !owned.contains($0.id) }
-                if done.isEmpty { break }
-                for record in done {
-                    if let outcome = record.state.outcome {
-                        try tx.setTask(record.replacing(state: .terminal(outcome: outcome)))
-                        if outcome.status == "faulted" || outcome.status == "orphaned" { try await settleOutcome(tx, record, outcome) }
-                    }
-                }
-            }
+            try await finalize(tx)
         }, context: context)
+    }
+    private func finalize(_ tx: Transaction) async throws {
+        var round = state.withLock { state in
+            let checks = Array(state.finalizeChecks); state.candidateEntries += checks.count
+            state.finalizeChecks.removeAll(); return checks
+        }
+        var overlay = try TaskOverlay(tx), done = Set<TaskID>()
+        let links = links(overlay)
+        while !round.isEmpty {
+            var next = Set<TaskID>()
+            for id in round {
+                guard let record = overlay.tasks[id] ?? current(id), record.state.status == "completing", !done.contains(id) else { continue }
+                if !ownedLive(id, overlay: overlay, links: links, first: true, done: done).isEmpty { continue }
+                guard let outcome = record.state.outcome else { continue }
+                let terminal = record.replacing(state: .terminal(outcome: outcome))
+                try tx.setTask(terminal); overlay.tasks[id] = terminal; done.insert(id)
+                if outcome.status == "faulted" || outcome.status == "orphaned" { try await settleOutcome(tx, record, outcome) }
+                if let above = state.withLock({ $0.nearestLiveAbove(TaskNode(record), overlay: overlay) }), above.state.status == "completing" { next.insert(above.id) }
+            }
+            round = Array(next)
+            state.withLock { $0.candidateEntries += next.count }
+        }
     }
     func terminate(_ tx: Transaction, record: TaskRecord, outcome: TaskOutcome) async throws {
         try await loadScopes()
         let overlay = try TaskOverlay(tx)
         for record in overlay.tasks.values { try await loadChain(record.parent, overlay: overlay) }
-        let held = ownedLive(overlay).contains(record.id)
+        let held = !ownedLive(record.id, overlay: overlay, links: links(overlay), first: true).isEmpty
         try tx.setTask(record.replacing(state: held ? .completing(outcome: outcome) : .terminal(outcome: outcome)))
         if !held && (outcome.status == "faulted" || outcome.status == "orphaned") { try await settleOutcome(tx, record, outcome) }
     }
@@ -416,7 +350,7 @@ internal final class TaskScheduler: Sendable {
         do {
             try await session.commit({ tx in
                 guard !closing else { return }
-                abandoned = state.withLock { $0.abandoned }
+                abandoned = state.withLock { state in state.candidateEntries += state.abandoned.count; return state.abandoned }
                 // Commit all restart marks before a descendant can reserve a run invocation.
                 if !abandoned.isEmpty {
                     for id in abandoned {
@@ -425,15 +359,20 @@ internal final class TaskScheduler: Sendable {
                     return
                 }
                 try await loadScopes()
-                let owned = ownedLive(), snapshot = registry.snapshot()
-                for original in records() {
-                    if state.withLock({ $0.invocations[original.id] != nil }) || original.state.status == "completing" || !waitingOn(original, owned: owned).isEmpty { continue }
+                let candidates = state.withLock { state in state.candidateEntries += state.runnable.count; return Array(state.runnable).sorted() }
+                var snapshot: RegistrySnapshot?
+                for id in candidates {
+                    guard let original = current(id), original.state.status != "completing", !state.withLock({ $0.invocations[id] != nil }) else {
+                        _ = state.withLock { $0.runnable.remove(id) }; continue
+                    }
+                    if !waitingOn(original, first: true).isEmpty { _ = state.withLock { $0.runnable.remove(id) }; continue }
                     if !original.abortRequested && !original.background && belowCancelled(original.parent) {
                         state.withLock { $0.cascadePending = true }; scheduleReconcile()
                         continue
                     }
                     var record = original
-                    let definition = snapshot.task(name: record.kind)
+                    snapshot = snapshot ?? registry.snapshot()
+                    let definition = snapshot!.task(name: record.kind)
                     var resolution = fit(record, definition: definition)
                     if resolution.reason == nil, resolution.migrates, let definition {
                         do {
@@ -454,8 +393,8 @@ internal final class TaskScheduler: Sendable {
                         try tx.setTask(record.replacing(state: .running(checkpoint: checkpoint)))
                     }
                     let invocation = TaskInvocation(record, abort: record.abortRequested, context: context), id = UUID()
-                    state.withLock { $0.invocations[record.id] = invocation; $0.joining[id] = invocation }
-                    reservations.append(Reservation(invocation: invocation, definition: definition, snapshot: snapshot, joinID: id))
+                    state.withLock { $0.runnable.remove(record.id); $0.invocations[record.id] = invocation; $0.joining[id] = invocation }
+                    reservations.append(Reservation(invocation: invocation, definition: definition, snapshot: snapshot!, joinID: id))
                 }
             }, context: context)
             if !abandoned.isEmpty {
@@ -484,7 +423,12 @@ internal final class TaskScheduler: Sendable {
             let watches = Array(state.watches.values); state.watches = [:]; return watches
         }
         guard let watches else { return }
-        state.withLock { if $0.invocations[invocation.taskId] === invocation { $0.invocations.removeValue(forKey: invocation.taskId) } }
+        state.withLock {
+            if $0.invocations[invocation.taskId] === invocation {
+                $0.invocations.removeValue(forKey: invocation.taskId)
+                if $0.live[invocation.taskId] != nil { $0.runnable.insert(invocation.taskId) }
+            }
+        }
         for stop in watches { stop() }
         invocation.controller.abort(SessionError.message("Task \(invocation.taskId.rawValue) invocation has ended"))
     }
@@ -555,9 +499,9 @@ internal final class TaskScheduler: Sendable {
 }
 
 internal enum OwnershipUp: Hashable, Sendable { case task(TaskID), conversation(ConversationID) }
-internal enum OwnershipStep: Sendable { case task(TaskRecord), conversation(ConversationID), unknown }
+internal enum OwnershipStep: Sendable { case task(TaskNode), conversation(ConversationID), unknown }
 internal struct TaskOverlay: Sendable {
-    let tasks: [TaskID: TaskRecord]
+    var tasks: [TaskID: TaskRecord]
     let conversations: [ConversationID: ConversationRecord]
     static let empty = TaskOverlay(tasks: [:], conversations: [:])
     init(tasks: [TaskID: TaskRecord], conversations: [ConversationID: ConversationRecord]) { self.tasks = tasks; self.conversations = conversations }

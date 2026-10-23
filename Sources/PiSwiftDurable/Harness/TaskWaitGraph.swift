@@ -1,22 +1,3 @@
-/// Reverse links for the ownership records already kept by the scheduler.
-internal struct TaskWaitOwnershipIndex: Sendable {
-    var children: [OwnershipUp: Set<OwnershipUp>] = [:]
-    var pending = Set<TaskID>()
-
-    mutating func add(_ record: TaskRecord) {
-        children[record.parent, default: []].insert(.task(record.id))
-    }
-    mutating func add(_ record: ConversationRecord) {
-        if let owner = record.owner { children[.task(owner.taskId), default: []].insert(.conversation(record.id)) }
-    }
-    mutating func remove(_ record: TaskRecord) {
-        children[record.parent]?.remove(.task(record.id))
-        if children[record.parent]?.isEmpty == true { children.removeValue(forKey: record.parent) }
-        // Child links belong to their cached records, even when this parent must be loaded again.
-        pending.remove(record.id)
-    }
-}
-
 extension TaskScheduler {
     /// A wait must name existing tasks and must keep the wait-for graph acyclic.
     func validateWait(_ tx: Transaction, invocation: TaskInvocation, current: TaskRecord,
@@ -43,17 +24,11 @@ extension TaskScheduler {
     /// Find a path from a wait target back to the task. Each reached task is visited once.
     private func waitCycle(_ task: TaskID, on: [TaskID], overlay: TaskOverlay) async throws -> [TaskID]? {
         // New committed tasks can precede the next reservation. Load only their chains.
-        let unloaded = state.withLock { $0.waitOwnership.pending }
-        for id in unloaded {
-            if let record = current(id) { try await loadChain(record.parent) }
-            _ = state.withLock { $0.waitOwnership.pending.remove(id) }
-        }
-        var staged = TaskWaitOwnershipIndex()
+        try await loadScopes()
         for record in overlay.tasks.values {
             try await loadChain(record.parent, overlay: overlay)
-            staged.add(record)
         }
-        for record in overlay.conversations.values { staged.add(record) }
+        let staged = links(overlay)
         var from: [TaskID: TaskID] = [:]
         var reached = Set<TaskID>(), walked = Set<OwnershipUp>()
         var pending: [TaskID] = []
@@ -77,14 +52,17 @@ extension TaskScheduler {
             var below: [OwnershipUp] = [.task(id)]
             while let at = below.popLast() {
                 guard walked.insert(at).inserted else { continue }
-                let children = state.withLock { $0.waitOwnership.children[at] ?? [] }
-                    .union(staged.children[at] ?? [])
+                let children = state.withLock { state in
+                    let children = (state.below[at] ?? []).union(staged[at] ?? [])
+                    state.candidateEntries += children.count
+                    return children
+                }
                 for child in children {
                     switch child {
                     case .conversation: below.append(child)
                     case .task(let member):
                         let live = overlay.tasks[member] ?? current(member)
-                        guard let node = live ?? state.withLock({ $0.nodes[member] }), !node.background else { continue }
+                        guard let node = live.map(TaskNode.init) ?? state.withLock({ $0.nodes[member] }), !node.background else { continue }
                         if let live, live.state.status != "terminal" { reach(member, via: id) }
                         // A cached terminal owner can have live work in its conversations.
                         below.append(child)

@@ -16,7 +16,7 @@ func recordOptional<T: Decodable>(_ object: JSONObject, _ key: String, as: T.Typ
 }
 func recordExtensions(_ object: JSONObject, excluding keys: [String]) -> JSONObject {
     var result = object
-    for key in keys { result[key] = nil }
+    result.removeValues(forKeys: keys)
     return result
 }
 func recordSet<T: Encodable>(_ object: inout JSONObject, _ key: String, _ value: T) throws {

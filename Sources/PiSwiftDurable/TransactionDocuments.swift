@@ -242,7 +242,8 @@ final class TransactionDocuments: Sendable {
                 plans[index].retire = true; retiring.insert(plans[index].id)
             }
         }
-        for id in terminal where !tx.createdTaskIDs().contains(id) {
+        let created = tx.createdTaskIDs()
+        for id in terminal where !created.contains(id) {
             var cursor: Cursor?
             repeat {
                 let page = try await tx.storage.scanDocuments(DocumentQuery(scope: .task(taskId: id), at: .current), limit: 256, cursor: cursor, context: tx.context)

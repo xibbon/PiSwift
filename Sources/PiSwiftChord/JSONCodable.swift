@@ -50,6 +50,18 @@ extension JSONValue: Codable {
 
     /// Builds an owned JSON tree without a data round trip. Port of chord `copyJson`, `packages/chord/src/json.ts`.
     public init<T: Encodable>(encoding value: T) throws {
+        let direct: JSONValue?
+        if let value = value as? JSONValue { direct = value }
+        else if let value = value as? JSONObject { direct = .object(value) }
+        else if T.self == String.self, let value = value as? String { direct = .string(value) }
+        else if T.self == Bool.self, let value = value as? Bool { direct = .bool(value) }
+        else if T.self == Double.self, let value = value as? Double { direct = .number(value) }
+        else { direct = nil }
+        if let direct {
+            guard direct.isStrictJSON else { throw JSONValueError.nonFiniteNumber }
+            self = direct
+            return
+        }
         let node = EncodingNode()
         try ValueEncoder(node: node, codingPath: []).encode(value)
         self = try node.finish(codingPath: [])
@@ -57,7 +69,10 @@ extension JSONValue: Codable {
 
     /// Decodes a Swift value directly from this tree. Swift bridge for chord `copyJson`, `packages/chord/src/json.ts`.
     public func decode<T: Decodable>(_ type: T.Type = T.self) throws -> T {
-        try T(from: ValueDecoder(value: self, codingPath: []))
+        if T.self == String.self, case .string(let value) = self, let result = value as? T { return result }
+        if T.self == Bool.self, case .bool(let value) = self, let result = value as? T { return result }
+        if T.self == Double.self, case .number(let value) = self, value.isFinite, let result = value as? T { return result }
+        return try T(from: ValueDecoder(value: self, codingPath: []))
     }
 }
 
@@ -65,6 +80,10 @@ extension JSONObject: Codable {
     /// Decodes an object. Port of chord `JsonValue`, `packages/chord/src/types.ts`.
     /// A foreign decoder supplies keys in its `allKeys` order and can merge key names before this call.
     public init(from decoder: any Decoder) throws {
+        if let decoder = decoder as? ValueDecoder, case .object(let object) = decoder.value {
+            self = object
+            return
+        }
         let container = try decoder.container(keyedBy: JSONCodingKey.self)
         self.init()
         for key in container.allKeys { self[key.stringValue] = try container.decode(JSONValue.self, forKey: key) }
@@ -72,6 +91,11 @@ extension JSONObject: Codable {
 
     /// Encodes entries in JavaScript key order. Port of chord `copyJson`, `packages/chord/src/json.ts`.
     public func encode(to encoder: any Encoder) throws {
+        if let encoder = encoder as? ValueEncoder, case .empty = encoder.node.storage {
+            guard JSONValue.object(self).isStrictJSON else { throw JSONValueError.nonFiniteNumber }
+            encoder.node.storage = .objectValue(self)
+            return
+        }
         var container = encoder.container(keyedBy: JSONCodingKey.self)
         for (key, value) in self { try container.encode(value, forKey: JSONCodingKey(key)) }
     }
@@ -90,6 +114,7 @@ private final class EncodingNode {
     enum Storage {
         case empty
         case value(JSONValue)
+        case objectValue(JSONObject)
         case object([(String, EncodingNode)])
         case array([EncodingNode])
     }
@@ -97,6 +122,12 @@ private final class EncodingNode {
     var error: (any Error)?
 
     func object(codingPath: [any CodingKey]) {
+        if case .objectValue(let object) = storage {
+            storage = .object(object.map { key, value in
+                let node = EncodingNode(); node.storage = .value(value)
+                return (key, node)
+            })
+        }
         if case .empty = storage { storage = .object([]) }
         if case .object = storage { return }
         conflict(codingPath: codingPath)
@@ -145,6 +176,7 @@ private final class EncodingNode {
         case .empty:
             throw EncodingError.invalidValue("empty value", .init(codingPath: codingPath, debugDescription: "Encodable did not encode a value"))
         case .value(let value): return value
+        case .objectValue(let object): return .object(object)
         case .object(let pairs):
             return .object(JSONObject(try pairs.map { key, node in
                 (key, try node.finish(codingPath: codingPath + [JSONCodingKey(key)]))

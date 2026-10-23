@@ -372,7 +372,7 @@ extension Transaction {
 }
 
 private func validateTableJSON<T: Encodable>(_ value: T) throws {
-    _ = try JSONValue(encoding: value).jsonText()
+    _ = try JSONValue(encoding: value)
 }
 
 private func applySubmissionChange(_ current: SubmissionRecord, _ change: TransactionSubmissionChange) throws -> SubmissionRecord {

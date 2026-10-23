@@ -10,7 +10,7 @@ extension TaskScheduler {
             if keepRestart && record.abortReason == .restart { return (.marked, nil) }
             if invocation == nil && record.state.status != "completing" {
                 try await loadScopes()
-                if !ownedLive().contains(id), let reason = fit(record, definition: registry.snapshot().task(name: record.kind)).reason {
+                if ownedLive(id, first: true).isEmpty, let reason = fit(record, definition: registry.snapshot().task(name: record.kind)).reason {
                     try await terminate(tx, record: record, outcome: .orphaned(reason: reason)); return (.marked, nil)
                 }
             }
@@ -57,11 +57,13 @@ extension TaskScheduler {
             try await loadScopes()
             let queued = try await loadQueuedScopes()
             var reached: [TaskID] = []
-            for record in records() {
-                if record.background && !background { continue }
-                if inScope(record.parent, conversationId: id, background: background) != true { continue }
+            walkDown(.conversation(id), crossBackground: background) { step in
+                guard let record = step.live, !record.background || background else { return false }
                 reached.append(record.id)
-                if !record.abortRequested || record.abortReason != nil { try tx.setTask(record.withAbortMark()) }
+                return false
+            }
+            for task in reached {
+                if let record = current(task), !record.abortRequested || record.abortReason != nil { try tx.setTask(record.withAbortMark()) }
             }
             for queuedID in queued where inScope(.conversation(queuedID), conversationId: id, background: background) == true { try await withdrawInputs(tx, queuedID) }
             return reached
@@ -73,13 +75,12 @@ extension TaskScheduler {
     /// Caller runs this read on the Session line. Migration code is not called.
     func inspect(snapshot: RegistrySnapshot) async throws -> (scheduling: SchedulingState, tasks: [TaskInspection]) {
         try await loadScopes()
-        let owned = ownedLive()
         let tasks = records().map { record -> TaskInspection in
             let derived: TaskInspectionState
             if state.withLock({ $0.invocations[record.id] != nil }) { derived = .running }
             else if record.state.status == "completing" { derived = .completing }
             else {
-                let on = waitingOn(record, owned: owned)
+                let on = waitingOn(record)
                 if !on.isEmpty { derived = .waiting(on: on) }
                 else {
                     let definition = snapshot.task(name: record.kind), fit = fit(record, definition: definition)

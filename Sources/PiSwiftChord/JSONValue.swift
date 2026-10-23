@@ -32,7 +32,7 @@ public enum JSONValue: Sendable, Equatable {
         switch self {
         case .number(let value): value.isFinite
         case .array(let values): values.allSatisfy(\.isStrictJSON)
-        case .object(let value): value.values.allSatisfy(\.isStrictJSON)
+        case .object(let value): value.hasStrictValues
         default: true
         }
     }

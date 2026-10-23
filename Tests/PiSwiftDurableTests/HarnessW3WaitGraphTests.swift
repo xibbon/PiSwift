@@ -276,7 +276,7 @@ private final class W3WaitNodes: Sendable {
         #expect(try await nodes.outcome(harness, "bridge").status == "completed")
         let bridge = try nodes.id("bridge"), endedOwner = try nodes.id("ended-owner")
         #expect(harness.tasks.state.withLock { $0.nodes[bridge] == nil })
-        #expect(harness.tasks.state.withLock { $0.nodes[endedOwner] != nil })
+        #expect(harness.tasks.state.withLock { $0.nodes[endedOwner] == nil })
         try await root.commit({ tx in
             try await nodes.create(tx, "descendant", conversation: conversationID)
             try await nodes.create(tx, "other")

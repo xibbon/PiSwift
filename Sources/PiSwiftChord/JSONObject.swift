@@ -68,8 +68,9 @@ public struct JSONObject: Sendable, Equatable, ExpressibleByDictionaryLiteral, S
     }
 
     private static func arrayIndex(_ text: String) -> UInt64? {
+        guard let first = text.utf8.first, (48...57).contains(first) else { return nil }
         let bytes = Array(text.utf8)
-        guard !bytes.isEmpty, bytes.count <= 10 else { return nil }
+        guard bytes.count <= 10 else { return nil }
         if bytes == [48] { return 0 }
         guard (49...57).contains(bytes[0]) else { return nil }
         var result: UInt64 = 0
@@ -84,6 +85,7 @@ public struct JSONObject: Sendable, Equatable, ExpressibleByDictionaryLiteral, S
     public var keys: [String] { orderedKeys.map(\.text) }
     /// The values in JavaScript property order.
     public var values: [JSONValue] { orderedKeys.compactMap { members[$0] } }
+    var hasStrictValues: Bool { members.values.allSatisfy(\.isStrictJSON) }
     /// The number of members.
     public var count: Int { members.count }
     /// Returns true when there are no members.
@@ -97,6 +99,13 @@ public struct JSONObject: Sendable, Equatable, ExpressibleByDictionaryLiteral, S
         if Self.arrayIndex(key) != nil { indexKeys.removeAll { $0.key == identity } }
         else { otherKeys.removeAll { $0 == identity } }
         return value
+    }
+    /// Removes several members with exact Unicode scalar key identity.
+    package mutating func removeValues(forKeys keys: [String]) {
+        let removed = Set(keys.map { ScalarKey(text: $0) })
+        members = members.filter { !removed.contains($0.key) }
+        indexKeys.removeAll { removed.contains($0.key) }
+        otherKeys.removeAll { removed.contains($0) }
     }
     /// Compares members without regard to key order.
     public static func == (lhs: Self, rhs: Self) -> Bool { lhs.members == rhs.members }
