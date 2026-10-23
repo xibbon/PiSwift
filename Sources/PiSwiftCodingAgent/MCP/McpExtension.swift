@@ -464,8 +464,8 @@ public actor McpBuiltinRuntime {
         let needsSearch = exposure.contains(.deferred)
         guard needsCodemode || needsSearch else { return }
         let all = api.getAllTools()
-        let hasCodemode = all.contains(where: isCodemodeTool)
-        let hasSearch = all.contains(where: isToolSearchTool)
+        let hasCodemode = all.contains { $0.name == CODEMODE_TOOL_NAME && $0.reachesTools != nil }
+        let hasSearch = all.contains { $0.name == TOOL_SEARCH_TOOL_NAME && $0.reachesTools != nil }
         var active = api.getActiveTools()
         if needsCodemode && hasCodemode && autoEnableCodemode && !active.contains(CODEMODE_TOOL_NAME) {
             active.append(CODEMODE_TOOL_NAME)
@@ -530,10 +530,13 @@ public actor McpBuiltinRuntime {
         }
         guard let tool = api.getAllTools().first(where: { $0.name == event.toolName }) else { return }
         let names: [String]
-        if isCodemodeTool(tool) {
-            let source = event.input["code"]?.value as? String ?? ""
-            names = orderedServers.filter { mcpScriptNeedsServer(source, server: $0.entry.name) }.map { $0.entry.name }
-        } else if isToolSearchTool(tool) || [LIST_MCP_RESOURCES_TOOL, LIST_MCP_RESOURCE_TEMPLATES_TOOL, READ_MCP_RESOURCE_TOOL].contains(tool.name) {
+        if let reach = tool.reachesTools?(event.input) {
+            let tools = api.getAllTools()
+            names = orderedServers.filter { server in
+                let owned = tools.filter { toolOwners[$0.name]?.split(separator: "\0").first.map(String.init) == server.entry.name }
+                return mcpReachNeedsServer(reach, server: server.entry.name, tools: owned)
+            }.map { $0.entry.name }
+        } else if [LIST_MCP_RESOURCES_TOOL, LIST_MCP_RESOURCE_TEMPLATES_TOOL, READ_MCP_RESOURCE_TOOL].contains(tool.name) {
             names = serverNames
         } else { return }
         try await waitForServers(names: names, signal: context.signal)
@@ -634,8 +637,8 @@ public actor McpBuiltinRuntime {
         case .failed: return !withError ? "failed" : "failed: \((await connection.error ?? "unknown error").components(separatedBy: "\n").first ?? "unknown error")"
         case .connected:
             let tools = await connection.tools.count
-            let resources = await connection.resources.count
-            return "connected · \(tools) tool\(tools == 1 ? "" : "s")\(resources > 0 ? " · \(resources) resource\(resources == 1 ? "" : "s")" : "")"
+            let hasResources = await connection.hasResources
+            return "connected · \(tools) tool\(tools == 1 ? "" : "s")\(hasResources ? " · resources" : "")"
         case .connecting: return "connecting…"
         case .disconnected: return "disconnected"
         case .closed: return "closed"

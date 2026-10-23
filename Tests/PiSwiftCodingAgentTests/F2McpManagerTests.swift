@@ -88,7 +88,7 @@ func f2McpManagerUsesUpstreamCountRules(_ count: Int) async throws {
     let context = f2McpContext()
     await runtime.start(context: context)
     await runtime.waitForFirstPrompt(context: context)
-    let resources = count == 0 ? "" : " · \(count) resource\(count == 1 ? "" : "s")"
+    let resources = " · resources"
     #expect(await runtime.menu().items.first?.detail == "connected · \(count) tool\(count == 1 ? "" : "s")\(resources) · direct · extension")
     // Plain status deliberately uses "tools" for all counts in upstream formatStatus.
     #expect(await runtime.status() == "docs: connected, \(count) tools (direct)")
@@ -113,7 +113,7 @@ func f2McpManagerUsesUpstreamCountRules(_ count: Int) async throws {
     #expect(menu.items.last?.value == (enabled ? "disable" : "enable"))
     #expect(menu.items.last?.detail == (scope == .extension ? "for this session" : "saved to the \(scope.rawValue) mcp.json"))
     #expect(menu.selected == menu.items.first?.value)
-    #expect(menu.details == "fixture\n\(scope.rawValue): \(entry.source)\nState: \(enabled ? "connected · 0 tools" : "disabled")")
+    #expect(menu.details == "fixture\n\(scope.rawValue): \(entry.source)\nState: \(enabled ? "connected · 0 tools · resources" : "disabled")")
     await runtime.shutdown()
 }
 
@@ -307,7 +307,7 @@ private struct F2McpSignInPresenter: McpSignInPresenter {
     switch result {
     case "success":
         #expect(menu.error == nil)
-        #expect(menu.details?.hasSuffix("State: connected · 1 tool") == true)
+        #expect(menu.details?.hasSuffix("State: connected · 1 tool · resources") == true)
         #expect(try credentials.tokens(name: "docs", url: serverURL)?.accessToken == "fixture-token")
     case "reconnect":
         #expect(menu.error == "Signed in, but MCP server \"docs\" failed to connect: reconnect rejected\nreconnect rejected")

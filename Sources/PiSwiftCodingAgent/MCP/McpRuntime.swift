@@ -103,8 +103,11 @@ public actor McpServerConnection {
     public private(set) var error: String?
     public private(set) var tools: [McpTool] = []
     public private(set) var hasResources = false
-    public private(set) var resources: [McpResource] = []
-    public private(set) var resourceTemplates: [McpResourceTemplate] = []
+    /// Resource lists are fetched on demand and are no longer cached.
+    @available(*, deprecated, message: "Use hasResources or allResources() instead. This cache is always empty.")
+    public var resources: [McpResource] { [] }
+    @available(*, deprecated, message: "Use hasResources or allResourceTemplates() instead. This cache is always empty.")
+    public var resourceTemplates: [McpResourceTemplate] { [] }
     public private(set) var instructions: String?
     public private(set) var challenge: McpOAuthChallenge?
 
@@ -253,7 +256,6 @@ public actor McpServerConnection {
             let hasTools = await newClient.supportsServerCapability("tools")
             let resourceCapability = await newClient.supportsServerCapability("resources")
             let listedTools = hasTools ? try await newClient.listAllTools() : []
-            let fetched = resourceCapability ? await fetchResources(newClient) : (resources: [McpResource](), templates: [McpResourceTemplate]())
             let connected = await newClient.isConnected()
             let serverInstructions = await newClient.serverInstructions()?.trimmingCharacters(in: .whitespacesAndNewlines)
             // Do not suspend between this check, client publication, and the state change.
@@ -263,8 +265,6 @@ public actor McpServerConnection {
             transport = newTransport
             tools = listedTools
             hasResources = resourceCapability
-            resources = fetched.resources
-            resourceTemplates = fetched.templates
             instructions = serverInstructions
             state = .connected
             self.error = nil
@@ -291,8 +291,6 @@ public actor McpServerConnection {
             // The client awaits notification handlers on its receive loop. A list request
             // must run in a separate task so that loop can receive its response.
             Task { await refreshTools(clientID: clientID) }
-        } else if method == "notifications/resources/list_changed" {
-            Task { await refreshResources(clientID: clientID) }
         }
     }
 
@@ -319,22 +317,6 @@ public actor McpServerConnection {
             await onTools?(self)
         } catch { self.error = "Failed to refresh tools: \(error.localizedDescription)" }
         await changed()
-    }
-
-    private func refreshResources(clientID: UUID) async {
-        guard let client, client.connectionID == clientID else { return }
-        let fetched = await fetchResources(client)
-        resources = fetched.resources
-        resourceTemplates = fetched.templates
-        await onTools?(self)
-        await changed()
-    }
-
-    private func fetchResources(_ client: McpClient) async -> (resources: [McpResource], templates: [McpResourceTemplate]) {
-        async let resources = (try? client.listAllResources()) ?? []
-        async let templates = (try? client.listAllResourceTemplates()) ?? []
-        return (await resources.filter { !isMcpAppResource(uri: $0.uri, mimeType: $0.mimeType) },
-                await templates.filter { !isMcpAppResource(uri: $0.uriTemplate, mimeType: $0.mimeType) })
     }
 
     private func withClient<T: Sendable>(readOnly: Bool = false,

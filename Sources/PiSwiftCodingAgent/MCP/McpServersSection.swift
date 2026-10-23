@@ -57,7 +57,17 @@ public func renderServersSection(_ servers: [McpServerListing]) -> String? {
     return ([intro] + lines + omitted(listed.count - kept)).joined(separator: "\n")
 }
 
-func mcpScriptNeedsServer(_ code: String, server: String) -> Bool {
-    code.range(of: "\\b(searchTools|describeNamespace|describeTool|ALL_TOOLS)\\b", options: .regularExpression) != nil
-        || code.contains(mcpNamespace(server))
+/// Match declared reach words against server names, namespaces, aliases, and owned tools.
+func mcpReachNeedsServer(_ reach: ToolReach, server: String, tools: [ToolInfo] = []) -> Bool {
+    guard case .words(let words) = reach else { return true }
+    var names = [server, "mcp__" + server, mcpNamespace(server)]
+    for tool in tools {
+        names.append(tool.name)
+        if let namespace = tool.namespace {
+            names.append(namespace.name)
+            names.append(contentsOf: namespace.aliases ?? [])
+        }
+    }
+    let variants = Set(names.flatMap { [$0, toCodemodeIdentifier($0)] }.filter { !$0.isEmpty })
+    return words.contains { word in variants.contains { word.contains($0) } }
 }

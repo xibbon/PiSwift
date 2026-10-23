@@ -143,15 +143,17 @@ func f2McpConfigEditsKeepAllKeyOrderAndIndentCharacters(_ indent: String) throws
     #expect(report.servers.map(\.name) == ["zeta", "alpha"])
     report.servers[0].tools = ["z_tool", "a_tool"]
     report.servers[0].toolExposure = ["a_tool": .hidden, "z_tool": .direct]
-    report.servers[0].resources = 1
-    report.servers[0].resourceTemplates = 0
+    report.servers[0].hasResources = true
     report.servers[0].error = "failure"
     let text = String(decoding: try report.jsonData(), as: UTF8.self)
     let json = try OrderedJSON.parse(text)
     #expect(f2McpKeys(json) == ["servers", "errors", "note"])
     guard case .array(let servers) = json["servers"] else { Issue.record("Report must contain servers"); return }
     #expect(servers.compactMap { $0["name"]?.stringValue } == ["zeta", "alpha"])
-    #expect(f2McpKeys(servers[0]) == ["name", "scope", "source", "enabled", "exposure", "transport", "state", "tools", "toolExposure", "resources", "resourceTemplates", "error"])
+    #expect(f2McpKeys(servers[0]) == ["name", "scope", "source", "enabled", "exposure", "transport", "state", "tools", "toolExposure", "resources", "error"])
+    if case .bool(let resources) = servers[0]["resources"] {
+        #expect(resources)
+    } else { Issue.record("Resource capability must be a boolean") }
     #expect(f2McpKeys(servers[0]["toolExposure"]) == ["z_tool", "a_tool"])
     #expect(text.hasPrefix("{\n  \"servers\": [\n    {\n      \"name\": \"zeta\","))
     #expect(text.contains("\"transport\": \"https://example.com/mcp\""))

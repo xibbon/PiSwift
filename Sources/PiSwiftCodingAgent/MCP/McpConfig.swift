@@ -578,8 +578,28 @@ public struct McpServerListReport: Codable, Sendable, Equatable {
     public var state: String
     public var tools: [String]
     public var toolExposure: [String: McpExposure]?
-    public var resources: Int?
-    public var resourceTemplates: Int?
+    /// The initialize response declares the resources capability.
+    public var hasResources = false
+    private var legacyResources: Int?
+    private var legacyResourceTemplates: Int?
+
+    /// A supplied legacy count. New connections do not list or count resources.
+    @available(*, deprecated, message: "Use hasResources. Resource counts are no longer fetched.")
+    public var resources: Int? {
+        get { legacyResources }
+        set {
+            legacyResources = newValue
+            if let newValue, newValue > 0 { hasResources = true }
+        }
+    }
+    @available(*, deprecated, message: "Use hasResources. Template counts are no longer fetched.")
+    public var resourceTemplates: Int? {
+        get { legacyResourceTemplates }
+        set {
+            legacyResourceTemplates = newValue
+            if let newValue, newValue > 0 { hasResources = true }
+        }
+    }
     public var error: String?
 
     public init(entry: McpServerEntry) {
@@ -592,6 +612,50 @@ public struct McpServerListReport: Codable, Sendable, Equatable {
         transport = entry.config.url ?? ([entry.config.command].compactMap { $0 } + (entry.config.args ?? [])).joined(separator: " ")
         state = "disabled"
         tools = []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, source, override, scope, enabled, exposure, transport, state, tools, toolExposure
+        case resources, resourceTemplates, error
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        source = try values.decode(String.self, forKey: .source)
+        override = try values.decodeIfPresent(String.self, forKey: .override)
+        scope = try values.decode(McpServerEntry.Scope.self, forKey: .scope)
+        enabled = try values.decode(Bool.self, forKey: .enabled)
+        exposure = try values.decode(McpExposure.self, forKey: .exposure)
+        transport = try values.decode(String.self, forKey: .transport)
+        state = try values.decode(String.self, forKey: .state)
+        tools = try values.decode([String].self, forKey: .tools)
+        toolExposure = try values.decodeIfPresent([String: McpExposure].self, forKey: .toolExposure)
+        error = try values.decodeIfPresent(String.self, forKey: .error)
+        if let capability = try? values.decode(Bool.self, forKey: .resources) {
+            hasResources = capability
+        } else {
+            legacyResources = try values.decodeIfPresent(Int.self, forKey: .resources)
+        }
+        legacyResourceTemplates = try values.decodeIfPresent(Int.self, forKey: .resourceTemplates)
+        // A positive legacy count proves capability. Zero does not prove its absence.
+        hasResources = hasResources || (legacyResources ?? 0) > 0 || (legacyResourceTemplates ?? 0) > 0
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(name, forKey: .name)
+        try values.encode(source, forKey: .source)
+        try values.encodeIfPresent(override, forKey: .override)
+        try values.encode(scope, forKey: .scope)
+        try values.encode(enabled, forKey: .enabled)
+        try values.encode(exposure, forKey: .exposure)
+        try values.encode(transport, forKey: .transport)
+        try values.encode(state, forKey: .state)
+        try values.encode(tools, forKey: .tools)
+        try values.encodeIfPresent(toolExposure, forKey: .toolExposure)
+        if hasResources { try values.encode(true, forKey: .resources) }
+        try values.encodeIfPresent(error, forKey: .error)
     }
 }
 
@@ -610,8 +674,7 @@ private extension McpServerListReport {
                 overrides[name].map { (name, .string($0.rawValue)) }
             })))
         }
-        if let resources { entries.append(("resources", .number(String(resources)))) }
-        if let resourceTemplates { entries.append(("resourceTemplates", .number(String(resourceTemplates)))) }
+        if hasResources { entries.append(("resources", .bool(true))) }
         if let error { entries.append(("error", .string(error))) }
         return .object(entries)
     }
@@ -679,10 +742,7 @@ private func inspectMcpServer(
         if exposure != report.exposure { overrides[tool.name] = exposure }
     }
     if !overrides.isEmpty { report.toolExposure = overrides }
-    if await connection.hasResources {
-        report.resources = await connection.resources.count
-        report.resourceTemplates = await connection.resourceTemplates.count
-    }
+    report.hasResources = await connection.hasResources
     if report.state != McpConnectionState.connected.rawValue { report.error = await connection.error }
     await connection.close()
     return report

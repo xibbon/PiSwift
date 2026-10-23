@@ -72,13 +72,45 @@ public func limitMcpContent(_ content: [ContentBlock], saveOutput: McpOutputSave
     return ([.text(TextContent(text: text))] + content.filter { if case .image = $0 { true } else { false } }, path)
 }
 
+private let mcpSchemaDataKeywords: Set<String> = ["const", "enum", "default", "examples"]
+private let mcpSchemaMapKeywords: Set<String> = ["properties", "patternProperties", "dependentSchemas", "dependencies", "$defs", "definitions"]
+
+private func relocateMcpSchema(_ schema: Any, pointer: String) -> Any {
+    if let values = schema as? [Any] { return values.map { relocateMcpSchema($0, pointer: pointer) } }
+    guard let fields = schema as? [String: Any] else { return schema }
+    return fields.reduce(into: [String: Any]()) { relocated, field in
+        let (key, value) = field
+        if key == "$ref", let reference = value as? String,
+           reference == "#" || reference.hasPrefix("#/") {
+            relocated[key] = pointer + reference.dropFirst()
+        } else if mcpSchemaDataKeywords.contains(key) {
+            relocated[key] = value
+        } else if mcpSchemaMapKeywords.contains(key), let schemas = value as? [String: Any] {
+            relocated[key] = schemas.mapValues { relocateMcpSchema($0, pointer: pointer) }
+        } else {
+            relocated[key] = relocateMcpSchema(value, pointer: pointer)
+        }
+    }
+}
+
 public func mcpResultSchema(_ structuredSchema: AnyCodable?) -> [String: AnyCodable] {
-    var properties: [String: Any] = [
-        "content": ["type": "array", "items": ["type": "object"]],
-        "isError": ["type": "boolean"], "_meta": ["type": "object"]
+    let block: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "type": ["enum": ["text", "image", "audio", "resource_link", "resource"]],
+            "text": ["type": "string"], "data": ["type": "string"], "mimeType": ["type": "string"],
+        ],
+        "required": ["type"], "additionalProperties": true,
     ]
-    if let structuredSchema { properties["structuredContent"] = structuredSchema.value }
-    return ["type": AnyCodable("object"), "properties": AnyCodable(properties), "required": AnyCodable(["content"])]
+    let properties: [String: Any] = [
+        "content": ["type": "array", "items": block],
+        "structuredContent": structuredSchema.map {
+            relocateMcpSchema($0.value, pointer: "#/properties/structuredContent")
+        } ?? [String: Any](),
+        "isError": ["type": "boolean"],
+    ]
+    return ["type": AnyCodable("object"), "properties": AnyCodable(properties),
+            "required": AnyCodable(["content"]), "additionalProperties": AnyCodable(true)]
 }
 
 private func mcpExtension(_ uri: String) -> String {

@@ -405,25 +405,26 @@ func oauthConfiguredDocumentRejectsInsecureURLBeforeFetch() async throws {
     #expect(await fixture.snapshot().0.isEmpty)
 }
 
-@Test(.timeLimit(.minutes(1)), arguments: [0, 1, 2, 3])
+@Test(.timeLimit(.minutes(1)), arguments: [0, 1, 2, 3, 4, 5])
 func oauthAuthorizationResponseIssuerCases(_ index: Int) async throws {
-    let fixture = OAuthFixture()
+    let hasMetadata = index < 4
+    let fixture = OAuthFixture(mode: hasMetadata ? .standard : .clientMetadataDocument(iss: nil, metadataAvailable: false))
     let oauth = provider(fixture, clientID: "client", recorder: RedirectRecorder())
-    let iss = index == 0 ? "https://attacker.example" : (index == 2 ? fixture.origin.absoluteString : nil)
+    let iss = index == 0 || index == 4 ? "https://attacker.example" : (index == 2 ? fixture.origin.absoluteString : nil)
     let supported = index == 1 || index == 2
     try await oauth.saveCodeVerifier("verifier")
     try await oauth.saveDiscoveryState(McpOAuthDiscoveryState(authorizationServerURL: fixture.origin.absoluteString,
-        authorizationServerMetadata: McpOAuthAuthorizationServerMetadata(issuer: fixture.origin.absoluteString,
+        authorizationServerMetadata: hasMetadata ? McpOAuthAuthorizationServerMetadata(issuer: fixture.origin.absoluteString,
             authorizationEndpoint: "\(fixture.origin)/authorize", tokenEndpoint: "\(fixture.origin)/token",
-            authorizationResponseIssParameterSupported: supported)))
+            authorizationResponseIssParameterSupported: supported) : nil))
     let options = McpOAuthFlowOptions(serverURL: URL(string: "\(fixture.origin)/mcp")!,
         authorizationCode: "test-code", iss: iss, skipIssuerValidation: true)
-    if index < 2 {
+    if index < 2 || index == 4 {
         do {
             _ = try await McpOAuthFlow.authorize(provider: oauth, options: options, http: fixture)
             Issue.record("Expected issuer mismatch")
         } catch McpOAuthError.issuerMismatch(let expected, let received) {
-            #expect(expected == fixture.origin.absoluteString)
+            #expect(expected == (hasMetadata ? fixture.origin.absoluteString : nil))
             #expect(received == iss)
         }
         #expect(await fixture.snapshot().2.isEmpty)

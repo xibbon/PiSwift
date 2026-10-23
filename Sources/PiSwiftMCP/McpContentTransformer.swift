@@ -44,7 +44,7 @@ public func resolveMcpResultContent(_ result: McpToolResult) -> [ContentBlock] {
     guard blocks.isEmpty, let structuredContent = result.structuredContent else {
         return blocks
     }
-    if let data = try? JSONSerialization.data(withJSONObject: structuredContent.value, options: [.prettyPrinted]),
+    if let data = try? JSONSerialization.data(withJSONObject: structuredContent.value, options: [.prettyPrinted, .fragmentsAllowed]),
        let text = String(data: data, encoding: .utf8) {
         return [.text(TextContent(text: text))]
     }
@@ -77,7 +77,7 @@ public func toLlmContent(_ result: McpToolResult) -> [ContentBlock] {
         }
     }
     if blocks.isEmpty, let structuredContent = result.structuredContent {
-        if let data = try? JSONSerialization.data(withJSONObject: structuredContent.value, options: [.prettyPrinted, .sortedKeys]),
+        if let data = try? JSONSerialization.data(withJSONObject: structuredContent.value, options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed]),
            let text = String(data: data, encoding: .utf8) {
             blocks.append(.text(TextContent(text: text)))
         }

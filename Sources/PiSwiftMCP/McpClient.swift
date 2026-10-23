@@ -40,6 +40,7 @@ public typealias McpRootsProvider = @Sendable () async -> [McpRoot]
 
 private struct PendingRequest: Sendable {
     let continuation: CheckedContinuation<AnyCodable?, any Error>
+    let dispatchSignal: CancellationToken
     let method: String
     let timeoutMs: Int?
     let legacyTimeout: Bool
@@ -214,9 +215,6 @@ public actor McpClient {
         }
         let content = try (dict["content"] as? [[String: Any]] ?? []).map {
             try decodeObject(McpContent.self, from: $0)
-        }
-        if let structured = dict["structuredContent"], !(structured is [String: Any]) {
-            throw McpError.protocolError("Invalid MCP tools/call structured content")
         }
         let structuredContent = dict["structuredContent"].map { AnyCodable($0) }
         if let outputSchema = outputSchemas[name], let structuredContent {
@@ -422,16 +420,18 @@ public actor McpClient {
         isClosed = true
         receiveTask?.cancel()
         receiveTask = nil
-        if let transport {
-            await transport.close()
-        }
-        transport = nil
-        for (_, entry) in pendingRequests {
+        let pending = pendingRequests
+        pendingRequests.removeAll()
+        for entry in pending.values {
+            entry.dispatchSignal.cancel()
             entry.timer?.cancel()
             entry.signalWatcher?.cancel()
             entry.continuation.resume(throwing: error)
         }
-        pendingRequests.removeAll()
+        if let transport {
+            await transport.close()
+        }
+        transport = nil
         for (_, task) in incomingTasks { task.cancel() }
         incomingTasks.removeAll()
         await connectionClosedHandler?()
@@ -446,7 +446,7 @@ public actor McpClient {
         timeoutMs: Int? = nil,
         onProgress: McpProgressHandler? = nil
     ) async throws -> AnyCodable? {
-        guard let transport else { throw McpError.transportClosed }
+        guard let transport, !isClosed else { throw McpError.transportClosed }
         if signal?.isCancelled == true { throw CancellationError() }
         try Task.checkCancellation()
 
@@ -462,14 +462,17 @@ public actor McpClient {
         }
         let data = try JsonRpc.encodeToLine(JsonRpcRequest(id: id, method: method, params: requestParams))
         let effectiveTimeout = timeoutMs ?? requestTimeoutMs ?? 30_000
+        let dispatchSignal = CancellationToken()
         return try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 if cancelledRequestIDs.remove(id) != nil {
+                    dispatchSignal.cancel()
                     continuation.resume(throwing: McpError.aborted)
                     return
                 }
                 pendingRequests[id] = PendingRequest(
                     continuation: continuation,
+                    dispatchSignal: dispatchSignal,
                     method: method,
                     timeoutMs: effectiveTimeout,
                     legacyTimeout: timeoutMs == nil,
@@ -491,7 +494,7 @@ public actor McpClient {
                     pendingRequests[id]?.signalWatcher = watcher
                 }
                 Task { [weak self] in
-                    do { try await transport.send(data) }
+                    do { try await transport.send(data, options: .init(signal: dispatchSignal)) }
                     catch { await self?.failPendingRequest(id: id, error: error) }
                 }
             }
@@ -521,6 +524,7 @@ public actor McpClient {
 
     private func takePendingRequest(_ id: JsonRpcId) -> PendingRequest? {
         guard let entry = pendingRequests.removeValue(forKey: id) else { return nil }
+        entry.dispatchSignal.cancel()
         entry.timer?.cancel()
         entry.signalWatcher?.cancel()
         return entry

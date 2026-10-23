@@ -10,11 +10,23 @@ import Darwin
 /// The largest JSON-RPC message accepted by the upstream MCP transports.
 public let mcpDefaultMaxMessageBytes = 16 * 1024 * 1024
 
+public struct McpTransportSendOptions: Sendable {
+    /// Cancel this token when the sender stops waiting for a reply. A transport
+    /// must then prevent a later dispatch or retry. This does not stop work for
+    /// a message that was already sent.
+    public var signal: CancellationToken?
+
+    public init(signal: CancellationToken? = nil) {
+        self.signal = signal
+    }
+}
+
 /// A pull-based transport. Framing is transport-specific: stdio uses newline
 /// delimiters; HTTP sends a single JSON value in each request body.
 public protocol McpTransport: Sendable {
     func start() async throws
     func send(_ data: Data) async throws
+    func send(_ data: Data, options: McpTransportSendOptions) async throws
     func receive() async throws -> Data
     func close() async
     func setProtocolVersion(_ version: String) async
@@ -23,6 +35,13 @@ public protocol McpTransport: Sendable {
 public extension McpTransport {
     func start() async throws {}
     func setProtocolVersion(_ version: String) async {}
+
+    /// A transport that waits before dispatch must also check the token after
+    /// that wait. Implement this overload to check each authorization retry.
+    func send(_ data: Data, options: McpTransportSendOptions) async throws {
+        guard options.signal?.isCancelled != true else { throw McpError.aborted }
+        try await send(data)
+    }
 }
 
 public protocol McpSessionAwareTransport: McpTransport {

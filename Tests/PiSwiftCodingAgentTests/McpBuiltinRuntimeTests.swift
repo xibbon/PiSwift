@@ -180,6 +180,8 @@ private actor RetryResourceTransport: McpTransport {
         }, credentials: McpOAuthCredentialStore(backend: InMemoryAuthStorageBackend()))
     try await connection.connect()
     let before = await retryTransport.attempts()
+    // Connection setup must not consume an on-demand resources/list request.
+    #expect(before == 0)
     await retryTransport.failOnce()
     let page = try await connection.resourcesPage()
     #expect(page.resources.isEmpty)
@@ -211,9 +213,11 @@ private actor RetryResourceTransport: McpTransport {
     api.setSetActiveToolsHandler { names in active.withLock { $0 = names } }
     api.setGetAllToolsHandler {
         [ToolInfo(name: CODEMODE_TOOL_NAME, description: "Codemode",
-            sourceInfo: SourceInfo(path: "builtin:codemode", source: "builtin", scope: "user")),
+            sourceInfo: SourceInfo(path: "builtin:codemode", source: "builtin", scope: "user"),
+            reachesTools: createCodemodeToolDefinition().reachesTools),
          ToolInfo(name: TOOL_SEARCH_TOOL_NAME, description: "Search",
-            sourceInfo: SourceInfo(path: "builtin:tool-search", source: "builtin", scope: "user"))]
+            sourceInfo: SourceInfo(path: "builtin:tool-search", source: "builtin", scope: "user"),
+            reachesTools: createToolSearchToolDefinition().reachesTools)]
     }
     let runtime = McpBuiltinRuntime(api: api, options: McpExtensionOptions(agentDir: directory,
         loadConfig: { _ in loaded }, createTransport: { _, _, _ in clientTransport }))
@@ -260,4 +264,23 @@ private actor RetryResourceTransport: McpTransport {
     await runtime.waitForFirstPrompt(context: context)
     #expect(started.duration(to: clock.now) < .milliseconds(200))
     await runtime.shutdown()
+}
+
+// v1.3.0 mcp-extension.test.ts:791 uses the recorded-method fixture above.
+@Test(.timeLimit(.minutes(1))) func m1BuiltinResourceServerConnectsWithoutResourceLists() async throws {
+    let (client, server) = InMemoryTransport.pair()
+    let fixture = BuiltinFixture(server)
+    await fixture.start()
+    let entry = McpServerEntry(name: "docs", config: .init(command: "fixture"), source: "test", scope: .extension)
+    let connection = McpServerConnection(entry: entry, cwd: FileManager.default.temporaryDirectory,
+        createTransport: { _, _, _ in client },
+        credentials: McpOAuthCredentialStore(backend: InMemoryAuthStorageBackend()))
+    try await connection.connect()
+    #expect(await connection.state == .connected)
+    #expect(await connection.hasResources)
+    #expect(await fixture.methods() == ["initialize", "tools/list"])
+    #expect(try await connection.allResources().isEmpty)
+    #expect(await fixture.methods() == ["initialize", "tools/list", "resources/list"])
+    await connection.close()
+    await fixture.close()
 }

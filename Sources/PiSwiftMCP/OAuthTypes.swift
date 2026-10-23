@@ -8,7 +8,7 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
     case invalidMetadata(String)
     case clientMetadataDocumentUnsupported(String)
     case httpStatus(Int, String)
-    case issuerMismatch(expected: String, received: String?)
+    case issuerMismatch(expected: String?, received: String?)
     case insecureEndpoint(String)
     case registration(status: Int, body: String)
     case authorization(code: String, message: String, uri: String?)
@@ -22,7 +22,7 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
         case .invalidMetadata(let field): "Invalid OAuth metadata: \(field)"
         case .clientMetadataDocumentUnsupported(let message): message
         case .httpStatus(let status, let body): "OAuth HTTP \(status): \(body)"
-        case .issuerMismatch(let expected, let received): "OAuth issuer mismatch: expected \(expected), received \(received ?? "none")"
+        case .issuerMismatch(let expected, let received): "OAuth issuer mismatch: expected \(formatOAuthIssuer(expected)), received \(formatOAuthIssuer(received))"
         case .insecureEndpoint(let url): "Refusing to send OAuth credentials to non-HTTPS endpoint \(url)"
         case .registration(let status, let body): "OAuth dynamic client registration failed with status \(status): \(body)"
         case .authorization(_, let message, _): message
@@ -32,6 +32,14 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
         case .invalidState: "Invalid OAuth state"
         }
     }
+}
+
+private func formatOAuthIssuer(_ issuer: String?) -> String {
+    guard let issuer else { return "none" }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .withoutEscapingSlashes
+    // A String has no value that JSONEncoder cannot encode.
+    return String(decoding: (try? encoder.encode(issuer)) ?? Data(), as: UTF8.self)
 }
 
 /// A host document URL used as `client_id`, and a redirect URI that the document lists.

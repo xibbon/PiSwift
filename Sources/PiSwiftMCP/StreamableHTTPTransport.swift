@@ -59,12 +59,16 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     public func setProtocolVersion(_ version: String) async { protocolVersion = version }
 
     public func send(_ data: Data) async throws {
+        try await send(data, options: .init())
+    }
+
+    public func send(_ data: Data, options: McpTransportSendOptions) async throws {
         guard !closed else { throw McpError.transportClosed }
         guard data.count <= maxMessageBytes else { throw McpTransportError.messageTooLarge(limit: maxMessageBytes) }
         // Z4 / #10249: match upstream's shared abort controller for each POST,
         // including the wait for headers and the JSON response body.
         let taskID = UUID()
-        let task = Task { try await self.performSend(data) }
+        let task = Task { try await self.performSend(data, options: options) }
         sendTasks[taskID] = task
         defer { sendTasks[taskID] = nil }
         do {
@@ -80,10 +84,10 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         }
     }
 
-    private func performSend(_ data: Data) async throws {
+    private func performSend(_ data: Data, options: McpTransportSendOptions) async throws {
         try checkOpen()
         let info = try Self.messageInfo(data)
-        let (bytes, response) = try await authorizedRequest(method: "POST", accept: "application/json, text/event-stream", body: data)
+        let (bytes, response) = try await authorizedRequest(method: "POST", accept: "application/json, text/event-stream", body: data, options: options)
         try await withTaskCancellationHandler {
             try await handleSendResponse(bytes, response: response, info: info)
         } onCancel: {
@@ -209,7 +213,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         if let token, !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
     }
 
-    private func authorizedRequest(method: String, accept: String, body: Data? = nil, lastEventID: String? = nil) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+    private func authorizedRequest(method: String, accept: String, body: Data? = nil, lastEventID: String? = nil, options: McpTransportSendOptions = .init()) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         for attempt in 0...1 {
             try checkOpen()
             var request = URLRequest(url: url)
@@ -218,6 +222,9 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
             if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
             let token = try await applyHeaders(to: &request, accept: accept, lastEventID: lastEventID)
             try checkOpen()
+            // This token stops future dispatch only. Do not attach it to the
+            // HTTP task or to shared authorization recovery.
+            guard options.signal?.isCancelled != true else { throw McpError.aborted }
             let (bytes, response) = try await session.bytes(for: request)
             do { try checkOpen() }
             catch { bytes.task.cancel(); throw error }

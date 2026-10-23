@@ -298,10 +298,10 @@ public enum McpOAuthFlow {
         guard let client else { throw McpOAuthError.invalidMetadata("client information") }
         let redirectURL = document?.redirectURL ?? provider.redirectURL
         if let code = options.authorizationCode {
-            if let metadata = info.authorizationServerMetadata,
-               options.iss != nil || metadata.authorizationResponseIssParameterSupported == true,
-               options.iss != metadata.issuer {
-                throw McpOAuthError.issuerMismatch(expected: metadata.issuer, received: options.iss)
+            let metadata = info.authorizationServerMetadata
+            if options.iss != nil || metadata?.authorizationResponseIssParameterSupported == true,
+               options.iss != metadata?.issuer {
+                throw McpOAuthError.issuerMismatch(expected: metadata?.issuer, received: options.iss)
             }
             let tokens = try await exchangeAuthorizationCode(authorizationServerURL: info.authorizationServerURL,
                 metadata: info.authorizationServerMetadata, clientInformation: client,

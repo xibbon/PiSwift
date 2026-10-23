@@ -93,8 +93,10 @@ private func c1Runtime(_ entries: [McpServerEntry], fixtures: [String: C1McpFixt
     api.setGetActiveToolsHandler { active.withLock { $0 } }
     api.setSetActiveToolsHandler { names in active.withLock { $0 = names } }
     api.setGetAllToolsHandler {
-        [ToolInfo(name: CODEMODE_TOOL_NAME, description: "Codemode", sourceInfo: SourceInfo(path: "builtin:codemode", source: "builtin", scope: "user")),
-         ToolInfo(name: TOOL_SEARCH_TOOL_NAME, description: "Search", sourceInfo: SourceInfo(path: "builtin:tool-search", source: "builtin", scope: "user"))]
+        [ToolInfo(name: CODEMODE_TOOL_NAME, description: "Codemode", sourceInfo: SourceInfo(path: "builtin:codemode", source: "builtin", scope: "user"),
+            reachesTools: createCodemodeToolDefinition().reachesTools),
+         ToolInfo(name: TOOL_SEARCH_TOOL_NAME, description: "Search", sourceInfo: SourceInfo(path: "builtin:tool-search", source: "builtin", scope: "user"),
+            reachesTools: createToolSearchToolDefinition().reachesTools)]
         // A registered resource tool can wait for other servers still connecting.
         + [LIST_MCP_RESOURCES_TOOL, LIST_MCP_RESOURCE_TEMPLATES_TOOL, READ_MCP_RESOURCE_TOOL].map {
             ToolInfo(name: $0, description: "Resources", sourceInfo: SourceInfo(path: "builtin:mcp", source: "builtin", scope: "user"))
