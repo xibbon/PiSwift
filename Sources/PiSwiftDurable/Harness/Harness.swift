@@ -47,10 +47,12 @@ public final class Harness: Sendable {
             if !missing.isEmpty { throw HarnessOpenError.missingBuiltins(missing) }
             let hooks = HarnessSessionHooks(app: options.conversationCreated)
             let now = options.now ?? { options.clock.now() }
-            let session = try await Session.open(storage: storage, now: now, hooks: hooks, onReport: options.onReport ?? { _ in }, context: context)
+            let settings: @Sendable () -> Settings = { options.settings?.resolve() ?? resolveSettings() }
+            let session = try await Session.openWithDocumentRetention(storage: storage, now: now,
+                documentRetentionMs: { settings().documentRetentionMs },
+                hooks: hooks, onReport: options.onReport ?? { _ in }, context: context)
             let storage = session.storage
             let report: @Sendable (any Error) -> Void = options.onReport ?? { _ in }
-            let settings: @Sendable () -> Settings = { options.settings?.resolve() ?? resolveSettings() }
             let reference = Mutex(WeakHarness())
             let scheduler = TaskScheduler(session: session, registry: options.registry, models: options.models,
                 clock: options.clock, now: now, settings: settings,

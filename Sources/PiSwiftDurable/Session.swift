@@ -28,6 +28,25 @@ public final class Session: Sendable {
     internal let report: @Sendable (any Error) -> Void
     internal let now: @Sendable () -> Int64
     internal let hooks: any SessionHooks
+    private let documentRetentionMs: @Sendable () throws -> Double?
+    private let cacheNow: @Sendable () throws -> Int64
+    private let documentTimer: SessionDocumentTimer
+    // This build flag is used only for the full-suite retention checks.
+    #if DEBUG && PI_DURABLE_ZERO_DOCUMENT_RETENTION
+    internal static let defaultDocumentRetentionMs: Double = 0
+    #else
+    internal static let defaultDocumentRetentionMs: Double = 600_000
+    #endif
+    internal static func documentRetention(_ value: Double?) -> Double {
+        guard let value, value >= 0 else { return defaultDocumentRetentionMs }
+        return value
+    }
+    private struct DocumentSweep: Sendable {
+        let id: Int
+        let at: Double
+        var queued = false
+        var timer: Task<Void, Never>?
+    }
     internal let line = SessionLine()
     private struct CommitListener: Sendable {
         let id: Int
@@ -50,22 +69,60 @@ public final class Session: Sendable {
         var commits: [CommitListener] = []
         var closes: [CloseListener] = []
         var documents: [[UInt8]: LoadedDocument] = [:]
+        var idleDocuments = SessionDocumentIdleMap()
+        var attachedDocuments: [DocumentID: Int] = [:]
+        var documentSweep: DocumentSweep?
+        var nextDocumentSweep = 0
+        var sweepJobs = 0
+        var documentTimersUnavailable = false
     }
     private let state = Mutex(State())
     // Capture cached revisions atomically with all adoption, eviction, and installation.
     private let committedRead = Mutex(())
-    private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64, hooks: any SessionHooks, report: @escaping @Sendable (any Error) -> Void) {
+    deinit { state.withLock { $0.documentSweep?.timer?.cancel() } }
+    private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
+                 documentRetentionMs: @escaping @Sendable () throws -> Double?, documentTimer: SessionDocumentTimer,
+                 cacheNow: (@Sendable () throws -> Int64)?, hooks: any SessionHooks, report: @escaping @Sendable (any Error) -> Void) {
         let latch = SessionFailureLatch()
         self.failureLatch = latch
+        self.documentRetentionMs = documentRetentionMs; self.documentTimer = documentTimer
+        self.cacheNow = cacheNow ?? now
         self.storage = GuardedStorage(storage, latch: latch); self.now = now; self.hooks = hooks; self.report = report
     }
     /// Creates a session over the supplied storage without reading persisted records.
+    /// Unobserved documents leave the cache after ten minutes by default.
+    /// A retention of zero releases them after use; positive infinity keeps them.
+    /// Negative values and NaN use the default. Retention timers use real elapsed time.
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+                            documentRetentionMs: Double? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error) -> Void = { _ in },
                             context: ChordContext) async throws -> Session {
-        let session = Session(storage: storage, now: now, hooks: hooks, report: onReport)
+        try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
+            hooks: hooks, onReport: onReport, context: context)
+    }
+    /// Opens a Session with an internal timer hook for retention tests.
+    internal static func open(storage: any DurableStorage,
+                            now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+                            documentRetentionMs: Double?,
+                            documentTimer: SessionDocumentTimer,
+                            hooks: any SessionHooks = DefaultSessionHooks(),
+                            onReport: @escaping @Sendable (any Error) -> Void = { _ in },
+                            context: ChordContext) async throws -> Session {
+        try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
+            documentTimer: documentTimer, hooks: hooks, onReport: onReport, context: context)
+    }
+    internal static func openWithDocumentRetention(storage: any DurableStorage,
+                            now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+                            documentRetentionMs: @escaping @Sendable () throws -> Double?,
+                            documentTimer: SessionDocumentTimer = .continuous,
+                            cacheNow: (@Sendable () throws -> Int64)? = nil,
+                            hooks: any SessionHooks = DefaultSessionHooks(),
+                            onReport: @escaping @Sendable (any Error) -> Void = { _ in },
+                            context: ChordContext) async throws -> Session {
+        let session = Session(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
+            documentTimer: documentTimer, cacheNow: cacheNow, hooks: hooks, report: onReport)
         session.failureLatch.install { [weak session] error in
             guard let session else { return }
             _ = session.beginClose(context: .background)
@@ -93,7 +150,7 @@ public final class Session: Sendable {
                                 scope: TransactionScope = TransactionScope()) async throws -> T {
         let ticket = try admit()
         await ticket.wait()
-        defer { line.release() }
+        defer { sweepDocuments(); line.release() }
         try assertHealthy()
         try context.abortSignal?.throwIfAborted()
         let tx = Transaction(session: self, context: context, scope: scope)
@@ -111,6 +168,9 @@ public final class Session: Sendable {
         let documents: [DocumentCommitChange]
         do { documents = try committedRead.withLock { _ in try tx.adopt(seq) } }
         catch { fail(error); throw error }
+        for document in documents {
+            touchDocument(DocumentAddress(kind: document.record.kind, scope: document.record.scope, key: document.record.key))
+        }
         var changes: [CommitChange] = []
         for write in writes {
             switch write {
@@ -143,7 +203,7 @@ public final class Session: Sendable {
         let ticket = line.reserve()
         await ticket.wait()
         defer { line.release() }
-        state.withLock { $0.documents.removeAll() }
+        state.withLock { clearDocumentCache(&$0) }
     }
     /// The listener runs on the line after adoption. It must not block or call Session operations.
     public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
@@ -218,11 +278,13 @@ public final class Session: Sendable {
                 let ticket = self.line.reserve()
                 await ticket.wait()
                 defer { self.line.release(); self.finishClose() }
-                self.state.withLock { $0.commits.removeAll(); $0.internals.removeAll(); $0.documents.removeAll() }
+                self.state.withLock { $0.commits.removeAll(); $0.internals.removeAll(); self.clearDocumentCache(&$0); $0.attachedDocuments.removeAll() }
                 do { try await self.storage.close(context: cleanup) }
                 catch { self.fail(error); throw error }
             }
             state.closing = task
+            state.documentSweep?.timer?.cancel()
+            state.documentSweep = nil
             let listeners = state.closes; state.closes.removeAll()
             return (task, listeners)
         }
@@ -269,6 +331,7 @@ public final class Session: Sendable {
             return (cached, cached.tracker.revision, cached.tracker.value)
         }
         if let (loaded, revision, tree) = captured {
+            touchDocument(address)
             return try loaded.snapshot(Value.self, revision: revision, tree: tree)
         }
         return try await readOnLine {
@@ -312,15 +375,160 @@ public final class Session: Sendable {
         return (loaded.record, loaded.valueVersion, loaded.tracker.value.objectValue!)
     }
     internal func cachedDocument(_ address: DocumentAddress) -> LoadedDocument? {
-        state.withLock { $0.documents[Array(documentAddressID(address).utf8)] }
+        let loaded = state.withLock { $0.documents[Array(documentAddressID(address).utf8)] }
+        if loaded != nil { touchDocument(address) }
+        return loaded
     }
     internal func installDocument(_ document: LoadedDocument) {
         state.withLock { $0.documents[Array(documentAddressID(document.address).utf8)] = document }
+        touchDocument(document.address)
     }
     internal func evictDocument(_ address: DocumentAddress, recordID: DocumentID) {
         state.withLock {
             let key = Array(documentAddressID(address).utf8)
-            if $0.documents[key]?.record.id == recordID { $0.documents.removeValue(forKey: key) }
+            if $0.documents[key]?.record.id == recordID {
+                $0.documents.removeValue(forKey: key); $0.idleDocuments.remove(key)
+                if $0.idleDocuments.count == 0 { cancelDocumentTimer(&$0) }
+            }
+        }
+    }
+
+    /// Cache counts for retention tests. Observers are counted by record ID.
+    internal var documentCacheSizes: (cached: Int, idle: Int, attached: Int, sweeps: Int) {
+        state.withLock { ($0.documents.count, $0.idleDocuments.count, $0.attachedDocuments.count, $0.sweepJobs) }
+    }
+    private func retentionParameters() -> (now: Double, retention: Double, sleepNow: Int64) {
+        // Take the sleep clock first. A concurrent advance must not move a deadline later.
+        let sleepNow = documentTimer.now()
+        let time: Int64
+        do { time = try cacheNow() } catch { time = SystemDurableClock().now() }
+        let retention: Double
+        do { retention = Self.documentRetention(try documentRetentionMs()) }
+        catch { retention = Self.defaultDocumentRetentionMs }
+        return (Double(time), retention, sleepNow)
+    }
+    private func touchDocument(_ address: DocumentAddress, recordID: DocumentID? = nil) {
+        let (now, retention, sleepNow) = retentionParameters()
+        state.withLock { state in
+            let key = Array(documentAddressID(address).utf8)
+            guard state.closing == nil, let cached = state.documents[key],
+                  recordID == nil || cached.record.id == recordID,
+                  state.attachedDocuments[cached.record.id] == nil else { return }
+            if let since = state.idleDocuments.since(key), now - since < min(1000, retention / 10) { return }
+            state.idleDocuments.touch(key, at: now)
+            if state.documentSweep == nil || state.documentSweep!.at > now + retention {
+                scheduleDocumentSweep(&state, now: now, retention: retention, sleepNow: sleepNow)
+            }
+        }
+    }
+    private func cancelDocumentTimer(_ state: inout State) {
+        state.documentSweep?.timer?.cancel()
+        // A queued job keeps its place until it runs. A later touch reuses it.
+        if state.documentSweep?.queued != true { state.documentSweep = nil }
+    }
+    private func clearDocumentCache(_ state: inout State) {
+        state.documents.removeAll(); state.idleDocuments.removeAll()
+        cancelDocumentTimer(&state)
+    }
+    /// Called with the state lock. A timer or a queued line job is the only pending sweep.
+    private func scheduleDocumentSweep(_ state: inout State, now: Double, retention: Double, sleepNow: Int64) {
+        guard state.closing == nil else { return }
+        guard let oldest = state.idleDocuments.first, retention.isFinite else {
+            cancelDocumentTimer(&state)
+            return
+        }
+        let at = oldest.since + retention
+        if let sweep = state.documentSweep, sweep.queued || sweep.at <= at { return }
+        state.documentSweep?.timer?.cancel()
+        state.nextDocumentSweep += 1
+        let id = state.nextDocumentSweep
+        state.documentSweep = DocumentSweep(id: id, at: at)
+        let delay = at - now
+        if delay <= 0 {
+            queueDocumentSweep(&state, id: id)
+            return
+        }
+        if state.documentTimersUnavailable { state.documentSweep = nil; return }
+        // Bound each sleep and check the live setting again when it ends.
+        let milliseconds = Int64(min(delay.rounded(.up), 2_147_483_647))
+        let timer = documentTimer
+        let sum = sleepNow.addingReportingOverflow(milliseconds)
+        let deadline = sum.overflow ? Int64.max : sum.partialValue
+        state.documentSweep?.timer = Task { [weak self] in
+            do { try await timer.sleep(deadline) }
+            catch {
+                if !Task.isCancelled { self?.documentTimerFailed(id: id) }
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.documentTimerFired(id: id)
+        }
+    }
+    private func documentTimerFailed(id: Int) {
+        state.withLock { state in
+            guard state.documentSweep?.id == id else { return }
+            state.documentTimersUnavailable = true
+            state.documentSweep = nil
+        }
+    }
+    private func documentTimerFired(id: Int) {
+        state.withLock { state in
+            guard state.closing == nil, state.documentSweep?.id == id else { return }
+            queueDocumentSweep(&state, id: id)
+        }
+    }
+    private func queueDocumentSweep(_ state: inout State, id: Int) {
+        guard state.documentSweep?.queued == false else { return }
+        state.documentSweep?.queued = true
+        state.documentSweep?.timer = nil
+        state.sweepJobs += 1
+        let line = self.line
+        let ticket = line.reserve()
+        Task { [weak self] in
+            await ticket.wait()
+            defer { line.release() }
+            guard let self else { return }
+            self.state.withLock { state in
+                if state.documentSweep?.id == id { state.documentSweep = nil }
+            }
+            self.sweepDocuments()
+        }
+    }
+    /// Runs on the Session line, after settlement and publication have finished.
+    private func sweepDocuments() {
+        let (now, retention, sleepNow) = retentionParameters()
+        state.withLock { state in
+            guard state.closing == nil else { return }
+            let expired = now - retention
+            while let oldest = state.idleDocuments.first, oldest.since <= expired {
+                state.documents.removeValue(forKey: oldest.key)
+                state.idleDocuments.remove(oldest.key)
+            }
+            scheduleDocumentSweep(&state, now: now, retention: retention, sleepNow: sleepNow)
+        }
+    }
+    internal func pinDocument(_ address: DocumentAddress, recordID: DocumentID) throws -> SessionSubscription {
+        try state.withLock { state in
+            try failureLatch.check()
+            if state.closing != nil { throw SessionError.closed }
+            state.attachedDocuments[recordID, default: 0] += 1
+            state.idleDocuments.remove(Array(documentAddressID(address).utf8))
+            if state.idleDocuments.count == 0 { cancelDocumentTimer(&state) }
+        }
+        let released = Mutex(false)
+        return SessionSubscription { [weak self] in
+            let first = released.withLock { released in
+                if released { return false }
+                released = true; return true
+            }
+            guard first, let self else { return }
+            let last = self.state.withLock { state in
+                guard let count = state.attachedDocuments[recordID] else { return false }
+                if count > 1 { state.attachedDocuments[recordID] = count - 1; return false }
+                state.attachedDocuments.removeValue(forKey: recordID)
+                return true
+            }
+            if last { self.touchDocument(address, recordID: recordID) }
         }
     }
 }

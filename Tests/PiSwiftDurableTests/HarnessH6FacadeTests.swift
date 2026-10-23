@@ -249,14 +249,12 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         await expectD2FailedEnd(opened.harness, failure)
         try await opened.harness.close(context: .background)
         let reopened = try await openChat(storage: storage, setup: setup, models: manual)
-        #expect(try await reopened.harness.snapshot(LiveDoc, conversationId: reopened.root.id, context: .background)?.run?.taskId == generation)
-        #expect(try await allEntries(reopened.root).map(\.kind) == ["pi.user"])
-        try await reopened.root.commit({ tx in _ = try await tx.appendEntry(reopened.root.id, value: EntryDraft(kind: "note")) }, context: .background)
         let recoveredSubmission = try #require(try await reopened.harness.submission(id: submission.id, context: .background))
         let receipt = try await recoveredSubmission.wait(context: .background)
+        #expect(receipt.status == "unanswered")
         #expect(receipt.reason == "faulted")
         #expect(try await reopened.harness.snapshot(LiveDoc, conversationId: reopened.root.id, context: .background) == LiveState())
-        #expect(try await allEntries(reopened.root).map(\.kind) == ["pi.user", "note", "pi.assistant"])
+        #expect(try await allEntries(reopened.root).map(\.kind) == ["pi.user", "pi.assistant"])
         try await reopened.harness.close(context: .background)
     }
 

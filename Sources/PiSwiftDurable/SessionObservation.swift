@@ -68,7 +68,7 @@ extension Session {
             let subscriptions = ObservationSubscriptions()
             let watch = CommittedWatch<Value?>(value: value, replacement: { _ in revision.tree }, detach: { subscriptions.release() }, report: report)
             do {
-                try attachObservation(recordID: loaded.record.id, revision: revision, subscriptions: subscriptions,
+                try attachObservation(address: address, recordID: loaded.record.id, revision: revision, subscriptions: subscriptions,
                     advance: { change, ops, context in
                         do {
                             let value = try change.value.map { try JSONValue.object($0).decode(Value.self) }
@@ -107,7 +107,7 @@ extension Session {
             let subscriptions = ObservationSubscriptions()
             let source = CommittedStateSource<Value?>(value: value, release: { subscriptions.release() })
             do {
-                try attachObservation(recordID: loaded.record.id, revision: revision, subscriptions: subscriptions,
+                try attachObservation(address: address, recordID: loaded.record.id, revision: revision, subscriptions: subscriptions,
                     advance: { change, ops, context in
                         do {
                             let value = try change.value.map { try JSONValue.object($0).decode(Value.self) }
@@ -127,15 +127,18 @@ extension Session {
     }
 
     private func attachObservation(
-        recordID: DocumentID, revision: ObservationRevision, subscriptions: ObservationSubscriptions,
+        address: DocumentAddress, recordID: DocumentID, revision: ObservationRevision, subscriptions: ObservationSubscriptions,
         advance: @escaping @Sendable (DocumentCommitChange, [Delta.Op], ChordContext) -> Void,
         close: @escaping @Sendable () -> Void
     ) throws {
+        let pin = try pinDocument(address, recordID: recordID)
+        subscriptions.add(pin)
         subscriptions.add(try observeCommits { publication, context in
             for change in publication.changes {
                 guard case .document(let document) = change,
                       document.source == nil, document.record.id == recordID else { continue }
                 let ops = revision.operations(document)
+                if document.value == nil { pin.cancel() }
                 if !ops.isEmpty { advance(document, ops, context.withoutAbortSignal()) }
             }
         })
