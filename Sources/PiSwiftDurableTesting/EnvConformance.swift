@@ -26,9 +26,16 @@ public struct EnvConformanceCapabilities: Sendable {
     public var symlinks: Bool
     /// Include file watch checks.
     public var watch: Bool
-    /// Selects the supported checks. All capabilities are enabled by default.
-    public init(exec: Bool = true, symlinks: Bool = true, watch: Bool = true) {
+    /// Include tree listing checks. Disabled by default.
+    public var listFiles: Bool
+    /// Include gitignore assertions in the listing checks. Requires listFiles; enabled by default.
+    /// A test fake can disable this flag and still check `.git` and name exclusions.
+    public var listFilesGitignore: Bool
+    /// Selects the supported checks. Listing is disabled by default; other checks are enabled.
+    public init(exec: Bool = true, symlinks: Bool = true, watch: Bool = true,
+                listFiles: Bool = false, listFilesGitignore: Bool = true) {
         self.exec = exec; self.symlinks = symlinks; self.watch = watch
+        self.listFiles = listFiles; self.listFilesGitignore = listFilesGitignore
     }
 }
 
@@ -88,6 +95,19 @@ public func envConformanceCases(
             ("windowed exec keeps the exact tail and counts what it skips", nil, EnvChecks.case21),
             ("argv exec distinguishes timeout from abort", nil, EnvChecks.case22),
         ]
+    }
+    if capabilities.listFiles {
+        checks += [
+            ("listFiles lists files and directories depth first in name order", nil, { @Sendable in try await $0.case25() }),
+            ("listFiles skips what git ignores in work trees, .git, and excluded names", nil, { @Sendable check in
+                try await check.case26(gitignore: capabilities.listFilesGitignore)
+            }),
+            ("listFiles stops at its bounds and reports truncated", nil, { @Sendable in try await $0.case27() }),
+            ("listFiles fails on missing directories, files, and aborts", nil, { @Sendable in try await $0.case28() }),
+        ]
+        if capabilities.symlinks {
+            checks.append(("listFiles lists symbolic links without following them", nil, { @Sendable in try await $0.case29() }))
+        }
     }
     if capabilities.symlinks {
         checks.append(("binary reader follows symlinks unless noFollow refuses the final one", nil, EnvChecks.case23))
@@ -154,5 +174,100 @@ internal struct EnvChecks: Sendable {
         guard let makeSymlink else { throw EnvConformanceFailure("The symlink capability requires makeSymlink") }
         let absolute = try await env.absolutePath(path, context: Self.context).get()
         try await makeSymlink(target, absolute, Self.context)
+    }
+}
+
+// Upstream durable/src/testing/env-conformance.ts:484-588 (v1.3.0).
+internal extension EnvChecks {
+    func listed(_ path: String = ".", options: ListFilesOptions? = nil) async throws -> FileListing {
+        try await env.listFiles(path, options: options, context: Self.context).get()
+    }
+    func listedPaths(_ path: String = ".", options: ListFilesOptions? = nil) async throws -> [String] {
+        try await listed(path, options: options).entries.map { entry in
+            let kind = switch entry.kind { case .file: "f"; case .directory: "d"; case .symlink: "l" }
+            return "\(kind) \(entry.path)"
+        }
+    }
+    func writeListingFiles(_ paths: [String]) async throws {
+        for path in paths {
+            let parts = path.split(separator: "/").dropLast().map(String.init)
+            if !parts.isEmpty {
+                try await env.createDir(parts.joined(separator: "/"), options: .init(recursive: true), context: Self.context).get()
+            }
+            try await write(path, "")
+        }
+    }
+    func case25() async throws {
+        try await writeListingFiles(["b.txt", "a/z.txt", "a/b/c.txt", ".hidden/x", "A.txt"])
+        try await directory("empty")
+        try EnvAssertions.equal(try await listedPaths(), [
+            "d .hidden", "f .hidden/x", "f A.txt", "d a", "d a/b", "f a/b/c.txt", "f a/z.txt", "f b.txt", "d empty",
+        ])
+        try EnvAssertions.equal(try await listed().truncated, false)
+        try EnvAssertions.equal(try await listedPaths(options: .init(hidden: false)), [
+            "f A.txt", "d a", "d a/b", "f a/b/c.txt", "f a/z.txt", "f b.txt", "d empty",
+        ])
+        let expected = ["d b", "f b/c.txt", "f z.txt"]
+        try EnvAssertions.equal(try await listedPaths("a"), expected)
+        try EnvAssertions.equal(try await listed("a").truncated, false)
+        let absolute = try await env.absolutePath("a", context: Self.context).get()
+        try EnvAssertions.equal(try await listedPaths(absolute), expected)
+        try EnvAssertions.equal(try await listed(absolute).truncated, false)
+        try EnvAssertions.equal(try await listed("empty"), FileListing(entries: [], truncated: false))
+    }
+    func case26(gitignore: Bool) async throws {
+        try await writeListingFiles(["keep.txt", "out/x.js", "sub/keep.txt", "sub/drop.log", "node_modules/m/i.js"])
+        try await write(".gitignore", "out/\n*.log\n")
+        try await write("sub/.gitignore", "!keep.txt\n")
+        try EnvAssertions.ok(try await listedPaths().contains("f out/x.js"))
+        try await writeListingFiles([".git/HEAD", ".git/info/exclude"])
+        try await write(".git/HEAD", "ref: refs/heads/main\n")
+        try await write(".git/info/exclude", "keep.txt\n")
+        if gitignore {
+            try EnvAssertions.equal(try await listedPaths(options: .init(exclude: ["node_modules"])), [
+                "f .gitignore", "d sub", "f sub/.gitignore", "f sub/keep.txt",
+            ])
+            try EnvAssertions.equal(try await listedPaths("sub"), ["f .gitignore", "f keep.txt"])
+        }
+        try await writeListingFiles(["sub/node_modules/x", "sub/.git/config"])
+        let all = try await listedPaths(options: .init(gitignore: false))
+        try EnvAssertions.ok(all.contains("f out/x.js") && all.contains("f node_modules/m/i.js") && all.contains("f keep.txt"))
+        try EnvAssertions.ok(!all.contains { entry in
+            entry == "d .git" || entry.contains(".git/") || entry.hasSuffix("/.git")
+        })
+        let excluded = try await listedPaths(options: .init(gitignore: false, exclude: ["node_modules"]))
+        try EnvAssertions.equal(excluded, [
+            "f .gitignore", "f keep.txt", "d out", "f out/x.js", "d sub", "f sub/.gitignore", "f sub/drop.log", "f sub/keep.txt",
+        ])
+        try await env.remove(".git", options: .init(recursive: true), context: Self.context).get()
+        try await write(".git", "gitdir: elsewhere\n")
+        try EnvAssertions.ok(!(try await listedPaths(options: .init(gitignore: false))).contains("f .git"))
+    }
+    func case27() async throws {
+        try await writeListingFiles(["a", "b", "c"])
+        let firstTwo = [FileListEntry(path: "a", kind: .file), FileListEntry(path: "b", kind: .file)]
+        try EnvAssertions.equal(try await listed(options: .init(maxEntries: 2)), FileListing(entries: firstTwo, truncated: true))
+        try EnvAssertions.equal(try await listed(options: .init(maxEntries: 3)),
+                                FileListing(entries: firstTwo + [.init(path: "c", kind: .file)], truncated: false))
+        try EnvAssertions.equal(try await listed(options: .init(maxBytes: 6)), FileListing(entries: firstTwo, truncated: true))
+        try EnvAssertions.equal(try await listed(options: .init(maxEntries: 0)), FileListing(entries: [], truncated: true))
+        try EnvAssertions.equal(try await listed(options: .init(maxBytes: 0)), FileListing(entries: [], truncated: true))
+        try EnvAssertions.equal(Self.code(await env.listFiles(".", options: .init(maxEntries: -1), context: Self.context)), .invalid)
+        try EnvAssertions.equal(Self.code(await env.listFiles(".", options: .init(timeoutMs: 1.5), context: Self.context)), .invalid)
+    }
+    func case28() async throws {
+        try await write("file.txt", "")
+        try EnvAssertions.equal(Self.code(await env.listFiles("missing", options: nil, context: Self.context)), .notFound)
+        try EnvAssertions.equal(Self.code(await env.listFiles("file.txt", options: nil, context: Self.context)), .notDirectory)
+        try EnvAssertions.equal(Self.code(await env.listFiles(".", options: nil, context: Self.abortedContext())), .aborted)
+    }
+    func case29() async throws {
+        try await writeListingFiles(["dir/inner.txt"])
+        try await link("dir", "link")
+        try await link("missing", "dangling")
+        try await link("..", "dir/loop")
+        try EnvAssertions.equal(try await listedPaths(), ["l dangling", "d dir", "f dir/inner.txt", "l dir/loop", "l link"])
+        try EnvAssertions.equal(try await listedPaths("link"), ["f inner.txt", "l loop"])
+        try EnvAssertions.equal(try await listed("link").truncated, false)
     }
 }

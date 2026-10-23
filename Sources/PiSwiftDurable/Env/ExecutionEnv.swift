@@ -293,6 +293,11 @@ public protocol FileSystem: Sendable {
     func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError>
     /// Returns the entries in a directory.
     func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError>
+    /// Lists files, directories and symbolic links below a directory, at any depth.
+    /// Do not follow child symbolic links. Skip unreadable entries and other file kinds.
+    /// A missing root fails with notFound; a file root fails with notDirectory; cancellation fails with aborted.
+    /// The root can be a symbolic link to a directory. The default returns notSupported.
+    func listFiles(_ path: String, options: ListFilesOptions?, context: ChordContext) async -> Result<FileListing, FileError>
     /// Opens a paged directory reader.
     func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError>
     /// Starts a watch and delivers path changes, overflow, or errors.
