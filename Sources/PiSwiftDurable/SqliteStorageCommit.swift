@@ -13,14 +13,14 @@ extension SqliteStorage {
         let actions = try prepareDocumentActions(writes)
         let candidate = writes.compactMap(sqliteWriteIdentity).reduce(nextId) { max($0, $1.id + 1) }
         let seq = try db.transaction { executor in
-            guard let metadata = try executor.get("SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1"),
+            guard let metadata = try executor.get("SELECT next_id, next_seq FROM \(schema.tables.durableMetadata) WHERE singleton = 1"),
                   let persistedId = Int64(try metadata.sqliteText("next_id")) else { throw SqliteStorageFailure.metadataMissing }
             let seq = try Seq(metadata.sqliteInteger("next_seq"))
             try checkGlobalIds(executor, writes: writes)
             try checkDocumentActions(executor, actions: actions)
             for write in writes { try applyTableWrite(executor, write: write, seq: seq) }
             try applyDocumentActions(executor, actions: actions, seq: seq)
-            try executor.run("UPDATE durable_metadata SET next_id = ?, next_seq = ? WHERE singleton = 1", [.text(String(max(persistedId, candidate))), .integer(seq.rawValue + 1)])
+            try executor.run("UPDATE \(schema.tables.durableMetadata) SET next_id = ?, next_seq = ? WHERE singleton = 1", [.text(String(max(persistedId, candidate))), .integer(seq.rawValue + 1)])
             return seq
         }
         nextId = max(nextId, candidate)
@@ -31,7 +31,7 @@ extension SqliteStorage {
         for write in writes {
             guard let identity = sqliteWriteIdentity(write) else { continue }
             let (id, table) = identity
-            let existing = try executor.get("SELECT record_type FROM record_ids WHERE id = ?", [.integer(id)]).map { try $0.sqliteText("record_type") }
+            let existing = try executor.get("SELECT record_type FROM \(schema.tables.recordIds) WHERE id = ?", [.integer(id)]).map { try $0.sqliteText("record_type") }
             let earlier = claimed[id]
             if table == "conversation" || table == "entry" || table == "document" {
                 if let existing { throw DurableStorageError.idAlreadyOwned(id: id, recordType: existing) }
@@ -79,12 +79,12 @@ extension SqliteStorage {
         var liveCounts: [MemoryAddressKey: Int] = [:]
         for (id, action) in actions {
             if let source = action.copy, changed.contains(source.id) { throw DocumentCopyFailure(message: "Document copy \(id.rawValue) source is changed in the copy batch", cause: DurableStorageError.forkSourceChangedInCopyBatch(source.id)) }
-            let existing: DocumentRecord? = try executor.get("SELECT record FROM documents WHERE id = ?", [.integer(id.rawValue)]).map { try decodeRecord($0) }
+            let existing: DocumentRecord? = try executor.get("SELECT record FROM \(schema.tables.documents) WHERE id = ?", [.integer(id.rawValue)]).map { try decodeRecord($0) }
             if action.create == nil, existing == nil { throw DurableStorageError.unknownDocument(id) }
             if action.create != nil, existing != nil { throw DurableStorageError.documentAlreadyExists(id) }
             if existing?.retiredAt != nil { throw DurableStorageError.documentRetired(id) }
             if case .delta(let version, _, _) = action.content {
-                guard let previous = try executor.get("SELECT version FROM document_revisions WHERE document_id = ? ORDER BY seq DESC LIMIT 1", [.integer(id.rawValue)]) else { throw DurableStorageError.documentDeltaHasNoBase(id) }
+                guard let previous = try executor.get("SELECT version FROM \(schema.tables.documentRevisions) WHERE document_id = ? ORDER BY seq DESC LIMIT 1", [.integer(id.rawValue)]) else { throw DurableStorageError.documentDeltaHasNoBase(id) }
                 guard try previous.sqliteInteger("version") == Int64(version) else { throw DurableStorageError.documentVersionTransitionRequiresBase(id) }
             }
             let kind = action.create?.kind ?? existing!.kind
@@ -94,7 +94,7 @@ extension SqliteStorage {
             var live: Int
             if let count = liveCounts[key] { live = count }
             else {
-                let current = try executor.get("SELECT id FROM documents WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ? AND retired_at IS NULL LIMIT 1", addressValues(kind: kind, scope: scope, key: keyValue))
+                let current = try executor.get("SELECT id FROM \(schema.tables.documents) WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ? AND retired_at IS NULL LIMIT 1", addressValues(kind: kind, scope: scope, key: keyValue))
                 live = current == nil ? 0 : 1
             }
             if action.retire, existing != nil { live -= 1 }
@@ -104,20 +104,20 @@ extension SqliteStorage {
         if liveCounts.values.contains(where: { $0 > 1 }) { throw DurableStorageError.documentAddressOccupied }
     }
     func claimId(_ executor: any SqliteExecutor, id: Int64, table: String) throws {
-        try executor.run("INSERT OR IGNORE INTO record_ids (id, record_type) VALUES (?, ?)", [.integer(id), .text(table)])
+        try executor.run("INSERT OR IGNORE INTO \(schema.tables.recordIds) (id, record_type) VALUES (?, ?)", [.integer(id), .text(table)])
     }
     func applyTableWrite(_ executor: any SqliteExecutor, write: StorageWrite, seq: Seq) throws {
         switch write {
         case .conversation(let value, _):
             try claimId(executor, id: value.id.rawValue, table: "conversation")
-            try executor.run("INSERT INTO conversations (id, owner_conversation_id, owner_task_id, record) VALUES (?, ?, ?, ?)", [.integer(value.id.rawValue), value.owner.map { .integer($0.conversationId.rawValue) } ?? .null, value.owner.map { .integer($0.taskId.rawValue) } ?? .null, try sqliteJSON(value)])
+            try executor.run("INSERT INTO \(schema.tables.conversations) (id, owner_conversation_id, owner_task_id, record) VALUES (?, ?, ?, ?)", [.integer(value.id.rawValue), value.owner.map { .integer($0.conversationId.rawValue) } ?? .null, value.owner.map { .integer($0.taskId.rawValue) } ?? .null, try sqliteJSON(value)])
         case .entry(let value, _):
             try claimId(executor, id: value.id.rawValue, table: "entry")
-            try executor.run("INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, ?, ?, ?, ?)", [.integer(value.id.rawValue), .integer(value.conversationId.rawValue), value.head.map { .integer($0.rawValue) } ?? .null, .integer(seq.rawValue), try sqliteJSON(value)])
+            try executor.run("INSERT INTO \(schema.tables.entries) (id, conversation_id, head, commit_seq, record) VALUES (?, ?, ?, ?, ?)", [.integer(value.id.rawValue), .integer(value.conversationId.rawValue), value.head.map { .integer($0.rawValue) } ?? .null, .integer(seq.rawValue), try sqliteJSON(value)])
         case .task(let value, _):
             try claimId(executor, id: value.id.rawValue, table: "task")
             try executor.run("""
-                INSERT INTO tasks (id, conversation_id, kind, status, abort_requested, background, record)
+                INSERT INTO \(schema.tables.tasks) (id, conversation_id, kind, status, abort_requested, background, record)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET conversation_id = excluded.conversation_id, kind = excluded.kind,
                 status = excluded.status, abort_requested = excluded.abort_requested,
@@ -126,7 +126,7 @@ extension SqliteStorage {
         case .submission(let value, _):
             try claimId(executor, id: value.id.rawValue, table: "submission")
             try executor.run("""
-                INSERT INTO submissions (id, conversation_id, request_id, status, record) VALUES (?, ?, ?, ?, ?)
+                INSERT INTO \(schema.tables.submissions) (id, conversation_id, request_id, status, record) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET conversation_id = excluded.conversation_id,
                 request_id = excluded.request_id, status = excluded.status, record = excluded.record
                 """, [.integer(value.id.rawValue), .integer(value.conversationId.rawValue), try value.requestId.map(indexed) ?? .null, .text(value.status), try sqliteJSON(value)])
@@ -153,12 +153,12 @@ extension SqliteStorage {
                 let parts = try addressValues(kind: record.kind, scope: record.scope, key: record.key)
                 try claimId(executor, id: id.rawValue, table: "document")
                 try executor.run("""
-                    INSERT INTO documents
+                    INSERT INTO \(schema.tables.documents)
                     (id, kind, family, key_value, scope_kind, owner_id, created_at, retired_at, record)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, [.integer(id.rawValue), parts[0], parts[3], parts[4], parts[1], parts[2], .integer(seq.rawValue), action.retire ? .integer(seq.rawValue) : .null, try sqliteJSON(record)])
             } else {
-                guard let row = try executor.get("SELECT record FROM documents WHERE id = ?", [.integer(id.rawValue)]) else { throw DurableStorageError.unknownDocument(id) }
+                guard let row = try executor.get("SELECT record FROM \(schema.tables.documents) WHERE id = ?", [.integer(id.rawValue)]) else { throw DurableStorageError.unknownDocument(id) }
                 record = try decodeRecord(row)
             }
             if let content {
@@ -167,17 +167,17 @@ extension SqliteStorage {
                 switch content {
                 case .base(_, let value, _):
                     kind = "base"; encoded = try sqliteJSON(value)
-                    if record.memoryCurrentOnly { try executor.run("DELETE FROM document_revisions WHERE document_id = ?", [.integer(id.rawValue)]) }
+                    if record.memoryCurrentOnly { try executor.run("DELETE FROM \(schema.tables.documentRevisions) WHERE document_id = ?", [.integer(id.rawValue)]) }
                 case .delta(_, let ops, _): kind = "delta"; encoded = try sqliteJSON(ops)
                 }
-                try executor.run("INSERT INTO document_revisions (document_id, seq, kind, version, content) VALUES (?, ?, ?, ?, ?)", [.integer(id.rawValue), .integer(seq.rawValue), .text(kind), .integer(Int64(content.memoryVersion)), encoded])
+                try executor.run("INSERT INTO \(schema.tables.documentRevisions) (document_id, seq, kind, version, content) VALUES (?, ?, ?, ?, ?)", [.integer(id.rawValue), .integer(seq.rawValue), .text(kind), .integer(Int64(content.memoryVersion)), encoded])
             }
             if action.retire {
                 if action.create == nil {
                     record = DocumentRecord(id: record.id, kind: record.kind, scope: record.scope, createdAt: record.createdAt, key: record.key, retiredAt: seq, history: record.history, fork: record.fork, extensionFields: record.extensionFields)
-                    try executor.run("UPDATE documents SET retired_at = ?, record = ? WHERE id = ?", [.integer(seq.rawValue), try sqliteJSON(record), .integer(id.rawValue)])
+                    try executor.run("UPDATE \(schema.tables.documents) SET retired_at = ?, record = ? WHERE id = ?", [.integer(seq.rawValue), try sqliteJSON(record), .integer(id.rawValue)])
                 }
-                if record.memoryCurrentOnly { try executor.run("DELETE FROM document_revisions WHERE document_id = ?", [.integer(id.rawValue)]) }
+                if record.memoryCurrentOnly { try executor.run("DELETE FROM \(schema.tables.documentRevisions) WHERE document_id = ?", [.integer(id.rawValue)]) }
             }
         }
     }

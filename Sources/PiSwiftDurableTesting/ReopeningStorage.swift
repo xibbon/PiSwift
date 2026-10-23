@@ -6,12 +6,14 @@ import PiSwiftDurable
 public actor ReopeningStorage: DurableStorage {
     private var current: SqliteStorage
     private let path: String
+    private let prefix: String?
     private var closed = false
 
     /// Wraps SQLite storage and reopens the same path after every commit.
-    public init(storage: SqliteStorage, path: String) {
+    public init(storage: SqliteStorage, path: String, prefix: String? = nil) {
         current = storage
         self.path = path
+        self.prefix = prefix
     }
 
     /// Atomically stores the write batch and returns its increasing commit sequence.
@@ -21,7 +23,7 @@ public actor ReopeningStorage: DurableStorage {
         do { result = .success(try await current.commit(writes, context: context)) }
         catch { result = .failure(error) }
         try await current.close(context: .background)
-        current = try await SqliteStorage.open(path: path)
+        current = try await SqliteStorage.open(path: path, prefix: prefix)
         return try result.get()
     }
 

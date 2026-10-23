@@ -4,36 +4,38 @@ internal struct SqliteMigration: Sendable {
     let statements: [String]
 }
 
-// These SQL strings match migrations.ts at v1.1.0, including its names and checks.
+// These SQL strings match the historical names and checks in upstream migrations.ts.
 // next_id is TEXT because node:sqlite rejects INTEGER results above its safe range.
-internal let sqliteMigrations: [SqliteMigration] = [
-    SqliteMigration(version: 1, statements: [
+internal let sqliteMigrations = makeSqliteMigrations(for: .default)
+
+internal func makeSqliteMigrations(for schema: SqliteSchema) -> [SqliteMigration] {
+    [SqliteMigration(version: 1, statements: [
 #"""
-CREATE TABLE durable_metadata (
+CREATE TABLE \#(schema.tables.durableMetadata) (
 		singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 		next_id TEXT NOT NULL,
 		next_seq INTEGER NOT NULL
 	) STRICT
 """#,
-        #"INSERT INTO durable_metadata (singleton, next_id, next_seq) VALUES (1, '2', 1)"#,
+        #"INSERT INTO \#(schema.tables.durableMetadata) (singleton, next_id, next_seq) VALUES (1, '2', 1)"#,
 #"""
-CREATE TABLE record_ids (
+CREATE TABLE \#(schema.tables.recordIds) (
 		id INTEGER PRIMARY KEY,
 		record_type TEXT NOT NULL CHECK (record_type IN ('conversation', 'entry', 'task', 'submission', 'document'))
 	) STRICT
 """#,
 #"""
-CREATE TABLE conversations (
+CREATE TABLE \#(schema.tables.conversations) (
 		id INTEGER PRIMARY KEY,
 		owner_conversation_id INTEGER,
 		owner_task_id INTEGER,
 		record TEXT NOT NULL CHECK (json_valid(record))
 	) STRICT
 """#,
-        #"CREATE INDEX conversations_by_owner_conversation ON conversations (owner_conversation_id, id)"#,
-        #"CREATE INDEX conversations_by_owner_task ON conversations (owner_task_id, id)"#,
+        #"CREATE INDEX \#(schema.indexes.conversationsByOwnerConversation) ON \#(schema.tables.conversations) (owner_conversation_id, id)"#,
+        #"CREATE INDEX \#(schema.indexes.conversationsByOwnerTask) ON \#(schema.tables.conversations) (owner_task_id, id)"#,
 #"""
-CREATE TABLE entries (
+CREATE TABLE \#(schema.tables.entries) (
 		id INTEGER PRIMARY KEY,
 		conversation_id INTEGER NOT NULL,
 		head INTEGER,
@@ -41,10 +43,10 @@ CREATE TABLE entries (
 		record TEXT NOT NULL CHECK (json_valid(record))
 	) STRICT
 """#,
-        #"CREATE INDEX entries_by_conversation ON entries (conversation_id, id DESC)"#,
-        #"CREATE INDEX entry_heads_by_conversation ON entries (conversation_id, id DESC) WHERE head IS NOT NULL"#,
+        #"CREATE INDEX \#(schema.indexes.entriesByConversation) ON \#(schema.tables.entries) (conversation_id, id DESC)"#,
+        #"CREATE INDEX \#(schema.indexes.entryHeadsByConversation) ON \#(schema.tables.entries) (conversation_id, id DESC) WHERE head IS NOT NULL"#,
 #"""
-CREATE TABLE tasks (
+CREATE TABLE \#(schema.tables.tasks) (
 		id INTEGER PRIMARY KEY,
 		conversation_id INTEGER NOT NULL,
 		kind TEXT NOT NULL,
@@ -54,13 +56,13 @@ CREATE TABLE tasks (
 		record TEXT NOT NULL CHECK (json_valid(record))
 	) STRICT
 """#,
-        #"CREATE INDEX tasks_by_status ON tasks (status, id)"#,
-        #"CREATE INDEX tasks_by_conversation ON tasks (conversation_id, id)"#,
-        #"CREATE INDEX tasks_by_kind ON tasks (kind, id)"#,
-        #"CREATE INDEX tasks_by_abort_requested ON tasks (abort_requested, id)"#,
-        #"CREATE INDEX tasks_by_background ON tasks (background, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByStatus) ON \#(schema.tables.tasks) (status, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByConversation) ON \#(schema.tables.tasks) (conversation_id, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByKind) ON \#(schema.tables.tasks) (kind, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByAbortRequested) ON \#(schema.tables.tasks) (abort_requested, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByBackground) ON \#(schema.tables.tasks) (background, id)"#,
 #"""
-CREATE TABLE submissions (
+CREATE TABLE \#(schema.tables.submissions) (
 		id INTEGER PRIMARY KEY,
 		conversation_id INTEGER NOT NULL,
 		request_id TEXT,
@@ -68,11 +70,11 @@ CREATE TABLE submissions (
 		record TEXT NOT NULL CHECK (json_valid(record))
 	) STRICT
 """#,
-        #"CREATE INDEX submissions_by_request ON submissions (conversation_id, request_id)"#,
-        #"CREATE INDEX submissions_by_conversation ON submissions (conversation_id, id)"#,
-        #"CREATE INDEX submissions_by_status ON submissions (status, id)"#,
+        #"CREATE INDEX \#(schema.indexes.submissionsByRequest) ON \#(schema.tables.submissions) (conversation_id, request_id)"#,
+        #"CREATE INDEX \#(schema.indexes.submissionsByConversation) ON \#(schema.tables.submissions) (conversation_id, id)"#,
+        #"CREATE INDEX \#(schema.indexes.submissionsByStatus) ON \#(schema.tables.submissions) (status, id)"#,
 #"""
-CREATE TABLE documents (
+CREATE TABLE \#(schema.tables.documents) (
 		id INTEGER PRIMARY KEY,
 		kind TEXT NOT NULL,
 		family INTEGER NOT NULL CHECK (family IN (0, 1)),
@@ -85,13 +87,13 @@ CREATE TABLE documents (
 	) STRICT
 """#,
 #"""
-CREATE INDEX documents_by_address
-		ON documents (kind, scope_kind, owner_id, family, key_value, created_at DESC, retired_at)
+CREATE INDEX \#(schema.indexes.documentsByAddress)
+		ON \#(schema.tables.documents) (kind, scope_kind, owner_id, family, key_value, created_at DESC, retired_at)
 """#,
-        #"CREATE INDEX documents_by_scope ON documents (scope_kind, owner_id, id)"#,
-        #"CREATE INDEX documents_by_scope_kind ON documents (scope_kind, owner_id, kind, id)"#,
+        #"CREATE INDEX \#(schema.indexes.documentsByScope) ON \#(schema.tables.documents) (scope_kind, owner_id, id)"#,
+        #"CREATE INDEX \#(schema.indexes.documentsByScopeKind) ON \#(schema.tables.documents) (scope_kind, owner_id, kind, id)"#,
 #"""
-CREATE TABLE document_revisions (
+CREATE TABLE \#(schema.tables.documentRevisions) (
 		document_id INTEGER NOT NULL,
 		seq INTEGER NOT NULL,
 		kind TEXT NOT NULL CHECK (kind IN ('base', 'delta')),
@@ -100,31 +102,33 @@ CREATE TABLE document_revisions (
 		PRIMARY KEY (document_id, seq)
 	) STRICT
 """#,
-        #"CREATE INDEX document_revisions_by_kind ON document_revisions (document_id, kind, seq DESC)"#,
-    ]),
-]
+        #"CREATE INDEX \#(schema.indexes.documentRevisionsByKind) ON \#(schema.tables.documentRevisions) (document_id, kind, seq DESC)"#,
+    ])]
+}
 
 internal let currentSqliteSchemaVersion = sqliteMigrations.last?.version ?? 0
 
 /// Apply pending schema changes in one transaction.
 internal func applySqliteMigrations(
     _ database: any SqliteExecutor,
-    migrations: [SqliteMigration] = sqliteMigrations
+    schema: SqliteSchema = .default,
+    migrations suppliedMigrations: [SqliteMigration]? = nil
 ) throws {
+    let migrations = suppliedMigrations ?? makeSqliteMigrations(for: schema)
     for (index, migration) in migrations.enumerated() {
         guard migration.version == index + 1 else { throw SqliteFacadeError.invalidMigrations }
     }
     try database.transaction { transaction in
         try transaction.exec(
 #"""
-CREATE TABLE IF NOT EXISTS durable_schema (
+CREATE TABLE IF NOT EXISTS \#(schema.tables.durableSchema) (
 			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 			version INTEGER NOT NULL CHECK (version >= 0)
 		) STRICT
 """#
         )
-        try transaction.run("INSERT OR IGNORE INTO durable_schema (singleton, version) VALUES (1, 0)")
-        guard let row = try transaction.get("SELECT version FROM durable_schema WHERE singleton = 1"),
+        try transaction.run("INSERT OR IGNORE INTO \(schema.tables.durableSchema) (singleton, version) VALUES (1, 0)")
+        guard let row = try transaction.get("SELECT version FROM \(schema.tables.durableSchema) WHERE singleton = 1"),
               let version = row["version"]?.integerValue else { throw SqliteFacadeError.missingSchema }
         let currentVersion = migrations.last?.version ?? 0
         guard version <= currentVersion else {
@@ -132,7 +136,7 @@ CREATE TABLE IF NOT EXISTS durable_schema (
         }
         for migration in migrations where migration.version > version {
             for statement in migration.statements { try transaction.exec(statement) }
-            try transaction.run("UPDATE durable_schema SET version = ? WHERE singleton = 1", [.integer(Int64(migration.version))])
+            try transaction.run("UPDATE \(schema.tables.durableSchema) SET version = ? WHERE singleton = 1", [.integer(Int64(migration.version))])
         }
     }
 }
