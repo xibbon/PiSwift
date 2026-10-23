@@ -2,7 +2,7 @@ import Foundation
 import PiSwiftAI
 import PiSwiftChord
 
-/// Arguments for the text read tool. Line numbers start at one.
+/// Arguments for the read tool. Line numbers start at one.
 public struct ReadToolInput: Sendable, Codable {
     /// The file path, relative to the environment directory or absolute.
     public var path: String
@@ -34,34 +34,48 @@ public struct ReadToolError: Error, Sendable, CustomStringConvertible {
     public init(_ message: String) { self.message = message }
 }
 
-/// Creates a tool that reads text with bounded memory and reports continuation in diagnostics.
-public func createReadTool() throws -> ToolRegistration {
-    try defineTool(name: "read", description: "Read the contents of a text file. Output is truncated to \(defaultMaxLines) lines or \(defaultMaxBytes / 1024)KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", parameters: [
+/// Creates a tool that reads text and images. The optional processor converts and resizes images.
+public func createReadTool(images: (any ImageProcessor)? = nil) throws -> ToolRegistration {
+    let formats = images == nil ? "jpg, png, gif, webp" : "jpg, png, gif, webp, bmp"
+    return try defineTool(name: "read", description: "Read the contents of a file. Supports text files and images (\(formats)). Images are sent as attachments. For text files, output is truncated to \(defaultMaxLines) lines or \(defaultMaxBytes / 1024)KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", parameters: [
         "type": "object", "properties": .object([
             "path": .object(["type": "string", "description": "Path to the file to read (relative or absolute)"]),
             "offset": .object(["type": "number", "description": "Line number to start reading from (1-indexed)"]),
             "limit": .object(["type": "number", "description": "Maximum number of lines to read"])
         ]), "required": .array(["path"])
-    ], args: ReadToolInput.self, execute: executeReadTool)
+    ], args: ReadToolInput.self, execute: { args, api, context in
+        try await executeReadTool(args, api, context, images: images)
+    })
 }
 
 internal func executeReadTool(_ args: ReadToolInput, _ api: ToolExecutionApi,
-                              _ context: ChordContext) async throws -> ToolExecutionResult {
+                              _ context: ChordContext, images: (any ImageProcessor)? = nil) async throws -> ToolExecutionResult {
     let env = try requireEnv(api)
     let path = try await resolveReadToolPath(env: env, path: args.path, context: context)
     let reader = try await env.openBinaryReader(path, options: nil, context: context).get()
-    return try await executeReadReader(reader, args: args, context: context)
+    return try await executeReadReader(reader, args: args, context: context, api: api, images: images)
 }
 
 internal func executeReadReader(_ reader: any BinaryReader, args: ReadToolInput,
-                                context: ChordContext) async throws -> ToolExecutionResult {
+                                context: ChordContext, api: ToolExecutionApi? = nil,
+                                images: (any ImageProcessor)? = nil) async throws -> ToolExecutionResult {
     do {
         var attempt = 0
         while true {
             let before = try await reader.info(context: context).get()
-            let result = try await readText(reader, info: before, args: args, context: context)
+            let mime = try await detectSupportedImageMimeTypeOf(.init(size: before.size, read: { position, length in
+                try await reader.read(offset: position, length: length, context: context).get()
+            }))
+            let result: ToolExecutionResult
+            if let mime {
+                let model = try await imageModel(api, context: context)
+                result = try await readImage(reader, info: before, path: args.path, mimeType: mime,
+                                             processor: images, vision: model.vision, limits: model.limits, context: context)
+            } else {
+                result = try await readText(reader, info: before, args: args, context: context)
+            }
             let after = try await reader.info(context: context).get()
-            if after.size > before.size || (after.size == before.size && after.mtimeMs == before.mtimeMs) {
+            if (mime == nil && after.size > before.size) || (after.size == before.size && after.mtimeMs == before.mtimeMs) {
                 await reader.close(context: context)
                 return result
             }
@@ -106,13 +120,6 @@ private func readHead(_ reader: any BinaryReader, start: Int64, end: Int64, skip
 
 private func readText(_ reader: any BinaryReader, info: FileInfo, args: ReadToolInput,
                       context: ChordContext) async throws -> ToolExecutionResult {
-    if let mime = try await detectSupportedImageMimeTypeOf(.init(size: info.size, read: { position, length in
-        try await reader.read(offset: position, length: length, context: context).get()
-    })) {
-        return .init(output: [], isError: true, diagnostics: [
-            .init(severity: .error, message: "\(args.path) is an image (\(mime)); reading images is not supported", code: "unsupported_image")
-        ])
-    }
     let offset = args.offset ?? 0
     let startLine = offset == 0 || offset.isNaN ? 0 : jsMax(0, offset - 1)
     let startDisplay = startLine + 1
@@ -184,4 +191,81 @@ private func truncationDetails(_ result: TruncationResult, outputLines: Int? = n
         "firstLineExceedsLimit": .bool(result.firstLineExceedsLimit),
         "maxLines": .number(Double(result.maxLines)), "maxBytes": .number(Double(result.maxBytes))
     ])])
+}
+
+private func imageModel(_ api: ToolExecutionApi?, context: ChordContext) async throws -> (vision: Bool, limits: ImageLimits) {
+    guard let api else { return (true, defaultImageLimits) }
+    let ref = try await api.agent(context).model
+    let model = ref.flatMap { api.models.getModel(provider: $0.provider, modelId: $0.modelId) }
+    let resize = model?.inputLimits?.images?.resize
+    return (model?.input.contains(.image) ?? true,
+            ImageLimits(maxWidth: resize?.maxWidth ?? defaultImageLimits.maxWidth,
+                        maxHeight: resize?.maxHeight ?? defaultImageLimits.maxHeight,
+                        maxBytes: resize?.maxBytes ?? defaultImageLimits.maxBytes))
+}
+
+private func imageError(_ message: String) -> ToolExecutionResult {
+    .init(output: [], isError: true, diagnostics: [.init(severity: .error, message: message, code: "unsupported_image")])
+}
+
+private func readImage(_ reader: any BinaryReader, info: FileInfo, path: String, mimeType: String,
+                       processor: (any ImageProcessor)?, vision: Bool, limits: ImageLimits,
+                       context: ChordContext) async throws -> ToolExecutionResult {
+    let image: PreparedImage
+    var notes: [String] = []
+    if let processor {
+        let bytes = try await reader.read(offset: 0, length: Int(info.size), context: context).get()
+        try context.abortSignal?.throwIfAborted()
+        try Task.checkCancellation()
+        let work = Task { try await processor.prepare(bytes: bytes, mimeType: mimeType, limits: limits) }
+        let registration = context.abortSignal?.addAbortListener { _ in work.cancel() }
+        defer { if let registration { context.abortSignal?.removeAbortListener(registration) } }
+        if context.abortSignal?.aborted == true { work.cancel() }
+        let prepared = try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        try context.abortSignal?.throwIfAborted()
+        guard let prepared else {
+            return imageError("\(path) is an image (\(mimeType)) that cannot be prepared for the model")
+        }
+        image = prepared
+        if let from = prepared.convertedFrom { notes.append("Converted from \(from) to \(prepared.mimeType).") }
+        if let resized = prepared.resized {
+            let scale = imageScaleText(Double(resized.from.width) / Double(resized.to.width))
+            notes.append("Resized from \(resized.from.width)x\(resized.from.height) to \(resized.to.width)x\(resized.to.height). Multiply coordinates by \(scale) to map them to the original.")
+        }
+    } else {
+        guard inlineImageTypes.contains(mimeType) else {
+            return imageError("\(path) is an image (\(mimeType)) that needs converting, and no image processor is configured")
+        }
+        let unshrinkable = "and no image processor is configured to shrink it"
+        if base64Length(info.size) > Double(limits.maxBytes) {
+            return imageError("\(path) is an image (\(mimeType)) of \(formatSize(Int(info.size))), too large to send, \(unshrinkable)")
+        }
+        let bytes = try await reader.read(offset: 0, length: Int(info.size), context: context).get()
+        guard let size = imageDimensions(bytes, mimeType: mimeType) else {
+            return imageError("\(path) is an image (\(mimeType)) whose size cannot be read")
+        }
+        if size.width > limits.maxWidth || size.height > limits.maxHeight {
+            return imageError("\(path) is an image (\(mimeType)) of \(size.width)x\(size.height), larger than \(limits.maxWidth)x\(limits.maxHeight), \(unshrinkable)")
+        }
+        image = PreparedImage(data: toBase64(bytes), mimeType: mimeType)
+    }
+    if !vision { notes.append("The current model does not support images; it sees a placeholder instead.") }
+    return .init(output: [.image(.init(data: image.data, mimeType: image.mimeType))], diagnostics: [
+        .init(severity: .info, message: (["Read image file [\(image.mimeType)]."] + notes).joined(separator: " "), code: "image")
+    ])
+}
+
+// Match JavaScript toFixed(2), including exact decimal half ties.
+private func imageScaleText(_ value: Double) -> String {
+    if value.isNaN { return "NaN" }
+    if value.isInfinite { return value > 0 ? "Infinity" : "-Infinity" }
+    // Exact binary half ties at two places are odd multiples of 1/8.
+    let halves = value * 8
+    let tie = abs(halves) < 9_007_199_254_740_992 && halves.rounded(.towardZero) == halves
+        && abs(halves.truncatingRemainder(dividingBy: 2)) == 1
+    let rounded = tie ? (value > 0 ? value.nextUp : value.nextDown) : value
+    return String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), rounded)
 }

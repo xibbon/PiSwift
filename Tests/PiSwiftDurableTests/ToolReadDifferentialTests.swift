@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+import Synchronization
+import PiSwiftAI
+import PiSwiftDurableTesting
 import PiSwiftChord
 @testable import PiSwiftDurable
 
@@ -34,6 +37,9 @@ import PiSwiftChord
             let result = try await body()
             var object: JSONObject = ["output": .array((result.output ?? []).map { block in
                 if case .text(let text) = block { return .object(["type": "text", "text": .string(text.text)]) }
+                if case .image(let image) = block {
+                    return .object(["type": "image", "data": .string(image.data), "mimeType": .string(image.mimeType)])
+                }
                 return .null
             })]
             if let isError = result.isError { object["isError"] = .bool(isError) }
@@ -96,5 +102,86 @@ import PiSwiftChord
         #expect(toolResultText(result) == reference.content)
         #expect(result.details?["truncation"]?["totalBytes"] == .number(Double(reference.totalBytes)))
         #expect(result.details?["truncation"]?["totalLines"] == .number(Double(reference.totalLines)))
+    }
+}
+
+
+extension ToolReadDifferentialTests {
+    @Test("matches the v1.3.0 image read results and processor calls")
+    func imageReference() async throws {
+        let url = try #require(Bundle.module.url(forResource: "read-differential-v130", withExtension: "json", subdirectory: "Fixtures"))
+        let fixture = try unpack(JSONValue(jsonData: Data(contentsOf: url)))
+        #expect(fixture["tag"] == "v1.3.0")
+        let cases = try #require(fixture["imageCases"]?.arrayValue)
+        #expect(cases.count == 25)
+        let directory = try toolTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for item in cases {
+            let name = try #require(item["name"]?.stringValue)
+            let path = try #require(item["path"]?.stringValue)
+            let base64 = try #require(item["base64"]?.stringValue)
+            try #require(Data(base64Encoded: base64)).write(to: directory.appendingPathComponent(path))
+            let processor = try item["processor"].map(ReadOracleProcessor.init)
+            var api = try toolTestApi(env: LocalExecutionEnv(cwd: directory.path))
+            if let model = item["model"] {
+                api.models = try ReadOracleModels(spec: model)
+                api.agent = { _ in Agent(model: .init(provider: "test", modelId: "test")) }
+            }
+            let actual = try await outcome {
+                try await createReadTool(images: processor).execute(["path": .string(path)], api, context)
+            }
+            #expect(actual == item["actual"], "image case \(name)")
+            if let expected = item["expected"] { #expect(actual == expected, "whole-file image reference for \(name)") }
+            #expect(.array(processor?.calls.withLock { $0 } ?? []) == item["calls"], "processor calls for \(name)")
+        }
+        #expect(try createReadTool().description == fixture["descriptions"]?["withoutProcessor"]?.stringValue)
+        let processor = try ReadOracleProcessor(["result": .null])
+        #expect(try createReadTool(images: processor).description == fixture["descriptions"]?["withProcessor"]?.stringValue)
+    }
+}
+
+private final class ReadOracleProcessor: ImageProcessor {
+    let calls = Mutex<[JSONValue]>([])
+    let result: PreparedImage?
+    let failure: String?
+    init(_ spec: JSONValue) throws {
+        failure = spec["error"]?.stringValue
+        if let value = spec["result"], value != .null {
+            var resize: ImageResize?
+            if let resized = value["resized"] {
+                func dimensions(_ key: String) throws -> ImageDimensions {
+                    .init(width: Int(try #require(resized[key]?["width"]?.numberValue)),
+                          height: Int(try #require(resized[key]?["height"]?.numberValue)))
+                }
+                resize = try .init(from: dimensions("from"), to: dimensions("to"))
+            }
+            result = try .init(data: #require(value["data"]?.stringValue), mimeType: #require(value["mimeType"]?.stringValue),
+                               resized: resize, convertedFrom: value["convertedFrom"]?.stringValue)
+        } else { result = nil }
+    }
+    func prepare(bytes: [UInt8], mimeType: String, limits: ImageLimits) async throws -> PreparedImage? {
+        calls.withLock { $0.append(["base64": .string(Data(bytes).base64EncodedString()), "mimeType": .string(mimeType),
+            "limits": ["maxWidth": .number(Double(limits.maxWidth)), "maxHeight": .number(Double(limits.maxHeight)),
+                       "maxBytes": .number(Double(limits.maxBytes))]]) }
+        if let failure { throw TaskDefinitionError(failure) }
+        return result
+    }
+}
+
+private struct ReadOracleModels: DurableModels {
+    let model: Model?
+    init(spec: JSONValue) throws {
+        guard spec != .null else { model = nil; return }
+        let input = spec["input"]?.arrayValue?.compactMap { $0.stringValue.flatMap(ModelInput.init(rawValue:)) } ?? [.text, .image]
+        let resize = spec["resize"]
+        func integer(_ key: String) -> Int? { resize?[key]?.numberValue.map(Int.init) }
+        model = Model(id: "test", name: "Test", api: .openAICompletions, provider: "test", baseUrl: "http://localhost:0",
+                      reasoning: false, input: input, cost: .init(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                      contextWindow: 1000, maxTokens: 100,
+                      inputLimits: .init(images: .init(resize: .init(maxWidth: integer("maxWidth"), maxHeight: integer("maxHeight"), maxBytes: integer("maxBytes")))))
+    }
+    func getModel(provider: String, modelId: String) -> Model? { model }
+    func streamSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) -> AssistantMessageEventStream {
+        FakeDurableModels().streamSimple(model: model, context: context, options: options)
     }
 }

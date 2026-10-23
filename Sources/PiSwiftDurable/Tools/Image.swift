@@ -86,3 +86,43 @@ private func startsWithAscii(_ bytes: [UInt8], at offset: Int, _ text: String) -
     let prefix = Array(text.utf8)
     return offset + prefix.count <= bytes.count && bytes.dropFirst(offset).starts(with: prefix)
 }
+
+/// Reads the declared dimensions without decoding the image.
+internal func imageDimensions(_ bytes: [UInt8], mimeType: String) -> ImageDimensions? {
+    switch mimeType {
+    case "image/png":
+        guard bytes.count >= 24 else { return nil }
+        return .init(width: Int(readUInt32BE(bytes, at: 16)), height: Int(readUInt32BE(bytes, at: 20)))
+    case "image/gif":
+        guard bytes.count >= 10 else { return nil }
+        return .init(width: Int(readUInt16LE(bytes, at: 6)), height: Int(readUInt16LE(bytes, at: 8)))
+    case "image/webp":
+        guard bytes.count >= 30 else { return nil }
+        if startsWithAscii(bytes, at: 12, "VP8 ") {
+            return .init(width: Int(readUInt16LE(bytes, at: 26) & 0x3fff), height: Int(readUInt16LE(bytes, at: 28) & 0x3fff))
+        }
+        if startsWithAscii(bytes, at: 12, "VP8L") {
+            let bits = readUInt32LE(bytes, at: 21)
+            return .init(width: Int(bits & 0x3fff) + 1, height: Int((bits >> 14) & 0x3fff) + 1)
+        }
+        if startsWithAscii(bytes, at: 12, "VP8X") {
+            func uint24(_ offset: Int) -> Int { Int(readUInt16LE(bytes, at: offset) + byte(bytes, offset + 2) * 65536) }
+            return .init(width: uint24(24) + 1, height: uint24(27) + 1)
+        }
+        return nil
+    case "image/jpeg":
+        var offset = 2
+        func uint16(_ offset: Int) -> Int { Int(byte(bytes, offset) * 256 + byte(bytes, offset + 1)) }
+        while offset + 9 <= bytes.count {
+            guard bytes[offset] == 0xff else { return nil }
+            let marker = bytes[offset + 1]
+            if marker == 0xff { offset += 1; continue }
+            if marker >= 0xc0 && marker <= 0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc {
+                return .init(width: uint16(offset + 7), height: uint16(offset + 5))
+            }
+            offset += 2 + uint16(offset + 2)
+        }
+        return nil
+    default: return nil
+    }
+}

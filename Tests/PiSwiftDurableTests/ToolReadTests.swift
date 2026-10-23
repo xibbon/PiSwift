@@ -74,8 +74,10 @@ import PiSwiftDurableTesting
         let env = FakeExecutionEnv()
         try await env.writeFile("image.txt", content: .bytes(Array(png)), context: context).get()
         let result = try await createReadTool().execute(["path": "image.txt"], toolTestApi(env: env), context)
-        #expect(result.output?.isEmpty == true); #expect(result.isError == true)
-        #expect(result.diagnostics == [.init(severity: .error, message: "image.txt is an image (image/png); reading images is not supported", code: "unsupported_image")])
+        #expect(result.output?.count == 1); #expect(result.isError != true)
+        guard case .image(let image) = result.output?.first else { Issue.record("Expected an image"); return }
+        #expect(image.data == png.base64EncodedString()); #expect(image.mimeType == "image/png")
+        #expect(result.diagnostics == [.init(severity: .info, message: "Read image file [image/png].", code: "image")])
     }
     @Test("reads a rewritten file again once and closes the reader")
     func rewrite() async throws {

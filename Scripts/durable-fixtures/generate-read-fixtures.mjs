@@ -47,6 +47,67 @@ try {
         }
         files.push({ seed, base64: Buffer.from(bytes).toString('base64'), trials });
     }
+    // Read results come from the tag's tool. Use the tag's GIF and BMP builders without changes.
+    const imageTests = execFileSync('git', ['-C', upstreamRepository, 'show', `${upstreamTag}:packages/durable/test/tools-images.test.ts`], { encoding: 'utf8' });
+    const builders = stripTypeScriptTypes(imageTests.slice(imageTests.indexOf('function bmp('), imageTests.indexOf('/** A TIFF header')));
+    const webpStart = imageTests.indexOf('const webp =', imageTests.indexOf('describe("imageDimensions"'));
+    const webpBuilder = stripTypeScriptTypes(imageTests.slice(webpStart, imageTests.indexOf('// VP8:', webpStart)));
+    const builderPath = join(source.directory, 'image-builders.mjs');
+    await writeFile(builderPath, `${builders}\n${webpBuilder}\nexport { bmp, gif, webp };\n`);
+    const { bmp, gif, webp } = await import(pathToFileURL(builderPath).href);
+    // A fixed PNG header fixture; read checks dimensions and does not decode pixels.
+    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==', 'base64'));
+    // Keep the differential test's APNG bytes and its whole-file reference.
+    const apngStart = upstream.indexOf('const chunk =', upstream.indexOf('detects animated PNGs'));
+    const apngSource = stripTypeScriptTypes(upstream.slice(apngStart, upstream.indexOf('writeFileSync', apngStart)));
+    const apngPath = join(source.directory, 'apng-builder.mjs');
+    await writeFile(apngPath, `${apngSource}\nexport { png };\n`);
+    const { png: apng } = await import(pathToFileURL(apngPath).href);
+    const prepared = { data: 'AQID', mimeType: 'image/png' };
+    const specs = [
+        { name: 'apng-beyond-header', path: 'a.png', bytes: apng, wholeFileReference: true },
+        { name: 'png-inline', path: 'a.png', bytes: png },
+        { name: 'jpeg-inline', path: 'a.jpg', bytes: Uint8Array.from([255, 216, 255, 192, 0, 17, 8, 0, 5, 0, 7]) },
+        { name: 'webp-vp8-inline', path: 'a.webp', bytes: webp('VP8 ', [0, 0, 0, 0x9d, 0x01, 0x2a, 0x2c, 0x01, 0xc8, 0x00]) },
+        { name: 'webp-vp8l-inline', path: 'a.webp', bytes: webp('VP8L', [0x2f, 43, 193, 49, 0]) },
+        { name: 'webp-vp8x-inline', path: 'a.webp', bytes: webp('VP8X', [0, 0, 0, 0, 0x2b, 0x01, 0, 0xc7, 0, 0]) },
+        { name: 'gif-inline', path: 'a.gif', bytes: gif() },
+        { name: 'gif-wide', path: 'wide.gif', bytes: gif(2001, 2) },
+        { name: 'gif-tall', path: 'tall.gif', bytes: gif(1, 3000) },
+        { name: 'bmp-needs-conversion', path: 'a.bmp', bytes: bmp(4, 4) },
+        { name: 'jpeg-size-unreadable', path: 'broken.jpg', bytes: Uint8Array.from([255, 216, 255]) },
+        { name: 'model-width-limit', path: 'a.gif', bytes: gif(8, 6), model: { resize: { maxWidth: 4 } } },
+        { name: 'model-height-limit', path: 'a.gif', bytes: gif(8, 6), model: { resize: { maxHeight: 4 } } },
+        { name: 'model-byte-limit', path: 'a.png', bytes: png, model: { resize: { maxBytes: 8 } } },
+        { name: 'model-byte-boundary', path: 'a.gif', bytes: gif(), model: { resize: { maxBytes: Buffer.from(gif()).toString('base64').length } } },
+        { name: 'text-only-model', path: 'a.png', bytes: png, model: { input: ['text'] } },
+        { name: 'unresolved-model', path: 'a.png', bytes: png, model: null },
+        { name: 'processor-pass-through', path: 'a.gif', bytes: gif(), processor: { result: { data: Buffer.from(gif()).toString('base64'), mimeType: 'image/gif' } } },
+        { name: 'processor-conversion', path: 'a.bmp', bytes: bmp(4, 4), processor: { result: { ...prepared, convertedFrom: 'image/bmp' } } },
+        { name: 'processor-resize', path: 'wide.gif', bytes: gif(4000, 1000), processor: { result: { ...prepared, resized: { from: { width: 4000, height: 1000 }, to: { width: 2000, height: 500 } } } } },
+        { name: 'processor-resize-half-up', path: 'a.gif', bytes: gif(9, 6), processor: { result: { ...prepared, resized: { from: { width: 9, height: 6 }, to: { width: 8, height: 5 } } } } },
+        { name: 'processor-model-limits', path: 'a.gif', bytes: gif(8, 6), model: { resize: { maxWidth: 4, maxHeight: 3, maxBytes: 64 } }, processor: { result: prepared } },
+        { name: 'processor-conversion-resize-placeholder', path: 'a.bmp', bytes: bmp(4, 4), model: { input: ['text'] }, processor: { result: { ...prepared, convertedFrom: 'image/bmp', resized: { from: { width: 4, height: 4 }, to: { width: 3, height: 3 } } } } },
+        { name: 'processor-refuses', path: 'a.png', bytes: png, processor: { result: null } },
+        { name: 'processor-throws', path: 'a.png', bytes: png, processor: { error: 'processor failed' } },
+    ];
+    const imageCases = [];
+    for (const spec of specs) {
+        await writeFile(join(cwd, spec.path), spec.bytes);
+        const calls = [];
+        const images = spec.processor === undefined ? undefined : { async prepare(bytes, mimeType, limits) {
+            calls.push({ base64: Buffer.from(bytes).toString('base64'), mimeType, limits });
+            if (spec.processor.error) throw new Error(spec.processor.error);
+            return spec.processor.result ?? undefined;
+        } };
+        const imageApi = { ...api, async agent() { return spec.model === undefined ? {} : { model: { provider: 'test', modelId: 'test' } }; },
+            models: { getModel() { return spec.model === null ? undefined : { input: spec.model?.input ?? ['text', 'image'], inputLimits: { images: { resize: spec.model?.resize } } }; } } };
+        const actual = await outcome(() => createReadTool({ images }).execute({ path: spec.path }, imageApi, BACKGROUND_CONTEXT));
+        const { bytes, ...parameters } = spec;
+        const expected = spec.wholeFileReference ? await outcome(() => referenceRead(bytes, spec.path, undefined, undefined)) : undefined;
+        imageCases.push({ ...parameters, ...(expected === undefined ? {} : { expected }), base64: Buffer.from(bytes).toString('base64'), actual, calls });
+    }
+    const descriptions = { withoutProcessor: createReadTool().description, withProcessor: createReadTool({ images: { async prepare() {} } }).description };
     function pack(value) {
         if (Array.isArray(value)) return value.map(pack);
         if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, pack(child)]));
@@ -63,10 +124,10 @@ try {
         return JSON.stringify(packed).length < value.length ? packed : value;
     }
     // Escape FEFF so parsers cannot treat a raw string segment as a byte-order mark.
-    const fixture = JSON.stringify(pack({ tag: upstreamTag, provenance: { source: 'unmodified isolated git archive', resultEnvelope: 'unmodified top-level output', images: 'deferred' }, seeds: 400, trialsPerSeed: 4, differences, files })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
+    const fixture = JSON.stringify(pack({ tag: upstreamTag, provenance: { source: 'unmodified isolated git archive', resultEnvelope: 'unmodified top-level output', images: { source: 'packages/durable/src/tools/read.ts', tests: 'packages/durable/test/tools-images.test.ts', builders: 'unmodified bmp and gif functions, webp builder; unmodified APNG chunk and png declarations from tools-read-differential.test.ts', png: 'fixed one-pixel header fixture', jpeg: 'synthetic SOF header; dimensions from image.ts', processor: 'scripted ImageProcessor; calls and results recorded from the tag tool' } }, seeds: 400, trialsPerSeed: 4, differences, files, imageCases, descriptions })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
     const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v130.json', import.meta.url));
     if (process.argv.includes('--check')) {
         if (await readFile(path, 'utf8') !== fixture) throw new Error('Read fixtures differ. Run without --check.');
     } else { await writeFile(path, fixture); }
-    console.log(`Read fixtures: 400 seeds, 1600 trials, ${differences} upstream reference differences.`);
+    console.log(`Read fixtures: 400 seeds, 1600 trials, ${differences} upstream reference differences, ${imageCases.length} image cases.`);
 } finally { await rm(cwd, { recursive: true, force: true }); await source.close(); }
