@@ -1,0 +1,732 @@
+{
+  "tag": "v1.3.0",
+  "provenance": {
+    "source": "unmodified packages/durable/src/codemode/codemode.ts, session/session.ts, storage/memory.ts at v1.3.0",
+    "construction": "Real upstream document tokens and Session commits. Payloads are constructed host records. No JavaScript sandbox runs."
+  },
+  "moduleVersion": 2,
+  "conversationId": 2,
+  "taskId": 3,
+  "forkId": 8,
+  "cutoffId": 7,
+  "definitions": [
+    {
+      "kind": "pi.codemode.run",
+      "version": 1,
+      "scope": "task",
+      "initial": {}
+    },
+    {
+      "kind": "pi.codemode.journal",
+      "version": 1,
+      "scope": "task",
+      "initial": {
+        "entries": []
+      }
+    },
+    {
+      "kind": "pi.codemode.store",
+      "version": 1,
+      "scope": "conversation",
+      "history": "rewindable",
+      "fork": "asOf",
+      "initial": {
+        "values": {}
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "initial",
+      "seq": 4,
+      "run": {},
+      "journal": {
+        "entries": []
+      },
+      "store": {
+        "values": {}
+      }
+    },
+    {
+      "name": "started",
+      "seq": 6,
+      "run": {
+        "start": {
+          "version": 2,
+          "startedAt": 1700000000000,
+          "seed": 123456,
+          "fingerprint": "fixture-engine-v1",
+          "deadline": 1700000030000,
+          "tools": [
+            {
+              "name": "read-file",
+              "jsName": "read_file",
+              "description": "Read a file.",
+              "structured": true
+            },
+            {
+              "name": "pi.codemode.models.classify",
+              "jsName": "pi_codemode_models_classify",
+              "description": "Classify.",
+              "structured": true,
+              "hidden": true
+            }
+          ],
+          "namespaces": [
+            {
+              "name": "files",
+              "description": "File tools",
+              "instructions": "Use paths.",
+              "tools": [
+                "read-file"
+              ]
+            }
+          ],
+          "globals": [
+            {
+              "name": "fixtureGlobal",
+              "spread": false
+            }
+          ],
+          "maxOutputTokens": 2000,
+          "store": {
+            "old": null,
+            "count": 1
+          }
+        }
+      },
+      "journal": {
+        "entries": [],
+        "firstIssued": 3
+      },
+      "store": {
+        "values": {
+          "old": null,
+          "count": 1
+        }
+      }
+    },
+    {
+      "name": "journaled",
+      "seq": 7,
+      "run": {
+        "start": {
+          "version": 2,
+          "startedAt": 1700000000000,
+          "seed": 123456,
+          "fingerprint": "fixture-engine-v1",
+          "deadline": 1700000030000,
+          "tools": [
+            {
+              "name": "read-file",
+              "jsName": "read_file",
+              "description": "Read a file.",
+              "structured": true
+            },
+            {
+              "name": "pi.codemode.models.classify",
+              "jsName": "pi_codemode_models_classify",
+              "description": "Classify.",
+              "structured": true,
+              "hidden": true
+            }
+          ],
+          "namespaces": [
+            {
+              "name": "files",
+              "description": "File tools",
+              "instructions": "Use paths.",
+              "tools": [
+                "read-file"
+              ]
+            }
+          ],
+          "globals": [
+            {
+              "name": "fixtureGlobal",
+              "spread": false
+            }
+          ],
+          "maxOutputTokens": 2000,
+          "store": {
+            "old": null,
+            "count": 1
+          }
+        }
+      },
+      "journal": {
+        "entries": [
+          {
+            "id": 2,
+            "at": 1700000000005,
+            "issuedAfter": 3,
+            "global": {
+              "name": "fixtureGlobal",
+              "args": [
+                "key",
+                null
+              ],
+              "outcome": {
+                "ok": true
+              }
+            }
+          },
+          {
+            "id": 1,
+            "at": 1700000000006,
+            "issuedAfter": 4
+          },
+          {
+            "id": 3,
+            "at": 1700000000007,
+            "global": {
+              "name": "fixtureGlobal",
+              "outcome": {
+                "ok": false,
+                "message": "Fixture failure",
+                "properties": {
+                  "retry": false
+                }
+              }
+            }
+          }
+        ],
+        "firstIssued": 3
+      },
+      "store": {
+        "values": {
+          "old": null,
+          "count": 1
+        }
+      }
+    },
+    {
+      "name": "decided",
+      "seq": 8,
+      "run": {
+        "start": {
+          "version": 2,
+          "startedAt": 1700000000000,
+          "seed": 123456,
+          "fingerprint": "fixture-engine-v1",
+          "deadline": 1700000030000,
+          "tools": [
+            {
+              "name": "read-file",
+              "jsName": "read_file",
+              "description": "Read a file.",
+              "structured": true
+            },
+            {
+              "name": "pi.codemode.models.classify",
+              "jsName": "pi_codemode_models_classify",
+              "description": "Classify.",
+              "structured": true,
+              "hidden": true
+            }
+          ],
+          "namespaces": [
+            {
+              "name": "files",
+              "description": "File tools",
+              "instructions": "Use paths.",
+              "tools": [
+                "read-file"
+              ]
+            }
+          ],
+          "globals": [
+            {
+              "name": "fixtureGlobal",
+              "spread": false
+            }
+          ],
+          "maxOutputTokens": 2000,
+          "store": {
+            "old": null,
+            "count": 1
+          }
+        },
+        "result": {
+          "output": [
+            {
+              "type": "text",
+              "text": "Done"
+            }
+          ],
+          "details": {
+            "calls": [
+              {
+                "id": 1,
+                "name": "read-file",
+                "args": "{\"path\":\"file\"}",
+                "status": "ok",
+                "durationMs": 6
+              }
+            ]
+          }
+        },
+        "outputDir": "/fixture/codemode-output"
+      },
+      "journal": {
+        "entries": [
+          {
+            "id": 2,
+            "at": 1700000000005,
+            "issuedAfter": 3,
+            "global": {
+              "name": "fixtureGlobal",
+              "args": [
+                "key",
+                null
+              ],
+              "outcome": {
+                "ok": true
+              }
+            }
+          },
+          {
+            "id": 1,
+            "at": 1700000000006,
+            "issuedAfter": 4
+          },
+          {
+            "id": 3,
+            "at": 1700000000007,
+            "global": {
+              "name": "fixtureGlobal",
+              "outcome": {
+                "ok": false,
+                "message": "Fixture failure",
+                "properties": {
+                  "retry": false
+                }
+              }
+            },
+            "issuedAfter": 4
+          }
+        ],
+        "firstIssued": 3
+      },
+      "store": {
+        "values": {
+          "count": 2,
+          "nested": {
+            "list": [
+              true,
+              null,
+              1.25
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "forkStore": {
+    "values": {
+      "old": null,
+      "count": 1
+    }
+  },
+  "batches": [
+    {
+      "seq": 1,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "seq": 2,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 3,
+            "conversationId": 2,
+            "kind": "fixture.codemode",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "writes": [
+        {
+          "type": "document.create",
+          "record": {
+            "id": 4,
+            "kind": "pi.codemode.run",
+            "scope": {
+              "kind": "task",
+              "taskId": 3
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {}
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 5,
+            "kind": "pi.codemode.journal",
+            "scope": {
+              "kind": "task",
+              "taskId": 3
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "entries": []
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 6,
+            "kind": "pi.codemode.store",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 2
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "values": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "writes": [
+        {
+          "type": "document.change",
+          "id": 4,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "start"
+                ],
+                {
+                  "version": 2,
+                  "startedAt": 1700000000000,
+                  "seed": 123456,
+                  "fingerprint": "fixture-engine-v1",
+                  "deadline": 1700000030000,
+                  "tools": [
+                    {
+                      "name": "read-file",
+                      "jsName": "read_file",
+                      "description": "Read a file.",
+                      "structured": true
+                    },
+                    {
+                      "name": "pi.codemode.models.classify",
+                      "jsName": "pi_codemode_models_classify",
+                      "description": "Classify.",
+                      "structured": true,
+                      "hidden": true
+                    }
+                  ],
+                  "namespaces": [
+                    {
+                      "name": "files",
+                      "description": "File tools",
+                      "instructions": "Use paths.",
+                      "tools": [
+                        "read-file"
+                      ]
+                    }
+                  ],
+                  "globals": [
+                    {
+                      "name": "fixtureGlobal",
+                      "spread": false
+                    }
+                  ],
+                  "maxOutputTokens": 2000,
+                  "store": {
+                    "old": null,
+                    "count": 1
+                  }
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 5,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "firstIssued"
+                ],
+                3
+              ]
+            ]
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 6,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "values"
+                ],
+                {
+                  "old": null,
+                  "count": 1
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "seq": 6,
+      "writes": [
+        {
+          "type": "entry",
+          "value": {
+            "kind": "fixture.codemode.cutoff",
+            "id": 7,
+            "conversationId": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 7,
+      "writes": [
+        {
+          "type": "document.change",
+          "id": 5,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "p",
+                [
+                  "entries"
+                ],
+                0,
+                0,
+                [
+                  {
+                    "id": 2,
+                    "at": 1700000000005,
+                    "issuedAfter": 3,
+                    "global": {
+                      "name": "fixtureGlobal",
+                      "args": [
+                        "key",
+                        null
+                      ],
+                      "outcome": {
+                        "ok": true
+                      }
+                    }
+                  },
+                  {
+                    "id": 1,
+                    "at": 1700000000006,
+                    "issuedAfter": 4
+                  },
+                  {
+                    "id": 3,
+                    "at": 1700000000007,
+                    "global": {
+                      "name": "fixtureGlobal",
+                      "outcome": {
+                        "ok": false,
+                        "message": "Fixture failure",
+                        "properties": {
+                          "retry": false
+                        }
+                      }
+                    }
+                  }
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "writes": [
+        {
+          "type": "document.change",
+          "id": 4,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "result"
+                ],
+                {
+                  "output": [
+                    {
+                      "type": "text",
+                      "text": "Done"
+                    }
+                  ],
+                  "details": {
+                    "calls": [
+                      {
+                        "id": 1,
+                        "name": "read-file",
+                        "args": "{\"path\":\"file\"}",
+                        "status": "ok",
+                        "durationMs": 6
+                      }
+                    ]
+                  }
+                }
+              ],
+              [
+                "s",
+                [
+                  "outputDir"
+                ],
+                "/fixture/codemode-output"
+              ]
+            ]
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 6,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "values"
+                ],
+                {
+                  "count": 2,
+                  "nested": {
+                    "list": [
+                      true,
+                      null,
+                      1.25
+                    ]
+                  }
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 5,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "entries",
+                  2,
+                  "issuedAfter"
+                ],
+                4
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "seq": 9,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 8,
+            "parent": {
+              "conversationId": 2,
+              "at": 7
+            }
+          }
+        },
+        {
+          "type": "document.copy",
+          "record": {
+            "id": 9,
+            "kind": "pi.codemode.store",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 8
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "source": {
+            "id": 6,
+            "at": 6
+          }
+        }
+      ]
+    }
+  ]
+}
