@@ -4,6 +4,8 @@ This module connects pi settings, models, and tools to `PiSwiftDurable`.
 One process owns the model runtime, the durable Harness, SQLite storage, and the terminal UI.
 The UI is in PiSwiftTui. This library has no terminal dependency.
 The agent uses the Harness with its coding tools and `subagent` tool.
+Swift keeps this host after upstream removed its experimental durable host.
+The hidden command and private session directory remain part of the Swift scope.
 
 ## Run
 
@@ -25,6 +27,7 @@ On macOS, the default agent directory is `~/.pi/agent`.
 On iOS, it is the app's Application Support `agent` directory.
 `PI_CODING_AGENT_DIR` overrides the agent directory.
 Swift sessions are separate from TypeScript sessions. Do not share their databases.
+The library still reads and writes compatible SQLite and JSONL files.
 Each open session holds an exclusive `flock` on `session.lock`.
 A second open retries for up to two seconds. The kernel releases the lock when the process dies.
 
@@ -140,6 +143,14 @@ Set `HarnessOptions.env` to your remote factory.
 To leave `bash` out, install `createReadTool()`, `createWriteTool()`, and `createEditTool()` in your registry.
 Use `createPiPrompt` for that registry. `createCodingRegistry` includes `bash`.
 
+The stock host installs `createCodingTools(images: NativeImageProcessor())`.
+Image reads can convert and resize files for the selected model. The native processor uses
+ImageIO and CoreGraphics; encoded bytes and resampling can differ from upstream Photon.
+This does not add image input to the terminal UI. The stock host does not install
+`tool_search` or codemode. A custom host must install them explicitly. Codemode also needs
+a real sandbox adapter; the library supplies no JavaScriptCore adapter. Local environments
+have no native `listFiles` implementation and return `notSupported`.
+
 ## Accepted differences from upstream
 
 - Swift has a separate session root and a kernel lock. It needs no ten-second stale-lock check.
@@ -155,4 +166,4 @@ Use `createPiPrompt` for that registry. `createCodingRegistry` includes `bash`.
 - Swift decodes built-in documents. The compatibility helper `agentOf` returns an empty state on invalid data; `decodeAgentOf` reports the error.
 - `ctrl+d` requires an empty editor to exit. `ctrl+c` cancels a selector when it has focus.
 
-Not here: session list and resume picker, forks and tree navigation, extensions, prompt templates, images, `/login`.
+Not here: session list and resume picker, forks and tree navigation, extensions, prompt templates, image input in the terminal UI, `/login`.

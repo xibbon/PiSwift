@@ -3,7 +3,7 @@
 > **Experimental.** The API can change without notice between releases.
 
 PiSwiftDurable ports the library core of `@earendil-works/pi-durable` at
-[v1.1.0](https://github.com/earendil-works/pi/tree/v1.1.0/packages/durable).
+[v1.3.0](https://github.com/earendil-works/pi/tree/v1.3.0/packages/durable).
 It uses PiSwiftAI for model types and PiSwiftChord for JSON state and observation.
 The package requires macOS 15 or iOS 18. It uses Swift 6 strict concurrency.
 
@@ -28,6 +28,11 @@ Calls take a `ChordContext`. `ChordContext.background` does not cancel.
 `ChordContextKey` carries typed values. These names replace upstream `Context` and
 `ContextKey`. PiSwiftAI already has a public `Context`. This rename is the user's choice.
 Cancellation of a submission wait cancels that wait. It does not withdraw the submission.
+
+A backend failure ends the Session. The Session keeps the first cause and rejects later
+operations. `Session.closed` and `Harness.closed` return after storage cleanup.
+An internal commit observer can fail the Session after the write succeeds. Public listener
+errors are reported without undoing the write. Reopen storage to recover pending work.
 
 ## Quick Start
 
@@ -98,6 +103,12 @@ then call `resume`. Submission or waiting also enables scheduling. Example 13 re
 through tick 5 without duplicate ticks. Examples 24 and 31 check task and tool recovery.
 Close the Harness to stop its work and close storage.
 
+`abandonOnRestart` marks work that cannot safely resume. Recovery applies restart marks
+before descendants run and records `abortReason: "restart"`. `ownedTasks` lists direct live
+task-owned children. `abortOwned` checks ownership, requests abort, and waits for settlement.
+Invocation APIs reject calls after that invocation ends. Cancellation and held ownership
+keep parent settlement behind the work that must drain.
+
 ## Extensions and Tools
 
 Create `registry` with `createRegistry()`. Install this extension before you open the Harness.
@@ -121,10 +132,33 @@ An extension can also supply `sections`, `hooks`, `wraps`, and `tasks`.
 Replacement keeps an extension's position. A running call keeps its selected code.
 The next call uses the new code (example 31).
 
+Tool model v2 uses `output` for execution output. Transcript messages still use `content`.
+A tool can also return a structured program value, diagnostics, and details. These fields
+have separate roles. A schema-free tool can supply text output without a structured value.
+Stored legacy calls can migrate when their task resumes.
+
+A tool can use `executeTool` for nested calls. An explicit key reuses a call only for the
+same tool and equal arguments. Cancelling a result wait does not cancel its child.
+Nested results have no transcript entry. Events and live state identify each call and
+its parent by task ID. An invocation cannot use its API after it ends. Settlement stops
+remaining owned nested work and waits for it. Safe callers can reattach after restart.
+Unsafe callers abandon owned work by default; an explicit restart policy can override this.
+
+Deferred tools are not offered to the model by default. The enabled filter applies first.
+`modelTools` narrows model offers; it cannot enable a disabled tool. Nested access is
+separate. Install `tool_search` explicitly to find deferred tools and load their declarations
+through `control.addTools`. Search does not expose disabled or nested-only tools.
+
 Busy input defaults to a follow-up. `.steer` joins after the tool round.
 `.reject` rejects busy admission. Writes append without a model call. Example 20 checks
 steering, follow-ups, and queued withdrawal. Tasks can wait for children with `.failFast`
 or `.allSettled`. Example 24 checks fail-fast, abort propagation, and restart.
+
+Application `InputEntry` metadata supplies kind and data. Input content supplies its user
+model contribution. Display-only writes can settle during busy work, except behind a queued
+reset. Live state retains the latest compaction failure. A failed blocking compaction stops
+generation. Only a produced summary clears the retained failure. The durable summary
+serializer omits thinking; stored assistant messages keep it.
 
 ## Watching
 
@@ -186,6 +220,17 @@ are not flushed. An acknowledged tail marker can be lost after power failure.
 A main-file flush permits destructive reclamation. These rules match upstream JSONL.
 Run `storageConformanceCases` from PiSwiftDurableTesting to check a custom backend.
 
+`SqliteStorage.open(path:prefix:)` selects a table namespace. Nil keeps the existing names.
+The prefix goes directly before each application table and explicit index name. A different
+prefix selects separate records and counters in the same file. It does not migrate data.
+Stored IDs survive reopen. IDs that were only minted need not survive reopen.
+
+`documentRetentionMs` controls the document memory cache, not stored data or context retention.
+The default is ten minutes. Zero permits prompt removal of idle cache entries. Infinity
+keeps them. Observers pin the stored document incarnation until they detach. Cache removal
+does not retire a document. Ended task payloads can also leave memory and reload when needed;
+ownership, cancellation, wait-cycle checks, and busy scope rules still apply.
+
 ## Coding Tools
 
 Install `CodingTools` to offer `read`, `write`, `edit`, and `bash`.
@@ -211,7 +256,15 @@ try await harness.close(context: .background)
 ```
 
 `read` uses bounded memory and reports truncation and continuation diagnostics.
-Recognized images return `unsupported_image`. `write` keeps the supplied content.
+PNG, JPEG, GIF, and WebP files can return image blocks within model limits. Without a
+processor, unknown or excessive dimensions and excessive encoded size give `unsupported_image`.
+Pass `NativeImageProcessor()` to `createReadTool(images:)` or `createCodingTools(images:)`
+to enable conversion and resizing. `CodingTools` has no processor by default. A text-only
+model still gets the image block with a placeholder diagnostic.
+
+The native processor uses ImageIO and CoreGraphics instead of Photon. Encoded bytes,
+resampling, codec acceptance, and dimensions under a tight byte limit can differ.
+Cancellation checks run around codec calls; a codec call cannot stop midway. `write` keeps the supplied content.
 `edit` matches replacements against the original file. It rejects missing, duplicate,
 and overlapping targets. Details contain a display diff, a unified patch, and the first
 changed line. It preserves BOM and uniform CRLF. Upstream and Swift normalize mixed
@@ -303,6 +356,22 @@ let cases = envConformanceCases(capabilities: .init(exec: false, symlinks: false
 for testCase in cases { try await testCase.run() }
 ```
 
+## Listings and Codemode
+
+`FileSystem.listFiles` has an optional capability contract and reusable conformance cases.
+Listings use relative paths, depth-first parent-first order, and byte-ordered sibling names.
+The default limits are 50,000 entries, 4,194,304 bytes, and 10,000 milliseconds.
+`LocalExecutionEnv` returns `notSupported`. Native traversal and gitignore support remain
+open work. Enable listing conformance cases only for an environment that implements them.
+
+Codemode requires an injected `CodemodeSandbox` and explicit extension installation.
+It journals results before delivery, checks calls during replay, and commits successful
+store writes with the final result. Supply model services if model globals are enabled.
+The deterministic sandbox in the testing module is a scripted test fake. It does not run
+JavaScript. No JavaScriptCore adapter is supplied. A real adapter must supply its own engine
+fingerprint and deterministic execution behavior. Do not resume live TypeScript codemode
+calls with the fake or claim compatibility with a different engine fingerprint.
+
 ## Swift Differences and Scope
 
 - Typed IDs, enums, optionals, errors, and Codable/Sendable values replace TypeScript
@@ -345,5 +414,5 @@ Examples 18 and 19 retain their library print and event scenarios without CLI ex
 Most tests use fake models and temporary directories. The compile-only spec-usage test
 checks public Swift API shapes and marks TypeScript-only forms.
 
-The [v1.1.0 spec](https://github.com/earendil-works/pi/blob/v1.1.0/packages/durable/docs/spec.md)
+The [v1.3.0 spec](https://github.com/earendil-works/pi/blob/v1.3.0/packages/durable/docs/spec.md)
 is the design reference. This README describes the tested Swift surface.

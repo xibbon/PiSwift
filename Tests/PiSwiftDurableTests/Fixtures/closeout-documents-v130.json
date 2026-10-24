@@ -1,0 +1,1165 @@
+{
+  "tag": "v1.3.0",
+  "provenance": {
+    "source": "Unmodified v1.3.0 Session, AgentDoc, InboxDoc, LiveDoc and MemoryStorage",
+    "construction": "Constructed document payloads and settled submission records; no scheduling or model execution",
+    "deferred": "Registration metadata is not stored. modelTools.add records loaded deferred names."
+  },
+  "catalog": [
+    {
+      "name": "fixture.inline"
+    },
+    {
+      "name": "fixture.deferred",
+      "deferred": true
+    },
+    {
+      "name": "fixture.unloaded",
+      "deferred": true
+    },
+    {
+      "name": "fixture.hidden"
+    },
+    {
+      "name": "fixture.disabled",
+      "deferred": true
+    },
+    {
+      "name": "fixture.nested",
+      "deferred": true,
+      "callers": [
+        "tools"
+      ]
+    }
+  ],
+  "filters": [
+    {
+      "conversationId": 2,
+      "tools": [
+        "fixture.inline",
+        "fixture.hidden"
+      ],
+      "callable": [
+        "fixture.inline",
+        "fixture.deferred",
+        "fixture.unloaded",
+        "fixture.hidden",
+        "fixture.disabled",
+        "fixture.nested"
+      ],
+      "deferred": [
+        "fixture.deferred",
+        "fixture.unloaded",
+        "fixture.disabled"
+      ]
+    },
+    {
+      "conversationId": 4,
+      "tools": [
+        "fixture.deferred"
+      ],
+      "callable": [
+        "fixture.inline",
+        "fixture.deferred"
+      ],
+      "deferred": []
+    },
+    {
+      "conversationId": 6,
+      "tools": [
+        "fixture.inline",
+        "fixture.deferred"
+      ],
+      "callable": [
+        "fixture.inline",
+        "fixture.deferred",
+        "fixture.unloaded",
+        "fixture.hidden",
+        "fixture.nested"
+      ],
+      "deferred": [
+        "fixture.unloaded"
+      ]
+    },
+    {
+      "conversationId": 8,
+      "tools": [
+        "fixture.inline",
+        "fixture.hidden",
+        "fixture.deferred"
+      ],
+      "callable": [
+        "fixture.inline",
+        "fixture.deferred",
+        "fixture.unloaded",
+        "fixture.hidden",
+        "fixture.disabled",
+        "fixture.nested"
+      ],
+      "deferred": [
+        "fixture.unloaded",
+        "fixture.disabled"
+      ]
+    },
+    {
+      "conversationId": 10,
+      "tools": [
+        "fixture.deferred"
+      ],
+      "callable": [
+        "fixture.inline",
+        "fixture.deferred",
+        "fixture.nested"
+      ],
+      "deferred": []
+    }
+  ],
+  "conversations": [
+    2,
+    4,
+    6,
+    8,
+    10
+  ],
+  "batches": [
+    {
+      "seq": 1,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "seq": 2,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "writes": [
+        {
+          "type": "document.create",
+          "record": {
+            "id": 3,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 2
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {}
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 4
+          }
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "writes": [
+        {
+          "type": "document.create",
+          "record": {
+            "id": 5,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 4
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "tools": [
+                "fixture.inline",
+                "fixture.deferred"
+              ],
+              "modelTools": [
+                "fixture.deferred"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 6,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 6
+          }
+        }
+      ]
+    },
+    {
+      "seq": 7,
+      "writes": [
+        {
+          "type": "document.create",
+          "record": {
+            "id": 7,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 6
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "tools": {
+                "remove": [
+                  "fixture.disabled"
+                ]
+              },
+              "modelTools": {
+                "remove": [
+                  "fixture.hidden"
+                ],
+                "add": [
+                  "fixture.deferred"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 8
+          }
+        }
+      ]
+    },
+    {
+      "seq": 9,
+      "writes": [
+        {
+          "type": "document.create",
+          "record": {
+            "id": 9,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 8
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "modelTools": {
+                "add": [
+                  "fixture.deferred"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 10,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 10
+          }
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "writes": [
+        {
+          "type": "document.create",
+          "record": {
+            "id": 11,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 10
+            },
+            "history": "rewindable",
+            "fork": "asOf"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "tools": [
+                "fixture.inline",
+                "fixture.deferred",
+                "fixture.nested"
+              ],
+              "modelTools": [
+                "fixture.disabled",
+                "fixture.nested",
+                "fixture.deferred"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 12,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 12,
+            "conversationId": 2,
+            "kind": "fixture.closeout",
+            "version": 1,
+            "input": {},
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 13,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 13,
+            "conversationId": 2,
+            "kind": "fixture.closeout",
+            "version": 1,
+            "input": {},
+            "owner": 12,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 14,
+      "writes": [
+        {
+          "type": "entry",
+          "value": {
+            "kind": "app.display",
+            "data": {
+              "text": "Already settled"
+            },
+            "id": 18,
+            "conversationId": 2
+          }
+        },
+        {
+          "type": "entry",
+          "value": {
+            "kind": "app.question",
+            "data": {
+              "source": "fixture"
+            },
+            "model": [
+              {
+                "role": "user",
+                "content": "Placed question",
+                "timestamp": 1700000000000
+              }
+            ],
+            "id": 20,
+            "conversationId": 2
+          }
+        },
+        {
+          "type": "submission",
+          "value": {
+            "conversationId": 2,
+            "requestId": "custom-input",
+            "type": "input",
+            "status": "queued",
+            "id": 14
+          }
+        },
+        {
+          "type": "submission",
+          "value": {
+            "conversationId": 2,
+            "requestId": "display-write",
+            "type": "write",
+            "status": "queued",
+            "id": 15
+          }
+        },
+        {
+          "type": "submission",
+          "value": {
+            "conversationId": 2,
+            "requestId": "reset",
+            "type": "write",
+            "status": "queued",
+            "id": 16
+          }
+        },
+        {
+          "type": "submission",
+          "value": {
+            "conversationId": 2,
+            "requestId": "settled-display",
+            "type": "write",
+            "status": "done",
+            "entry": 18,
+            "id": 19
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 17,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 2
+            },
+            "history": "latest",
+            "fork": "initial"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "items": [
+                {
+                  "id": 14,
+                  "mode": "followUp",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "User question"
+                    }
+                  ],
+                  "entry": {
+                    "kind": "app.question",
+                    "data": {
+                      "source": "fixture",
+                      "nullable": null
+                    }
+                  }
+                },
+                {
+                  "id": 16,
+                  "mode": "write",
+                  "entry": {
+                    "kind": "app.reset",
+                    "head": "self"
+                  }
+                },
+                {
+                  "id": 15,
+                  "mode": "write",
+                  "entry": {
+                    "kind": "app.display",
+                    "data": {
+                      "text": "Display only"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 21,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 2
+            },
+            "history": "latest",
+            "fork": "initial"
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "run": {
+                "taskId": 12,
+                "inputs": [
+                  14
+                ]
+              },
+              "tools": [
+                {
+                  "callId": "parent",
+                  "name": "fixture.parent",
+                  "taskId": 12,
+                  "status": "running"
+                }
+              ],
+              "nestedTools": [
+                {
+                  "callId": "parent/child",
+                  "parentCallId": "parent",
+                  "parentTaskId": 12,
+                  "taskId": 13,
+                  "name": "fixture.child",
+                  "arguments": {
+                    "path": "a"
+                  },
+                  "status": "done",
+                  "details": null,
+                  "output": "Nested output",
+                  "diagnostics": [
+                    {
+                      "severity": "info",
+                      "code": "fixture",
+                      "message": "Complete"
+                    }
+                  ],
+                  "summary": {
+                    "isError": false,
+                    "durationMs": 12
+                  }
+                }
+              ],
+              "compactionFailure": {
+                "taskId": 13,
+                "reason": "manual",
+                "error": "Fixture summary failure"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "reads": [
+    {
+      "method": "conversation",
+      "arguments": [
+        2
+      ],
+      "result": {
+        "id": 2
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 3,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 2
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 3
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        3,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 3,
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          },
+          "history": "rewindable",
+          "fork": "asOf",
+          "createdAt": 3
+        },
+        "version": 1,
+        "value": {},
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.inbox",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 17,
+        "kind": "pi.inbox",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 2
+        },
+        "history": "latest",
+        "fork": "initial",
+        "createdAt": 14
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        17,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 17,
+          "kind": "pi.inbox",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          },
+          "history": "latest",
+          "fork": "initial",
+          "createdAt": 14
+        },
+        "version": 1,
+        "value": {
+          "items": [
+            {
+              "id": 14,
+              "mode": "followUp",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "User question"
+                }
+              ],
+              "entry": {
+                "kind": "app.question",
+                "data": {
+                  "source": "fixture",
+                  "nullable": null
+                }
+              }
+            },
+            {
+              "id": 16,
+              "mode": "write",
+              "entry": {
+                "kind": "app.reset",
+                "head": "self"
+              }
+            },
+            {
+              "id": 15,
+              "mode": "write",
+              "entry": {
+                "kind": "app.display",
+                "data": {
+                  "text": "Display only"
+                }
+              }
+            }
+          ]
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.live",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 21,
+        "kind": "pi.live",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 2
+        },
+        "history": "latest",
+        "fork": "initial",
+        "createdAt": 14
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        21,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 21,
+          "kind": "pi.live",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 2
+          },
+          "history": "latest",
+          "fork": "initial",
+          "createdAt": 14
+        },
+        "version": 1,
+        "value": {
+          "run": {
+            "taskId": 12,
+            "inputs": [
+              14
+            ]
+          },
+          "tools": [
+            {
+              "callId": "parent",
+              "name": "fixture.parent",
+              "taskId": 12,
+              "status": "running"
+            }
+          ],
+          "nestedTools": [
+            {
+              "callId": "parent/child",
+              "parentCallId": "parent",
+              "parentTaskId": 12,
+              "taskId": 13,
+              "name": "fixture.child",
+              "arguments": {
+                "path": "a"
+              },
+              "status": "done",
+              "details": null,
+              "output": "Nested output",
+              "diagnostics": [
+                {
+                  "severity": "info",
+                  "code": "fixture",
+                  "message": "Complete"
+                }
+              ],
+              "summary": {
+                "isError": false,
+                "durationMs": 12
+              }
+            }
+          ],
+          "compactionFailure": {
+            "taskId": 13,
+            "reason": "manual",
+            "error": "Fixture summary failure"
+          }
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "conversation",
+      "arguments": [
+        4
+      ],
+      "result": {
+        "id": 4
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 4
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 5,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 4
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 5
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        5,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 5,
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 4
+          },
+          "history": "rewindable",
+          "fork": "asOf",
+          "createdAt": 5
+        },
+        "version": 1,
+        "value": {
+          "tools": [
+            "fixture.inline",
+            "fixture.deferred"
+          ],
+          "modelTools": [
+            "fixture.deferred"
+          ]
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "conversation",
+      "arguments": [
+        6
+      ],
+      "result": {
+        "id": 6
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 6
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 7,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 6
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 7
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        7,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 7,
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 6
+          },
+          "history": "rewindable",
+          "fork": "asOf",
+          "createdAt": 7
+        },
+        "version": 1,
+        "value": {
+          "tools": {
+            "remove": [
+              "fixture.disabled"
+            ]
+          },
+          "modelTools": {
+            "remove": [
+              "fixture.hidden"
+            ],
+            "add": [
+              "fixture.deferred"
+            ]
+          }
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "conversation",
+      "arguments": [
+        8
+      ],
+      "result": {
+        "id": 8
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 8
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 9,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 8
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 9
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        9,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 9,
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 8
+          },
+          "history": "rewindable",
+          "fork": "asOf",
+          "createdAt": 9
+        },
+        "version": 1,
+        "value": {
+          "modelTools": {
+            "add": [
+              "fixture.deferred"
+            ]
+          }
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "conversation",
+      "arguments": [
+        10
+      ],
+      "result": {
+        "id": 10
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 10
+          }
+        },
+        "current"
+      ],
+      "result": {
+        "id": 11,
+        "kind": "pi.agent",
+        "scope": {
+          "kind": "conversation",
+          "conversationId": 10
+        },
+        "history": "rewindable",
+        "fork": "asOf",
+        "createdAt": 11
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        11,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 11,
+          "kind": "pi.agent",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 10
+          },
+          "history": "rewindable",
+          "fork": "asOf",
+          "createdAt": 11
+        },
+        "version": 1,
+        "value": {
+          "tools": [
+            "fixture.inline",
+            "fixture.deferred",
+            "fixture.nested"
+          ],
+          "modelTools": [
+            "fixture.disabled",
+            "fixture.nested",
+            "fixture.deferred"
+          ]
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "scanEntries",
+      "arguments": [
+        {
+          "conversationId": 2,
+          "order": "ascending"
+        },
+        100,
+        null
+      ],
+      "result": {
+        "items": [
+          {
+            "kind": "app.display",
+            "data": {
+              "text": "Already settled"
+            },
+            "id": 18,
+            "conversationId": 2
+          },
+          {
+            "kind": "app.question",
+            "data": {
+              "source": "fixture"
+            },
+            "model": [
+              {
+                "role": "user",
+                "content": "Placed question",
+                "timestamp": 1700000000000
+              }
+            ],
+            "id": 20,
+            "conversationId": 2
+          }
+        ]
+      }
+    },
+    {
+      "method": "scanSubmissions",
+      "arguments": [
+        {
+          "conversationId": 2,
+          "order": "ascending"
+        },
+        100,
+        null
+      ],
+      "result": {
+        "items": [
+          {
+            "conversationId": 2,
+            "requestId": "custom-input",
+            "type": "input",
+            "status": "queued",
+            "id": 14
+          },
+          {
+            "conversationId": 2,
+            "requestId": "display-write",
+            "type": "write",
+            "status": "queued",
+            "id": 15
+          },
+          {
+            "conversationId": 2,
+            "requestId": "reset",
+            "type": "write",
+            "status": "queued",
+            "id": 16
+          },
+          {
+            "conversationId": 2,
+            "requestId": "settled-display",
+            "type": "write",
+            "status": "done",
+            "entry": 18,
+            "id": 19
+          }
+        ]
+      }
+    }
+  ]
+}
