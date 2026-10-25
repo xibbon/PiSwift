@@ -11,14 +11,20 @@ import ImageIO
 /// codec call finishes before it checks cancellation. Only the first frame is
 /// re-encoded; an image that needs no change keeps all its original bytes.
 public struct NativeImageProcessor: ImageProcessor, Sendable {
-    public init() {}
+    /// Test seam: reports whether the codec work ran on the main thread.
+    private let onWork: (@Sendable (_ onMainThread: Bool) -> Void)?
+
+    public init() { onWork = nil }
+
+    internal init(onWork: @escaping @Sendable (_ onMainThread: Bool) -> Void) { self.onWork = onWork }
 
     /// Use the installed ImageIO codecs to decode the input and produce PNG or JPEG
     /// when a change is required. Invalid limits or damaged image data return nil.
     public func prepare(bytes: [UInt8], mimeType: String, limits: ImageLimits) async throws -> PreparedImage? {
         try Task.checkCancellation()
+        let onWork = onWork
         let work = Task.detached(priority: Task.currentPriority) {
-            try Self.prepareImage(bytes: bytes, mimeType: mimeType, limits: limits)
+            try Self.observedPrepare(bytes: bytes, mimeType: mimeType, limits: limits, onWork: onWork)
         }
         return try await withTaskCancellationHandler {
             let result = try await work.value
@@ -27,6 +33,13 @@ public struct NativeImageProcessor: ImageProcessor, Sendable {
         } onCancel: {
             work.cancel()
         }
+    }
+
+    private static func observedPrepare(
+        bytes: [UInt8], mimeType: String, limits: ImageLimits, onWork: (@Sendable (Bool) -> Void)?
+    ) throws -> PreparedImage? {
+        onWork?(Thread.isMainThread)
+        return try prepareImage(bytes: bytes, mimeType: mimeType, limits: limits)
     }
 
     private static func prepareImage(

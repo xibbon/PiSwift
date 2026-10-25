@@ -305,30 +305,17 @@ struct NativeImageProcessorTests {
         #expect(wide == originalWide)
     }
 
+    // Timing checks of the main actor fail under a parallel test run (other @MainActor
+    // tests share it), so check where the codec work runs instead.
     @MainActor @Test func leavesMainActorFree() async throws {
         let bytes = try imageFixture(width: 1800, height: 1200, noise: true)
-        let clock = ContinuousClock()
-        let start = clock.now
-        let finished = Mutex(false)
-        let work = Task { @MainActor in
-            defer { finished.withLock { $0 = true } }
-            return try await NativeImageProcessor().prepare(
-                bytes: bytes, mimeType: "image/png", limits: ImageLimits(maxWidth: 500, maxBytes: 50_000)
-            )
-        }
-        // Tick while the image work runs. Under a loaded parallel test run a 5 ms sleep can take
-        // hundreds of milliseconds, so the bound only rules out a main actor blocked for the encode.
-        var ticks = 0
-        var longest = Duration.zero
-        while !finished.withLock({ $0 }) || clock.now - start < .milliseconds(100) {
-            let tick = clock.now
-            try await Task.sleep(for: .milliseconds(5))
-            longest = max(longest, clock.now - tick)
-            ticks += 1
-        }
-        #expect(try await work.value != nil)
-        #expect(ticks >= 3)
-        #expect(longest < .seconds(1))
+        let workOnMain = Mutex<[Bool]>([])
+        let processor = NativeImageProcessor(onWork: { onMain in workOnMain.withLock { $0.append(onMain) } })
+        let prepared = try await processor.prepare(
+            bytes: bytes, mimeType: "image/png", limits: ImageLimits(maxWidth: 500, maxBytes: 50_000)
+        )
+        #expect(prepared != nil)
+        #expect(workOnMain.withLock { $0 } == [false])
     }
 
     @Test func cancellationThrowsAndDoesNotAffectLaterCalls() async throws {
