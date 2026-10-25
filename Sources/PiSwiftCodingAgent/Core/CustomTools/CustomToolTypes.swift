@@ -19,11 +19,6 @@ public enum ToolExposure: String, Sendable, Codable {
     case hidden
 }
 
-public enum ToolNameCollisionPolicy: String, Sendable, Codable {
-    case overwrite
-    case reject
-}
-
 public struct ToolNamespace: Sendable, Codable {
     public var name: String
     /// Other names that tools can use to find this namespace.

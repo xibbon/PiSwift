@@ -1,6 +1,7 @@
 import Foundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftCodemodeRuntime
 
 public let CODEMODE_TOOL_NAME = "codemode"
 public let CODEMODE_STORE_ENTRY_TYPE = "codemode-store"

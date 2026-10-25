@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import PiSwiftAI
 @testable import PiSwiftCodingAgent
+@testable import PiSwiftCodemodeRuntime
 
 private func sandboxValue(_ result: CodemodeRuntimeResult) -> String? {
     guard let value = result.execution.returnedValue,

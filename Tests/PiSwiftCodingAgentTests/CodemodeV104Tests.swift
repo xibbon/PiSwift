@@ -3,6 +3,7 @@ import JavaScriptCore
 import Testing
 import PiSwiftAI
 @testable import PiSwiftCodingAgent
+@testable import PiSwiftCodemodeRuntime
 
 private func v104Value(_ result: CodemodeRuntimeResult) throws -> String? {
     try result.execution.returnedValue.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }

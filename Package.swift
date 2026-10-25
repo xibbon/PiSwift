@@ -16,6 +16,7 @@ let package = Package(
             name: "PiSwift",
             targets: ["PiSwift"]
         ),
+        .library(name: "PiSwiftCodemodeRuntime", targets: ["PiSwiftCodemodeRuntime"]),
         .library(name: "PiSwiftDurable", targets: ["PiSwiftDurable"]),
         .library(name: "PiSwiftDurableTesting", targets: ["PiSwiftDurableTesting"]),
         .library(name: "PiSwiftCodingAgentDurable", targets: ["PiSwiftCodingAgentDurable"]),
@@ -112,11 +113,17 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .target(
+            name: "PiSwiftCodemodeRuntime",
+            dependencies: ["PiSwiftAI"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
             name: "PiSwiftCodingAgent",
             dependencies: [
                 "PiSwiftAI",
                 "PiSwiftAgent",
                 "PiSwiftMCP",
+                "PiSwiftCodemodeRuntime",
             ],
             resources: [
                 .process("Resources")
@@ -176,7 +183,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PiSwiftCodingAgentDurableTests",
-            dependencies: ["PiSwiftCodingAgentDurable", "PiSwiftCodingAgent", "PiSwiftDurable", "PiSwiftDurableTesting"],
+            dependencies: ["PiSwiftCodingAgentDurable", "PiSwiftCodingAgent", "PiSwiftDurable", "PiSwiftDurableTesting", "PiSwiftCodemodeRuntime"],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
@@ -207,6 +214,7 @@ let package = Package(
             name: "PiSwiftCodingAgentTests",
             dependencies: [
                 "PiSwiftCodingAgent",
+                "PiSwiftCodemodeRuntime",
                 "PiSwiftAI",
                 "PiSwiftAgent",
                 "TestEnvironmentSupport",

@@ -1,0 +1,20 @@
+import PiSwiftCodemodeRuntime
+
+/// Use the shared JavaScriptCore engine for new integrations.
+@available(*, deprecated, renamed: "PiSwiftCodemodeRuntime.JSCCodemodeEngine")
+public typealias CodemodeSandbox = PiSwiftCodemodeRuntime.JSCCodemodeEngine
+
+public typealias CodemodeRuntimeTool = PiSwiftCodemodeRuntime.CodemodeRuntimeTool
+public typealias CodemodeRuntimeGlobal = PiSwiftCodemodeRuntime.CodemodeRuntimeGlobal
+public typealias CodemodeRuntimeCall = PiSwiftCodemodeRuntime.CodemodeRuntimeCall
+public typealias CodemodeRuntimeReply = PiSwiftCodemodeRuntime.CodemodeRuntimeReply
+public typealias CodemodeStoreWrites = PiSwiftCodemodeRuntime.CodemodeStoreWrites
+public typealias CodemodeRuntimeResult = PiSwiftCodemodeRuntime.CodemodeRuntimeResult
+public typealias CodemodeFailureKind = PiSwiftCodemodeRuntime.CodemodeFailureKind
+public typealias CodemodeFailure = PiSwiftCodemodeRuntime.CodemodeFailure
+public typealias CodemodeOutputItem = PiSwiftCodemodeRuntime.CodemodeOutputItem
+public typealias CodemodeExecutionResult = PiSwiftCodemodeRuntime.CodemodeExecutionResult
+public typealias ToolNameCollisionPolicy = PiSwiftCodemodeRuntime.ToolNameCollisionPolicy
+
+public let codemodeMaxOutputChars = PiSwiftCodemodeRuntime.codemodeMaxOutputChars
+public let codemodeMaxOutputItems = PiSwiftCodemodeRuntime.codemodeMaxOutputItems

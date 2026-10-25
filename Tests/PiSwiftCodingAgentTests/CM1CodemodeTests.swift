@@ -3,6 +3,7 @@ import Testing
 import PiSwiftAI
 import PiSwiftAgent
 @testable import PiSwiftCodingAgent
+@testable import PiSwiftCodemodeRuntime
 
 private func cm1Text(_ block: ContentBlock) -> String? {
     if case .text(let value) = block { return value.text }

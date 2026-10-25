@@ -2,6 +2,7 @@ import Foundation
 import CoreFoundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftCodemodeRuntime
 
 public let defaultCodemodeInputSchemaMaxChars = 16_000
 
@@ -36,30 +37,12 @@ public struct CodemodeDeclaration: Sendable {
 }
 
 public func toCodemodeIdentifier(_ name: String) -> String {
-    var result = ""
-    for scalar in name.unicodeScalars {
-        let ascii = scalar.value
-        let valid = (65...90).contains(ascii) || (97...122).contains(ascii) || ascii == 95 || ascii == 36 ||
-            (!result.isEmpty && (48...57).contains(ascii))
-        result += valid ? String(scalar) : "_"
-    }
-    return result.isEmpty ? "_" : result
+    PiSwiftCodemodeRuntime.toCodemodeIdentifier(name)
 }
 
 /// Return a diagnostic when two names resolve to the same JavaScript property.
 public func codemodeToolIdentifierCollision(_ names: [String]) -> String? {
-    codemodeToolIdentifierCollision(names.map { ($0, toCodemodeIdentifier($0)) })
-}
-
-func codemodeToolIdentifierCollision(_ entries: [(name: String, identifier: String)]) -> String? {
-    var namesByIdentifier: [String: String] = [:]
-    for (name, identifier) in entries {
-        if let previous = namesByIdentifier[identifier] {
-            return "Tools \"\(previous)\" and \"\(name)\" use the same JavaScript identifier \"\(identifier)\"."
-        }
-        namesByIdentifier[identifier] = name
-    }
-    return nil
+    PiSwiftCodemodeRuntime.codemodeToolIdentifierCollision(names.map { ($0, toCodemodeIdentifier($0)) })
 }
 
 private func object(_ value: Any?) -> [String: Any]? { value as? [String: Any] }

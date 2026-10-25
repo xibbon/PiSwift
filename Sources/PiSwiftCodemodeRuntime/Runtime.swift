@@ -166,8 +166,8 @@ private final class RuntimeStopFlag: Sendable {
         let recorded = state.withLock { state -> CodemodeRuntimeCall? in
             if state.rejected.count < 128 {
                 var bounded = call
-                bounded.name = CodemodeNestedCall.preview(call.name, limit: 200)
-                bounded.argsJSON = call.argsJSON.map { CodemodeNestedCall.preview($0, limit: 200) }
+                bounded.name = codemodePreview(call.name, limit: 200)
+                bounded.argsJSON = call.argsJSON.map { codemodePreview($0, limit: 200) }
                 state.rejected.append(bounded)
                 return bounded
             }
@@ -190,7 +190,7 @@ private struct RuntimeInput: Sendable {
     var useTimeLimit: Bool
 }
 
-public enum CodemodeSandbox {
+public enum JSCCodemodeEngine {
     static func usesTimeLimit(forceWatchdog: Bool) -> Bool {
         #if os(macOS)
         return !forceWatchdog && runtimeSetExecutionTimeLimit != nil

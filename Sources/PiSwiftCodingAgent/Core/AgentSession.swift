@@ -1,6 +1,7 @@
 import Foundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftCodemodeRuntime
 
 // v1.0.4 #10343: all prompt paths use the same built-in contributions.
 private let builtInToolPrompt: [String: ToolSystemPromptContribution] = [

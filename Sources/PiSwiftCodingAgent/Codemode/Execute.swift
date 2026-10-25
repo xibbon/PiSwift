@@ -2,6 +2,7 @@ import Foundation
 import CoreFoundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftCodemodeRuntime
 
 /// The catalog, classifier, and image operations scripts can use.
 public protocol CodemodeModelRuntime: Sendable {
@@ -730,7 +731,7 @@ public func executeCodemode(toolCallId: String, params: [String: AnyCodable],
     await state.publish()
     let limit = ClassifyLimit()
     let byName = Dictionary(callable.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-    let result = await CodemodeSandbox.execute(
+    let result = await JSCCodemodeEngine.execute(
         code: parsed.code, tools: runtimeTools, globals: globals,
         store: context.map { readCodemodeStore($0.sessionManager.getBranch()) } ?? [:],
         timeoutMs: timeoutMs, signal: signal, forceWatchdog: forceWatchdog,

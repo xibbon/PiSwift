@@ -3,6 +3,7 @@ import Testing
 import PiSwiftAI
 import PiSwiftAgent
 @testable import PiSwiftCodingAgent
+@testable import PiSwiftCodemodeRuntime
 
 private func hostContext(_ tool: AgentTool,
                          execute: @escaping NestedToolExecute) -> CustomToolContext {

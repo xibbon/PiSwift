@@ -1,6 +1,7 @@
 import Foundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftCodemodeRuntime
 
 public typealias HookFactory = @Sendable (HookAPI) -> Void
 

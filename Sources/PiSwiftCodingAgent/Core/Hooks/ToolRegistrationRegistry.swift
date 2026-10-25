@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PiSwiftCodemodeRuntime
 
 func hasCodemodeIdentifier(_ exposure: ToolExposure) -> Bool {
     exposure != .hidden && exposure != .modelOnly
