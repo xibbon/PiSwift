@@ -3,6 +3,7 @@ import PiSwiftAI
 import PiSwiftChord
 import PiSwiftCodingAgent
 import PiSwiftDurable
+import PiSwiftDurableJSC
 import Synchronization
 
 /// An open durable session. Call close() to release its resources and session lock.
@@ -87,7 +88,7 @@ internal struct OpenDurableDependencies: Sendable {
     static var live: Self {
         Self(agentDirectory: getAgentDir(), makeModels: { directory in
             let registry = discoverModels(authStorage: discoverAuthStorage(agentDir: directory), agentDir: directory)
-            let adapter = await RegistryDurableModels.create(registry: registry)
+            let adapter = await RegistryCodemodeModels.create(registry: registry)
             return DurableRuntimeModels(models: adapter, available: adapter.getAvailableSnapshot(), initial: {
                 await findInitialAgentModel(settingsManager: $0, registry: registry)
             })
@@ -101,6 +102,7 @@ internal func openDurable(_ options: OpenDurableOptions,
                                            continueSession: options.continueSession,
                                            agentDirectory: dependencies.agentDirectory)
     let envs = dependencies.makeEnvs(location.cwd)
+    let sandbox = JSCCodemodeSandbox()
     var storage: (any DurableStorage)?
     var harness: Harness?
     var runtime: DurableRuntime?
@@ -108,10 +110,10 @@ internal func openDurable(_ options: OpenDurableOptions,
         let models = try await dependencies.makeModels(dependencies.agentDirectory)
         let manager = SettingsManager.create(location.cwd, dependencies.agentDirectory)
         let settings = harnessSettings(from: manager)
-        let registry = try createCodingRegistry(settingsManager: manager, cwd: location.cwd,
-                                                 agentDirectory: dependencies.agentDirectory)
-        try registry.install(try subagentExtension())
         let reports = RuntimeReports()
+        let registry = try createCodingRegistry(settingsManager: manager, cwd: location.cwd,
+                                                 agentDirectory: dependencies.agentDirectory,
+                                                 sandbox: sandbox, onReport: { reports.report($0) })
         let sqlite = try await dependencies.makeStorage(location.database)
         storage = sqlite
         let opened = try await Harness.open(storage: sqlite,
@@ -132,7 +134,8 @@ internal func openDurable(_ options: OpenDurableOptions,
                 ModelSummary(provider: $0.provider, modelId: $0.id, name: $0.name, contextWindow: $0.contextWindow)
             }))
         let live = DurableRuntime(harness: opened, envs: envs, location: location,
-                                  models: models.models, source: source, current: root, conversation: attached)
+                                  sandbox: sandbox, models: models.models, source: source,
+                                  current: root, conversation: attached)
         runtime = live
         try await live.attach()
         reports.attach(source)
@@ -161,6 +164,7 @@ internal func openDurable(_ options: OpenDurableOptions,
             } else {
                 if let openedHarness { try? await openedHarness.close(context: .background) }
                 else { try? await openedStorage?.close(context: .background) }
+                await sandbox.close()
                 await envs.cleanup(context: .background)
                 location.release()
             }
@@ -247,6 +251,7 @@ private final class RuntimeController: DurableController {
 private actor DurableRuntime {
     let harness: Harness
     let envs: ExecutionEnvs
+    let sandbox: JSCCodemodeSandbox
     let location: SessionLocation
     let models: any DurableModels
     let source: RuntimeViewSource
@@ -264,9 +269,10 @@ private actor DurableRuntime {
     var terminalObserver: Task<Void, Never>?
 
     init(harness: Harness, envs: ExecutionEnvs, location: SessionLocation,
-         models: any DurableModels, source: RuntimeViewSource, current: Conversation,
+         sandbox: JSCCodemodeSandbox, models: any DurableModels, source: RuntimeViewSource, current: Conversation,
          conversation: AttachedReplicatedState<ConversationView>) {
         self.harness = harness; self.envs = envs; self.location = location
+        self.sandbox = sandbox
         self.models = models; self.source = source; self.current = current; self.conversation = conversation
     }
     func attach() throws {
@@ -426,6 +432,7 @@ private actor DurableRuntime {
         do { try await harness.close(context: .background) }
         catch { /* The terminal result retains the first storage failure. */ }
         source.terminate(await harness.closed)
+        await sandbox.close()
         await envs.cleanup(context: .background)
         location.release()
         for task in pending { await task.value }

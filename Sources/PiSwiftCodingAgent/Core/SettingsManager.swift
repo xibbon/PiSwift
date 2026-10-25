@@ -278,6 +278,7 @@ public struct Settings: Sendable {
     public var defaultThinkingLevel: String?
     public var modelThinkingLevels: [String: PiSwiftAgent.ThinkingLevel]?
     public var defaultTools: [String]?
+    public var durableDeferredTools: [String]?
     public var fullscreenExitOutput: FullscreenExitOutput?
     public var fullscreenCopyOnSelect: Bool?
     public var transport: Transport?
@@ -748,6 +749,16 @@ public final class SettingsManager: Sendable {
     }
 
     public func getDefaultTools() -> [String]? { settings.defaultTools.map(resolveDefaultTools) }
+
+    public func getDurableDeferredTools() -> [String] {
+        settings.durableDeferredTools ?? []
+    }
+
+    public func setDurableDeferredTools(_ names: [String]) {
+        globalSettings.durableDeferredTools = names
+        markModified("durableDeferredTools")
+        save()
+    }
 
     public func getCodemodeMode() -> CodemodeMode { settings.codemode?.mode ?? .on }
     public func getCodemodeInlineBudget() -> Double {
@@ -1706,6 +1717,7 @@ public final class SettingsManager: Sendable {
         settings.defaultThinkingLevel = json["defaultThinkingLevel"] as? String
         settings.modelThinkingLevels = (json["modelThinkingLevels"] as? [String: String])?.compactMapValues(PiSwiftAgent.ThinkingLevel.init(rawValue:))
         settings.defaultTools = json["defaultTools"] as? [String]
+        settings.durableDeferredTools = json["durableDeferredTools"] as? [String]
         settings.fullscreenExitOutput = (json["fullscreenExitOutput"] as? String).flatMap(FullscreenExitOutput.init(rawValue:))
         settings.fullscreenCopyOnSelect = json["fullscreenCopyOnSelect"] as? Bool
         if let transport = json["transport"] as? String, let parsed = Transport(rawValue: transport) {
@@ -2031,6 +2043,7 @@ public final class SettingsManager: Sendable {
         json["defaultThinkingLevel"] = settings.defaultThinkingLevel
         json["modelThinkingLevels"] = settings.modelThinkingLevels?.mapValues(\.rawValue)
         json["defaultTools"] = settings.defaultTools
+        json["durableDeferredTools"] = settings.durableDeferredTools
         json["fullscreenExitOutput"] = settings.fullscreenExitOutput?.rawValue
         json["fullscreenCopyOnSelect"] = settings.fullscreenCopyOnSelect
         json["transport"] = settings.transport?.rawValue
@@ -2263,6 +2276,7 @@ public final class SettingsManager: Sendable {
                 result.defaultTools = tools
             }
         }
+        if override.durableDeferredTools != nil { result.durableDeferredTools = override.durableDeferredTools }
         if override.fullscreenExitOutput != nil { result.fullscreenExitOutput = override.fullscreenExitOutput }
         if override.fullscreenCopyOnSelect != nil { result.fullscreenCopyOnSelect = override.fullscreenCopyOnSelect }
         if override.transport != nil { result.transport = override.transport }

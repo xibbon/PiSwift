@@ -3,7 +3,7 @@
 This module connects pi settings, models, and tools to `PiSwiftDurable`.
 One process owns the model runtime, the durable Harness, SQLite storage, and the terminal UI.
 The UI is in PiSwiftTui. This library has no terminal dependency.
-The agent uses the Harness with its coding tools and `subagent` tool.
+The agent uses the Harness with its coding tools, `codemode`, and `subagent`.
 Swift keeps this host after upstream removed its experimental durable host.
 The hidden command and private session directory remain part of the Swift scope.
 
@@ -78,9 +78,10 @@ A submitted turn with no answer shows a notice. A recovered turn does not get th
 | `Sessions.swift` | Session directories and locks. |
 | `HarnessSettings.swift` | Read pi settings for the Harness. |
 | `RegistryDurableModels.swift` | Use model registry routing and credentials. |
+| `CodemodeModels.swift` | Use the same registry for the catalog, classifiers, and images. |
 | `InitialAgentModel.swift` | Select the model for a new conversation. |
 | `ExecutionEnvs.swift` | Share local environments by working directory. |
-| `CodingRegistry.swift` | Install coding tools and the pi prompt. |
+| `CodingRegistry.swift` | Install coding tools, codemode, the pi prompt, and optional tool search. |
 | `PiPrompt.swift` | Build tools, rules, docs, AGENTS.md, skills, and cwd sections. |
 | `Subagent.swift` | Install the foreground subagent tool. |
 | PiSwiftTui `DurableSubcommand.swift` | Parse arguments, open, run, and close. |
@@ -146,10 +147,56 @@ Use `createPiPrompt` for that registry. `createCodingRegistry` includes `bash`.
 The stock host installs `createCodingTools(images: NativeImageProcessor())`.
 Image reads can convert and resize files for the selected model. The native processor uses
 ImageIO and CoreGraphics; encoded bytes and resampling can differ from upstream Photon.
-This does not add image input to the terminal UI. The stock host does not install
-`tool_search` or codemode. A custom host must install them explicitly. Codemode also needs
-a real sandbox adapter; the library supplies no JavaScriptCore adapter. Local environments
-have no native `listFiles` implementation and return `notSupported`.
+This does not add image input to the terminal UI. Local environments have no native
+`listFiles` implementation and return `notSupported`.
+
+## Code mode and tool search
+
+Both coding registry factories install durable `codemode` with `JSCCodemodeSandbox`.
+The runtime owns one sandbox for each open session. It closes the Harness and its
+invocations, then the sandbox, then the execution environments. A continued session
+uses a new sandbox and the saved script journal. Finished nested calls use their saved
+results. An interrupted unsafe tool, such as `bash`, can return an interrupted error.
+Scripts can catch this error. The engine fingerprint must match to resume a script.
+An OS or engine change can prevent resume. JavaScriptCore has no per-context heap cap.
+On iOS, the watchdog can end a run before its JavaScript thread stops.
+
+The model can call `codemode`. The classifier and image helper tools permit nested
+tool calls only. Coding tools permit both caller types. Deferred tools remain callable
+from scripts. Explicit extension and tool selections must include the required
+extensions and tools; codemode does not bypass these filters.
+
+`models.getModelsOfType`, `models.getAvailableOfType`, `models.getModelOfType`,
+`models.classify`, and `models.generateImages` use `RegistryCodemodeModels`.
+The runtime uses the same registry and credentials for these calls and for chat.
+Credentials are resolved for each request. Catalog results omit credential headers.
+Classifier and image requests receive the script's cancellation signal. Missing
+credentials return the registry's error text. The session's `ExecutionEnv` writes
+full text output and image files. The result includes their paths.
+
+Set `durableDeferredTools` in `settings.json` to defer registered tools:
+
+```json
+{
+  "durableDeferredTools": ["bash", "edit"]
+}
+```
+
+This is a top-level setting because there was no nested durable settings object.
+The default is `[]`. An empty list keeps the coding tools available and does not
+install `tool_search`. A non-empty list installs the `tool-search` extension.
+Named tools have `deferred: true`. Search loads matches with `modelTools.add` for
+later model requests. An unknown name is reported once per registry and ignored.
+The runtime shows the report as a warning. Custom registry hosts can receive it
+through `onReport`. A project list replaces the global list; `[]` clears it.
+The registry reads the list when it is created. Reopen the session to apply a change.
+When you supply an explicit extension selection, include `codemode` and, if the list
+is non-empty, `tool-search`.
+
+Custom Harness hosts must supply `RegistryCodemodeModels` to enable model globals.
+When you pass your own sandbox to `createCodingRegistry`, close the Harness before
+you call `await sandbox.close()`. Keep the session's execution environment installed
+for output and image files. PiSwiftTui's codemode display is separate work (H1t).
 
 ## Accepted differences from upstream
 
