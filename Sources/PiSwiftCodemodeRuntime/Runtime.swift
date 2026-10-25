@@ -68,6 +68,8 @@ public struct CodemodeStoreWrites: Sendable {
 public struct CodemodeRuntimeResult: Sendable {
     public var execution: CodemodeExecutionResult
     public var storeWrites: CodemodeStoreWrites
+    /// The reply being applied when a deterministic script ended. Nil for execute().
+    public var during: CodemodeRuntimeDuring? = nil
     /// True when a timeout cannot stop the JavaScriptCore thread and the host abandons it.
     public var usedWatchdog: Bool
     /// Calls that `onCall` received and that had no reply when the script ended, in call order.
@@ -98,11 +100,13 @@ public struct CodemodeRuntimeResult: Sendable {
     }
 }
 
-private enum RuntimeEvent: Sendable {
+enum RuntimeEvent: Sendable {
     case output(CodemodeOutputItem)
     case call(id: Int, target: CodemodeRuntimeCall.Target, name: String, argsJSON: String?)
     case callResult(id: Int, CodemodeRuntimeReply)
     case done(ok: Bool, payload: String?, writes: String?)
+    case deterministicDone(ok: Bool, payload: String?, writes: String?, during: CodemodeRuntimeDuring)
+    case idle(seq: Int, issued: Int)
     case crash(String)
     case bridgeBroken(String)
     case timeout(Int)
@@ -111,12 +115,13 @@ private enum RuntimeEvent: Sendable {
     case stopGraceExpired
 }
 
-private enum RuntimeMessage: Sendable {
+enum RuntimeMessage: Sendable {
     case settle(Int, CodemodeRuntimeReply)
+    case deterministicSettle(seq: Int, now: Double, id: Int, reply: CodemodeRuntimeReply, propertiesJSON: String?)
     case stop
 }
 
-private final class RuntimeMailbox: Sendable {
+final class RuntimeMailbox: Sendable {
     private let queue = LockedState<[RuntimeMessage]>([])
     private let available = DispatchSemaphore(value: 0)
 
@@ -131,7 +136,7 @@ private final class RuntimeMailbox: Sendable {
     }
 }
 
-private final class RuntimeStopFlag: Sendable {
+final class RuntimeStopFlag: Sendable {
     private struct State: Sendable {
         var hostEnded = false
         var scriptSettled = false
@@ -181,13 +186,14 @@ private final class RuntimeStopFlag: Sendable {
     var rejectedCalls: [CodemodeRuntimeCall] { state.withLock { $0.rejected } }
 }
 
-private struct RuntimeInput: Sendable {
+struct RuntimeInput: Sendable {
     var code: String
     var preludeSource: String
     var toolsJSON: String
     var globalsJSON: String
     var storeJSON: String
     var useTimeLimit: Bool
+    var deterministic: RuntimeDeterministicInput? = nil
 }
 
 public enum JSCCodemodeEngine {
@@ -363,7 +369,7 @@ public enum JSCCodemodeEngine {
                 result = CodemodeRuntimeResult(execution: .init(output: output,
                     failure: .init(kind: .sandbox, message: "JavaScriptCore stopped before the script settled")),
                     usedWatchdog: watchdog)
-            case .stopGraceExpired:
+            case .stopGraceExpired, .idle, .deterministicDone:
                 continue
             }
             if result != nil {
@@ -398,24 +404,24 @@ public enum JSCCodemodeEngine {
     }
 }
 
-private func jsonString<T: Encodable>(_ value: T) throws -> String {
+func jsonString<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return String(decoding: try encoder.encode(value), as: UTF8.self)
 }
 
 // The prelude and script share built-ins. Do not trust the prelude's serialized fields.
-private struct RuntimeBridgeError: Error {
+struct RuntimeBridgeError: Error {
     var reason: String
 }
 
-private func brokenBridgeResult(_ reason: String, output: [CodemodeOutputItem], watchdog: Bool) -> CodemodeRuntimeResult {
+func brokenBridgeResult(_ reason: String, output: [CodemodeOutputItem], watchdog: Bool) -> CodemodeRuntimeResult {
     .init(execution: .init(output: output, failure: .init(kind: .sandbox,
         message: "Sandbox bridge broken: \(reason). The script may have modified built-ins such as a prototype's toJSON.")),
         usedWatchdog: watchdog)
 }
 
-private func decodeAnyCodable(_ json: String, what: String) throws -> AnyCodable {
+func decodeAnyCodable(_ json: String, what: String) throws -> AnyCodable {
     do {
         return try JSONDecoder().decode(AnyCodable.self, from: Data(json.utf8))
     } catch {
@@ -423,7 +429,7 @@ private func decodeAnyCodable(_ json: String, what: String) throws -> AnyCodable
     }
 }
 
-private func parseBridgeJSON(_ json: String, what: String) throws -> Any {
+func parseBridgeJSON(_ json: String, what: String) throws -> Any {
     do {
         return try JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])
     } catch {
@@ -431,7 +437,7 @@ private func parseBridgeJSON(_ json: String, what: String) throws -> Any {
     }
 }
 
-private func parseWrites(_ json: String) throws -> CodemodeStoreWrites {
+func parseWrites(_ json: String) throws -> CodemodeStoreWrites {
     guard let entries = try parseBridgeJSON(json, what: "store writes") as? [Any] else {
         throw RuntimeBridgeError(reason: "store writes are not an array")
     }
@@ -451,7 +457,7 @@ private func parseWrites(_ json: String) throws -> CodemodeStoreWrites {
     return writes
 }
 
-private func parseFailure(_ json: String?) throws -> CodemodeFailure {
+func parseFailure(_ json: String?) throws -> CodemodeFailure {
     let parsed = try parseBridgeJSON(json ?? "", what: "script error")
     guard parsed is [String: Any] || parsed is [Any] else {
         throw RuntimeBridgeError(reason: "script error is not an object")
@@ -464,7 +470,7 @@ private func parseFailure(_ json: String?) throws -> CodemodeFailure {
     return .init(kind: .script, message: message, name: object["name"] as? String, stack: object["stack"] as? String)
 }
 
-private func validateGlobals(_ globals: [CodemodeRuntimeGlobal]) -> String? {
+func validateGlobals(_ globals: [CodemodeRuntimeGlobal]) -> String? {
     let reserved: Set<String> = ["tools", "ALL_TOOLS", "console", "text", "image", "exit", "globalThis", "store", "load"]
     let identifier = try! NSRegularExpression(pattern: "^[A-Za-z_$][A-Za-z0-9_$]*$")
     var seen: Set<String> = []
@@ -484,7 +490,7 @@ private func validateGlobals(_ globals: [CodemodeRuntimeGlobal]) -> String? {
 }
 
 /// This function runs only on the dedicated thread. The context and every JSValue stay here.
-private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFlag: RuntimeStopFlag,
+func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFlag: RuntimeStopFlag,
                            emit: AsyncStream<RuntimeEvent>.Continuation) {
     let vm = JSVirtualMachine()
     guard let context = JSContext(virtualMachine: vm) else {
@@ -501,6 +507,13 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
     // The C callback retains no Swift object. Keep its state alive until the VM leaves this scope.
     defer { withExtendedLifetime(interruptState) {} }
     #endif
+
+    // These counters and all JS values stay on the worker thread.
+    var current = 0
+    var issued = 0
+    func during() -> CodemodeRuntimeDuring? {
+        input.deterministic.map { _ in .init(seq: current, issued: issued) }
+    }
 
     // String conversion would turn JavaScript undefined into the literal "undefined".
     // Read JSValue on this thread first; events still carry only Sendable string values.
@@ -522,6 +535,7 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
                 }
                 return
             }
+            issued += 1
             emit.yield(.call(id: id, target: kind == "call" ? .tool : .global, name: name, argsJSON: c))
         case "output":
             if a == "image", bValue.isString, let data = b {
@@ -533,7 +547,7 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
             }
         case "done":
             stopFlag.settle()
-            emit.yield(.done(ok: a == "true", payload: b, writes: c))
+            runtimeEmitDone(ok: a == "true", payload: b, writes: c, during: during(), emit: emit)
         default:
             emit.yield(.bridgeBroken("unknown message from the worker"))
         }
@@ -541,7 +555,27 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
     // JavaScriptCore supplies a configurable console; upstream QuickJS does not.
     // Remove it before lockdown so the prelude can define its own console afterwards.
     context.evaluateScript("delete globalThis.console")
-    let preludeURL = URL(fileURLWithPath: "codemode-prelude.js")
+    // Deterministic source URLs cannot depend on the host's working directory.
+    func sourceURL(_ name: String) -> URL {
+        if input.deterministic != nil {
+            return URL(fileURLWithPath: name, relativeTo: URL(fileURLWithPath: "/")).absoluteURL
+        }
+        return URL(fileURLWithPath: name)
+    }
+    // Install clock and random bindings before the prelude freezes built-ins.
+    var advanceClock: JSValue?
+    if let deterministic = input.deterministic {
+        context.exception = nil
+        guard let factory = context.evaluateScript(codemodeDeterministicPreludeSource,
+                  withSourceURL: sourceURL("codemode-deterministic.js")),
+              let advance = factory.call(withArguments: [deterministic.startedAt, deterministic.seed]),
+              context.exception == nil, !advance.isUndefined else {
+            emit.yield(.crash("Failed to initialize deterministic JavaScriptCore bindings: \(runtimeExceptionText(context))"))
+            return
+        }
+        advanceClock = advance
+    }
+    let preludeURL = sourceURL("codemode-prelude.js")
     context.exception = nil
     guard let prelude = context.evaluateScript(input.preludeSource, withSourceURL: preludeURL),
           context.exception == nil,
@@ -559,16 +593,18 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
     // The wrapper prefix is on the script's first line, as it is upstream.
     let wrapped = "(async (tools, console) => {\(input.code)\n})"
     context.exception = nil
-    guard let script = context.evaluateScript(wrapped, withSourceURL: URL(fileURLWithPath: "codemode.js")),
+    guard let script = context.evaluateScript(wrapped, withSourceURL: sourceURL(input.deterministic?.name ?? "codemode.js")),
           context.exception == nil else {
-        emit.yield(.done(ok: false, payload: runtimeExceptionJSON(context), writes: nil))
+        runtimeEmitDone(ok: false, payload: runtimeExceptionJSON(context), writes: nil, during: during(), emit: emit)
         return
     }
     context.exception = nil
     _ = run.call(withArguments: [script])
-    if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit) { return }
+    if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
     _ = stalled.call(withArguments: [])
-    if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit) { return }
+    if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
+
+    if input.deterministic != nil { emit.yield(.idle(seq: current, issued: issued)) }
 
     while true {
         switch mailbox.next() {
@@ -580,21 +616,44 @@ private func runtimeWorker(input: RuntimeInput, mailbox: RuntimeMailbox, stopFla
             let payload: Any = reply.payloadJSON ?? JSValue(undefinedIn: context)!
             let arguments: [Any] = [id, reply.ok, payload]
             _ = settle.call(withArguments: arguments)
-            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit) { return }
+            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
             _ = stalled.call(withArguments: [])
-            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit) { return }
+            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
+        case .deterministicSettle(let seq, let now, let id, let reply, let propertiesJSON):
+            if stopFlag.isCancelled { return }
+            current = seq
+            context.exception = nil
+            _ = advanceClock?.call(withArguments: [now])
+            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
+            let payload: Any = reply.payloadJSON ?? JSValue(undefinedIn: context)!
+            let properties: Any = propertiesJSON ?? JSValue(undefinedIn: context)!
+            _ = settle.call(withArguments: [id, reply.ok, payload, properties])
+            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
+            _ = stalled.call(withArguments: [])
+            if runtimeCheckTermination(context: context, stopFlag: stopFlag, emit: emit, during: during()) { return }
+            emit.yield(.idle(seq: current, issued: issued))
         }
     }
 }
 
 private func runtimeCheckTermination(context: JSContext, stopFlag: RuntimeStopFlag,
-                                     emit: AsyncStream<RuntimeEvent>.Continuation) -> Bool {
+                                     emit: AsyncStream<RuntimeEvent>.Continuation,
+                                     during: CodemodeRuntimeDuring? = nil) -> Bool {
     if stopFlag.isCancelled { return true }
     if context.exception != nil {
-        emit.yield(.done(ok: false, payload: runtimeExceptionJSON(context), writes: nil))
+        runtimeEmitDone(ok: false, payload: runtimeExceptionJSON(context), writes: nil, during: during, emit: emit)
         return true
     }
     return false
+}
+
+private func runtimeEmitDone(ok: Bool, payload: String?, writes: String?, during: CodemodeRuntimeDuring?,
+                             emit: AsyncStream<RuntimeEvent>.Continuation) {
+    if let during {
+        emit.yield(.deterministicDone(ok: ok, payload: payload, writes: writes, during: during))
+    } else {
+        emit.yield(.done(ok: ok, payload: payload, writes: writes))
+    }
 }
 
 private func runtimeExceptionText(_ context: JSContext) -> String {

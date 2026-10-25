@@ -182,6 +182,11 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
+            name: "PiSwiftCodemodeRuntimeTests",
+            dependencies: ["PiSwiftCodemodeRuntime", "PiSwiftAI"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
             name: "PiSwiftCodingAgentDurableTests",
             dependencies: ["PiSwiftCodingAgentDurable", "PiSwiftCodingAgent", "PiSwiftDurable", "PiSwiftDurableTesting", "PiSwiftCodemodeRuntime"],
             swiftSettings: strictConcurrencySettings

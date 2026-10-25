@@ -422,12 +422,20 @@ let codemodePreludeSource = #"""
 	Object.defineProperty(globalThis, "exit", { value: exit, enumerable: true });
 
 	return {
-		settle(id, ok, payload) {
+		settle(id, ok, payload, propertiesJson) {
 			const entry = pending.get(id);
 			if (!entry) return;
 			pending.delete(id);
 			if (!ok) {
-				entry.reject(new ErrorCtor(payload));
+				const error = new ErrorCtor(payload);
+				if (propertiesJson !== undefined) {
+					const properties = parse(propertiesJson);
+					for (const key of Object.keys(properties)) {
+						if (key === "name" || key === "message" || key === "stack") continue;
+						Object.defineProperty(error, key, { value: properties[key], writable: true, enumerable: true, configurable: true });
+					}
+				}
+				entry.reject(error);
 				return;
 			}
 			let value;
