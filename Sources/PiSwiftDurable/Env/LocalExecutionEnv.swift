@@ -253,6 +253,10 @@ public final class LocalExecutionEnv: ExecutionEnv {
             }
         }
     }
+    /// Lists a bounded tree on a private I/O worker. Git ignore rules apply in work trees.
+    public func listFiles(_ path: String, options: ListFilesOptions?, context: ChordContext) async -> Result<FileListing, FileError> {
+        await LocalFileListing.list(resolve(path), options: options, context: context)
+    }
     /// Opens a paged POSIX directory reader.
     public func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> {
         let resolved = resolve(path)

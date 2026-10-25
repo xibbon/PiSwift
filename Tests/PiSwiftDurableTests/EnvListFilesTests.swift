@@ -4,7 +4,7 @@ import PiSwiftDurable
 import PiSwiftDurableTesting
 
 struct EnvListFilesTests {
-    @Test("existing environments report unsupported", arguments: [false, true])
+    @Test("existing environments report unsupported", arguments: [false])
     func unsupported(_ local: Bool) async {
         let env: any ExecutionEnv = local ? LocalExecutionEnv(cwd: "/") : FakeExecutionEnv()
         let controller = AbortController(); controller.abort()
