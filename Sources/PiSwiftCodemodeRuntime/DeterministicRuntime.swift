@@ -42,6 +42,10 @@ public struct CodemodeRuntimeStartOptions: Sendable {
     public var timeoutMs: Int?
     public var signal: CancellationToken?
     public var forceWatchdog: Bool
+    /// Adds platform, OS version and architecture to the fingerprint, so a resume on another
+    /// OS version or device is rejected up front. Off by default: replay still detects a
+    /// script that behaves differently, through the call journal.
+    public var fingerprintIncludesPlatform: Bool = false
     /// Awaited before the worker starts. The handle permits abort during this callback.
     public var onStarted: @Sendable (String, CodemodeRuntimeRun) async -> Void
     /// Calls and idle callbacks are awaited in worker event order. Callbacks can deliver replies.
@@ -234,7 +238,8 @@ public actor CodemodeRuntimeRun {
                 Task { await self?.abort() }
             }
         }
-        await options.onStarted(deterministicFingerprint(useTimeLimit: input.useTimeLimit), self)
+        await options.onStarted(deterministicFingerprint(useTimeLimit: input.useTimeLimit,
+                                                         includePlatform: options.fingerprintIncludesPlatform), self)
         guard !finished else { return }
         let (events, emitter) = AsyncStream<RuntimeEvent>.makeStream()
         self.emitter = emitter
@@ -389,7 +394,11 @@ private func deterministicSourceHash(_ source: String) -> String {
     return String(format: "%08x", hash)
 }
 
-private func deterministicFingerprint(useTimeLimit: Bool) -> String {
+func deterministicFingerprint(useTimeLimit: Bool, includePlatform: Bool) -> String {
+    let versions = "prelude \(deterministicSourceHash(codemodePreludeSource)), " +
+        "bindings \(deterministicSourceHash(codemodeDeterministicPreludeSource)), scheduler 1, seed mulberry32-v1, " +
+        "interrupt \(useTimeLimit ? "time-limit" : "watchdog")"
+    guard includePlatform else { return "JavaScriptCore, " + versions }
     let os = ProcessInfo.processInfo.operatingSystemVersion
     #if arch(arm64)
     let architecture = "arm64"
@@ -405,8 +414,5 @@ private func deterministicFingerprint(useTimeLimit: Bool) -> String {
     #else
     let platform = "Apple"
     #endif
-    return "JavaScriptCore \(platform) \(os.majorVersion).\(os.minorVersion).\(os.patchVersion) \(architecture), " +
-        "prelude \(deterministicSourceHash(codemodePreludeSource)), " +
-        "bindings \(deterministicSourceHash(codemodeDeterministicPreludeSource)), scheduler 1, seed mulberry32-v1, " +
-        "interrupt \(useTimeLimit ? "time-limit" : "watchdog")"
+    return "JavaScriptCore \(platform) \(os.majorVersion).\(os.minorVersion).\(os.patchVersion) \(architecture), " + versions
 }

@@ -7,11 +7,16 @@ import PiSwiftDurable
 /// A watchdog can end a run before its JavaScript thread stops. This is the iOS path.
 public actor JSCCodemodeSandbox: CodemodeSandbox {
     private let forceWatchdog: Bool
+    private let fingerprintIncludesPlatform: Bool
     private var closed = false
     private var runs: [UUID: JSCCodemodeRun] = [:]
 
-    public init(forceWatchdog: Bool = false) {
+    /// `fingerprintIncludesPlatform` adds platform, OS version and architecture to the
+    /// engine fingerprint, so a run does not resume after an OS update or on another device.
+    /// It is off by default; the durable journal still rejects a run that diverges.
+    public init(forceWatchdog: Bool = false, fingerprintIncludesPlatform: Bool = false) {
         self.forceWatchdog = forceWatchdog
+        self.fingerprintIncludesPlatform = fingerprintIncludesPlatform
     }
 
     public func start(source: String, name: String, options: CodemodeRunOptions) async throws -> any CodemodeRun {
@@ -54,6 +59,7 @@ public actor JSCCodemodeSandbox: CodemodeSandbox {
                 }
             },
             onIdle: { seq, issued, _ in await options.onIdle(seq, issued, run) })
+        input.fingerprintIncludesPlatform = fingerprintIncludesPlatform
         // The prelude accepts a map from each exact key to its encoded JSON value.
         input.rawStoreJSON = JSONValue.object(JSONObject(options.store.map { ($0.key, .string($0.value.description)) })).description
         do {

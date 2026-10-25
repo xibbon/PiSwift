@@ -158,7 +158,8 @@ invocations, then the sandbox, then the execution environments. A continued sess
 uses a new sandbox and the saved script journal. Finished nested calls use their saved
 results. An interrupted unsafe tool, such as `bash`, can return an interrupted error.
 Scripts can catch this error. The engine fingerprint must match to resume a script.
-An OS or engine change can prevent resume. JavaScriptCore has no per-context heap cap.
+A change to the prelude, the scheduler or the interrupt mode prevents resume. By default, an OS update
+does not. `JSCCodemodeSandbox(fingerprintIncludesPlatform: true)` also adds the platform and OS version. JavaScriptCore has no per-context heap cap.
 On iOS, the watchdog can end a run before its JavaScript thread stops.
 
 The model can call `codemode`. The classifier and image helper tools permit nested

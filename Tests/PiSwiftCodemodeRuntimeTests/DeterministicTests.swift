@@ -205,6 +205,23 @@ struct DeterministicTests {
         #expect(recorded.snapshot.idles == [.init(seq: 0, issued: 2), .init(seq: 1, issued: 2)])
     }
 
+    // The default fingerprint names only versions this package controls; platform, OS
+    // version and architecture are opt-in.
+    @Test func fingerprintPlatformPartIsOptIn() {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let osText = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+        for timeLimit in [false, true] {
+            let plain = deterministicFingerprint(useTimeLimit: timeLimit, includePlatform: false)
+            let full = deterministicFingerprint(useTimeLimit: timeLimit, includePlatform: true)
+            #expect(plain.hasPrefix("JavaScriptCore, prelude "))
+            #expect(!plain.contains(osText))
+            #expect(full.contains(osText))
+            #expect(full.hasSuffix(String(plain.dropFirst("JavaScriptCore, ".count))))
+        }
+        #expect(deterministicFingerprint(useTimeLimit: true, includePlatform: false)
+            != deterministicFingerprint(useTimeLimit: false, includePlatform: false))
+    }
+
     @Test(arguments: [false, true])
     func fingerprintPrecedesCallsAndIdleReportsIssuedCount(forceWatchdog: Bool) async throws {
         let recorded = try await deterministicStart(

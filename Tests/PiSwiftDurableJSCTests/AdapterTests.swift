@@ -28,12 +28,13 @@ private func adapterWait(_ condition: @Sendable () async -> Bool) async throws {
         try await Task.sleep(for: .milliseconds(1))
     }
 }
-private func adapterRun(_ code: String, watchdog: Bool, seed: UInt32 = 1, startedAt: Double = adapterStart,
+private func adapterRun(_ code: String, watchdog: Bool, includePlatform: Bool = false,
+                        seed: UInt32 = 1, startedAt: Double = adapterStart,
                         tools: [CodemodeDeclaredTool] = [.init(name: "echo"), .init(name: "wait")],
                         globals: [CodemodeDeclaredGlobal] = [], store: JSONObject = [:],
                         answer: @escaping @Sendable (CodemodeHostCall) -> CodemodeOutcome = { .success($0.args) }) async throws -> (any CodemodeRun, AdapterLog) {
     let log = AdapterLog()
-    let run = try await JSCCodemodeSandbox(forceWatchdog: watchdog).start(source: code, name: "adapter-case.js", options: .init(
+    let run = try await JSCCodemodeSandbox(forceWatchdog: watchdog, fingerprintIncludesPlatform: includePlatform).start(source: code, name: "adapter-case.js", options: .init(
         startedAt: startedAt, seed: seed, tools: tools, globals: globals, store: store, timeoutMs: 10_000,
         onStarted: { fingerprint, _ in
             log.state.withLock { $0.fingerprint = fingerprint; $0.events.append("started") }
@@ -126,13 +127,26 @@ struct CodemodeAdapterTests {
         #expect(await run.result.value == ["a", "b"])
     }
 
+    // The platform and OS version enter the fingerprint only when the host asks for it.
+    @Test func platformFingerprintIsOptIn() async throws {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let osText = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+        let (plain, plainLog) = try await adapterRun("return 1", watchdog: true)
+        _ = await plain.result
+        let (full, fullLog) = try await adapterRun("return 1", watchdog: true, includePlatform: true)
+        _ = await full.result
+        #expect(!plainLog.value.fingerprint.contains(osText))
+        #expect(fullLog.value.fingerprint.contains(osText))
+        #expect(plainLog.value.fingerprint != fullLog.value.fingerprint)
+    }
+
     // :180. JSC fingerprints identify the engine and interruption configuration.
     @Test(arguments: [false, true]) func fingerprintPrecedesEffectsAndIdleCountsAreExact(_ watchdog: Bool) async throws {
         let (run, log) = try await adapterRun("await tools.echo(1); await Promise.all([tools.echo(2),tools.echo(3)])", watchdog: watchdog)
         #expect(await run.result.ok)
         #expect(Array(log.value.events.prefix(3)) == ["started", "call 1", "idle 0"])
         #expect(log.value.idles == [[0, 1], [1, 3], [2, 3]])
-        #expect(log.value.fingerprint.hasPrefix("JavaScriptCore "))
+        #expect(log.value.fingerprint.hasPrefix("JavaScriptCore, "))
         #expect(log.value.fingerprint.contains("scheduler 1, seed mulberry32-v1"))
         let (same, sameLog) = try await adapterRun("return 1", watchdog: watchdog, seed: 7)
         _ = await same.result
