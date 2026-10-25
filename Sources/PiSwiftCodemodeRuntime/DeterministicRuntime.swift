@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import Synchronization
 
 /// The reply being processed and the number of calls issued when a script ended.
 public struct CodemodeRuntimeDuring: Sendable, Equatable {
@@ -35,6 +36,9 @@ public struct CodemodeRuntimeStartOptions: Sendable {
     public var tools: [CodemodeRuntimeTool]
     public var globals: [CodemodeRuntimeGlobal]
     public var store: [String: AnyCodable]
+    /// An object whose values are encoded JSON strings, as required by the prelude.
+    /// Package adapters can use this path to preserve exact JavaScript keys.
+    package var rawStoreJSON: String? = nil
     public var timeoutMs: Int?
     public var signal: CancellationToken?
     public var forceWatchdog: Bool
@@ -71,6 +75,10 @@ struct RuntimeDeterministicInput: Sendable {
     var name: String
 }
 
+private final class RuntimeWorkerExitState: Sendable {
+    let stopped = Mutex(true)
+}
+
 extension JSCCodemodeEngine {
     /// Start a host-controlled run. Use the same name, declarations, seed, and replies for replay.
     /// The real deadline remains active while the virtual clock is stopped.
@@ -93,9 +101,16 @@ extension JSCCodemodeEngine {
         }
         let storeJSON: String
         do {
-            var store: [String: String] = [:]
-            for (key, value) in options.store { store[key] = try jsonString(value) }
-            storeJSON = try jsonString(store)
+            if let rawStoreJSON = options.rawStoreJSON {
+                guard try validateReplyJSON(rawStoreJSON) else {
+                    throw CodemodeRuntimeProtocolError.invalidJSON
+                }
+                storeJSON = rawStoreJSON
+            } else {
+                var store: [String: String] = [:]
+                for (key, value) in options.store { store[key] = try jsonString(value) }
+                storeJSON = try jsonString(store)
+            }
         } catch {
             throw CodemodeRuntimeProtocolError.invalidJSON
         }
@@ -119,6 +134,9 @@ public actor CodemodeRuntimeRun {
     private let stopFlag = RuntimeStopFlag()
     private let watchdog: Bool
     private var workerStarted = false
+    private let workerExitState = RuntimeWorkerExitState()
+    /// True when no worker was started, or when the worker thread has left its runtime scope.
+    package var workerHasStopped: Bool { workerExitState.stopped.withLock { $0 } }
     private var output: [CodemodeOutputItem] = []
     private var pending: [Int: CodemodeRuntimeCall] = [:]
     private var issued = 0
@@ -150,7 +168,12 @@ public actor CodemodeRuntimeRun {
     /// Invalid input changes neither the waiting calls nor the accepted sequence numbers.
     /// Delivery after the terminal outcome has no effect, including invalid delivery.
     public func deliver(seq: Int, now: Double, id: Int, outcome: CodemodeRuntimeOutcome) throws {
-        guard !finished else { return }
+        _ = try deliverIfWaiting(seq: seq, now: now, id: id, outcome: outcome)
+    }
+
+    /// Returns false when the terminal outcome caused this delivery to be ignored.
+    package func deliverIfWaiting(seq: Int, now: Double, id: Int, outcome: CodemodeRuntimeOutcome) throws -> Bool {
+        guard !finished else { return false }
         guard now.isFinite else { throw CodemodeRuntimeProtocolError.invalidClock }
         guard seq > 0, !delivered.contains(seq) else {
             throw CodemodeRuntimeProtocolError.invalidSequence(seq)
@@ -179,11 +202,17 @@ public actor CodemodeRuntimeRun {
             if nextSeq == Int.max { break }
             nextSeq += 1
         }
+        return true
     }
 
     /// End the run outside JavaScript. This does not reject a promise the script can catch.
     public func abort(message: String = "Execution aborted") {
         select(failure(.aborted, message: message))
+    }
+
+    /// Select a package adapter's bridge failure through the same terminal gate.
+    package func failBridge(message: String) {
+        select(failure(.sandbox, message: message))
     }
 
     func start(input: RuntimeInput, options: CodemodeRuntimeStartOptions) async {
@@ -212,8 +241,13 @@ public actor CodemodeRuntimeRun {
         let mailbox = self.mailbox
         let stopFlag = self.stopFlag
         workerStarted = true
+        workerExitState.stopped.withLock { $0 = false }
+        let workerExitState = self.workerExitState
         Thread.detachNewThread {
-            defer { emitter.yield(.stopped) }
+            defer {
+                workerExitState.stopped.withLock { $0 = true }
+                emitter.yield(.stopped)
+            }
             runtimeWorker(input: input, mailbox: mailbox, stopFlag: stopFlag, emit: emitter)
         }
         Task {
@@ -268,6 +302,8 @@ public actor CodemodeRuntimeRun {
                     let storeWrites = try writes.map(parseWrites) ?? .init()
                     result = .init(execution: .init(output: output, returnedValue: value),
                                    storeWrites: storeWrites, usedWatchdog: watchdog)
+                    result.rawValueJSON = payload
+                    result.rawStoreWritesJSON = writes
                 } else {
                     result = .init(execution: .init(output: output, failure: try parseFailure(payload)), usedWatchdog: watchdog)
                 }
@@ -303,6 +339,7 @@ public actor CodemodeRuntimeRun {
         var result = cancellation.isCancelled ? failure(.aborted, message: "Execution aborted") : result
         result.unfinishedCalls = pending.values.sorted { $0.id < $1.id }
         result.readRejectedCalls { [stopFlag] in stopFlag.rejectedCalls }
+        result.endedAt = .now
         selected = result
         for call in result.unfinishedCalls { call.signal.cancel() }
         pending.removeAll()

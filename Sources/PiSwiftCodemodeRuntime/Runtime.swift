@@ -68,6 +68,11 @@ public struct CodemodeStoreWrites: Sendable {
 public struct CodemodeRuntimeResult: Sendable {
     public var execution: CodemodeExecutionResult
     public var storeWrites: CodemodeStoreWrites
+    /// Raw bridge JSON for package adapters that must preserve exact object keys.
+    package var rawValueJSON: String? = nil
+    package var rawStoreWritesJSON: String? = nil
+    /// The wall-clock instant when a deterministic run selected its terminal outcome.
+    package var endedAt: ContinuousClock.Instant? = nil
     /// The reply being applied when a deterministic script ended. Nil for execute().
     public var during: CodemodeRuntimeDuring? = nil
     /// True when a timeout cannot stop the JavaScriptCore thread and the host abandons it.

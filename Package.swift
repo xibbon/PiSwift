@@ -18,6 +18,7 @@ let package = Package(
         ),
         .library(name: "PiSwiftCodemodeRuntime", targets: ["PiSwiftCodemodeRuntime"]),
         .library(name: "PiSwiftDurable", targets: ["PiSwiftDurable"]),
+        .library(name: "PiSwiftDurableJSC", targets: ["PiSwiftDurableJSC"]),
         .library(name: "PiSwiftDurableTesting", targets: ["PiSwiftDurableTesting"]),
         .library(name: "PiSwiftCodingAgentDurable", targets: ["PiSwiftCodingAgentDurable"]),
         .library(
@@ -78,6 +79,11 @@ let package = Package(
             name: "PiSwiftDurable",
             dependencies: ["PiSwiftAI", "PiSwiftChord"],
             exclude: ["README.md"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiSwiftDurableJSC",
+            dependencies: ["PiSwiftDurable", "PiSwiftCodemodeRuntime", "PiSwiftChord"],
             swiftSettings: strictConcurrencySettings
         ),
         .target(
@@ -179,6 +185,11 @@ let package = Package(
             name: "PiSwiftDurableTests",
             dependencies: ["PiSwiftDurable", "PiSwiftDurableTesting", "PiSwiftChord", "PiSwiftAI"],
             resources: [.copy("Fixtures")],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiSwiftDurableJSCTests",
+            dependencies: ["PiSwiftDurableJSC", "PiSwiftCodemodeRuntime", "PiSwiftDurable", "PiSwiftDurableTesting", "PiSwiftChord", "PiSwiftAI"],
             swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
