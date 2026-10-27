@@ -34,7 +34,8 @@ struct ToolsManagerDownloadTests {
                 #expect(request.url?.absoluteString == "https://github.com/sharkdp/fd/releases/latest")
                 #expect(!follows)
                 #expect(request.timeoutInterval == 10)
-                #expect(request.value(forHTTPHeaderField: "User-Agent") == "pi-coding-agent")
+                // Upstream v1.4.0 tools-manager.ts uses the shared, version-aware User-Agent.
+                #expect(request.value(forHTTPHeaderField: "User-Agent") == formatUserAgent(identity: ClientIdentity(userAgent: .detailed, version: VERSION)))
                 return ManagementHTTPResponse(statusCode: 302, headers: ["Location": location], body: Data("unused redirect body".utf8))
             })
             #expect(version == expected)

@@ -109,6 +109,7 @@ public typealias NestedToolExecute = @Sendable (
 public struct CustomToolContext: Sendable {
     public var sessionManager: SessionManager
     public var modelRegistry: ModelRegistry
+    public var clientIdentityProvider: ClientIdentityProvider?
     public var model: Model?
     public var isIdle: @Sendable () -> Bool
     public var hasPendingMessages: @Sendable () -> Bool
@@ -132,10 +133,12 @@ public struct CustomToolContext: Sendable {
         tools: [AgentTool] = [],
         toolCallId: String? = nil,
         signal: CancellationToken? = nil,
-        nestedToolExecute: NestedToolExecute? = nil
+        nestedToolExecute: NestedToolExecute? = nil,
+        clientIdentityProvider: ClientIdentityProvider? = nil
     ) {
         self.sessionManager = sessionManager
         self.modelRegistry = modelRegistry
+        self.clientIdentityProvider = clientIdentityProvider
         self.model = model
         self.isIdle = isIdle
         self.hasPendingMessages = hasPendingMessages

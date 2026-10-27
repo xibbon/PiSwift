@@ -809,6 +809,8 @@ public final class ModelRegistry: Sendable {
     public let authStorage: AuthStorage
     private let modelsDir: String?
     private let networkEnabled: Bool
+    /// Read for each request. Request identity fields take precedence.
+    public let clientIdentityProvider: ClientIdentityProvider?
     private let state = LockedState(State())
     private let customProviderApiKeys = LockedState<[String: String]>([:])
     private let refreshCoordinator = LockedState<ModelCatalogRefreshCoordinator?>(nil)
@@ -836,14 +838,15 @@ public final class ModelRegistry: Sendable {
         var githubCopilotSupportedModelIds: Set<String>?
     }
 
-    public convenience init(_ authStorage: AuthStorage, _ modelsDir: String? = nil) {
+    public convenience init(_ authStorage: AuthStorage, _ modelsDir: String? = nil, clientIdentityProvider: ClientIdentityProvider? = nil) {
         let storeDir = modelsDir ?? getAgentDir()
         let storePath = (storeDir as NSString).appendingPathComponent("models-store.json")
         self.init(
             authStorage,
             modelsDir,
             modelsStore: FileModelsStore(storePath),
-            networkEnabled: true
+            networkEnabled: true,
+            clientIdentityProvider: clientIdentityProvider
         )
     }
 
@@ -854,11 +857,13 @@ public final class ModelRegistry: Sendable {
         catalogBaseURL: String = "https://pi.dev",
         remoteHTTPClient: any ProviderHTTPClient = DefaultProviderHTTPClient(),
         networkEnabled: Bool = true,
-        now: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 * 1_000 }
+        now: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 * 1_000 },
+        clientIdentityProvider: ClientIdentityProvider? = nil
     ) {
         self.authStorage = authStorage
         self.modelsDir = modelsDir
         self.networkEnabled = networkEnabled
+        self.clientIdentityProvider = clientIdentityProvider
         self.authStorage.setFallbackResolver({ [weak self] provider in
             guard let self, let value = self.requestConfiguration(provider: provider).key else { return nil }
             return try? resolveConfigValueOrThrow(value, description: "API key for provider \"\(provider)\"")
@@ -1318,6 +1323,11 @@ public final class ModelRegistry: Sendable {
         return hasProviderConfiguredAuth(model.provider) || !(model.catalog.headers?.isEmpty ?? true)
     }
 
+    /// Merge the registry default below the request identity.
+    public func resolveClientIdentity(_ identity: ClientIdentity? = nil) -> ClientIdentity? {
+        mergeClientIdentity(clientIdentityProvider?(), identity)
+    }
+
     public func generateImages(_ model: ImageModel, context: ImagesContext, options: ImagesOptions? = nil) async -> AssistantImages {
         let resolved = await resolveModelRequest(model, signal: options?.signal, env: options?.env)
         let auth = resolved.auth
@@ -1326,7 +1336,7 @@ public final class ModelRegistry: Sendable {
                                    stopReason: options?.signal?.isCancelled == true ? .aborted : .error,
                                    errorMessage: auth.error)
         }
-        var request = options ?? ImagesOptions()
+        var request = withClientIdentity(options ?? ImagesOptions(), resolveClientIdentity())
         request.env = mergeConfigEnvironment(auth.env, request.env)
         request.apiKey = request.apiKey ?? auth.apiKey
         request.headers = mergeProviderHeaders(auth.headers, request.headers)
@@ -1351,7 +1361,7 @@ public final class ModelRegistry: Sendable {
                                     stopReason: options?.signal?.isCancelled == true ? .aborted : .error,
                                     errorMessage: auth.error)
         }
-        var request = options ?? ClassifierOptions()
+        var request = withClientIdentity(options ?? ClassifierOptions(), resolveClientIdentity())
         request.env = mergeConfigEnvironment(auth.env, request.env)
         request.apiKey = request.apiKey ?? auth.apiKey
         request.headers = mergeProviderHeaders(auth.headers, request.headers)
@@ -1598,6 +1608,13 @@ public final class ModelRegistry: Sendable {
     /// The caller must apply `resolveModelRequest` and merge its auth into the options first.
     /// This method does not resolve authentication or route virtual models.
     public func streamSimplePrepared(model: Model, context: Context, options: SimpleStreamOptions) throws -> AssistantMessageEventStream {
+        var options = withClientIdentity(options, resolveClientIdentity())
+        options.headers = openCodeSessionHeaders(model: model, sessionId: options.sessionId, headers: options.headers)
+        return try streamSimpleWithPreparedHeaders(model: model, context: context, options: options)
+    }
+
+    // SDK headers have already passed through the final header hook.
+    func streamSimpleWithPreparedHeaders(model: Model, context: Context, options: SimpleStreamOptions) throws -> AssistantMessageEventStream {
         if let customStream = extensionStream(for: model) {
             return customStream(model, normalizeContext(context), options)
         }
@@ -1686,6 +1703,7 @@ public final class ModelRegistry: Sendable {
                     websocketConnectTimeoutMs: fullOptions?.websocketConnectTimeoutMs,
                     maxRetries: fullOptions?.maxRetries
                 )
+                options.identity = resolveClientIdentity(options.identity)
                 options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
                 options.headers = mergeProviderHeaders(
@@ -1693,6 +1711,7 @@ public final class ModelRegistry: Sendable {
                     options.headers)
                 input = customStream(resolved.model, normalizeContext(context), options)
             } else if var options = simpleOptions {
+                options.identity = resolveClientIdentity(options.identity)
                 options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
                 options.headers = mergeProviderHeaders(
@@ -1701,6 +1720,7 @@ public final class ModelRegistry: Sendable {
                 input = try PiSwiftAI.streamSimple(model: resolved.model, context: context, options: options)
             } else {
                 var options = fullOptions ?? StreamOptions()
+                options.identity = resolveClientIdentity(options.identity)
                 options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
                 options.headers = mergeProviderHeaders(

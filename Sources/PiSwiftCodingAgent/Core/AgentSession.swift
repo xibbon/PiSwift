@@ -65,6 +65,7 @@ public struct AgentSessionConfig: Sendable {
     public var hookRunner: HookRunner?
     public var customTools: [LoadedCustomTool]?
     public var modelRegistry: ModelRegistry
+    public var clientIdentityProvider: ClientIdentityProvider?
     public var cacheWarmer: CacheWarmer?
     public var skillsSettings: SkillsSettings?
     public var eventBus: EventBus?
@@ -126,7 +127,8 @@ public struct AgentSessionConfig: Sendable {
         rebuildSystemPrompt: (@Sendable ([String]) -> String)? = nil,
         reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)? = nil,
         wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])? = nil,
-        bashOperations: BashOperations? = nil
+        bashOperations: BashOperations? = nil,
+        clientIdentityProvider: ClientIdentityProvider? = nil
     ) {
         self.agent = agent
         self.sessionManager = sessionManager
@@ -140,6 +142,7 @@ public struct AgentSessionConfig: Sendable {
         self.hookRunner = hookRunner
         self.customTools = customTools
         self.modelRegistry = modelRegistry
+        self.clientIdentityProvider = clientIdentityProvider
         self.cacheWarmer = cacheWarmer
         self.skillsSettings = skillsSettings
         self.eventBus = eventBus
@@ -381,6 +384,7 @@ public final class AgentSession: Sendable {
     public let sessionManager: SessionManager
     public let settingsManager: SettingsManager
     public let modelRegistry: ModelRegistry
+    private let clientIdentityProvider: ClientIdentityProvider?
     public let cacheWarmer: CacheWarmer?
     public let eventBus: EventBus
     public let projectTrusted: Bool
@@ -893,6 +897,7 @@ public final class AgentSession: Sendable {
         self.sessionManager = config.sessionManager
         self.settingsManager = config.settingsManager
         self.modelRegistry = config.modelRegistry
+        self.clientIdentityProvider = config.clientIdentityProvider
         self.cacheWarmer = config.cacheWarmer
         self.eventBus = config.eventBus ?? createEventBus()
         self.projectTrusted = config.projectTrusted
@@ -1290,7 +1295,8 @@ public final class AgentSession: Sendable {
             events: eventBus,
             sendMessage: { [weak self] message, options in
                 self?.enqueueHookMessage(message, options: options)
-            }
+            },
+            clientIdentityProvider: clientIdentityProvider
         )
 
         for tool in customToolsInternal {
@@ -3631,7 +3637,9 @@ public final class AgentSession: Sendable {
                     retry: summaryRetryPolicy,
                     callbacks: summaryRetryCallbacks
                 )
-                let result = await generateBranchSummary(collection.entries, options)
+                let result = await withSummarizationRequestOptions {
+                    await generateBranchSummary(collection.entries, options)
+                }
                 if result.aborted == true {
                     return (nil, true, true, nil)
                 }
@@ -3795,19 +3803,21 @@ public final class AgentSession: Sendable {
             if !hasRequestAuth(request.auth) {
                 throw AgentSessionError.missingApiKey(provider: request.model.provider)
             }
-            result = try await PiSwiftCodingAgent.compact(
-                preparation,
-                request.model,
-                apiKey ?? "",
-                headers: request.auth.headers,
-                env: request.auth.env,
-                customInstructions: customInstructions,
-                signal: compactionToken,
-                thinkingLevel: summary.thinkingLevel,
-                streamFn: agent.streamFn,
-                retry: summaryRetryPolicy,
-                callbacks: summaryRetryCallbacks
-            )
+            result = try await withSummarizationRequestOptions {
+                try await PiSwiftCodingAgent.compact(
+                    preparation,
+                    request.model,
+                    apiKey ?? "",
+                    headers: request.auth.headers,
+                    env: request.auth.env,
+                    customInstructions: customInstructions,
+                    signal: compactionToken,
+                    thinkingLevel: summary.thinkingLevel,
+                    streamFn: agent.streamFn,
+                    retry: summaryRetryPolicy,
+                    callbacks: summaryRetryCallbacks
+                )
+            }
         }
 
         if compactionToken.isCancelled {
@@ -3866,9 +3876,33 @@ public final class AgentSession: Sendable {
         return (request, PiSwiftAI.ThinkingLevel(rawValue: level))
     }
 
+    /// Resolve this session's default without changing the shared registry.
+    public func resolveClientIdentity(_ identity: ClientIdentity? = nil) -> ClientIdentity? {
+        mergeClientIdentity(clientIdentityProvider?() ?? modelRegistry.resolveClientIdentity(), identity)
+    }
+
+    private func withSummarizationRequestOptions<Result>(
+        _ operation: () async throws -> Result
+    ) async rethrows -> Result {
+        guard clientIdentityProvider != nil else { return try await operation() }
+        return try await SummarizationRequestContext.$prepareOptions.withValue({ model, options in
+            var request = options
+            request.identity = self.resolveClientIdentity(options.identity)
+            request.headers = mergeProviderHeaders(model.headers, request.headers)
+            request.headers = openCodeSessionHeaders(model: model, sessionId: request.sessionId, headers: request.headers)
+            if let runner = self._hookRunner, runner.hasHandlers("before_provider_headers") {
+                request.headers = await runner.emitBeforeProviderHeaders(request.headers ?? [:])
+            }
+            return request
+        }) {
+            try await operation()
+        }
+    }
+
     private func resolveModelRequestWithHooks(_ model: Model, signal: CancellationToken? = nil) async -> ResolvedModelRequest {
         let request = await modelRegistry.resolveModelRequest(model, signal: signal)
-        guard let hookRunner = _hookRunner,
+        guard clientIdentityProvider == nil,
+              let hookRunner = _hookRunner,
               hookRunner.hasHandlers("before_provider_headers") else {
             return request
         }

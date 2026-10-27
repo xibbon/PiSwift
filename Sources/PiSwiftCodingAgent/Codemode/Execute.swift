@@ -518,7 +518,7 @@ private func toolSearchSummaryDescription(_ description: String) -> String {
 private func handleGlobal(_ call: CodemodeRuntimeCall, callable: [AgentTool],
                           samples: [String: String], options: CodemodeToolOptions,
                           modelRuntime: (any CodemodeModelRuntime)?, state: CodemodeCallState,
-                          limit: ClassifyLimit) async -> CodemodeRuntimeReply {
+                          limit: ClassifyLimit, clientIdentityProvider: ClientIdentityProvider? = nil) async -> CodemodeRuntimeReply {
     if ["searchTools", "describeTool", "describeNamespace"].contains(call.name) {
         options.recordDiscoveryCall?(call.name)
     }
@@ -647,13 +647,13 @@ private func handleGlobal(_ call: CodemodeRuntimeCall, callable: [AgentTool],
                 let usage: Usage?
                 switch resolved {
                 case .classifier(let model):
-                    let result = await models.classify(model, context: classifier!, options: ClassifierOptions(signal: call.signal))
+                    let result = await models.classify(model, context: classifier!, options: ClassifierOptions(signal: call.signal, identity: clientIdentityProvider?()))
                     reply = classifierResult(result)
                     stopReason = result.stopReason.rawValue
                     errorMessage = result.errorMessage
                     usage = result.usage
                 case .image(let model):
-                    let result = await models.generateImages(model, context: images!, options: ImagesOptions(signal: call.signal))
+                    let result = await models.generateImages(model, context: images!, options: ImagesOptions(signal: call.signal, identity: clientIdentityProvider?()))
                     await state.addGeneratedImages(result.output.filter { if case .image = $0 { return true }; return false }.count)
                     reply = imagesResult(result)
                     stopReason = result.stopReason.rawValue
@@ -750,7 +750,8 @@ public func executeCodemode(toolCallId: String, params: [String: AnyCodable],
                 return await handleTool(call, tool: byName[call.name], context: context, state: state, options: options)
             case .global:
                 return await handleGlobal(call, callable: callable, samples: samples, options: options,
-                                          modelRuntime: modelRuntime, state: state, limit: limit)
+                                          modelRuntime: modelRuntime, state: state, limit: limit,
+                                          clientIdentityProvider: context?.clientIdentityProvider)
             }
         })
     let unfinishedTools = context == nil ? [] : result.unfinishedCalls.filter { $0.target == .tool && byName[$0.name] != nil }

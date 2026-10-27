@@ -597,6 +597,14 @@ public func getSummarizationFailure(_ response: AssistantMessage, label: String)
     return nil
 }
 
+// Keep request preparation scoped to this summary operation and its retry attempts.
+struct SummarizationRequestContext: Sendable {
+    let identity: ClientIdentity?
+    let headersPrepared: Bool
+    @TaskLocal static var current: SummarizationRequestContext?
+    @TaskLocal static var prepareOptions: (@Sendable (Model, SimpleStreamOptions) async -> SimpleStreamOptions)?
+}
+
 /// Run a standalone summary request without prompt caching.
 public func completeSummarization(
     model: Model, context: Context, options: SimpleStreamOptions,
@@ -608,11 +616,23 @@ public func completeSummarization(
     let requestOptions = configured
     return await retryAssistantCall(produce: {
         do {
-            if let streamFn {
-                let stream = try await streamFn(model, normalizeContext(context), requestOptions)
-                return await stream.result()
+            // Standalone callers use local settings. A session stream wrapper applies
+            // its own current policy; an explicit standalone request identity wins.
+            let prepare = SummarizationRequestContext.prepareOptions
+            let attemptOptions = if let prepare {
+                await prepare(model, requestOptions)
+            } else {
+                withClientIdentity(requestOptions, getCodingAgentClientIdentity())
             }
-            return try await completeSimple(model: model, context: context, options: requestOptions)
+            if let streamFn {
+                return try await SummarizationRequestContext.$current.withValue(
+                    SummarizationRequestContext(identity: requestOptions.identity, headersPrepared: prepare != nil)
+                ) {
+                    let stream = try await streamFn(model, normalizeContext(context), attemptOptions)
+                    return await stream.result()
+                }
+            }
+            return try await completeSimple(model: model, context: context, options: attemptOptions)
         } catch {
             let aborted = error is CancellationError || requestOptions.signal?.isCancelled == true
             return AssistantMessage(content: [], api: model.api, provider: model.provider, model: model.id,

@@ -218,7 +218,7 @@ public struct ToolManager: Sendable {
     private func fetch(_ url: URL, followRedirects: Bool, timeout: Double) async throws -> ManagementHTTPResponse {
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout
-        request.setValue("\(APP_NAME)-coding-agent", forHTTPHeaderField: "User-Agent")
+        request.setValue(formatUserAgent(identity: ClientIdentity(userAgent: .detailed, version: VERSION)), forHTTPHeaderField: "User-Agent")
         return try await fetchWithRetry(request, client: ToolTransportClient(transport: transport, followRedirects: followRedirects), options: FetchRetryOptions(timeoutMs: timeout * 1_000))
     }
 

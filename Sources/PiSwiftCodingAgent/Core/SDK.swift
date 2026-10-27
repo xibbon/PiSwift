@@ -34,6 +34,8 @@ public struct CreateAgentSessionOptions: Sendable {
     public var agentDir: String?
     public var authStorage: AuthStorage?
     public var modelRegistry: ModelRegistry?
+    /// Read for each model request and merged over the SDK and registry defaults.
+    public var clientIdentityProvider: ClientIdentityProvider?
     public var model: Model?
     public var thinkingLevel: ThinkingLevel?
     public var scopedModels: [ScopedModel]?
@@ -114,12 +116,14 @@ public struct CreateAgentSessionOptions: Sendable {
         promptTemplates: [PromptTemplate]? = nil,
         sessionManager: SessionManager? = nil,
         settingsManager: SettingsManager? = nil,
-        bashOperations: BashOperations? = nil
+        bashOperations: BashOperations? = nil,
+        clientIdentityProvider: ClientIdentityProvider? = nil
     ) {
         self.cwd = cwd
         self.agentDir = agentDir
         self.authStorage = authStorage
         self.modelRegistry = modelRegistry
+        self.clientIdentityProvider = clientIdentityProvider
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.scopedModels = scopedModels
@@ -558,6 +562,11 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let projectTrusted = options.projectTrusted ?? true
     let settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir, projectTrusted: projectTrusted)
     time("settingsManager")
+    let hostIdentityProvider = options.clientIdentityProvider
+    let clientIdentityProvider: ClientIdentityProvider = {
+        mergeClientIdentity(getCodingAgentClientIdentity(settingsManager),
+                            modelRegistry.clientIdentityProvider?(), hostIdentityProvider?())
+    }
     let sessionManager = options.sessionManager ?? SessionManager.create(cwd, nil, sessionId: options.sessionId)
     time("sessionManager")
 
@@ -893,7 +902,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
                 }
                 return await session.executeNestedTool(callerId: toolCallId, name: name, args: args,
                                                        options: options)
-            }
+            },
+            clientIdentityProvider: clientIdentityProvider
         )
     }
     let wrappedCustomTools = wrapCustomTools(customToolsResult.tools, contextFactory: getCustomToolContext)
@@ -1042,6 +1052,35 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         ))
     }
 
+    let streamWithSDKOptions: StreamFn = { model, context, options in
+        var request = options
+        let summary = SummarizationRequestContext.current
+        if summary?.headersPrepared != true {
+            let requestIdentity: ClientIdentity?
+            if let summary {
+                requestIdentity = summary.identity
+            } else if options.sessionId == sessionManager.getSessionId(),
+                      options.identity == mergeClientIdentity(ClientIdentity(attribution: .value(PI_ATTRIBUTION)), agentBox.withLock({ $0?.identity })) {
+                // The loop adds pi attribution. Use its actual configured identity
+                // so that this automatic default cannot override telemetry opt-out.
+                requestIdentity = agentBox.withLock { $0?.identity }
+            } else {
+                requestIdentity = options.identity
+            }
+            request.identity = mergeClientIdentity(clientIdentityProvider(), requestIdentity)
+        }
+        // Normal loop headers have already passed through getModelAuth.
+        // A standalone summary callback reaches this boundary on each attempt.
+        if summary != nil, summary?.headersPrepared != true {
+            request.headers = mergeProviderHeaders(model.headers, request.headers)
+            request.headers = openCodeSessionHeaders(model: model, sessionId: request.sessionId, headers: request.headers)
+            if hookRunner.hasHandlers("before_provider_headers") {
+                request.headers = await hookRunner.emitBeforeProviderHeaders(request.headers ?? [:])
+            }
+        }
+        return try modelRegistry.streamSimpleWithPreparedHeaders(model: model, context: Context(messages: context.messages), options: request)
+    }
+
     let providerRetrySettings = settingsManager.getProviderRetrySettings()
     let createdAgent = Agent(AgentOptions(
         initialState: AgentState(
@@ -1064,18 +1103,16 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             await modelRegistry.getApiKeyForProvider(provider)
         },
         getModelAuth: { model in
-            let auth = await modelRegistry.getApiKeyAndHeaders(model)
-            // PiSwiftAgent obtains model auth immediately before it constructs
-            // `SimpleStreamOptions`. At this point model and auth headers are known,
-            // making it the coding-agent boundary equivalent to upstream's provider
-            // header assembly hook.
-            var headers = mergeProviderHeaders(model.headers, auth.headers) ?? [:]
+            let resolved = await modelRegistry.resolveModelRequest(model)
+            let auth = resolved.auth
+            var headers = mergeProviderHeaders(resolved.model.headers, auth.headers)
+            headers = openCodeSessionHeaders(model: resolved.model, sessionId: sessionManager.getSessionId(), headers: headers)
             if hookRunner.hasHandlers("before_provider_headers") {
-                headers = await hookRunner.emitBeforeProviderHeaders(headers)
+                headers = await hookRunner.emitBeforeProviderHeaders(headers ?? [:])
             }
             return AgentModelAuth(
                 apiKey: auth.apiKey,
-                headers: headers.isEmpty ? nil : headers,
+                headers: headers,
                 baseUrl: auth.baseUrl,
                 env: auth.env,
                 error: auth.error
@@ -1095,7 +1132,23 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     let cacheWarmer = CacheWarmer(
         stream: { model, context, options in
-            await modelRegistry.streamSimple(model: model, context: context, options: options).result()
+            let resolved = await modelRegistry.resolveModelRequest(model, signal: options.signal, env: options.env)
+            guard options.signal?.isCancelled != true else { throw CancellationError() }
+            guard resolved.auth.ok || options.apiKey != nil || options.headers?.isEmpty == false else {
+                throw AgentSessionError.missingApiKey(provider: resolved.model.provider)
+            }
+            var request = options
+            request.apiKey = request.apiKey ?? resolved.auth.apiKey
+            request.env = mergeConfigEnvironment(resolved.auth.env, request.env)
+            request.headers = mergeProviderHeaders(resolved.auth.headers, request.headers)
+            // A replay inherits the current SDK policy, not the saved request identity.
+            request.identity = clientIdentityProvider()
+            request.headers = mergeProviderHeaders(resolved.model.headers, request.headers)
+            request.headers = openCodeSessionHeaders(model: resolved.model, sessionId: request.sessionId, headers: request.headers)
+            if hookRunner.hasHandlers("before_provider_headers") {
+                request.headers = await hookRunner.emitBeforeProviderHeaders(request.headers ?? [:])
+            }
+            return try await modelRegistry.streamSimpleWithPreparedHeaders(model: resolved.model, context: context, options: request).result()
         },
         sessionManager: sessionManager,
         getMode: { settingsManager.getCacheWarmingMode() },
@@ -1107,7 +1160,6 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             sessionBox.withLock { $0 }?.emitCacheWarmed(entry)
         }
     )
-    let originalStreamFn = createdAgent.streamFn
     createdAgent.streamFn = { model, context, options in
         if options.sessionId == sessionManager.getSessionId() {
             let originalMessages = agentBox.withLock { $0?.state.messages ?? [] }
@@ -1126,7 +1178,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
                 isCurrent: isCurrent
             )
         }
-        return try await originalStreamFn(model, context, options)
+        return try await streamWithSDKOptions(model, context, options)
     }
 
     if hasExistingSession {
@@ -1171,7 +1223,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
                 .filter { !excludedTools.matches($0.name) }
             return wrapped
         },
-        bashOperations: options.bashOperations
+        bashOperations: options.bashOperations,
+        clientIdentityProvider: clientIdentityProvider
     ))
     time("createAgentSession")
     sessionBox.withLock { $0 = createdSession }

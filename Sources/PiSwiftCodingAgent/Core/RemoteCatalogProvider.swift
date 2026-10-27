@@ -319,7 +319,7 @@ public struct RemoteCatalogProvider: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(piUserAgent(version: VERSION), forHTTPHeaderField: "User-Agent")
+        request.setValue(formatUserAgent(identity: ClientIdentity(userAgent: .detailed, version: VERSION)), forHTTPHeaderField: "User-Agent")
         return request
     }
 
@@ -394,24 +394,6 @@ func logModelCatalogDebug(_ message: String) {
 
 private func header(_ name: String, in headers: [String: String]) -> String? {
     headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
-}
-
-private func piUserAgent(version: String) -> String {
-    #if os(macOS)
-    let platform = "darwin"
-    #elseif os(iOS)
-    let platform = "ios"
-    #else
-    let platform = "swift"
-    #endif
-    #if arch(arm64)
-    let architecture = "arm64"
-    #elseif arch(x86_64)
-    let architecture = "x64"
-    #else
-    let architecture = "unknown"
-    #endif
-    return "pi/\(version) (\(platform); swift; \(architecture))"
 }
 
 /// Match the upstream Map: the last value wins and its first position stays fixed.
