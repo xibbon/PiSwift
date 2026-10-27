@@ -419,6 +419,7 @@ private func streamAssistantResponse(
             maxTokens: config.maxTokens,
             signal: signal,
             telemetry: config.telemetry,
+            identity: mergeClientIdentity(ClientIdentity(attribution: .value(PI_ATTRIBUTION)), config.identity),
             apiKey: resolvedApiKey,
             transport: config.transport,
             reasoning: config.reasoning,

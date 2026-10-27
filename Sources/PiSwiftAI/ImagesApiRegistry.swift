@@ -6,10 +6,20 @@ public struct ImageApiProvider: Sendable {
     public let api: ImageApi
     public let generateImages: ImageApiFunction
 
-    public init(api: ImageApi, generateImages: @escaping ImageApiFunction) {
+    public init(api: ImageApi, generateImages: @escaping ImageApiFunction, identity: ClientIdentity? = nil) {
         self.api = api
-        self.generateImages = generateImages
+        if let identity {
+            self.generateImages = { model, context, options in
+                await generateImages(model, context, withClientIdentity(options ?? ImagesOptions(), identity))
+            }
+        } else {
+            self.generateImages = generateImages
+        }
     }
+}
+
+public func withClientIdentity(_ provider: ImageApiProvider, _ identity: ClientIdentity) -> ImageApiProvider {
+    ImageApiProvider(api: provider.api, generateImages: provider.generateImages, identity: identity)
 }
 
 private struct RegisteredImageApiProvider: Sendable {

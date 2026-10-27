@@ -57,7 +57,8 @@ private func a2CodexRequest(modelHeaders: ProviderHeaders? = nil, callerHeaders:
 @Test func a2CodexDefaultsAndDeletion() async throws {
     let defaults = try await a2CodexRequest()
     #expect(defaults.value(forHTTPHeaderField: "originator") == "pi")
-    #expect(defaults.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+    // Upstream v1.4.0 identity change: use the shared User-Agent format.
+    #expect(defaults.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
     let request = try await a2CodexRequest(
         modelHeaders: ["Originator": "model", "USER-AGENT": "model", "X-Delete": "model"],
         callerHeaders: ["originator": nil, "user-agent": nil, "x-delete": nil,

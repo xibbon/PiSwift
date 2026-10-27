@@ -36,7 +36,10 @@ public func streamGoogle(
             request.httpMethod = "POST"
             request.httpBody = requestBody
 
-            request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+            applyProviderHeaders(
+                identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+                to: &request
+            )
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             applyProviderHeaders(

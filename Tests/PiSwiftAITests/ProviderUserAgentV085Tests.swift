@@ -36,7 +36,8 @@ private enum UserAgent085Adapter: String, CaseIterable, Sendable {
         // A4 item 16: upstream v0.87.1 reports the newer Claude Code version.
         case .anthropicOAuth: "claude-cli/2.1.280"
         case .copilot: "GitHubCopilotChat/0.35.0"
-        default: getPiUserAgent()
+        // Upstream v1.4.0 identity change: use the shared User-Agent format.
+        default: formatUserAgent()
         }
     }
 }

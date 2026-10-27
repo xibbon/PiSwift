@@ -207,7 +207,11 @@ public func streamAnthropic(
                     let name = compat.sessionAffinityFormat == .openrouter ? "x-session-id" : "x-session-affinity"
                     affinityHeaders = [name: sessionId]
                 }
-                var mergedHeaders = mergeProviderHeaders(affinityHeaders, model.headers)
+                let defaults: ProviderHeaders = isOAuthToken
+                    ? ["user-agent": "claude-cli/\(claudeCodeVersion)", "x-app": "cli"]
+                    : identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity)
+                var mergedHeaders = mergeProviderHeaders(defaults, affinityHeaders)
+                mergedHeaders = mergeProviderHeaders(mergedHeaders, model.headers)
                 // Copilot: add dynamic headers for vision and initiator
                 if model.provider == "github-copilot" {
                     let copilotHeaders = buildCopilotDynamicHeaders(messages: context.messages)
@@ -1362,9 +1366,6 @@ private func buildAnthropicHttpClient(
     rawRequestBody: Data? = nil
 ) -> HTTPClient {
     var merged = extraHeaders
-    if !isOAuthToken && !providerHeadersContain(merged, name: "user-agent") {
-        merged.updateValue(getPiUserAgent(), forKey: "User-Agent")
-    }
     if isOAuthToken {
         if !providerHeadersContain(merged, name: "user-agent") {
             merged.updateValue("claude-cli/\(claudeCodeVersion)", forKey: "user-agent")

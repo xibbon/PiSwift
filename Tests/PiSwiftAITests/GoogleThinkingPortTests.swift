@@ -139,7 +139,8 @@ func googleToolCallsPreserveRawStopAndLength(_ vertex: Bool, _ reason: String) a
 @Test(.timeLimit(.minutes(1))) func googleUserAgentDefaultAndExplicitOverride() async throws {
     let defaultClient = try GooglePortHTTP()
     _ = await googlePortResult(client: defaultClient, vertex: false)
-    #expect(await defaultClient.request?.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+    // Upstream v1.4.0 identity change: use the shared User-Agent format.
+    #expect(await defaultClient.request?.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
     let customClient = try GooglePortHTTP()
     _ = await googlePortResult(client: customClient, vertex: false, headers: ["User-Agent": "custom-agent"])
     #expect(await customClient.request?.value(forHTTPHeaderField: "User-Agent") == "custom-agent")

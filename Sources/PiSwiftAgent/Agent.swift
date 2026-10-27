@@ -21,6 +21,7 @@ public struct AgentOptions: Sendable {
     public var followUpMode: AgentFollowUpMode?
     public var streamFn: StreamFn?
     public var sessionId: String?
+    public var identity: ClientIdentity?
     public var transport: Transport?
     public var thinkingBudgets: ThinkingBudgets?
     public var maxRetryDelayMs: Int?
@@ -60,6 +61,7 @@ public struct AgentOptions: Sendable {
         followUpMode: AgentFollowUpMode? = nil,
         streamFn: StreamFn? = nil,
         sessionId: String? = nil,
+        identity: ClientIdentity? = nil,
         transport: Transport? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -90,6 +92,7 @@ public struct AgentOptions: Sendable {
         self.followUpMode = followUpMode
         self.streamFn = streamFn
         self.sessionId = sessionId
+        self.identity = identity
         self.transport = transport
         self.thinkingBudgets = thinkingBudgets
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -128,6 +131,7 @@ public final class Agent: Sendable {
         var followUpMode: AgentFollowUpMode
         var streamFn: StreamFn
         var sessionId: String?
+        var identity: ClientIdentity?
         var transport: Transport
         var thinkingBudgets: ThinkingBudgets?
         var maxRetryDelayMs: Int?
@@ -212,6 +216,12 @@ public final class Agent: Sendable {
     public var sessionId: String? {
         get { stateBox.withLock { $0.sessionId } }
         set { stateBox.withLock { $0.sessionId = newValue } }
+    }
+
+    /// Request identity. The loop reads this value before each request.
+    public var identity: ClientIdentity? {
+        get { stateBox.withLock { $0.identity } }
+        set { stateBox.withLock { $0.identity = newValue } }
     }
 
     public var transport: Transport {
@@ -349,6 +359,7 @@ public final class Agent: Sendable {
             followUpMode: options.followUpMode ?? .oneAtATime,
             streamFn: stream,
             sessionId: options.sessionId,
+            identity: options.identity,
             transport: options.transport ?? .sse,
             thinkingBudgets: options.thinkingBudgets,
             maxRetryDelayMs: options.maxRetryDelayMs,
@@ -688,11 +699,12 @@ public final class Agent: Sendable {
         let context = AgentContext(messages: _state.messages, tools: _state.tools)
 
         let skipInitialSteeringPoll = LockedState(options?.skipInitialSteeringPoll == true)
-        let config = AgentLoopConfig(
+        var config = AgentLoopConfig(
             model: model,
             reasoning: reasoning,
             transport: transport,
             sessionId: sessionId,
+            identity: identity,
             thinkingBudgets: thinkingBudgets,
             maxRetryDelayMs: maxRetryDelayMs,
             onPayload: onPayload,
@@ -740,6 +752,8 @@ public final class Agent: Sendable {
                 return try await self.prepareNextTurn?(token)
             }
         )
+
+        config.identityProvider = { [weak self] in self?.identity }
 
         if let messages {
             _ = await runAgentLoop(

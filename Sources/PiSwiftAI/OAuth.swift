@@ -1628,7 +1628,7 @@ private func requestKimiCoding(
     request.httpMethod = "POST"
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+    request.setValue(formatUserAgent(), forHTTPHeaderField: "User-Agent")
     request.httpBody = kimiFormBody(fields)
     return try await oauthData(for: request, signal: signal, timeoutMs: kimiCodingRequestTimeoutMs)
 }

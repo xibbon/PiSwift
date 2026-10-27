@@ -127,6 +127,10 @@ private func buildOpenRouterImagesRequest(
     request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
     request.httpBody = body
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    applyProviderHeaders(
+        identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+        to: &request
+    )
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
     applyProviderHeaders(

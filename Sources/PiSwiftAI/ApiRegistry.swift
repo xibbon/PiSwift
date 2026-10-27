@@ -22,14 +22,44 @@ public struct ApiProvider: Sendable {
         stream: @escaping ApiStreamFunction,
         streamSimple: @escaping ApiStreamSimpleFunction,
         fetchDeferred: ApiFetchDeferredFunction? = nil,
-        cancelDeferred: ApiCancelDeferredFunction? = nil
+        cancelDeferred: ApiCancelDeferredFunction? = nil,
+        identity: ClientIdentity? = nil
     ) {
         self.api = api
-        self.stream = stream
-        self.streamSimple = streamSimple
-        self.fetchDeferred = fetchDeferred
-        self.cancelDeferred = cancelDeferred
+        if let identity {
+            self.stream = { model, context, options in
+                stream(model, context, withClientIdentity(options ?? StreamOptions(), identity))
+            }
+            self.streamSimple = { model, context, options in
+                streamSimple(model, context, withClientIdentity(options ?? SimpleStreamOptions(), identity))
+            }
+            if let fetchDeferred {
+                self.fetchDeferred = { model, handle, options in
+                    fetchDeferred(model, handle, withClientIdentity(options ?? DeferredFetchOptions(), identity))
+                }
+            } else {
+                self.fetchDeferred = nil
+            }
+            if let cancelDeferred {
+                self.cancelDeferred = { model, handle, options in
+                    try await cancelDeferred(model, handle, withClientIdentity(options ?? DeferredCancelOptions(), identity))
+                }
+            } else {
+                self.cancelDeferred = nil
+            }
+        } else {
+            self.stream = stream
+            self.streamSimple = streamSimple
+            self.fetchDeferred = fetchDeferred
+            self.cancelDeferred = cancelDeferred
+        }
     }
+}
+
+/// Add a request default without changing registration or provider operations.
+public func withClientIdentity(_ provider: ApiProvider, _ identity: ClientIdentity) -> ApiProvider {
+    ApiProvider(api: provider.api, stream: provider.stream, streamSimple: provider.streamSimple,
+                fetchDeferred: provider.fetchDeferred, cancelDeferred: provider.cancelDeferred, identity: identity)
 }
 
 /// Internal registration entry with optional source ID for grouping.
@@ -133,6 +163,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 cacheRetention: options?.cacheRetention,
@@ -166,6 +197,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 cacheRetention: options?.cacheRetention,
@@ -202,6 +234,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 cacheRetention: options?.cacheRetention,
@@ -235,6 +268,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 cacheRetention: options?.cacheRetention,
@@ -269,6 +303,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
@@ -303,6 +338,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
@@ -343,6 +379,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
@@ -383,6 +420,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 apiKey: apiKey,
                 httpClient: options?.httpClient,
                 sessionId: options?.sessionId,
@@ -412,6 +450,7 @@ public func registerBuiltInProviders() {
                 maxTokens: options?.maxTokens,
                 signal: options?.signal,
                 telemetry: options?.telemetry,
+                identity: options?.identity,
                 cacheRetention: options?.cacheRetention,
                 headers: options?.headers,
                 onPayload: options?.onPayload,

@@ -550,6 +550,20 @@ public struct AgentLoopConfig: Sendable {
     public var transport: Transport?
     public var apiKey: String?
     public var sessionId: String?
+    private var identityValue: ClientIdentity?
+    internal var identityProvider: (@Sendable () -> ClientIdentity?)?
+
+    /// Request identity merged over the default pi attribution for each request.
+    public var identity: ClientIdentity? {
+        get {
+            if let identityProvider { return identityProvider() }
+            return identityValue
+        }
+        set {
+            identityValue = newValue
+            identityProvider = nil
+        }
+    }
     public var thinkingBudgets: ThinkingBudgets?
     public var maxRetryDelayMs: Int?
     public var onPayload: OnPayloadFn?
@@ -647,6 +661,7 @@ public struct AgentLoopConfig: Sendable {
         transport: Transport? = nil,
         apiKey: String? = nil,
         sessionId: String? = nil,
+        identity: ClientIdentity? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
         onPayload: OnPayloadFn? = nil,
@@ -680,6 +695,8 @@ public struct AgentLoopConfig: Sendable {
         self.transport = transport
         self.apiKey = apiKey
         self.sessionId = sessionId
+        self.identityValue = identity
+        self.identityProvider = nil
         self.thinkingBudgets = thinkingBudgets
         self.maxRetryDelayMs = maxRetryDelayMs
         self.onPayload = onPayload

@@ -163,7 +163,8 @@ func anthropicFinalTransformationsReplaceRatherThanAppend(_ mode: String) async 
 @Test(.timeLimit(.minutes(1))) func anthropicWireHeadersPreserveUserAgentAndBetaOverrides() async throws {
     let client = try AnthropicAuditHTTP(events: anthropicAuditEvents())
     _ = await anthropicAuditResult(client)
-    #expect(await client.requests.last?.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+    // Upstream v1.4.0 identity change: use the shared User-Agent format.
+    #expect(await client.requests.last?.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
     let custom = try AnthropicAuditHTTP(events: anthropicAuditEvents())
     _ = await anthropicAuditResult(custom, model: anthropicAuditModel(headers: ["anthropic-beta": "model-beta"], provider: "kimi-coding"),
         options: AnthropicOptions(headers: ["User-Agent": "custom-client", "Anthropic-Beta": "custom-beta"]))

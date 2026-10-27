@@ -22,14 +22,20 @@ func resolveOpenAICodexBaseUrl(_ baseUrl: String) -> String {
 func buildOpenAICodexHeaders(
     baseHeaders: ProviderHeaders?,
     additionalHeaders: ProviderHeaders? = nil,
-    accessToken: String
+    accessToken: String,
+    provider: String = "openai-codex",
+    baseUrl: String = "",
+    identity: ClientIdentity? = nil
 ) throws -> [String: String] {
     guard let accountId = openAICodexAccountId(from: accessToken) else {
         throw OpenAICodexError.missingAccountId
     }
 
-    // Upstream v1.1.0: defaults, model fields, caller fields, then protected auth fields.
-    let defaults: ProviderHeaders = ["originator": "pi", "User-Agent": getPiUserAgent()]
+    // Codex requires originator as a protocol default.
+    let defaults = mergeProviderHeaders(
+        ["originator": "pi"],
+        identityHeaders(provider: provider, baseUrl: baseUrl, identity: identity)
+    )
     let requested = mergeProviderHeaders(mergeProviderHeaders(defaults, baseHeaders), additionalHeaders)
     let protected: ProviderHeaders = [
         "Authorization": "Bearer \(accessToken)",

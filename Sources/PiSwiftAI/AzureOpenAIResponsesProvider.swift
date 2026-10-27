@@ -131,6 +131,7 @@ public func streamAzureOpenAIResponses(
                 model: azureModel,
                 apiKey: apiKey,
                 headers: options.headers,
+                identity: options.identity,
                 timeoutMs: options.timeoutMs,
                 middlewares: middlewares
             )
@@ -152,11 +153,13 @@ public func streamAzureOpenAIResponses(
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
-                request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+                applyProviderHeaders(
+                    identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+                    to: &request
+                )
                 request.setValue("text/event-stream", forHTTPHeaderField: "accept")
                 request.setValue("application/json", forHTTPHeaderField: "content-type")
-                for (key, value) in model.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
-                for (key, value) in options.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
+                applyProviderHeaders(mergeProviderHeaders(model.headers, options.headers), to: &request)
                 try await processRawOpenAIResponsesStream(
                     request: request,
                     model: model,
@@ -423,6 +426,7 @@ public func streamSimpleAzureOpenAIResponses(
         maxTokens: maxTokens,
         signal: options?.signal,
         telemetry: options?.telemetry,
+        identity: options?.identity,
         apiKey: apiKey,
         httpClient: options?.httpClient,
         reasoningEffort: reasoningEffort,

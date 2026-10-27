@@ -12,6 +12,7 @@ public func streamOpenAI(
         maxTokens: options.maxTokens,
         signal: options.signal,
         telemetry: options.telemetry,
+        identity: options.identity,
         apiKey: options.apiKey
     )
 

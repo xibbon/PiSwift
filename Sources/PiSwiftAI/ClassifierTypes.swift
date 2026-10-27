@@ -127,6 +127,7 @@ public typealias ClassifierResponseHandler = @Sendable (ResponseSnapshot, Classi
 public struct ClassifierOptions: Sendable {
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var env: [String: String]?
@@ -138,7 +139,8 @@ public struct ClassifierOptions: Sendable {
     public var maxRetryDelayMs: Int?
     public var temperature: Double?
 
-    public init(signal: CancellationToken? = nil, telemetry: (any TelemetrySpan)? = nil, apiKey: String? = nil,
+    public init(signal: CancellationToken? = nil, telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil, apiKey: String? = nil,
                 httpClient: (any ProviderHTTPClient)? = nil, env: [String: String]? = nil,
                 onPayload: ClassifierPayloadHandler? = nil,
                 onResponse: ClassifierResponseHandler? = nil,
@@ -147,6 +149,7 @@ public struct ClassifierOptions: Sendable {
                 temperature: Double? = nil) {
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.env = env

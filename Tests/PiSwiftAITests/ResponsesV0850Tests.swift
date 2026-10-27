@@ -165,7 +165,8 @@ func responses085CodexTerminalEOFAndEndTurn(terminal: String, keepOpen: Bool) as
     #expect(result.stopReason == (incomplete ? .length : .stop))
     #expect(result.endTurn == false)
     #expect(result.content.contains { if case .text(let text) = $0 { text.text == "Hello" } else { false } })
-    #expect(headers.withLock { $0.first { $0.key.lowercased() == "user-agent" }?.value } == getPiUserAgent())
+    // Upstream v1.4.0 identity change: use the shared User-Agent format.
+    #expect(headers.withLock { $0.first { $0.key.lowercased() == "user-agent" }?.value } == formatUserAgent())
 }
 
 @Test func responses085URLPathsAndXAIEncryptedReasoning() throws {

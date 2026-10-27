@@ -823,7 +823,10 @@ private func streamZaiCompletions(
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     request.setValue("application/json", forHTTPHeaderField: "content-type")
-    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+    applyProviderHeaders(
+        identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+        to: &request
+    )
 
     request = applyOpenAICompletionsSessionAffinityHeaders(
         request: request,
@@ -1423,7 +1426,10 @@ private func streamManualOpenAICompletions(
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     request.setValue("application/json", forHTTPHeaderField: "content-type")
-    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+    applyProviderHeaders(
+        identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+        to: &request
+    )
 
     request.httpBody = try JSONEncoder().encode(query)
     request = middlewares.reduce(request) { current, middleware in

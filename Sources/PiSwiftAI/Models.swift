@@ -206,13 +206,15 @@ public struct OpenAIOptions: Sendable {
     public var temperature: Double?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
 
-    public init(env: [String: String]? = nil, apiKey: String? = nil, maxTokens: Int? = nil, temperature: Double? = nil, signal: CancellationToken? = nil, telemetry: (any TelemetrySpan)? = nil) {
+    public init(env: [String: String]? = nil, apiKey: String? = nil, maxTokens: Int? = nil, temperature: Double? = nil, signal: CancellationToken? = nil, telemetry: (any TelemetrySpan)? = nil, identity: ClientIdentity? = nil) {
         self.env = env
         self.apiKey = apiKey
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
     }
 }

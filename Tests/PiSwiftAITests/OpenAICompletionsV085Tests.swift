@@ -335,7 +335,8 @@ private func completions085AssistantPayload(_ message: AssistantMessage) async t
     _ = await streamOpenAICompletions(model: completions085Model(), context: normalizeContext(Context(messages: [])),
         options: OpenAICompletionsOptions(apiKey: "test", httpClient: client)).result()
     let request = try #require(await client.lastRequest())
-    #expect(request.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+    // Upstream v1.4.0 identity change: use the shared User-Agent format.
+    #expect(request.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
 }
 
 @Test(.timeLimit(.minutes(1))) func completions085StrictSchemaConvertsOptionalProperties() async throws {

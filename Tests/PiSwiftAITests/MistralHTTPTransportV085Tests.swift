@@ -79,7 +79,8 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
     #expect(request.value(forHTTPHeaderField: "accept") == "text/event-stream")
     #expect(request.value(forHTTPHeaderField: "x-affinity") == "session-1")
     #expect(request.value(forHTTPHeaderField: "x-custom") == "value")
-    #expect(request.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+    // Upstream v1.4.0 identity change: use the shared User-Agent format.
+    #expect(request.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
     let payload = try await mistral085Payload(client)
     #expect(payload["max_tokens"] as? Int == 123)
     #expect(payload["prompt_mode"] as? String == "reasoning")

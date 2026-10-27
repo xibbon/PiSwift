@@ -97,13 +97,15 @@ struct A1AnthropicFederationSDKTests {
             #expect(request.value(forHTTPHeaderField: "anthropic-beta")?.contains("oauth-2025-04-20") == true)
             #expect(request.value(forHTTPHeaderField: "anthropic-beta")?.contains("claude-code-20250219") != true)
             #expect(request.value(forHTTPHeaderField: "x-app") == nil)
-            #expect(request.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+            // Upstream v1.4.0 identity change: use the shared User-Agent format.
+            #expect(request.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
             #expect(request.value(forHTTPHeaderField: "anthropic-workspace-id") == nil)
         }
         let exchange = try #require(requests.first)
         #expect(exchange.httpMethod == "POST")
         #expect(exchange.value(forHTTPHeaderField: "anthropic-beta") == "oauth-2025-04-20,oidc-federation-2026-04-01")
-        #expect(exchange.value(forHTTPHeaderField: "User-Agent") == getPiUserAgent())
+        // Upstream v1.4.0 identity change: use the shared User-Agent format.
+        #expect(exchange.value(forHTTPHeaderField: "User-Agent") == formatUserAgent())
         let exchangeBody = try #require(exchange.httpBody)
         let body = try #require(try JSONSerialization.jsonObject(with: exchangeBody) as? [String: String])
         #expect(body == ["grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": "header.payload.signature",

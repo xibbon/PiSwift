@@ -45,7 +45,10 @@ public func streamMistral(
             request.timeoutInterval = Double(options.timeoutMs ?? 60_000) / 1000.0
             request.httpMethod = "POST"
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+            applyProviderHeaders(
+                identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+                to: &request
+            )
             request.setValue("text/event-stream", forHTTPHeaderField: "accept")
             request.setValue("application/json", forHTTPHeaderField: "content-type")
 
@@ -784,6 +787,7 @@ public func mapMistralSimpleOptions(model: Model, options: SimpleStreamOptions?,
         maxTokens: options?.maxTokens ?? model.maxTokens,
         signal: options?.signal,
         telemetry: options?.telemetry,
+        identity: options?.identity,
         apiKey: apiKey,
         httpClient: options?.httpClient,
         toolChoice: options?.toolChoice.map { AnyCodable($0.rawValue) },

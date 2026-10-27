@@ -1670,6 +1670,7 @@ public final class ModelRegistry: Sendable {
                     maxTokens: fullOptions?.maxTokens,
                     signal: fullOptions?.signal,
                     telemetry: fullOptions?.telemetry,
+                    identity: fullOptions?.identity,
                     apiKey: fullOptions?.apiKey,
                     httpClient: fullOptions?.httpClient,
                     transport: fullOptions?.transport,
@@ -1687,18 +1688,24 @@ public final class ModelRegistry: Sendable {
                 )
                 options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
-                options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
+                options.headers = mergeProviderHeaders(
+                    openCodeSessionHeaders(model: resolved.model, sessionId: options.sessionId, headers: resolved.auth.headers),
+                    options.headers)
                 input = customStream(resolved.model, normalizeContext(context), options)
             } else if var options = simpleOptions {
                 options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
-                options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
+                options.headers = mergeProviderHeaders(
+                    openCodeSessionHeaders(model: resolved.model, sessionId: options.sessionId, headers: resolved.auth.headers),
+                    options.headers)
                 input = try PiSwiftAI.streamSimple(model: resolved.model, context: context, options: options)
             } else {
                 var options = fullOptions ?? StreamOptions()
                 options.env = mergeConfigEnvironment(resolved.auth.env, options.env)
                 options.apiKey = options.apiKey ?? resolved.auth.apiKey
-                options.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
+                options.headers = mergeProviderHeaders(
+                    openCodeSessionHeaders(model: resolved.model, sessionId: options.sessionId, headers: resolved.auth.headers),
+                    options.headers)
                 input = try PiSwiftAI.stream(model: resolved.model, context: context, options: options)
             }
             for await event in input { output.push(event) }

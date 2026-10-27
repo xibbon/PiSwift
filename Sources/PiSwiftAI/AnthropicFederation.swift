@@ -203,7 +203,7 @@ func exchangeAnthropicFederationToken(
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("oauth-2025-04-20,oidc-federation-2026-04-01", forHTTPHeaderField: "anthropic-beta")
-    request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+    request.setValue(formatUserAgent(), forHTTPHeaderField: "User-Agent")
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
     let response: ProviderHTTPResponse
     do { response = try await client.send(request) }

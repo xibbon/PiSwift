@@ -716,6 +716,7 @@ func buildBedrockRequest(
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("application/vnd.amazon.eventstream", forHTTPHeaderField: "Accept")
     request.setValue(url.host ?? "", forHTTPHeaderField: "Host")
+    request.setValue(formatBedrockUserAgent(identity: options.identity), forHTTPHeaderField: "User-Agent")
     let customHeaders = mergeProviderHeaders(model.headers, options.headers) ?? [:]
     for (key, value) in customHeaders where !isReservedBedrockHeader(key) {
         request.setValue(value, forHTTPHeaderField: key)

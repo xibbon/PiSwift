@@ -195,6 +195,7 @@ public struct StreamOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     /// Optional per-request HTTP executor. Providers that cannot use it reject the request.
     public var httpClient: (any ProviderHTTPClient)?
@@ -229,6 +230,7 @@ public struct StreamOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         transport: Transport? = nil,
@@ -254,6 +256,7 @@ public struct StreamOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.transport = transport
@@ -296,6 +299,7 @@ public struct DeferredFetchOptions: Sendable {
     public var env: [String: String]?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var timeoutMs: Int?
     public var onResponse: ResponseHandler?
     public var httpClient: (any ProviderHTTPClient)?
@@ -308,6 +312,7 @@ public struct DeferredFetchOptions: Sendable {
         env: [String: String]? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         timeoutMs: Int? = nil,
         onResponse: ResponseHandler? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
@@ -318,6 +323,7 @@ public struct DeferredFetchOptions: Sendable {
         self.env = env
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.timeoutMs = timeoutMs
         self.onResponse = onResponse
         self.httpClient = httpClient
@@ -331,6 +337,7 @@ public struct DeferredCancelOptions: Sendable {
     public var env: [String: String]?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var timeoutMs: Int?
     public var onResponse: ResponseHandler?
     public var httpClient: (any ProviderHTTPClient)?
@@ -341,6 +348,7 @@ public struct DeferredCancelOptions: Sendable {
         env: [String: String]? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         timeoutMs: Int? = nil,
         onResponse: ResponseHandler? = nil,
         httpClient: (any ProviderHTTPClient)? = nil
@@ -350,6 +358,7 @@ public struct DeferredCancelOptions: Sendable {
         self.env = env
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.timeoutMs = timeoutMs
         self.onResponse = onResponse
         self.httpClient = httpClient
@@ -364,6 +373,7 @@ public struct SimpleStreamOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     /// Optional per-request HTTP executor. Providers that cannot use it reject the request.
     public var httpClient: (any ProviderHTTPClient)?
@@ -400,6 +410,7 @@ public struct SimpleStreamOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         transport: Transport? = nil,
@@ -432,6 +443,7 @@ public struct SimpleStreamOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.transport = transport
@@ -1348,6 +1360,7 @@ public struct ImagesOptions: Sendable {
     public var env: [String: String]?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var onPayload: PayloadHandler?
@@ -1362,6 +1375,7 @@ public struct ImagesOptions: Sendable {
         env: [String: String]? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         onPayload: PayloadHandler? = nil,
@@ -1375,6 +1389,7 @@ public struct ImagesOptions: Sendable {
         self.env = env
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.onPayload = onPayload
@@ -1937,6 +1952,7 @@ public struct OpenAICompletionsOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var toolChoice: OpenAIToolChoice?
@@ -1964,6 +1980,7 @@ public struct OpenAICompletionsOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         toolChoice: OpenAIToolChoice? = nil,
@@ -1989,6 +2006,7 @@ public struct OpenAICompletionsOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.toolChoice = toolChoice
@@ -2046,6 +2064,7 @@ public struct OpenAIResponsesOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var cacheRetention: CacheRetention?
@@ -2072,6 +2091,7 @@ public struct OpenAIResponsesOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         cacheRetention: CacheRetention? = nil,
@@ -2098,6 +2118,7 @@ public struct OpenAIResponsesOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.cacheRetention = cacheRetention
@@ -2124,6 +2145,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var reasoningEffort: ThinkingLevel?
@@ -2150,6 +2172,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         reasoningEffort: ThinkingLevel? = nil,
@@ -2176,6 +2199,7 @@ public struct AzureOpenAIResponsesOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.reasoningEffort = reasoningEffort
@@ -2201,6 +2225,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var reasoningEffort: ThinkingLevel?
@@ -2231,6 +2256,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         reasoningEffort: ThinkingLevel? = nil,
@@ -2258,6 +2284,7 @@ public struct OpenAICodexResponsesOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.reasoningEffort = reasoningEffort
@@ -2305,6 +2332,7 @@ public struct GoogleOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var sessionId: String?
@@ -2324,6 +2352,7 @@ public struct GoogleOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         sessionId: String? = nil,
@@ -2342,6 +2371,7 @@ public struct GoogleOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.sessionId = sessionId
@@ -2363,6 +2393,7 @@ public struct GoogleGeminiCliOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var maxRetryDelayMs: Int?
     public var headers: ProviderHeaders?
@@ -2382,6 +2413,7 @@ public struct GoogleGeminiCliOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         maxRetryDelayMs: Int? = nil,
         headers: ProviderHeaders? = nil,
@@ -2400,6 +2432,7 @@ public struct GoogleGeminiCliOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.maxRetryDelayMs = maxRetryDelayMs
         self.headers = headers
@@ -2421,6 +2454,7 @@ public struct GoogleVertexOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var sessionId: String?
@@ -2442,6 +2476,7 @@ public struct GoogleVertexOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         sessionId: String? = nil,
@@ -2462,6 +2497,7 @@ public struct GoogleVertexOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.sessionId = sessionId
@@ -2492,6 +2528,7 @@ public struct AnthropicOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     public var cacheRetention: CacheRetention?
@@ -2526,6 +2563,7 @@ public struct AnthropicOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         cacheRetention: CacheRetention? = nil,
@@ -2550,6 +2588,7 @@ public struct AnthropicOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.cacheRetention = cacheRetention
@@ -2584,6 +2623,7 @@ public struct BedrockOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var region: String?
     public var profile: String?
     public var toolChoice: BedrockToolChoice?
@@ -2615,6 +2655,7 @@ public struct BedrockOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         region: String? = nil,
         profile: String? = nil,
         toolChoice: BedrockToolChoice? = nil,
@@ -2637,6 +2678,7 @@ public struct BedrockOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.region = region
         self.profile = profile
         self.toolChoice = toolChoice
@@ -2663,6 +2705,7 @@ public struct MistralOptions: Sendable {
     public var maxTokens: Int?
     public var signal: CancellationToken?
     public var telemetry: (any TelemetrySpan)?
+    public var identity: ClientIdentity?
     public var apiKey: String?
     public var httpClient: (any ProviderHTTPClient)?
     /// "auto" | "none" | "any" | "required" | { type: function, name: ... }
@@ -2686,6 +2729,7 @@ public struct MistralOptions: Sendable {
         maxTokens: Int? = nil,
         signal: CancellationToken? = nil,
         telemetry: (any TelemetrySpan)? = nil,
+        identity: ClientIdentity? = nil,
         apiKey: String? = nil,
         httpClient: (any ProviderHTTPClient)? = nil,
         toolChoice: AnyCodable? = nil,
@@ -2707,6 +2751,7 @@ public struct MistralOptions: Sendable {
         self.maxTokens = maxTokens
         self.signal = signal
         self.telemetry = telemetry
+        self.identity = identity
         self.apiKey = apiKey
         self.httpClient = httpClient
         self.toolChoice = toolChoice

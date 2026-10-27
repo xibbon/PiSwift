@@ -5,6 +5,7 @@ func makeOpenAIClient(
     model: Model,
     apiKey: String?,
     headers: ProviderHeaders? = nil,
+    identity: ClientIdentity? = nil,
     timeoutMs: Int? = nil,
     middlewares: [OpenAIMiddleware] = []
 ) throws -> OpenAI {
@@ -24,7 +25,8 @@ func makeOpenAIClient(
     } else {
         basePath = rawPath.isEmpty || rawPath == "/" ? "/v1" : rawPath
     }
-    let mergedHeaders = mergeProviderHeaders(model.headers, headers)
+    let defaults = identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: identity)
+    let mergedHeaders = mergeProviderHeaders(mergeProviderHeaders(defaults, model.headers), headers)
 
     let timeoutInterval = Double(timeoutMs ?? 60_000) / 1000.0
     let configuration = OpenAI.Configuration(

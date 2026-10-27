@@ -75,6 +75,10 @@ func postClassifierRequest(label: String, url: @Sendable () throws -> URL, model
     request.httpMethod = "POST"
     request.httpBody = Data(body.serialized(escapeSlashes: escapeSlashes).utf8)
     if let timeoutMs = options.timeoutMs { request.timeoutInterval = Double(timeoutMs) / 1000 }
+    applyProviderHeaders(
+        identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+        to: &request
+    )
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     applyProviderHeaders(mergeProviderHeaders(model.headers, options.headers), to: &request)

@@ -6,10 +6,20 @@ public struct ClassifierApiProvider: Sendable {
     public let api: ClassifierApi
     public let classify: ClassifierFunction
 
-    public init(api: ClassifierApi, classify: @escaping ClassifierFunction) {
+    public init(api: ClassifierApi, classify: @escaping ClassifierFunction, identity: ClientIdentity? = nil) {
         self.api = api
-        self.classify = classify
+        if let identity {
+            self.classify = { model, context, options in
+                await classify(model, context, withClientIdentity(options ?? ClassifierOptions(), identity))
+            }
+        } else {
+            self.classify = classify
+        }
     }
+}
+
+public func withClientIdentity(_ provider: ClassifierApiProvider, _ identity: ClientIdentity) -> ClassifierApiProvider {
+    ClassifierApiProvider(api: provider.api, classify: provider.classify, identity: identity)
 }
 
 private struct RegisteredClassifierProvider: Sendable {

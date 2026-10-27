@@ -29,7 +29,10 @@ public func streamOpenAICodexResponses(
             let baseHeaders = try buildOpenAICodexHeaders(
                 baseHeaders: model.headers,
                 additionalHeaders: options.headers,
-                accessToken: apiKey
+                accessToken: apiKey,
+                provider: model.provider,
+                baseUrl: model.baseUrl,
+                identity: options.identity
             )
             let accountId = baseHeaders["chatgpt-account-id"] ?? ""
             let cacheSessionId = codexCacheSessionId(options.sessionId, cacheRetention: options.cacheRetention)

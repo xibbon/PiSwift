@@ -182,6 +182,7 @@ public func streamOpenAIResponses(
             maxTokens: options.maxTokens,
             signal: options.signal,
             telemetry: options.telemetry,
+            identity: options.identity,
             apiKey: options.apiKey,
             httpClient: options.httpClient,
             reasoningEffort: options.reasoningEffort,
@@ -274,6 +275,7 @@ public func streamOpenAIResponses(
                 model: model,
                 apiKey: options.apiKey,
                 headers: options.headers,
+                identity: options.identity,
                 timeoutMs: options.timeoutMs,
                 middlewares: middlewares
             )
@@ -303,11 +305,13 @@ public func streamOpenAIResponses(
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(options.apiKey ?? "")", forHTTPHeaderField: "Authorization")
-                request.setValue(getPiUserAgent(), forHTTPHeaderField: "User-Agent")
+                applyProviderHeaders(
+                    identityHeaders(provider: model.provider, baseUrl: model.baseUrl, identity: options.identity),
+                    to: &request
+                )
                 request.setValue("text/event-stream", forHTTPHeaderField: "accept")
                 request.setValue("application/json", forHTTPHeaderField: "content-type")
-                for (key, value) in model.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
-                for (key, value) in options.headers ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
+                applyProviderHeaders(mergeProviderHeaders(model.headers, options.headers), to: &request)
                 try await processRawOpenAIResponsesStream(
                     request: request,
                     model: model,
