@@ -1,3 +1,5 @@
+import PiSwiftTelemetry
+
 /// A typed key. Two keys with the same description have separate identities.
 public final class ChordContextKey<Value: Sendable>: Sendable {
     /// The diagnostic name of this key; it does not determine key identity.
@@ -42,6 +44,8 @@ private final class ContextNode: Sendable {
 /// | `withAbortSignal` | `withAbortSignal(_:)` |
 /// | `withoutAbortSignal` | `withoutAbortSignal()` |
 /// | `withCancel` | `withCancel()` |
+/// | `withTelemetry` | `withTelemetry(_:)` |
+/// | `traceIn` | `traceIn(_:body:)` |
 /// | `awaitWithContext` | `awaitWithContext(_:_:)` |
 public struct ChordContext: Sendable, CustomStringConvertible {
     /// A context with no values and no cancellation signal.
@@ -49,6 +53,7 @@ public struct ChordContext: Sendable, CustomStringConvertible {
     /// A context for a caller that has not yet supplied its own context.
     public static let todo = ChordContext(node: ContextNode(name: "[Context TODO_CONTEXT]"))
     private static let abortSignalKey = ChordContextKey<AbortSignal>("chord.abortSignal")
+    private static let telemetryKey = ChordContextKey<any TelemetrySpan>("chord.telemetry")
 
     private let node: ContextNode
 
@@ -66,6 +71,30 @@ public struct ChordContext: Sendable, CustomStringConvertible {
 
     /// The effective cancellation signal, or nil if cancellation is absent or masked.
     public var abortSignal: AbortSignal? { value(Self.abortSignalKey) }
+
+    /// The explicit telemetry parent, or the shared default span.
+    public var telemetry: any TelemetrySpan { value(Self.telemetryKey) ?? noopTelemetryContext }
+
+    /// Derives a telemetry parent and keeps application values and cancellation.
+    public func withTelemetry(_ telemetry: any TelemetrySpan) -> ChordContext {
+        withValue(telemetry, for: Self.telemetryKey)
+    }
+
+    /// Runs a child span with a derived context and passes the result or error through.
+    public func traceIn<Result>(
+        _ options: SpanOptions,
+        body: (ChordContext) throws -> Result
+    ) rethrows -> Result {
+        try telemetry.startSpan(options) { span in try body(withTelemetry(span)) }
+    }
+
+    /// Runs asynchronous work in a child span without changing cancellation.
+    public func traceIn<Result: Sendable>(
+        _ options: SpanOptions,
+        body: @Sendable (ChordContext) async throws -> Result
+    ) async rethrows -> Result {
+        try await telemetry.startSpan(options) { span in try await body(withTelemetry(span)) }
+    }
 
     /// Adds or replaces a value. A nil value masks the parent's value.
     public func withValue<Value>(_ value: Value?, for key: ChordContextKey<Value>) -> ChordContext {
@@ -99,6 +128,24 @@ public struct ChordContext: Sendable, CustomStringConvertible {
         }
         return names.reversed().joined()
     }
+}
+
+/// Runs a child span with the supplied context as its explicit parent.
+public func traceIn<Result>(
+    _ context: ChordContext,
+    _ options: SpanOptions,
+    body: (ChordContext) throws -> Result
+) rethrows -> Result {
+    try context.traceIn(options, body: body)
+}
+
+/// Runs asynchronous work with the supplied context as its explicit parent.
+public func traceIn<Result: Sendable>(
+    _ context: ChordContext,
+    _ options: SpanOptions,
+    body: @Sendable (ChordContext) async throws -> Result
+) async rethrows -> Result {
+    try await context.traceIn(options, body: body)
 }
 
 /// A child context and its independent cancellation control.

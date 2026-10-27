@@ -181,6 +181,7 @@ public func streamOpenAIResponses(
             temperature: options.temperature,
             maxTokens: options.maxTokens,
             signal: options.signal,
+            telemetry: options.telemetry,
             apiKey: options.apiKey,
             httpClient: options.httpClient,
             reasoningEffort: options.reasoningEffort,

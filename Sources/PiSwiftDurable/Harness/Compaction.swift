@@ -196,7 +196,7 @@ private func summarizeCompaction(_ task: RunningTask<CompactionInput, Compaction
     let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
     defer { withExtendedLifetime(bridge) {} }
     let options = try compactionStreamOptions(request, signal: bridge.token,
-        sessionId: await ensureProviderSessionId(runtime: runtime, context: context))
+        sessionId: await ensureProviderSessionId(runtime: runtime, context: context), context: context)
     let message = await runtime.models.completeSimple(model: model, context: .init(messages: messages), options: options)
     try runtime.signal.throwIfAborted()
     let summary = compactionSummaryText(message), policy = runtime.settings.retry
@@ -222,13 +222,13 @@ private func summarizeCompaction(_ task: RunningTask<CompactionInput, Compaction
     }, context: context)
 }
 
-private func compactionStreamOptions(_ request: SummaryRequest, signal: CancellationToken, sessionId: String) throws -> SimpleStreamOptions {
+private func compactionStreamOptions(_ request: SummaryRequest, signal: CancellationToken, sessionId: String, context: ChordContext) throws -> SimpleStreamOptions {
     let source = request.streamOptions
     var metadata: [String: AnyCodable]?
     if let value = source.metadata, let object = try foundationJSON(from: .object(value)) as? [String: Any] {
         metadata = object.mapValues(AnyCodable.init)
     }
-    return SimpleStreamOptions(maxTokens: request.maxTokens, signal: signal, transport: source.transport,
+    return SimpleStreamOptions(maxTokens: request.maxTokens, signal: signal, telemetry: context.telemetry, transport: source.transport,
         reasoning: request.thinkingLevel == .off ? nil : ThinkingLevel(rawValue: request.thinkingLevel.rawValue),
         cacheRetention: CacheRetention.none, sessionId: sessionId, headers: source.headers, maxRetryDelayMs: source.maxRetryDelayMs,
         metadata: metadata, timeoutMs: source.timeoutMs, maxRetries: source.maxRetries)

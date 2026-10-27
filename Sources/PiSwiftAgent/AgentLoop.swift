@@ -418,6 +418,7 @@ private func streamAssistantResponse(
             temperature: config.temperature,
             maxTokens: config.maxTokens,
             signal: signal,
+            telemetry: config.telemetry,
             apiKey: resolvedApiKey,
             transport: config.transport,
             reasoning: config.reasoning,

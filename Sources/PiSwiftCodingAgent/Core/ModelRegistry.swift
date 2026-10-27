@@ -1669,6 +1669,7 @@ public final class ModelRegistry: Sendable {
                     samplingParams: fullOptions?.samplingParams,
                     maxTokens: fullOptions?.maxTokens,
                     signal: fullOptions?.signal,
+                    telemetry: fullOptions?.telemetry,
                     apiKey: fullOptions?.apiKey,
                     httpClient: fullOptions?.httpClient,
                     transport: fullOptions?.transport,

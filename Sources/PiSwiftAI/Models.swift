@@ -1,3 +1,4 @@
+import PiSwiftTelemetry
 import Foundation
 
 /// Generation timestamp for the bundled model catalog, in Unix milliseconds.
@@ -204,12 +205,14 @@ public struct OpenAIOptions: Sendable {
     public var maxTokens: Int?
     public var temperature: Double?
     public var signal: CancellationToken?
+    public var telemetry: (any TelemetrySpan)?
 
-    public init(env: [String: String]? = nil, apiKey: String? = nil, maxTokens: Int? = nil, temperature: Double? = nil, signal: CancellationToken? = nil) {
+    public init(env: [String: String]? = nil, apiKey: String? = nil, maxTokens: Int? = nil, temperature: Double? = nil, signal: CancellationToken? = nil, telemetry: (any TelemetrySpan)? = nil) {
         self.env = env
         self.apiKey = apiKey
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.signal = signal
+        self.telemetry = telemetry
     }
 }

@@ -1,3 +1,4 @@
+import PiSwiftTelemetry
 import Foundation
 import PiSwiftAI
 
@@ -541,6 +542,7 @@ public enum AgentEvent: Sendable {
 }
 
 public struct AgentLoopConfig: Sendable {
+    public var telemetry: (any TelemetrySpan)?
     public var model: Model
     public var temperature: Double?
     public var maxTokens: Int?
@@ -638,6 +640,7 @@ public struct AgentLoopConfig: Sendable {
 
     public init(
         model: Model,
+        telemetry: (any TelemetrySpan)? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
         reasoning: ReasoningEffort? = nil,
@@ -670,6 +673,7 @@ public struct AgentLoopConfig: Sendable {
         prepareNextTurn: PrepareNextTurnFn? = nil
     ) {
         self.model = model
+        self.telemetry = telemetry
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.reasoning = reasoning

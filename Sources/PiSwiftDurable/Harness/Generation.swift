@@ -132,7 +132,7 @@ private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRu
         let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
         defer { withExtendedLifetime(bridge) {} }
         let message = await runtime.models.fetchDeferred(model: model, handle: try required(checkpoint.handle, "handle").handle,
-                                                        options: DeferredFetchOptions(signal: bridge.token))
+                                                        options: DeferredFetchOptions(signal: bridge.token, telemetry: context.telemetry))
         try await classifyGeneration(runtime, request: checkpoint, message: message, context: context)
     case .tools:
         let assistant = try required(checkpoint.assistant, "assistant")
@@ -217,14 +217,14 @@ private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
     let sessionId = try await ensureProviderSessionId(runtime: runtime, context: context)
     let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
     defer { withExtendedLifetime(bridge) {} }
-    let options = try generationStreamOptions(required(checkpoint.streamOptions, "streamOptions"), thinkingLevel: required(checkpoint.thinkingLevel, "thinkingLevel"), signal: bridge.token, sessionId: sessionId)
+    let options = try generationStreamOptions(required(checkpoint.streamOptions, "streamOptions"), thinkingLevel: required(checkpoint.thinkingLevel, "thinkingLevel"), signal: bridge.token, sessionId: sessionId, context: context)
     let message = try await streamGeneration(runtime: runtime, model: model, messages: messages, options: options, attempt: attempt, context: context)
     try await classifyGeneration(runtime, request: checkpoint, message: message, messages: view.messages, context: context)
 }
-func generationStreamOptions(_ options: ConversationStreamOptions, thinkingLevel: ModelThinkingLevel, signal: CancellationToken, sessionId: String) throws -> SimpleStreamOptions {
+func generationStreamOptions(_ options: ConversationStreamOptions, thinkingLevel: ModelThinkingLevel, signal: CancellationToken, sessionId: String, context: ChordContext = .background) throws -> SimpleStreamOptions {
     var metadata: [String: AnyCodable]?
     if let value = options.metadata { metadata = (try foundationJSON(from: .object(value)) as! [String: Any]).mapValues(AnyCodable.init) }
-    return SimpleStreamOptions(signal: signal, transport: options.transport, reasoning: ThinkingLevel(rawValue: thinkingLevel.rawValue),
+    return SimpleStreamOptions(signal: signal, telemetry: context.telemetry, transport: options.transport, reasoning: ThinkingLevel(rawValue: thinkingLevel.rawValue),
         cacheRetention: options.cacheRetention, sessionId: sessionId, headers: options.headers, maxRetryDelayMs: options.maxRetryDelayMs,
         metadata: metadata, timeoutMs: options.timeoutMs, maxRetries: options.maxRetries, deferred: options.deferred)
 }
@@ -258,7 +258,7 @@ private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Task
         do {
             let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
             defer { withExtendedLifetime(bridge) {} }
-            try await runtime.models.cancelDeferred(model: model, handle: handle.handle, options: DeferredCancelOptions(signal: bridge.token))
+            try await runtime.models.cancelDeferred(model: model, handle: handle.handle, options: DeferredCancelOptions(signal: bridge.token, telemetry: context.telemetry))
         } catch { try runtime.report(error) }
     }
     let unstarted = checkpoint.phase == .tools ? try await generationCalls(runtime: runtime, assistant: required(checkpoint.assistant, "assistant"), callIds: checkpoint.pending ?? [], context: context) : []

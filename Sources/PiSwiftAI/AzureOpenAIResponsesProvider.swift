@@ -422,6 +422,7 @@ public func streamSimpleAzureOpenAIResponses(
         ),
         maxTokens: maxTokens,
         signal: options?.signal,
+        telemetry: options?.telemetry,
         apiKey: apiKey,
         httpClient: options?.httpClient,
         reasoningEffort: reasoningEffort,

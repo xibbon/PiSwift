@@ -331,6 +331,7 @@ private func toSimpleOptions(_ options: StreamOptions) -> SimpleStreamOptions {
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         signal: options.signal,
+        telemetry: options.telemetry,
         apiKey: options.apiKey,
         cacheRetention: options.cacheRetention,
         sessionId: options.sessionId,

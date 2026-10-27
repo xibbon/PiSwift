@@ -11,6 +11,7 @@ public func streamOpenAI(
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         signal: options.signal,
+        telemetry: options.telemetry,
         apiKey: options.apiKey
     )
 
