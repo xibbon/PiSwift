@@ -22,6 +22,10 @@ private func requestId(from response: HTTPURLResponse) -> String? {
 
 func describeOpenAIError(_ error: Error, provider: String? = nil) -> String {
     let providerName = provider.map { $0 == "openai" ? "OpenAI" : $0 } ?? "OpenAI"
+    if let streamError = error as? StreamError,
+       case let .providerRequest(statusCode?, _, message) = streamError {
+        return "\(providerName) API error (\(statusCode)): \(message)"
+    }
     if let apiError = error as? APIErrorResponse {
         return apiError.errorDescription ?? "\(providerName) API error."
     }

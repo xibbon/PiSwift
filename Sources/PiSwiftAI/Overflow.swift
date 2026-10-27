@@ -18,6 +18,8 @@ private let overflowPatterns: [NSRegularExpression] = [
     try! NSRegularExpression(pattern: "context[_ ]length[_ ]exceeded", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "too many tokens", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "token limit exceeded", options: [.caseInsensitive]),
+    // HTTP 413 is a request-size overflow. Match the status only at the start.
+    try! NSRegularExpression(pattern: "^(?:[\\w -]+ API error \\(413\\):|413(?:\\s|:|$))", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "model_context_window_exceeded", options: [.caseInsensitive]),
     try! NSRegularExpression(pattern: "too large for model with \\d+ maximum context length", options: [.caseInsensitive]),
     // v0.65.0: Anthropic HTTP 413 surfaces as `request_too_large`.

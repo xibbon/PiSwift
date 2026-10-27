@@ -18,6 +18,8 @@ private let nonRetryableProviderLimitErrorPatterns = [
     "quota exceeded",
     "billing",
     "subscription_sharing_usage_limit_exceeded",
+    // A ChatGPT Business workspace admin must raise this limit.
+    "subscription_sharing_workplace_individual_usage_limit_exceeded",
 ]
 
 private let retryableProviderErrorPatterns = [
@@ -29,13 +31,8 @@ private let retryableProviderErrorPatterns = [
     "model is at capacity",
     "rate.?limit",
     "too many requests",
-    "429",
-    "500",
-    "502",
-    "503",
-    "504",
-    "520",
-    "524",
+    // Do not match status codes inside request IDs or byte counts.
+    "(?<![a-z0-9])(?:429|500|502|503|504|520|524)(?![a-z0-9])",
     "service.?(?:is.?)?(?:temporarily.?)?unavailable",
     "server.?error",
     "internal.?error",
@@ -44,6 +41,10 @@ private let retryableProviderErrorPatterns = [
     "provider.?returned.?(?:an.?)?error",
     "exceeded request buffer limit while retrying upstream",
     "unable to forward upstream",
+    "upstream.?request.?failed",
+    "upstream_stream_read_error",
+    "stream was interrupted",
+    "http/?2 stream failed",
 
     // Network, proxy, and fetch transport failures.
     "network.?error",
@@ -52,6 +53,7 @@ private let retryableProviderErrorPatterns = [
     "connection.?lost",
     "other side closed",
     "fetch failed",
+    "request to \\S+ failed, reason:",
     "getaddrinfo",
     "ENOTFOUND",
     "EAI_AGAIN",
@@ -75,6 +77,7 @@ private let retryableProviderErrorPatterns = [
     "stream ended before message_stop",
     "stream ended before a terminal response event",
     "http2 request did not get a response",
+    "stream disconnected before completion",
     // Node ERR_HTTP2_STREAM_CANCEL: the HTTP/2 session died before the request was
     // sent, e.g. after the Bedrock SDK's 5-minute session timeout (#10379).
     "pending stream has been canceled",

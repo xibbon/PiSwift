@@ -114,13 +114,20 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     let added = try await captureMidBody(.openAIResponses, compat: compat,
         context: midContext([midSystem("Later", added: [midTool("search")])]))
     let input = try #require(added["input"] as? [[String: Any]])
-    #expect((added["tools"] as? [[String: Any]])?.count == 1)
-    #expect(input.contains { $0["type"] as? String == "additional_tools" })
+    // caa6967b6: Declare the initial and later tools in input items.
+    #expect(added["tools"] == nil)
+    #expect(input.filter { $0["type"] as? String == "additional_tools" }.map {
+        ($0["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+    } == [["read"], ["search"]])
     let removed = try await captureMidBody(.openAIResponses, compat: compat,
         context: midContext([midSystem("", added: [midTool("search")]), midSystem("", removed: [ToolReference(name: "read")])]))
     let removedInput = try #require(removed["input"] as? [[String: Any]])
-    #expect((removed["tools"] as? [[String: Any]])?.count == 1)
-    #expect(!removedInput.contains { $0["type"] as? String == "additional_tools" })
+    // caa6967b6: Keep declarations and announce removals in text.
+    #expect(removed["tools"] == nil)
+    #expect(removedInput.filter { $0["type"] as? String == "additional_tools" }.map {
+        ($0["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+    } == [["read"], ["search"]])
+    #expect(removedInput.last?["content"] as? String == "The following tools are no longer available. Do not call them:\n- read")
 
     let search = try await captureMidBody(.openAIResponses,
         compat: OpenAICompat(supportsMidConvoSystemMessages: true, supportsToolSearch: true),

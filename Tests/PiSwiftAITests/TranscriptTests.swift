@@ -48,12 +48,14 @@ private func transcriptTool(_ name: String, _ description: String = "first") -> 
     let additive = normalizeContext(Context(messages: [
         .system(SystemMessage(content: .text(""), toolsAdded: [b]))
     ], tools: [a]))
-    #expect(resolveTranscriptTools(additive.messages, supportsToolAdditions: true).anchorsAdditions)
-    #expect(resolveTranscriptTools(additive.messages, supportsToolAdditions: true).requestTools.map(\.name) == ["a"])
+    // caa6967b6: Count the folded system messages.
+    #expect(resolveTranscriptTools(additive.messages, support: .additions).foldedSystemMessages == 1)
+    #expect(resolveTranscriptTools(additive.messages, support: .additions).requestTools.map(\.name) == ["a"])
     let removed = normalizeContext(Context(messages: [
         .system(SystemMessage(content: .text(""), toolsRemoved: [ToolReference(name: "a")]))
     ], tools: [a]))
-    #expect(!resolveTranscriptTools(removed.messages, supportsToolAdditions: true).anchorsAdditions)
+    // caa6967b6: Fold through the last removal.
+    #expect(resolveTranscriptTools(removed.messages, support: .additions).foldedSystemMessages == 2)
     let changed = getToolStateChanges([a], [redefined])
     #expect(changed.toolsAdded.map(\.name) == ["a"])
     #expect(changed.toolsRemoved == [ToolReference(name: "a")])

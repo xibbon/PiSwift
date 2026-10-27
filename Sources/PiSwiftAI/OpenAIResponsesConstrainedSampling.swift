@@ -1,6 +1,15 @@
 import Foundation
 import OpenAI
 
+func responsesToolDeclarations(_ context: Context) -> [AITool] {
+    var tools: [AITool] = []
+    for tool in (context.tools ?? []) + getDeclaredTools(context.messages) {
+        if let index = tools.firstIndex(where: { $0.name == tool.name }) { tools[index] = tool }
+        else { tools.append(tool) }
+    }
+    return tools
+}
+
 struct OpenAIResponsesGrammarTool: Sendable {
     let name: String
     let description: String

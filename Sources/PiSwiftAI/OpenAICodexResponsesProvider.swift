@@ -6,7 +6,7 @@ public func streamOpenAICodexResponses(
     options: OpenAICodexResponsesOptions
 ) -> AssistantMessageEventStream {
     let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
-    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let toolPlan = resolveTranscriptTools(transcript.messages, support: getResponsesToolSupport(model))
     let context = Context(systemPrompt: getInitialSystemMessage(transcript.messages).map(getSystemMessageText), messages: transcript.messages, tools: toolPlan.requestTools)
     let stream = AssistantMessageEventStream()
 
@@ -41,7 +41,7 @@ public func streamOpenAICodexResponses(
 
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
             let grammarToolInputProperties = try createGrammarToolInputProperties(
-                tools: getDeclaredTools(context.messages),
+                tools: responsesToolDeclarations(context),
                 supportsOpenAIGrammarTools: supportsGrammar
             )
             var body: [String: Any] = [
@@ -1049,15 +1049,19 @@ func convertCodexMessages(
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
     var msgIndex = 0
 
-    let toolPlan = resolveTranscriptTools(context.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let toolPlan = resolveTranscriptTools(context.messages, support: getResponsesToolSupport(model))
+    var systemIndex = 0
     for (index, message) in transformed.enumerated() {
         switch message {
         case .system(let system):
-            if index == 0 { continue }
-            if toolPlan.anchorsAdditions && system.toolsAdded?.isEmpty == false {
-                messages.append(["role": "developer", "content": "\u{0}__PI_TRANSCRIPT_TOOLS__:\(index)"])
+            let anchors = systemIndex >= toolPlan.foldedSystemMessages
+            let toolIndex = systemIndex
+            systemIndex += 1
+            if anchors && system.toolsAdded?.isEmpty == false {
+                messages.append(["role": "developer", "content": "\u{0}__PI_TRANSCRIPT_TOOLS__:\(toolIndex)"])
             }
-            let text = renderSystemMessageUpdate(system)
+            if index == 0 { continue }
+            let text = responsesSystemText(system, initial: false, anchorsTools: anchors)
             if !text.isEmpty { messages.append(["role": model.reasoning && model.compat?.supportsDeveloperRole != false ? "developer" : "system", "content": sanitizeSurrogates(text)]) }
         case .user(let user):
             switch user.content {
@@ -1170,6 +1174,7 @@ func convertCodexMessages(
                 if case .text(let text) = block { return text.text }
                 return nil
             }.joined(separator: "\n")
+            let hasText = !textResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasImages = toolResult.content.contains { if case .image = $0 { return true } else { return false } }
             let callId = toolResult.toolCallId.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? toolResult.toolCallId
 
@@ -1177,7 +1182,7 @@ func convertCodexMessages(
                 "type": grammarToolInputProperties[toolResult.toolName] == nil
                     ? "function_call_output" : "custom_tool_call_output",
                 "call_id": callId,
-                "output": sanitizeSurrogates(textResult.isEmpty ? "(see attached image)" : textResult),
+                "output": sanitizeSurrogates(hasText ? textResult : (hasImages ? "(see attached image)" : "(no tool output)")),
             ])
 
             if hasImages && model.input.contains(.image) {
@@ -1205,7 +1210,7 @@ func convertCodexMessages(
         msgIndex += 1
     }
 
-    let replay = try makeResponsesReplayMiddleware(model: model, context: context)
+    let replay = try makeResponsesReplayMiddleware(model: model, context: context, includeSystemPrompt: false)
     return replay.rewriteInput(messages.compactMap { $0 as? [String: Any] })
 }
 
@@ -1213,7 +1218,10 @@ func convertCodexMessages(model: Model, context: Context) -> [Any] {
     (try? convertCodexMessages(
         model: model,
         context: context,
-        grammarToolInputProperties: [:]
+        grammarToolInputProperties: createGrammarToolInputProperties(
+            tools: responsesToolDeclarations(context),
+            supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
+        )
     )) ?? []
 }
 

@@ -18,7 +18,8 @@ private func a4Error(_ text: String, provider: String = "test") -> AssistantMess
     #expect(isContextOverflow(a4Error("400 {\"code\":\"1261\",\"message\":\"Prompt too long\"}", provider: "zai")))
     for code in ["400", "413"] {
         #expect(isContextOverflow(a4Error("\(code) status code (no body)", provider: "cerebras")))
-        #expect(!isContextOverflow(a4Error("\(code) status code (no body)", provider: "openai")))
+        // overflow.test.ts: HTTP 413 is request-size overflow for every provider.
+        #expect(isContextOverflow(a4Error("\(code) status code (no body)", provider: "openai")) == (code == "413"))
     }
 }
 

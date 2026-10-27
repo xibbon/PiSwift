@@ -148,25 +148,57 @@ public func hasToolRedefinitions<T: TranscriptMessageLike>(_ messages: [T]) -> B
     }
     return false
 }
-public func hasNonAdditiveToolChanges<T: TranscriptMessageLike>(_ messages: [T]) -> Bool {
+private func lastNonAdditiveToolChange(_ systems: [SystemMessage]) -> Int {
     var declared: Set<String> = []
-    for message in messages {
-        guard let system = message.transcriptSystemMessage else { continue }
-        if system.toolsRemoved?.isEmpty == false { return true }
+    var last = -1
+    for (index, system) in systems.enumerated() {
+        if system.toolsRemoved?.isEmpty == false { last = index }
         for tool in system.toolsAdded ?? [] {
-            if !declared.insert(tool.name).inserted { return true }
+            if !declared.insert(tool.name).inserted { last = index }
         }
     }
-    return false
+    return last
+}
+public func hasNonAdditiveToolChanges<T: TranscriptMessageLike>(_ messages: [T]) -> Bool {
+    lastNonAdditiveToolChange(messages.compactMap(\.transcriptSystemMessage)) >= 0
+}
+
+public enum TranscriptToolSupport: Sendable, Equatable {
+    case none
+    case additions
+    case changes
 }
 public struct TranscriptTools: Sendable {
     public let requestTools: [AITool]
-    public let anchorsAdditions: Bool
+    /// Number of leading system messages whose tools are in the request tool list.
+    public let foldedSystemMessages: Int
+    private let legacyAnchorsAdditions: Bool
+    @available(*, deprecated, message: "Use foldedSystemMessages to find the boundary for tool changes.")
+    public var anchorsAdditions: Bool { legacyAnchorsAdditions }
+
+    init(requestTools: [AITool], foldedSystemMessages: Int, legacyAnchorsAdditions: Bool = false) {
+        self.requestTools = requestTools
+        self.foldedSystemMessages = foldedSystemMessages
+        self.legacyAnchorsAdditions = legacyAnchorsAdditions
+    }
 }
+public func resolveTranscriptTools<T: TranscriptMessageLike>(_ messages: [T], support: TranscriptToolSupport) -> TranscriptTools {
+    let systems = messages.compactMap(\.transcriptSystemMessage)
+    switch support {
+    case .none:
+        return TranscriptTools(requestTools: getCurrentTools(messages), foldedSystemMessages: systems.count)
+    case .changes:
+        return TranscriptTools(requestTools: [], foldedSystemMessages: 0, legacyAnchorsAdditions: true)
+    case .additions:
+        let folded = max(getInitialSystemMessage(messages) == nil ? 0 : 1, lastNonAdditiveToolChange(systems) + 1)
+        let prefix = systems.prefix(folded).map(Message.system)
+        return TranscriptTools(requestTools: getCurrentTools(prefix), foldedSystemMessages: folded,
+                               legacyAnchorsAdditions: lastNonAdditiveToolChange(systems) < 0)
+    }
+}
+@available(*, deprecated, message: "Use resolveTranscriptTools(_:support:) with TranscriptToolSupport.")
 public func resolveTranscriptTools<T: TranscriptMessageLike>(_ messages: [T], supportsToolAdditions: Bool) -> TranscriptTools {
-    let anchors = supportsToolAdditions && !hasNonAdditiveToolChanges(messages)
-    return TranscriptTools(requestTools: anchors ? (getInitialSystemMessage(messages)?.toolsAdded ?? []) : getCurrentTools(messages),
-                           anchorsAdditions: anchors)
+    resolveTranscriptTools(messages, support: supportsToolAdditions ? .additions : .none)
 }
 
 // Providers without native mid-conversation system support use the collapsed transcript.

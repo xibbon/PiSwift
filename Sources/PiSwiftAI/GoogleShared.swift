@@ -176,7 +176,7 @@ func convertGoogleMessages(model: Model, context: Context) -> [[String: Any]] {
                 return nil
             } : []
 
-            let hasText = !textResult.isEmpty
+            let hasText = !textResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasImages = !imageContent.isEmpty
             // Gemini 3+ and Antigravity (Claude behind Gemini) support multimodal function responses
             let supportsMultimodalFunctionResponse = model.id.contains("gemini-3") || model.provider == KnownProvider.googleAntigravity.rawValue

@@ -44,7 +44,7 @@ public func streamAzureOpenAIResponses(
     options: AzureOpenAIResponsesOptions
 ) -> AssistantMessageEventStream {
     let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
-    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let toolPlan = resolveTranscriptTools(transcript.messages, support: getResponsesToolSupport(model))
     let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     var options = options
     options.samplingParams = resolveSamplingParams(
@@ -89,7 +89,7 @@ public func streamAzureOpenAIResponses(
                 effort: rawResponsesReasoningEffort(model: model, requested: options.reasoningEffort)
             )
             let constrainedSamplingMiddleware = try makeOpenAIResponsesConstrainedSamplingMiddleware(
-                tools: getDeclaredTools(context.messages),
+                tools: responsesToolDeclarations(context),
                 supportsStrictMode: model.compat?.supportsStrictMode ?? true,
                 supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
             )
@@ -456,7 +456,7 @@ func buildAzureResponsesQuery(
     let inputItems = convertResponsesMessages(
         model: model, context: context, allowedToolCallProviders: azureToolCallProviders,
         grammarToolInputProperties: try createGrammarToolInputProperties(
-            tools: context.tools, supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
+            tools: responsesToolDeclarations(context), supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
         )
     )
 

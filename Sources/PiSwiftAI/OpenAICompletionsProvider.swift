@@ -17,7 +17,7 @@ public func streamOpenAICompletions(
     let model = resolveCloudflareModel(model, env: providerEnvironment(options.env))
     let supportsSystem = model.compat?.supportsMidConvoSystemMessages == true
     let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: supportsSystem)
-    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: supportsSystem && model.compat?.supportsMidConvoToolAdditions == true)
+    let toolPlan = resolveTranscriptTools(transcript.messages, support: supportsSystem && model.compat?.supportsMidConvoToolAdditions == true ? .additions : .none)
     let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     var options = options
     options.samplingParams = resolveSamplingParams(
@@ -634,15 +634,19 @@ private func convertCompletionsMessages(
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
 
     var lastRole: String? = nil
-    let toolPlan = resolveTranscriptTools(context.messages, supportsToolAdditions: compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions)
+    let toolPlan = resolveTranscriptTools(context.messages, support: compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions ? .additions : .none)
+    var systemIndex = 0
     for (index, msg) in transformed.enumerated() {
         if compat.requiresAssistantAfterToolResult && lastRole == "toolResult" && msg.role == "user" {
             params.append(.assistant(.init(content: .textContent("I have processed the tool results."))))
         }
         switch msg {
         case .system(let system):
-            if index > 0 && toolPlan.anchorsAdditions && system.toolsAdded?.isEmpty == false {
-                params.append(.system(.init(content: .textContent("\u{0}__PI_TRANSCRIPT_TOOLS__:\(index)"))))
+            let anchors = systemIndex >= toolPlan.foldedSystemMessages
+            let toolIndex = systemIndex
+            systemIndex += 1
+            if anchors && system.toolsAdded?.isEmpty == false {
+                params.append(.system(.init(content: .textContent("\u{0}__PI_TRANSCRIPT_TOOLS__:\(toolIndex)"))))
             }
             let text = index == 0 ? getSystemMessageText(system) : renderSystemMessageUpdate(system)
             if !text.isEmpty {
@@ -744,7 +748,7 @@ private func convertCompletionsMessages(
             // An empty text-only result is not an image attachment. Telling the model
             // otherwise causes it to invent an image that was never supplied.
             let emptyToolResult = hasImages ? "(see attached image)" : "(no tool output)"
-            let toolText = sanitizeSurrogates(text.isEmpty ? emptyToolResult : text)
+            let toolText = sanitizeSurrogates(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? emptyToolResult : text)
             let toolMessage = ChatQuery.ChatCompletionMessageParam.ToolMessageParam(
                 content: .textContent(toolText),
                 toolCallId: toolResult.toolCallId
@@ -1059,11 +1063,13 @@ private func buildCompletionsMiddlewares(
             vercelGatewayRouting: model.compat?.vercelGatewayRouting
         ))
     }
-    let additions = Dictionary(uniqueKeysWithValues: context.messages.enumerated().compactMap { index, message -> (Int, [AITool])? in
-        guard index > 0, case .system(let system) = message, let tools = system.toolsAdded, !tools.isEmpty else { return nil }
+    let plan = resolveTranscriptTools(context.messages, support: compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions ? .additions : .none)
+    let systems = context.messages.compactMap(\.transcriptSystemMessage)
+    let additions = Dictionary(uniqueKeysWithValues: systems.enumerated().compactMap { index, system -> (Int, [AITool])? in
+        guard index >= plan.foldedSystemMessages, let tools = system.toolsAdded, !tools.isEmpty else { return nil }
         return (index, tools)
     })
-    if compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolAdditions && !hasNonAdditiveToolChanges(context.messages) && !additions.isEmpty {
+    if !additions.isEmpty {
         middlewares.append(OpenAICompletionsTranscriptToolsMiddleware(additions: additions, compat: compat))
     }
     if compat.supportsOpenAIGrammarTools,

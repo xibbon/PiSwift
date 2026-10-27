@@ -4,6 +4,7 @@ import OpenAI
 
 private let openAIToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode"]
 private let chatGPTUsageURL = "https://chatgpt.com/settings/usage"
+private let chatGPTWorkspaceLimitHint = "You've reached your ChatGPT workspace's usage limit. Ask your workspace admin to increase it at admin.openai.com → Workspace → Usage limits."
 private let responsesConfigurationUpdateMarker = "\u{0}__PI_CONFIGURATION_EFFORT__:"
 
 /// Return the effort for input updates. A nil value keeps the request-level effort path.
@@ -27,8 +28,13 @@ func isChatGPTSignIn(model: Model, apiKey: String?) -> Bool {
 }
 
 func chatGPTUsageLimitMessage(_ message: String) -> String {
-    message.contains("subscription_sharing_usage_limit_exceeded")
-        ? "\(message)\nCheck your ChatGPT usage: \(chatGPTUsageURL)" : message
+    if message.contains("subscription_sharing_usage_limit_exceeded") {
+        return "\(message)\nCheck your ChatGPT usage: \(chatGPTUsageURL)"
+    }
+    if message.contains("subscription_sharing_workplace_individual_usage_limit_exceeded") {
+        return "\(message)\n\(chatGPTWorkspaceLimitHint)"
+    }
+    return message
 }
 
 func resolveCacheRetention(_ cacheRetention: CacheRetention?, env: [String: String]? = nil) -> CacheRetention {
@@ -173,7 +179,7 @@ public func streamOpenAIResponses(
 ) -> AssistantMessageEventStream {
     let model = resolveCloudflareModel(model, env: providerEnvironment(options.env))
     let transcript = resolveTranscript(context, supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages == true)
-    let toolPlan = resolveTranscriptTools(transcript.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let toolPlan = resolveTranscriptTools(transcript.messages, support: getResponsesToolSupport(model))
     let context = Context(systemPrompt: nil, messages: transcript.messages, tools: toolPlan.requestTools)
     if model.provider.lowercased() == "openai-codex" {
         let codexOptions = OpenAICodexResponsesOptions(
@@ -252,7 +258,7 @@ public func streamOpenAIResponses(
             let supportsStrictMode = model.compat?.supportsStrictMode ?? false
             let supportsGrammar = model.compat?.supportsOpenAIGrammarTools ?? false
             let constrainedSamplingMiddleware = try makeOpenAIResponsesConstrainedSamplingMiddleware(
-                tools: getDeclaredTools(context.messages),
+                tools: responsesToolDeclarations(context),
                 supportsStrictMode: supportsStrictMode,
                 supportsOpenAIGrammarTools: supportsGrammar
             )
@@ -589,7 +595,7 @@ func buildResponsesQuery(
         model: model, context: context, allowedToolCallProviders: openAIToolCallProviders,
         configurationUpdateEffort: configurationUpdateEffort,
         grammarToolInputProperties: try createGrammarToolInputProperties(
-            tools: context.tools, supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
+            tools: responsesToolDeclarations(context), supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false
         )
     )
 
@@ -811,15 +817,19 @@ func convertResponsesMessages(
     let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: normalizeToolCallId)
 
     var messageIndex = 0
-    let toolPlan = resolveTranscriptTools(context.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
+    let toolPlan = resolveTranscriptTools(context.messages, support: getResponsesToolSupport(model))
+    var systemIndex = 0
     for (index, msg) in transformed.enumerated() {
         switch msg {
         case .system(let system):
             let role: EasyInputMessage.RolePayload = model.reasoning && model.compat?.supportsDeveloperRole != false ? .developer : .system
-            if index > 0 && toolPlan.anchorsAdditions && system.toolsAdded?.isEmpty == false {
-                messages.append(.inputMessage(EasyInputMessage(role: .developer, content: .textInput("\u{0}__PI_TRANSCRIPT_TOOLS__:\(index)"))))
+            let anchors = systemIndex >= toolPlan.foldedSystemMessages
+            let toolIndex = systemIndex
+            systemIndex += 1
+            if anchors && system.toolsAdded?.isEmpty == false {
+                messages.append(.inputMessage(EasyInputMessage(role: .developer, content: .textInput("\u{0}__PI_TRANSCRIPT_TOOLS__:\(toolIndex)"))))
             }
-            let text = index == 0 ? getSystemMessageText(system) : renderSystemMessageUpdate(system)
+            let text = responsesSystemText(system, initial: index == 0, anchorsTools: anchors)
             if !text.isEmpty { messages.append(.inputMessage(EasyInputMessage(role: role, content: .textInput(sanitizeSurrogates(text))))) }
         case .user(let user):
             switch user.content {
@@ -921,6 +931,7 @@ func convertResponsesMessages(
                 if case .text(let textBlock) = block { return textBlock.text }
                 return nil
             }.joined(separator: "\n")
+            let hasText = !textResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasImages = toolResult.content.contains { block in
                 if case .image = block { return true }
                 return false
@@ -933,7 +944,7 @@ func convertResponsesMessages(
                 // We encode a JSON placeholder that the middleware will expand into
                 // the proper ResponseFunctionCallOutputItemList array format.
                 var inlineParts: [[String: Any]] = []
-                if !textResult.isEmpty {
+                if hasText {
                     inlineParts.append(["type": "input_text", "text": sanitizeSurrogates(textResult)])
                 }
                 for block in toolResult.content {
@@ -956,7 +967,7 @@ func convertResponsesMessages(
                     let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
                         callId: callId,
                         _type: .functionCallOutput,
-                        output: sanitizeSurrogates(textResult.isEmpty ? "(see attached image)" : textResult)
+                        output: sanitizeSurrogates(hasText ? textResult : "(see attached image)")
                     )
                     messages.append(.item(.functionCallOutputItemParam(toolOutput)))
                 }
@@ -964,7 +975,7 @@ func convertResponsesMessages(
                 let toolOutput = Components.Schemas.FunctionCallOutputItemParam(
                     callId: callId,
                     _type: .functionCallOutput,
-                    output: sanitizeSurrogates(textResult.isEmpty ? "(no tool output)" : textResult)
+                    output: sanitizeSurrogates(hasText ? textResult : (hasImages ? "(see attached image)" : "(no tool output)"))
                 )
                 messages.append(.item(.functionCallOutputItemParam(toolOutput)))
             }
@@ -1180,8 +1191,28 @@ func mapResponsesToolChoice(_ choice: OpenAIToolChoice?) -> Components.Schemas.R
     }
 }
 
-func responsesToolAdditionsEnabled(_ model: Model) -> Bool {
-    model.compat?.supportsAdditionalTools == true || model.compat?.supportsToolSearch == true
+func getResponsesToolSupport(_ model: Model) -> TranscriptToolSupport {
+    if model.compat?.supportsMidConvoSystemMessages == true && model.compat?.supportsAdditionalTools == true { return .changes }
+    return model.compat?.supportsToolSearch == true ? .additions : .none
+}
+
+func responsesTrueToolRemovals(_ system: SystemMessage) -> [String] {
+    let added = Set((system.toolsAdded ?? []).map(\.name))
+    return (system.toolsRemoved ?? []).map(\.name).filter { !added.contains($0) }
+}
+
+func responsesSystemText(_ system: SystemMessage, initial: Bool, anchorsTools: Bool) -> String {
+    var parts = [initial ? getSystemMessageText(system) : renderSystemMessageUpdate(system)]
+    let removed = anchorsTools ? responsesTrueToolRemovals(system) : []
+    if !removed.isEmpty {
+        parts.append("The following tools are no longer available. Do not call them:\n" + removed.map { "- \($0)" }.joined(separator: "\n"))
+    }
+    return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
+}
+
+func responsesIncrementalToolsNotice(_ unavailable: [String]) -> String {
+    let notice = "This is an incremental tools update. Previously declared tools remain available unless explicitly marked unavailable. A tool declared again here is available again, and its latest definition replaces the earlier one."
+    return unavailable.isEmpty ? notice : notice + "\nStill unavailable: " + unavailable.joined(separator: ", ") + "."
 }
 
 /// The SDK does not represent namespaces, effort updates, or deferred-tool input items.
@@ -1234,34 +1265,86 @@ func makeResponsesReplayMiddleware(
     model: Model,
     context: Context,
     configurationUpdateEffort: String? = nil,
+    includeSystemPrompt: Bool = true,
 ) throws -> ResponsesReplayMiddleware {
     var namespaces: [String: String] = [:]
     var additions: [Int: Data] = [:]
-    let plan = resolveTranscriptTools(context.messages, supportsToolAdditions: responsesToolAdditionsEnabled(model))
-    for (index, message) in context.messages.enumerated() {
+    let support = getResponsesToolSupport(model)
+    let plan = resolveTranscriptTools(context.messages, support: support)
+    var systemIndex = 0
+    var declaredAdditionalTools = false
+    var unavailable: [String] = []
+    let instructionRole = model.reasoning && model.compat?.supportsDeveloperRole != false ? "developer" : "system"
+    let transformed = transformMessages(context.messages, model: model)
+    var searchSeeds: [Int: Int] = [:]
+    var seedSystemIndex = 0
+    var seedMessageIndex = 0
+    for (sourceIndex, message) in transformed.enumerated() {
+        let isLeadingSystem = sourceIndex == 0 && message.transcriptSystemMessage != nil
+        switch message {
+        case .system:
+            searchSeeds[seedSystemIndex] = seedMessageIndex
+            seedSystemIndex += 1
+        case .user(let user):
+            if case .blocks(let blocks) = user.content, blocks.isEmpty { continue }
+        case .assistant(let assistant):
+            let hasOutput = assistant.content.contains { block in
+                switch block {
+                case .text, .toolCall: true
+                case .thinking(let thinking): thinking.thinkingSignature?.isEmpty == false
+                case .image: false
+                }
+            }
+            if !hasOutput { continue }
+        case .toolResult:
+            break
+        }
+        if !isLeadingSystem { seedMessageIndex += 1 }
+    }
+    for message in context.messages {
         switch message {
         case .system(let system):
-            guard index > 0, plan.anchorsAdditions, let tools = system.toolsAdded, !tools.isEmpty else { continue }
-            var converted = try convertCodexTools(
-                tools,
-                supportsStrictMode: model.compat?.supportsStrictMode ?? false,
-                supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false,
-                defaultStrict: model.api == .openAICodexResponses ? nil : false
-            )
-            let items: [[String: Any]]
-            if model.compat?.supportsAdditionalTools == true {
-                items = [["type": "additional_tools", "role": "developer", "tools": converted]]
-            } else {
-                let names = tools.map(\.name)
-                let searchId = "pi_tool_load_\(openAIResponsesShortHash("system:\(index):\(names.joined(separator: ","))"))"
-                for position in converted.indices { converted[position]["defer_loading"] = true }
-                items = [
-                    ["type": "tool_search_call", "call_id": searchId, "execution": "client", "status": "completed",
-                     "arguments": ["query": names.joined(separator: " "), "limit": names.count]],
-                    ["type": "tool_search_output", "call_id": searchId, "execution": "client", "status": "completed", "tools": converted],
-                ]
+            let index = systemIndex
+            systemIndex += 1
+            guard index >= plan.foldedSystemMessages else { continue }
+            let tools = system.toolsAdded ?? []
+            let names = tools.map(\.name)
+            unavailable.removeAll { names.contains($0) }
+            if !tools.isEmpty {
+                var converted = try convertCodexTools(
+                    tools,
+                    supportsStrictMode: model.compat?.supportsStrictMode ?? (model.api == .azureOpenAIResponses || model.api == .openAICodexResponses),
+                    supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false,
+                    defaultStrict: model.api == .openAICodexResponses ? nil : false
+                )
+                var items: [[String: Any]] = []
+                switch support {
+                case .changes:
+                    if declaredAdditionalTools {
+                        items.append(["role": instructionRole, "content": responsesIncrementalToolsNotice(unavailable)])
+                    }
+                    declaredAdditionalTools = true
+                    items.append(["type": "additional_tools", "role": "developer", "tools": converted])
+                case .additions:
+                    let seed = searchSeeds[index] ?? 0
+                    let searchId = "pi_tool_load_\(openAIResponsesShortHash("system:\(seed):\(names.joined(separator: ","))"))"
+                    for position in converted.indices { converted[position]["defer_loading"] = true }
+                    items = [
+                        ["type": "tool_search_call", "call_id": searchId, "execution": "client", "status": "completed",
+                         "arguments": ["query": names.joined(separator: " "), "limit": names.count]],
+                        ["type": "tool_search_output", "call_id": searchId, "execution": "client", "status": "completed", "tools": converted],
+                    ]
+                case .none:
+                    break
+                }
+                additions[index] = try JSONSerialization.data(withJSONObject: items)
             }
-            additions[index] = try JSONSerialization.data(withJSONObject: items)
+            // Codex skips the leading system text, which also skips its removal notice.
+            let skipsInitialNotice = !includeSystemPrompt && index == 0 && getInitialSystemMessage(context.messages) != nil
+            if !skipsInitialNotice {
+                // Record removals after the addition notice for this system message.
+                for name in responsesTrueToolRemovals(system) where !unavailable.contains(name) { unavailable.append(name) }
+            }
         case .assistant(let assistant):
             let sameModel = assistant.provider == model.provider && assistant.api == model.api && assistant.model == model.id
             for case .toolCall(let call) in assistant.content {
