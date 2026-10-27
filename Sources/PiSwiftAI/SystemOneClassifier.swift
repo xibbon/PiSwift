@@ -13,10 +13,65 @@ enum SystemOneTransport: Sendable {
     var path: String {
         switch self { case .typesafe: "systemone"; case .cloudflare: "run" }
     }
+
+    func detectedCompat(model: ClassifierModel) -> (imageInput: SystemOneImageInput, sendImageOptInHeader: Bool) {
+        switch self {
+        case .typesafe:
+            return model.provider == "openrouter" || model.baseUrl.contains("openrouter.ai")
+                ? (.stateImageURLs, false) : (.assets, true)
+        case .cloudflare:
+            return (model.id.hasPrefix("@cf/cloudflare/clef") ? .images : .assets, false)
+        }
+    }
 }
 
-private func systemOneWireRequest(_ context: ClassifierContext) -> OrderedJSON {
-    let state = OrderedJSON.fromFoundation(context.state.mapValues(\.value))
+private func systemOneWireRequest(_ context: ClassifierContext, model: ClassifierModel,
+                                  transport: SystemOneTransport) throws -> OrderedJSON {
+    var state = OrderedJSON.fromFoundation(context.state.mapValues(\.value))
+    var imageFields: [(String, OrderedJSON)] = []
+    if let images = context.images, !images.isEmpty {
+        guard model.input.contains(.image) else {
+            throw ClassifierError(message: "\(transport.label) does not support image input for \(model.id)")
+        }
+        let imageInput = model.compat?.imageInput ?? transport.detectedCompat(model: model).imageInput
+        switch imageInput {
+        case .assets:
+            var assets: [(String, OrderedJSON)] = []
+            for (index, image) in images.enumerated() {
+                let format: String
+                switch image.mimeType {
+                case "image/png": format = "png"
+                case "image/jpeg": format = "jpeg"
+                default:
+                    throw ClassifierError(message: "\(transport.label) accepts PNG and JPEG images for \(model.id), got \(image.mimeType)")
+                }
+                assets.append(("<image-\(index + 1)>", .object([
+                    ("type", .string("image")), ("format", .string(format)),
+                    ("data_base64", .string(image.data))
+                ])))
+            }
+            state = .array(assets.map { .string($0.0) } + [state])
+            imageFields = [("assets", .object(assets))]
+        case .images:
+            guard images.count <= 4 else {
+                throw ClassifierError(message: "\(transport.label) accepts at most 4 images for \(model.id), got \(images.count)")
+            }
+            let urls = try images.map { image -> OrderedJSON in
+                guard ["image/png", "image/jpeg", "image/webp"].contains(image.mimeType) else {
+                    throw ClassifierError(message: "\(transport.label) accepts PNG, JPEG, and WebP images for \(model.id), got \(image.mimeType)")
+                }
+                return .string("data:\(image.mimeType);base64,\(image.data)")
+            }
+            imageFields = [("images", .array(urls))]
+        case .stateImageURLs:
+            state = .array(images.map { image in
+                .object([
+                    ("type", .string("image_url")),
+                    ("image_url", .object([("url", .string("data:\(image.mimeType);base64,\(image.data)"))]))
+                ])
+            } + [state])
+        }
+    }
     let questions = context.questions.entries.map { id, question -> (String, OrderedJSON) in
         let value: OrderedJSON
         switch question {
@@ -38,12 +93,12 @@ private func systemOneWireRequest(_ context: ClassifierContext) -> OrderedJSON {
         }
         return (id, value)
     }
-    return .object([("state", state), ("questions", .object(questions))])
+    return .object([("state", state), ("questions", .object(questions))] + imageFields)
 }
 
 private func systemOnePayload(model: ClassifierModel, context: ClassifierContext,
-                              transport: SystemOneTransport) -> OrderedJSON {
-    let request = systemOneWireRequest(context)
+                              transport: SystemOneTransport) throws -> OrderedJSON {
+    let request = try systemOneWireRequest(context, model: model, transport: transport)
     switch transport {
     case .typesafe:
         return .object([("model", .string(model.id))] + (request.objectEntries ?? []))
@@ -132,17 +187,19 @@ func classifySystemOne(model: ClassifierModel, context: ClassifierContext,
         guard model.api == transport.api else {
             throw ClassifierError(message: "Unsupported classifier API: \(model.api.rawValue)")
         }
-        if let images = context.images, !images.isEmpty {
-            throw ClassifierError(message: "\(transport.label) does not support image input")
+        let payload = try systemOnePayload(model: model, context: context, transport: transport)
+        var options = options ?? ClassifierOptions()
+        if let images = context.images, !images.isEmpty,
+           model.compat?.sendImageOptInHeader ?? transport.detectedCompat(model: model).sendImageOptInHeader {
+            options.headers = mergeProviderHeaders(["TypeSafe-Danger-Zone-Images": "true"], options.headers)
         }
-        let options = options ?? ClassifierOptions()
         guard let apiKey = options.apiKey, !apiKey.isEmpty else {
             throw ClassifierError(message: "No API key for provider: \(model.provider)")
         }
         let resolved = resolveCloudflareModel(model, env: providerEnvironment(options.env))
         let body = try await postClassifierRequest(label: transport.label,
             url: { try systemOneURL(model: resolved, transport: transport) }, model: resolved,
-            payload: systemOnePayload(model: resolved, context: context, transport: transport), options: options)
+            payload: payload, options: options)
         let result = try systemOneOutput(body.value, transport: transport)
         output.usage = parseClassifierUsage(result["usage"], model: resolved)
         output.answers = try parseSystemOneAnswers(result["answers"], context: context, label: transport.label)

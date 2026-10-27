@@ -366,6 +366,7 @@ private struct ProviderOverride: Sendable {
     var headers: ProviderHeaders?
     var apiKey: String?
     var compat: OpenAICompat?
+    var classifierCompat: SystemOneCompat?
     var authHeader: Bool = false
     var modelHeaders: [String: ProviderHeaders] = [:]
 }
@@ -572,6 +573,17 @@ private struct ModelsConfigValidation {
         }
     }
 
+    mutating func classifierCompat(_ value: Any, path: String) {
+        guard let dict = value as? [String: Any] else { return }
+        booleans(dict, keys: ["sendImageOptInHeader"], path: path)
+        if let value = dict["imageInput"] {
+            guard let name = value as? String, SystemOneImageInput(rawValue: name) != nil else {
+                error("\(path).imageInput", "must match a schema in anyOf")
+                return
+            }
+        }
+    }
+
     mutating func validate(_ dict: [String: Any]) {
         if let value = dict["$schema"], !(value is String) { error("$schema", "must be string") }
         guard let value = dict["providers"] else { error("providers", "must have required properties providers"); return }
@@ -582,6 +594,7 @@ private struct ModelsConfigValidation {
             // The existing provider-name check keeps its public error text.
             strings(provider, keys: ["baseUrl", "apiKey", "api"], path: path, nonempty: true)
             booleans(provider, keys: ["authHeader"], path: path)
+            if let compat = provider["compat"] { classifierCompat(compat, path: "\(path).compat") }
             if let value = provider["models"] {
                 if let models = value as? [Any] {
                     for (index, value) in models.enumerated() { model(value, path: "\(path).models.\(index)", override: false) }
@@ -687,6 +700,20 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
     merged.supportsMidConvoToolChanges = override.supportsMidConvoToolChanges ?? base.supportsMidConvoToolChanges
     merged.allowedFallbackModels = override.allowedFallbackModels ?? base.allowedFallbackModels
     return merged
+}
+
+private func parseClassifierCompat(_ value: Any?) -> SystemOneCompat? {
+    guard let dict = value as? [String: Any] else { return nil }
+    let imageInput = (dict["imageInput"] as? String).flatMap(SystemOneImageInput.init(rawValue:))
+    let sendImageOptInHeader = dict["sendImageOptInHeader"] as? Bool
+    guard imageInput != nil || sendImageOptInHeader != nil else { return nil }
+    return SystemOneCompat(imageInput: imageInput, sendImageOptInHeader: sendImageOptInHeader)
+}
+
+private func mergeClassifierCompat(_ base: SystemOneCompat?, _ override: SystemOneCompat?) -> SystemOneCompat? {
+    guard let override else { return base }
+    return SystemOneCompat(imageInput: override.imageInput ?? base?.imageInput,
+                           sendImageOptInHeader: override.sendImageOptInHeader ?? base?.sendImageOptInHeader)
 }
 
 private func applyModelOverride(model: Model, override: ModelOverride) -> Model {
@@ -1054,7 +1081,8 @@ public final class ModelRegistry: Sendable {
                     id: model.id, name: model.name ?? model.id, api: model.api,
                     provider: config.provider, baseUrl: model.baseUrl ?? config.baseUrl,
                     input: model.input, cost: model.cost, contextWindow: model.contextWindow,
-                    headers: mergeHeaders(config.headers, model.headers), inputLimits: model.inputLimits
+                    headers: mergeHeaders(config.headers, model.headers), inputLimits: model.inputLimits,
+                    compat: model.compat
                 ))
             }
         }
@@ -1917,18 +1945,20 @@ public final class ModelRegistry: Sendable {
     private func applyConfiguredNonChatModel(_ model: AnyModel, state: State) -> AnyModel {
         guard let providerOverride = state.configuredProviderOverrides[model.provider] else { return model }
         let headers = mergeProviderHeaders(model.catalog.headers, providerOverride.headers)
+        let baseUrl = providerOverride.baseUrl ?? model.catalog.baseUrl
         switch model {
         case .chat: return model
         case .image(let value):
             return .image(ImageModel(id: value.id, name: value.name, api: value.api,
-                provider: value.provider, baseUrl: providerOverride.baseUrl ?? value.baseUrl,
+                provider: value.provider, baseUrl: baseUrl,
                 input: value.input, output: value.output, cost: value.cost,
                 headers: headers, inputLimits: value.inputLimits))
         case .classifier(let value):
             return .classifier(ClassifierModel(id: value.id, name: value.name, api: value.api,
-                provider: value.provider, baseUrl: providerOverride.baseUrl ?? value.baseUrl,
+                provider: value.provider, baseUrl: baseUrl,
                 input: value.input, cost: value.cost, contextWindow: value.contextWindow,
-                headers: headers, inputLimits: value.inputLimits))
+                headers: headers, inputLimits: value.inputLimits,
+                compat: mergeClassifierCompat(value.compat, providerOverride.classifierCompat)))
         }
     }
 
@@ -2187,7 +2217,8 @@ public final class ModelRegistry: Sendable {
             let providerCompat = parseCompat(providerConfig["compat"])
 
             // Keep even a provider with only a name or modelOverrides in the login list.
-            overrides[providerName] = ProviderOverride(name: name, baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat, authHeader: authHeader, modelHeaders: Dictionary(models.compactMap { definition in
+            overrides[providerName] = ProviderOverride(name: name, baseUrl: baseUrl, headers: headers, apiKey: apiKey, compat: providerCompat,
+                classifierCompat: parseClassifierCompat(providerConfig["compat"]), authHeader: authHeader, modelHeaders: Dictionary(models.compactMap { definition in
                     guard let id = definition["id"] as? String, let values = parseProviderHeaders(definition["headers"]) else { return nil }
                     return (id, values)
                 }, uniquingKeysWith: { _, last in last }))

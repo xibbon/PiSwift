@@ -516,7 +516,7 @@ public struct HookProviderImageModel: Sendable {
     }
 }
 
-public struct HookProviderClassifierModel: Sendable {
+public struct HookProviderClassifierModel: Sendable, Codable {
     public var id: String
     public var name: String?
     public var api: ClassifierApi
@@ -526,11 +526,12 @@ public struct HookProviderClassifierModel: Sendable {
     public var cost: ModelCost
     public var contextWindow: Int
     public var headers: ProviderHeaders?
+    public var compat: SystemOneCompat?
 
     public init(id: String, name: String? = nil, api: ClassifierApi, baseUrl: String? = nil,
                 input: [ModelInput] = [.text], inputLimits: ModelInputLimits? = nil,
                 cost: ModelCost = ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-                contextWindow: Int, headers: ProviderHeaders? = nil) {
+                contextWindow: Int, headers: ProviderHeaders? = nil, compat: SystemOneCompat? = nil) {
         self.id = id
         self.name = name
         self.api = api
@@ -540,6 +541,7 @@ public struct HookProviderClassifierModel: Sendable {
         self.cost = cost
         self.contextWindow = contextWindow
         self.headers = headers
+        self.compat = compat
     }
 }
 

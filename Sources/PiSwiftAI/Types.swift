@@ -1272,6 +1272,22 @@ public struct ImageModel: CatalogModel, Sendable, Codable {
     }
 }
 
+public enum SystemOneImageInput: String, Sendable, Codable {
+    case assets
+    case images
+    case stateImageURLs = "state-image-urls"
+}
+
+public struct SystemOneCompat: Sendable, Codable, Equatable {
+    public var imageInput: SystemOneImageInput?
+    public var sendImageOptInHeader: Bool?
+
+    public init(imageInput: SystemOneImageInput? = nil, sendImageOptInHeader: Bool? = nil) {
+        self.imageInput = imageInput
+        self.sendImageOptInHeader = sendImageOptInHeader
+    }
+}
+
 public struct ClassifierModel: CatalogModel, Sendable, Codable {
     public let type: ModelType
     public let id: String
@@ -1284,11 +1300,12 @@ public struct ClassifierModel: CatalogModel, Sendable, Codable {
     public let cost: ModelCost
     public let contextWindow: Int
     public let headers: ProviderHeaders?
+    public let compat: SystemOneCompat?
 
     public init(id: String, name: String, api: ClassifierApi, provider: Provider,
                 baseUrl: String, input: [ModelInput], cost: ModelCost,
                 contextWindow: Int, headers: ProviderHeaders? = nil,
-                inputLimits: ModelInputLimits? = nil) {
+                inputLimits: ModelInputLimits? = nil, compat: SystemOneCompat? = nil) {
         self.type = .classifier
         self.id = id
         self.name = name
@@ -1300,6 +1317,7 @@ public struct ClassifierModel: CatalogModel, Sendable, Codable {
         self.cost = cost
         self.contextWindow = contextWindow
         self.headers = headers
+        self.compat = compat
     }
 }
 

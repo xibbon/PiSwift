@@ -106,6 +106,12 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(getClassifierModels(provider: "openrouter").allSatisfy {
         $0.api == .typesafeSystemOne && $0.baseUrl == "https://openrouter.ai/api/v1"
     })
+    let openRouter = ClassifierModel(id: "typesafe/jev-1.14", name: "Jev", api: .typesafeSystemOne,
+        provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1", input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0), contextWindow: 32_000,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false))
+    #expect(openRouter.compat?.imageInput == .stateImageURLs)
+    #expect(openRouter.compat?.sendImageOptInHeader == false)
 }
 
 @Test(.timeLimit(.minutes(1))) func systemOneCatalogRoutesVercelAndOpenCode() async throws {

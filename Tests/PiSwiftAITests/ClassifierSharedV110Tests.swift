@@ -22,9 +22,10 @@ private enum SharedV110Transport: CaseIterable, Sendable {
     }
 
     func model(headers: ProviderHeaders? = nil,
-               baseURL: String = "https://classifier.example/v1") -> ClassifierModel {
+               baseURL: String = "https://classifier.example/v1",
+               input: [ModelInput] = [.text, .image]) -> ClassifierModel {
         ClassifierModel(id: "test-classifier", name: "Test", api: api, provider: "test-provider",
-            baseUrl: baseURL, input: [.text, .image],
+            baseUrl: baseURL, input: input,
             cost: ModelCost(input: 1, output: 2, cacheRead: 0, cacheWrite: 0),
             contextWindow: 64_000, headers: headers)
     }
@@ -122,8 +123,10 @@ private func classifierSharedV110SystemOneChecksAPIBeforeImagesBeforeKey(_ trans
     let mismatch = await transport.classify(sharedV110Context(images: [image]),
         model: SharedV110Transport.decisions.model(), options: options)
     #expect(mismatch.errorMessage == "Unsupported classifier API: openai-decisions")
-    let images = await transport.classify(sharedV110Context(images: [image]), options: options)
-    #expect(images.errorMessage == "\(transport.label) does not support image input")
+    // Upstream 7f225f25d / typesafe-system-one.test.ts:123 rejects images only for text-only models.
+    let images = await transport.classify(sharedV110Context(images: [image]),
+        model: transport.model(input: [.text]), options: options)
+    #expect(images.errorMessage == "\(transport.label) does not support image input for test-classifier")
     let emptyImages = await transport.classify(sharedV110Context(images: []), options: options)
     #expect(emptyImages.errorMessage == "No API key for provider: test-provider")
     #expect(await client.captured().isEmpty)
@@ -134,13 +137,15 @@ private func classifierSharedV110SystemOneRejectsImagesBeforePayloadHook(_ trans
     let client = SharedV110Client([])
     let payloadCalls = LockedState(0)
     let image = ImageContent(data: "aW1hZ2U=", mimeType: "image/png")
-    let result = await transport.classify(sharedV110Context(images: [image]), options: ClassifierOptions(
+    // Upstream 7f225f25d / typesafe-system-one.test.ts:123 rejects images only for text-only models.
+    let result = await transport.classify(sharedV110Context(images: [image]),
+        model: transport.model(input: [.text]), options: ClassifierOptions(
         apiKey: "secret", httpClient: client, onPayload: { _, _ in
             payloadCalls.withLock { $0 += 1 }
             return nil
         }))
     #expect(result.stopReason == .error)
-    #expect(result.errorMessage == "\(transport.label) does not support image input")
+    #expect(result.errorMessage == "\(transport.label) does not support image input for test-classifier")
     #expect(payloadCalls.withLock { $0 } == 0)
     #expect(await client.captured().isEmpty)
 }

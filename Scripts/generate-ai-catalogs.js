@@ -405,6 +405,29 @@ function assertKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unmapped ${label} field: ${key}`);
 }
 
+function systemOneCompatLiteral(compat) {
+  if (compat === undefined) return undefined;
+  if (compat === null || typeof compat !== "object" || Array.isArray(compat)) {
+    throw new Error("Expected classifier compat object");
+  }
+  assertKeys(compat, ["imageInput", "sendImageOptInHeader"], "classifier compat");
+  const args = [];
+  if (Object.hasOwn(compat, "imageInput")) {
+    const cases = { assets: "assets", images: "images", "state-image-urls": "stateImageURLs" };
+    if (typeof compat.imageInput !== "string" || !Object.hasOwn(cases, compat.imageInput)) {
+      throw new Error(`Unknown classifier imageInput: ${compat.imageInput}`);
+    }
+    args.push(`imageInput: .${cases[compat.imageInput]}`);
+  }
+  if (Object.hasOwn(compat, "sendImageOptInHeader")) {
+    if (typeof compat.sendImageOptInHeader !== "boolean") {
+      throw new Error(`Expected classifier sendImageOptInHeader boolean: ${compat.sendImageOptInHeader}`);
+    }
+    args.push(`sendImageOptInHeader: ${swiftBool(compat.sendImageOptInHeader)}`);
+  }
+  return `SystemOneCompat(${args.join(", ")})`;
+}
+
 function inputLimitsLiteral(value) {
   assertKeys(value, ["maxRequestBytes", "images"], "inputLimits");
   let images = "nil";
@@ -446,7 +469,7 @@ function swiftImageModel(model) {
 }
 
 function swiftClassifierModel(model) {
-  assertKeys(model, ["type", "id", "name", "api", "provider", "baseUrl", "input", "cost", "contextWindow", "headers"], "classifier model");
+  assertKeys(model, ["type", "id", "name", "api", "provider", "baseUrl", "input", "cost", "contextWindow", "headers", "compat"], "classifier model");
   if (model.type !== "classifier") throw new Error(`Expected classifier model ${model.provider}/${model.id}`);
   const args = [
     `id: ${swiftString(model.id)}`,
@@ -460,6 +483,8 @@ function swiftClassifierModel(model) {
   ];
   const headers = headersLiteral(model.headers);
   if (headers) args.push(`headers: ${headers}`);
+  const compat = systemOneCompatLiteral(model.compat);
+  if (compat) args.push(`compat: ${compat}`);
   return `ClassifierModel(\n        ${args.join(",\n        ")}\n    )`;
 }
 
@@ -556,20 +581,24 @@ function writeClassifierModelsData(models) {
   fs.writeFileSync(path.join(repoRoot, "Sources/PiSwiftAI/ClassifierModelsData.swift"), `${lines.join("\n")}\n`);
 }
 
-const catalogs = loadCatalogs();
-const models = catalogs.chat;
-const builtinModelDataGeneratedAt = loadBuiltinModelDataGeneratedAt();
-const imageModels = catalogs.image;
-const classifierModels = catalogs.classifier;
-writeModelsData(models, builtinModelDataGeneratedAt);
-writeImageModelsData(imageModels);
-writeClassifierModelsData(classifierModels);
-writeJsonFixture("upstream-models.generated.json", models);
-writeJsonFixture("upstream-image-models.generated.json", imageModels);
-writeJsonFixture("upstream-classifier-models.generated.json", classifierModels);
-for (const [type, entries] of Object.entries(catalogs)) {
-  console.log(`Generated ${Object.values(entries).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} ${type === "chat" ? "text" : type} models across ${Object.keys(entries).length} providers.`);
+if (require.main === module) {
+  const catalogs = loadCatalogs();
+  const models = catalogs.chat;
+  const builtinModelDataGeneratedAt = loadBuiltinModelDataGeneratedAt();
+  const imageModels = catalogs.image;
+  const classifierModels = catalogs.classifier;
+  writeModelsData(models, builtinModelDataGeneratedAt);
+  writeImageModelsData(imageModels);
+  writeClassifierModelsData(classifierModels);
+  writeJsonFixture("upstream-models.generated.json", models);
+  writeJsonFixture("upstream-image-models.generated.json", imageModels);
+  writeJsonFixture("upstream-classifier-models.generated.json", classifierModels);
+  for (const [type, entries] of Object.entries(catalogs)) {
+    console.log(`Generated ${Object.values(entries).reduce((sum, provider) => sum + Object.keys(provider).length, 0)} ${type === "chat" ? "text" : type} models across ${Object.keys(entries).length} providers.`);
+  }
 }
+
+module.exports = { swiftClassifierModel };
 
 function costLiteral(cost) {
   return cost.tiers?.length
