@@ -40,3 +40,10 @@ private struct RecordKey: CodingKey {
     init?(stringValue: String) { self.init(stringValue) }
     init?(intValue: Int) { return nil }
 }
+
+// Deadlines use the full upstream number range, including fractional milliseconds.
+func recordValidateDeadline(_ until: Double) throws {
+    guard until.isFinite, until >= 0 else {
+        throw recordUnknown("sleep deadline", "not a finite nonnegative time in milliseconds")
+    }
+}

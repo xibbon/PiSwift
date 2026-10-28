@@ -439,6 +439,8 @@ public enum TaskState: Sendable, Equatable, Codable {
     case running(checkpoint: JSONValue, extensions: JSONObject = [:])
     /// Work waits for the selected tasks under its join policy.
     case waiting(checkpoint: JSONValue, on: [TaskID], policy: JoinPolicy, extensions: JSONObject = [:])
+    /// Work waits until the Harness clock reaches the saved time in milliseconds.
+    case sleeping(checkpoint: JSONValue, until: Double, extensions: JSONObject = [:])
     /// An outcome is saved while ordinary owned work finishes.
     case completing(outcome: TaskOutcome, extensions: JSONObject = [:])
     /// The task has a final outcome and cannot execute again.
@@ -449,6 +451,7 @@ public enum TaskState: Sendable, Equatable, Codable {
         case .pending: "pending"
         case .running: "running"
         case .waiting: "waiting"
+        case .sleeping: "sleeping"
         case .completing: "completing"
         case .terminal: "terminal"
         }
@@ -458,11 +461,16 @@ public enum TaskState: Sendable, Equatable, Codable {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "status")
         switch tag {
-        case "pending": try recordForbid(object, ["on", "outcome", "policy"]); self = .pending(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
-        case "running": try recordForbid(object, ["on", "outcome", "policy"]); self = .running(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
-        case "waiting": try recordForbid(object, ["outcome"]); self = .waiting(checkpoint: try recordRequired(object, "checkpoint"), on: try recordRequired(object, "on"), policy: try recordRequired(object, "policy"), extensions: recordExtensions(object, excluding: ["status", "checkpoint", "on", "policy"]))
-        case "completing": try recordForbid(object, ["checkpoint", "on", "policy"]); self = .completing(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
-        case "terminal": try recordForbid(object, ["checkpoint", "on", "policy"]); self = .terminal(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
+        case "pending": try recordForbid(object, ["on", "outcome", "policy", "until"]); self = .pending(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
+        case "running": try recordForbid(object, ["on", "outcome", "policy", "until"]); self = .running(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
+        case "waiting": try recordForbid(object, ["outcome", "until"]); self = .waiting(checkpoint: try recordRequired(object, "checkpoint"), on: try recordRequired(object, "on"), policy: try recordRequired(object, "policy"), extensions: recordExtensions(object, excluding: ["status", "checkpoint", "on", "policy"]))
+        case "sleeping":
+            try recordForbid(object, ["on", "outcome", "policy"])
+            let until: Double = try recordRequired(object, "until")
+            try recordValidateDeadline(until)
+            self = .sleeping(checkpoint: try recordRequired(object, "checkpoint"), until: until, extensions: recordExtensions(object, excluding: ["status", "checkpoint", "until"]))
+        case "completing": try recordForbid(object, ["checkpoint", "on", "policy", "until"]); self = .completing(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
+        case "terminal": try recordForbid(object, ["checkpoint", "on", "policy", "until"]); self = .terminal(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
         default: throw recordUnknown("status", tag)
         }
     }
@@ -473,29 +481,36 @@ public enum TaskState: Sendable, Equatable, Codable {
         case let .pending(checkpoint, extensions):
             object = extensions
             object["status"] = .string("pending")
-            try recordForbid(object, ["on", "outcome", "policy"])
+            try recordForbid(object, ["on", "outcome", "policy", "until"])
             try recordSet(&object, "checkpoint", checkpoint)
         case let .running(checkpoint, extensions):
             object = extensions
             object["status"] = .string("running")
-            try recordForbid(object, ["on", "outcome", "policy"])
+            try recordForbid(object, ["on", "outcome", "policy", "until"])
             try recordSet(&object, "checkpoint", checkpoint)
         case let .waiting(checkpoint, on, policy, extensions):
             object = extensions
             object["status"] = .string("waiting")
-            try recordForbid(object, ["outcome"])
+            try recordForbid(object, ["outcome", "until"])
             try recordSet(&object, "checkpoint", checkpoint)
             try recordSet(&object, "on", on)
             try recordSet(&object, "policy", policy)
+        case let .sleeping(checkpoint, until, extensions):
+            try recordValidateDeadline(until)
+            object = extensions
+            object["status"] = .string("sleeping")
+            try recordForbid(object, ["on", "outcome", "policy"])
+            try recordSet(&object, "checkpoint", checkpoint)
+            try recordSet(&object, "until", until)
         case let .completing(outcome, extensions):
             object = extensions
             object["status"] = .string("completing")
-            try recordForbid(object, ["checkpoint", "on", "policy"])
+            try recordForbid(object, ["checkpoint", "on", "policy", "until"])
             try recordSet(&object, "outcome", outcome)
         case let .terminal(outcome, extensions):
             object = extensions
             object["status"] = .string("terminal")
-            try recordForbid(object, ["checkpoint", "on", "policy"])
+            try recordForbid(object, ["checkpoint", "on", "policy", "until"])
             try recordSet(&object, "outcome", outcome)
         }
         try object.encode(to: encoder)
@@ -538,10 +553,22 @@ public struct TaskRecord: Sendable, Equatable, Codable {
     public let endedAt: Double?
     /// The durable task memos used to avoid repeated effects.
     public let memos: JSONObject?
+    /// The number of consecutive interrupted runs. An absent count is zero.
+    public var restarts: Double { storedRestarts ?? 0 }
+    /// The stored restart count. Nil retains an absent JSON field.
+    public let storedRestarts: Double?
+    /// The carrier of the context that created this task.
+    /// Swift treats canonically equivalent keys as equal. Encoding retains the exact stored keys.
+    public let trace: [String: String]?
+    /// The carriers linked to the first task invocation.
+    /// Encoding retains the exact stored keys and link order.
+    public let links: [[String: String]]?
+    private let rawTrace: JSONValue?
+    private let rawLinks: JSONValue?
     /// Unknown JSON members retained by upstream record copies.
     public let extensionFields: JSONObject
     /// Creates a complete stored task record, including ownership and execution state.
-    public init(id: TaskID, conversationId: ConversationID, kind: String, version: Double, input: JSONValue, state: TaskState, owner: TaskID? = nil, background: Bool = false, abortRequested: Bool = false, abortReason: TaskAbortReason? = nil, abandonOnRestart: Bool? = nil, startedAt: Double? = nil, endedAt: Double? = nil, memos: JSONObject? = nil, extensionFields: JSONObject = [:]) {
+    public init(id: TaskID, conversationId: ConversationID, kind: String, version: Double, input: JSONValue, state: TaskState, owner: TaskID? = nil, background: Bool = false, abortRequested: Bool = false, abortReason: TaskAbortReason? = nil, abandonOnRestart: Bool? = nil, startedAt: Double? = nil, endedAt: Double? = nil, memos: JSONObject? = nil, restarts: Double? = nil, trace: [String: String]? = nil, links: [[String: String]]? = nil, extensionFields: JSONObject = [:]) {
         self.id = id
         self.conversationId = conversationId
         self.kind = kind
@@ -556,7 +583,24 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.memos = memos
-        self.extensionFields = extensionFields
+        storedRestarts = restarts ?? extensionFields["restarts"]?.numberValue
+        rawTrace = trace.map { .object(JSONObject($0.map { ($0.key, .string($0.value)) })) } ?? extensionFields["trace"]
+        rawLinks = links.map { .array($0.map { .object(JSONObject($0.map { ($0.key, .string($0.value)) })) }) } ?? extensionFields["links"]
+        self.trace = trace ?? (try? rawTrace?.decode([String: String].self))
+        self.links = links ?? (try? rawLinks?.decode([[String: String]].self))
+        var retained = extensionFields
+        if storedRestarts != nil { retained["restarts"] = nil }
+        if self.trace != nil { retained["trace"] = nil }
+        if self.links != nil { retained["links"] = nil }
+        self.extensionFields = retained
+    }
+    // Copies must use these fields instead of the Swift dictionary projections.
+    // JSON objects keep keys with different Unicode scalar sequences distinct.
+    internal var carrierCopyFields: JSONObject {
+        var fields = extensionFields
+        if let rawTrace { fields["trace"] = rawTrace }
+        if let rawLinks { fields["links"] = rawLinks }
+        return fields
     }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
@@ -575,8 +619,13 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         startedAt = try recordOptional(object, "startedAt")
         endedAt = try recordOptional(object, "endedAt")
         memos = try recordOptional(object, "memos")
+        storedRestarts = try recordOptional(object, "restarts")
+        rawTrace = object["trace"]
+        rawLinks = object["links"]
+        trace = try recordOptional(object, "trace")
+        links = try recordOptional(object, "links")
         if state.status == "completing" || state.status == "terminal" { try recordForbid(object, ["memos"]) }
-        extensionFields = recordExtensions(object, excluding: ["id", "conversationId", "kind", "version", "input", "state", "owner", "background", "abortRequested", "abortReason", "abandonOnRestart", "startedAt", "endedAt", "memos"])
+        extensionFields = recordExtensions(object, excluding: ["id", "conversationId", "kind", "version", "input", "state", "owner", "background", "abortRequested", "abortReason", "abandonOnRestart", "startedAt", "endedAt", "memos", "restarts", "trace", "links"])
     }
     /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
@@ -598,6 +647,9 @@ public struct TaskRecord: Sendable, Equatable, Codable {
         try recordSetOptional(&object, "startedAt", startedAt)
         try recordSetOptional(&object, "endedAt", endedAt)
         try recordSetOptional(&object, "memos", memos)
+        if let storedRestarts { try recordSet(&object, "restarts", storedRestarts) }
+        if let rawTrace { object["trace"] = rawTrace }
+        if let rawLinks { object["links"] = rawLinks }
         try object.encode(to: encoder)
     }
 }
@@ -735,6 +787,21 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
     public var requestId: String? {
         switch self { case .input(_, _, let value, _), .write(_, _, let value, _): value }
     }
+    /// The carrier of the admission context, when propagation is available.
+    public var trace: [String: String]? {
+        let fields: JSONObject
+        switch self {
+        case .input(_, _, _, let state):
+            switch state {
+            case .queued(let extensions), .placed(_, let extensions), .done(_, _, let extensions), .unanswered(_, _, _, let extensions): fields = extensions
+            }
+        case .write(_, _, _, let state):
+            switch state {
+            case .queued(let extensions), .done(_, let extensions), .unanswered(_, _, let extensions): fields = extensions
+            }
+        }
+        return try? fields["trace"]?.decode([String: String].self)
+    }
     /// The stored input or write submission tag.
     public var type: String {
         switch self { case .input: "input"; case .write: "write" }
@@ -750,6 +817,7 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
         let id: SubmissionID = try recordRequired(object, "id")
         let conversationId: ConversationID = try recordRequired(object, "conversationId")
         let requestId: String? = try recordOptional(object, "requestId")
+        let _: [String: String]? = try recordOptional(object, "trace")
         for key in ["type", "id", "conversationId", "requestId"] { object[key] = nil }
         switch type {
         case "input": self = .input(id: id, conversationId: conversationId, requestId: requestId, state: try JSONValue.object(object).decode())

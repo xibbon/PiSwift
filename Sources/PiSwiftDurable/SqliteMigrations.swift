@@ -103,6 +103,30 @@ CREATE TABLE \#(schema.tables.documentRevisions) (
 	) STRICT
 """#,
         #"CREATE INDEX \#(schema.indexes.documentRevisionsByKind) ON \#(schema.tables.documentRevisions) (document_id, kind, seq DESC)"#,
+    ]), SqliteMigration(version: 2, statements: [
+// Upstream v1.4.0 durable/src/storage/sqlite/migrations.ts:91 rebuilds this CHECK.
+#"""
+CREATE TABLE \#(schema.tables.tasks)_v2 (
+		id INTEGER PRIMARY KEY,
+		conversation_id INTEGER NOT NULL,
+		kind TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'sleeping', 'completing', 'terminal')),
+		abort_requested INTEGER NOT NULL CHECK (abort_requested IN (0, 1)),
+		background INTEGER NOT NULL CHECK (background IN (0, 1)),
+		record TEXT NOT NULL CHECK (json_valid(record))
+	) STRICT
+"""#,
+#"""
+INSERT INTO \#(schema.tables.tasks)_v2 (id, conversation_id, kind, status, abort_requested, background, record)
+		SELECT id, conversation_id, kind, status, abort_requested, background, record FROM \#(schema.tables.tasks)
+"""#,
+        #"DROP TABLE \#(schema.tables.tasks)"#,
+        #"ALTER TABLE \#(schema.tables.tasks)_v2 RENAME TO \#(schema.tables.tasks)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByStatus) ON \#(schema.tables.tasks) (status, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByConversation) ON \#(schema.tables.tasks) (conversation_id, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByKind) ON \#(schema.tables.tasks) (kind, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByAbortRequested) ON \#(schema.tables.tasks) (abort_requested, id)"#,
+        #"CREATE INDEX \#(schema.indexes.tasksByBackground) ON \#(schema.tables.tasks) (background, id)"#,
     ])]
 }
 

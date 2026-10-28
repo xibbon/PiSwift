@@ -86,6 +86,7 @@ extension TaskScheduler.State {
     }
     mutating func track(_ record: TaskRecord) {
         let id = record.id, previous = live[id]
+        if case .sleeping = record.state { sleeping.insert(id) } else { sleeping.remove(id) }
         if case .waiting(_, let on, _, _) = previous?.state {
             for target in on {
                 waiters[target]?.remove(id)

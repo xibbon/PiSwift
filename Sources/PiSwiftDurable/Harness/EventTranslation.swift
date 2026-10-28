@@ -116,7 +116,7 @@ internal func translateDurableEvents(conversationId: ConversationID, before: Con
         var args: JSONObject = [:]
         if let id = slot.taskId, let task = tasks[id] {
             switch task.state {
-            case .pending(let cp, _), .running(let cp, _), .waiting(let cp, _, _, _): args = cp.objectValue?["arguments"]?.objectValue ?? [:]
+            case .pending(let cp, _), .running(let cp, _), .waiting(let cp, _, _, _), .sleeping(let cp, _, _): args = cp.objectValue?["arguments"]?.objectValue ?? [:]
             default: break
             }
         }

@@ -17,7 +17,7 @@ if (!['prepare', 'verify'].includes(mode) || !directory || !['sqlite', 'prefix',
 }
 const fixtures = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/', import.meta.url));
 const load = async name => JSON.parse(await readFile(join(fixtures, name), 'utf8'));
-const source = await mirror();
+const source = await mirror({ tag: 'v1.4.0' });
 try {
   const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
   const { openNodeSqliteStorage } = await source.import('packages/durable/src/storage/sqlite/node.ts');

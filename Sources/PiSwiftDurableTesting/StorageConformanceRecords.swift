@@ -212,12 +212,22 @@ extension StorageChecks {
         try StorageAssertions.strictEqual(try await h.scan("task", ["background": true]).ids, [two])
     }
     static func case12(_ h: Self) async throws {
-        let root = try await h.root(), ownerId = try await h.mint(), waitingId = try await h.mint(), completingId = try await h.mint()
+        let root = try await h.root(), ownerId = try await h.mint(), waitingId = try await h.mint(), completingId = try await h.mint(), sleepingId = try await h.mint()
         let owner = task(ownerId, root)
         let waiting = task(waitingId, root, ["owner": number(ownerId), "state": ["status": "waiting", "checkpoint": ["phase": "next"], "on": [number(ownerId)], "policy": "allSettled"], "memos": ["kept": true]])
         let outcome: JSONValue = ["status": "failed", "error": ["message": "held"]]
         let completing = task(completingId, root, ["owner": number(ownerId), "state": ["status": "completing", "outcome": outcome]])
-        try await h.commit([owner, waiting, completing].map { write("task", $0) })
+        let sleeping = task(sleepingId, root, ["owner": number(ownerId),
+            "state": ["status": "sleeping", "checkpoint": ["phase": "next"], "until": 123.75],
+            "restarts": 2, "trace": ["traceparent": "opaque", "vendor": "value"],
+            "links": [["traceparent": "linked"]], "future": ["kept": true]])
+        try await h.commit([owner, waiting, completing, sleeping].map { write("task", $0) })
+        try StorageAssertions.deepEqual(try await h.task(sleepingId), sleeping)
+        try StorageAssertions.strictEqual(try await h.scan("task", ["status": "sleeping"]).items, [sleeping])
+        let awake = replacing(sleeping, ["state": ["status": "running", "checkpoint": ["phase": "next"]]])
+        try await h.commit([write("task", awake)])
+        try StorageAssertions.strictEqual(try await h.scan("task", ["status": "sleeping"]).items, [])
+        try StorageAssertions.strictEqual(try await h.scan("task", ["status": "running"]).items, [awake])
         try StorageAssertions.deepEqual(try await h.task(waitingId), waiting)
         try StorageAssertions.deepEqual(try await h.task(completingId), completing)
         try StorageAssertions.strictEqual(try await h.scan("task", ["status": "waiting"]).items, [waiting])
@@ -232,7 +242,7 @@ extension StorageChecks {
         let root = try await h.root(), other = try await h.mint()
         try await h.commit([write("conversation", ["id": number(other)])])
         let one = try await h.mint(), two = try await h.mint(), three = try await h.mint()
-        let first = submission(one, root, ["requestId": "same"]), second = submission(two, root, ["requestId": "other"]), third = submission(three, other, ["requestId": "same"])
+        let first = submission(one, root, ["requestId": "same", "trace": ["traceparent": "admission", "vendor": "kept"]]), second = submission(two, root, ["requestId": "other"]), third = submission(three, other, ["requestId": "same"])
         try await h.commit([first, second, third].map { write("submission", $0) })
         try StorageAssertions.deepEqual(try await h.request(root, "same"), first)
         try StorageAssertions.deepEqual(try await h.request(other, "same"), third)

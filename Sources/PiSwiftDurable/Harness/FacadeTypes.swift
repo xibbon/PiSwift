@@ -26,6 +26,8 @@ public enum TaskInspectionState: Sendable {
     case ready(migrates: Bool)
     /// Work waits for the selected tasks under its join policy.
     case waiting(on: [TaskID])
+    /// Work waits until the Harness clock reaches this millisecond deadline.
+    case sleeping(until: Double)
     /// An outcome is saved while ordinary owned work finishes.
     case completing
     /// The task cannot run until its definition problem is resolved.

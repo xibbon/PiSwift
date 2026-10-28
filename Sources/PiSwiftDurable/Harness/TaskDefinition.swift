@@ -91,6 +91,11 @@ public struct TaskDefinition<Input: Codable & Sendable, Checkpoint: TaskCheckpoi
     public func waiting(_ checkpoint: Checkpoint, on: [TaskID], policy: JoinPolicy) throws -> TaskState {
         .waiting(checkpoint: try encodeTaskCheckpoint(checkpoint), on: on, policy: policy)
     }
+    /// Creates a sleeping task state with a deadline in Harness clock milliseconds.
+    public func sleeping(_ checkpoint: Checkpoint, until: Double) throws -> TaskState {
+        try recordValidateDeadline(until)
+        return .sleeping(checkpoint: try encodeTaskCheckpoint(checkpoint), until: until)
+    }
     /// Creates a completed terminal task state with a JSON-encoded result.
     public func completed(_ result: Result) throws -> TaskState {
         .terminal(outcome: .completed(result: try JSONValue(encoding: result)))

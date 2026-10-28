@@ -67,6 +67,8 @@ public enum TaskStatus: String, Sendable, Equatable, Codable {
     case running
     /// Work waits for the selected tasks under its join policy.
     case waiting
+    /// Work waits until the Harness clock reaches its saved time.
+    case sleeping
     /// An outcome is saved while ordinary owned work finishes.
     case completing
     /// The task has a final outcome and cannot execute again.

@@ -82,6 +82,7 @@ extension TaskScheduler {
             else {
                 let on = waitingOn(record)
                 if !on.isEmpty { derived = .waiting(on: on) }
+                else if notDue(record), case .sleeping(_, let until, _) = record.state { derived = .sleeping(until: until) }
                 else {
                     let definition = snapshot.task(name: record.kind), fit = fit(record, definition: definition)
                     if let reason = fit.reason { derived = .blocked(reason: TaskBlockedReason(rawValue: reason)!, error: fit.error) }

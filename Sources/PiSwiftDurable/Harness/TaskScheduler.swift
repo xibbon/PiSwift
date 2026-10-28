@@ -68,6 +68,10 @@ internal final class TaskScheduler: Sendable {
         var dropQueue = Set<OwnershipUp>()
         var intent = Set<TaskID>()
         var runnable = Set<TaskID>()
+        var sleeping = Set<TaskID>()
+        var sleepWork: Task<Void, Never>?
+        var sleepAt: Double?
+        var sleepID = UUID()
         var finalizeChecks = Set<TaskID>()
         var waiters: [TaskID: Set<TaskID>] = [:]
         var failFastChecks = Set<TaskID>()
@@ -125,7 +129,7 @@ internal final class TaskScheduler: Sendable {
         state.withLock { $0.subscriptions = [commits, close]; $0.unsubscribe = unsubscribe }
         try await session.commit({ tx in
             var found: [TaskRecord] = []
-            for status in [TaskStatus.pending, .running, .waiting, .completing] {
+            for status in [TaskStatus.pending, .running, .waiting, .sleeping, .completing] {
                 found += try await scanAll { cursor in try await tx.scanTasks(.init(status: status), limit: 256, cursor: cursor) }
             }
             state.withLock { state in
@@ -152,13 +156,14 @@ internal final class TaskScheduler: Sendable {
         for work in reconciles { await work.value }
     }
     private func seal() {
-        let (expiry, unsubscribe) = state.withLock { state in
+        let (expiry, sleep, unsubscribe) = state.withLock { state in
             state.closing = true; state.contexts = [:]
             let expiry = state.expiry; state.expiry = nil; state.expiryAt = nil
+            let sleep = state.sleepWork; state.sleepWork = nil; state.sleepAt = nil
             let unsubscribe = state.unsubscribe; state.unsubscribe = nil
-            return (expiry, unsubscribe)
+            return (expiry, sleep, unsubscribe)
         }
-        unsubscribe?(); expiry?.cancel()
+        unsubscribe?(); expiry?.cancel(); sleep?.cancel()
         let error: any Error = session.failure.map { SessionFailed($0) } ?? closedError()
         taskWaiters.rejectAll(error); idleWaiters.rejectAll(error)
     }
@@ -234,6 +239,7 @@ internal final class TaskScheduler: Sendable {
             state.pumping = true
             state.worker = Task { [weak self] in await self?.pump() }
         }
+        scheduleSleep()
     }
     private func pump() async {
         while state.withLock({ state in
@@ -359,6 +365,7 @@ internal final class TaskScheduler: Sendable {
                     return
                 }
                 try await loadScopes()
+                wakeDue()
                 let candidates = state.withLock { state in state.candidateEntries += state.runnable.count; return Array(state.runnable).sorted() }
                 var snapshot: RegistrySnapshot?
                 for id in candidates {
@@ -366,6 +373,7 @@ internal final class TaskScheduler: Sendable {
                         _ = state.withLock { $0.runnable.remove(id) }; continue
                     }
                     if !waitingOn(original, first: true).isEmpty { _ = state.withLock { $0.runnable.remove(id) }; continue }
+                    if notDue(original) { _ = state.withLock { $0.runnable.remove(id) }; continue }
                     if !original.abortRequested && !original.background && belowCancelled(original.parent) {
                         state.withLock { $0.cascadePending = true }; scheduleReconcile()
                         continue
@@ -511,7 +519,7 @@ internal struct TaskOverlay: Sendable {
     }
 }
 internal extension TaskState {
-    var checkpoint: JSONValue? { switch self { case .pending(let value, _), .running(let value, _), .waiting(let value, _, _, _): value; default: nil } }
+    var checkpoint: JSONValue? { switch self { case .pending(let value, _), .running(let value, _), .waiting(let value, _, _, _), .sleeping(let value, _, _): value; default: nil } }
     var outcome: TaskOutcome? { switch self { case .completing(let value, _), .terminal(let value, _): value; default: nil } }
 }
 internal extension TaskRecord {
@@ -521,7 +529,8 @@ internal extension TaskRecord {
         TaskRecord(id: id, conversationId: conversationId, kind: kind, version: version,
                    input: input, state: state, owner: owner, background: background,
                    abortRequested: true, abortReason: reason, abandonOnRestart: abandonOnRestart,
-                   startedAt: startedAt, endedAt: endedAt, memos: memos, extensionFields: extensionFields)
+                   startedAt: startedAt, endedAt: endedAt, memos: memos,
+                   restarts: storedRestarts, extensionFields: carrierCopyFields)
     }
     func replacing(input: JSONValue? = nil, version: Double? = nil, state: TaskState? = nil,
                    abortRequested: Bool? = nil, memos: JSONObject? = nil) -> TaskRecord {
@@ -530,7 +539,8 @@ internal extension TaskRecord {
                           input: input ?? self.input, state: next, owner: owner, background: background,
                           abortRequested: abortRequested ?? self.abortRequested, abortReason: abortReason,
                           abandonOnRestart: abandonOnRestart, startedAt: startedAt, endedAt: endedAt,
-                          memos: next.outcome == nil ? (memos ?? self.memos) : nil, extensionFields: extensionFields)
+                          memos: next.outcome == nil ? (memos ?? self.memos) : nil,
+                          restarts: storedRestarts, extensionFields: carrierCopyFields)
     }
 }
 internal func jsonStructurallyEqual(_ lhs: JSONValue, _ rhs: JSONValue) -> Bool {
