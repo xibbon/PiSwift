@@ -466,8 +466,9 @@ public func compact(
     if preparation.isSplitTurn, !preparation.turnPrefixMessages.isEmpty {
         let prefix = try await generateTurnPrefixSummary(
             messages: preparation.turnPrefixMessages, model: model,
-            reserveTokens: preparation.settings.reserveTokens, apiKey: apiKey,
+            apiKey: apiKey,
             headers: headers, env: env, signal: signal, thinkingLevel: thinkingLevel,
+            customInstructions: customInstructions,
             streamFn: streamFn, retry: retry, callbacks: callbacks, sessionId: sessionId
         )
         summary += "\n\n---\n\n**Turn Context (split turn):**\n\n" + prefix.text
@@ -658,6 +659,7 @@ private func summaryText(_ response: AssistantMessage, label: String) throws -> 
     return response.content.compactMap { if case .text(let text) = $0 { return text.text }; return nil }.joined(separator: "\n")
 }
 
+// Upstream 6fcb48670: reserveTokens remains for source compatibility and does not limit output.
 public func generateSummary(
     currentMessages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
     headers: ProviderHeaders? = nil, env: [String: String]? = nil, signal: CancellationToken? = nil,
@@ -679,7 +681,7 @@ public func generateSummaryWithUsage(
     thinkingLevel: PiSwiftAI.ThinkingLevel? = nil, streamFn: StreamFn? = nil,
     retry: RetryPolicy? = nil, callbacks: RetryCallbacks? = nil, sessionId: String? = nil
 ) async throws -> SummaryWithUsage {
-    let maxTokens = min(Int(Double(reserveTokens) * 0.8), model.maxTokens > 0 ? model.maxTokens : Int.max)
+    // Upstream 6fcb48670: Keep reserveTokens for callers; the model sets the output limit.
     var basePrompt = previousSummary?.isEmpty != false ? SUMMARIZATION_PROMPT : UPDATE_SUMMARIZATION_PROMPT
     if let customInstructions, !customInstructions.isEmpty {
         basePrompt += "\n\nAdditional focus: \(customInstructions)"
@@ -692,7 +694,7 @@ public func generateSummaryWithUsage(
     promptText += basePrompt
     let response = try await completeSummarization(
         model: model, context: buildSummarizationContext(promptText),
-        options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
+        options: createSummarizationOptions(model: model, apiKey: apiKey,
             headers: headers, env: env, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
         streamFn: streamFn, retry: retry, callbacks: callbacks
     )
@@ -705,10 +707,10 @@ private func buildSummarizationContext(_ prompt: String) -> Context {
 }
 
 private func createSummarizationOptions(
-    model: Model, maxTokens: Int, apiKey: String, headers: ProviderHeaders?, env: [String: String]?,
+    model: Model, apiKey: String, headers: ProviderHeaders?, env: [String: String]?,
     signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?, sessionId: String?
 ) -> SimpleStreamOptions {
-    SimpleStreamOptions(env: env, maxTokens: maxTokens, signal: signal, apiKey: apiKey,
+    SimpleStreamOptions(env: env, signal: signal, apiKey: apiKey,
         reasoning: model.reasoning ? thinkingLevel : nil,
         sessionId: sessionId, headers: headers)
 }
@@ -731,16 +733,19 @@ Only summarize information explicitly present above. Do not infer or recreate la
 """
 
 private func generateTurnPrefixSummary(
-    messages: [AgentMessage], model: Model, reserveTokens: Int, apiKey: String,
+    messages: [AgentMessage], model: Model, apiKey: String,
     headers: ProviderHeaders?, env: [String: String]?, signal: CancellationToken?, thinkingLevel: PiSwiftAI.ThinkingLevel?,
+    customInstructions: String?,
     streamFn: StreamFn?, retry: RetryPolicy?, callbacks: RetryCallbacks?, sessionId: String?
 ) async throws -> SummaryWithUsage {
-    let maxTokens = min(Int(Double(reserveTokens) * 0.5), model.maxTokens > 0 ? model.maxTokens : Int.max)
     let conversationText = serializeConversation(convertToLlm(messages))
-    let promptText = "# Conversation\n\(conversationText)\n\n# Instructions\n\(TURN_PREFIX_SUMMARIZATION_PROMPT)"
+    var promptText = "# Conversation\n\(conversationText)\n\n# Instructions\n\(TURN_PREFIX_SUMMARIZATION_PROMPT)"
+    if let customInstructions, !customInstructions.isEmpty {
+        promptText += "\n\nAdditional focus: \(customInstructions)"
+    }
     let response = try await completeSummarization(
         model: model, context: buildSummarizationContext(promptText),
-        options: createSummarizationOptions(model: model, maxTokens: maxTokens, apiKey: apiKey,
+        options: createSummarizationOptions(model: model, apiKey: apiKey,
             headers: headers, env: env, signal: signal, thinkingLevel: thinkingLevel, sessionId: sessionId),
         streamFn: streamFn, retry: retry, callbacks: callbacks
     )

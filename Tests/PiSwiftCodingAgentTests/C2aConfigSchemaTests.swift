@@ -23,11 +23,11 @@ private func c2aTemporaryDirectory() throws -> URL {
 }
 
 @Suite struct C2aConfigSchemaTests {
-    @Test func bundledArtifactsMatchV130() throws {
-        // SHA-256 of git show v1.3.0:packages/coding-agent/schemas/<name>.schema.json.
+    @Test func bundledArtifactsMatchV140() throws {
+        // Upstream 8efd314fa, v1.4.0: pin the published schema bytes.
         let expected: [BundledConfigSchema: String] = [
             .settings: "d4b19b0e492cb887a23c50034f00213c476048956fa92c5cce2f1536ef50b9b0",
-            .models: "2548101f94ac38e673e7b41eee9b86fb21b509192efd40d155340ab8270cdae8",
+            .models: "86ade9716724902bdfe91347a728980ad7242a76d0773dbc7217ce4584d696ea",
             .keybindings: "46d494b2493cd9fcf957d352aac653fe6f04121254f34033a5664e7c8f9928aa",
             .theme: "f526a690b63c6303296f683c9df6077ddc290ee9acb1bc27eedef169c0caad59",
         ]
@@ -63,6 +63,22 @@ private func c2aTemporaryDirectory() throws -> URL {
         #expect((tokens["scrollbarTrack"]?["description"] as? String)?.contains("falls back to muted") == true)
         #expect((properties["export"]?["description"] as? String)?.contains("defaults derived from userMessageBg") == true)
         let definitions = try #require(schema(.models)["$defs"] as? [String: [String: Any]])
+        // Upstream 8efd314fa: retain the models reference guidance in the published schema.
+        let models = try schema(.models)
+        let rootProperties = try #require(models["properties"] as? [String: [String: Any]])
+        let providerPatterns = try #require(rootProperties["providers"]?["patternProperties"] as? [String: [String: Any]])
+        let provider = try #require(providerPatterns["^.*$"]?["properties"] as? [String: [String: Any]])
+        #expect(provider["baseUrl"]?["description"] as? String == "API base URL. Also applies to the provider's built-in models.")
+        #expect(provider["authHeader"]?["default"] as? Bool == false)
+        let modelItems = try #require(provider["models"]?["items"] as? [String: Any])
+        let modelFields = try #require(modelItems["properties"] as? [String: [String: Any]])
+        #expect(modelFields["id"]?["description"] as? String == "Model ID sent to the API.")
+        let overrides = try #require(provider["modelOverrides"]?["patternProperties"] as? [String: [String: Any]])
+        let overrideFields = try #require(overrides["^.*$"]?["properties"] as? [String: [String: Any]])
+        #expect(overrideFields["name"]?["description"] as? String == "Display name, also matched by --model patterns.")
+        let compat = try #require(definitions["ProviderCompat"]?["properties"] as? [String: [String: Any]])
+        #expect((compat["imageInput"]?["description"] as? String)?.contains("Classifier models read it from the provider-level compat; models and modelOverrides entries apply to chat models only.") == true)
+        #expect((compat["sendImageOptInHeader"]?["description"] as? String)?.contains("TypeSafe-Danger-Zone-Images: true") == true)
         let cost = try #require(definitions["ModelCost"]?["properties"] as? [String: [String: Any]])
         #expect((cost["input"]?["description"] as? String)?.contains("USD per million tokens") == true)
         #expect((cost["tiers"]?["description"] as? String)?.contains("highest matching input threshold") == true)

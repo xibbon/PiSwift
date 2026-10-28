@@ -374,7 +374,7 @@ public enum AgentSessionError: LocalizedError, Sendable {
         case .invalidBoundaryDraft:
             return "Invalid boundary draft"
         case .recoveryEntryMissing:
-            return "Recovery attempt has no persisted source entry"
+            return "Cannot persist recovery omission because a projected message has no source entry"
         }
     }
 }
@@ -478,7 +478,6 @@ public final class AgentSession: Sendable {
         var failedResponse: AssistantMessage?
         var lastAssistantEntryId: String?
         var lastToolResultEntryIds: [String: String] = [:]
-        var lastAssistantToolResults: [ToolResultMessage] = []
         var lastActivityOutcome: AgentActivityOutcome = .completed
         var isRunActive = false
         var isRunPreparing = false
@@ -1216,13 +1215,8 @@ public final class AgentSession: Sendable {
             }
         }
         refreshContext()
-        if config.usesDefaultTools,
-           let current = getCurrentSystemMessage(sessionManager.buildSessionProjection().messages) {
-            let names = applyToolModifiers(
-                base: (current.toolsAdded ?? []).map(\.name), entries: config.defaultToolModifiers)
-            restoreActiveTools(names)
-            let activeNames = getActiveToolNames()
-            state.withLock { $0.systemPromptOptions.selectedToolNames = activeNames }
+        if config.usesDefaultTools {
+            restoreToolsFromTranscript(modifiers: config.defaultToolModifiers)
         } else {
             setActiveToolsByName(agent.tools.map(\.name))
         }
@@ -1597,8 +1591,7 @@ public final class AgentSession: Sendable {
             state.withLock { $0.isRunPreparing = false }
             if state.withLock({ $0.agentRunAbortRequested }) { agent.abort() }
         }
-        if case .turnEnd(_, let toolResults) = event {
-            state.withLock { $0.lastAssistantToolResults = toolResults }
+        if case .turnEnd = event {
             turnIndex += 1
         }
         if case .messageStart(let message) = event, message.role == "user" {
@@ -1719,6 +1712,7 @@ public final class AgentSession: Sendable {
 
         if case .agentEnd = event, let lastAssistantMessage {
             self.lastAssistantMessage = nil
+            let sourceEntryId = state.withLock { $0.lastAssistantEntryId }
             beginPostRunTask()
             Task { [weak self] in
                 defer { self?.finishPostRunTask() }
@@ -1726,7 +1720,7 @@ public final class AgentSession: Sendable {
                 let events = self._agentEventQueue.withLock { $0 }
                 await events?.value
                 if self.isRetryableError(lastAssistantMessage) {
-                    let didRetry = await self.handleRetryableError(lastAssistantMessage)
+                    let didRetry = await self.handleRetryableError(lastAssistantMessage, sourceEntryId: sourceEntryId)
                     if didRetry { return }
                 }
                 if lastAssistantMessage.stopReason == .error, self.retryAttempt > 0 {
@@ -1737,7 +1731,7 @@ public final class AgentSession: Sendable {
                     self.emit(.autoRetryEnd(success: false, attempt: attempt,
                                             finalError: lastAssistantMessage.errorMessage))
                 }
-                await self.checkAutoCompaction(lastAssistantMessage)
+                await self.checkAutoCompaction(lastAssistantMessage, sourceEntryId: sourceEntryId)
             }
         }
     }
@@ -1748,18 +1742,29 @@ public final class AgentSession: Sendable {
         return isRetryableAssistantError(message)
     }
 
-    /// Keep an abandoned attempt in the session log while removing it from later model requests.
-    private func omitRecoveryAttempt(_ message: AssistantMessage, toolResults: [ToolResultMessage] = []) throws {
-        let ids = try state.withLock { state -> [String] in
-            guard let assistantId = state.lastAssistantEntryId else { throw AgentSessionError.recoveryEntryMissing }
-            var ids = [assistantId]
-            for result in toolResults {
-                guard let id = state.lastToolResultEntryIds[result.toolCallId] else {
-                    throw AgentSessionError.recoveryEntryMissing
+    /// Keep an abandoned attempt and its results in the log, but omit them from model context.
+    private func omitRecoveryAttempt(_ message: AssistantMessage, sourceEntryId: String?) throws {
+        guard let sourceEntryId, sessionManager.getEntry(sourceEntryId) != nil else {
+            throw AgentSessionError.recoveryEntryMissing
+        }
+        let callIds = Set(message.content.compactMap { block -> String? in
+            if case .toolCall(let call) = block { return call.id }
+            return nil
+        })
+        // Swift messages are values. Carry the source ID from projection or persistence so
+        // a context edit cannot break the link to the failed assistant (02726086d).
+        let projected = sessionManager.buildSessionProjection().entries.flatMap { entry in
+            entry.messages.map { (sourceId: entry.sourceEntry.id, message: $0) }
+        }
+        var ids = [sourceEntryId]
+        if let index = projected.firstIndex(where: { $0.sourceId == sourceEntryId && $0.message.role == "assistant" }) {
+            for target in projected.dropFirst(index + 1) {
+                if target.message.role == "assistant" { break }
+                if case .toolResult(let result) = target.message, callIds.contains(result.toolCallId),
+                   !ids.contains(target.sourceId) {
+                    ids.append(target.sourceId)
                 }
-                ids.append(id)
             }
-            return ids
         }
         var appended: [SessionEntry] = []
         for id in ids {
@@ -1770,7 +1775,7 @@ public final class AgentSession: Sendable {
         for entry in appended { emit(.entryAppended(entry)) }
     }
 
-    private func handleRetryableError(_ message: AssistantMessage) async -> Bool {
+    private func handleRetryableError(_ message: AssistantMessage, sourceEntryId: String?) async -> Bool {
         guard !state.withLock({ $0.agentRunAbortRequested }) else { return false }
         let settings = settingsManager.getRetrySettings()
         guard settings.enabled ?? true else { return false }
@@ -1799,7 +1804,7 @@ public final class AgentSession: Sendable {
             errorMessage: message.errorMessage ?? "Unknown error"
         ))
 
-        do { try omitRecoveryAttempt(message) } catch {
+        do { try omitRecoveryAttempt(message, sourceEntryId: sourceEntryId) } catch {
             emit(.autoRetryEnd(success: false, attempt: retryAttempt, finalError: error.localizedDescription))
             retryAttempt = 0
             return false
@@ -1824,7 +1829,7 @@ public final class AgentSession: Sendable {
     /// compaction.  Uses `lastSuccessfulUsage` for threshold checks after
     /// error responses (4D-4) and sets `overflowRecoveryAttempted` so stale
     /// pre-compaction usage doesn't retrigger (4D-3).
-    private func checkAutoCompaction(_ message: AssistantMessage, allowRetry: Bool = true) async {
+    private func checkAutoCompaction(_ message: AssistantMessage, sourceEntryId: String?, allowRetry: Bool = true) async {
         guard !state.withLock({ $0.agentRunAbortRequested }) else { return }
         guard autoCompactionEnabled, !isCompactingInternal else { return }
         switch message.stopReason {
@@ -1845,7 +1850,7 @@ public final class AgentSession: Sendable {
 
         let sameModel = messageModel != nil
         let branch = sessionManager.getBranch()
-        let assistantId = state.withLock { $0.lastAssistantEntryId }
+        let assistantId = sourceEntryId
         let projection = sessionManager.buildSessionProjection()
         let assistantProjected = projection.entries.contains { entry in
             entry.sourceEntry.id == assistantId && entry.messages.contains { $0.role == "assistant" }
@@ -1872,14 +1877,14 @@ public final class AgentSession: Sendable {
         // limit both get one bounded compact-and-retry recovery attempt.
         if contextOverflow || recoverableLength {
             let willRetry = allowRetry && message.stopReason != .stop
-            if willRetry {
+            if message.stopReason != .stop {
                 guard !overflowRecoveryAttempted else {
                     await emitCompactionFailure(reason: .overflow, error: contextOverflow ? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model." : "Truncated response recovery failed after one compact-and-retry attempt.", aborted: false, willRetry: false)
                     return
                 }
                 overflowRecoveryAttempted = true
                 do {
-                    try omitRecoveryAttempt(message, toolResults: state.withLock { $0.lastAssistantToolResults })
+                    try omitRecoveryAttempt(message, sourceEntryId: sourceEntryId)
                     failedResponse = message
                 } catch {
                     await emitCompactionFailure(reason: .overflow, error: error.localizedDescription, aborted: false, willRetry: false)
@@ -2109,6 +2114,16 @@ public final class AgentSession: Sendable {
         }
     }
 
+    // Upstream bd3c9b823: An allowlist does not activate unmentioned inactive tools on restore.
+    private func isActivatedOnRestore(_ name: String) -> Bool {
+        state.withLock { current in
+            guard current.toolRegistry[name] != nil else { return false }
+            let definition = current.toolDefinitions[name]
+            let exposure = definition?.exposure ?? .direct
+            return (exposure == .direct || exposure == .modelOnly) && definition?.defaultActive != false
+        }
+    }
+
     /// Check if a kept tool can be declared, including a restored tool loadout.
     private func isActivatable(_ name: String) -> Bool {
         state.withLock { current in
@@ -2319,6 +2334,27 @@ public final class AgentSession: Sendable {
         let pending = Set(names.filter(isAllowedTool))
         state.withLock { $0.pendingToolNames = pending }
         setActiveTools(names)
+    }
+
+    private func restoreToolsFromTranscript(modifiers: [String] = []) {
+        state.withLock { $0.pendingToolNames.removeAll() }
+        // Replay raw branch deltas, including changes before compaction (bd3c9b823).
+        let systems = sessionManager.getBranch().compactMap { entry -> AgentMessage? in
+            guard case .message(let entry) = entry, case .system = entry.message else { return nil }
+            return entry.message
+        }
+        guard !systems.isEmpty else { return }
+        let mentioned = Set(systems.flatMap { message -> [String] in
+            guard case .system(let system) = message else { return [] }
+            return (system.toolsAdded ?? []).map(\.name) + (system.toolsRemoved ?? []).map(\.name)
+        })
+        let newTools = toolRegistryOrder.filter { name in
+            !mentioned.contains(name) && ToolName(rawValue: name) == nil && isActivatedOnRestore(name)
+        }
+        let names = applyToolModifiers(base: getCurrentTools(systems).map(\.name) + newTools, entries: modifiers)
+        restoreActiveTools(names)
+        let activeNames = getActiveToolNames()
+        state.withLock { $0.systemPromptOptions.selectedToolNames = activeNames }
     }
 
     private func setActiveTools(_ toolNames: [String]) {
@@ -2636,11 +2672,14 @@ public final class AgentSession: Sendable {
             }
         }
 
-        if let last = sessionManager.buildSessionProjection().messages.reversed().compactMap({ message -> AssistantMessage? in
-            if case .assistant(let assistant) = message { return assistant }
-            return nil
+        if let last = sessionManager.buildSessionProjection().entries.reversed().compactMap({ entry -> (AssistantMessage, String)? in
+            guard let message = entry.messages.reversed().compactMap({ message -> AssistantMessage? in
+                if case .assistant(let assistant) = message { return assistant }
+                return nil
+            }).first else { return nil }
+            return (message, entry.sourceEntry.id)
         }).first {
-            await checkAutoCompaction(last, allowRetry: false)
+            await checkAutoCompaction(last.0, sourceEntryId: last.1, allowRetry: false)
         }
         var messages: [AgentMessage] = []
         var handlerMessages: [AgentMessage] = []
@@ -3963,14 +4002,7 @@ public final class AgentSession: Sendable {
         let context = sessionManager.buildSessionProjection()
         let previousModel = agent.state.model
         refreshContext(context)
-        // A branch without a system message has no restored pending tools.
-        state.withLock { $0.pendingToolNames.removeAll() }
-        if let current = getCurrentSystemMessage(context.messages) {
-            let names = (current.toolsAdded ?? []).map(\.name)
-            restoreActiveTools(names)
-            let activeNames = getActiveToolNames()
-            state.withLock { $0.systemPromptOptions.selectedTools = activeNames.compactMap(ToolName.init(rawValue:)) }
-        }
+        restoreToolsFromTranscript()
         if let modelInfo = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find) {
             if let model = modelRegistry.find(modelInfo.provider, modelInfo.modelId) {
                 agent.model = model

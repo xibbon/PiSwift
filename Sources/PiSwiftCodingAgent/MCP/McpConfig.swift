@@ -320,6 +320,8 @@ public func loadMcpConfig(agentDir: URL, cwd: URL, projectTrusted: Bool) -> Load
 }
 
 private func mcpParseJSON(_ text: String) throws -> OrderedJSON {
+    // Upstream bdd9f0399: accept one leading BOM for config reads and edits.
+    let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
     do { return try OrderedJSON.parse(text, allowDuplicateKeys: true) }
     catch {
         // Keep Foundation's existing malformed-JSON diagnostic for host callers.

@@ -3,7 +3,8 @@ import Foundation
 public let APP_NAME = "pi"
 public let CONFIG_DIR_NAME = ".pi"
 public let PACKAGE_NAME = "@earendil-works/pi-coding-agent"
-public let VERSION = "1.3.0"
+// Upstream 4a080252f: report the release version.
+public let VERSION = "1.4.0"
 public let ENV_CODING_AGENT = "\(APP_NAME.uppercased())_CODING_AGENT"
 public let ENV_AGENT_DIR = "\(APP_NAME.uppercased())_CODING_AGENT_DIR"
 public let ENV_CODING_AGENT_SESSION_DIR = "\(APP_NAME.uppercased())_CODING_AGENT_SESSION_DIR"

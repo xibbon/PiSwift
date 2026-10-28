@@ -273,7 +273,8 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.openai, "gpt-5.5"),
     (.azure, "gpt-5.4"),
     (.openaiCodex, "gpt-6.1-sol"),
-    (.nvidia, "nvidia/nemotron-3-ultra-550b-a55b"),
+    // Upstream 95364a54e: use the NVIDIA default from v1.4.0.
+    (.nvidia, "nvidia/nemotron-3.5-super-vl-120b-a12b"),
     (.deepseek, "deepseek-v4-pro"),
     (.google, "gemini-3.1-pro-preview"),
     (.googleVertex, "gemini-3.1-pro-preview"),

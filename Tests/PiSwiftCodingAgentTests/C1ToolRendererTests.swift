@@ -50,8 +50,9 @@ private func c1RendererRunner(_ hooks: [LoadedHook]) -> HookRunner {
     } == nil)
 }
 
-@Test func c1NvidiaDefaultUsesUltra() {
-    #expect(defaultModelPerProvider.first { $0.0 == .nvidia }?.1 == "nvidia/nemotron-3-ultra-550b-a55b")
+// Upstream 95364a54e: use the NVIDIA default from v1.4.0.
+@Test func c1NvidiaDefaultUsesSuperVL() {
+    #expect(defaultModelPerProvider.first { $0.0 == .nvidia }?.1 == "nvidia/nemotron-3.5-super-vl-120b-a12b")
 }
 
 @Test func c1UpstreamResolverCases() throws {
@@ -140,7 +141,8 @@ private func c1Session(_ hooks: [LoadedHook], customTools: [LoadedCustomTool]) -
 @Test func c1VersionUsesV103() {
     // Upstream v1.0.4 package.json:3: report the release version.
     // C1 v1.1.0: update the library version assertion.
-    #expect(VERSION == "1.3.0")
+    // Upstream 4a080252f: pin the v1.4.0 release version.
+    #expect(VERSION == "1.4.0")
     let renderer: BuiltInToolRenderer = .mcp(label: "server/tool")
     #expect(CustomToolRenderers(builtIn: renderer).builtIn == renderer)
 }

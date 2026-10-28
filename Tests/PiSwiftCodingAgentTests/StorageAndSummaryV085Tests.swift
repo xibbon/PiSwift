@@ -82,7 +82,8 @@ private func storageTempDir() throws -> URL {
             #expect(options.sessionId == "caller-route")
             #expect(options.cacheRetention == CacheRetention.none)
             #expect(options.toolChoice == nil)
-            #expect(options.maxTokens == 3000)
+            // Upstream 6fcb48670: Summary requests use the model output limit.
+            #expect(options.maxTokens == nil)
             #expect(options.reasoning == .medium)
         }
         #expect(result.usage?.totalTokens == 22)
@@ -121,7 +122,8 @@ private func storageTempDir() throws -> URL {
         #expect(seen.first?.sessionId == seen.last?.sessionId)
     }
 
-    @Test(arguments: [0, 1000, 8000]) func branchOutputCap(limit: Int) async throws {
+    // Upstream 6fcb48670: Keep all model limits and require no request cap.
+    @Test(arguments: [0, 1000, 8000]) func branchHasNoOutputCap(limit: Int) async throws {
         let session = SessionManager.inMemory()
         session.appendMessage(.user(UserMessage(content: .text("branch"))))
         let seen = LockedState<SimpleStreamOptions?>(nil)
@@ -129,7 +131,8 @@ private func storageTempDir() throws -> URL {
             model: storageModel(maxTokens: limit), apiKey: "key", signal: nil, customInstructions: nil, reserveTokens: 20000,
             streamFn: { _, _, options in seen.withLock { $0 = options }; return storageStream(storageResponse()) }))
         #expect(result.summary == "summary")
-        #expect(seen.withLock { $0?.maxTokens } == (limit > 0 ? min(4096, limit) : 4096))
+        // Upstream 6fcb48670: The branch request has no fixed output cap.
+        #expect(seen.withLock { $0?.maxTokens } == nil)
         #expect(seen.withLock { $0?.toolChoice } == nil)
     }
 
@@ -282,4 +285,108 @@ private func storageTempDir() throws -> URL {
         #expect(payload?["fromId"] == nil)
         #expect(convertToLlm([message]).count == 1)
     }
+
+    @Test(arguments: [false, true]) func tinyReserveDoesNotCapSummaryRequests(split: Bool) async throws {
+        var preparation = storagePreparation(split: split)
+        preparation.settings.reserveTokens = 1
+        let calls = LockedState<[SimpleStreamOptions]>([])
+        _ = try await compact(preparation, storageModel(maxTokens: 1000), "key",
+            streamFn: { _, _, options in
+                calls.withLock { $0.append(options) }
+                return storageStream(storageResponse())
+            })
+        let seen = calls.withLock { $0 }
+        #expect(seen.count == (split ? 2 : 1))
+        #expect(seen.allSatisfy { $0.maxTokens == nil })
+    }
+
+    @Test func publicSummaryWrappersIgnoreTinyReserve() async throws {
+        let calls = LockedState<[SimpleStreamOptions]>([])
+        let stream: StreamFn = { _, _, options in
+            calls.withLock { $0.append(options) }
+            return storageStream(storageResponse())
+        }
+        let messages: [AgentMessage] = [.user(UserMessage(content: .text("history")))]
+        let text = try await generateSummary(currentMessages: messages, model: storageModel(),
+            reserveTokens: 1, apiKey: "key", streamFn: stream)
+        let result = try await generateSummaryWithUsage(currentMessages: messages, model: storageModel(),
+            reserveTokens: 1, apiKey: "key", streamFn: stream)
+        #expect(text == "summary")
+        #expect(result.text == "summary")
+        #expect(result.usage.totalTokens == 11)
+        #expect(calls.withLock { $0.count == 2 && $0.allSatisfy { $0.maxTokens == nil } })
+    }
+
+    // Upstream adfc14461: A prefix-only split must receive the custom focus.
+    @Test(arguments: [nil, "", "keep migration decisions"] as [String?])
+    func splitPrefixReceivesFocusWithoutNewHistory(focus: String?) async throws {
+        var preparation = storagePreparation(split: true, history: false)
+        preparation.previousSummary = "previous checkpoint"
+        preparation.settings.reserveTokens = 1
+        let calls = LockedState<[(TranscriptContext, SimpleStreamOptions)]>([])
+        let result = try await compact(preparation, storageModel(), "key", customInstructions: focus,
+            streamFn: { _, context, options in
+                calls.withLock { $0.append((context, options)) }
+                return storageStream(storageResponse())
+            })
+        let seen = calls.withLock { $0 }
+        #expect(seen.count == 1)
+        let request = try #require(seen.first)
+        let prompt = serializeConversation(request.0.messages)
+        if let focus, !focus.isEmpty {
+            #expect(prompt.contains("\n\nAdditional focus: \(focus)"))
+        } else {
+            #expect(!prompt.contains("Additional focus:"))
+        }
+        #expect(request.1.maxTokens == nil)
+        #expect(result.summary.hasPrefix("previous checkpoint\n\n---"))
+        #expect(result.usage?.totalTokens == 11)
+    }
+
+    @Test func branchSummaryIgnoresTinyReserve() async throws {
+        let session = SessionManager.inMemory()
+        session.appendMessage(.user(UserMessage(content: .text("branch"))))
+        let calls = LockedState<[SimpleStreamOptions]>([])
+        let result = await generateBranchSummary(session.getEntries(), GenerateBranchSummaryOptions(
+            model: storageModel(), apiKey: "key", signal: nil, customInstructions: nil, reserveTokens: 1,
+            streamFn: { _, _, options in
+                calls.withLock { $0.append(options) }
+                return storageStream(storageResponse())
+            }))
+        #expect(result.summary == "summary")
+        #expect(calls.withLock { $0.count == 1 && $0.allSatisfy { $0.maxTokens == nil } })
+    }
+
+    @Test func builtInCompactionUsesRoutedModelWithoutOutputCap() async throws {
+        let registry = ModelRegistry(AuthStorage(":memory:"))
+        registry.registerProvider(HookProviderConfig(
+            provider: "physical", api: .openAICompletions, baseUrl: "https://example.invalid",
+            apiKey: "key", models: [HookProviderModel(id: "resolved", contextWindow: 32000, maxTokens: 1000)]),
+            sourceId: "summary-test")
+        let physical = try #require(registry.find("physical", "resolved"))
+        try registry.registerVirtualModel(VirtualModelDefinition(
+            provider: "router", id: "auto", name: "Auto", contextWindow: 32000, maxTokens: 100,
+            route: { _ in ModelRoute(model: physical, thinkingLevel: .off) }), sourceId: "summary-route")
+        let virtual = try #require(registry.find("router", "auto"))
+        let manager = SessionManager.inMemory()
+        manager.appendMessage(.user(UserMessage(content: .text(String(repeating: "history ", count: 100)))))
+        manager.appendMessage(.user(UserMessage(content: .text("recent"))))
+        let calls = LockedState<[(String, SimpleStreamOptions)]>([])
+        let agent = Agent(AgentOptions(initialState: AgentState(model: virtual),
+            streamFn: { model, _, options in
+                calls.withLock { $0.append((model.id, options)) }
+                return storageStream(storageResponse())
+            }, getApiKey: { _ in "key" }))
+        var settings = Settings()
+        settings.compaction = CompactionSettingsOverrides(enabled: true, reserveTokens: 1, keepRecentTokens: 1)
+        let session = AgentSession(config: AgentSessionConfig(agent: agent, sessionManager: manager,
+            settingsManager: SettingsManager.inMemory(settings), resourceLoader: TestResourceLoader(),
+            modelRegistry: registry))
+        defer { session.dispose() }
+        _ = try await session.compact()
+        let seen = calls.withLock { $0 }
+        #expect(!seen.isEmpty)
+        #expect(seen.allSatisfy { $0.0 == "resolved" && $0.1.maxTokens == nil })
+    }
+
 }

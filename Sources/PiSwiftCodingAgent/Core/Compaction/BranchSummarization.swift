@@ -203,7 +203,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
         let response = try await completeSummarization(
             model: options.model,
             context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: [message]),
-            options: SimpleStreamOptions(env: options.env, maxTokens: min(4096, options.model.maxTokens > 0 ? options.model.maxTokens : Int.max), signal: options.signal, apiKey: options.apiKey, reasoning: options.thinkingLevel, headers: options.headers),
+            options: SimpleStreamOptions(env: options.env, signal: options.signal, apiKey: options.apiKey, reasoning: options.thinkingLevel, headers: options.headers),
             streamFn: options.streamFn, retry: options.retry, callbacks: options.callbacks
         )
         if response.stopReason == .aborted { return BranchSummaryResult(aborted: true) }

@@ -44,5 +44,6 @@ private func c1AzureResolverRegistry(_ authenticated: [String]) -> ModelRegistry
     #expect(defaultModelPerProvider.first { $0.0 == .azure }?.1 == "gpt-5.4")
     // Upstream v1.0.4 package.json:3: report the release version.
     // C1 v1.1.0: update the library version assertion.
-    #expect(VERSION == "1.3.0")
+    // Upstream 4a080252f: pin the v1.4.0 release version.
+    #expect(VERSION == "1.4.0")
 }

@@ -21,6 +21,15 @@ struct C1bResumeToolsTests {
         return manager
     }
 
+    // Upstream bd3c9b823: Record the removal, not only the final tool list.
+    private func changedSession(_ directory: URL) -> SessionManager {
+        let manager = recordedSession(directory, names: ["read", "grep", "active_tool"])
+        manager.appendMessage(.system(SystemMessage(content: .text(""),
+            toolsAdded: [AITool(name: "inactive_tool", description: "inactive_tool", parameters: ["type": AnyCodable("object")])],
+            toolsRemoved: [ToolReference(name: "active_tool")])))
+        return manager
+    }
+
     private func tool(_ name: String, active: Bool = false) -> CustomTool {
         CustomTool(name: name, label: name, description: name, parameters: [:],
             execute: { _, _, _, _, _ in AgentToolResult(content: []) }, defaultActive: active)
@@ -45,7 +54,8 @@ struct C1bResumeToolsTests {
     @Test(.timeLimit(.minutes(1))) func restoresRecordedLoadout() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = recordedSession(directory, names: ["read", "grep", "inactive_tool"])
+        // Upstream bd3c9b823: The branch explicitly deactivates active_tool.
+        let manager = changedSession(directory)
         let session = try await resume(directory, manager: manager)
         defer { session.dispose() }
         #expect(session.getActiveToolNames().sorted() == ["grep", "inactive_tool", "read"])
@@ -54,7 +64,8 @@ struct C1bResumeToolsTests {
     @Test(.timeLimit(.minutes(1))) func doesNotRestoreExcludedTools() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = recordedSession(directory, names: ["read", "grep", "inactive_tool"])
+        // Upstream bd3c9b823: The branch explicitly deactivates active_tool.
+        let manager = changedSession(directory)
         let session = try await resume(directory, manager: manager, exclude: ["inactive_*"])
         defer { session.dispose() }
         #expect(session.getActiveToolNames().sorted() == ["grep", "read"])
@@ -63,16 +74,16 @@ struct C1bResumeToolsTests {
     @Test(.timeLimit(.minutes(1))) func explicitOptionsOverrideRecordedLoadout() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let recorded = ["read", "grep", "inactive_tool"]
-        let allowlisted = try await resume(directory, manager: recordedSession(directory, names: recorded),
+        // Upstream bd3c9b823: Keep explicit-option tests on the changed-loadout fixture.
+        let allowlisted = try await resume(directory, manager: changedSession(directory),
                                           names: ["read", "write"])
         defer { allowlisted.dispose() }
         #expect(allowlisted.getActiveToolNames() == ["read", "write"])
-        let builtinless = try await resume(directory, manager: recordedSession(directory, names: recorded),
+        let builtinless = try await resume(directory, manager: changedSession(directory),
                                           noTools: .builtin)
         defer { builtinless.dispose() }
         #expect(builtinless.getActiveToolNames() == ["active_tool"])
-        let noTools = try await resume(directory, manager: recordedSession(directory, names: recorded),
+        let noTools = try await resume(directory, manager: changedSession(directory),
                                       noTools: .all)
         defer { noTools.dispose() }
         #expect(noTools.getActiveToolNames().isEmpty)
@@ -82,7 +93,8 @@ struct C1bResumeToolsTests {
     @Test(.timeLimit(.minutes(1))) func appliesModifiersToRecordedLoadout() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = recordedSession(directory, names: ["read", "grep", "inactive_tool"])
+        // Upstream bd3c9b823: The branch explicitly deactivates active_tool.
+        let manager = changedSession(directory)
         let session = try await resume(directory, manager: manager, names: ["-grep", "+write"])
         defer { session.dispose() }
         #expect(session.getActiveToolNames().sorted() == ["inactive_tool", "read", "write"])
@@ -104,7 +116,8 @@ struct C1bResumeToolsTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let session = try await resume(directory, manager: recordedSession(directory, names: []))
         defer { session.dispose() }
-        #expect(session.getActiveToolNames().isEmpty)
+        // Upstream bd3c9b823: An empty loadout does not mention active_tool.
+        #expect(session.getActiveToolNames() == ["active_tool"])
     }
 
     @Test(.timeLimit(.minutes(1))) func lateRegistrationKeepsModifiersAndExclusions() async throws {
@@ -113,6 +126,9 @@ struct C1bResumeToolsTests {
         let savedAPI = LockedState<HookAPI?>(nil)
         let capture = InlineExtension(name: "late-resume-tools") { api in savedAPI.withLock { $0 = api } }
         let manager = recordedSession(directory, names: ["read", "late_tool", "mcp__docs__search", "late_removed", "late_excluded"])
+        // Upstream bd3c9b823: Record the intended removal before restoring tools.
+        manager.appendMessage(.system(SystemMessage(content: .text(""),
+            toolsRemoved: [ToolReference(name: "active_tool")])))
         let session = try await resume(directory, manager: manager, names: ["-late_removed", "+late_added"],
                                        exclude: ["late_excluded"], extraExtensions: [capture])
         defer { session.dispose() }
@@ -128,7 +144,8 @@ struct C1bResumeToolsTests {
     @Test(.timeLimit(.minutes(1))) func treeNavigationDoesNotApplyStartupModifiers() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let manager = recordedSession(directory, names: ["read", "grep", "inactive_tool"])
+        // Upstream bd3c9b823: The branch explicitly deactivates active_tool.
+        let manager = changedSession(directory)
         let recordedLeaf = try #require(manager.getLeafId())
         manager.appendMessage(.user(UserMessage(content: .text("later branch"))))
         let session = try await resume(directory, manager: manager, names: ["-grep", "+write"])
