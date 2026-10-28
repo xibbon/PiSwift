@@ -9,6 +9,7 @@ internal struct InvocationBinding: Sendable {
 internal final class TaskInvocation: Sendable {
     let taskId: TaskID
     let conversationId: ConversationID
+    let reportTask: ReportTask
     let abort: Bool
     let controller = AbortController()
     let context: ChordContext
@@ -21,7 +22,7 @@ internal final class TaskInvocation: Sendable {
     }
     let state = Mutex(State())
     init(_ record: TaskRecord, abort: Bool, context: ChordContext) {
-        taskId = record.id; conversationId = record.conversationId; self.abort = abort
+        taskId = record.id; conversationId = record.conversationId; reportTask = ReportTask(record); self.abort = abort
         self.context = context.withoutAbortSignal().withAbortSignal(controller.signal)
     }
     func check() throws {
@@ -37,7 +38,11 @@ internal final class RuntimePhase: Sendable {
         var reportedMissing = false
     }
     let state: Mutex<State>
-    init(_ definition: AnyTaskDefinition, _ snapshot: RegistrySnapshot) { state = Mutex(State(definition: definition, snapshot: snapshot)) }
+    let installer: String?
+    init(_ definition: AnyTaskDefinition, _ snapshot: RegistrySnapshot) {
+        installer = snapshot.installer(of: definition)
+        state = Mutex(State(definition: definition, snapshot: snapshot))
+    }
 }
 
 /// Every decision that changes a task runs in one callback on the Session line.
@@ -55,7 +60,7 @@ internal final class TaskScheduler: Sendable {
     let resolveAgent: @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent
     let env: @Sendable (ConversationID, ChordContext) async throws -> (any ExecutionEnv)?
     let conversation: @Sendable (ConversationID, InvocationBinding, ChordContext) async throws -> ConversationHandle?
-    let report: @Sendable (any Error) -> Void
+    let report: @Sendable (any Error, ReportInfo) -> Void
     let context: ChordContext
     let settleOutcome: @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void
     let withdrawInputs: @Sendable (Transaction, ConversationID) async throws -> Void
@@ -120,7 +125,7 @@ internal final class TaskScheduler: Sendable {
          agent: @escaping @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent,
          env: @escaping @Sendable (ConversationID, ChordContext) async throws -> (any ExecutionEnv)?,
          conversation: @escaping @Sendable (ConversationID, InvocationBinding, ChordContext) async throws -> ConversationHandle?,
-         report: @escaping @Sendable (any Error) -> Void, context: ChordContext,
+         report: @escaping @Sendable (any Error, ReportInfo) -> Void, context: ChordContext,
          settleOutcome: @escaping @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void = { _, _, _ in },
          withdrawInputs: @escaping @Sendable (Transaction, ConversationID) async throws -> Void = { _, _ in }) {
         self.session = session; storage = session.storage; self.registry = registry; self.models = models
@@ -160,8 +165,10 @@ internal final class TaskScheduler: Sendable {
                 }
             }
         }, context: context)
+        let snapshot = registry.snapshot()
         for record in parked {
-            report(SessionError.message("Task \(record.id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts + 1)) times without progress; it is parked until retryTask()"))
+            report(SessionError.message("Task \(record.id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts + 1)) times without progress; it is parked until retryTask()"),
+                   .taskParked(task: ReportTask(record), extension: snapshot.installer(of: snapshot.task(name: record.kind))))
         }
         state.withLock { $0.cascadePending = true }
         scheduleReconcile()
@@ -427,7 +434,7 @@ internal final class TaskScheduler: Sendable {
     struct Reservation: Sendable { let invocation: TaskInvocation; let definition: AnyTaskDefinition; let snapshot: RegistrySnapshot; let joinID: UUID }
     private func reserve() async throws -> [Reservation] {
         var reservations: [Reservation] = []
-        var faulted: [String] = []
+        var faulted: [(TaskRecord, String)] = []
         var abandoned: Set<TaskID> = []
         do {
             try await session.commit({ tx in
@@ -467,7 +474,7 @@ internal final class TaskScheduler: Sendable {
                     if record.abortRequested && record.restarts >= settings().restartLimit {
                         let message = "Abort handler of task \(id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts)) times"
                         try await terminate(tx, record: record, outcome: .faulted(error: .init(message: message, detail: ["reason": "restart_limit"])))
-                        faulted.append(message)
+                        faulted.append((record, message))
                         continue
                     }
                     snapshot = snapshot ?? registry.snapshot()
@@ -479,7 +486,7 @@ internal final class TaskScheduler: Sendable {
                             let next = try migrate(record.input, record.state.checkpoint!, record.version)
                             record = record.replacing(input: next.input, version: definition.version, state: .running(checkpoint: next.checkpoint))
                         } catch {
-                            state.withLock { $0.failedMigrations[record.id] = (definition.identity, error) }; report(error)
+                            state.withLock { $0.failedMigrations[record.id] = (definition.identity, error) }; report(error, .migrationFailed(task: ReportTask(record), extension: snapshot!.installer(of: definition)))
                             refreshBlocked()
                             scheduleWake()
                             resolution = ("migration_failed", error, false)
@@ -504,7 +511,10 @@ internal final class TaskScheduler: Sendable {
             if !abandoned.isEmpty {
                 state.withLock { $0.abandoned.subtract(abandoned); $0.dirty = true }
             }
-            for message in faulted { report(SessionError.message(message)) }
+            for (record, message) in faulted {
+                let snapshot = registry.snapshot()
+                report(SessionError.message(message), .taskFaulted(task: ReportTask(record), extension: snapshot.installer(of: snapshot.task(name: record.kind)), reason: .restartLimit))
+            }
             return reservations
         } catch {
             for reservation in reservations { end(reservation.invocation); finish(reservation) }
@@ -539,7 +549,7 @@ internal final class TaskScheduler: Sendable {
         invocation.controller.abort(SessionError.message("Task \(invocation.taskId.rawValue) invocation has ended"))
     }
     enum Decision { case proceed, end, fault(any Error) }
-    private func step(_ invocation: TaskInvocation, decide: (Transaction, TaskRecord) throws -> Decision) async -> TaskRecord? {
+    private func step(_ invocation: TaskInvocation, phase: RuntimePhase, decide: (Transaction, TaskRecord) throws -> Decision) async -> TaskRecord? {
         var fault: (any Error)?
         do {
             let continued: TaskRecord? = try await session.commit({ tx in
@@ -554,7 +564,7 @@ internal final class TaskScheduler: Sendable {
                     return nil
                 }
             }, context: context)
-            if let fault { report(fault) }
+            if let fault { report(fault, .taskFaulted(task: invocation.reportTask, extension: phase.installer, reason: .threw)) }
             return continued
         } catch { end(invocation); if !closing { session.fail(error) }; return nil }
     }
@@ -565,12 +575,12 @@ internal final class TaskScheduler: Sendable {
             guard let current = current(invocation.taskId), !closing else { return }
             var failure: (any Error)?
             do { try await reservation.definition.abort(current, runtime, invocation.context) } catch { failure = error }
-            _ = await step(invocation) { _, _ in .fault(failure ?? SessionError.message("Abort handler of task \(invocation.taskId.rawValue) returned without a terminal outcome")) }
+            _ = await step(invocation, phase: phase) { _, _ in .fault(failure ?? SessionError.message("Abort handler of task \(invocation.taskId.rawValue) returned without a terminal outcome")) }
             return
         }
         var previous: JSONValue?, failure: (any Error)?
         while true {
-            let found = await step(invocation) { tx, current in
+            let found = await step(invocation, phase: phase) { tx, current in
                 if current.abortRequested { return .end }
                 // The owner's mark can commit before this task's cascade mark.
                 if !current.background && belowCancelled(current.parent) {
@@ -595,7 +605,11 @@ internal final class TaskScheduler: Sendable {
                         else { if state.reportedMissing { return false }; state.reported = nil; state.reportedMissing = true }
                         return true
                     }
-                    if shouldReport { report(TaskHandoverError(taskId: current.id, kind: current.kind, cause: next == nil ? .missingTask : .incompatibleTask)) }
+                    if shouldReport {
+                        let reason: ReportInfo.OutdatedReason = next == nil ? .missingTask : .incompatibleTask
+                        report(TaskHandoverError(taskId: current.id, kind: current.kind, cause: next == nil ? .missingTask : .incompatibleTask),
+                               .taskOutdated(task: invocation.reportTask, extension: phase.installer, reason: reason))
+                    }
                 }
                 return .proceed
             }

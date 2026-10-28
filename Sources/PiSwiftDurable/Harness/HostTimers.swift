@@ -54,10 +54,10 @@ internal final class HarnessTimers: Sendable {
     private let absoluteArm: HarnessSetTimer
     private let absoluteRetentionArm: HarnessSetTimer
     private let fallback: HarnessSetTimer
-    private let report: @Sendable (any Error) -> Void
+    private let report: @Sendable (any Error, ReportInfo) -> Void
     private let reported = Mutex(false)
     init(clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
-         setTimer: HarnessSetTimer? = nil, report: @escaping @Sendable (any Error) -> Void = { _ in }) {
+         setTimer: HarnessSetTimer? = nil, report: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in }) {
         self.now = now ?? { clock.now() }; self.report = report
         arm = setTimer ?? Self.native(clock: clock)
         retentionArm = setTimer ?? Self.native(clock: DocumentRetentionClock(base: clock))
@@ -81,16 +81,18 @@ internal final class HarnessTimers: Sendable {
                           fallbackDelay: () -> Double) -> HarnessDisarm? {
         let delivery = HostTimerDelivery()
         let deliver: @Sendable () -> Void = { delivery.fire(callback) }
+        var failure: (any Error)?
         do {
             if let disarm = try timer(deliver, value, options) {
                 delivery.install(disarm); return { delivery.cancel() }
             }
             if options.background { delivery.cancel(); return nil }
         } catch {
-            if options.background { delivery.cancel(); report(error); return nil }
+            if options.background { delivery.cancel(); report(error, .hostError(callback: .setTimer)); return nil }
+            failure = error
         }
         let first = reported.withLock { value in let first = !value; value = true; return first }
-        if first { report(TimerFallbackError()) }
+        if first { report(failure ?? TimerFallbackError(), .hostError(callback: .setTimer)) }
         let disarm = try? fallback(deliver, fallbackDelay(), .init())
         if let disarm { delivery.install(disarm) }
         return { delivery.cancel() }

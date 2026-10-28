@@ -78,7 +78,7 @@ extension TaskScheduler {
                 do {
                     try onWake(value)
                     state.withLock { $0.lastWake = value }
-                } catch { report(error) }
+                } catch { report(error, .hostError(callback: .onWake)) }
             } else {
                 armSleep(state.withLock({ $0.enabled && !$0.closing }) ? value.at : nil)
                 // The deadline can pass before the first timer is installed, or

@@ -113,12 +113,12 @@ internal func openDurable(_ options: OpenDurableOptions,
         let reports = RuntimeReports()
         let registry = try createCodingRegistry(settingsManager: manager, cwd: location.cwd,
                                                  agentDirectory: dependencies.agentDirectory,
-                                                 sandbox: sandbox, onReport: { reports.report($0) })
+                                                 sandbox: sandbox, onReport: { error, info in reports.report(error, info: info) })
         let sqlite = try await dependencies.makeStorage(location.database)
         storage = sqlite
         let opened = try await Harness.open(storage: sqlite,
             options: HarnessOptions(models: models.models, registry: registry, settings: settings,
-                                    env: envs.factory, onReport: { reports.report($0) }), context: .background)
+                                    env: envs.factory, onReport: { error, info in reports.report(error, info: info) }), context: .background)
         harness = opened
         let initial = location.created ? await models.initial(manager) : nil
         let root = try await opened.root(options: .init(agent: AgentChange(

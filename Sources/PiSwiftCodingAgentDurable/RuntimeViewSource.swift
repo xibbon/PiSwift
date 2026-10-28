@@ -117,19 +117,49 @@ internal final class RuntimeViewSource: DurableViewSource {
 
     private static func appendNotice(_ state: inout State, _ level: Notice.Level, _ message: String,
                                      category: Notice.Category = .operation,
-                                     taskId: TaskID? = nil, taskKind: String? = nil) {
+                                     taskId: TaskID? = nil, taskKind: String? = nil,
+                                     info: ReportInfo? = nil, replacing: Int? = nil) {
         let view = state.view
-        let notice = Notice(id: state.nextNotice, level: level, message: message,
-                            category: category, taskId: taskId, taskKind: taskKind)
-        state.nextNotice += 1
+        let conversationId: ConversationID?
+        if let info, case .extensionError(_, _, let id) = info { conversationId = id ?? info.task?.conversationId }
+        else { conversationId = info?.task?.conversationId }
+        let notice = Notice(id: replacing ?? state.nextNotice, level: level, message: message,
+                            category: category, taskId: taskId, taskKind: taskKind,
+                            reportType: info?.type, extensionName: info?.extension,
+                            conversationId: conversationId, reportInfo: info)
+        if replacing == nil { state.nextNotice += 1 }
+        let notices = replacing.map { id in view.notices.map { $0.id == id ? notice : $0 } }
+            ?? Array((view.notices + [notice]).suffix(20))
         state.view = DurableView(session: view.session, conversation: view.conversation,
                                  conversations: view.conversations, models: view.models,
-                                 notices: Array((view.notices + [notice]).suffix(20)), tasks: view.tasks,
+                                 notices: notices, tasks: view.tasks,
                                  terminal: view.terminal)
     }
 
     func report(_ report: RuntimeReport) {
         change { state in
+            if let info = report.info {
+                // Typed identity selects the notice. Error text does not classify this path.
+                let category: Notice.Category
+                let level: Notice.Level
+                switch info {
+                case .taskParked: category = .taskParked; level = .warning
+                case .taskFaulted: category = .taskFault; level = .error
+                case .extensionError: category = .extensionError; level = .warning
+                case .sessionFailed: category = .sessionFailed; level = .error
+                default: category = .report; level = .warning
+                }
+                let previous = state.view.notices.last {
+                    $0.category == category && (category == .sessionFailed ||
+                        ((category == .taskFault || category == .taskParked) && $0.taskId == info.task?.id))
+                }
+                if case .taskParked(let task, _) = info { state.parkedNotices.insert(task.id) }
+                if case .taskFaulted(let task, _, _) = info { state.faultedTasks.insert(task.id) }
+                Self.appendNotice(&state, level, report.message, category: category,
+                                  taskId: info.task?.id, taskKind: info.task?.kind,
+                                  info: info, replacing: previous?.id)
+                return
+            }
             // The fault commit arrives before its callback. Keep one notice with its task data.
             if let count = state.faultReports[report.description], count > 0 {
                 state.faultReports[report.description] = count == 1 ? nil : count - 1
@@ -162,9 +192,11 @@ internal final class RuntimeViewSource: DurableViewSource {
             case .failed(let error):
                 let message = runtimeErrorMessage(error)
                 terminal = .failed(message: message)
-                notices = Array((notices + [Notice(id: state.nextNotice, level: .error, message: message,
-                                                  category: .sessionFailed)]).suffix(20))
-                state.nextNotice += 1
+                if !notices.contains(where: { $0.category == .sessionFailed }) {
+                    notices = Array((notices + [Notice(id: state.nextNotice, level: .error, message: message,
+                                                      category: .sessionFailed)]).suffix(20))
+                    state.nextNotice += 1
+                }
             }
             state.view = DurableView(session: view.session, conversation: view.conversation,
                                      conversations: view.conversations, models: view.models,
@@ -211,6 +243,10 @@ internal final class RuntimeViewSource: DurableViewSource {
         state.parkedNotices.formIntersection(Set(parked.map(\.id)))
         for node in parked.sorted(by: { $0.id < $1.id }) {
             guard let count = state.restarts[node.id], state.parkedNotices.insert(node.id).inserted else { continue }
+            // A typed report can arrive before the graph hydration.
+            if state.view.notices.contains(where: {
+                $0.category == .taskParked && $0.taskId == node.id && $0.reportType == "task_parked"
+            }) { continue }
             let report = runtimeParkingReport(id: node.id, kind: node.kind, restarts: count)
             Self.appendNotice(&state, .warning, report, category: .taskParked,
                               taskId: node.id, taskKind: node.kind)
@@ -242,8 +278,8 @@ internal final class RuntimeReports: Sendable {
     }
     private let state = Mutex(State())
 
-    func report(_ error: any Error) {
-        let report = RuntimeReport(error)
+    func report(_ error: any Error, info: ReportInfo? = nil) {
+        let report = RuntimeReport(error, info: info)
         let drain = state.withLock { state in
             state.pending.append(report)
             guard state.source != nil, !state.draining else { return false }

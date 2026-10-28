@@ -30,6 +30,7 @@ public struct Notice: Sendable, Equatable, Codable {
         case report
         case taskParked
         case taskFault
+        case extensionError
         case sessionFailed
     }
 
@@ -56,18 +57,48 @@ public struct Notice: Sendable, Equatable, Codable {
     /// The saved kind of that task, when known.
     public let taskKind: String?
 
+    /// The complete typed report, including its reason and host callback.
+    public let reportInfo: ReportInfo?
+
+    /// The core report type, when the callback supplied typed data.
+    public let reportType: String?
+    /// The extension whose code produced the report.
+    public let extensionName: String?
+    /// The conversation that produced the report.
+    public let conversationId: ConversationID?
+
+    /// The report text with a distinct name for each condition.
+    public var displayMessage: String {
+        let label: String
+        switch category {
+        case .operation: return message
+        case .report: label = "Runtime report"
+        case .taskParked: label = "Task parked"
+        case .taskFault: label = "Task fault"
+        case .extensionError: label = "Extension error"
+        case .sessionFailed: label = "Session failed"
+        }
+        return "\(label): \(message)"
+    }
+
     /// Creates a notice with its display category.
     public init(id: Int, level: Level, message: String, category: Category = .operation,
-                taskId: TaskID? = nil, taskKind: String? = nil) {
+                taskId: TaskID? = nil, taskKind: String? = nil,
+                reportType: String? = nil, extensionName: String? = nil,
+                conversationId: ConversationID? = nil, reportInfo: ReportInfo? = nil) {
         self.id = id
         self.level = level
         self.message = message
         self.category = category
         self.taskId = taskId
         self.taskKind = taskKind
+        self.reportInfo = reportInfo
+        self.reportType = reportType
+        self.extensionName = extensionName
+        self.conversationId = conversationId
     }
 
-    private enum CodingKeys: String, CodingKey { case id, level, message, category, taskId, taskKind }
+    private enum CodingKeys: String, CodingKey { case id, level, message, category, taskId, taskKind, reportType, extensionName, conversationId, reportInfo }
 
     /// Reads notices saved before task report categories were added.
     public init(from decoder: any Decoder) throws {
@@ -78,6 +109,10 @@ public struct Notice: Sendable, Equatable, Codable {
         category = try values.decodeIfPresent(Category.self, forKey: .category) ?? .operation
         taskId = try values.decodeIfPresent(TaskID.self, forKey: .taskId)
         taskKind = try values.decodeIfPresent(String.self, forKey: .taskKind)
+        reportInfo = try values.decodeIfPresent(ReportInfo.self, forKey: .reportInfo)
+        reportType = try values.decodeIfPresent(String.self, forKey: .reportType)
+        extensionName = try values.decodeIfPresent(String.self, forKey: .extensionName)
+        conversationId = try values.decodeIfPresent(ConversationID.self, forKey: .conversationId)
     }
 }
 

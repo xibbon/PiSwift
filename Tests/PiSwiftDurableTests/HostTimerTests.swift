@@ -12,9 +12,10 @@ private func hostTimerEventually(_ predicate: () -> Bool) async -> Bool {
 @Test func hostTimerDeclineFallsBackAndReportsOnlyOnce() async throws {
     let reports = Mutex<[String]>([])
     let fired = Mutex(0)
+    // Upstream v1.4.0 ReportInfo adds the second report callback argument.
     let timers = HarnessTimers(setTimer: { _, _, options in
         #expect(!options.background); return nil
-    }, report: { error in reports.withLock { $0.append(String(describing: error)) } })
+    }, report: { error, _ in reports.withLock { $0.append(String(describing: error)) } })
     let first = timers.setTimer({ fired.withLock { $0 += 1 } }, delay: 0)
     let second = timers.setTimer({ fired.withLock { $0 += 1 } }, delay: 0)
     #expect(first != nil && second != nil)
@@ -25,20 +26,23 @@ private func hostTimerEventually(_ predicate: () -> Bool) async -> Bool {
 @Test func throwingHostTimerFallsBackButBackgroundIsDeclined() async {
     let reports = Mutex<[String]>([])
     let fired = Mutex(false)
+    // Upstream v1.4.0 ReportInfo adds the second report callback argument.
     let timers = HarnessTimers(setTimer: { _, _, _ in throw TestHostTimerError() },
-                               report: { error in reports.withLock { $0.append(String(describing: error)) } })
+                               report: { error, _ in reports.withLock { $0.append(String(describing: error)) } })
     let background = timers.setTimer({ Issue.record("Declined background timer fired") }, delay: 0, options: .init(background: true))
     #expect(background == nil)
     let foreground = timers.setTimer({ fired.withLock { $0 = true } }, delay: 0)
     #expect(foreground != nil)
     #expect(await hostTimerEventually { fired.withLock { $0 } })
     #expect(reports.withLock { $0.count } == 2)
-    #expect(reports.withLock { $0.last } == "HarnessOptions.setTimer declined a timer that paces work; using setTimeout")
+    // E1: upstream timers.ts:60-68 reports the original error when a foreground host timer throws.
+    #expect(reports.withLock { $0.last } == String(describing: TestHostTimerError()))
 }
 
 @Test func declinedBackgroundTimerDoesNotReportOrUseFallback() {
+    // Upstream v1.4.0 ReportInfo adds the second report callback argument.
     let timers = HarnessTimers(setTimer: { _, _, options in #expect(options.background); return nil },
-                               report: { _ in Issue.record("Background refusal must not report") })
+                               report: { _, _ in Issue.record("Background refusal must not report") })
     #expect(timers.setTimer({ Issue.record("Declined timer fired") }, delay: 0, options: .init(background: true)) == nil)
 }
 

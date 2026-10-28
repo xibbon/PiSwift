@@ -98,7 +98,7 @@ internal final class ConversationViews: Sendable {
         let result = Mutex<CommittedWatch<ConversationView>?>(nil)
         _ = try await attach(id: id, context: context) { value, release, _ in
             let tree = Mutex(try JSONValue(encoding: value))
-            let watch = CommittedWatch(value: value, replacement: { _ in tree.withLock { $0 } }, detach: release, report: self.session.report)
+            let watch = CommittedWatch(value: value, replacement: { _ in tree.withLock { $0 } }, detach: release, report: { self.session.report($0) })
             result.withLock { $0 = watch }
             return ConversationViewObserver(advance: { value, ops, context in
                 do { let next = try JSONValue(encoding: value); tree.withLock { $0 = next }; watch.advance(value: value, ops: ops, context: context) }
@@ -122,7 +122,7 @@ internal final class ConversationViews: Sendable {
         }
         let source = result.withLock { $0! }
         do {
-            let attached = try replicatedState(source, onError: session.report)
+            let attached = try replicatedState(source, onError: { self.session.report($0) })
             do { try context.abortSignal?.throwIfAborted() }
             catch { attached.dispose(); throw error }
             return attached

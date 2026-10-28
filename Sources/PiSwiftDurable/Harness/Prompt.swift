@@ -56,7 +56,7 @@ public func replaySections(_ messages: [Message]) -> JSONObject {
 /// A render failure after context cancellation is thrown to the caller.
 public func renderSections(
     _ sections: [PromptSection], input: PromptInput, shown: JSONObject,
-    report: @Sendable (any Error) -> Void = { _ in }, context: ChordContext
+    report: @Sendable (any Error, PromptSection) -> Void = { _, _ in }, context: ChordContext
 ) async throws -> JSONObject {
     var desired = JSONObject()
     for section in sections {
@@ -64,7 +64,7 @@ public func renderSections(
         do { text = try await section.render(input, context) }
         catch {
             if context.abortSignal?.aborted == true { throw error }
-            report(error)
+            report(error, section)
             if let kept = shown[section.key] { desired[section.key] = kept }
             continue
         }
@@ -72,6 +72,14 @@ public func renderSections(
         desired[section.key] = .string(section.tag == false ? text : "<\(section.key)>\n\(text)\n</\(section.key)>")
     }
     return desired
+}
+
+/// Adapts a section report callback that receives only the error.
+public func renderSections(
+    _ sections: [PromptSection], input: PromptInput, shown: JSONObject,
+    report: @Sendable (any Error) -> Void, context: ChordContext
+) async throws -> JSONObject {
+    try await renderSections(sections, input: input, shown: shown, report: { error, _ in report(error) }, context: context)
 }
 
 /// Plans positional system entries. Tool changes are placed on the last section entry.

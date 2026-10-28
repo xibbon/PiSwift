@@ -25,7 +25,8 @@ public struct DefaultSessionHooks: SessionHooks {
 public final class Session: Sendable {
     internal let storage: any DurableStorage
     private let failureLatch: SessionFailureLatch
-    internal let report: @Sendable (any Error) -> Void
+    internal let onReport: @Sendable (any Error, ReportInfo) -> Void
+    internal func report(_ error: any Error, _ info: ReportInfo = .listenerError) { onReport(error, info) }
     internal let now: @Sendable () -> Int64
     internal let hooks: any SessionHooks
     private let documentRetentionMs: @Sendable () throws -> Double?
@@ -82,12 +83,12 @@ public final class Session: Sendable {
     deinit { state.withLock { $0.documentSweep?.timer?.cancel() } }
     private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
                  documentRetentionMs: @escaping @Sendable () throws -> Double?, documentTimer: SessionDocumentTimer,
-                 cacheNow: (@Sendable () throws -> Int64)?, hooks: any SessionHooks, report: @escaping @Sendable (any Error) -> Void) {
+                 cacheNow: (@Sendable () throws -> Int64)?, hooks: any SessionHooks, report: @escaping @Sendable (any Error, ReportInfo) -> Void) {
         let latch = SessionFailureLatch()
         self.failureLatch = latch
         self.documentRetentionMs = documentRetentionMs; self.documentTimer = documentTimer
         self.cacheNow = cacheNow ?? now
-        self.storage = GuardedStorage(storage, latch: latch); self.now = now; self.hooks = hooks; self.report = report
+        self.storage = GuardedStorage(storage, latch: latch); self.now = now; self.hooks = hooks; self.onReport = report
     }
     /// Creates a session over the supplied storage without reading persisted records.
     /// Unobserved documents leave the cache after ten minutes by default.
@@ -98,10 +99,20 @@ public final class Session: Sendable {
                             documentRetentionMs: Double? = nil,
                             setTimer: HarnessSetTimer? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
-                            onReport: @escaping @Sendable (any Error) -> Void = { _ in },
+                            onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
                             context: ChordContext) async throws -> Session {
         try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
             documentTimer: .host(HarnessTimers(now: now, setTimer: setTimer, report: onReport)), hooks: hooks, onReport: onReport, context: context)
+    }
+    /// Adapts a callback that receives only the original error.
+    public static func open(storage: any DurableStorage,
+                            now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+                            documentRetentionMs: Double? = nil, setTimer: HarnessSetTimer? = nil,
+                            hooks: any SessionHooks = DefaultSessionHooks(),
+                            onReport: @escaping @Sendable (any Error) -> Void,
+                            context: ChordContext) async throws -> Session {
+        try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
+                       setTimer: setTimer, hooks: hooks, onReport: { error, _ in onReport(error) }, context: context)
     }
     /// Opens a Session with an internal timer hook for retention tests.
     internal static func open(storage: any DurableStorage,
@@ -109,7 +120,7 @@ public final class Session: Sendable {
                             documentRetentionMs: Double?,
                             documentTimer: SessionDocumentTimer,
                             hooks: any SessionHooks = DefaultSessionHooks(),
-                            onReport: @escaping @Sendable (any Error) -> Void = { _ in },
+                            onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
                             context: ChordContext) async throws -> Session {
         try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
             documentTimer: documentTimer, hooks: hooks, onReport: onReport, context: context)
@@ -120,14 +131,14 @@ public final class Session: Sendable {
                             documentTimer: SessionDocumentTimer? = nil,
                             cacheNow: (@Sendable () throws -> Int64)? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
-                            onReport: @escaping @Sendable (any Error) -> Void = { _ in },
+                            onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
                             context: ChordContext) async throws -> Session {
         let session = Session(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
             documentTimer: documentTimer ?? .host(HarnessTimers(now: now, report: onReport)), cacheNow: cacheNow, hooks: hooks, report: onReport)
         session.failureLatch.install { [weak session] error in
             guard let session else { return }
             _ = session.beginClose(context: .background)
-            session.report(error)
+            session.report(error, .sessionFailed)
         }
         return session
     }

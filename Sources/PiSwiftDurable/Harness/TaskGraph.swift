@@ -230,7 +230,7 @@ internal final class TaskGraphView: Sendable {
                 return (source, .state(source))
             }
             do {
-                let attached = try replicatedState(source, onError: session.report)
+                let attached = try replicatedState(source, onError: { self.session.report($0) })
                 do { try context.abortSignal?.throwIfAborted() }
                 catch { attached.dispose(); throw error }
                 return attached
@@ -240,7 +240,7 @@ internal final class TaskGraphView: Sendable {
     func watch(context: ChordContext) async throws -> TaskGraphWatch {
         let watch = try await session.readOnLine {
             try await attach(context: context) { value, release in
-                let watch = TaskGraphWatch(value: value, replacement: { $0.json }, detach: release, report: session.report)
+                let watch = TaskGraphWatch(value: value, replacement: { $0.json }, detach: release, report: { self.session.report($0) })
                 return (watch, .watch(watch))
             }
         }

@@ -18,7 +18,7 @@ public enum CodingRegistryError: Error, Sendable, Equatable, CustomStringConvert
 /// Unknown deferred names are reported once per registry through `onReport`.
 public func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
                                  sandbox: JSCCodemodeSandbox = JSCCodemodeSandbox(),
-                                 onReport: @Sendable (any Error) -> Void = { _ in }) throws -> Registry {
+                                 onReport: @Sendable (any Error, ReportInfo) -> Void = { _, _ in }) throws -> Registry {
     try codingRegistry(settingsManager: settingsManager, sandbox: sandbox, onReport: onReport,
         prompt: createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd))
 }
@@ -26,7 +26,7 @@ public func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
 internal func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
                                    agentDirectory: String,
                                    sandbox: JSCCodemodeSandbox = JSCCodemodeSandbox(),
-                                   onReport: @Sendable (any Error) -> Void = { _ in }) throws -> Registry {
+                                   onReport: @Sendable (any Error, ReportInfo) -> Void = { _, _ in }) throws -> Registry {
     try codingRegistry(settingsManager: settingsManager, sandbox: sandbox, onReport: onReport,
         prompt: createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd,
                                agentDirectory: agentDirectory),
@@ -34,7 +34,7 @@ internal func createCodingRegistry(settingsManager: SettingsManager, cwd: String
 }
 
 private func codingRegistry(settingsManager: SettingsManager, sandbox: JSCCodemodeSandbox,
-                            onReport: @Sendable (any Error) -> Void,
+                            onReport: @Sendable (any Error, ReportInfo) -> Void,
                             prompt: Extension, additional: [Extension] = []) throws -> Registry {
     let registry = createRegistry()
     var extensions = [try createCodingTools(images: NativeImageProcessor()), prompt,
@@ -45,7 +45,7 @@ private func codingRegistry(settingsManager: SettingsManager, sandbox: JSCCodemo
     let registered = Set(extensions.flatMap(\.tools).map { Array($0.name.utf16) })
     var reported = Set<[UInt16]>()
     for name in deferred where !registered.contains(Array(name.utf16)) {
-        if reported.insert(Array(name.utf16)).inserted { onReport(CodingRegistryError.unknownDeferredTool(name)) }
+        if reported.insert(Array(name.utf16)).inserted { onReport(CodingRegistryError.unknownDeferredTool(name), .extensionError(extension: "coding-agent")) }
     }
     for var item in extensions {
         for index in item.tools.indices where requested.contains(Array(item.tools[index].name.utf16)) {
@@ -54,4 +54,20 @@ private func codingRegistry(settingsManager: SettingsManager, sandbox: JSCCodemo
         try registry.install(item)
     }
     return registry
+}
+
+/// Creates a registry with a callback that accepts only the error.
+public func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
+                                 sandbox: JSCCodemodeSandbox = JSCCodemodeSandbox(),
+                                 onReport: @escaping @Sendable (any Error) -> Void) throws -> Registry {
+    try createCodingRegistry(settingsManager: settingsManager, cwd: cwd, sandbox: sandbox,
+                             onReport: { error, _ in onReport(error) })
+}
+
+internal func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
+                                   agentDirectory: String,
+                                   sandbox: JSCCodemodeSandbox = JSCCodemodeSandbox(),
+                                   onReport: @escaping @Sendable (any Error) -> Void) throws -> Registry {
+    try createCodingRegistry(settingsManager: settingsManager, cwd: cwd, agentDirectory: agentDirectory,
+                             sandbox: sandbox, onReport: { error, _ in onReport(error) })
 }

@@ -152,17 +152,29 @@ public struct HarnessOptions: Sendable {
     /// Runs inside the transaction that creates a conversation.
     public var conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?
     /// Receives nonfatal errors from handlers and observers.
-    public var onReport: (@Sendable (any Error) -> Void)?
+    public var onReport: (@Sendable (any Error, ReportInfo) -> Void)?
     /// Supplies host model, registry, clock, settings, and environment services.
     public init(models: any DurableModels, registry: any RegistryReader,
                 settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
-                onReport: (@Sendable (any Error) -> Void)? = nil) {
+                onReport: (@Sendable (any Error, ReportInfo) -> Void)? = nil) {
         self.models = models; self.registry = registry; self.settings = settings; self.env = env
         self.clock = clock; self.now = now; self.setTimer = setTimer; self.onWake = onWake; self.conversationCreated = conversationCreated; self.onReport = onReport
     }
+    /// Adapts a callback that receives only the original error.
+    public init(models: any DurableModels, registry: any RegistryReader,
+                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
+                setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
+                conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
+                onReport: @escaping @Sendable (any Error) -> Void) {
+        self.init(models: models, registry: registry, settings: settings, env: env, clock: clock, now: now,
+                  setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
+                  onReport: { error, _ in onReport(error) })
+    }
+
 }
 
 /// A replacement that cannot take the current invocation. The old definition continues.

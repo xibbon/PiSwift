@@ -2,23 +2,27 @@ import Foundation
 import PiSwiftChord
 import PiSwiftDurable
 
-/// Retains report data while the runtime opens. Typed core reports are a later slice.
+/// Retains typed report data while the runtime opens.
 internal struct RuntimeReport: Sendable {
+    let info: ReportInfo?
     let message: String
     let description: String
     let parked: DurableBlockedTask?
     let taskId: TaskID?
     let taskKind: String?
 
-    init(_ error: any Error) {
+    init(_ error: any Error, info: ReportInfo? = nil) {
+        self.info = info
         message = runtimeErrorMessage(error)
         description = String(describing: error)
-        if let handover = error as? TaskHandoverError {
+        if let task = info?.task {
+            taskId = task.id; taskKind = task.kind
+        } else if let handover = error as? TaskHandoverError {
             taskId = handover.taskId; taskKind = handover.kind
         } else {
             taskId = nil; taskKind = nil
         }
-        if let error = error as? SessionError, case .message(let text) = error {
+        if info == nil, let error = error as? SessionError, case .message(let text) = error {
             parked = runtimeParkedReport(text)
         } else { parked = nil }
     }

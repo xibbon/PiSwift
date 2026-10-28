@@ -13,9 +13,9 @@ public struct HookRunner: Sendable {
         try await withTaskCancellationContext(context) { context in
             let agent = try await runtime.agent(context: context)
             for registration in agentHooks(agent, taskName: runtime.taskKind) {
-                guard let handlers = registration.handlers(as: type) else { continue }
+                guard let handlers = registration.handlers.handlers(as: type) else { continue }
                 do { try await invoke(handlers) }
-                catch { if runtime.signal.aborted || context.abortSignal?.aborted == true { throw error }; runtime.scheduler.report(error) }
+                catch { if runtime.signal.aborted || context.abortSignal?.aborted == true { throw error }; try runtime.report(error, from: .extension(registration.extension)) }
             }
         }
     }
@@ -49,7 +49,19 @@ public final class TaskRuntime: Sendable {
     /// Returns the clock time in milliseconds.
     public func now() throws -> Int64 { try invocation.check(); return scheduler.now() }
     /// Sends a nonfatal handler error to the host report callback.
-    public func report(_ error: any Error) throws { try invocation.check(); scheduler.report(error) }
+    public func report(_ error: any Error, from: ReportFrom? = nil) throws {
+        try invocation.check()
+        let info: ReportInfo
+        switch from {
+        case nil: info = .taskError(task: invocation.reportTask, extension: phase.installer)
+        case .extension(let name): info = .extensionError(extension: name, task: invocation.reportTask)
+        case .host(let callback): info = .hostError(callback: callback, task: invocation.reportTask)
+        }
+        scheduler.report(error, info)
+    }
+    internal func reportTaskError(_ error: any Error) {
+        scheduler.report(error, .taskError(task: invocation.reportTask, extension: phase.installer))
+    }
     /// Commits state only while this invocation still owns the task.
     public func commit(_ change: (Transaction, TaskRecord) async throws -> TaskState?,
                        context: ChordContext) async throws {

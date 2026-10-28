@@ -88,7 +88,10 @@ private func finalToolResult(_ runtime: TaskRuntime, _ call: ToolHookCall, _ too
         if call.parent != nil {
             final.isError = true
             diagnostics.append(.init(severity: .error, message: broken, code: "invalid_structured_output"))
-        } else { runtime.scheduler.report(TaskDefinitionError(broken)) }
+        } else {
+            let agent = try? await runtime.agent(context: context)
+            try runtime.report(TaskDefinitionError(broken), from: .extension(agent.flatMap { toolExtension($0, name: tool.name) }))
+        }
     }
     if call.parent != nil {
         if tool.structuredOutputSchema == nil { final.structuredOutput = try outputValue(bounded.content) }

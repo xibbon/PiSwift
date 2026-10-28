@@ -50,21 +50,21 @@ public final class Harness: Sendable {
             if !missing.isEmpty { throw HarnessOpenError.missingBuiltins(missing) }
             let hooks = HarnessSessionHooks(app: options.conversationCreated)
             let timers = HarnessTimers(clock: options.clock, now: options.now, setTimer: options.setTimer,
-                report: options.onReport ?? { _ in })
+                report: options.onReport ?? { _, _ in })
             let now = timers.now
             let settings: @Sendable () -> Settings = { options.settings?.resolve() ?? resolveSettings() }
             let session = try await Session.openWithDocumentRetention(storage: storage, now: now,
                 documentRetentionMs: { settings().documentRetentionMs },
                 documentTimer: .host(timers),
-                hooks: hooks, onReport: options.onReport ?? { _ in }, context: context)
+                hooks: hooks, onReport: options.onReport ?? { _, _ in }, context: context)
             let storage = session.storage
-            let report: @Sendable (any Error) -> Void = options.onReport ?? { _ in }
+            let report: @Sendable (any Error, ReportInfo) -> Void = options.onReport ?? { _, _ in }
             let reference = Mutex(WeakHarness())
             let scheduler = TaskScheduler(session: session, registry: options.registry, models: options.models,
                 timers: timers, now: now, onWake: options.onWake, settings: settings,
                 agent: { id, snapshot, callContext in
                     let state = try await session.snapshot(AgentDoc, conversationId: id, context: callContext)
-                    return resolveAgent(state: state, snapshot: snapshot, settings: settings(), report: report)
+                    return resolveAgent(state: state, snapshot: snapshot, settings: settings(), report: { error, name in report(error, .extensionError(extension: name, conversationId: id)) })
                 }, env: { id, callContext in
                     guard let build = options.env else { return nil }
                     let cwd = try await session.snapshot(AgentDoc, conversationId: id, context: callContext)?.cwd
@@ -220,7 +220,7 @@ public final class Harness: Sendable {
     internal func resolveConversationAgent(id: ConversationID, context: ChordContext) async throws -> Agent {
         try assertOpen(); try context.abortSignal?.throwIfAborted()
         let value = try await session.snapshot(AgentDoc, conversationId: id, context: context)
-        return resolveAgent(state: value, snapshot: options.registry.snapshot(), settings: options.settings?.resolve() ?? resolveSettings(), report: options.onReport ?? { _ in })
+        return resolveAgent(state: value, snapshot: options.registry.snapshot(), settings: options.settings?.resolve() ?? resolveSettings(), report: { error, name in options.onReport?(error, .extensionError(extension: name, conversationId: id)) })
     }
 }
 /// The harness cannot use the supplied registry to load its built-in tasks.

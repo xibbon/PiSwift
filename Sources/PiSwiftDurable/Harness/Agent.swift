@@ -290,18 +290,45 @@ private func appendAgentToolNames(_ draft: JSONDraft, key: String, names: [Strin
     }
 }
 
-/// Returns the hooks supplied by the selected extensions for this task.
-public func agentHooks(_ agent: Agent, taskName: String) -> [HookRegistration] {
-    agent.extensions.flatMap(\.hooks).filter { harnessNamesEqual($0.task, taskName) }
+/// Hook handlers and the extension that installed them.
+public struct SelectedHooks<Handlers: Sendable>: Sendable {
+    public let `extension`: String
+    public let handlers: Handlers
+    /// Pairs handlers with their source extension.
+    public init(extension name: String, handlers: Handlers) { self.extension = name; self.handlers = handlers }
 }
-/// Returns the hooks supplied by the selected extensions for this task.
-public func agentHooks<Handlers: Sendable>(_ agent: Agent, taskName: String, as type: Handlers.Type) -> [Handlers] {
-    agentHooks(agent, taskName: taskName).compactMap { $0.handlers(as: type) }
+/// Returns hook registrations with their source extensions, in agent order.
+public func agentHooks(_ agent: Agent, taskName: String) -> [SelectedHooks<HookRegistration>] {
+    agent.extensions.flatMap { item in
+        item.hooks.filter { harnessNamesEqual($0.task, taskName) }.map { SelectedHooks(extension: item.name, handlers: $0) }
+    }
+}
+/// Returns typed hook handlers with their source extensions, in agent order.
+public func agentHooks<Handlers: Sendable>(_ agent: Agent, taskName: String, as type: Handlers.Type) -> [SelectedHooks<Handlers>] {
+    agentHooks(agent, taskName: taskName).compactMap { item in
+        item.handlers.handlers(as: type).map { SelectedHooks(extension: item.extension, handlers: $0) }
+    }
+}
+/// Returns the last selected extension that supplies or wraps this section.
+public func sectionExtension(_ agent: Agent, key: String) -> String? {
+    agent.extensions.last { item in
+        item.sections.contains { harnessNamesEqual($0.key, key) } || item.wraps.contains {
+            if case .section(let target, _) = $0 { return harnessNamesEqual(target, key) }; return false
+        }
+    }?.name
+}
+/// Returns the last selected extension that supplies or wraps this tool.
+public func toolExtension(_ agent: Agent, name: String) -> String? {
+    agent.extensions.last { item in
+        item.tools.contains { harnessNamesEqual($0.name, name) } || item.wraps.contains {
+            if case .tool(let target, _) = $0 { return harnessNamesEqual(target, name) }; return false
+        }
+    }?.name
 }
 
 /// Resolves stored agent names against the current registry and host defaults.
 public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, settings: Settings = resolveSettings(),
-                         report: (any Error) -> Void = { _ in }) -> Agent {
+                         report: (any Error, String) -> Void = { _, _ in }) -> Agent {
     let selected: [String]
     switch state?.extensions {
     case .exact(let names): selected = names
@@ -328,9 +355,9 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
         for wrap in extensionValue.wraps {
             switch wrap {
             case let .tool(name, transform):
-                applyWrap(&tools, name: name, nameOf: { $0.name }, transform: transform, report: report)
+                applyWrap(&tools, name: name, nameOf: { $0.name }, transform: transform, report: { report($0, extensionValue.name) })
             case let .section(key, transform):
-                applyWrap(&sections, name: key, nameOf: { $0.key }, transform: transform, report: report)
+                applyWrap(&sections, name: key, nameOf: { $0.key }, transform: transform, report: { report($0, extensionValue.name) })
             }
         }
     }
@@ -359,6 +386,12 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
     return Agent(model: state?.model, thinkingLevel: state?.thinkingLevel ?? .off, extensions: extensions,
                  tools: tools, callable: callable, deferred: deferred, sections: sections,
                  instructions: state?.instructions, cwd: state?.cwd)
+}
+
+/// Adapts a wrapper report callback that receives only the error.
+public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, settings: Settings = resolveSettings(),
+                         report: (any Error) -> Void) -> Agent {
+    resolveAgent(state: state, snapshot: snapshot, settings: settings, report: { error, _ in report(error) })
 }
 
 private func applyWrap<Value>(_ values: inout [Value], name: String, nameOf: (Value) -> String,

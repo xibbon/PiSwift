@@ -74,7 +74,11 @@ private func startHandover(_ root: Conversation, _ definition: HandoverTask) asy
         #expect(log.values == ["old:a start", "old:a end", "old:b start", "old:b end", "old:c"])
         #expect(opened.reports.count == 2)
         #expect(opened.reports.values.allSatisfy { String(describing: $0).contains("keeps running under its old") })
-        #expect(opened.reports.values.compactMap { ($0 as? TaskHandoverError)?.cause.rawValue } == ["missing_task", "incompatible_task"])
+        // Upstream v1.4.0 harness-tasks-recovery.test.ts:760 moves the reason to ReportInfo.
+        #expect(opened.reports.infos == [
+            .taskOutdated(task: ReportTask(id: id, kind: old.name, conversationId: root.id), extension: "tasks", reason: .missingTask),
+            .taskOutdated(task: ReportTask(id: id, kind: old.name, conversationId: root.id), extension: "tasks", reason: .incompatibleTask)
+        ])
         try await harness.close(context: .background)
     }
 

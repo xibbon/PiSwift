@@ -58,6 +58,12 @@ public struct RegistrySnapshot: Sendable {
     public func tasks() -> [AnyTaskDefinition] { builtins + extensions.flatMap(\.tasks) }
     /// Returns the installed task definition with this stable name, or nil when absent.
     public func task(name: String) -> AnyTaskDefinition? { tasks().first { harnessNamesEqual($0.name, name) } }
+    /// Returns the extension that installed this exact task definition.
+    internal func installer(of definition: AnyTaskDefinition?) -> String? {
+        guard let definition else { return nil }
+        return extensions.last { item in item.tasks.contains { $0.identity == definition.identity } }?.name
+    }
+
 }
 
 /// Supplies immutable registry snapshots and installation notifications.
