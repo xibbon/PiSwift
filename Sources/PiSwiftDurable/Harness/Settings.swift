@@ -178,16 +178,20 @@ public struct HarnessSettings: Sendable {
     /// The default is ten minutes. Zero releases after use; infinity keeps documents.
     /// Negative values and NaN use the default. Observers keep their documents.
     public var documentRetentionMs: Double?
+    /// Consecutive cutoffs before a task is parked. The default is five.
+    /// Values at least one are rounded down. Infinity disables parking.
+    public var restartLimit: Double?
     /// Selects host defaults and optional request, compaction, and queue policies.
     public init(extensions: [Extension]? = nil, stream: ConversationStreamOptions? = nil,
                 retry: RetryPolicyOverrides? = nil, compaction: CompactionPolicyOverrides? = nil,
                 progress: ProgressPolicyOverrides? = nil, toolExecution: ToolExecutionMode? = nil,
                 steeringMode: QueueMode? = nil, followUpMode: QueueMode? = nil, contextRetentionMs: Int64? = nil,
-                documentRetentionMs: Double? = nil) {
+                documentRetentionMs: Double? = nil, restartLimit: Double? = nil) {
         self.extensions = extensions; self.stream = stream; self.retry = retry; self.compaction = compaction
         self.progress = progress; self.toolExecution = toolExecution; self.steeringMode = steeringMode
         self.followUpMode = followUpMode; self.contextRetentionMs = contextRetentionMs
         self.documentRetentionMs = documentRetentionMs
+        self.restartLimit = restartLimit
     }
 }
 
@@ -221,6 +225,8 @@ public struct Settings: Sendable {
     public var contextRetentionMs: Int64
     /// How long unused documents can remain cached, in milliseconds.
     public var documentRetentionMs: Double
+    /// Consecutive cutoffs before a task is parked. Infinity disables parking.
+    public var restartLimit: Double
 }
 /// Fills unspecified retry, compaction, and progress fields with their defaults.
 public func resolveSettings(_ settings: HarnessSettings? = nil) -> Settings {
@@ -236,5 +242,6 @@ public func resolveSettings(_ settings: HarnessSettings? = nil) -> Settings {
         toolExecution: settings?.toolExecution ?? .parallel,
         steeringMode: settings?.steeringMode ?? .oneAtATime, followUpMode: settings?.followUpMode ?? .oneAtATime,
         contextRetentionMs: settings?.contextRetentionMs ?? 600000,
-        documentRetentionMs: Session.documentRetention(settings?.documentRetentionMs))
+        documentRetentionMs: Session.documentRetention(settings?.documentRetentionMs),
+        restartLimit: settings?.restartLimit.map { $0 >= 1 ? $0.rounded(.down) : 5 } ?? 5)
 }

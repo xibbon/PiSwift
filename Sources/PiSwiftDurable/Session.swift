@@ -152,6 +152,18 @@ public final class Session: Sendable {
         let ticket = try admit()
         await ticket.wait()
         defer { sweepDocuments(); line.release() }
+        return try await commitOnLine(change, context: context, scope: scope)
+    }
+    /// Cleanup reserves after admitted operations and can write after admission closes.
+    internal func writeAtClose(_ change: (Transaction) async throws -> Void, context: ChordContext) async throws {
+        let ticket = line.reserve()
+        await ticket.wait()
+        defer { line.release() }
+        do { try await commitOnLine(change, context: context.withoutAbortSignal(), scope: TransactionScope()) }
+        catch { fail(error); throw error }
+    }
+    private func commitOnLine<T>(_ change: (Transaction) async throws -> T,
+                                context: ChordContext, scope: TransactionScope) async throws -> T {
         try assertHealthy()
         try context.abortSignal?.throwIfAborted()
         let tx = Transaction(session: self, context: context, scope: scope)

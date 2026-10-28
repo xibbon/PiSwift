@@ -2,6 +2,14 @@ import Foundation
 import PiSwiftChord
 
 extension TaskScheduler {
+    func retry(id: TaskID, context: ChordContext) async throws {
+        try await session.commit({ tx in
+            guard let record = try await tx.task(id) else { throw SessionError.message("Task \(id.rawValue) does not exist") }
+            guard record.state.outcome == nil, parked(record) else { return }
+            try tx.setTask(record.progressed())
+        }, context: context)
+        resume()
+    }
     func abort(id: TaskID, context: ChordContext, keepRestart: Bool = false) async throws -> TaskAbortResult {
         let marked: (TaskAbortResult, TaskInvocation?) = try await session.commit({ tx in
             guard let record = try await tx.task(id) else { throw SessionError.message("Task \(id.rawValue) does not exist") }
@@ -83,6 +91,7 @@ extension TaskScheduler {
                 let on = waitingOn(record)
                 if !on.isEmpty { derived = .waiting(on: on) }
                 else if notDue(record), case .sleeping(_, let until, _) = record.state { derived = .sleeping(until: until) }
+                else if parked(record) { derived = .blocked(reason: .restartLimit) }
                 else {
                     let definition = snapshot.task(name: record.kind), fit = fit(record, definition: definition)
                     if let reason = fit.reason { derived = .blocked(reason: TaskBlockedReason(rawValue: reason)!, error: fit.error) }
@@ -133,7 +142,9 @@ extension TaskScheduler {
                 throw SessionError.message("Only the scheduler can commit \(outcome.status) outcomes")
             }
             try await terminate(tx, record: current, outcome: outcome)
-        case .running, .waiting, .sleeping: try tx.setTask(current.replacing(state: next))
+        case .running, .waiting, .sleeping:
+            let same = jsonStructurallyEqual(try JSONValue(encoding: current.state), try JSONValue(encoding: next))
+            try tx.setTask((same ? current : current.progressed()).replacing(state: next))
         default: throw SessionError.message("A task handler can commit only running, waiting, sleeping, or terminal state")
         }
     }

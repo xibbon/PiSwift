@@ -17,6 +17,8 @@ public enum TaskBlockedReason: String, Sendable {
     case taskTooOld = "task_too_old"
     /// The installed task migration threw an error.
     case migrationFailed = "migration_failed"
+    /// The task reached the consecutive restart limit and waits for retry.
+    case restartLimit = "restart_limit"
 }
 /// The task definition state selected during harness inspection.
 public enum TaskInspectionState: Sendable {

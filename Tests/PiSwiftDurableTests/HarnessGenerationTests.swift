@@ -174,11 +174,13 @@ struct HarnessGenerationTests {
         #expect(provider.sessionId.split(separator: "-")[2].first == "7")
         try await opened.harness.close(context: .background)
     }
+    // upstream v1.4.0 harness-generation.test.ts:508.
     @Test func settingsResolveOverDefaults() {
         let value = resolveSettings()
         #expect(value.retry == defaultRetryPolicy && value.compaction == defaultCompactionPolicy && value.progress == defaultProgressPolicy)
         #expect(value.toolExecution == .parallel && value.steeringMode == .oneAtATime && value.followUpMode == .oneAtATime)
         #expect(value.contextRetentionMs == 600000)
+        #expect(value.restartLimit == 5)
         let changed = resolveSettings(.init(retry: .init(enabled: false), compaction: .init(backgroundTokens: 0), progress: .init(outputIntervalMs: 500)))
         #expect(!changed.retry.enabled && changed.retry.maxRetries == 3 && changed.compaction.backgroundTokens == 0)
         #expect(changed.progress == .init(partialIntervalMs: 100, outputIntervalMs: 500))

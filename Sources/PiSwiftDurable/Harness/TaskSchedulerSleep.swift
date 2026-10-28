@@ -43,6 +43,7 @@ extension TaskScheduler {
                 continue
             }
             if active { continue }
+            if !record.abortRequested && record.restarts >= settings().restartLimit { continue }
             if record.abortRequested && view.hasOwnedLive(record.id) { continue }
             if !record.abortRequested || record.abortReason != nil {
                 snapshot = snapshot ?? registry.snapshot()

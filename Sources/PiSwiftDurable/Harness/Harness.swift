@@ -35,7 +35,10 @@ public final class Harness: Sendable {
                  tasks: TaskScheduler, submissions: Submissions) throws {
         self.session = session; self.storage = storage; self.options = options; self.tasks = tasks; self.submissions = submissions
         self.views = try ConversationViews(session: session, storage: storage)
-        self.graph = try TaskGraphView(session: session, storage: storage)
+        let graph = try TaskGraphView(session: session, storage: storage, blockedReason: { tasks.blockedReason($0) })
+        self.graph = graph
+        let context = tasks.context
+        tasks.state.withLock { $0.refreshBlocked = { [weak graph] in graph?.refreshBlocked(context: context) } }
     }
     /// Opens the session and restores runnable task state with scheduling paused.
     public static func open(storage: any DurableStorage, options: HarnessOptions,
@@ -176,6 +179,12 @@ public final class Harness: Sendable {
     public func abortTask(id: TaskID, context: ChordContext) async throws -> TaskAbortResult {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); return try await tasks.abort(id: id, context: context)
+        }
+    }
+    /// Clears a parked task's restart count and starts scheduling. Unknown IDs throw.
+    public func retryTask(id: TaskID, context: ChordContext) async throws {
+        try await withTaskCancellationContext(context) { context in
+            try assertOpen(); try await tasks.retry(id: id, context: context)
         }
     }
     /// Waits for a terminal task outcome and returns its durable receipt.

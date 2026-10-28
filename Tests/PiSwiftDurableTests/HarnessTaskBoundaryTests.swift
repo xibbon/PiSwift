@@ -5,7 +5,7 @@ import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
 @Suite struct HarnessTaskBoundaryTests {
-    // upstream harness-tasks.test.ts:1285,1386
+    // upstream v1.4.0 harness-tasks.test.ts:1258,1363
     @Test(arguments: [false, true])
     func closeJoinsReservationWithoutStartingHandler(marked: Bool) async throws {
         let storage = ControlledStorage()
@@ -31,11 +31,13 @@ import PiSwiftDurableTesting
         let taskWrites = await storage.commits.flatMap { $0 }.compactMap { write -> TaskRecord? in
             if case .task(let task, _) = write, task.id == id { return task }; return nil
         }
-        #expect(taskWrites.last?.state.status == "running")
+        #expect(taskWrites.dropLast().last?.state.status == "running")
+        #expect(taskWrites.dropLast().last?.abortRequested == marked)
+        #expect(taskWrites.last?.state == .pending(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())))
         #expect(taskWrites.last?.abortRequested == marked)
     }
 
-    // upstream harness-tasks.test.ts:1309; lifecycle:450
+    // upstream v1.4.0 harness-tasks.test.ts:1295
     @Test func closeRejectsRuntimeCommitAlreadyQueuedOnLine() async throws {
         let retained = Mutex<TaskRuntime?>(nil)
         let entered = SessionTestGate()
@@ -62,10 +64,15 @@ import PiSwiftDurableTesting
         runRelease.release()
         try await closing.value
         let writes = await storage.commits.flatMap { $0 }
+        let taskWrites = writes.compactMap { write -> TaskRecord? in
+            if case .task(let task, _) = write, task.id == id { return task }; return nil
+        }
         #expect(!writes.contains { if case .task(let task, _) = $0 { return task.id == id && task.state.status == "terminal" }; return false })
+        #expect(taskWrites.map { $0.state.status } == ["pending", "running", "pending"])
+        #expect(taskWrites.last?.state == .pending(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())))
     }
 
-    // upstream harness-tasks.test.ts:1255
+    // upstream v1.4.0 harness-tasks.test.ts:1229
     @Test func closeWinsOverFailedPhaseStepQueuedOnLine() async throws {
         let storage = ControlledStorage()
         let entered = SessionTestGate()
@@ -88,10 +95,13 @@ import PiSwiftDurableTesting
         _ = try await blocker.value
         try await closing.value
         let writes = await storage.commits.flatMap { $0 }
-        #expect(!writes.contains { if case .task(let task, _) = $0 { return task.id == id && task.state.status == "terminal" }; return false })
+        let statuses = writes.compactMap { write -> String? in
+            if case .task(let task, _) = write, task.id == id { return task.state.status }; return nil
+        }
+        #expect(statuses == ["pending", "running", "pending"])
     }
 
-    // upstream harness-tasks.test.ts:1175,973
+    // upstream v1.4.0 harness-tasks.test.ts:1154
     @Test func closeAfterProgressStartsNoNextPhaseOrAbortHandler() async throws {
         let entered = SessionTestGate()
         let runRelease = SessionTestGate()
@@ -105,17 +115,27 @@ import PiSwiftDurableTesting
             case .joined: log.append("joined")
             }
         }, abort: { _, _, _ in log.append("abort") })
-        let harness = try await harnessOpen([AnyTaskDefinition(definition)])
+        let storage = ControlledStorage()
+        let harness = try await harnessOpen([AnyTaskDefinition(definition)], storage: storage)
         let root = try await harness.root(context: .background)
         let id = try await harnessStart(root, definition)
         try harness.resume(); await entered.wait()
         let aborting = Task { try await harness.abortTask(id: id, context: .background) }
         try await harnessEventually { try await harness.getTask(id: id, context: .background)?.abortRequested == true }
+        let commitsBeforeClose = await storage.commits.count
         let closing = Task { try await harness.close(context: .background) }
         try await harnessEventually { harness.tasks.closing }
         runRelease.release()
         _ = try await aborting.value
         try await closing.value
         #expect(log.values == ["run"])
+        #expect(await storage.commits.count == commitsBeforeClose + 1)
+        let taskWrites = await storage.commits.flatMap { $0 }.compactMap { write -> TaskRecord? in
+            if case .task(let task, _) = write, task.id == id { return task }; return nil
+        }
+        let saved = try #require(taskWrites.last)
+        guard case .pending(let checkpoint, _) = saved.state else { Issue.record("Expected pending task"); return }
+        #expect(try checkpoint.decode(HarnessTaskCheckpoint.self).phase == .joined)
+        #expect(saved.abortRequested)
     }
 }

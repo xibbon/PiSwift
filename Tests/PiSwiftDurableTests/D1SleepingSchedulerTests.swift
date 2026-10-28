@@ -63,7 +63,8 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
         try await harnessEventually { try await harness.getTask(id: id, context: .background)?.state.status == "terminal" }
         let settled = try await harness.waitForTask(id: id, context: .background)
         #expect(runs.values == [17])
-        #expect(settled.record.storedRestarts == record.storedRestarts)
+        // upstream scheduler.ts:2473-2477: terminal states remove restart counts.
+        #expect(settled.record.storedRestarts == nil)
         #expect(settled.record.trace == record.trace && settled.record.links == record.links)
         #expect(settled.record.extensionFields == record.extensionFields)
         #expect(clock.pendingSleeperCount == 0)
@@ -137,7 +138,8 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
         try await harnessEventually { try await harness.getTask(id: id, context: .background)?.state.status == "terminal" }
         let settled = try await harness.waitForTask(id: id, context: .background)
         #expect(settled.outcome == .aborted(reason: "d1"))
-        #expect(settled.record.storedRestarts == 3)
+        // upstream scheduler.ts:2473-2477: terminal states remove restart counts.
+        #expect(settled.record.storedRestarts == nil)
         #expect(settled.record.trace == record.trace && settled.record.links == record.links)
         #expect(settled.record.extensionFields == record.extensionFields)
         #expect(runs.values.isEmpty && aborts.values == [17] && clock.now() == 0)

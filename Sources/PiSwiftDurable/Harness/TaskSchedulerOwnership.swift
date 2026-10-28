@@ -94,6 +94,7 @@ extension TaskScheduler.State {
             }
         }
         if record.state.status == "terminal" {
+            parked.remove(id)
             live.removeValue(forKey: id); liveOrder.removeValue(forKey: id); intent.remove(id); runnable.remove(id); finalizeChecks.remove(id)
             nodes[id] = TaskNode(record)
             if let above = nearestLiveAbove(TaskNode(record)) {
