@@ -143,6 +143,16 @@ internal func selectCut(view: ContextView, keepRecentTokens: Int) -> Int? {
 internal func estimateContext(view: ContextView, extra: [Message] = []) -> Int {
     generationEstimateContext(view: view, extra: extra)
 }
+/// Resolves one model's exact override over the global compaction policy.
+public func compactionPolicy(settings: Settings, model: ModelRef) -> CompactionPolicy {
+    let policy = settings.compaction
+    let key = "\(model.provider)/\(model.modelId)"
+    let override = policy.modelOverrides?.first { harnessNamesEqual($0.key, key) }?.value
+    return CompactionPolicy(enabled: override?.enabled ?? policy.enabled,
+        reserveTokens: override?.reserveTokens ?? policy.reserveTokens,
+        keepRecentTokens: override?.keepRecentTokens ?? policy.keepRecentTokens,
+        backgroundTokens: override?.backgroundTokens ?? policy.backgroundTokens)
+}
 internal func summarizedMessages(view: ContextView, cut: Int) -> [Message] {
     let end = cut < 0 ? max(0, view.contributions.count + cut) : cut
     return orderToolResults(view.contributions.prefix(end).flatMap { $0 })
@@ -155,7 +165,8 @@ private func selectCompaction(_ task: RunningTask<CompactionInput, CompactionChe
         return try await failCompactionNoModel(runtime, ref: agent.model, context: context)
     }
     let view = try await runtime.context(runtime.conversationId, context: context)
-    guard let cut = selectCut(view: view, keepRecentTokens: settings.compaction.keepRecentTokens) else {
+    let policy = compactionPolicy(settings: settings, model: ref)
+    guard let cut = selectCut(view: view, keepRecentTokens: policy.keepRecentTokens) else {
         return try await completeCompaction(runtime, context: context)
     }
     let firstKept = view.entries[cut].id
@@ -175,7 +186,7 @@ private func selectCompaction(_ task: RunningTask<CompactionInput, CompactionChe
             return
         }
     }
-    let budget = Int((0.8 * Double(settings.compaction.reserveTokens)).rounded(.down))
+    let budget = Int((0.8 * Double(policy.reserveTokens)).rounded(.down))
     let request = SummaryRequest(attempt: 1, model: ref, thinkingLevel: agent.thinkingLevel,
         streamOptions: settings.stream, maxTokens: model.maxTokens > 0 ? min(budget, model.maxTokens) : budget,
         tail: view.entries.reduce(firstKept) { max($0, $1.id) }, firstKept: firstKept)

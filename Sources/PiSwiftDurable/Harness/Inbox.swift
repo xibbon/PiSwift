@@ -132,12 +132,12 @@ internal func removeInboxItem(tx: Transaction, conversationId: ConversationID, i
     if let index = values.firstIndex(where: { $0.id == id }) { try items.splice(index, deleteCount: 1) }
 }
 /// Settles and removes queued inputs for the conversation.
-public func withdrawQueuedInputs(tx: Transaction, conversationId: ConversationID) async throws {
+public func withdrawQueuedInputs(tx: Transaction, conversationId: ConversationID, reason: String = "aborted") async throws {
     let inbox = try await tx.doc(InboxDoc, conversationId: conversationId)
     let items = try inbox.child("items")!
     let values = try inbox.snapshot().decode(InboxState.self).items
     for index in values.indices.reversed() where values[index].mode != .write {
-        try tx.settleSubmission(values[index].id, settlement: .unanswered(reason: "aborted"))
+        try tx.settleSubmission(values[index].id, settlement: .unanswered(reason: reason))
         try items.splice(index, deleteCount: 1)
     }
 }

@@ -191,7 +191,8 @@ private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
                                               runtime.scheduler.report(error, .extensionError(extension: sectionExtension(agent, key: section.key), task: runtime.invocation.reportTask))
                                           }, context: context)
     let entries = try planSystemEntries(view: view, desired: desired, registrations: agent.tools, timestamp: runtime.now())
-    let threshold = checkpoint.compacted == nil ? try generationThresholdCompaction(view: view, planned: entries, contextWindow: model.contextWindow, policy: settings.compaction) : nil
+    let threshold = checkpoint.compacted == nil ? try generationThresholdCompaction(view: view, planned: entries, contextWindow: model.contextWindow,
+        policy: compactionPolicy(settings: settings, model: ref)) : nil
     if threshold == .blocking {
         try await runtime.commit({ tx, _ in
             let child = try await createGenerationCompaction(tx: tx, conversationId: runtime.conversationId, reason: .threshold, owner: runtime.taskId)
@@ -247,8 +248,10 @@ private func failGeneration(_ runtime: TaskRuntime, modelError: String, context:
 }
 private func failGeneration(_ runtime: TaskRuntime, reason: String, text: String, context: ChordContext) async throws {
     try await runtime.commit({ tx, _ in
+        let failure = try await prepareFailure(tx: tx, runtime: runtime)
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
-        try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: reason, detail: reason == "model_error" ? .string(text) : nil))
+        try await endFailedRun(tx: tx, runtime: runtime, live: live, failure: failure,
+            settlement: .unanswered(reason: reason, detail: reason == "model_error" ? .string(text) : nil))
         return .terminal(outcome: .failed(error: TaskOutcomeError(message: text, detail: .object(["reason": .string(reason)]))))
     }, context: context)
 }

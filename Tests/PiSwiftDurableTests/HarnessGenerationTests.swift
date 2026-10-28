@@ -181,6 +181,8 @@ struct HarnessGenerationTests {
         #expect(value.toolExecution == .parallel && value.steeringMode == .oneAtATime && value.followUpMode == .oneAtATime)
         #expect(value.contextRetentionMs == 600000)
         #expect(value.restartLimit == 5)
+        // Upstream v1.4.0 harness-generation.test.ts:508,518 adds the failed-run default.
+        #expect(value.afterFailedRun == .keep)
         let changed = resolveSettings(.init(retry: .init(enabled: false), compaction: .init(backgroundTokens: 0), progress: .init(outputIntervalMs: 500)))
         #expect(!changed.retry.enabled && changed.retry.maxRetries == 3 && changed.compaction.backgroundTokens == 0)
         #expect(changed.progress == .init(partialIntervalMs: 100, outputIntervalMs: 500))

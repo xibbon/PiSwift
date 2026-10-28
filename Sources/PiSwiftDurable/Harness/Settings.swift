@@ -105,8 +105,27 @@ public struct CompactionPolicy: Sendable, Equatable, Codable {
     public var keepRecentTokens: Int
     /// Token budget reserved for a background compaction.
     public var backgroundTokens: Int
+    /// Optional policy fields for each exact provider/modelId key.
+    public var modelOverrides: [String: CompactionModelOverride]?
     /// Sets concrete token budgets and the automatic compaction switch.
-    public init(enabled: Bool = true, reserveTokens: Int = 16384, keepRecentTokens: Int = 20000, backgroundTokens: Int = 32768) {
+    public init(enabled: Bool = true, reserveTokens: Int = 16384, keepRecentTokens: Int = 20000, backgroundTokens: Int = 32768,
+                modelOverrides: [String: CompactionModelOverride]? = nil) {
+        self.enabled = enabled; self.reserveTokens = reserveTokens; self.keepRecentTokens = keepRecentTokens; self.backgroundTokens = backgroundTokens
+        self.modelOverrides = modelOverrides
+    }
+}
+/// Optional compaction policy fields for one model. Absent fields use the global policy.
+public struct CompactionModelOverride: Sendable, Equatable, Codable {
+    /// Whether automatic compaction is active for this model.
+    public var enabled: Bool?
+    /// Token budget left free for the next model response.
+    public var reserveTokens: Int?
+    /// Token budget for recent context retained after compaction.
+    public var keepRecentTokens: Int?
+    /// Token budget reserved for a background compaction.
+    public var backgroundTokens: Int?
+    /// Selects the fields that replace the global policy for this model.
+    public init(enabled: Bool? = nil, reserveTokens: Int? = nil, keepRecentTokens: Int? = nil, backgroundTokens: Int? = nil) {
         self.enabled = enabled; self.reserveTokens = reserveTokens; self.keepRecentTokens = keepRecentTokens; self.backgroundTokens = backgroundTokens
     }
 }
@@ -120,10 +139,23 @@ public struct CompactionPolicyOverrides: Sendable {
     public var keepRecentTokens: Int?
     /// Token budget reserved for a background compaction.
     public var backgroundTokens: Int?
+    /// Optional policy fields for each exact provider/modelId key.
+    public var modelOverrides: [String: CompactionModelOverride]?
     /// Selects optional compaction policy fields to replace their defaults.
-    public init(enabled: Bool? = nil, reserveTokens: Int? = nil, keepRecentTokens: Int? = nil, backgroundTokens: Int? = nil) {
+    public init(enabled: Bool? = nil, reserveTokens: Int? = nil, keepRecentTokens: Int? = nil, backgroundTokens: Int? = nil,
+                modelOverrides: [String: CompactionModelOverride]? = nil) {
         self.enabled = enabled; self.reserveTokens = reserveTokens; self.keepRecentTokens = keepRecentTokens; self.backgroundTokens = backgroundTokens
+        self.modelOverrides = modelOverrides
     }
+}
+/// Selects what a failed model run does with the inputs queued behind it.
+public enum AfterFailedRun: String, Sendable, Codable, CaseIterable {
+    /// Keeps inputs queued until another input or write starts work.
+    case keep
+    /// Applies the final boundary and starts a run with the selected inputs.
+    case `continue`
+    /// Settles queued inputs as unanswered with reason run_failed. Keeps queued writes.
+    case withdraw
 }
 /// Publication intervals for partial model messages and tool output.
 public struct ProgressPolicy: Sendable, Equatable, Codable {
@@ -181,17 +213,20 @@ public struct HarnessSettings: Sendable {
     /// Consecutive cutoffs before a task is parked. The default is five.
     /// Values at least one are rounded down. Infinity disables parking.
     public var restartLimit: Double?
+    /// The policy for queued inputs after model_error or no_model. The default is keep.
+    public var afterFailedRun: AfterFailedRun?
     /// Selects host defaults and optional request, compaction, and queue policies.
     public init(extensions: [Extension]? = nil, stream: ConversationStreamOptions? = nil,
                 retry: RetryPolicyOverrides? = nil, compaction: CompactionPolicyOverrides? = nil,
                 progress: ProgressPolicyOverrides? = nil, toolExecution: ToolExecutionMode? = nil,
                 steeringMode: QueueMode? = nil, followUpMode: QueueMode? = nil, contextRetentionMs: Int64? = nil,
-                documentRetentionMs: Double? = nil, restartLimit: Double? = nil) {
+                documentRetentionMs: Double? = nil, restartLimit: Double? = nil, afterFailedRun: AfterFailedRun? = nil) {
         self.extensions = extensions; self.stream = stream; self.retry = retry; self.compaction = compaction
         self.progress = progress; self.toolExecution = toolExecution; self.steeringMode = steeringMode
         self.followUpMode = followUpMode; self.contextRetentionMs = contextRetentionMs
         self.documentRetentionMs = documentRetentionMs
         self.restartLimit = restartLimit
+        self.afterFailedRun = afterFailedRun
     }
 }
 
@@ -227,6 +262,8 @@ public struct Settings: Sendable {
     public var documentRetentionMs: Double
     /// Consecutive cutoffs before a task is parked. Infinity disables parking.
     public var restartLimit: Double
+    /// The policy for queued inputs after model_error or no_model.
+    public var afterFailedRun: AfterFailedRun
 }
 /// Fills unspecified retry, compaction, and progress fields with their defaults.
 public func resolveSettings(_ settings: HarnessSettings? = nil) -> Settings {
@@ -236,12 +273,14 @@ public func resolveSettings(_ settings: HarnessSettings? = nil) -> Settings {
         retry: .init(enabled: retry?.enabled ?? true, maxRetries: retry?.maxRetries ?? 3,
                      baseDelayMs: retry?.baseDelayMs ?? 2000, maxAgentDelayMs: retry?.maxAgentDelayMs ?? 60000),
         compaction: .init(enabled: compact?.enabled ?? true, reserveTokens: compact?.reserveTokens ?? 16384,
-                         keepRecentTokens: compact?.keepRecentTokens ?? 20000, backgroundTokens: compact?.backgroundTokens ?? 32768),
+                         keepRecentTokens: compact?.keepRecentTokens ?? 20000, backgroundTokens: compact?.backgroundTokens ?? 32768,
+                         modelOverrides: compact?.modelOverrides),
         progress: .init(partialIntervalMs: settings?.progress?.partialIntervalMs ?? 100,
                         outputIntervalMs: settings?.progress?.outputIntervalMs ?? 100),
         toolExecution: settings?.toolExecution ?? .parallel,
         steeringMode: settings?.steeringMode ?? .oneAtATime, followUpMode: settings?.followUpMode ?? .oneAtATime,
         contextRetentionMs: settings?.contextRetentionMs ?? 600000,
         documentRetentionMs: Session.documentRetention(settings?.documentRetentionMs),
-        restartLimit: settings?.restartLimit.map { $0 >= 1 ? $0.rounded(.down) : 5 } ?? 5)
+        restartLimit: settings?.restartLimit.map { $0 >= 1 ? $0.rounded(.down) : 5 } ?? 5,
+        afterFailedRun: settings?.afterFailedRun ?? .keep)
 }
