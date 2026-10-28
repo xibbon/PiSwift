@@ -4,6 +4,7 @@ import PiSwiftDurable
 /// Creates a provider that reads the current coding-agent settings at each use.
 /// Settings changes and reloads apply to the next call to `resolve()`.
 /// HTTP timeouts apply to each request. Swift needs no shared HTTP dispatcher.
+/// Coding-agent settings have no restart limit. The core default remains 5.
 public func harnessSettings(from settingsManager: SettingsManager) -> HarnessSettingsProvider {
     HarnessSettingsProvider {
         let provider = settingsManager.getProviderRetrySettings()

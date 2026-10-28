@@ -55,6 +55,16 @@ func agentOfReturnsEmptyStateWhenDocumentCannotBeDecoded(document: JSONObject) {
     #expect(Notice.Level(rawValue: "error") == .error)
     #expect(SubmitWhenBusy(rawValue: "followUp") == .followUp)
     #expect(SubmitWhenBusy(rawValue: "reject") == nil)
+    #expect(decoded.blockedTasks.isEmpty)
+    #expect(decoded.sleepingTasks.isEmpty)
+    #expect(decoded.activity == .idle)
+    #expect(decoded.queuedInputs.isEmpty)
+    #expect(decoded.notices.first?.category == .operation)
+    #expect(try JSONValue.object([
+        "session": JSONValue(encoding: view.session), "conversation": JSONValue(encoding: view.conversation),
+        "conversations": JSONValue(encoding: view.conversations), "models": JSONValue(encoding: view.models),
+        "notices": .array([.object(["id": 1, "level": "warning", "message": "Select a model."])])
+    ]).decode(DurableView.self).notices == view.notices)
 }
 
 @Test func durableViewDefaultsLeaveTaskPanelClosed() {
@@ -67,6 +77,11 @@ func agentOfReturnsEmptyStateWhenDocumentCannotBeDecoded(document: JSONObject) {
     #expect(OpenDurableOptions().cwd == nil)
     #expect(OpenDurableOptions().continueSession == false)
     #expect(OpenDurableOptions(cwd: "/project", continueSession: true).continueSession)
+    #expect(view.blockedTasks.isEmpty)
+    #expect(view.parkedTasks.isEmpty)
+    #expect(view.sleepingTasks.isEmpty)
+    #expect(view.activity == .idle)
+    #expect(view.queuedInputs.isEmpty)
 }
 
 @Test func durableViewSubscriptionCancelsOnceAcrossTasks() async {

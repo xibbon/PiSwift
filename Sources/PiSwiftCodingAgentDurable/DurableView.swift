@@ -24,6 +24,15 @@ public struct ModelSummary: Sendable, Equatable, Codable {
 
 /// A message for the user.
 public struct Notice: Sendable, Equatable, Codable {
+    /// The source of a notice. Task reports do not close the Session.
+    public enum Category: String, Sendable, Codable {
+        case operation
+        case report
+        case taskParked
+        case taskFault
+        case sessionFailed
+    }
+
     /// The notice category for display.
     public enum Level: String, Sendable, Codable {
         /// Information about the session or an operation.
@@ -40,12 +49,35 @@ public struct Notice: Sendable, Equatable, Codable {
     public let level: Level
     /// The text for display to the user.
     public let message: String
+    /// The source of this notice.
+    public let category: Category
+    /// The task that produced the report, when known.
+    public let taskId: TaskID?
+    /// The saved kind of that task, when known.
+    public let taskKind: String?
 
     /// Creates a notice with its display category.
-    public init(id: Int, level: Level, message: String) {
+    public init(id: Int, level: Level, message: String, category: Category = .operation,
+                taskId: TaskID? = nil, taskKind: String? = nil) {
         self.id = id
         self.level = level
         self.message = message
+        self.category = category
+        self.taskId = taskId
+        self.taskKind = taskKind
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, level, message, category, taskId, taskKind }
+
+    /// Reads notices saved before task report categories were added.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(Int.self, forKey: .id)
+        level = try values.decode(Level.self, forKey: .level)
+        message = try values.decode(String.self, forKey: .message)
+        category = try values.decodeIfPresent(Category.self, forKey: .category) ?? .operation
+        taskId = try values.decodeIfPresent(TaskID.self, forKey: .taskId)
+        taskKind = try values.decodeIfPresent(String.self, forKey: .taskKind)
     }
 }
 
@@ -91,6 +123,70 @@ public enum DurableSessionTerminal: Sendable, Equatable, Codable {
     case failed(message: String)
 }
 
+/// The work state of the shown conversation and its owned tasks.
+/// Read blockedTasks as well: other work can progress while one task is parked.
+public enum DurableActivity: String, Sendable, Equatable, Codable {
+    case idle
+    case progressing
+    case sleeping
+    case parked
+    case blocked
+}
+
+/// A task that needs a definition change or an explicit user action.
+public struct DurableBlockedTask: Sendable, Equatable, Codable {
+    public let id: TaskID
+    public let kind: String
+    public let reason: TaskBlockedReason
+    /// The number of consecutive cutoffs without durable progress.
+    public let restarts: Double
+    /// The exact parking report, or nil for other blocked reasons.
+    public let report: String?
+
+    public init(id: TaskID, kind: String, reason: TaskBlockedReason,
+                restarts: Double = 0, report: String? = nil) {
+        self.id = id; self.kind = kind; self.reason = reason
+        self.restarts = restarts; self.report = report
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, reason, restarts, report }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(TaskID.self, forKey: .id)
+        kind = try values.decode(String.self, forKey: .kind)
+        let raw = try values.decode(String.self, forKey: .reason)
+        guard let reason = TaskBlockedReason(rawValue: raw) else {
+            throw DecodingError.dataCorruptedError(forKey: .reason, in: values, debugDescription: "Unknown blocked reason: \(raw)")
+        }
+        self.reason = reason
+        restarts = try values.decodeIfPresent(Double.self, forKey: .restarts) ?? 0
+        report = try values.decodeIfPresent(String.self, forKey: .report)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(kind, forKey: .kind)
+        try values.encode(reason.rawValue, forKey: .reason)
+        try values.encode(restarts, forKey: .restarts)
+        try values.encodeIfPresent(report, forKey: .report)
+    }
+}
+
+/// A durable wait, including a generation backoff or deferred poll.
+public struct DurableSleepingTask: Sendable, Equatable, Codable {
+    public let id: TaskID
+    public let kind: String
+    public let phase: String
+    /// The Harness clock deadline, in milliseconds since the epoch.
+    public let until: Double
+
+    public init(id: TaskID, kind: String, phase: String, until: Double) {
+        self.id = id; self.kind = kind; self.phase = phase; self.until = until
+    }
+}
+
 /// The values shown by a durable session interface.
 public struct DurableView: Sendable, Equatable, Codable {
     /// The session location.
@@ -107,12 +203,24 @@ public struct DurableView: Sendable, Equatable, Codable {
     public let tasks: TaskGraph?
     /// The final session state, when the session has ended.
     public let terminal: DurableSessionTerminal?
+    /// Blocked work in the shown conversation and its owned tasks, even with the panel hidden.
+    public let blockedTasks: [DurableBlockedTask]
+    /// Durable waits in the shown conversation and its owned tasks, even with the panel hidden.
+    public let sleepingTasks: [DurableSleepingTask]
+    /// Whether work can progress or waits for time or user action.
+    public let activity: DurableActivity
+    /// Queued inputs in inbox order. They remain here after a failed run under keep.
+    public let queuedInputs: [InboxItem]
+    /// Tasks that reached the restart limit and need retry or abort.
+    public var parkedTasks: [DurableBlockedTask] { blockedTasks.filter { $0.reason == .restartLimit } }
 
     /// Creates a view snapshot for a session interface.
     public init(session: DurableSessionView, conversation: ConversationView,
                 conversations: [ConversationSummary], models: [ModelSummary],
                 notices: [Notice] = [], tasks: TaskGraph? = nil,
-                terminal: DurableSessionTerminal? = nil) {
+                terminal: DurableSessionTerminal? = nil,
+                blockedTasks: [DurableBlockedTask] = [], sleepingTasks: [DurableSleepingTask] = [],
+                activity: DurableActivity = .idle, queuedInputs: [InboxItem] = []) {
         self.session = session
         self.conversation = conversation
         self.conversations = conversations
@@ -120,6 +228,31 @@ public struct DurableView: Sendable, Equatable, Codable {
         self.notices = notices
         self.tasks = tasks
         self.terminal = terminal
+        self.blockedTasks = blockedTasks
+        self.sleepingTasks = sleepingTasks
+        self.activity = activity
+        self.queuedInputs = queuedInputs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case session, conversation, conversations, models, notices, tasks, terminal
+        case blockedTasks, sleepingTasks, activity, queuedInputs
+    }
+
+    /// Reads snapshots saved before task wait and queue fields were added.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        session = try values.decode(DurableSessionView.self, forKey: .session)
+        conversation = try values.decode(ConversationView.self, forKey: .conversation)
+        conversations = try values.decode([ConversationSummary].self, forKey: .conversations)
+        models = try values.decode([ModelSummary].self, forKey: .models)
+        notices = try values.decode([Notice].self, forKey: .notices)
+        tasks = try values.decodeIfPresent(TaskGraph.self, forKey: .tasks)
+        terminal = try values.decodeIfPresent(DurableSessionTerminal.self, forKey: .terminal)
+        blockedTasks = try values.decodeIfPresent([DurableBlockedTask].self, forKey: .blockedTasks) ?? []
+        sleepingTasks = try values.decodeIfPresent([DurableSleepingTask].self, forKey: .sleepingTasks) ?? []
+        activity = try values.decodeIfPresent(DurableActivity.self, forKey: .activity) ?? .idle
+        queuedInputs = try values.decodeIfPresent([InboxItem].self, forKey: .queuedInputs) ?? []
     }
 }
 
@@ -174,6 +307,10 @@ public protocol DurableController: Sendable {
     /// Aborts work in the shown conversation, including manual compaction.
     /// This command bypasses the ordered command queue.
     func abort() async
+    /// Clears the restart count and resumes a parked task.
+    func retryTask(_ id: TaskID) async
+    /// Aborts one task. This command bypasses the ordered command queue.
+    func abortTask(_ id: TaskID) async
     /// Selects the next thinking level supported by the current model.
     func cycleThinking() async
     /// Selects a model and clamps the current thinking level to its supported levels.
@@ -182,6 +319,13 @@ public protocol DurableController: Sendable {
     func toggleTasks() async
     /// Shows another conversation. Later commands apply to that conversation.
     func switchConversation(_ id: ConversationID) async
+}
+
+extension DurableController {
+    /// Existing controllers can omit task retry support.
+    public func retryTask(_ id: TaskID) async {}
+    /// Existing controllers can omit task abort support.
+    public func abortTask(_ id: TaskID) async {}
 }
 
 /// Options used to open a durable session.

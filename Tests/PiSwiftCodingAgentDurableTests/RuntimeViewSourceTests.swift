@@ -96,6 +96,9 @@ private struct ViewReportError: Error, LocalizedError {
     #expect(source.current().notices.map(\.message) == ["First", "Second", "Third", "Failure"])
     #expect(source.current().notices.map(\.level) == [.warning, .warning, .warning, .error])
     #expect(scheduler.count == 1)
+    #expect(source.current().notices.map(\.category) == [.report, .report, .report, .operation])
+    #expect(source.current().notices.allSatisfy { $0.taskId == nil && $0.taskKind == nil })
+    #expect(source.current().terminal == nil)
 }
 
 @Test func runtimeTitleReadsStringsAndTextBlocks() throws {

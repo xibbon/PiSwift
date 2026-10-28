@@ -93,6 +93,10 @@ private struct HostDirectory: Sendable {
         #expect(cleanups.withLock { $0 } == [snapshot.session.cwd])
         #expect(storage.closeCount == 1)
         #expect(result.view.current().notices.filter { $0.level == .error }.map(\.message) == [original.message])
+        #expect(result.view.current().notices.last?.category == .sessionFailed)
+        #expect(result.view.current().notices.last?.taskId == nil)
+        #expect(result.view.current().notices.last?.taskKind == nil)
+        #expect(result.view.current().parkedTasks.isEmpty)
         let reopened = try await selectSession(directory.cwd, continueSession: true, agentDirectory: directory.agent)
         reopened.release()
     }

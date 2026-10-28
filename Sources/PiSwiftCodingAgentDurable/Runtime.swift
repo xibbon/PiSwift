@@ -236,6 +236,12 @@ private final class RuntimeController: DurableController {
         do { try await runtime.abort() }
         catch { report(error) }
     }
+    func retryTask(_ id: TaskID) async { await command { try await $0.retryTask(id) } }
+    func abortTask(_ id: TaskID) async {
+        guard queue.withLock({ !$0.sealed }), runtime.harness.failure == nil else { return }
+        do { try await runtime.abortTask(id) }
+        catch { report(error) }
+    }
     private func report(_ error: any Error) {
         if let cause = runtime.harness.failure {
             seal()
@@ -261,6 +267,7 @@ private actor DurableRuntime {
     var commits: SessionSubscription?
     var tasks: AttachedReplicatedState<TaskGraph>?
     var taskSubscription: ReplicatedStateSubscription?
+    var tasksVisible = false
     var conversationGeneration = 0
     var taskGeneration = 0
     var watches: [UUID: Task<Void, Never>] = [:]
@@ -275,9 +282,24 @@ private actor DurableRuntime {
         self.sandbox = sandbox
         self.models = models; self.source = source; self.current = current; self.conversation = conversation
     }
-    func attach() throws {
+    func attach() async throws {
         attachConversation()
-        commits = try harness.subscribeCommits { [source] publication, _ in source.record(publication) }
+        let graph = try await harness.taskGraph(context: .background)
+        guard !closed else { graph.dispose(); return }
+        tasks = graph
+        commits = try harness.subscribeCommits { [source, graph] publication, _ in
+            source.record(publication, graph: graph.value)
+        }
+        for node in graph.value.tasks.values.sorted(by: { $0.id < $1.id }) {
+            if let record = try await harness.getTask(id: node.id, context: .background) {
+                source.recordRestarts(record)
+            }
+        }
+        source.updateTasks(graph.value, visible: tasksVisible)
+        let generation = taskGeneration
+        taskSubscription = graph.subscribe { [weak self] _, _, _ in
+            await self?.receiveTasks(graph, generation: generation)
+        }
     }
     func observeTermination(seal: @escaping @Sendable () -> Void) {
         terminalObserver = Task { [weak self, harness] in
@@ -313,7 +335,7 @@ private actor DurableRuntime {
     }
     private func receiveTasks(_ graph: AttachedReplicatedState<TaskGraph>, generation: Int) {
         guard !closed, generation == taskGeneration else { return }
-        source.updateTasks(graph.value)
+        source.updateTasks(graph.value, visible: tasksVisible)
     }
     func submit(_ text: String, whenBusy: SubmitWhenBusy) async throws {
         try assertOpen()
@@ -356,6 +378,14 @@ private actor DurableRuntime {
         }
     }
     func abort() async throws { try assertOpen(); try await current.abort(context: .background) }
+    func retryTask(_ id: TaskID) async throws {
+        try assertOpen()
+        try await harness.retryTask(id: id, context: .background)
+    }
+    func abortTask(_ id: TaskID) async throws {
+        try assertOpen()
+        _ = try await harness.abortTask(id: id, context: .background)
+    }
     private func agentModel() throws -> Model {
         guard let ref = try decodeAgentOf(conversation.value).model else { throw SessionError.message("No model selected") }
         guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else {
@@ -386,15 +416,8 @@ private actor DurableRuntime {
     }
     func toggleTasks() async throws {
         try assertOpen()
-        if tasks != nil { closeTasks(); source.updateTasks(nil); return }
-        let graph = try await harness.taskGraph(context: .background)
-        guard !closed else { graph.dispose(); return }
-        tasks = graph
-        let generation = taskGeneration
-        source.updateTasks(graph.value)
-        taskSubscription = graph.subscribe { [weak self] _, _, _ in
-            await self?.receiveTasks(graph, generation: generation)
-        }
+        tasksVisible.toggle()
+        source.updateTasks(tasks?.value, visible: tasksVisible)
     }
     private func closeTasks() {
         taskGeneration += 1

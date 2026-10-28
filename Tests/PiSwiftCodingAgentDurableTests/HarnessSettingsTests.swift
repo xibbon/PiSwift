@@ -30,6 +30,7 @@ import Testing
     #expect(settings.compaction.backgroundTokens == defaultCompactionPolicy.backgroundTokens)
     #expect(settings.steeringMode == .all)
     #expect(settings.followUpMode == .oneAtATime)
+    #expect(settings.restartLimit == 5)
 }
 
 @Test(arguments: [0, 23_000]) func harnessSettingsUsesIdleTimeoutWhenProviderTimeoutIsAbsent(idle: Int) {
