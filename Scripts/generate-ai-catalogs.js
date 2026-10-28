@@ -9,6 +9,19 @@ function readUpstreamSource(file) {
   return fs.readFileSync(path.join(upstreamRoot, file), "utf8");
 }
 
+function applyOpenAITopLevelToolsOverride(model) {
+  // Post-tag fix 81d6759fc (#11415): GPT-5.4 and GPT-5.5 need top-level tools.
+  // Remove this override at the next sync when upstream data has the fix.
+  if (model.type !== "chat" || model.api !== "openai-responses" ||
+      !["openai", "opencode"].includes(model.provider) ||
+      !["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5"].includes(model.id)) return model;
+  if (model.compat) {
+    delete model.compat.supportsAdditionalTools;
+    delete model.compat.supportsToolSearch;
+  }
+  return model;
+}
+
 function loadCatalogs() {
   const generatedSource = readUpstreamSource("models.generated.ts");
   const imports = new Map();
@@ -51,6 +64,7 @@ function loadCatalogs() {
         if (entry.provider !== providerId) throw new Error(`Model provider mismatch for ${providerId}/${key}`);
         if (entry.type !== "image" && Object.hasOwn(entry, "output")) throw new Error(`Unexpected output on ${providerId}/${key}`);
         if (entry.type === "image" && !entry.output?.includes("image")) throw new Error(`Image output missing for ${providerId}/${key}`);
+        applyOpenAITopLevelToolsOverride(entry);
         (catalogs[entry.type][providerId] ??= {})[entry.id] = entry;
       }
     }
@@ -598,7 +612,7 @@ if (require.main === module) {
   }
 }
 
-module.exports = { swiftClassifierModel };
+module.exports = { swiftClassifierModel, applyOpenAITopLevelToolsOverride };
 
 function costLiteral(cost) {
   return cost.tiers?.length

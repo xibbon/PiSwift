@@ -23547,11 +23547,9 @@
       "api": "openai-responses",
       "baseUrl": "https://api.openai.com/v1",
       "compat": {
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true,
-        "supportsStrictMode": true,
-        "supportsToolSearch": true
+        "supportsStrictMode": true
       },
       "contextWindow": 272000,
       "cost": {
@@ -23605,11 +23603,9 @@
       "api": "openai-responses",
       "baseUrl": "https://api.openai.com/v1",
       "compat": {
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true,
-        "supportsStrictMode": true,
-        "supportsToolSearch": true
+        "supportsStrictMode": true
       },
       "contextWindow": 400000,
       "cost": {
@@ -23700,11 +23696,9 @@
       "api": "openai-responses",
       "baseUrl": "https://api.openai.com/v1",
       "compat": {
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true,
-        "supportsStrictMode": true,
-        "supportsToolSearch": true
+        "supportsStrictMode": true
       },
       "contextWindow": 1050000,
       "cost": {
@@ -23758,11 +23752,9 @@
       "api": "openai-responses",
       "baseUrl": "https://api.openai.com/v1",
       "compat": {
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true,
-        "supportsStrictMode": true,
-        "supportsToolSearch": true
+        "supportsStrictMode": true
       },
       "contextWindow": 272000,
       "cost": {
@@ -26858,7 +26850,6 @@
       "baseUrl": "https://opencode.ai/inference/v1",
       "compat": {
         "sessionAffinityFormat": "openai-nosession",
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true
       },
@@ -26913,7 +26904,6 @@
       "baseUrl": "https://opencode.ai/inference/v1",
       "compat": {
         "sessionAffinityFormat": "openai-nosession",
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true
       },
@@ -27003,7 +26993,6 @@
       "baseUrl": "https://opencode.ai/inference/v1",
       "compat": {
         "sessionAffinityFormat": "openai-nosession",
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true
       },
@@ -27049,7 +27038,6 @@
       "baseUrl": "https://opencode.ai/inference/v1",
       "compat": {
         "sessionAffinityFormat": "openai-nosession",
-        "supportsAdditionalTools": true,
         "supportsMidConvoSystemMessages": true,
         "supportsOpenAIGrammarTools": true
       },

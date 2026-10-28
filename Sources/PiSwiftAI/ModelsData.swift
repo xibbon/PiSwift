@@ -9100,7 +9100,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9115,7 +9115,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9145,7 +9145,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 30, output: 180, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 60, output: 270, cacheRead: 0, cacheWrite: 0)]),
         contextWindow: 1050000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -9160,7 +9160,7 @@ private let providerModels_openai: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true, supportsToolSearch: true, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, supportsStrictMode: true),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: "none", .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: 536870912, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: 1500))
     ),
@@ -10189,7 +10189,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0)]),
         contextWindow: 272000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -10204,7 +10204,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0),
         contextWindow: 400000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -10234,7 +10234,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 30, output: 180, cacheRead: 30, cacheWrite: 0),
         contextWindow: 1050000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.high: "high", .low: nil, .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
@@ -10249,7 +10249,7 @@ private let providerModels_opencode: [String: Model] = [
         cost: ModelCost(input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0)]),
         contextWindow: 1050000,
         maxTokens: 128000,
-        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession, supportsAdditionalTools: true),
+        compat: OpenAICompat(supportsOpenAIGrammarTools: true, supportsMidConvoSystemMessages: true, sessionAffinityFormat: .openaiNosession),
         thinkingLevelMap: [.high: "high", .low: "low", .max: nil, .medium: "medium", .minimal: nil, .off: nil, .xhigh: "xhigh"],
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
