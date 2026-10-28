@@ -1585,9 +1585,22 @@ public final class SettingsManager: Sendable {
         return json as? [String: Any] ?? [:]
     }
 
+    // Keep numeric truthiness, including nonzero numbers other than 1, in each settings layer.
+    private static func decodeTruthyBoolean(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber else { return nil }
+        return number.doubleValue != 0
+    }
+
     private static func decodeTerminalBoolean(_ value: Any?) -> TerminalBooleanSetting? {
-        if let value = value as? Bool { return .enabled(value) }
-        return (value as? String) == "auto" ? .auto : nil
+        if let value = jsonBoolean(value) { return .enabled(value) }
+        // A numeric override must select automatic detection instead of retaining a lower layer.
+        return value is NSNumber || (value as? String) == "auto" ? .auto : nil
+    }
+
+    private static func decodeTerminalImages(_ value: Any?) -> TerminalImageSetting? {
+        if jsonBoolean(value) == false { return .disabled }
+        if value is NSNumber { return .auto }
+        return (value as? String).flatMap(TerminalImageSetting.init(rawValue:))
     }
 
     private static func parseNonNegativeMilliseconds(_ value: Any?) -> Int? {
@@ -1720,10 +1733,10 @@ public final class SettingsManager: Sendable {
         settings.defaultTools = json["defaultTools"] as? [String]
         settings.durableDeferredTools = json["durableDeferredTools"] as? [String]
         settings.fullscreenExitOutput = (json["fullscreenExitOutput"] as? String).flatMap(FullscreenExitOutput.init(rawValue:))
-        settings.fullscreenCopyOnSelect = json["fullscreenCopyOnSelect"] as? Bool
+        settings.fullscreenCopyOnSelect = decodeTruthyBoolean(json["fullscreenCopyOnSelect"])
         if let transport = json["transport"] as? String, let parsed = Transport(rawValue: transport) {
             settings.transport = parsed
-        } else if settings.transport == nil, let websockets = json["websockets"] as? Bool {
+        } else if settings.transport == nil, let websockets = jsonBoolean(json["websockets"]) {
             settings.transport = websockets ? .websocket : .sse
         }
         settings.steeringMode = json["steeringMode"] as? String ?? settings.steeringMode
@@ -1735,8 +1748,8 @@ public final class SettingsManager: Sendable {
         if let trust = json["defaultProjectTrust"] as? String {
             settings.defaultProjectTrust = DefaultProjectTrust(rawValue: trust)
         }
-        settings.hideThinkingBlock = json["hideThinkingBlock"] as? Bool
-        settings.showCacheMissNotices = json["showCacheMissNotices"] as? Bool
+        settings.hideThinkingBlock = decodeTruthyBoolean(json["hideThinkingBlock"])
+        settings.showCacheMissNotices = decodeTruthyBoolean(json["showCacheMissNotices"])
         settings.cacheWarming = (json["cacheWarming"] as? String).flatMap(CacheWarmingMode.init(rawValue:))
         settings.shellPath = json["shellPath"] as? String
         settings.shellCommandPrefix = json["shellCommandPrefix"] as? String
@@ -1747,14 +1760,14 @@ public final class SettingsManager: Sendable {
                 settings.quietStartup = (value as? String) == "header" ? .header : .off
             }
         }
-        settings.collapseChangelog = json["collapseChangelog"] as? Bool
+        settings.collapseChangelog = decodeTruthyBoolean(json["collapseChangelog"])
         if let packages = json["packages"] as? [Any] {
             settings.packages = decodePackageSources(packages)
         }
         settings.extensions = json["extensions"] as? [String]
         settings.prompts = json["prompts"] as? [String]
         settings.themes = json["themes"] as? [String]
-        settings.enableSkillCommands = json["enableSkillCommands"] as? Bool
+        settings.enableSkillCommands = decodeTruthyBoolean(json["enableSkillCommands"])
         settings.hooks = json["hooks"] as? [String]
         settings.customTools = json["customTools"] as? [String]
         settings.enabledModels = json["enabledModels"] as? [String]
@@ -1764,7 +1777,7 @@ public final class SettingsManager: Sendable {
         }
         settings.outputPad = json["outputPad"] as? Int
         settings.autocompleteMaxVisible = json["autocompleteMaxVisible"] as? Int
-        settings.showHardwareCursor = json["showHardwareCursor"] as? Bool
+        settings.showHardwareCursor = decodeTruthyBoolean(json["showHardwareCursor"])
         if let mode = json["tuiMode"] as? String {
             settings.tuiMode = mode
         }
@@ -1802,7 +1815,7 @@ public final class SettingsManager: Sendable {
                                         keepRecentTokens: value["keepRecentTokens"] as? Int)
             }
             settings.compaction = CompactionSettingsOverrides(
-                enabled: compaction["enabled"] as? Bool,
+                enabled: decodeTruthyBoolean(compaction["enabled"]),
                 reserveTokens: compaction["reserveTokens"] as? Int,
                 keepRecentTokens: compaction["keepRecentTokens"] as? Int,
                 modelOverrides: modelOverrides
@@ -1810,7 +1823,7 @@ public final class SettingsManager: Sendable {
         }
 
         if let branch = json["branchSummary"] as? [String: Any] {
-            settings.branchSummary = BranchSummarySettings(reserveTokens: branch["reserveTokens"] as? Int, skipPrompt: branch["skipPrompt"] as? Bool)
+            settings.branchSummary = BranchSummarySettings(reserveTokens: branch["reserveTokens"] as? Int, skipPrompt: decodeTruthyBoolean(branch["skipPrompt"]))
         }
 
         if let retry = json["retry"] as? [String: Any] {
@@ -1822,7 +1835,7 @@ public final class SettingsManager: Sendable {
                 )
             }
             settings.retry = RetrySettings(
-                enabled: retry["enabled"] as? Bool,
+                enabled: decodeTruthyBoolean(retry["enabled"]),
                 maxRetries: retry["maxRetries"] as? Int,
                 baseDelayMs: retry["baseDelayMs"] as? Int,
                 maxAgentDelayMs: retry["maxAgentDelayMs"] as? Int,
@@ -1833,7 +1846,7 @@ public final class SettingsManager: Sendable {
         if let skillArray = json["skills"] as? [String] {
             settings.skillPaths = skillArray
         } else if let skills = json["skills"] as? [String: Any] {
-            let enableSkillCommands = skills["enableSkillCommands"] as? Bool
+            let enableSkillCommands = decodeTruthyBoolean(skills["enableSkillCommands"])
             if settings.enableSkillCommands == nil, let enableSkillCommands {
                 settings.enableSkillCommands = enableSkillCommands
             }
@@ -1858,25 +1871,26 @@ public final class SettingsManager: Sendable {
             settings.terminal = TerminalSettings(
                 hyperlinks: decodeTerminalBoolean(terminal["hyperlinks"]),
                 trueColor: decodeTerminalBoolean(terminal["trueColor"]),
-                images: (terminal["images"] as? Bool) == false ? .disabled : (terminal["images"] as? String).flatMap(TerminalImageSetting.init(rawValue:)),
-                showImages: terminal["showImages"] as? Bool,
+                images: decodeTerminalImages(terminal["images"]),
+                showImages: decodeTruthyBoolean(terminal["showImages"]),
                 imageWidthCells: terminal["imageWidthCells"] as? Int,
-                showTerminalProgress: terminal["showTerminalProgress"] as? Bool,
-                clearOnShrink: terminal["clearOnShrink"] as? Bool
+                showTerminalProgress: decodeTruthyBoolean(terminal["showTerminalProgress"]),
+                clearOnShrink: decodeTruthyBoolean(terminal["clearOnShrink"])
             )
         }
 
         if let warnings = json["warnings"] as? [String: Any] {
             settings.warnings = WarningsSettings(
-                anthropicExtraUsage: warnings["anthropicExtraUsage"] as? Bool
+                // Only literal false disables this warning. Preserve numeric overrides when layers merge.
+                anthropicExtraUsage: jsonBoolean(warnings["anthropicExtraUsage"]) ?? (warnings["anthropicExtraUsage"] is NSNumber ? true : nil)
             )
         }
 
-        if let telemetry = json["enableInstallTelemetry"] as? Bool {
+        if let telemetry = decodeTruthyBoolean(json["enableInstallTelemetry"]) {
             settings.enableInstallTelemetry = telemetry
         }
 
-        if let analytics = json["enableAnalytics"] as? Bool {
+        if let analytics = decodeTruthyBoolean(json["enableAnalytics"]) {
             settings.enableAnalytics = analytics
         }
 
@@ -1905,8 +1919,8 @@ public final class SettingsManager: Sendable {
 
         if let images = json["images"] as? [String: Any] {
             settings.images = ImageSettings(
-                autoResize: images["autoResize"] as? Bool,
-                blockImages: images["blockImages"] as? Bool
+                autoResize: decodeTruthyBoolean(images["autoResize"]),
+                blockImages: decodeTruthyBoolean(images["blockImages"])
             )
         }
 
