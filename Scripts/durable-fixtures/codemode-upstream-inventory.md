@@ -6,7 +6,15 @@ This is the test plan. “Applicable” requires a Swift test or a recorded gap 
 
 There are 68 test declarations: 40 durable, 7 models, 5 describe, and 16 deterministic. The first 14 deterministic declarations run for both worker and remote backends, for 82 upstream test instances.
 
-The document fixture uses the exact upstream `CodemodeRunDoc`, `CodemodeJournalDoc`, and `CodemodeStoreDoc` definitions. It runs Session commits, records storage writes and four snapshots, and checks a store fork at an earlier entry. Its payloads are constructed host records; it does not execute a sandbox.
+The frozen `codemode-v130.json` document fixture uses the exact upstream `CodemodeRunDoc`, `CodemodeJournalDoc`, and `CodemodeStoreDoc` definitions. It runs Session commits, records storage writes and four snapshots, and checks a store fork at an earlier entry. Its payloads are constructed host records; it does not execute a sandbox.
+
+## v1.4.0 fixture evidence
+
+The tables below keep the v1.3.0 test inventory and line numbers. They do not claim to list all v1.4.0 tests.
+
+`generate-codemode-fixtures.mjs` now reads tag v1.4.0 and writes `codemode-v140.json`. It uses the exact tagged document definitions, Session and MemoryStorage. The original four snapshots, commits and fork values are equal to the frozen v1.3.0 fixture. The payloads are constructed host records; no JavaScript sandbox runs.
+
+The added `checkpointEvidence` follows v1.4.0 `packages/durable/test/codemode-checkpoints.test.ts:14`. It records 64 deltas at counter 64, a base at counter 65 with zero deltas, the historical and fork counter 32, and one delta at counter 66. The policy is in `packages/durable/src/codemode/codemode.ts:170`. The run and journal policies at lines 130 and 156 return false. `D4CurrentFixtureTests.codemodeBaseKeepsHistoricalAndForkValues` replays and reads these exact storage records. Native Swift policy selection has a separate test in the D4 source fix; storage replay alone does not prove policy selection.
 
 ## packages/durable/test/codemode.test.ts
 
@@ -103,7 +111,7 @@ node Scripts/durable-fixtures/generate-codemode-fixtures.mjs
 node Scripts/durable-fixtures/generate-codemode-fixtures.mjs --check
 ```
 
-The generator uses `mirror.mjs`. It reads exact tag files with `git archive v1.3.0`; extracts them under `/tmp`; installs `typebox@1.3.27` and `quickjs-wasi@3.6.2` there with npm scripts disabled; and imports the unmodified source with Node type stripping. Package manifests and links exist only in the temporary mirror. The generator removes the mirror when it ends. It writes only `Tests/PiSwiftDurableTests/Fixtures/codemode-v130.json` in this repository.
+The frozen v1.3.0 fixture was generated with `mirror.mjs`. That historical run read exact tag files with `git archive v1.3.0`; extracts them under `/tmp`; installs `typebox@1.3.27` and `quickjs-wasi@3.6.2` there with npm scripts disabled; and imports the unmodified source with Node type stripping. Package manifests and links exist only in the temporary mirror. The generator removes the mirror when it ends. That historical run wrote `Tests/PiSwiftDurableTests/Fixtures/codemode-v130.json` in this repository. The current generator uses v1.4.0 as stated above.
 
 Read-only inventory command for each source path:
 

@@ -1,4 +1,4 @@
-// Build the tests first. Read the Swift-written prefix file with unmodified v1.3.0 code.
+// Build the tests first. Read the Swift-written prefix file with unmodified v1.4.0 code.
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -33,7 +33,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
       try { compareRecordedReads(await readRecordedCalls(storage, reads, context), reads, 'Swift prefixed SQLite'); }
       finally { await storage.close(context); }
     }
-    console.log(`Upstream v1.3.0 reads match Swift prefixed SQLite export: ${reads.length} reads before and after reopen.`);
+    console.log(`Upstream v1.4.0 reads match Swift prefixed SQLite export: ${reads.length} reads before and after reopen.`);
   } finally {
     await source.close();
     await rm(temporary, { recursive: true, force: true });

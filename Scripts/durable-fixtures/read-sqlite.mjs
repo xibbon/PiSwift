@@ -1,4 +1,4 @@
-// Read a Swift or upstream file with the unmodified v1.3.0 Node adapter.
+// Read a Swift or upstream file with the unmodified v1.4.0 Node adapter.
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

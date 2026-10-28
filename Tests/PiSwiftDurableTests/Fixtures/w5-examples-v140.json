@@ -1,0 +1,294 @@
+{
+  "tag": "v1.4.0",
+  "provenance": {
+    "source": "unmodified tagged examples and library source in mirror.mjs",
+    "dependencies": "typebox@1.3.27 from the offline npm cache",
+    "capture": "console.log argument snapshots and original stdout; example code and setup are unchanged"
+  },
+  "examples": [
+    {
+      "name": "09-context",
+      "source": "packages/durable/test/examples/09-context.ts",
+      "stdout": "raw active entries: [\n  'message',   'message',\n  'message',   'message',\n  'pi.system', 'message',\n  'message',   'edit',\n  'note'\n]\nrequest messages: [\n  'system: {\"cwd\":\"<cwd>/repo</cwd>\"}',\n  'user: read files a and b',\n  'assistant: reading call(a) call(b)',\n  'result(a)',\n  'result(b)',\n  'assistant: a and b look fine'\n]\nfork messages: [\n  'user: read a and b',\n  'assistant: reading call(a) call(b)',\n  'result(a) error',\n  'result(b) error'\n]\nafter summary: summary [ 'user: Summary: a and b are fine.' ]\nnewest stored entries: [ 'summary', 'note', 'edit' ] more: true\n",
+      "calls": [
+        [
+          "raw active entries:",
+          [
+            "message",
+            "message",
+            "message",
+            "message",
+            "pi.system",
+            "message",
+            "message",
+            "edit",
+            "note"
+          ]
+        ],
+        [
+          "request messages:",
+          [
+            "system: {\"cwd\":\"<cwd>/repo</cwd>\"}",
+            "user: read files a and b",
+            "assistant: reading call(a) call(b)",
+            "result(a)",
+            "result(b)",
+            "assistant: a and b look fine"
+          ]
+        ],
+        [
+          "fork messages:",
+          [
+            "user: read a and b",
+            "assistant: reading call(a) call(b)",
+            "result(a) error",
+            "result(b) error"
+          ]
+        ],
+        [
+          "after summary:",
+          "summary",
+          [
+            "user: Summary: a and b are fine."
+          ]
+        ],
+        [
+          "newest stored entries:",
+          [
+            "summary",
+            "note",
+            "edit"
+          ],
+          "more:",
+          true
+        ]
+      ]
+    },
+    {
+      "name": "20-inbox",
+      "source": "packages/durable/test/examples/20-inbox.ts",
+      "stdout": "rejected: Conversation 1 is busy\nwithdraw: aborted\ninbox: [ '10 followUp', '11 steer' ]\nfirst: done \nfollow-up: done \nsteer: done \nnote: done \nwithdrawn: unanswered aborted\ntranscript: [\n  'pi.user',\n  'app.note',\n  'pi.assistant',\n  'pi.user',\n  'pi.user',\n  'pi.assistant'\n]\n",
+      "calls": [
+        [
+          "rejected:",
+          "Conversation 1 is busy"
+        ],
+        [
+          "withdraw:",
+          "aborted"
+        ],
+        [
+          "inbox:",
+          [
+            "10 followUp",
+            "11 steer"
+          ]
+        ],
+        [
+          "first:",
+          "done",
+          ""
+        ],
+        [
+          "follow-up:",
+          "done",
+          ""
+        ],
+        [
+          "steer:",
+          "done",
+          ""
+        ],
+        [
+          "note:",
+          "done",
+          ""
+        ],
+        [
+          "withdrawn:",
+          "unanswered",
+          "aborted"
+        ],
+        [
+          "transcript:",
+          [
+            "pi.user",
+            "app.note",
+            "pi.assistant",
+            "pi.user",
+            "pi.user",
+            "pi.assistant"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "25-compaction",
+      "source": "packages/durable/test/examples/25-compaction.ts",
+      "stdout": "\nafter \"Where should we stay?\" (answered): 2 messages in context, 2 entries stored\n  user      Where should we stay?\n  assistant A detailed answer to \"Where should we stay?\": details details details \n\nafter \"What should we eat?\" (answered): 4 messages in context, 4 entries stored\n  user      Where should we stay?\n  assistant A detailed answer to \"Where should we stay?\": details details details \n  user      What should we eat?\n  assistant A detailed answer to \"What should we eat?\": details details details de\n\nafter \"Which day trips?\" (answered): 4 messages in context, 7 entries stored\n  (threshold compaction summary first)\n  user      The conversation history before this point was compacted into the foll\n  assistant A detailed answer to \"What should we eat?\": details details details de\n  user      Which day trips?\n  assistant A detailed answer to \"Which day trips?\": details details details detai\n\nafter \"Any museums?\" (answered): 7 messages in context, 10 entries stored\n  (threshold compaction summary first)\n  system    (system prompt)\n  user      The conversation history before this point was compacted into the foll\n  assistant A detailed answer to \"What should we eat?\": details details details de\n  user      Which day trips?\n  assistant A detailed answer to \"Which day trips?\": details details details detai\n  user      Any museums?\n  assistant A detailed answer to \"Any museums?\": details details details details d\n\nafter \"Nightlife?\" (answered): 5 messages in context, 14 entries stored\n  (threshold compaction summary first)\n  system    (system prompt)\n  user      The conversation history before this point was compacted into the foll\n  assistant A detailed answer to \"Any museums?\": details details details details d\n  user      Nightlife?\n  assistant A detailed answer to \"Nightlife?\": details details details details det\n\nmanual compaction finished; its summary is queued\nafter the answer, the summary is done\n\nafter compact(): 4 messages in context, 17 entries stored\n  (manual compaction summary first)\n  user      The conversation history before this point was compacted into the foll\n  assistant A detailed answer to \"Nightlife?\": details details details details det\n  user      How do we get around?\n  assistant A detailed answer to \"How do we get around?\": details details details \n\nafter \"What should we pack?\" (answered): 7 messages in context, 20 entries stored\n  (manual compaction summary first)\n  system    (system prompt)\n  user      The conversation history before this point was compacted into the foll\n  assistant A detailed answer to \"Nightlife?\": details details details details det\n  user      How do we get around?\n  assistant A detailed answer to \"How do we get around?\": details details details \n  user      What should we pack?\n  assistant A detailed answer to \"What should we pack?\": details details details d\n\nafter \"Summarize the plan for my partner\" (model_error): 4 messages in context, 24 entries stored\n  (threshold compaction summary first)\n  system    (system prompt)\n  user      The conversation history before this point was compacted into the foll\n  assistant A detailed answer to \"What should we pack?\": details details details d\n  user      Summarize the plan for my partner\n",
+      "calls": [
+        [
+          "\nafter \"Where should we stay?\" (answered): 2 messages in context, 2 entries stored"
+        ],
+        [
+          "  user      Where should we stay?"
+        ],
+        [
+          "  assistant A detailed answer to \"Where should we stay?\": details details details "
+        ],
+        [
+          "\nafter \"What should we eat?\" (answered): 4 messages in context, 4 entries stored"
+        ],
+        [
+          "  user      Where should we stay?"
+        ],
+        [
+          "  assistant A detailed answer to \"Where should we stay?\": details details details "
+        ],
+        [
+          "  user      What should we eat?"
+        ],
+        [
+          "  assistant A detailed answer to \"What should we eat?\": details details details de"
+        ],
+        [
+          "\nafter \"Which day trips?\" (answered): 4 messages in context, 7 entries stored"
+        ],
+        [
+          "  (threshold compaction summary first)"
+        ],
+        [
+          "  user      The conversation history before this point was compacted into the foll"
+        ],
+        [
+          "  assistant A detailed answer to \"What should we eat?\": details details details de"
+        ],
+        [
+          "  user      Which day trips?"
+        ],
+        [
+          "  assistant A detailed answer to \"Which day trips?\": details details details detai"
+        ],
+        [
+          "\nafter \"Any museums?\" (answered): 7 messages in context, 10 entries stored"
+        ],
+        [
+          "  (threshold compaction summary first)"
+        ],
+        [
+          "  system    (system prompt)"
+        ],
+        [
+          "  user      The conversation history before this point was compacted into the foll"
+        ],
+        [
+          "  assistant A detailed answer to \"What should we eat?\": details details details de"
+        ],
+        [
+          "  user      Which day trips?"
+        ],
+        [
+          "  assistant A detailed answer to \"Which day trips?\": details details details detai"
+        ],
+        [
+          "  user      Any museums?"
+        ],
+        [
+          "  assistant A detailed answer to \"Any museums?\": details details details details d"
+        ],
+        [
+          "\nafter \"Nightlife?\" (answered): 5 messages in context, 14 entries stored"
+        ],
+        [
+          "  (threshold compaction summary first)"
+        ],
+        [
+          "  system    (system prompt)"
+        ],
+        [
+          "  user      The conversation history before this point was compacted into the foll"
+        ],
+        [
+          "  assistant A detailed answer to \"Any museums?\": details details details details d"
+        ],
+        [
+          "  user      Nightlife?"
+        ],
+        [
+          "  assistant A detailed answer to \"Nightlife?\": details details details details det"
+        ],
+        [
+          "\nmanual compaction finished; its summary is",
+          "queued"
+        ],
+        [
+          "after the answer, the summary is",
+          "done"
+        ],
+        [
+          "\nafter compact(): 4 messages in context, 17 entries stored"
+        ],
+        [
+          "  (manual compaction summary first)"
+        ],
+        [
+          "  user      The conversation history before this point was compacted into the foll"
+        ],
+        [
+          "  assistant A detailed answer to \"Nightlife?\": details details details details det"
+        ],
+        [
+          "  user      How do we get around?"
+        ],
+        [
+          "  assistant A detailed answer to \"How do we get around?\": details details details "
+        ],
+        [
+          "\nafter \"What should we pack?\" (answered): 7 messages in context, 20 entries stored"
+        ],
+        [
+          "  (manual compaction summary first)"
+        ],
+        [
+          "  system    (system prompt)"
+        ],
+        [
+          "  user      The conversation history before this point was compacted into the foll"
+        ],
+        [
+          "  assistant A detailed answer to \"Nightlife?\": details details details details det"
+        ],
+        [
+          "  user      How do we get around?"
+        ],
+        [
+          "  assistant A detailed answer to \"How do we get around?\": details details details "
+        ],
+        [
+          "  user      What should we pack?"
+        ],
+        [
+          "  assistant A detailed answer to \"What should we pack?\": details details details d"
+        ],
+        [
+          "\nafter \"Summarize the plan for my partner\" (model_error): 4 messages in context, 24 entries stored"
+        ],
+        [
+          "  (threshold compaction summary first)"
+        ],
+        [
+          "  system    (system prompt)"
+        ],
+        [
+          "  user      The conversation history before this point was compacted into the foll"
+        ],
+        [
+          "  assistant A detailed answer to \"What should we pack?\": details details details d"
+        ],
+        [
+          "  user      Summarize the plan for my partner"
+        ]
+      ]
+    }
+  ]
+}

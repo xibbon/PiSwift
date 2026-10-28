@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mirror, upstreamTag } from './mirror.mjs';
 
-const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/structured-tool-schema-v130.json', import.meta.url));
+const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/structured-tool-schema-v140.json', import.meta.url));
 const checking = process.argv.includes('--check');
 const source = await mirror({ dependencies: ['typebox@1.3.27'] });
 try {

@@ -27,7 +27,7 @@ function expectedText(text) {
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-fixtures.json', import.meta.url));
 const temporary = mkdtempSync(join(tmpdir(), 'chord-tracker-'));
 try {
-  const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.3.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
+  const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.4.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
   execFileSync('tar', ['-x', '-C', temporary], { input: archive });
   const { track } = await import(pathToFileURL(join(temporary, 'packages/chord/src/delta/tracker.ts')).href);
   let seed = 0x43a71e29;
@@ -317,7 +317,7 @@ try {
       set('n', 999, ['xs', 800]), set('outside', 1)];
     add('multiple-disjoint-dense-regions-preserve-outside-operations', 'source-cases', base, [...steps, ...finish]);
   }
-  // New v1.3 cases have their own file. The old replay test keeps 925 cases.
+  // Keep frozen replay inputs. Record the output digest from this tag.
   const existingCases = cases.splice(0);
   const existingCounts = { ...counts };
   for (const key of Object.keys(counts)) delete counts[key];
@@ -337,15 +337,15 @@ try {
     repeat(256, set('value', ix(-1, -1), ['values', ix()]), 100),
     repeat(256, set('value', ix(-1, -1), ['values', ix()]), 900), ...finish,
   ]);
-  const additions = fixtureJSON({ upstream: 'pi-mono v1.3.0', source: 'packages/chord/test/delta-tracker/tracker.test.ts', counts, cases }) + '\n';
-  const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-v130-fixtures.json', import.meta.url));
+  const additions = fixtureJSON({ upstream: 'pi-mono v1.4.0', source: 'packages/chord/test/delta-tracker/tracker.test.ts', frozenFixture: 'tracker-v130-fixtures', payload: 'cases', count: cases.length, sha256: createHash('sha256').update(JSON.stringify(cases)).digest('hex') }) + '\n';
+  const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-v140-fixtures.json', import.meta.url));
   cases.splice(0, cases.length, ...existingCases);
   for (const key of Object.keys(counts)) delete counts[key];
   Object.assign(counts, existingCounts);
-  const output = fixtureJSON({ upstream: 'pi-mono v1.3.0', seed: '0x43a71e29', counts, cases }) + '\n';
-  assertFixtureBudget({ 'tracker-fixtures.json': output, 'tracker-v130-fixtures.json': additions });
+  const output = fixtureJSON({ upstream: 'pi-mono v1.4.0', seed: '0x43a71e29', counts, cases }) + '\n';
+  assertFixtureBudget({ 'tracker-fixtures.json': output, 'tracker-v140-fixtures.json': additions });
   if (process.argv.includes('--check')) {
-    if (readFileSync(additionsPath, 'utf8') !== additions) throw new Error('v1.3 tracker fixtures differ');
+    if (readFileSync(additionsPath, 'utf8') !== additions) throw new Error('v1.4 tracker fixtures differ');
   } else writeFileSync(additionsPath, additions);
   if (process.argv.includes('--check')) {
     if (readFileSync(fixturePath, 'utf8') !== output) {

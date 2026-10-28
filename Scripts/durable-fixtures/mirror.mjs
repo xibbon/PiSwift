@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const upstreamRepository = '/Users/miguel/cvs/pi/pi-mono';
-export const upstreamTag = 'v1.3.0';
+export const upstreamTag = 'v1.4.0';
 
 function completion(child) {
   return new Promise((resolve, reject) => {

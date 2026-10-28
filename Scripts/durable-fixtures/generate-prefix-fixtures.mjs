@@ -1,10 +1,10 @@
-// Use the unmodified v1.3.0 SQLite adapter. Keep the default-prefix fixtures unchanged.
+// Use the unmodified v1.4.0 SQLite adapter. Keep the default-prefix fixtures unchanged.
 import { spawnSync } from 'node:child_process';
 import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mirror } from './mirror.mjs';
+import { mirror, upstreamTag } from './mirror.mjs';
 import { readRecordedCalls, compareRecordedReads } from './sqlite-fixtures.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
@@ -12,8 +12,10 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(run.status ?? 1);
 }
 const check = process.argv.includes('--check');
-const fixture = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/prefix-upstream-v130.sqlite', import.meta.url));
-const { batches, reads } = JSON.parse(await readFile(new URL('../../Tests/PiSwiftDurableTests/Fixtures/records.json', import.meta.url), 'utf8'));
+const fixture = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/prefix-upstream-v140.sqlite', import.meta.url));
+const records = JSON.parse(await readFile(new URL('../../Tests/PiSwiftDurableTests/Fixtures/records.json', import.meta.url), 'utf8'));
+if (records.tag !== upstreamTag) throw new Error(`Prefix input tag differs: ${records.tag} != ${upstreamTag}`);
+const { batches, reads } = records;
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-prefix-fixtures-'));
 const source = await mirror();
 try {
@@ -35,7 +37,7 @@ try {
   try { compareRecordedReads(await readRecordedCalls(reopened, reads, context), reads, 'Prefixed SQLite after reopen'); }
   finally { await reopened.close(context); }
   if (!check) await copyFile(path, fixture);
-  console.log(`Prefixed SQLite fixture ${check ? 'matches' : 'written'}: ${batches.length} batches, ${reads.length} reads, prefix pi_, upstream v1.3.0.`);
+  console.log(`Prefixed SQLite fixture ${check ? 'matches' : 'written'}: ${batches.length} batches, ${reads.length} reads, prefix pi_, upstream ${upstreamTag}.`);
 } finally {
   await source.close();
   await rm(temporary, { recursive: true, force: true });

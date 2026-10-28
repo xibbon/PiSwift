@@ -1,4 +1,4 @@
-// Run the unmodified v1.3.0 examples with their faux providers and no network.
+// Run the unmodified v1.4.0 examples with their faux providers and no network.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -45,7 +45,7 @@ process.on('exit', () => writeFileSync(process.env.PI_DURABLE_EXAMPLE_TRACE, JSO
     dependencies: 'typebox@1.3.27 from the offline npm cache',
     capture: 'console.log argument snapshots and original stdout; example code and setup are unchanged',
   }, examples }, null, 2) + '\n';
-  const output = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/w5-examples-v130.json', import.meta.url));
+  const output = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/w5-examples-v140.json', import.meta.url));
   if (process.argv.includes('--check')) {
     if (await readFile(output, 'utf8') !== result) throw new Error('W5 example evidence differs');
   } else await writeFile(output, result);

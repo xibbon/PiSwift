@@ -1,4 +1,4 @@
-// Expected values come from unmodified v1.3.0 code and its pinned isolated diff 8.0.4 release.
+// Expected values come from unmodified v1.4.0 code and its pinned isolated diff 8.0.4 release.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -103,7 +103,7 @@ try {
   });
   const fixture = JSON.stringify({ tag: upstreamTag, diffVersion: '8.0.4', provenance: { source: 'unmodified isolated git archive', dependency: 'isolated npm diff@8.0.4' }, edits, diffs, normalization,
     counts: { edits: edits.length, diffs: diffs.length, normalization: normalization.length } }, null, 2) + '\n';
-  const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/edit-fixtures-v130.json', import.meta.url));
+  const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/edit-fixtures-v140.json', import.meta.url));
   if (process.argv.includes('--check')) {
     if (await readFile(path, 'utf8') !== fixture) throw new Error('Edit fixtures differ. Run this script without --check.');
     console.log(`Edit fixtures match: ${edits.length} edit cases, ${diffs.length} diff cases, ${normalization.length} normalization cases. isolated diff 8.0.4.`);

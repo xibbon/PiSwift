@@ -22,8 +22,8 @@ for (const name of checks) {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-console.log('Checking SharedFileCloseoutTests (all backends, both directions)');
-const matrix = spawnSync('swift', ['test', '--skip-build', '--filter', 'SharedFileCloseoutTests'], {
+console.log('Checking SharedFileCloseoutTests and D4 shared-file tests (all backends, both directions, schema migrations, scheduler resume)');
+const matrix = spawnSync('swift', ['test', '--skip-build', '--filter', 'SharedFileCloseoutTests|D4SharedFileCloseoutTests|D4SharedFileResumeTests'], {
   cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'inherit',
 });
 if (matrix.error) throw matrix.error;

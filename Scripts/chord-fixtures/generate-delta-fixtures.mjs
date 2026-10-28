@@ -30,7 +30,7 @@ const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixture
 // Import the full tag source. No copied algorithm is an oracle.
 const temporary = mkdtempSync(join(tmpdir(), 'chord-delta-'));
 try {
-const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.3.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
+const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.4.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
 execFileSync('tar', ['-x', '-C', temporary], { input: archive });
 const { overlap, apply: applyOps, applyImmutable } = await import(pathToFileURL(join(temporary, 'packages/chord/src/delta/index.ts')).href);
 const isObj = value => value !== null && typeof value === 'object';
@@ -234,13 +234,13 @@ addImmutable('non-append-general-path', [1,2], [['p', [], 1, 0, [9]]]);
 for (const [index, path] of [['values','missing'], ['missing'], ['values',0], ['__proto__'], ['list','x'], ['text'], ['list',-1], ['list',1.5], ['list',0,'constructor']].entries()) {
   addImmutable(`invalid-append-path-${index}`, { values: [], list: [[1]], text: 'a' }, [['p', path, 0, 0, []]]);
 }
-const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/delta-v130-fixtures.json', import.meta.url));
-const additionsOutput = fixtureJSON({ upstream: 'pi-mono v1.3.0', source: 'packages/chord/test/delta-apply-immutable.test.ts', apply: additions }) + '\n';
+const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/delta-v140-fixtures.json', import.meta.url));
+const additionsOutput = fixtureJSON({ upstream: 'pi-mono v1.4.0', source: 'packages/chord/test/delta-apply-immutable.test.ts', frozenFixture: 'delta-v130-fixtures', payload: 'apply', count: additions.length, sha256: createHash('sha256').update(JSON.stringify(additions)).digest('hex') }) + '\n';
 
-const output = fixtureJSON({ upstream: 'pi-mono v1.3.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }) + '\n';
-assertFixtureBudget({ 'overlap-fixtures.json': output, 'delta-v130-fixtures.json': additionsOutput });
+const output = fixtureJSON({ upstream: 'pi-mono v1.4.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }) + '\n';
+assertFixtureBudget({ 'overlap-fixtures.json': output, 'delta-v140-fixtures.json': additionsOutput });
 if (process.argv.includes('--check')) {
-  if (readFileSync(additionsPath, 'utf8') !== additionsOutput) throw new Error('v1.3 delta fixtures differ');
+  if (readFileSync(additionsPath, 'utf8') !== additionsOutput) throw new Error('v1.4 delta fixtures differ');
 } else writeFileSync(additionsPath, additionsOutput);
 
 const counts = `${overlapCases.length} overlap cases, ${applyCases.length} apply cases (${applyCases.filter(entry => entry.errorKind).length} invalid)`;

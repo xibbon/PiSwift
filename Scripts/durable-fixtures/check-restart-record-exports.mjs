@@ -1,4 +1,4 @@
-// Build the tests first. Check Swift-written files with the unmodified v1.3.0 adapters.
+// Build the tests first. Check Swift-written files with the unmodified v1.4.0 adapters.
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,7 +32,7 @@ try {
   const jsonl = await openNodeJsonlStorage(jsonlPath, context);
   try { compareRecordedReads(await readRecordedCalls(jsonl, reads, context), reads, 'JSONL'); }
   finally { await jsonl.close(context); }
-  console.log(`Upstream v1.3.0 reads match Swift restart exports: ${reads.length} SQLite reads and ${reads.length} JSONL reads.`);
+  console.log(`Upstream v1.4.0 reads match Swift restart exports: ${reads.length} SQLite reads and ${reads.length} JSONL reads.`);
 } finally {
   await source.close();
   await rm(temporary, { recursive: true, force: true });

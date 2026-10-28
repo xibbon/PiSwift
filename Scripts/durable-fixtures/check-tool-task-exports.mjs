@@ -1,4 +1,4 @@
-// Build the tests first. The v1.3.0 readers must read Swift's typed v2 task writes.
+// Build the tests first. The v1.4.0 readers must read Swift's typed v2 task writes.
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,7 +32,7 @@ try {
   const jsonl = await openNodeJsonlStorage(jsonlPath, context);
   try { compareRecordedReads(await readRecordedCalls(jsonl, reads, context), reads, 'JSONL'); }
   finally { await jsonl.close(context); }
-  console.log(`Upstream v1.3.0 reads match Swift typed v2 tool task exports: ${reads.length} SQLite reads and ${reads.length} JSONL reads.`);
+  console.log(`Upstream v1.4.0 reads match Swift typed v2 tool task exports: ${reads.length} SQLite reads and ${reads.length} JSONL reads.`);
 } finally {
   await source.close();
   await rm(temporary, { recursive: true, force: true });

@@ -8,7 +8,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(run.status ?? 1);
 }
-const path = new URL('../../Tests/PiSwiftDurableTests/Fixtures/search-v130.json', import.meta.url);
+const path = new URL('../../Tests/PiSwiftDurableTests/Fixtures/search-v140.json', import.meta.url);
 const source = await mirror();
 try {
   const { tokenize, rankDocuments } = await source.import('packages/durable/src/search.ts');

@@ -1,4 +1,4 @@
-// Store mixed model-call versions with unmodified v1.3.0 Session and storage code.
+// Store mixed model-call versions with unmodified v1.4.0 Session and storage code.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdtemp, mkdir, copyFile, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -94,18 +94,18 @@ try {
   }
   await session.close(context);
   const result = JSON.stringify({ tag: upstreamTag, provenance: {
-    source: 'unmodified v1.3.0 Session, ToolTask migration, appendToolResult, and storage adapters',
+    source: 'unmodified v1.4.0 Session, ToolTask migration, appendToolResult, and storage adapters',
     legacy: 'v1 model input has no kind; a v1 completing result keeps its legacy shape',
     transcript: 'ToolExecutionResult.output becomes ToolResultMessage.content; structuredOutput is not transcript content',
   }, batches, reads, migrations }, null, 2) + '\n';
   await mkdir(fixtures, { recursive: true });
-  const record = join(fixtures, 'tool-task-records-v130.json');
+  const record = join(fixtures, 'tool-task-records-v140.json');
   if (check) {
     if (await readFile(record, 'utf8') !== result) throw new Error('Tool task record fixtures differ');
   } else await writeFile(record, result);
   const sqlite = join(temporary, 'tool-tasks.sqlite');
   await replaySqlite(source, sqlite, batches, reads, context);
-  const sqliteFixture = join(fixtures, 'tool-task-upstream-v130.sqlite');
+  const sqliteFixture = join(fixtures, 'tool-task-upstream-v140.sqlite');
   if (check) {
     const checked = join(temporary, 'checked.sqlite');
     await copyFile(sqliteFixture, checked);
@@ -116,7 +116,7 @@ try {
   } else await copyFile(sqlite, sqliteFixture);
   const jsonl = join(temporary, 'jsonl');
   await replayJsonl(source, jsonl, batches, reads, context);
-  const jsonlFixture = join(fixtures, 'tool-task-upstream-jsonl-v130');
+  const jsonlFixture = join(fixtures, 'tool-task-upstream-jsonl-v140');
   if (check) {
     const checked = join(temporary, 'checked-jsonl');
     await cp(jsonlFixture, checked, { recursive: true });

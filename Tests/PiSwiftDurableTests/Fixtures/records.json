@@ -1,5 +1,9 @@
 {
-  "tag": "v1.3.0",
+  "tag": "v1.4.0",
+  "provenance": {
+    "source": "unmodified v1.4.0 Session, MemoryStorage, SQLite, and JSONL storage",
+    "checkpointWhen": "false for definitions without an earlier policy; the fixture.checkpoint true policy is retained"
+  },
   "batches": [
     {
       "seq": 1,

@@ -1,4 +1,4 @@
-// Read the unmodified v1.3.0 context implementation. Never write to pi-mono.
+// Read the unmodified v1.4.0 context implementation. Never write to pi-mono.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -75,10 +75,10 @@ try {
     { kind: 'edit', edits: [{ action: 'replace', target: 1, messages: [system('replacement')] }] },
     { ...summary, head: 2 }, baseline]);
   const result = JSON.stringify({ tag: upstreamTag, provenance: {
-    source: 'unmodified packages/durable/src/harness/context.ts at v1.3.0',
+    source: 'unmodified packages/durable/src/harness/context.ts at v1.4.0',
     construction: 'Constructed immutable transcript records; a read-only scan supplies each range. No Session or scheduler runs.',
   }, cases }, null, 2) + '\n';
-  const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/context-baseline-v130.json', import.meta.url));
+  const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/context-baseline-v140.json', import.meta.url));
   if (process.argv.includes('--check')) {
     if (await readFile(path, 'utf8') !== result) throw new Error('Context baseline fixtures differ');
   } else await writeFile(path, result);

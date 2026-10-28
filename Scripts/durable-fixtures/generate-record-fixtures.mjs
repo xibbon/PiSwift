@@ -1,4 +1,4 @@
-// All record JSON below comes from v1.3.0 Session and MemoryStorage results.
+// All record JSON below comes from v1.4.0 Session and MemoryStorage results.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, copyFile, cp, stat, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { mirror, upstreamTag } from './mirror.mjs';
 import { replaySqlite, readRecordedCalls, compareRecordedReads } from './sqlite-fixtures.mjs';
 import { replayJsonl, compareJsonl, jsonlSize } from './jsonl-fixtures.mjs';
+import { generateLifecycleFixtures } from './v140-record-cases.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
@@ -63,17 +64,17 @@ try {
     entryIDs.push((await tx.appendEntry(chat.id, { kind: 'fixture.opaque', data: null, extension: { retained: true } })).id);
   }, context, { conversationId: chat.id, taskId: taskIDs[0] });
 
-  const sessionDoc = defineDoc({ kind: 'fixture.session', version: 1, scope: 'session', initial: () => ({ count: 0, label: 'base' }) });
+  const sessionDoc = defineDoc({ kind: 'fixture.session', version: 1, scope: 'session', checkpointWhen: () => false, initial: () => ({ count: 0, label: 'base' }) });
   const checkpointDoc = defineDoc({ kind: 'fixture.checkpoint', version: 1, scope: 'session', initial: () => ({ count: 0 }), checkpointWhen: () => true });
-  const taskDoc = defineDoc({ kind: 'fixture.task-doc', version: 1, scope: 'task', initial: () => ({ count: 0 }) });
+  const taskDoc = defineDoc({ kind: 'fixture.task-doc', version: 1, scope: 'task', checkpointWhen: () => false, initial: () => ({ count: 0 }) });
   const conversationDocs = [];
   for (const [history, fork] of [['latest', 'initial'], ['latest', 'current'], ['rewindable', 'initial'], ['rewindable', 'current'], ['rewindable', 'asOf']]) {
-    conversationDocs.push(defineDoc({ kind: `fixture.${history}.${fork}`, version: 1, scope: 'conversation', history, fork, initial: () => ({ count: 0, items: ['base'] }) }));
+    conversationDocs.push(defineDoc({ kind: `fixture.${history}.${fork}`, version: 1, scope: 'conversation', history, fork, checkpointWhen: () => false, initial: () => ({ count: 0, items: ['base'] }) }));
   }
   const families = [
-    defineDocFamily({ kind: 'fixture.session-family', version: 1, scope: 'session', family: true, initial: seed => ({ seed, count: 0 }) }),
-    defineDocFamily({ kind: 'fixture.conversation-family', version: 1, scope: 'conversation', history: 'rewindable', fork: 'asOf', family: true, initial: seed => ({ seed, count: 0 }) }),
-    defineDocFamily({ kind: 'fixture.task-family', version: 1, scope: 'task', family: true, initial: seed => ({ seed, count: 0 }) }),
+    defineDocFamily({ kind: 'fixture.session-family', version: 1, scope: 'session', family: true, checkpointWhen: () => false, initial: seed => ({ seed, count: 0 }) }),
+    defineDocFamily({ kind: 'fixture.conversation-family', version: 1, scope: 'conversation', history: 'rewindable', fork: 'asOf', family: true, checkpointWhen: () => false, initial: seed => ({ seed, count: 0 }) }),
+    defineDocFamily({ kind: 'fixture.task-family', version: 1, scope: 'task', family: true, checkpointWhen: () => false, initial: seed => ({ seed, count: 0 }) }),
   ];
   await session.commit(async tx => {
     await tx.doc(sessionDoc);
@@ -191,7 +192,7 @@ try {
   await session.close(context);
   const counts = { batches: batches.length, writes: batches.reduce((count, batch) => count + batch.writes.length, 0), reads: reads.length,
     writeTypes: Object.fromEntries([...new Set(batches.flatMap(batch => batch.writes.map(write => write.type)))].sort().map(type => [type, batches.reduce((count, batch) => count + batch.writes.filter(write => write.type === type).length, 0)])) };
-  const fixture = JSON.stringify({ tag: upstreamTag, batches, reads, counts }, null, 2) + '\n';
+  const fixture = JSON.stringify({ tag: upstreamTag, provenance: { source: 'unmodified v1.4.0 Session, MemoryStorage, SQLite, and JSONL storage', checkpointWhen: 'false for definitions without an earlier policy; the fixture.checkpoint true policy is retained' }, batches, reads, counts }, null, 2) + '\n';
   const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/records.json', import.meta.url));
   if (process.argv.includes('--check')) {
     if (await readFile(path, 'utf8') !== fixture) throw new Error('Record fixtures differ. Run this script without --check.');
@@ -244,6 +245,7 @@ try {
       console.log(`Wrote durable JSONL fixture: ${counts.reads} reads, ${size.files} files, ${size.bytes} bytes.`);
     }
   } finally { await rm(jsonlDirectory, { recursive: true, force: true }); }
+  await generateLifecycleFixtures(source, { check: process.argv.includes('--check') });
 } finally {
   await source.close();
 }

@@ -96,11 +96,11 @@ try {
   await read('scanSubmissions', [{ conversationId, order: 'ascending' }, 100, undefined]);
   await session.close(context);
   const encoded = JSON.stringify({ tag: upstreamTag, provenance: {
-    source: 'Unmodified v1.3.0 Session, AgentDoc, InboxDoc, LiveDoc and MemoryStorage',
+    source: 'Unmodified v1.4.0 Session, AgentDoc, InboxDoc, LiveDoc and MemoryStorage',
     construction: 'Constructed document payloads and settled submission records; no scheduling or model execution',
     deferred: 'Registration metadata is not stored. modelTools.add records loaded deferred names.',
   }, catalog, filters, conversations, batches, reads }, null, 2) + '\n';
-  const path = new URL('../../Tests/PiSwiftDurableTests/Fixtures/closeout-documents-v130.json', import.meta.url);
+  const path = new URL('../../Tests/PiSwiftDurableTests/Fixtures/closeout-documents-v140.json', import.meta.url);
   if (process.argv.includes('--check')) {
     if (await readFile(path, 'utf8') !== encoded) throw new Error('Closeout document fixtures differ');
   } else await writeFile(path, encoded);

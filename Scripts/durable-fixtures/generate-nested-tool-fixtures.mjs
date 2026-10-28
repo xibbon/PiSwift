@@ -1,4 +1,4 @@
-// Record nested-call wire values with the unmodified v1.3.0 Session and adapters.
+// Record nested-call wire values with the unmodified v1.4.0 Session and adapters.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdtemp, mkdir, copyFile, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -149,14 +149,14 @@ try {
     { kind: 'pi.tool.nested-call', scope: { kind: 'task', taskId: parent }, at: 'current' }, 20, null]);
   await session.close(context);
   const result = JSON.stringify({ tag: upstreamTag, provenance: {
-    source: 'unmodified v1.3.0 Session, ToolTask, NestedCallDoc, and storage adapters',
+    source: 'unmodified v1.4.0 Session, ToolTask, NestedCallDoc, and storage adapters',
     construction: 'Session transactions construct schema examples; they do not execute ToolTask handlers or prove restart scheduling',
     sourcePaths: ['packages/durable/src/harness/tool.ts:59-108', 'packages/durable/src/harness/tool.ts:589-735', 'packages/durable/src/session/transaction.ts:775-803'],
     retirement: 'Session emits family document retirement when the calling task becomes terminal',
     history: 'Task-scoped documents keep current content only; checkpoints read results before parent retirement',
   }, cases: { parents, children, deep, members, deepResultSeq, parentResultSeq }, batches, checkpoints, reads }, null, 2) + '\n';
   await mkdir(fixtures, { recursive: true });
-  const recordPath = join(fixtures, 'nested-tool-records-v130.json');
+  const recordPath = join(fixtures, 'nested-tool-records-v140.json');
   if (check) {
     if (await readFile(recordPath, 'utf8') !== result) throw new Error('Nested tool record fixtures differ');
   } else await writeFile(recordPath, result);
@@ -173,7 +173,7 @@ try {
   const { openNodeSqliteStorage } = await source.import('packages/durable/src/storage/sqlite/node.ts');
   const sqlite = join(temporary, 'nested.sqlite');
   await replay(await openNodeSqliteStorage(sqlite));
-  const sqliteFixture = join(fixtures, 'nested-tool-upstream-v130.sqlite');
+  const sqliteFixture = join(fixtures, 'nested-tool-upstream-v140.sqlite');
   if (check) {
     const checked = join(temporary, 'checked.sqlite');
     await copyFile(sqliteFixture, checked);
@@ -186,7 +186,7 @@ try {
   const { openNodeJsonlStorage } = await source.import('packages/durable/src/storage/jsonl/node.ts');
   await replay(await openNodeJsonlStorage(jsonl, context));
   await compareJsonl(source, jsonl, reads, context);
-  const jsonlFixture = join(fixtures, 'nested-tool-upstream-jsonl-v130');
+  const jsonlFixture = join(fixtures, 'nested-tool-upstream-jsonl-v140');
   if (check) {
     const checked = join(temporary, 'checked-jsonl');
     await cp(jsonlFixture, checked, { recursive: true });

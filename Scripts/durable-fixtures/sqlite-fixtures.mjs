@@ -1,4 +1,4 @@
-// Replay the recorded v1.3.0 scenario through unmodified upstream SQLite code.
+// Replay the recorded v1.4.0 scenario through unmodified upstream SQLite code.
 import { isDeepStrictEqual } from 'node:util';
 
 export function jsonResult(value) {

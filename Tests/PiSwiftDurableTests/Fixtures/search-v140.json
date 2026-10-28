@@ -1,0 +1,552 @@
+{
+  "tag": "v1.4.0",
+  "tokens": [
+    {
+      "text": "",
+      "expected": []
+    },
+    {
+      "text": "   -- 💡 ",
+      "expected": []
+    },
+    {
+      "text": "a an and are as at be by for from in is it of on or that the this to with",
+      "expected": []
+    },
+    {
+      "text": "getIssue HTTPServer XMLHTTPRequest readJSON2File issue42Count",
+      "expected": [
+        "get",
+        "issue",
+        "http",
+        "server",
+        "xmlhttp",
+        "request",
+        "read",
+        "json2",
+        "file",
+        "issue42",
+        "count"
+      ]
+    },
+    {
+      "text": "github_get_issue foo-bar.baz/QUX 123 1A aB ABCd",
+      "expected": [
+        "github",
+        "get",
+        "issue",
+        "foo",
+        "bar",
+        "baz",
+        "qux",
+        "123",
+        "1",
+        "b",
+        "ab",
+        "cd"
+      ]
+    },
+    {
+      "text": "issues searches churches wishes classes boxes quizzes parties cities ties gas bus news glass",
+      "expected": [
+        "issue",
+        "search",
+        "church",
+        "wish",
+        "class",
+        "box",
+        "quizz",
+        "party",
+        "city",
+        "tie",
+        "gas",
+        "bus",
+        "new",
+        "glass"
+      ]
+    },
+    {
+      "text": "İ K İssue Kelvin fooKBar FOOİBar Straße CAFÉ naïve 東京",
+      "expected": [
+        "i",
+        "k",
+        "i",
+        "ssue",
+        "kelvin",
+        "fookbar",
+        "fooi",
+        "bar",
+        "stra",
+        "e",
+        "caf",
+        "na",
+        "ve"
+      ]
+    },
+    {
+      "text": "İ i̇ KK ABCKTest 𐐀 Foo𐐨Bar",
+      "expected": [
+        "i",
+        "i",
+        "kk",
+        "abcktest",
+        "foo",
+        "bar"
+      ]
+    },
+    {
+      "text": "THE Issues WITH repositories and SearchTools",
+      "expected": [
+        "issue",
+        "repository",
+        "search",
+        "tool"
+      ]
+    }
+  ],
+  "rankings": [
+    {
+      "set": "empty",
+      "query": "alpha",
+      "limit": 8,
+      "documents": [],
+      "expected": []
+    },
+    {
+      "set": "blank",
+      "query": "alpha",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "empty",
+          "text": ""
+        },
+        {
+          "name": "stop",
+          "text": "the and with"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "set": "tools",
+      "query": "",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "set": "tools",
+      "query": "the and",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "set": "tools",
+      "query": "github issue",
+      "limit": 1,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": [
+        "issue"
+      ]
+    },
+    {
+      "set": "tools",
+      "query": "repositories",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": [
+        "repos"
+      ]
+    },
+    {
+      "set": "tools",
+      "query": "weather forecast",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": [
+        "weather"
+      ]
+    },
+    {
+      "set": "tools",
+      "query": "unknown",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "set": "tools",
+      "query": "issue issue issue github",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": [
+        "issue",
+        "repos"
+      ]
+    },
+    {
+      "set": "tools",
+      "query": "issue github",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": [
+        "issue",
+        "repos"
+      ]
+    },
+    {
+      "set": "tools",
+      "query": "github",
+      "limit": 0,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "set": "tools",
+      "query": "github",
+      "limit": -1,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "set": "tools",
+      "query": "github",
+      "limit": 99,
+      "documents": [
+        {
+          "name": "issue",
+          "text": "github_get_issue Get a GitHub issue by number"
+        },
+        {
+          "name": "repos",
+          "text": "github_list_repos List repositories of a user"
+        },
+        {
+          "name": "weather",
+          "text": "weather forecast rain temperature"
+        }
+      ],
+      "expected": [
+        "repos",
+        "issue"
+      ]
+    },
+    {
+      "set": "scoring",
+      "query": "alpha",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "short",
+          "text": "alpha"
+        },
+        {
+          "name": "frequency",
+          "text": "alpha alpha alpha"
+        },
+        {
+          "name": "long",
+          "text": "alpha beta gamma delta epsilon zeta eta theta"
+        },
+        {
+          "name": "rare",
+          "text": "beta unique"
+        },
+        {
+          "name": "none",
+          "text": ""
+        }
+      ],
+      "expected": [
+        "frequency",
+        "short",
+        "long"
+      ]
+    },
+    {
+      "set": "scoring",
+      "query": "beta unique",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "short",
+          "text": "alpha"
+        },
+        {
+          "name": "frequency",
+          "text": "alpha alpha alpha"
+        },
+        {
+          "name": "long",
+          "text": "alpha beta gamma delta epsilon zeta eta theta"
+        },
+        {
+          "name": "rare",
+          "text": "beta unique"
+        },
+        {
+          "name": "none",
+          "text": ""
+        }
+      ],
+      "expected": [
+        "rare",
+        "long"
+      ]
+    },
+    {
+      "set": "scoring",
+      "query": "alpha beta",
+      "limit": 2,
+      "documents": [
+        {
+          "name": "short",
+          "text": "alpha"
+        },
+        {
+          "name": "frequency",
+          "text": "alpha alpha alpha"
+        },
+        {
+          "name": "long",
+          "text": "alpha beta gamma delta epsilon zeta eta theta"
+        },
+        {
+          "name": "rare",
+          "text": "beta unique"
+        },
+        {
+          "name": "none",
+          "text": ""
+        }
+      ],
+      "expected": [
+        "rare",
+        "frequency"
+      ]
+    },
+    {
+      "set": "ties",
+      "query": "same",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "z",
+          "text": "same token"
+        },
+        {
+          "name": "a",
+          "text": "same token"
+        },
+        {
+          "name": "m",
+          "text": "same token"
+        }
+      ],
+      "expected": [
+        "z",
+        "a",
+        "m"
+      ]
+    },
+    {
+      "set": "ties",
+      "query": "same",
+      "limit": 2,
+      "documents": [
+        {
+          "name": "z",
+          "text": "same token"
+        },
+        {
+          "name": "a",
+          "text": "same token"
+        },
+        {
+          "name": "m",
+          "text": "same token"
+        }
+      ],
+      "expected": [
+        "z",
+        "a"
+      ]
+    },
+    {
+      "set": "unicode",
+      "query": "kelvin",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "kelvin",
+          "text": "Kelvin"
+        },
+        {
+          "name": "dotted",
+          "text": "İssue"
+        },
+        {
+          "name": "ascii",
+          "text": "issue"
+        }
+      ],
+      "expected": [
+        "kelvin"
+      ]
+    },
+    {
+      "set": "unicode",
+      "query": "İssue",
+      "limit": 8,
+      "documents": [
+        {
+          "name": "kelvin",
+          "text": "Kelvin"
+        },
+        {
+          "name": "dotted",
+          "text": "İssue"
+        },
+        {
+          "name": "ascii",
+          "text": "issue"
+        }
+      ],
+      "expected": [
+        "dotted"
+      ]
+    }
+  ]
+}

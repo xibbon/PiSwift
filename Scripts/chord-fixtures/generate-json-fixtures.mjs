@@ -84,7 +84,7 @@ for (const input of invalidInputs) {
   if (!rejected) throw new Error(`Invalid input was accepted by Node: ${input}`);
 }
 const parse = { valid: validInputs.map(input => ({ input, text: JSON.stringify(JSON.parse(input)) })), invalid: invalidInputs };
-const output = fixtureJSON({ provenance: { oracle: 'Node JSON.stringify, JSON.parse and Object.keys', node: process.version, reviewedAgainst: 'pi-mono v1.3.0', upstreamSourceExecuted: false }, numbers, keyOrders, strings, parse }) + '\n';
+const output = fixtureJSON({ provenance: { oracle: 'Node JSON.stringify, JSON.parse and Object.keys', node: process.version, reviewedAgainst: 'pi-mono v1.4.0', upstreamSourceExecuted: false }, numbers, keyOrders, strings, parse }) + '\n';
 assertFixtureBudget({ 'json-fixtures.json': output });
 if (process.argv.includes('--check')) {
   const temporaryPath = fileURLToPath(new URL(`.json-fixtures-${process.pid}.tmp`, import.meta.url));

@@ -1,4 +1,4 @@
-// Generate a separate restart-field oracle with unmodified v1.3.0 sources.
+// Generate a separate restart-field oracle with unmodified v1.4.0 sources.
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, mkdtemp, mkdir, copyFile, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -65,17 +65,17 @@ try {
     result: await storage.scanTasks({ conversationId: conversation.id, order: 'ascending' }, 20, undefined, context) });
   await session.close(context);
   const result = JSON.stringify({ tag: upstreamTag, provenance: {
-    source: 'unmodified v1.3.0 Session and MemoryStorage',
+    source: 'unmodified v1.4.0 Session and MemoryStorage',
     rawFalse: 'TaskRecord types declare true only; raw Session and storage copies also preserve false',
   }, batches, reads }, null, 2) + '\n';
-  const recordPath = join(fixtures, 'restart-records-v130.json');
+  const recordPath = join(fixtures, 'restart-records-v140.json');
   await mkdir(fixtures, { recursive: true });
   if (check) {
     if (await readFile(recordPath, 'utf8') !== result) throw new Error('Restart record fixtures differ');
   } else await writeFile(recordPath, result);
   const sqlite = join(temporary, 'restart.sqlite');
   await replaySqlite(source, sqlite, batches, reads, context);
-  const sqliteFixture = join(fixtures, 'restart-upstream-v130.sqlite');
+  const sqliteFixture = join(fixtures, 'restart-upstream-v140.sqlite');
   if (check) {
     const checked = join(temporary, 'checked.sqlite');
     await copyFile(sqliteFixture, checked);
@@ -86,7 +86,7 @@ try {
   } else await copyFile(sqlite, sqliteFixture);
   const jsonl = join(temporary, 'jsonl');
   await replayJsonl(source, jsonl, batches, reads, context);
-  const jsonlFixture = join(fixtures, 'restart-upstream-jsonl-v130');
+  const jsonlFixture = join(fixtures, 'restart-upstream-jsonl-v140');
   if (check) {
     const checked = join(temporary, 'checked-jsonl');
     await cp(jsonlFixture, checked, { recursive: true });

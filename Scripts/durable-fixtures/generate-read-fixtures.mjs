@@ -125,7 +125,7 @@ try {
     }
     // Escape FEFF so parsers cannot treat a raw string segment as a byte-order mark.
     const fixture = JSON.stringify(pack({ tag: upstreamTag, provenance: { source: 'unmodified isolated git archive', resultEnvelope: 'unmodified top-level output', images: { source: 'packages/durable/src/tools/read.ts', tests: 'packages/durable/test/tools-images.test.ts', builders: 'unmodified bmp and gif functions, webp builder; unmodified APNG chunk and png declarations from tools-read-differential.test.ts', png: 'fixed one-pixel header fixture', jpeg: 'synthetic SOF header; dimensions from image.ts', processor: 'scripted ImageProcessor; calls and results recorded from the tag tool' } }, seeds: 400, trialsPerSeed: 4, differences, files, imageCases, descriptions })).replaceAll('\uFEFF', '\\uFEFF') + '\n';
-    const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v130.json', import.meta.url));
+    const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v140.json', import.meta.url));
     if (process.argv.includes('--check')) {
         if (await readFile(path, 'utf8') !== fixture) throw new Error('Read fixtures differ. Run without --check.');
     } else { await writeFile(path, fixture); }

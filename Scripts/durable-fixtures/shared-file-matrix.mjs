@@ -12,6 +12,10 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(run.status ?? 1);
 }
 const [mode, directory, backend] = process.argv.slice(2);
+if (['prepare-v140', 'verify-v140', 'prepare-migration', 'verify-migration', 'prepare-resume', 'verify-resume'].includes(mode)) {
+  await import('./shared-file-v140.mjs');
+  process.exit(0);
+}
 if (!['prepare', 'verify'].includes(mode) || !directory || !['sqlite', 'prefix', 'jsonl'].includes(backend)) {
   throw new Error('Usage: node shared-file-matrix.mjs prepare|verify DIRECTORY sqlite|prefix|jsonl');
 }

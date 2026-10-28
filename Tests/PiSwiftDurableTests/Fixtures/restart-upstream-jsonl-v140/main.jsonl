@@ -1,0 +1,5 @@
+{"format":1,"type":"commit","seq":1,"writes":[{"type":"conversation","value":{"id":1}}]}
+{"format":1,"type":"commit","seq":2,"writes":[{"type":"conversation","value":{"id":2}}]}
+{"format":1,"type":"commit","seq":3,"writes":[{"type":"task.sidecar","id":3,"ordinal":0},{"type":"task.sidecar","id":4,"ordinal":1},{"type":"task.sidecar","id":5,"ordinal":2},{"type":"task.sidecar","id":6,"ordinal":3},{"type":"task.sidecar","id":7,"ordinal":4},{"type":"task.sidecar","id":8,"ordinal":5},{"type":"task.sidecar","id":9,"ordinal":6}]}
+{"format":1,"type":"commit","seq":4,"writes":[{"type":"task.sidecar","id":5,"ordinal":0},{"type":"task.sidecar","id":6,"ordinal":1},{"type":"task","value":{"id":7,"conversationId":2,"kind":"fixture.restart","version":1,"input":{"index":4},"background":false,"abortRequested":true,"abandonOnRestart":true,"state":{"status":"terminal","outcome":{"status":"aborted","reason":"restart"}},"abortReason":"restart","endedAt":1700000000000}},{"type":"task.sidecar","id":8,"ordinal":2},{"type":"task.sidecar","id":9,"ordinal":3}]}
+{"format":1,"type":"commit","seq":5,"writes":[{"type":"task.sidecar","id":6,"ordinal":0}]}

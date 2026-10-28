@@ -1,4 +1,4 @@
-// Build the tests first. Read Swift files with the unmodified v1.3.0 adapters.
+// Build the tests first. Read Swift files with the unmodified v1.4.0 adapters.
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,7 +41,7 @@ try {
     finally { await jsonl.close(context); }
   }
   const checkpointReads = checkpoints.reduce((count, step) => count + step.reads.length, 0);
-  console.log(`Upstream v1.3.0 reads match Swift nested tool exports: ${reads.length} final reads and ${checkpointReads} checkpoint reads for each of SQLite and JSONL.`);
+  console.log(`Upstream v1.4.0 reads match Swift nested tool exports: ${reads.length} final reads and ${checkpointReads} checkpoint reads for each of SQLite and JSONL.`);
 } finally {
   await source.close();
   await rm(temporary, { recursive: true, force: true });

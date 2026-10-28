@@ -1,0 +1,2087 @@
+{
+  "tag": "v1.4.0",
+  "provenance": {
+    "source": "unmodified v1.4.0 Session, ToolTask, NestedCallDoc, and storage adapters",
+    "construction": "Session transactions construct schema examples; they do not execute ToolTask handlers or prove restart scheduling",
+    "sourcePaths": [
+      "packages/durable/src/harness/tool.ts:59-108",
+      "packages/durable/src/harness/tool.ts:589-735",
+      "packages/durable/src/session/transaction.ts:775-803"
+    ],
+    "retirement": "Session emits family document retirement when the calling task becomes terminal",
+    "history": "Task-scoped documents keep current content only; checkpoints read results before parent retirement"
+  },
+  "cases": {
+    "parents": [
+      4,
+      5
+    ],
+    "children": [
+      7,
+      9,
+      11,
+      13
+    ],
+    "deep": 15,
+    "members": [
+      {
+        "parent": 4,
+        "key": "1",
+        "id": 6,
+        "at": "current",
+        "retired": false
+      },
+      {
+        "parent": 4,
+        "key": "waiting",
+        "id": 8,
+        "at": "current",
+        "retired": false
+      },
+      {
+        "parent": 5,
+        "key": "1",
+        "id": 10,
+        "at": 10,
+        "retired": true
+      },
+      {
+        "parent": 5,
+        "key": "gated",
+        "id": 12,
+        "at": 10,
+        "retired": true
+      },
+      {
+        "parent": 11,
+        "key": "deep",
+        "id": 14,
+        "at": 9,
+        "retired": true
+      }
+    ],
+    "deepResultSeq": 9,
+    "parentResultSeq": 10
+  },
+  "batches": [
+    {
+      "seq": 1,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 1
+          }
+        }
+      ]
+    },
+    {
+      "seq": 2,
+      "writes": [
+        {
+          "type": "conversation",
+          "value": {
+            "id": 2
+          }
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "writes": [
+        {
+          "type": "entry",
+          "value": {
+            "model": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "toolCall",
+                    "id": "safe",
+                    "name": "fixture.parent",
+                    "arguments": {}
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "unsafe",
+                    "name": "fixture.parent",
+                    "arguments": {}
+                  }
+                ],
+                "api": "openai-completions",
+                "provider": "fixture",
+                "model": "fixture",
+                "usage": {
+                  "input": 1,
+                  "output": 2,
+                  "cacheRead": 3,
+                  "cacheWrite": 4,
+                  "totalTokens": 10,
+                  "cost": {
+                    "input": 0.01,
+                    "output": 0.02,
+                    "cacheRead": 0.03,
+                    "cacheWrite": 0.04,
+                    "total": 0.1
+                  }
+                },
+                "stopReason": "toolUse",
+                "timestamp": 1700000000000
+              }
+            ],
+            "kind": "pi.assistant",
+            "id": 3,
+            "conversationId": 2
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "safe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "unsafe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 4,
+              "parentCallId": "safe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "safe/1",
+                "name": "fixture.success",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 4,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 4,
+              "parentCallId": "safe",
+              "key": "waiting",
+              "call": {
+                "type": "toolCall",
+                "id": "safe/waiting",
+                "name": "fixture.waiting",
+                "arguments": {
+                  "text": "waiting",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 4,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 11,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1",
+                "name": "fixture.running",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 13,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "gated",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/gated",
+                "name": "fixture.gated",
+                "arguments": {
+                  "text": "gated",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              },
+              "progress": false
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 6,
+            "kind": "pi.tool.nested-call",
+            "key": "1",
+            "scope": {
+              "kind": "task",
+              "taskId": 4
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "taskId": 7
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 8,
+            "kind": "pi.tool.nested-call",
+            "key": "waiting",
+            "scope": {
+              "kind": "task",
+              "taskId": 4
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "taskId": 9
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 10,
+            "kind": "pi.tool.nested-call",
+            "key": "1",
+            "scope": {
+              "kind": "task",
+              "taskId": 5
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "taskId": 11
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 12,
+            "kind": "pi.tool.nested-call",
+            "key": "gated",
+            "scope": {
+              "kind": "task",
+              "taskId": 5
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "taskId": 13
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 5,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 15,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 11,
+              "parentCallId": "unsafe/1",
+              "key": "deep",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1/deep",
+                "name": "fixture.deep",
+                "arguments": {}
+              }
+            },
+            "owner": 11,
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          }
+        },
+        {
+          "type": "document.create",
+          "record": {
+            "id": 14,
+            "kind": "pi.tool.nested-call",
+            "key": "deep",
+            "scope": {
+              "kind": "task",
+              "taskId": 11
+            }
+          },
+          "content": {
+            "version": 1,
+            "kind": "base",
+            "value": {
+              "taskId": 15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "seq": 6,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "safe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "safe"
+              }
+            },
+            "memos": {
+              "pi.tool.madeNestedCalls": true
+            },
+            "startedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "unsafe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "unsafe"
+              }
+            },
+            "startedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 11,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1",
+                "name": "fixture.running",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "safe"
+              }
+            },
+            "startedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 15,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 11,
+              "parentCallId": "unsafe/1",
+              "key": "deep",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1/deep",
+                "name": "fixture.deep",
+                "arguments": {}
+              }
+            },
+            "owner": 11,
+            "background": false,
+            "abortRequested": false,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "safe"
+              }
+            },
+            "startedAt": 1700000000000
+          }
+        }
+      ]
+    },
+    {
+      "seq": 7,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 4,
+              "parentCallId": "safe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "safe/1",
+                "name": "fixture.success",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 4,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "endedAt": 1700000000000
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 6,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "result"
+                ],
+                {
+                  "taskId": 7,
+                  "structuredOutput": {
+                    "answer": 42,
+                    "nested": [
+                      "value",
+                      null
+                    ]
+                  },
+                  "isError": false,
+                  "details": {
+                    "step": 2
+                  },
+                  "diagnostics": [
+                    {
+                      "severity": "info",
+                      "code": "fixture",
+                      "message": "Complete"
+                    }
+                  ],
+                  "usage": {
+                    "input": 1,
+                    "output": 2,
+                    "cacheRead": 3,
+                    "cacheWrite": 4,
+                    "totalTokens": 10,
+                    "cost": {
+                      "input": 0.01,
+                      "output": 0.02,
+                      "cacheRead": 0.03,
+                      "cacheWrite": 0.04,
+                      "total": 0.1
+                    }
+                  },
+                  "durationMs": 12
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "seq": 8,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 11,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1",
+                "name": "fixture.running",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "safe"
+              }
+            },
+            "startedAt": 1700000000000,
+            "abortReason": "restart"
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 13,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "gated",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/gated",
+                "name": "fixture.gated",
+                "arguments": {
+                  "text": "gated",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              },
+              "progress": false
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            },
+            "abortReason": "restart"
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 15,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 11,
+              "parentCallId": "unsafe/1",
+              "key": "deep",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1/deep",
+                "name": "fixture.deep",
+                "arguments": {}
+              }
+            },
+            "owner": 11,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "safe"
+              }
+            },
+            "startedAt": 1700000000000,
+            "abortReason": "restart"
+          }
+        }
+      ]
+    },
+    {
+      "seq": 9,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 15,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 11,
+              "parentCallId": "unsafe/1",
+              "key": "deep",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1/deep",
+                "name": "fixture.deep",
+                "arguments": {}
+              }
+            },
+            "owner": 11,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "startedAt": 1700000000000,
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 14,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "result"
+                ],
+                {
+                  "taskId": 15,
+                  "isError": true,
+                  "details": {
+                    "step": 1
+                  },
+                  "diagnostics": [
+                    {
+                      "severity": "error",
+                      "code": "interrupted",
+                      "message": "The deep call was interrupted"
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "seq": 10,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 11,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1",
+                "name": "fixture.running",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "startedAt": 1700000000000,
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          }
+        },
+        {
+          "type": "task",
+          "value": {
+            "id": 13,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "gated",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/gated",
+                "name": "fixture.gated",
+                "arguments": {
+                  "text": "gated",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              },
+              "progress": false
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 10,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "result"
+                ],
+                {
+                  "taskId": 11,
+                  "isError": true,
+                  "details": {
+                    "step": 1
+                  },
+                  "diagnostics": [
+                    {
+                      "severity": "error",
+                      "code": "interrupted",
+                      "message": "The call was interrupted"
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "type": "document.change",
+          "id": 12,
+          "content": {
+            "version": 1,
+            "kind": "delta",
+            "ops": [
+              [
+                "s",
+                [
+                  "result"
+                ],
+                {
+                  "taskId": 13,
+                  "isError": true,
+                  "details": {
+                    "step": 1
+                  },
+                  "diagnostics": [
+                    {
+                      "severity": "error",
+                      "code": "abandoned",
+                      "message": "The call was abandoned"
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "type": "document.retire",
+          "id": 14
+        }
+      ]
+    },
+    {
+      "seq": 11,
+      "writes": [
+        {
+          "type": "task",
+          "value": {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "unsafe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "The caller was interrupted"
+                }
+              }
+            },
+            "startedAt": 1700000000000,
+            "endedAt": 1700000000000
+          }
+        },
+        {
+          "type": "document.retire",
+          "id": 10
+        },
+        {
+          "type": "document.retire",
+          "id": 12
+        }
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "seq": 9,
+      "reads": [
+        {
+          "method": "document",
+          "arguments": [
+            14,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 14,
+              "kind": "pi.tool.nested-call",
+              "key": "deep",
+              "scope": {
+                "kind": "task",
+                "taskId": 11
+              },
+              "createdAt": 5
+            },
+            "version": 1,
+            "value": {
+              "taskId": 15,
+              "result": {
+                "taskId": 15,
+                "isError": true,
+                "details": {
+                  "step": 1
+                },
+                "diagnostics": [
+                  {
+                    "severity": "error",
+                    "code": "interrupted",
+                    "message": "The deep call was interrupted"
+                  }
+                ]
+              }
+            },
+            "deltasSinceBase": 1
+          }
+        }
+      ]
+    },
+    {
+      "seq": 10,
+      "reads": [
+        {
+          "method": "document",
+          "arguments": [
+            10,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 10,
+              "kind": "pi.tool.nested-call",
+              "key": "1",
+              "scope": {
+                "kind": "task",
+                "taskId": 5
+              },
+              "createdAt": 4
+            },
+            "version": 1,
+            "value": {
+              "taskId": 11,
+              "result": {
+                "taskId": 11,
+                "isError": true,
+                "details": {
+                  "step": 1
+                },
+                "diagnostics": [
+                  {
+                    "severity": "error",
+                    "code": "interrupted",
+                    "message": "The call was interrupted"
+                  }
+                ]
+              }
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "document",
+          "arguments": [
+            12,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 12,
+              "kind": "pi.tool.nested-call",
+              "key": "gated",
+              "scope": {
+                "kind": "task",
+                "taskId": 5
+              },
+              "createdAt": 4
+            },
+            "version": 1,
+            "value": {
+              "taskId": 13,
+              "result": {
+                "taskId": 13,
+                "isError": true,
+                "details": {
+                  "step": 1
+                },
+                "diagnostics": [
+                  {
+                    "severity": "error",
+                    "code": "abandoned",
+                    "message": "The call was abandoned"
+                  }
+                ]
+              }
+            },
+            "deltasSinceBase": 1
+          }
+        }
+      ]
+    }
+  ],
+  "reads": [
+    {
+      "method": "task",
+      "arguments": [
+        4
+      ],
+      "result": {
+        "id": 4,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "model",
+          "assistant": 3,
+          "callId": "safe"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "running",
+          "checkpoint": {
+            "phase": "execute",
+            "arguments": {},
+            "replay": "safe"
+          }
+        },
+        "memos": {
+          "pi.tool.madeNestedCalls": true
+        },
+        "startedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        5
+      ],
+      "result": {
+        "id": 5,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "model",
+          "assistant": 3,
+          "callId": "unsafe"
+        },
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "terminal",
+          "outcome": {
+            "status": "failed",
+            "error": {
+              "message": "The caller was interrupted"
+            }
+          }
+        },
+        "startedAt": 1700000000000,
+        "endedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        7
+      ],
+      "result": {
+        "id": 7,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "nested",
+          "parent": 4,
+          "parentCallId": "safe",
+          "key": "1",
+          "call": {
+            "type": "toolCall",
+            "id": "safe/1",
+            "name": "fixture.success",
+            "arguments": {
+              "text": "1",
+              "object": {
+                "b": 2,
+                "a": 1
+              }
+            }
+          }
+        },
+        "owner": 4,
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "terminal",
+          "outcome": {
+            "status": "completed",
+            "result": {
+              "kind": "nested"
+            }
+          }
+        },
+        "endedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        9
+      ],
+      "result": {
+        "id": 9,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "nested",
+          "parent": 4,
+          "parentCallId": "safe",
+          "key": "waiting",
+          "call": {
+            "type": "toolCall",
+            "id": "safe/waiting",
+            "name": "fixture.waiting",
+            "arguments": {
+              "text": "waiting",
+              "object": {
+                "b": 2,
+                "a": 1
+              }
+            }
+          }
+        },
+        "owner": 4,
+        "background": false,
+        "abortRequested": false,
+        "state": {
+          "status": "pending",
+          "checkpoint": {
+            "phase": "call"
+          }
+        }
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        11
+      ],
+      "result": {
+        "id": 11,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "nested",
+          "parent": 5,
+          "parentCallId": "unsafe",
+          "key": "1",
+          "call": {
+            "type": "toolCall",
+            "id": "unsafe/1",
+            "name": "fixture.running",
+            "arguments": {
+              "text": "1",
+              "object": {
+                "b": 2,
+                "a": 1
+              }
+            }
+          }
+        },
+        "owner": 5,
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "terminal",
+          "outcome": {
+            "status": "aborted",
+            "result": {
+              "kind": "nested"
+            }
+          }
+        },
+        "startedAt": 1700000000000,
+        "abortReason": "restart",
+        "endedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        13
+      ],
+      "result": {
+        "id": 13,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "nested",
+          "parent": 5,
+          "parentCallId": "unsafe",
+          "key": "gated",
+          "call": {
+            "type": "toolCall",
+            "id": "unsafe/gated",
+            "name": "fixture.gated",
+            "arguments": {
+              "text": "gated",
+              "object": {
+                "b": 2,
+                "a": 1
+              }
+            }
+          },
+          "progress": false
+        },
+        "owner": 5,
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "terminal",
+          "outcome": {
+            "status": "aborted",
+            "result": {
+              "kind": "nested"
+            }
+          }
+        },
+        "abortReason": "restart",
+        "endedAt": 1700000000000
+      }
+    },
+    {
+      "method": "task",
+      "arguments": [
+        15
+      ],
+      "result": {
+        "id": 15,
+        "conversationId": 2,
+        "kind": "pi.tool",
+        "version": 2,
+        "input": {
+          "kind": "nested",
+          "parent": 11,
+          "parentCallId": "unsafe/1",
+          "key": "deep",
+          "call": {
+            "type": "toolCall",
+            "id": "unsafe/1/deep",
+            "name": "fixture.deep",
+            "arguments": {}
+          }
+        },
+        "owner": 11,
+        "background": false,
+        "abortRequested": true,
+        "abandonOnRestart": true,
+        "state": {
+          "status": "terminal",
+          "outcome": {
+            "status": "aborted",
+            "result": {
+              "kind": "nested"
+            }
+          }
+        },
+        "startedAt": 1700000000000,
+        "abortReason": "restart",
+        "endedAt": 1700000000000
+      }
+    },
+    {
+      "method": "scanTasks",
+      "arguments": [
+        {
+          "conversationId": 2,
+          "kind": "pi.tool",
+          "order": "ascending"
+        },
+        20,
+        null
+      ],
+      "result": {
+        "items": [
+          {
+            "id": 4,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "safe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "execute",
+                "arguments": {},
+                "replay": "safe"
+              }
+            },
+            "memos": {
+              "pi.tool.madeNestedCalls": true
+            },
+            "startedAt": 1700000000000
+          },
+          {
+            "id": 5,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "model",
+              "assistant": 3,
+              "callId": "unsafe"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "failed",
+                "error": {
+                  "message": "The caller was interrupted"
+                }
+              }
+            },
+            "startedAt": 1700000000000,
+            "endedAt": 1700000000000
+          },
+          {
+            "id": 7,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 4,
+              "parentCallId": "safe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "safe/1",
+                "name": "fixture.success",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 4,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "completed",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "endedAt": 1700000000000
+          },
+          {
+            "id": 9,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 4,
+              "parentCallId": "safe",
+              "key": "waiting",
+              "call": {
+                "type": "toolCall",
+                "id": "safe/waiting",
+                "name": "fixture.waiting",
+                "arguments": {
+                  "text": "waiting",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 4,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "pending",
+              "checkpoint": {
+                "phase": "call"
+              }
+            }
+          },
+          {
+            "id": 11,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "1",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1",
+                "name": "fixture.running",
+                "arguments": {
+                  "text": "1",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              }
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "startedAt": 1700000000000,
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          },
+          {
+            "id": 13,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 5,
+              "parentCallId": "unsafe",
+              "key": "gated",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/gated",
+                "name": "fixture.gated",
+                "arguments": {
+                  "text": "gated",
+                  "object": {
+                    "b": 2,
+                    "a": 1
+                  }
+                }
+              },
+              "progress": false
+            },
+            "owner": 5,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          },
+          {
+            "id": 15,
+            "conversationId": 2,
+            "kind": "pi.tool",
+            "version": 2,
+            "input": {
+              "kind": "nested",
+              "parent": 11,
+              "parentCallId": "unsafe/1",
+              "key": "deep",
+              "call": {
+                "type": "toolCall",
+                "id": "unsafe/1/deep",
+                "name": "fixture.deep",
+                "arguments": {}
+              }
+            },
+            "owner": 11,
+            "background": false,
+            "abortRequested": true,
+            "abandonOnRestart": true,
+            "state": {
+              "status": "terminal",
+              "outcome": {
+                "status": "aborted",
+                "result": {
+                  "kind": "nested"
+                }
+              }
+            },
+            "startedAt": 1700000000000,
+            "abortReason": "restart",
+            "endedAt": 1700000000000
+          }
+        ]
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 4
+          },
+          "key": "1"
+        },
+        "current"
+      ],
+      "result": {
+        "id": 6,
+        "kind": "pi.tool.nested-call",
+        "key": "1",
+        "scope": {
+          "kind": "task",
+          "taskId": 4
+        },
+        "createdAt": 4
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        6,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 6,
+          "kind": "pi.tool.nested-call",
+          "key": "1",
+          "scope": {
+            "kind": "task",
+            "taskId": 4
+          },
+          "createdAt": 4
+        },
+        "version": 1,
+        "value": {
+          "taskId": 7,
+          "result": {
+            "taskId": 7,
+            "structuredOutput": {
+              "answer": 42,
+              "nested": [
+                "value",
+                null
+              ]
+            },
+            "isError": false,
+            "details": {
+              "step": 2
+            },
+            "diagnostics": [
+              {
+                "severity": "info",
+                "code": "fixture",
+                "message": "Complete"
+              }
+            ],
+            "usage": {
+              "input": 1,
+              "output": 2,
+              "cacheRead": 3,
+              "cacheWrite": 4,
+              "totalTokens": 10,
+              "cost": {
+                "input": 0.01,
+                "output": 0.02,
+                "cacheRead": 0.03,
+                "cacheWrite": 0.04,
+                "total": 0.1
+              }
+            },
+            "durationMs": 12
+          }
+        },
+        "deltasSinceBase": 1
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 4
+          },
+          "key": "waiting"
+        },
+        "current"
+      ],
+      "result": {
+        "id": 8,
+        "kind": "pi.tool.nested-call",
+        "key": "waiting",
+        "scope": {
+          "kind": "task",
+          "taskId": 4
+        },
+        "createdAt": 4
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        8,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 8,
+          "kind": "pi.tool.nested-call",
+          "key": "waiting",
+          "scope": {
+            "kind": "task",
+            "taskId": 4
+          },
+          "createdAt": 4
+        },
+        "version": 1,
+        "value": {
+          "taskId": 9
+        },
+        "deltasSinceBase": 0
+      }
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 5
+          },
+          "key": "1"
+        },
+        10
+      ],
+      "result": {
+        "id": 10,
+        "kind": "pi.tool.nested-call",
+        "key": "1",
+        "scope": {
+          "kind": "task",
+          "taskId": 5
+        },
+        "createdAt": 4,
+        "retiredAt": 11
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        10,
+        "current"
+      ],
+      "result": null
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 5
+          },
+          "key": "1"
+        },
+        "current"
+      ],
+      "result": null
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 5
+          },
+          "key": "gated"
+        },
+        10
+      ],
+      "result": {
+        "id": 12,
+        "kind": "pi.tool.nested-call",
+        "key": "gated",
+        "scope": {
+          "kind": "task",
+          "taskId": 5
+        },
+        "createdAt": 4,
+        "retiredAt": 11
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        12,
+        "current"
+      ],
+      "result": null
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 5
+          },
+          "key": "gated"
+        },
+        "current"
+      ],
+      "result": null
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 11
+          },
+          "key": "deep"
+        },
+        9
+      ],
+      "result": {
+        "id": 14,
+        "kind": "pi.tool.nested-call",
+        "key": "deep",
+        "scope": {
+          "kind": "task",
+          "taskId": 11
+        },
+        "createdAt": 5,
+        "retiredAt": 10
+      }
+    },
+    {
+      "method": "document",
+      "arguments": [
+        14,
+        "current"
+      ],
+      "result": null
+    },
+    {
+      "method": "findDocument",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 11
+          },
+          "key": "deep"
+        },
+        "current"
+      ],
+      "result": null
+    },
+    {
+      "method": "scanDocuments",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 4
+          },
+          "at": "current"
+        },
+        20,
+        null
+      ],
+      "result": {
+        "items": [
+          {
+            "id": 6,
+            "kind": "pi.tool.nested-call",
+            "key": "1",
+            "scope": {
+              "kind": "task",
+              "taskId": 4
+            },
+            "createdAt": 4
+          },
+          {
+            "id": 8,
+            "kind": "pi.tool.nested-call",
+            "key": "waiting",
+            "scope": {
+              "kind": "task",
+              "taskId": 4
+            },
+            "createdAt": 4
+          }
+        ]
+      }
+    },
+    {
+      "method": "scanDocuments",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 5
+          },
+          "at": "current"
+        },
+        20,
+        null
+      ],
+      "result": {
+        "items": []
+      }
+    },
+    {
+      "method": "scanDocuments",
+      "arguments": [
+        {
+          "kind": "pi.tool.nested-call",
+          "scope": {
+            "kind": "task",
+            "taskId": 11
+          },
+          "at": "current"
+        },
+        20,
+        null
+      ],
+      "result": {
+        "items": []
+      }
+    }
+  ]
+}

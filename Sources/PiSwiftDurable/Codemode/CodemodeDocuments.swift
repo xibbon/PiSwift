@@ -5,7 +5,7 @@ public let CodemodeRunDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode.run
 /// Results in delivery order and the number of calls made after each result.
 public let CodemodeJournalDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode.journal", version: 1, initial: { ["entries": []] })
 /// Saved script values. Forks copy the values at their entry boundary.
-public let CodemodeStoreDoc = try! RewindableConversationDocToken<JSONObject>(kind: "pi.codemode.store", version: 1, fork: .asOf, initial: { ["values": [:]] })
+public let CodemodeStoreDoc = try! RewindableConversationDocToken<JSONObject>(kind: "pi.codemode.store", version: 1, fork: .asOf, initial: { ["values": [:]] }, checkpointWhen: { _, _, info in info.deltasSinceBase >= 64 })
 
 /// A group of tools with a common name prefix. The longest prefix wins.
 public struct CodemodeNamespace: Sendable, Equatable, Codable {
