@@ -55,7 +55,7 @@ public func contentBlockFromJSONObject(_ dict: [String: Any], ordered: OrderedJS
         return .thinking(ThinkingContent(
             thinking: dict["thinking"] as? String ?? "",
             thinkingSignature: dict["thinkingSignature"] as? String,
-            redacted: dict["redacted"] as? Bool
+            redacted: jsonBoolean(dict["redacted"])
         ))
     case "image":
         guard let data = dict["data"] as? String else { return nil }
@@ -200,7 +200,7 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any], ordered: Order
         },
         providerThinkingLevel: dict["providerThinkingLevel"] as? String,
         thinkingLevel: (dict["thinkingLevel"] as? String).flatMap(ModelThinkingLevel.init(rawValue:)),
-        endTurn: dict["endTurn"] as? Bool,
+        endTurn: jsonBoolean(dict["endTurn"]),
         durationMs: durationMillisecondsFromJSON(dict["durationMs"])
     )
     if let value = dict["deferred"] as? [String: Any], let provider = value["provider"] as? String,
@@ -228,7 +228,7 @@ public func nestedToolCallsFromJSONObject(_ object: [String: Any]) -> NestedTool
 }
 
 public func nestedToolCallsFromJSONObject(_ object: [String: Any], ordered: OrderedJSON?) -> NestedToolCalls? {
-    guard let complete = object["complete"] as? Bool,
+    guard let complete = jsonBoolean(object["complete"]),
           let rawCalls = object["calls"] as? [[String: Any]] else { return nil }
     var calls: [NestedToolCallRecord] = []
     for (index, raw) in rawCalls.enumerated() {

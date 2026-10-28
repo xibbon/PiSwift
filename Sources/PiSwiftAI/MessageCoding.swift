@@ -78,7 +78,7 @@ public func messageFromJSONObject(_ dict: [String: Any], ordered: OrderedJSON? =
             guard let name = item["name"] as? String, let description = item["description"] as? String,
                   let parameters = item["parameters"] as? [String: Any] else { return nil }
             let sampling: ConstrainedSampling?
-            if let value = item["constrainedSampling"] as? Bool, !value { sampling = .disabled }
+            if let value = jsonBoolean(item["constrainedSampling"]), !value { sampling = .disabled }
             else if let config = item["constrainedSampling"] as? [String: Any], let type = config["type"] as? String {
                 if type == "json_schema", let strict = config["strict"] as? String,
                    let level = ConstrainedSamplingStrictness(rawValue: strict) {
@@ -116,7 +116,7 @@ public func messageFromJSONObject(_ dict: [String: Any], ordered: OrderedJSON? =
         let timestamp = (dict["timestamp"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
         let toolCallId = dict["toolCallId"] as? String ?? ""
         let toolName = dict["toolName"] as? String ?? ""
-        let isError = dict["isError"] as? Bool ?? false
+        let isError = jsonBoolean(dict["isError"]) ?? false
         let details = dict["details"].map { AnyCodable($0) }
         let contentBlocks = (dict["content"] as? [Any] ?? []).enumerated().compactMap { index, block -> ContentBlock? in
             guard let dict = block as? [String: Any] else { return nil }

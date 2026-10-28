@@ -183,11 +183,11 @@ private struct ParsedRouting {
 private func parseRouting(_ value: Any?) -> ParsedRouting? {
     guard let dict = value as? [String: Any] else { return nil }
     var r = ParsedRouting()
-    r.allowFallbacks = dict["allow_fallbacks"] as? Bool
-    r.requireParameters = dict["require_parameters"] as? Bool
+    r.allowFallbacks = jsonBoolean(dict["allow_fallbacks"])
+    r.requireParameters = jsonBoolean(dict["require_parameters"])
     r.dataCollection = dict["data_collection"] as? String
-    r.zdr = dict["zdr"] as? Bool
-    r.enforceDistillableText = dict["enforce_distillable_text"] as? Bool
+    r.zdr = jsonBoolean(dict["zdr"])
+    r.enforceDistillableText = jsonBoolean(dict["enforce_distillable_text"])
     r.only = dict["only"] as? [String]
     r.order = dict["order"] as? [String]
     r.ignore = dict["ignore"] as? [String]
@@ -262,18 +262,18 @@ private let extendedCompatKeys: Set<String> = [
 private func parseCompat(_ value: Any?) -> OpenAICompat? {
     guard let dict = value as? [String: Any] else { return nil }
 
-    let supportsStore = dict["supportsStore"] as? Bool
-    let supportsDeveloperRole = dict["supportsDeveloperRole"] as? Bool
-    let supportsReasoningEffort = dict["supportsReasoningEffort"] as? Bool
-    let supportsUsageInStreaming = dict["supportsUsageInStreaming"] as? Bool
+    let supportsStore = jsonBoolean(dict["supportsStore"])
+    let supportsDeveloperRole = jsonBoolean(dict["supportsDeveloperRole"])
+    let supportsReasoningEffort = jsonBoolean(dict["supportsReasoningEffort"])
+    let supportsUsageInStreaming = jsonBoolean(dict["supportsUsageInStreaming"])
     let maxTokensField = (dict["maxTokensField"] as? String).flatMap(OpenAICompatMaxTokensField.init(rawValue:))
-    let requiresToolResultName = dict["requiresToolResultName"] as? Bool
-    let requiresAssistantAfterToolResult = dict["requiresAssistantAfterToolResult"] as? Bool
-    let requiresThinkingAsText = dict["requiresThinkingAsText"] as? Bool
-    let requiresMistralToolIds = dict["requiresMistralToolIds"] as? Bool
+    let requiresToolResultName = jsonBoolean(dict["requiresToolResultName"])
+    let requiresAssistantAfterToolResult = jsonBoolean(dict["requiresAssistantAfterToolResult"])
+    let requiresThinkingAsText = jsonBoolean(dict["requiresThinkingAsText"])
+    let requiresMistralToolIds = jsonBoolean(dict["requiresMistralToolIds"])
     let thinkingFormat = (dict["thinkingFormat"] as? String).flatMap(OpenAICompatThinkingFormat.init(rawValue:))
-    let supportsStrictMode = dict["supportsStrictMode"] as? Bool
-    let supportsThinkingTokenBudget = dict["supportsThinkingTokenBudget"] as? Bool
+    let supportsStrictMode = jsonBoolean(dict["supportsStrictMode"])
+    let supportsThinkingTokenBudget = jsonBoolean(dict["supportsThinkingTokenBudget"])
 
     let openRouterRoutingValue = parseRouting(dict["openRouterRouting"])
     let vercelGatewayRoutingValue = parseRouting(dict["vercelGatewayRouting"])
@@ -301,12 +301,12 @@ private func parseCompat(_ value: Any?) -> OpenAICompat? {
 
     // v0.68.0 / v0.70.0 / v0.70.1: new compat fields read from models.json so proxies and
     // custom-provider entries can opt in/out without recompiling.
-    let supportsLongCacheRetention = dict["supportsLongCacheRetention"] as? Bool
-    let sendSessionIdHeader = dict["sendSessionIdHeader"] as? Bool
-    let supportsEagerToolInputStreaming = dict["supportsEagerToolInputStreaming"] as? Bool
+    let supportsLongCacheRetention = jsonBoolean(dict["supportsLongCacheRetention"])
+    let sendSessionIdHeader = jsonBoolean(dict["sendSessionIdHeader"])
+    let supportsEagerToolInputStreaming = jsonBoolean(dict["supportsEagerToolInputStreaming"])
     let cacheControlFormat = (dict["cacheControlFormat"] as? String).flatMap(OpenAICompatCacheControlFormat.init(rawValue:))
-    let sendSessionAffinityHeaders = dict["sendSessionAffinityHeaders"] as? Bool
-    let requiresReasoningContentOnAssistantMessages = dict["requiresReasoningContentOnAssistantMessages"] as? Bool
+    let sendSessionAffinityHeaders = jsonBoolean(dict["sendSessionAffinityHeaders"])
+    let requiresReasoningContentOnAssistantMessages = jsonBoolean(dict["requiresReasoningContentOnAssistantMessages"])
 
     if supportsStore == nil,
        supportsDeveloperRole == nil,

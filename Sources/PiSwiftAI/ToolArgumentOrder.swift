@@ -108,7 +108,7 @@ public func replacingJSONMembers(_ value: OrderedJSON, with replacements: [Strin
 public func jsonObjectCarriesToolArguments(_ object: [String: Any]) -> Bool {
     if object["type"] as? String == "toolCall" { return object["arguments"] is [String: Any] }
     if let type = object["type"] as? String, type.hasPrefix("tool_execution_"), object["args"] is [String: Any] { return true }
-    if let calls = object["calls"] as? [[String: Any]], object["complete"] is Bool {
+    if let calls = object["calls"] as? [[String: Any]], jsonBoolean(object["complete"]) != nil {
         return calls.contains { $0["arguments"] is [String: Any] }
     }
     for key in ["message", "entry", "systemMessage", "toolCall", "partial", "assistantMessageEvent", "nestedCalls", "result", "partialResult", "replacement"] {

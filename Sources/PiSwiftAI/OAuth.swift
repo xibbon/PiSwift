@@ -1095,7 +1095,7 @@ private func pollForGitHubAccessToken(
                 return .pending
             }
             if error == "slow_down" {
-                let interval = (json["interval"] as? NSNumber)?.doubleValue
+                let interval = oauthJSONNumber(json["interval"])
                 return .slowDown(intervalSeconds: interval)
             }
             return .failed("Device flow failed: \(error)")
@@ -1235,8 +1235,8 @@ func parseGitHubCopilotModelCatalog(_ raw: Any, allowPolicyFallback: Bool) throw
     let models: [(id: String, picker: Bool, policy: String?)] = data.compactMap { rawItem in
         guard let item = rawItem as? [String: Any], let id = item["id"] as? String else { return nil }
         let supports = (item["capabilities"] as? [String: Any])?["supports"] as? [String: Any]
-        guard supports?["tool_calls"] as? Bool != false else { return nil }
-        return (id, item["model_picker_enabled"] as? Bool == true, (item["policy"] as? [String: Any])?["state"] as? String)
+        guard jsonBoolean(supports?["tool_calls"]) != false else { return nil }
+        return (id, jsonBoolean(item["model_picker_enabled"]) == true, (item["policy"] as? [String: Any])?["state"] as? String)
     }
     let pickerIds = models.filter { $0.picker && $0.policy != "disabled" }.map(\.id)
     let usePolicyFallback = allowPolicyFallback && pickerIds.isEmpty
@@ -1370,7 +1370,7 @@ private let xaiTokenUrl = URL(string: "https://auth.x.ai/oauth2/token")!
 private let xaiDefaultTokenLifetimeSeconds = 3600.0
 private let xaiDefaultPollIntervalSeconds = 5.0
 
-private struct XaiDeviceCode {
+struct XaiDeviceCode {
     let deviceCode: String
     let userCode: String
     let verificationUri: String
@@ -1395,8 +1395,14 @@ private func xaiRequiredString(_ body: [String: Any], field: String) throws -> S
     return value
 }
 
+func oauthJSONNumber(_ value: Any?) -> Double? {
+    guard let number = value as? NSNumber, jsonBoolean(number) == nil else { return nil }
+    return number.doubleValue
+}
+
 private func xaiPositiveNumber(_ body: [String: Any], field: String) throws -> Double {
     guard let value = body[field] as? NSNumber,
+          jsonBoolean(value) == nil,
           value.doubleValue.isFinite,
           value.doubleValue > 0 else {
         throw OAuthError.tokenExchangeFailed("Invalid xAI OAuth response field: \(field)")
@@ -1445,8 +1451,8 @@ private func xaiRequestFailure(action: String, response: XaiHttpResponse) -> Str
     return "xAI OAuth \(action) failed (HTTP \(response.status))\(suffix)"
 }
 
-private func parseXaiDeviceCode(_ body: [String: Any]) throws -> XaiDeviceCode {
-    let interval = (body["interval"] as? NSNumber)?.doubleValue
+func parseXaiDeviceCode(_ body: [String: Any]) throws -> XaiDeviceCode {
+    let interval = oauthJSONNumber(body["interval"])
     let intervalSeconds = interval.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
     let verificationUriComplete: String?
     if let raw = body["verification_uri_complete"] as? String, !raw.isEmpty {
@@ -1529,7 +1535,7 @@ private func pollForXaiTokens(
         case "authorization_pending":
             return .pending
         case "slow_down":
-            return .slowDown(intervalSeconds: (response.body["interval"] as? NSNumber)?.doubleValue)
+            return .slowDown(intervalSeconds: oauthJSONNumber(response.body["interval"]))
         case "access_denied", "authorization_denied":
             return .failed("xAI device authorization was denied")
         case "expired_token":
@@ -1662,8 +1668,8 @@ private func startKimiCodingDeviceAuthorization(
           let verificationUriComplete = trustedKimiHttpUrl(json?["verification_uri_complete"]) else {
         throw OAuthError.tokenExchangeFailed("Invalid Kimi Code device authorization response")
     }
-    let interval = (json?["interval"] as? NSNumber)?.doubleValue
-    let expiresIn = (json?["expires_in"] as? NSNumber)?.doubleValue
+    let interval = oauthJSONNumber(json?["interval"])
+    let expiresIn = oauthJSONNumber(json?["expires_in"])
     return KimiCodingDeviceAuthorization(
         deviceCode: deviceCode,
         userCode: userCode,
@@ -1676,7 +1682,7 @@ private func startKimiCodingDeviceAuthorization(
     )
 }
 
-private func kimiCodingCredentials(
+func kimiCodingCredentials(
     _ json: [String: Any]?,
     operation: String
 ) throws -> OAuthCredentials {
@@ -1684,7 +1690,7 @@ private func kimiCodingCredentials(
           !access.isEmpty,
           let refresh = json?["refresh_token"] as? String,
           !refresh.isEmpty,
-          let expiresIn = (json?["expires_in"] as? NSNumber)?.doubleValue,
+          let expiresIn = oauthJSONNumber(json?["expires_in"]),
           expiresIn.isFinite,
           expiresIn > 0 else {
         throw OAuthError.tokenExchangeFailed("Kimi Code token \(operation) response missing fields")
@@ -1733,7 +1739,7 @@ private func pollForKimiCodingToken(
         case "authorization_pending":
             return .pending
         case "slow_down":
-            return .slowDown(intervalSeconds: (json?["interval"] as? NSNumber)?.doubleValue)
+            return .slowDown(intervalSeconds: oauthJSONNumber(json?["interval"]))
         case "expired_token":
             return .failed("Kimi Code device authorization expired. Please restart login.")
         case "access_denied":

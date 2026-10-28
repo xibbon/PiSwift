@@ -1897,7 +1897,7 @@ private func decodeSessionEntry(_ dict: [String: Any], ordered: OrderedJSON? = n
         let firstKeptEntryId = dict["firstKeptEntryId"] as? String ?? ""
         let tokensBefore = dict["tokensBefore"] as? Int ?? 0
         let details = dict["details"].map { AnyCodable($0) }
-        let fromHook = dict["fromHook"] as? Bool
+        let fromHook = jsonBoolean(dict["fromHook"])
         let systemMessage: SystemMessage?
         if let systemDict = dict["systemMessage"] as? [String: Any],
            case .system(let system) = decodeAgentMessage(systemDict, ordered: ordered?["systemMessage"]) {
@@ -1922,7 +1922,7 @@ private func decodeSessionEntry(_ dict: [String: Any], ordered: OrderedJSON? = n
         let summary = dict["summary"] as? String ?? ""
         let fromId = dict["fromId"] as? String ?? ""
         let details = dict["details"].map { AnyCodable($0) }
-        let fromHook = dict["fromHook"] as? Bool
+        let fromHook = jsonBoolean(dict["fromHook"])
         return .branchSummary(BranchSummaryEntry(id: id, parentId: parentId, timestamp: timestamp, fromId: fromId, summary: summary, details: details, fromHook: fromHook, usage: (dict["usage"] as? [String: Any]).map(usageFromJSONObject)))
     case "custom":
         let customType = dict["customType"] as? String ?? ""
@@ -1930,7 +1930,7 @@ private func decodeSessionEntry(_ dict: [String: Any], ordered: OrderedJSON? = n
         return .custom(CustomEntry(id: id, parentId: parentId, timestamp: timestamp, customType: customType, data: data))
     case "custom_message":
         let customType = dict["customType"] as? String ?? ""
-        let display = dict["display"] as? Bool ?? true
+        let display = jsonBoolean(dict["display"]) ?? true
         let details = dict["details"].map { AnyCodable($0) }
         let contentValue = dict["content"]
         let content: HookMessageContent

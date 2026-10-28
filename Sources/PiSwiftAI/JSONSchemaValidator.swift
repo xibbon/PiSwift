@@ -154,7 +154,7 @@ public final class JSONSchemaValidator: Sendable {
             let result: ValidationResult
             if let target = target as? [String: Any] {
                 result = validate(value, against: target, path: path, coerceTypes: coerceTypes, context: context)
-            } else if let allowed = target as? Bool {
+            } else if let allowed = jsonBoolean(target) {
                 result = allowed ? .valid(value) : .invalid(SchemaValidationError(path: path, message: "schema rejects all values"))
             } else {
                 return .invalid(SchemaValidationError(path: path, message: "schema reference must identify a schema"))
@@ -227,10 +227,10 @@ public final class JSONSchemaValidator: Sendable {
                 }
             }
             let types = schema["type"] as? [String] ?? (schema["type"] as? String).map { [$0] } ?? []
-            if value == nil && !schemaAllowsNull(schema) && schema["nullable"] as? Bool != true {
+            if value == nil && !schemaAllowsNull(schema) && jsonBoolean(schema["nullable"]) != true {
                 return .invalid(SchemaValidationError(path: path, message: "value is required"))
             }
-            if !types.isEmpty && !types.contains("null") && schema["nullable"] as? Bool != true {
+            if !types.isEmpty && !types.contains("null") && jsonBoolean(schema["nullable"]) != true {
                 return .invalid(SchemaValidationError(path: path, message: "value is required"))
             }
             if let constant = schema["const"], !(constant is NSNull) {
@@ -362,10 +362,10 @@ public final class JSONSchemaValidator: Sendable {
             stringValue = str
         } else if coerceTypes {
             // Coerce to string
-            if let num = value as? NSNumber {
-                stringValue = "\(num)"
-            } else if let bool = value as? Bool {
+            if let bool = jsonBoolean(value) {
                 stringValue = bool ? "true" : "false"
+            } else if let num = value as? NSNumber {
+                stringValue = "\(num)"
             } else {
                 return .invalid(SchemaValidationError(path: path, message: "must be a string"))
             }
@@ -451,6 +451,7 @@ public final class JSONSchemaValidator: Sendable {
 
     /// Extract a number from a schema value (handles both Int and Double storage).
     private func schemaNumber(_ value: Any?) -> Double? {
+        guard jsonBoolean(value) == nil else { return nil }
         if let d = value as? Double { return d }
         if let i = value as? Int { return Double(i) }
         if let n = value as? NSNumber { return n.doubleValue }
@@ -497,7 +498,7 @@ public final class JSONSchemaValidator: Sendable {
 
         // Validate minimum
         if let minimum = schemaNumber(schema["minimum"]) {
-            let exclusive = schema["exclusiveMinimum"] as? Bool ?? false
+            let exclusive = jsonBoolean(schema["exclusiveMinimum"]) ?? false
             if exclusive {
                 if numberValue <= minimum {
                     return .invalid(SchemaValidationError(path: path, message: "must be greater than \(minimum)"))
@@ -518,7 +519,7 @@ public final class JSONSchemaValidator: Sendable {
 
         // Validate maximum
         if let maximum = schemaNumber(schema["maximum"]) {
-            let exclusive = schema["exclusiveMaximum"] as? Bool ?? false
+            let exclusive = jsonBoolean(schema["exclusiveMaximum"]) ?? false
             if exclusive {
                 if numberValue >= maximum {
                     return .invalid(SchemaValidationError(path: path, message: "must be less than \(maximum)"))
@@ -574,7 +575,7 @@ public final class JSONSchemaValidator: Sendable {
     // MARK: - Boolean Validation
 
     private func validateBoolean(_ value: Any, path: String, coerceTypes: Bool) -> ValidationResult {
-        if let boolValue = value as? Bool {
+        if let boolValue = jsonBoolean(value) {
             return .valid(boolValue)
         }
 
@@ -618,7 +619,7 @@ public final class JSONSchemaValidator: Sendable {
         }
 
         // Validate uniqueItems
-        if let uniqueItems = schema["uniqueItems"] as? Bool, uniqueItems {
+        if let uniqueItems = jsonBoolean(schema["uniqueItems"]), uniqueItems {
             // Simple uniqueness check using JSON encoding
             var seen: [String] = []
             for item in arrayValue {
@@ -641,7 +642,7 @@ public final class JSONSchemaValidator: Sendable {
                 coercedItems.append(result.coercedValue ?? arrayValue[index])
             }
             let remaining = arrayValue.dropFirst(prefixItems.count)
-            if schema["items"] as? Bool == false, !remaining.isEmpty {
+            if jsonBoolean(schema["items"]) == false, !remaining.isEmpty {
                 return .invalid(SchemaValidationError(path: path, message: "must not have additional items"))
             }
             if let itemsSchema = schema["items"] as? [String: Any] {
@@ -663,7 +664,7 @@ public final class JSONSchemaValidator: Sendable {
                 coercedItems.append(result.coercedValue ?? arrayValue[index])
             }
             let remaining = arrayValue.dropFirst(tupleItems.count)
-            if schema["additionalItems"] as? Bool == false, !remaining.isEmpty {
+            if jsonBoolean(schema["additionalItems"]) == false, !remaining.isEmpty {
                 return .invalid(SchemaValidationError(path: path, message: "must not have additional items"))
             }
             if let additionalItems = schema["additionalItems"] as? [String: Any] {
@@ -737,7 +738,7 @@ public final class JSONSchemaValidator: Sendable {
             } else {
                 // Check additionalProperties
                 let additionalProperties = schema["additionalProperties"]
-                if let allowed = additionalProperties as? Bool {
+                if let allowed = jsonBoolean(additionalProperties) {
                     if !allowed {
                         errors.append(SchemaValidationError(path: propPath, message: "additional property not allowed"))
                     } else {
@@ -789,14 +790,14 @@ public final class JSONSchemaValidator: Sendable {
             return aStr == bStr
         }
 
+        // Keep JSON booleans distinct from numbers before NSNumber equality.
+        let aBool = jsonBoolean(a)
+        let bBool = jsonBoolean(b)
+        if aBool != nil || bBool != nil { return aBool == bBool }
+
         // Handle numbers
         if let aNum = a as? NSNumber, let bNum = b as? NSNumber {
             return aNum.isEqual(to: bNum)
-        }
-
-        // Handle booleans
-        if let aBool = a as? Bool, let bBool = b as? Bool {
-            return aBool == bBool
         }
 
         // Handle arrays
@@ -834,6 +835,9 @@ public final class JSONSchemaValidator: Sendable {
         }
         if let str = value as? String {
             return "\"\(str)\""
+        }
+        if let bool = jsonBoolean(value) {
+            return bool ? "true" : "false"
         }
         if let num = value as? NSNumber {
             return "\(num)"

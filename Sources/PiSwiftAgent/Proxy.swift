@@ -104,7 +104,7 @@ public func streamProxy(model: Model, context: TranscriptContext, options: Proxy
                 let fields = try JSONSerialization.jsonObject(with: eventData) as? [String: Any] ?? [:]
                 if let level = fields["providerThinkingLevel"] as? String { partial.providerThinkingLevel = level }
                 if let level = fields["thinkingLevel"] as? String { partial.thinkingLevel = ModelThinkingLevel(rawValue: level) }
-                if let endTurn = fields["endTurn"] as? Bool { partial.endTurn = endTurn }
+                if let endTurn = jsonBoolean(fields["endTurn"]) { partial.endTurn = endTurn }
                 if let messageEvent = try processProxyEvent(event, partial: &partial, toolCallPartials: &toolCallPartials) {
                     switch messageEvent {
                     case .done, .error: sawTerminalEvent = true

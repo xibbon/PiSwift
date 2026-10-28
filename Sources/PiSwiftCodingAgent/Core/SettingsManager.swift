@@ -1556,7 +1556,8 @@ public final class SettingsManager: Sendable {
         }
         func validate(_ value: Any?, field: String) throws {
             guard let value else { return }
-            guard let integer = value as? Int, integer >= 0, !(value is Bool) else {
+            guard jsonBoolean(value) == nil, let integer = value as? Int,
+                  integer >= 0, integer <= 9_007_199_254_740_991 else {
                 throw CompactionSettingsError.invalidValue(field)
             }
         }
