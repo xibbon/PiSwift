@@ -609,6 +609,10 @@
           .replace(/'/g, '&#39;');
       }
 
+      function escapeAttribute(text) {
+        return escapeHtml(text);
+      }
+
       function sanitizeMarkdownUrl(url, options = {}) {
         const raw = String(url || '').replace(/[\x00-\x1f\x7f]/g, '').trim();
         if (!raw) return null;
@@ -1719,7 +1723,8 @@
               text: match[2],
               tokens: this.lexer.inlineTokens(match[2])
             };
-          }
+          },
+          emStrong: markedCjkFriendly().tokenizer.emStrong
         },
         renderer: {
           html(token) {

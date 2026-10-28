@@ -150,6 +150,7 @@ private func generateHtml(_ sessionData: OrderedJSON, themeName: String?) throws
     let templateCss = try loadTemplateFile(named: "template", ext: "css", subdir: "export-html")
     let templateJs = try loadTemplateFile(named: "template", ext: "js", subdir: "export-html")
     let markedJs = try loadTemplateFile(named: "marked.min", ext: "js", subdir: "export-html/vendor")
+    let markedCjkFriendlyJs = try loadTemplateFile(named: "marked-cjk-friendly.min", ext: "js", subdir: "export-html/vendor")
     let highlightJs = try loadTemplateFile(named: "highlight.min", ext: "js", subdir: "export-html/vendor")
 
     let themeVars = generateThemeVars(themeName)
@@ -171,6 +172,7 @@ private func generateHtml(_ sessionData: OrderedJSON, themeName: String?) throws
         .replacingOccurrences(of: "{{JS}}", with: templateJs)
         .replacingOccurrences(of: "{{SESSION_DATA}}", with: sessionBase64)
         .replacingOccurrences(of: "{{MARKED_JS}}", with: markedJs)
+        .replacingOccurrences(of: "{{MARKED_CJK_FRIENDLY_JS}}", with: markedCjkFriendlyJs)
         .replacingOccurrences(of: "{{HIGHLIGHT_JS}}", with: highlightJs)
 }
 

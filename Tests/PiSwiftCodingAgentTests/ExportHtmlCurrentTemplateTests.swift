@@ -127,7 +127,7 @@ private func currentExportResource(_ ext: String) throws -> String {
     try json.write(to: input, atomically: true, encoding: .utf8)
     _ = try exportFromFile(input.path, ExportOptions(outputPath: output.path, themeName: "dark"))
     let html = try String(contentsOf: output, encoding: .utf8)
-    for token in ["THEME_VARS", "BODY_BG", "CONTAINER_BG", "INFO_BG", "CSS", "JS", "SESSION_DATA", "MARKED_JS", "HIGHLIGHT_JS"] {
+    for token in ["THEME_VARS", "BODY_BG", "CONTAINER_BG", "INFO_BG", "CSS", "JS", "SESSION_DATA", "MARKED_JS", "MARKED_CJK_FRIENDLY_JS", "HIGHLIGHT_JS"] {
         #expect(!html.contains("{{\(token)}}"))
     }
     #expect(html.contains("sidebar-resizer"))
