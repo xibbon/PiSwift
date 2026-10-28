@@ -310,6 +310,11 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.xiaomiTokenPlanSgp, "mimo-v2.6-pro"),
 ]
 
+/// Returns the default chat model id for an exact provider id, or nil if none is set.
+public func defaultModelId(forProvider provider: String) -> String? {
+    defaultModelPerProvider.first { $0.0.rawValue == provider }?.1
+}
+
 public func selectDefaultModel(available: [Model], registry: ModelRegistry) async -> Model? {
     for (provider, modelId) in defaultModelPerProvider {
         if let match = available.first(where: { $0.provider == provider.rawValue && $0.id == modelId }),
