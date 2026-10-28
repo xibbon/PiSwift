@@ -19,9 +19,10 @@ private let providerModels_classifier_cloudflare_workers_ai: [String: Classifier
         api: .cloudflareWorkersAISystemOne,
         provider: "cloudflare-workers-ai",
         baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .images)
     ),
     "@cf/cloudflare/clef-flash": ClassifierModel(
         id: "@cf/cloudflare/clef-flash",
@@ -29,9 +30,21 @@ private let providerModels_classifier_cloudflare_workers_ai: [String: Classifier
         api: .cloudflareWorkersAISystemOne,
         provider: "cloudflare-workers-ai",
         baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
-        input: [.text],
-        cost: ModelCost(input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        input: [.text, .image],
+        cost: ModelCost(input: 0.038, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 24576,
+        compat: SystemOneCompat(imageInput: .images)
+    ),
+    "@cf/cloudflare/clef-omni": ClassifierModel(
+        id: "@cf/cloudflare/clef-omni",
+        name: "Clef Omni",
+        api: .cloudflareWorkersAISystemOne,
+        provider: "cloudflare-workers-ai",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.15, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 64000,
+        compat: SystemOneCompat(imageInput: .images)
     ),
     "typesafe/jev": ClassifierModel(
         id: "typesafe/jev",
@@ -39,9 +52,21 @@ private let providerModels_classifier_cloudflare_workers_ai: [String: Classifier
         api: .cloudflareWorkersAISystemOne,
         provider: "cloudflare-workers-ai",
         baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32000
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32000,
+        compat: SystemOneCompat(imageInput: .assets)
+    ),
+    "typesafe/jev-1.14.0": ClassifierModel(
+        id: "typesafe/jev-1.14.0",
+        name: "Jev 1.14",
+        api: .cloudflareWorkersAISystemOne,
+        provider: "cloudflare-workers-ai",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32000,
+        compat: SystemOneCompat(imageInput: .assets)
     ),
 ]
 
@@ -82,6 +107,28 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
 ]
 
 private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
+    "baseten/elephant-1:free": ClassifierModel(
+        id: "baseten/elephant-1:free",
+        name: "Baseten: Elephant 1 (free)",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "baseten/mammoth-1:free": ClassifierModel(
+        id: "baseten/mammoth-1:free",
+        name: "Baseten: Mammoth 1 (free)",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "cloudflare/clef": ClassifierModel(
         id: "cloudflare/clef",
         name: "Cloudflare: Clef",
@@ -89,8 +136,9 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "cloudflare/clef-flash": ClassifierModel(
         id: "cloudflare/clef-flash",
@@ -99,8 +147,9 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.038, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 24576
+        cost: ModelCost(input: 0.019, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 24576,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "cloudflare/clef-omni": ClassifierModel(
         id: "cloudflare/clef-omni",
@@ -110,7 +159,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "inception/mercury-decide": ClassifierModel(
         id: "inception/mercury-decide",
@@ -120,7 +170,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "inception/mercury-decide:free": ClassifierModel(
         id: "inception/mercury-decide:free",
@@ -130,7 +181,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "jaredpalmer/kev-4b": ClassifierModel(
         id: "jaredpalmer/kev-4b",
@@ -140,7 +192,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 8192
+        contextWindow: 8192,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "liquid/d1": ClassifierModel(
         id: "liquid/d1",
@@ -150,7 +203,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.02, output: 0, cacheRead: 0.02, cacheWrite: 0),
-        contextWindow: 65536
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "liquid/d1-ultra": ClassifierModel(
         id: "liquid/d1-ultra",
@@ -160,7 +214,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0.042, cacheWrite: 0),
-        contextWindow: 32768
+        contextWindow: 32768,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "microsoft/microsoft-decision-1": ClassifierModel(
         id: "microsoft/microsoft-decision-1",
@@ -170,7 +225,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32768
+        contextWindow: 32768,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "nace-ai/drex-max": ClassifierModel(
         id: "nace-ai/drex-max",
@@ -180,7 +236,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.06, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "nace-ai/drex-v1.5": ClassifierModel(
         id: "nace-ai/drex-v1.5",
@@ -190,7 +247,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072
+        contextWindow: 131072,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "nace-ai/drex-v2.0": ClassifierModel(
         id: "nace-ai/drex-v2.0",
@@ -200,7 +258,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.06, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072
+        contextWindow: 131072,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "openai/gpt-6-luna-decisions": ClassifierModel(
         id: "openai/gpt-6-luna-decisions",
@@ -210,7 +269,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1050000
+        contextWindow: 1050000,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "perplexity/pplx-decider-flash-v1.2": ClassifierModel(
         id: "perplexity/pplx-decider-flash-v1.2",
@@ -220,7 +280,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "perplexity/pplx-decider-v1.2": ClassifierModel(
         id: "perplexity/pplx-decider-v1.2",
@@ -230,7 +291,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "respan/span-01": ClassifierModel(
         id: "respan/span-01",
@@ -240,7 +302,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 4096
+        contextWindow: 4096,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "respan/span-01-lite": ClassifierModel(
         id: "respan/span-01-lite",
@@ -250,7 +313,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 4096
+        contextWindow: 4096,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "respan/span-01-lite:free": ClassifierModel(
         id: "respan/span-01-lite:free",
@@ -260,7 +324,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 4096
+        contextWindow: 4096,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "respan/span-02": ClassifierModel(
         id: "respan/span-02",
@@ -270,7 +335,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 131072
+        contextWindow: 131072,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "scaledown/classify-1": ClassifierModel(
         id: "scaledown/classify-1",
@@ -280,7 +346,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 1000000
+        contextWindow: 1000000,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "togethercomputer/tev1-4b-experimental": ClassifierModel(
         id: "togethercomputer/tev1-4b-experimental",
@@ -290,7 +357,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 32768
+        contextWindow: 32768,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "typesafe/jev-1.13": ClassifierModel(
         id: "typesafe/jev-1.13",
@@ -300,7 +368,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "typesafe/jev-1.14": ClassifierModel(
         id: "typesafe/jev-1.14",
@@ -310,7 +379,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "upstage/solar-decide": ClassifierModel(
         id: "upstage/solar-decide",
@@ -320,7 +390,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.05, output: 0, cacheRead: 0.05, cacheWrite: 0),
-        contextWindow: 524288
+        contextWindow: 524288,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "upstage/solar-decide-flash": ClassifierModel(
         id: "upstage/solar-decide-flash",
@@ -330,7 +401,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
         cost: ModelCost(input: 0.05, output: 0, cacheRead: 0.05, cacheWrite: 0),
-        contextWindow: 524288
+        contextWindow: 524288,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "~perplexity/pplx-decider-flash-latest": ClassifierModel(
         id: "~perplexity/pplx-decider-flash-latest",
@@ -340,7 +412,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "~perplexity/pplx-decider-latest": ClassifierModel(
         id: "~perplexity/pplx-decider-latest",
@@ -350,7 +423,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "~typesafe/jev-latest": ClassifierModel(
         id: "~typesafe/jev-latest",
@@ -360,7 +434,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 262144
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
 ]
 
@@ -371,9 +446,10 @@ private let providerModels_classifier_typesafe: [String: ClassifierModel] = [
         api: .typesafeSystemOne,
         provider: "typesafe",
         baseUrl: "https://api.typesafe.ai/v1/",
-        input: [.text],
+        input: [.text, .image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 64000
+        contextWindow: 64000,
+        compat: SystemOneCompat(imageInput: .assets, sendImageOptInHeader: true)
     ),
 ]
 

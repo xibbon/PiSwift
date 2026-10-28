@@ -3,6 +3,9 @@
     "@cf/cloudflare/clef": {
       "api": "cloudflare-workers-ai-system-one",
       "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "compat": {
+        "imageInput": "images"
+      },
       "contextWindow": 65536,
       "cost": {
         "cacheRead": 0,
@@ -12,7 +15,8 @@
       },
       "id": "@cf/cloudflare/clef",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "name": "Clef",
       "provider": "cloudflare-workers-ai",
@@ -21,36 +25,88 @@
     "@cf/cloudflare/clef-flash": {
       "api": "cloudflare-workers-ai-system-one",
       "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
-      "contextWindow": 65536,
+      "compat": {
+        "imageInput": "images"
+      },
+      "contextWindow": 24576,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.09,
+        "input": 0.038,
         "output": 0
       },
       "id": "@cf/cloudflare/clef-flash",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "name": "Clef Flash",
+      "provider": "cloudflare-workers-ai",
+      "type": "classifier"
+    },
+    "@cf/cloudflare/clef-omni": {
+      "api": "cloudflare-workers-ai-system-one",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "compat": {
+        "imageInput": "images"
+      },
+      "contextWindow": 64000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.15,
+        "output": 0
+      },
+      "id": "@cf/cloudflare/clef-omni",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Clef Omni",
       "provider": "cloudflare-workers-ai",
       "type": "classifier"
     },
     "typesafe/jev": {
       "api": "cloudflare-workers-ai-system-one",
       "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "compat": {
+        "imageInput": "assets"
+      },
       "contextWindow": 32000,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0,
+        "input": 0.042,
         "output": 0
       },
       "id": "typesafe/jev",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "name": "Jev",
+      "provider": "cloudflare-workers-ai",
+      "type": "classifier"
+    },
+    "typesafe/jev-1.14.0": {
+      "api": "cloudflare-workers-ai-system-one",
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
+      "compat": {
+        "imageInput": "assets"
+      },
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "typesafe/jev-1.14.0",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Jev 1.14",
       "provider": "cloudflare-workers-ai",
       "type": "classifier"
     }
@@ -127,6 +183,10 @@
     "~perplexity/pplx-decider-flash-latest": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -146,6 +206,10 @@
     "~perplexity/pplx-decider-latest": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -165,6 +229,10 @@
     "~typesafe/jev-latest": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -181,14 +249,62 @@
       "provider": "openrouter",
       "type": "classifier"
     },
-    "cloudflare/clef": {
+    "baseten/elephant-1:free": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
-      "contextWindow": 65536,
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 16384,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.24,
+        "input": 0,
+        "output": 0
+      },
+      "id": "baseten/elephant-1:free",
+      "input": [
+        "text"
+      ],
+      "name": "Baseten: Elephant 1 (free)",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "baseten/mammoth-1:free": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 16384,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "baseten/mammoth-1:free",
+      "input": [
+        "text"
+      ],
+      "name": "Baseten: Mammoth 1 (free)",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "cloudflare/clef": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 16384,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
         "output": 0
       },
       "id": "cloudflare/clef",
@@ -203,11 +319,15 @@
     "cloudflare/clef-flash": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 24576,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.038,
+        "input": 0.019,
         "output": 0
       },
       "id": "cloudflare/clef-flash",
@@ -222,6 +342,10 @@
     "cloudflare/clef-omni": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 65536,
       "cost": {
         "cacheRead": 0,
@@ -241,6 +365,10 @@
     "inception/mercury-decide": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 65536,
       "cost": {
         "cacheRead": 0,
@@ -260,6 +388,10 @@
     "inception/mercury-decide:free": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 65536,
       "cost": {
         "cacheRead": 0,
@@ -279,6 +411,10 @@
     "jaredpalmer/kev-4b": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 8192,
       "cost": {
         "cacheRead": 0,
@@ -297,6 +433,10 @@
     "liquid/d1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 65536,
       "cost": {
         "cacheRead": 0.02,
@@ -316,6 +456,10 @@
     "liquid/d1-ultra": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 32768,
       "cost": {
         "cacheRead": 0.042,
@@ -335,6 +479,10 @@
     "microsoft/microsoft-decision-1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 32768,
       "cost": {
         "cacheRead": 0,
@@ -353,6 +501,10 @@
     "nace-ai/drex-max": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -371,6 +523,10 @@
     "nace-ai/drex-v1.5": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 131072,
       "cost": {
         "cacheRead": 0,
@@ -389,6 +545,10 @@
     "nace-ai/drex-v2.0": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 131072,
       "cost": {
         "cacheRead": 0,
@@ -407,6 +567,10 @@
     "openai/gpt-6-luna-decisions": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 1050000,
       "cost": {
         "cacheRead": 0,
@@ -426,6 +590,10 @@
     "perplexity/pplx-decider-flash-v1.2": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -445,6 +613,10 @@
     "perplexity/pplx-decider-v1.2": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -464,6 +636,10 @@
     "respan/span-01": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 4096,
       "cost": {
         "cacheRead": 0,
@@ -482,6 +658,10 @@
     "respan/span-01-lite": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 4096,
       "cost": {
         "cacheRead": 0,
@@ -500,6 +680,10 @@
     "respan/span-01-lite:free": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 4096,
       "cost": {
         "cacheRead": 0,
@@ -518,6 +702,10 @@
     "respan/span-02": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 131072,
       "cost": {
         "cacheRead": 0,
@@ -537,6 +725,10 @@
     "scaledown/classify-1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 1000000,
       "cost": {
         "cacheRead": 0,
@@ -556,6 +748,10 @@
     "togethercomputer/tev1-4b-experimental": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 32768,
       "cost": {
         "cacheRead": 0,
@@ -574,6 +770,10 @@
     "typesafe/jev-1.13": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -593,6 +793,10 @@
     "typesafe/jev-1.14": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 262144,
       "cost": {
         "cacheRead": 0,
@@ -612,6 +816,10 @@
     "upstage/solar-decide": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 524288,
       "cost": {
         "cacheRead": 0.05,
@@ -630,6 +838,10 @@
     "upstage/solar-decide-flash": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
       "contextWindow": 524288,
       "cost": {
         "cacheRead": 0.05,
@@ -650,6 +862,10 @@
     "jev-latest": {
       "api": "typesafe-system-one",
       "baseUrl": "https://api.typesafe.ai/v1/",
+      "compat": {
+        "imageInput": "assets",
+        "sendImageOptInHeader": true
+      },
       "contextWindow": 64000,
       "cost": {
         "cacheRead": 0,
@@ -659,7 +875,8 @@
       },
       "id": "jev-latest",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "name": "Jev",
       "provider": "typesafe",

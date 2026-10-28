@@ -258,7 +258,7 @@ struct A1RetryAndCloudflareTests {
     }
     @Test(arguments: ["@cf/cloudflare/clef", "@cf/cloudflare/clef-flash"])
     func clefDirectOutput(_ id: String) async throws {
-        let price = id.hasSuffix("-flash") ? 0.09 : 0.24
+        let price = id.hasSuffix("-flash") ? 0.038 : 0.24
         let model = ClassifierModel(id: id, name: id, api: .cloudflareWorkersAISystemOne,
             provider: "cloudflare-workers-ai", baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai",
             input: [.text], cost: ModelCost(input: price, output: 0, cacheRead: 0, cacheWrite: 0), contextWindow: 65536)

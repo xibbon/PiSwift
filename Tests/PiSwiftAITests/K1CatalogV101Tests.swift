@@ -17,21 +17,29 @@ private actor K1CloudflareHTTPClient: ProviderHTTPClient {
 
 @Suite("K1 v1.0.1 catalog", .timeLimit(.minutes(1)))
 struct K1CatalogV101Tests {
-    @Test(arguments: ["@cf/cloudflare/clef", "@cf/cloudflare/clef-flash"])
-    func clefCatalogMetadata(_ id: String) throws {
+    @Test(arguments: [
+        ("@cf/cloudflare/clef", 0.24, 65_536),
+        ("@cf/cloudflare/clef-flash", 0.038, 24_576),
+        ("@cf/cloudflare/clef-omni", 0.15, 64_000),
+    ])
+    func clefCatalogMetadata(_ id: String, _ price: Double, _ contextWindow: Int) throws {
         let model = try #require(getClassifierModel(provider: "cloudflare-workers-ai", modelId: id))
-        let price = id.hasSuffix("-flash") ? 0.09 : 0.24
         #expect(model.id == id)
         #expect(model.provider == "cloudflare-workers-ai")
         #expect(model.api == .cloudflareWorkersAISystemOne)
         #expect(model.baseUrl == "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai")
-        #expect(model.contextWindow == 65_536)
-        #expect(model.input == [.text])
+        #expect(model.contextWindow == contextWindow)
+        #expect(model.input == [.text, .image])
         #expect(model.cost == ModelCost(input: price, output: 0, cacheRead: 0, cacheWrite: 0))
+        #expect(model.compat == SystemOneCompat(imageInput: .images))
     }
 
-    @Test(arguments: ["@cf/cloudflare/clef", "@cf/cloudflare/clef-flash"])
-    func clefCatalogClassifyCost(_ id: String) async throws {
+    @Test(arguments: [
+        ("@cf/cloudflare/clef", 0.24),
+        ("@cf/cloudflare/clef-flash", 0.038),
+        ("@cf/cloudflare/clef-omni", 0.15),
+    ])
+    func clefCatalogClassifyCost(_ id: String, _ price: Double) async throws {
         let model = try #require(getClassifierModel(provider: "cloudflare-workers-ai", modelId: id))
         let client = K1CloudflareHTTPClient()
         let context = ClassifierContext(
@@ -53,7 +61,6 @@ struct K1CatalogV101Tests {
             #expect(confidence == 0.4538)
         } else { Issue.record("Missing choice answer") }
         let usage = try #require(result.usage)
-        let price = id.hasSuffix("-flash") ? 0.09 : 0.24
         let expected = 222 * price / 1_000_000
         #expect(usage.input == 222)
         #expect(usage.output == 0)
@@ -66,6 +73,45 @@ struct K1CatalogV101Tests {
         let data = try #require(request.httpBody)
         let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(body["model"] as? String == id)
+    }
+
+    @Test(arguments: ["typesafe/jev", "typesafe/jev-1.14.0"])
+    func cloudflareJevCatalogMetadata(_ id: String) throws {
+        let model = try #require(getClassifierModel(provider: "cloudflare-workers-ai", modelId: id))
+        #expect(model.id == id)
+        #expect(model.provider == "cloudflare-workers-ai")
+        #expect(model.api == .cloudflareWorkersAISystemOne)
+        #expect(model.baseUrl == "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai")
+        #expect(model.contextWindow == 32_000)
+        #expect(model.input == [.text, .image])
+        #expect(model.cost == ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0))
+        #expect(model.compat == SystemOneCompat(imageInput: .assets))
+    }
+
+    @Test func typeSafeJevCatalogMetadata() throws {
+        let model = try #require(getClassifierModel(provider: "typesafe", modelId: "jev-latest"))
+        #expect(model.api == .typesafeSystemOne)
+        #expect(model.contextWindow == 64_000)
+        #expect(model.input == [.text, .image])
+        #expect(model.cost == ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0))
+        #expect(model.compat == SystemOneCompat(imageInput: .assets, sendImageOptInHeader: true))
+    }
+
+    @Test(arguments: ["minimax", "minimax-cn"])
+    func miniMaxM31FlashAdaptiveThinking(_ provider: String) throws {
+        let model = try #require(getModel(provider: provider, modelId: "MiniMax-M3.1-Flash"))
+        #expect(model.api == .anthropicMessages)
+        #expect(model.reasoning)
+        #expect(model.compat?.forceAdaptiveThinking == true)
+        #expect(getSupportedThinkingLevels(model) == [.low, .medium, .high, .xhigh, .max])
+    }
+
+    @Test(arguments: ["grok-4.3", "grok-4.5", "grok-4.6", "grok-4.7"])
+    func grokCatalogThinkingLevels(_ id: String) throws {
+        let model = try #require(getModel(provider: "xai", modelId: id))
+        let expected: [ModelThinkingLevel] = id == "grok-4.3"
+            ? [.off, .low, .medium, .high, .xhigh] : [.low, .medium, .high, .xhigh]
+        #expect(getSupportedThinkingLevels(model) == expected)
     }
 
     // Port of the DeepSeek assertions in v1.0.1 together-models.test.ts.
@@ -111,7 +157,9 @@ struct K1CatalogV101Tests {
     }
 
     @Test func generationTimestampAndProviderCount() {
-        #expect(builtinModelDataGeneratedAt == 1_792_621_556.816) // v1.3.0 hydration, 2026-10-21T22:25:56.816Z
+        #expect(builtinModelDataGeneratedAt == 1_793_037_618.400) // v1.4.0 hydration, 2026-10-26T18:00:18.400Z
+        #expect(ModelsData.count == 41)
         #expect(getProviders().count == 40)
+        #expect(ClassifierModelsData.count == 6)
     }
 }

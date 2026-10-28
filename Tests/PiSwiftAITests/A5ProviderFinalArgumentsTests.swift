@@ -225,7 +225,7 @@ func a5RawResponsesFinalArgumentsClearStreamedState() async throws {
 // The upstream fixture targets Codex. Exercise its separate request body conversion.
 @Test(.timeLimit(.minutes(1)))
 func a5CodexRequestUsesUniqueFallbackIDsForTwoTextBlocks() async throws {
-    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-6.1-sol")
     let assistant = AssistantMessage(content: [.text(TextContent(text: "first answer")), .text(TextContent(text: "visible answer"))],
         api: .anthropicMessages, provider: "anthropic", model: "claude-opus-4-8",
         usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0), stopReason: .stop)

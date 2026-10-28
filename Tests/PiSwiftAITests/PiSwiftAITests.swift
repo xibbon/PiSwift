@@ -584,10 +584,19 @@ private func normalizeImageModel(_ model: ImageModel) -> [String: Any] {
     ])
 }
 
+private func normalizeSystemOneCompat(_ compat: SystemOneCompat?) -> [String: Any]? {
+    guard let compat else { return nil }
+    return optionalFields([
+        ("imageInput", compat.imageInput?.rawValue),
+        ("sendImageOptInHeader", compat.sendImageOptInHeader),
+    ])
+}
+
 private func normalizeClassifierModel(_ model: ClassifierModel) -> [String: Any] {
     optionalFields([
         ("api", model.api.rawValue),
         ("baseUrl", model.baseUrl),
+        ("compat", normalizeSystemOneCompat(model.compat)),
         ("contextWindow", model.contextWindow),
         ("cost", normalizeCost(model.cost)),
         ("headers", model.headers),
@@ -639,6 +648,7 @@ private struct CodexRequestCapture: Sendable {
     let hasTools: Bool
     let toolChoice: String?
     let parallelToolCalls: Bool?
+    let body: Data?
     let usage: Usage
 }
 
@@ -759,7 +769,7 @@ private func runCodexToolCallRequest(
             URLProtocol.unregisterClass(MockURLProtocol.self)
         }
 
-        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
+        let model = getModel(provider: .openaiCodex, modelId: "gpt-6.1-sol")
         let context = Context(messages: [.user(UserMessage(content: .text("Use read tool")))])
         let stream = streamOpenAICodexResponses(
             model: model,
@@ -794,7 +804,8 @@ private func runCodexToolCallRequest(
 private func runCodexSessionRequest(
     sessionId: String?,
     serviceTier: OpenAIServiceTier? = nil,
-    tools: [AITool]? = nil
+    tools: [AITool]? = nil,
+    model: PiSwiftAI.Model? = nil
 ) async throws -> CodexRequestCapture {
     try await codexRequestLock.withLock {
         let token = try codexSubscriptionToken()
@@ -807,6 +818,7 @@ private func runCodexSessionRequest(
         let seenHasTools = LockedState(false)
         let seenToolChoice = LockedState<String?>(nil)
         let seenParallelToolCalls = LockedState<Bool?>(nil)
+        let seenBody = LockedState<Data?>(nil)
         MockURLProtocol.allowedHosts.withLock { $0 = ["api.github.com", "raw.githubusercontent.com", "chatgpt.com"] }
         MockURLProtocol.requestHandler.withLock { $0 = { request in
             guard let url = request.url else {
@@ -833,6 +845,7 @@ private func runCodexSessionRequest(
                 seenXClientRequestId.withLock { $0 = request.value(forHTTPHeaderField: "x-client-request-id") }
                 if let body = readRequestBody(request),
                    let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                    seenBody.withLock { $0 = body }
                     seenPromptCacheKey.withLock { $0 = json["prompt_cache_key"] as? String }
                     seenServiceTier.withLock { $0 = json["service_tier"] as? String }
                     seenHasTools.withLock { $0 = json.keys.contains("tools") }
@@ -909,7 +922,7 @@ private func runCodexSessionRequest(
             URLProtocol.unregisterClass(MockURLProtocol.self)
         }
 
-        let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
+        let model = model ?? getModel(provider: .openaiCodex, modelId: "gpt-6.1-sol")
         let context = Context(messages: [.user(UserMessage(content: .text("Say hello")))], tools: tools)
         let stream = streamOpenAICodexResponses(
             model: model,
@@ -927,6 +940,7 @@ private func runCodexSessionRequest(
             hasTools: seenHasTools.withLock { $0 },
             toolChoice: seenToolChoice.withLock { $0 },
             parallelToolCalls: seenParallelToolCalls.withLock { $0 },
+            body: seenBody.withLock { $0 },
             usage: message.usage
         )
     }
@@ -1149,14 +1163,26 @@ private func runCodexSessionRequest(
     #expect(capture.serviceTier == nil)
 }
 
-@Test(.timeLimit(.minutes(1))) func openAICodexOmitsToolFieldsForExplicitEmptyTools() async throws {
+@Test(.timeLimit(.minutes(1))) func openAICodexKeepsToolDefaultsForExplicitEmptyTools() async throws {
     let capture = try await runCodexSessionRequest(sessionId: nil, tools: [])
     #expect(capture.hasTools == false)
-    #expect(capture.toolChoice == nil)
-    #expect(capture.parallelToolCalls == nil)
+    // Tag openai-codex-responses.ts:575–585 always sends these defaults.
+    #expect(capture.toolChoice == "auto")
+    #expect(capture.parallelToolCalls == true)
 }
 
 @Test(.timeLimit(.minutes(1))) func openAICodexKeepsToolFieldsForNonEmptyTools() async throws {
+    let builtin = getModel(provider: .openaiCodex, modelId: "gpt-6.1-sol")
+    var compat = try #require(builtin.compat)
+    compat.supportsAdditionalTools = false
+    compat.supportsToolSearch = false
+    let model = PiSwiftAI.Model(
+        id: builtin.id, name: builtin.name, api: builtin.api, provider: builtin.provider, baseUrl: builtin.baseUrl,
+        reasoning: builtin.reasoning, input: builtin.input, cost: builtin.cost, contextWindow: builtin.contextWindow,
+        maxTokens: builtin.maxTokens, samplingParams: builtin.samplingParams, headers: builtin.headers,
+        compat: compat, thinkingLevelMap: builtin.thinkingLevelMap, inputLimits: builtin.inputLimits,
+        promptCache: builtin.promptCache, samplingParamsByThinkingLevel: builtin.samplingParamsByThinkingLevel
+    )
     let capture = try await runCodexSessionRequest(
         sessionId: nil,
         tools: [
@@ -1165,20 +1191,45 @@ private func runCodexSessionRequest(
                 description: "Ping tool",
                 parameters: ["type": AnyCodable("object")]
             ),
-        ]
+        ],
+        model: model
     )
     #expect(capture.hasTools == true)
     #expect(capture.toolChoice == "auto")
     #expect(capture.parallelToolCalls == true)
 }
 
+@Test(.timeLimit(.minutes(1))) func openAICodexAdditionalToolsKeepToolDefaults() async throws {
+    let capture = try await runCodexSessionRequest(
+        sessionId: nil,
+        tools: [AITool(name: "ping", description: "Ping tool", parameters: ["type": AnyCodable("object")])]
+    )
+    #expect(capture.hasTools == false)
+    #expect(capture.toolChoice == "auto")
+    #expect(capture.parallelToolCalls == true)
+    let data = try #require(capture.body)
+    let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(body["model"] as? String == "gpt-6.1-sol")
+    let input = try #require(body["input"] as? [[String: Any]])
+    let batches = input.filter { $0["type"] as? String == "additional_tools" }
+    #expect(batches.count == 1)
+    let batch = try #require(batches.first)
+    let tools = try #require(batch["tools"] as? [[String: Any]])
+    #expect(tools.count == 1)
+    let tool = try #require(tools.first)
+    #expect(tool["type"] as? String == "function")
+    #expect(tool["name"] as? String == "ping")
+    #expect(tool["description"] as? String == "Ping tool")
+    #expect(try canonicalJSONString(try #require(tool["parameters"])) == #"{"type":"object"}"#)
+}
+
 @Test(.timeLimit(.minutes(1))) func openAICodexForwardsServiceTierAndAppliesPricing() async throws {
     let capture = try await runCodexSessionRequest(sessionId: "tier-session", serviceTier: .priority)
     #expect(capture.serviceTier == "priority")
 
-    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
-    let expectedInput = model.cost.input / 1_000_000 * Double(capture.usage.input) * 2.5
-    let expectedOutput = model.cost.output / 1_000_000 * Double(capture.usage.output) * 2.5
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-6.1-sol")
+    let expectedInput = model.cost.input / 1_000_000 * Double(capture.usage.input) * 2
+    let expectedOutput = model.cost.output / 1_000_000 * Double(capture.usage.output) * 2
     #expect(abs(capture.usage.cost.input - expectedInput) < 0.000000001)
     #expect(abs(capture.usage.cost.output - expectedOutput) < 0.000000001)
     #expect(abs(capture.usage.cost.total - (expectedInput + expectedOutput)) < 0.000000001)
@@ -1192,7 +1243,7 @@ private func runCodexSessionRequest(
 
 @Test(.timeLimit(.minutes(1))) func openAICodexForeignToolCallItemIdsAreHashed() async throws {
     let rawItemId = "foreign.item/id with punctuation and a very very very very very long suffix"
-    let model = getModel(provider: .openaiCodex, modelId: "gpt-5.5")
+    let model = getModel(provider: .openaiCodex, modelId: "gpt-6.1-sol")
     let foreignAssistant = AssistantMessage(
         content: [
             .toolCall(ToolCall(id: "call.foreign|\(rawItemId)", name: "lookup", arguments: ["q": AnyCodable("weather")]))
@@ -6453,8 +6504,8 @@ struct ApiRegistryTests {
     #expect(getProviders().count == 40)
     #expect(!getProviders().contains(.typesafe))
     #expect(getBuiltinProviders().contains(.typesafe))
-    #expect(allModels.count == 1567) // v1.3.0 catalog
-    #expect(compared == 1567) // v1.3.0 catalog
+    #expect(allModels.count == 1566) // v1.4.0 catalog
+    #expect(compared == 1566) // v1.4.0 catalog
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6524,6 +6575,14 @@ struct ApiRegistryTests {
 @Test func generatedClassifierCatalogMatchesUpstreamMetadata() throws {
     let upstream = try loadJSONResource("upstream-classifier-models.generated")
     #expect(Set(ClassifierModelsData.keys) == Set(upstream.keys))
+    #expect(ClassifierModelsData.mapValues(\.count) == [
+        "cloudflare-workers-ai": 5, "openai": 1, "opencode": 2,
+        "openrouter": 30, "typesafe": 1, "vercel-ai-gateway": 14,
+    ])
+    #expect(Set(ClassifierModelsData["cloudflare-workers-ai"]?.keys.map { $0 } ?? []) == Set([
+        "@cf/cloudflare/clef", "@cf/cloudflare/clef-flash", "@cf/cloudflare/clef-omni",
+        "typesafe/jev", "typesafe/jev-1.14.0",
+    ]))
 
     var compared = 0
     for provider in ClassifierModelsData.keys.sorted() {
@@ -6539,12 +6598,25 @@ struct ApiRegistryTests {
                 #expect(Bool(false), "Missing classifier \(provider)/\(modelId)")
                 continue
             }
+            // Pin compat independently, so both generated files cannot omit it.
+            let expectedCompat: SystemOneCompat?
+            switch provider {
+            case "cloudflare-workers-ai":
+                expectedCompat = SystemOneCompat(imageInput: modelId.hasPrefix("@cf/cloudflare/clef") ? .images : .assets)
+            case "openrouter":
+                expectedCompat = SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+            case "typesafe":
+                expectedCompat = SystemOneCompat(imageInput: .assets, sendImageOptInHeader: true)
+            default:
+                expectedCompat = nil
+            }
+            #expect(swiftModel.compat == expectedCompat, "Classifier compat drift for \(provider)/\(modelId)")
             #expect(try canonicalJSONString(normalizeClassifierModel(swiftModel)) == canonicalJSONString(upstreamModel),
                     "Classifier metadata drift for \(provider)/\(modelId)")
             compared += 1
         }
     }
-    #expect(compared == 49) // v1.3.0 catalog
+    #expect(compared == 53) // v1.4.0 catalog
     #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }

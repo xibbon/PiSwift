@@ -105,6 +105,7 @@ private func systemOneModel(api: ClassifierApi = .typesafeSystemOne, provider: S
     #expect(getAllBuiltinModels(provider: "typesafe").count == 1)
     #expect(getClassifierModels(provider: "openrouter").allSatisfy {
         $0.api == .typesafeSystemOne && $0.baseUrl == "https://openrouter.ai/api/v1"
+            && $0.compat?.imageInput == .stateImageURLs && $0.compat?.sendImageOptInHeader == false
     })
     let openRouter = ClassifierModel(id: "typesafe/jev-1.14", name: "Jev", api: .typesafeSystemOne,
         provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1", input: [.text, .image],

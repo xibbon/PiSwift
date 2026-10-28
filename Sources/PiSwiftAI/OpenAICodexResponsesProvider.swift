@@ -52,6 +52,8 @@ public func streamOpenAICodexResponses(
                     grammarToolInputProperties: grammarToolInputProperties
                 ),
                 "stream": true,
+                "tool_choice": options.toolChoice.map(responsesToolChoicePayload) ?? "auto",
+                "parallel_tool_calls": true,
             ]
 
             if let codexSessionId, !codexSessionId.isEmpty {
@@ -74,13 +76,6 @@ public func streamOpenAICodexResponses(
                     supportsStrictMode: model.compat?.supportsStrictMode ?? true,
                     supportsOpenAIGrammarTools: supportsGrammar
                 )
-                body["parallel_tool_calls"] = true
-            }
-
-            if let choice = options.toolChoice {
-                body["tool_choice"] = responsesToolChoicePayload(choice)
-            } else if context.tools?.isEmpty == false {
-                body["tool_choice"] = "auto"
             }
 
             if let instructions = context.systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
