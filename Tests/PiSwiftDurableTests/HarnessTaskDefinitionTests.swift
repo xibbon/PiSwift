@@ -2,6 +2,8 @@ import Testing
 import PiSwiftChord
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private struct DefinitionCheckpoint: TaskCheckpoint, Equatable {
     enum Phase: String, Codable, Sendable { case work, joined }
     var phase: Phase
@@ -93,7 +95,7 @@ private struct DefinitionAgentHooks: SessionHooks {
         let initialRoot = try await session.snapshot(AgentDoc, conversationId: values.0, context: .background)
         let initialOwned = try await session.snapshot(AgentDoc, conversationId: values.1, context: .background)
         #expect(initialRoot == initialOwned)
-        let rawToken = try RewindableConversationDocToken<JSONObject>(kind: "pi.agent", version: 1, fork: .asOf, initial: { [:] })
+        let rawToken = try RewindableConversationDocToken<JSONObject>(kind: "pi.agent", version: 1, fork: .asOf, initial: { [:] }, checkpointWhen: { _, _, _ in false })
         let raw = try await session.snapshot(rawToken, conversationId: values.1, context: .background)
         #expect(raw?["future"] == .string("retained"))
         try await session.commit({ tx in

@@ -6,16 +6,17 @@ import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
 @Suite struct HarnessRunControlValueTests {
+    // Upstream v1.4.0 types.ts:78 / documents.ts:89: the checkpoint policy is required.
     @Test func documentPoliciesMatchIdleAndRunningStates() throws {
         let info = CheckpointInfo(deltasSinceBase: 1)
-        #expect(try InboxDoc.definition.checkpointWhen?(["items": []], [], info) == true)
-        #expect(try InboxDoc.definition.checkpointWhen?(["items": [[:]]], [], info) == false)
-        #expect(try UsageDoc.definition.checkpointWhen?(["models": [:], "tools": [:]], [], info) == true)
-        #expect(try ProviderDoc.definition.checkpointWhen?(["sessionId": "id"], [], info) == true)
-        #expect(try LiveDoc.definition.checkpointWhen?([:], [], info) == true)
-        #expect(try LiveDoc.definition.checkpointWhen?(["generation": [:]], [], info) == false)
-        #expect(try LiveDoc.definition.checkpointWhen?(["tools": [["status": "pending"]]], [], info) == true)
-        #expect(try LiveDoc.definition.checkpointWhen?(["tools": [["status": "running"]]], [], info) == false)
+        #expect(try InboxDoc.definition.checkpointWhen(["items": []], [], info) == true)
+        #expect(try InboxDoc.definition.checkpointWhen(["items": [[:]]], [], info) == false)
+        #expect(try UsageDoc.definition.checkpointWhen(["models": [:], "tools": [:]], [], info) == true)
+        #expect(try ProviderDoc.definition.checkpointWhen(["sessionId": "id"], [], info) == true)
+        #expect(try LiveDoc.definition.checkpointWhen([:], [], info) == true)
+        #expect(try LiveDoc.definition.checkpointWhen(["generation": [:]], [], info) == false)
+        #expect(try LiveDoc.definition.checkpointWhen(["tools": [["status": "pending"]]], [], info) == true)
+        #expect(try LiveDoc.definition.checkpointWhen(["tools": [["status": "running"]]], [], info) == false)
         for definition in [LiveDoc.definition, InboxDoc.definition, UsageDoc.definition, ProviderDoc.definition] {
             #expect(definition.version == 1)
             if case .conversation(let history, let fork, _) = definition.semantics {

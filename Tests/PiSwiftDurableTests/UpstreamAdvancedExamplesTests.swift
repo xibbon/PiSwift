@@ -6,6 +6,8 @@ import PiSwiftChord
 import PiSwiftDurable
 import PiSwiftDurableTesting
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 // These tests port the printed results from pi-mono v1.1.0 examples.
 // Gates replace timer delays. All model responses use the faux provider.
 private final class AdvancedExampleLog<Value: Sendable>: Sendable {
@@ -400,7 +402,7 @@ private func advancedSubagentExtension(_ token: ConversationDocToken<AdvancedSub
 extension UpstreamAdvancedExamplesTests {
     // 23-subagent-background.ts: spawn, report, stop, status, and resume after restart.
     @Test func backgroundSubagent() async throws {
-        let token = try ConversationDocToken<AdvancedSubagents>(kind: "app.subagents", version: 1, fork: .initial, initial: { .init() })
+        let token = try ConversationDocToken<AdvancedSubagents>(kind: "app.subagents", version: 1, fork: .initial, initial: { .init() }, checkpointWhen: { _, _, _ in false })
         let setup = HarnessChatSetup()
         try setup.registry.install(advancedSubagentExtension(token))
         let longAnswer = HarnessUnanswered(), whaleAnswer = HarnessUnanswered()

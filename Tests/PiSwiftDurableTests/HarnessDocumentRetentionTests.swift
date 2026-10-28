@@ -3,6 +3,8 @@ import PiSwiftChord
 @testable import PiSwiftDurable
 import PiSwiftDurableTesting
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Suite struct HarnessDocumentRetentionTests {
     // v1.4.0 uses Harness timers for eviction; SessionDocumentTimer.continuous was removed.
     @Test func documentRetentionUsesTheHarnessTimerClock() async throws {
@@ -12,7 +14,7 @@ import PiSwiftDurableTesting
             models: setup.models, registry: setup.registry, settings: setup.settingsProvider,
             clock: clock), context: .background)
         let token = try SessionDocToken<JSONObject>(kind: "retention.harness.clock", version: 1,
-            initial: { ["count": 0] })
+            initial: { ["count": 0] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in
             try await tx.doc(token).set("count", 7)
         }, context: .background)

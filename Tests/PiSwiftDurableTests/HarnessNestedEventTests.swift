@@ -102,10 +102,11 @@ import PiSwiftDurableTesting
         #expect(try translate(view([done]), view([])).isEmpty)
     }
 
+    // Upstream v1.4.0 types.ts:78 / documents.ts:89: the checkpoint policy is required.
     @Test func liveCheckpointWaitsForNestedWork() throws {
         for (status, expected) in [("pending", true), ("running", false), ("done", true)] {
             let value = view([slot(11, status: status)]).docs["pi.live"]!
-            #expect(try LiveDoc.definition.checkpointWhen!(value, [], .init(deltasSinceBase: 1000)) == expected)
+            #expect(try LiveDoc.definition.checkpointWhen(value, [], .init(deltasSinceBase: 1000)) == expected)
         }
     }
 

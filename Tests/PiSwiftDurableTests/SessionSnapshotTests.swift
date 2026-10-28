@@ -3,6 +3,8 @@ import Synchronization
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private struct CountedSnapshot: Codable, Sendable, Equatable {
     static let decodes = Mutex(0)
     let count: Int
@@ -17,7 +19,7 @@ private struct CountedSnapshot: Codable, Sendable, Equatable {
 @Suite struct SessionSnapshotTests {
     @Test func decodesOnceForEachRevisionAndDefinitionVersion() async throws {
         let harness = try await openTestSession()
-        let token = try SessionDocToken<CountedSnapshot>(kind: "decode", version: 1, initial: { CountedSnapshot(count: 0) })
+        let token = try SessionDocToken<CountedSnapshot>(kind: "decode", version: 1, initial: { CountedSnapshot(count: 0) }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         CountedSnapshot.decodes.withLock { $0 = 0 }
         let a = try await harness.session.snapshot(token, context: .background)
@@ -30,7 +32,7 @@ private struct CountedSnapshot: Codable, Sendable, Equatable {
         #expect(c?.count == 1)
         #expect(a?.count == 0)
         #expect(CountedSnapshot.decodes.withLock { $0 } == 2)
-        let newer = try SessionDocToken<CountedSnapshot>(kind: "decode", version: 2, initial: { CountedSnapshot(count: 0) }, migrate: { value, _ in value })
+        let newer = try SessionDocToken<CountedSnapshot>(kind: "decode", version: 2, initial: { CountedSnapshot(count: 0) }, migrate: { value, _ in value }, checkpointWhen: { _, _, _ in false })
         _ = try await harness.session.snapshot(newer, context: .background)
         _ = try await harness.session.snapshot(newer, context: .background)
         #expect(CountedSnapshot.decodes.withLock { $0 } == 3)
@@ -39,7 +41,7 @@ private struct CountedSnapshot: Codable, Sendable, Equatable {
 
     @Test func familyAddressesUseExactStringUnits() async throws {
         let harness = try await openTestSession()
-        let token = try SessionDocFamilyToken<JSONObject, Int>(kind: "unicode", version: 1, initial: { ["seed": .number(Double($0))] })
+        let token = try SessionDocFamilyToken<JSONObject, Int>(kind: "unicode", version: 1, initial: { ["seed": .number(Double($0))] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in
             _ = try await tx.doc(token, key: "é", seed: 1)
             _ = try await tx.doc(token, key: "e\u{301}", seed: 2)

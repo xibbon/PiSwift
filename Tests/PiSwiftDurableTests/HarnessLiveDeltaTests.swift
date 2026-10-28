@@ -147,9 +147,10 @@ import PiSwiftDurableTesting
         _ = try await run.input.wait(context: .background); try await run.close()
     }
 
+    // Upstream v1.4.0 types.ts:78 / documents.ts:89: the checkpoint policy is required.
     @Test func completeBasePredicateDependsOnlyOnGenerationAndRunningTools() throws {
         let definition = LiveDoc.definition, run = LiveRun(taskId: try TaskID(1), inputs: [])
         let cases: [(LiveState, Bool)] = [(.init(), true), (.init(run: run, generation: .init(attempt: 1)), false), (.init(run: run, tools: [.init(callId: "c", name: "n", status: .pending), .init(callId: "d", name: "n", status: .done)]), true), (.init(run: run, tools: [.init(callId: "c", name: "n", status: .done), .init(callId: "d", name: "n", status: .running)]), false), (.init(run: run), true)]
-        for (value, expected) in cases { #expect(try definition.checkpointWhen!(JSONValue(encoding: value).objectValue!, [], .init(deltasSinceBase: 1000)) == expected) }
+        for (value, expected) in cases { #expect(try definition.checkpointWhen(JSONValue(encoding: value).objectValue!, [], .init(deltasSinceBase: 1000)) == expected) }
     }
 }

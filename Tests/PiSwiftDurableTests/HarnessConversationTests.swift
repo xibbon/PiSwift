@@ -5,8 +5,10 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private func harnessNote() throws -> RewindableConversationDocToken<JSONObject> {
-    try RewindableConversationDocToken(kind: "h5.note", version: 1, fork: .asOf, initial: { ["text": ""] })
+    try RewindableConversationDocToken(kind: "h5.note", version: 1, fork: .asOf, initial: { ["text": ""] }, checkpointWhen: { _, _, _ in false })
 }
 private func harnessAppend(_ conversation: Conversation, _ text: String) async throws -> EntryRecord {
     try await conversation.commit({ tx in try await tx.appendEntry(conversation.id, value: EntryDraft(kind: "message", data: .string(text))) }, context: .background)

@@ -265,7 +265,7 @@ final class TransactionDocuments: Sendable {
         for index in plans.indices {
             if let loaded = plans[index].loaded, let prepared = plans[index].prepared, let definition = plans[index].definition,
                case .documentChange(_, .delta, _) = plans[index].content,
-               try definition.checkpointWhen?(prepared.value.objectValue!, prepared.ops, CheckpointInfo(deltasSinceBase: loaded.deltasSinceBase)) == true {
+               try definition.checkpointWhen(prepared.value.objectValue!, prepared.ops, CheckpointInfo(deltasSinceBase: loaded.deltasSinceBase)) {
                 plans[index].content = .documentChange(id: plans[index].id, content: .base(version: definition.version, value: prepared.value.objectValue!))
             }
             if let content = plans[index].content { writes.append(content) }

@@ -3,6 +3,8 @@ import Synchronization
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 struct ObservationValue: Codable, Sendable, Equatable {
     struct Retained: Codable, Sendable, Equatable { var label: String }
     var value: Int
@@ -11,7 +13,7 @@ struct ObservationValue: Codable, Sendable, Equatable {
     static let initial = ObservationValue(value: 0, items: ["a", "b"], retained: Retained(label: "stable"))
 }
 func observationToken(kind: String = "watch.state") throws -> SessionDocToken<ObservationValue> {
-    try SessionDocToken(kind: kind, version: 1, initial: { .initial })
+    try SessionDocToken(kind: kind, version: 1, initial: { .initial }, checkpointWhen: { _, _, _ in false })
 }
 func createObservationState() async throws -> (SessionTestHarness, SessionDocToken<ObservationValue>) {
     let harness = try await openTestSession()
@@ -193,7 +195,7 @@ enum ObservationFailure: Error, Equatable { case acquisition, listener }
     }
 
     @Test("hydrates migration without writing and observes the later exact edit") func migration() async throws {
-        let harness = try await openTestSession(); let old = try SessionDocToken<JSONObject>(kind: "watch.migration", version: 1, initial: { ["value": 3] }); let current = try SessionDocToken<JSONObject>(kind: "watch.migration", version: 2, initial: { ["value": 0, "migrated": false] }, migrate: { value, _ in ["value": value["value"]!, "migrated": true] })
+        let harness = try await openTestSession(); let old = try SessionDocToken<JSONObject>(kind: "watch.migration", version: 1, initial: { ["value": 3] }, checkpointWhen: { _, _, _ in false }); let current = try SessionDocToken<JSONObject>(kind: "watch.migration", version: 2, initial: { ["value": 0, "migrated": false] }, migrate: { value, _ in ["value": value["value"]!, "migrated": true] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(old) }, context: .background); try await harness.session.unloadDocuments(); let commits = await harness.storage.commits.count
         let watch = try #require(try await harness.session.watchDoc(current, context: .background)); #expect(watch.value == ["value": 3, "migrated": true]); #expect(await harness.storage.commits.count == commits)
         let values = SessionTestLog<JSONObject?>(); try watch.start { value, _, _ in values.append(value) }
@@ -202,7 +204,7 @@ enum ObservationFailure: Error, Equatable { case acquisition, listener }
     }
 
     @Test("can replay every delivered exact operation batch from the acquisition revision") func exactReplay() async throws {
-        let harness = try await openTestSession(); let token = try SessionDocToken<JSONObject>(kind: "watch.replay", version: 1, initial: { ["value": 0, "items": ["a", "b"]] })
+        let harness = try await openTestSession(); let token = try SessionDocToken<JSONObject>(kind: "watch.replay", version: 1, initial: { ["value": 0, "items": ["a", "b"]] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         let watch = try #require(try await harness.session.watchDoc(token, context: .background)); let replica = Mutex<JSONValue?>(watch.value.map(JSONValue.object))
         try watch.start { value, ops, _ in try replica.withLock { state in state = try Delta.applyImmutable(state, ops); #expect(state == value.map(JSONValue.object)) } }

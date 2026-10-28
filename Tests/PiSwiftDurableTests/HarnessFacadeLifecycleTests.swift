@@ -5,6 +5,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Suite struct HarnessFacadeLifecycleTests {
     // harness-lifecycle.test.ts:85
     @Test func failedOpenClosesWithUncancelledContextAndKeepsOriginalError() async throws {
@@ -97,7 +99,7 @@ import PiSwiftDurableTesting
     // harness-lifecycle.test.ts:275
     @Test func closeSuppressesDocumentStateAndWatchFramesFromAdmittedCommit() async throws {
         let storage = ControlledStorage(); let h = try await openHarness(storage: storage)
-        let token = try SessionDocToken<JSONObject>(kind: "h5.close-frames", version: 1, initial: { ["text": "before"] })
+        let token = try SessionDocToken<JSONObject>(kind: "h5.close-frames", version: 1, initial: { ["text": "before"] }, checkpointWhen: { _, _, _ in false })
         try await h.harness.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         let state = try #require(await h.harness.documentState(token, context: .background))
         let watch = try #require(await h.harness.watchDoc(token, context: .background))
@@ -110,7 +112,7 @@ import PiSwiftDurableTesting
     // harness-lifecycle.test.ts:336
     @Test func cancelledWatchAcquisitionLeavesNoListener() async throws {
         let storage = ControlledStorage(); let h = try await openHarness(storage: storage)
-        let token = try SessionDocToken<JSONObject>(kind: "h5.cancel-watch", version: 1, initial: { ["text": "before"] })
+        let token = try SessionDocToken<JSONObject>(kind: "h5.cancel-watch", version: 1, initial: { ["text": "before"] }, checkpointWhen: { _, _, _ in false })
         try await h.harness.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         let root = try await h.harness.root(context: .background); let held = await storage.holdCommits()
         let blocking = Task { _ = try await harnessAppendForLifecycle(root) }
@@ -145,7 +147,7 @@ import PiSwiftDurableTesting
     // harness-lifecycle.test.ts:450. Submission and H9 operations are deferred.
     @Test func queuedReadsFinishAtCloseButQueuedWaitsReject() async throws {
         let storage = ControlledStorage(); let h = try await openHarness(storage: storage); let root = try await h.harness.root(context: .background)
-        let token = try SessionDocToken<JSONObject>(kind: "h5.seal-read", version: 1, initial: { ["text": "before"] })
+        let token = try SessionDocToken<JSONObject>(kind: "h5.seal-read", version: 1, initial: { ["text": "before"] }, checkpointWhen: { _, _, _ in false })
         try await h.harness.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         let held = await storage.holdCommits(); let blocking = Task { _ = try await harnessAppendForLifecycle(root) }
         await held.waitUntilEntered()
@@ -169,7 +171,7 @@ import PiSwiftDurableTesting
         }
         let harness = try await harnessOpen([AnyTaskDefinition(definition)]); let root = try await harness.root(context: .background)
         let id = try await harnessStart(root, definition)
-        let token = try SessionDocToken<JSONObject>(kind: "h5.viewer", version: 1, initial: { [:] })
+        let token = try SessionDocToken<JSONObject>(kind: "h5.viewer", version: 1, initial: { [:] }, checkpointWhen: { _, _, _ in false })
         try await harness.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         _ = try await harness.inspect(context: .background); _ = try await harness.getTask(id: id, context: .background)
         _ = try await harness.usage(context: .background); _ = try await harness.conversation(id: root.id, context: .background)

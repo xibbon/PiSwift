@@ -6,6 +6,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private struct RuntimePing: Sendable { let call: @Sendable () throws -> Void }
 private func runtimeTool(_ name: String) throws -> ToolRegistration {
     try ToolRegistration(name: name, description: name,
@@ -138,7 +140,7 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
             let stopped = try #require(acquired[2])
             _ = await stopped.stop()
             try await harnessEventually { runtime.invocation.state.withLock { $0.watches.count == 7 } }
-            let absent = try SessionDocToken<DefinitionState>(kind: "test.runtime-absent", version: 1, initial: { .init(value: 0) })
+            let absent = try SessionDocToken<DefinitionState>(kind: "test.runtime-absent", version: 1, initial: { .init(value: 0) }, checkpointWhen: { _, _, _ in false })
             #expect(try await runtime.watchDoc(absent, context: context) == nil)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
@@ -173,8 +175,8 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
 
     // upstream harness-tasks.test.ts:580
     @Test func readsHistoricalDocumentsAndContextAndForwardsClockAndReport() async throws {
-        let notes = try RewindableConversationDocToken<DefinitionState>(kind: "test.runtime-history", version: 1, fork: .asOf, initial: { .init(value: 0) })
-        let family = try RewindableConversationDocFamilyToken<DefinitionState, Int>(kind: "test.runtime-history-family", version: 1, fork: .asOf, initial: { .init(value: $0) })
+        let notes = try RewindableConversationDocToken<DefinitionState>(kind: "test.runtime-history", version: 1, fork: .asOf, initial: { .init(value: 0) }, checkpointWhen: { _, _, _ in false })
+        let family = try RewindableConversationDocFamilyToken<DefinitionState, Int>(kind: "test.runtime-history-family", version: 1, fork: .asOf, initial: { .init(value: $0) }, checkpointWhen: { _, _, _ in false })
         let seen = SessionTestLog<Int>(), reports = SessionTestLog<String>()
         let definition = harnessOneStep("test.runtime-reader") { _, runtime, context in
             let entries = try await runtime.context(runtime.conversationId, context: context).entries
@@ -257,7 +259,7 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
     @Test func lateWatchAcquisitionStopsAndRejects() async throws {
         let storage = ControlledStorage(), entered = SessionTestGate(), release = SessionTestGate()
         let captured = Mutex<TaskRuntime?>(nil)
-        let notes = try SessionDocToken<DefinitionState>(kind: "test.runtime-late-watch", version: 1, initial: { .init(value: 0) })
+        let notes = try SessionDocToken<DefinitionState>(kind: "test.runtime-late-watch", version: 1, initial: { .init(value: 0) }, checkpointWhen: { _, _, _ in false })
         let definition = harnessOneStep("test.runtime-late-watch") { _, runtime, _ in
             captured.withLock { $0 = runtime }; entered.release(); await release.wait()
         }

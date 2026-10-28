@@ -3,6 +3,8 @@ import Synchronization
 import PiSwiftChord
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private enum DocumentTestFailure: Error { case callback, checkpoint }
 private struct LiveState: Codable, Sendable, Equatable {
     var message: String?
@@ -13,10 +15,10 @@ private struct LiveState: Codable, Sendable, Equatable {
 private struct CountState: Codable, Sendable, Equatable { var count: Int }
 private struct LabelState: Codable, Sendable, Equatable { var label: String }
 private func liveToken() throws -> ConversationDocToken<LiveState> {
-    try ConversationDocToken(kind: "test.live", version: 1, fork: .initial, initial: { LiveState() })
+    try ConversationDocToken(kind: "test.live", version: 1, fork: .initial, initial: { LiveState() }, checkpointWhen: { _, _, _ in false })
 }
 private func counterToken() throws -> SessionDocToken<CountState> {
-    try SessionDocToken(kind: "test.counter", version: 1, initial: { CountState(count: 0) })
+    try SessionDocToken(kind: "test.counter", version: 1, initial: { CountState(count: 0) }, checkpointWhen: { _, _, _ in false })
 }
 private func liveSetup() async throws -> (SessionTestHarness, ConversationID, ConversationDocToken<LiveState>) {
     let harness = try await openTestSession()
@@ -48,7 +50,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
     // :109
     @Test func SessionDocumentsAbsentSnapshots() async throws {
         let harness = try await openTestSession(); let id = try await createConversation(harness.session)
-        let family = try SessionDocFamilyToken<JSONObject, String>(kind: "family", version: 1, initial: { ["seed": .string($0)] })
+        let family = try SessionDocFamilyToken<JSONObject, String>(kind: "family", version: 1, initial: { ["seed": .string($0)] }, checkpointWhen: { _, _, _ in false })
         #expect(try await harness.session.snapshot(liveToken(), conversationId: id, context: .background) == nil)
         #expect(try await harness.session.snapshot(counterToken(), context: .background) == nil)
         #expect(try await harness.session.snapshot(family, key: "k", context: .background) == nil)
@@ -137,7 +139,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
     // :250
     @Test func SessionDocumentsConcurrentAcquisitionOnce() async throws {
         let harness = try await openTestSession(); let count = SessionTestLog<Int>()
-        let token = try SessionDocToken<CountState>(kind: "once", version: 1, initial: { count.append(1); return CountState(count: 0) })
+        let token = try SessionDocToken<CountState>(kind: "once", version: 1, initial: { count.append(1); return CountState(count: 0) }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in
             async let first = tx.doc(token); async let second = tx.doc(token)
             let drafts = try await (first, second); try drafts.0.set("count", .number(2)); #expect(try drafts.1.get("count") == .number(2))
@@ -148,7 +150,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
     // :266
     @Test func SessionDocumentsFirstFamilySeed() async throws {
         let harness = try await openTestSession(); let seeds = SessionTestLog<String>()
-        let token = try SessionDocFamilyToken<JSONObject, String>(kind: "family", version: 1, initial: { seeds.append($0); return ["seed": .string($0), "hits": .number(0)] })
+        let token = try SessionDocFamilyToken<JSONObject, String>(kind: "family", version: 1, initial: { seeds.append($0); return ["seed": .string($0), "hits": .number(0)] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in
             let first = try await tx.doc(token, key: "k", seed: "first"); let second = try await tx.doc(token, key: "k", seed: "second"); try first.set("hits", .number(1)); #expect(try second.get("hits") == .number(1))
         }, context: .background)
@@ -158,7 +160,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
 
     @Test func SessionDocumentsDuplicateFamilySeedIsNotEncoded() async throws {
         let harness = try await openTestSession()
-        let token = try SessionDocFamilyToken<JSONObject, JSONValue>(kind: "seed-validation", version: 1, initial: { ["seed": $0] })
+        let token = try SessionDocFamilyToken<JSONObject, JSONValue>(kind: "seed-validation", version: 1, initial: { ["seed": $0] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in
             _ = try await tx.doc(token, key: "member", seed: .string("first"))
             _ = try await tx.doc(token, key: "member", seed: .number(.infinity))
@@ -171,7 +173,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
     // :284, :311, :337. A gate makes the unawaited Swift operation start before callback settlement.
     @Test(arguments: [0, 1, 2]) func SessionDocumentsPendingAcquisition(_ mode: Int) async throws {
         let harness = try await openTestSession(); let initial = SessionTestLog<Int>()
-        let token = try SessionDocToken<CountState>(kind: "late", version: 1, initial: { initial.append(1); return CountState(count: 0) })
+        let token = try SessionDocToken<CountState>(kind: "late", version: 1, initial: { initial.append(1); return CountState(count: 0) }, checkpointWhen: { _, _, _ in false })
         if mode != 1 { _ = try await harness.session.commit({ tx in try await tx.doc(token) }, context: .background); try await harness.session.unloadDocuments() }
         let gate = await harness.storage.holdFindDocument(); let callbackDone = SessionTestGate(); let transactions = SessionTestLog<Transaction>(); let pending = Mutex<Task<JSONDraft, any Error>?>(nil)
         let commits = await harness.storage.commits.count; let mints = await harness.storage.mintCount; let initialCount = initial.count
@@ -207,8 +209,8 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
     // :363
     @Test func SessionDocumentsTokenMismatch() async throws {
         let (harness, id, token) = try await liveSetup()
-        let wrong = try RewindableConversationDocToken<LiveState>(kind: "test.live", version: 1, fork: .asOf, initial: { LiveState() })
-        let newer = try ConversationDocToken<LiveState>(kind: "test.live", version: 2, fork: .initial, initial: { LiveState() })
+        let wrong = try RewindableConversationDocToken<LiveState>(kind: "test.live", version: 1, fork: .asOf, initial: { LiveState() }, checkpointWhen: { _, _, _ in false })
+        let newer = try ConversationDocToken<LiveState>(kind: "test.live", version: 2, fork: .initial, initial: { LiveState() }, checkpointWhen: { _, _, _ in false })
         await #expect(throws: DocumentDefinitionError.self) { _ = try await harness.session.snapshot(wrong, conversationId: id, context: .background) }
         await #expect(throws: DocumentDefinitionError.self) { _ = try await harness.session.commit({ tx in try await tx.doc(wrong, conversationId: id) }, context: .background) }
         await #expect(throws: DocumentDefinitionError.self) { _ = try await harness.session.commit({ tx in try await tx.doc(newer, conversationId: id) }, context: .background) }
@@ -218,7 +220,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
     // :380. Non-finite numbers replace JavaScript Date and undefined values.
     @Test func SessionDocumentsInvalidJSON() async throws {
         let harness = try await openTestSession()
-        let invalid = try SessionDocToken<JSONObject>(kind: "invalid", version: 1, initial: { ["value": .number(.infinity)] })
+        let invalid = try SessionDocToken<JSONObject>(kind: "invalid", version: 1, initial: { ["value": .number(.infinity)] }, checkpointWhen: { _, _, _ in false })
         await #expect(throws: JSONValueError.self) { _ = try await harness.session.commit({ tx in try await tx.doc(invalid) }, context: .background) }
         let token = try counterToken()
         await #expect(throws: TrackerError.self) { try await harness.session.commit({ tx in try await tx.doc(token).set("value", .number(.nan)) }, context: .background) }
@@ -272,7 +274,7 @@ private func liveSetup() async throws -> (SessionTestHarness, ConversationID, Co
         let (harness, id, token) = try await liveSetup(); try await harness.session.unloadDocuments()
         try await harness.session.commit({ tx in try await tx.retireDoc(token, conversationId: id); try await tx.doc(token, conversationId: id).set("message", .string("replacement")) }, context: .background)
         #expect(await harness.storage.commits.last!.count == 2)
-        let family = try SessionDocFamilyToken<JSONObject, String>(kind: "absent", version: 1, initial: { ["seed": .string($0)] })
+        let family = try SessionDocFamilyToken<JSONObject, String>(kind: "absent", version: 1, initial: { ["seed": .string($0)] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in try await tx.retireDoc(family, key: "k"); _ = try await tx.doc(family, key: "k", seed: "seed") }, context: .background)
         #expect(await harness.storage.commits.last!.count == 1)
     }

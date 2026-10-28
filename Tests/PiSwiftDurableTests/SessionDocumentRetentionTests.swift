@@ -4,6 +4,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 func retentionTestTimer(_ clock: any DurableClock) -> SessionDocumentTimer {
     .init(now: { clock.now() }, sleep: { try await clock.sleep(until: $0) })
 }
@@ -11,7 +13,7 @@ func retentionTestTimer(_ clock: any DurableClock) -> SessionDocumentTimer {
 private struct RetentionCount: Codable, Sendable, Equatable { var count: Int = 0 }
 private enum RetentionFailure: Error { case clock, checkpoint, timer }
 private func retentionCounter() throws -> ConversationDocToken<RetentionCount> {
-    try ConversationDocToken(kind: "test.retention.counter", version: 1, fork: .initial, initial: { RetentionCount() })
+    try ConversationDocToken(kind: "test.retention.counter", version: 1, fork: .initial, initial: { RetentionCount() }, checkpointWhen: { _, _, _ in false })
 }
 private struct RetentionSetup: Sendable {
     let storage: ControlledStorage
@@ -117,7 +119,7 @@ private func retentionEventually(_ condition: () async throws -> Bool) async thr
     // :234.
     @Test func evictionPreservesHistoryAndForks() async throws {
         let h = try await RetentionSetup.open(0), id = try await createConversation(h.session)
-        let token = try RewindableConversationDocToken<RetentionCount>(kind: "test.retention.rewindable", version: 1, fork: .asOf, initial: { RetentionCount() })
+        let token = try RewindableConversationDocToken<RetentionCount>(kind: "test.retention.rewindable", version: 1, fork: .asOf, initial: { RetentionCount() }, checkpointWhen: { _, _, _ in false })
         let first = try await h.session.commit({ tx in
             try await tx.doc(token, conversationId: id).set("count", 1)
             return try await tx.appendEntry(id, value: EntryDraft(kind: "note")).id
@@ -140,7 +142,7 @@ private func retentionEventually(_ condition: () async throws -> Bool) async thr
     // :259.
     @Test func familyMembersLeaveTheCache() async throws {
         let h = try await RetentionSetup.open(0), id = try await createConversation(h.session)
-        let token = try ConversationDocFamilyToken<JSONObject, Int>(kind: "test.retention.event", version: 1, fork: .initial, initial: { ["seq": .number(Double($0))] })
+        let token = try ConversationDocFamilyToken<JSONObject, Int>(kind: "test.retention.event", version: 1, fork: .initial, initial: { ["seq": .number(Double($0))] }, checkpointWhen: { _, _, _ in false })
         for seq in 0..<200 { try await h.session.commit({ tx in _ = try await tx.doc(token, conversationId: id, key: String(seq), seed: seq) }, context: .background) }
         try await retentionEventually { try await h.settle(); return h.session.documentCacheSizes.cached == 0 }
         #expect(try await h.session.snapshot(token, conversationId: id, key: "123", context: .background) == ["seq": 123])
@@ -238,8 +240,8 @@ private func retentionEventually(_ condition: () async throws -> Bool) async thr
     // :397.
     @Test func coldReadsRepeatMigration() async throws {
         let h = try await RetentionSetup.open(0), migrations = SessionTestLog<Int>()
-        let old = try SessionDocToken<JSONObject>(kind: "test.retention.migrating", version: 1, initial: { ["count": 1] })
-        let current = try SessionDocToken<JSONObject>(kind: "test.retention.migrating", version: 2, initial: { ["count": 0, "migrated": true] }, migrate: { value, _ in migrations.append(1); var value = value; value["migrated"] = true; return value })
+        let old = try SessionDocToken<JSONObject>(kind: "test.retention.migrating", version: 1, initial: { ["count": 1] }, checkpointWhen: { _, _, _ in false })
+        let current = try SessionDocToken<JSONObject>(kind: "test.retention.migrating", version: 2, initial: { ["count": 0, "migrated": true] }, migrate: { value, _ in migrations.append(1); var value = value; value["migrated"] = true; return value }, checkpointWhen: { _, _, _ in false })
         try await h.session.commit({ tx in _ = try await tx.doc(old) }, context: .background)
         try await h.settle()
         #expect(try await h.session.snapshot(current, context: .background) == ["count": 1, "migrated": true])
@@ -283,8 +285,8 @@ private func retentionEventually(_ condition: () async throws -> Bool) async thr
     // :539.
     @Test func anOldVersionObserverPinsANewVersionReload() async throws {
         let h = try await RetentionSetup.open(0)
-        let old = try SessionDocToken<JSONObject>(kind: "test.retention.versioned", version: 1, initial: { ["count": 3] })
-        let current = try SessionDocToken<JSONObject>(kind: "test.retention.versioned", version: 2, initial: { ["count": 0, "v2": true] }, migrate: { value, _ in var value = value; value["v2"] = true; return value })
+        let old = try SessionDocToken<JSONObject>(kind: "test.retention.versioned", version: 1, initial: { ["count": 3] }, checkpointWhen: { _, _, _ in false })
+        let current = try SessionDocToken<JSONObject>(kind: "test.retention.versioned", version: 2, initial: { ["count": 0, "v2": true] }, migrate: { value, _ in var value = value; value["v2"] = true; return value }, checkpointWhen: { _, _, _ in false })
         try await h.session.commit({ tx in _ = try await tx.doc(old) }, context: .background)
         let state = try #require(try await h.session.documentState(old, context: .background))
         #expect(try await h.session.snapshot(current, context: .background) == ["count": 3, "v2": true])

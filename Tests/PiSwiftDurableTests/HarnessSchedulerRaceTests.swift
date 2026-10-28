@@ -5,6 +5,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Suite struct HarnessSchedulerRaceTests {
     // upstream harness-tasks.test.ts:623
     @Test func runtimeCommitsBeforeAndAfterTheStep() async throws {
@@ -178,7 +180,7 @@ extension HarnessSchedulerRaceTests {
 
     // upstream harness-tasks.test.ts:1222
     @Test func closeSealsBeforeSignalCallbacksAndClosesWatchesBeforeJoining() async throws {
-        let notes = try SessionDocToken<JSONObject>(kind: "test.reentrant-notes", version: 1, initial: { JSONObject() })
+        let notes = try SessionDocToken<JSONObject>(kind: "test.reentrant-notes", version: 1, initial: { JSONObject() }, checkpointWhen: { _, _, _ in false })
         let reference = Mutex<Harness?>(nil), callback = Mutex<Task<Void, any Error>?>(nil)
         let entered = SessionTestGate(), end = Mutex<WatchEnd?>(nil)
         let definition = harnessOneStep("test.reentrant-close") { _, runtime, _ in

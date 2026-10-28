@@ -2,6 +2,8 @@ import PiSwiftChord
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private struct FailureObservedValue: Codable, Sendable {
     var value: Int
 }
@@ -51,7 +53,7 @@ private struct FailureObservedValue: Codable, Sendable {
         let reports = SessionTestLog<any Error>()
         let session = try await Session.open(storage: ControlledStorage(), onReport: { reports.append($0) }, context: .background)
         let token = try SessionDocToken<FailureObservedValue>(kind: "failure.state.listener", version: 1,
-            initial: { FailureObservedValue(value: 0) })
+            initial: { FailureObservedValue(value: 0) }, checkpointWhen: { _, _, _ in false })
         try await session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         let state = try #require(try await session.documentState(token, context: .background))
         let failure = HarnessStorageFailure("state listener failed")
@@ -86,7 +88,7 @@ extension SessionFailureConcurrencyTests {
         let reports = SessionTestLog<any Error>()
         let session = try await Session.open(storage: ControlledStorage(), onReport: { reports.append($0) }, context: .background)
         let token = try SessionDocToken<FailureObservedValue>(kind: "failure.state.decode", version: 1,
-            initial: { FailureObservedValue(value: 0) })
+            initial: { FailureObservedValue(value: 0) }, checkpointWhen: { _, _, _ in false })
         try await session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         let state = try #require(try await session.documentState(token, context: .background))
         try await session.commit({ tx in try await tx.doc(token).set("value", "invalid") }, context: .background)

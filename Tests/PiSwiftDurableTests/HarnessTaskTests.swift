@@ -5,6 +5,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 struct HarnessTaskCheckpoint: TaskCheckpoint, Equatable {
     enum Phase: String, Codable, Sendable { case run, joined }
     var phase: Phase = .run
@@ -99,7 +101,7 @@ func harnessOpen(_ tasks: [AnyTaskDefinition], storage: any DurableStorage = Mem
         let retained = Mutex<TaskRuntime?>(nil)
         let values = SessionTestLog<JSONValue>()
         let childID = Mutex<TaskID?>(nil)
-        let progress = try TaskDocToken<JSONObject>(kind: "test.memo-progress", version: 1, initial: { ["lines": .array([])] })
+        let progress = try TaskDocToken<JSONObject>(kind: "test.memo-progress", version: 1, initial: { ["lines": .array([])] }, checkpointWhen: { _, _, _ in false })
         let child = harnessOneStep("test.memo-child") { _, runtime, context in
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(0))) }, context: context)
         }

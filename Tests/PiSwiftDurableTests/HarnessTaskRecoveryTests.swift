@@ -5,6 +5,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Suite struct HarnessTaskRecoveryTests {
     // upstream harness-tasks-recovery.test.ts:112,148,388,408; SQLite survives a process boundary.
     @Test(arguments: ["pending", "running", "terminal", "marked"])
@@ -62,7 +64,7 @@ import PiSwiftDurableTesting
             try registry.install(Extension(name: "tasks", tasks: [AnyTaskDefinition(definition)]))
         }
         let harness = try await harnessOpen([], storage: storage, registry: registry)
-        let taskDoc = try TaskDocToken<JSONObject>(kind: "test.orphan-document", version: 1, initial: { ["retained": true] })
+        let taskDoc = try TaskDocToken<JSONObject>(kind: "test.orphan-document", version: 1, initial: { ["retained": true] }, checkpointWhen: { _, _, _ in false })
         try await harness.commit({ tx in _ = try await tx.doc(taskDoc, taskId: id) }, context: .background)
         let inspection = try await harness.inspect(context: .background)
         let item = try #require(inspection.tasks.first)
@@ -88,7 +90,7 @@ import PiSwiftDurableTesting
             handlers.append("abort"); Issue.record("A paused task aborted")
         })
         let token = try TaskDocToken<JSONObject>(kind: "test.marked-missing-doc", version: 1,
-                                                initial: { ["retained": true] })
+                                                initial: { ["retained": true] }, checkpointWhen: { _, _, _ in false })
         let first = try await harnessOpen([AnyTaskDefinition(definition)], storage: SqliteStorage.open(path: path))
         let root = try await first.root(context: .background)
         let id = try await harnessStart(root, definition)

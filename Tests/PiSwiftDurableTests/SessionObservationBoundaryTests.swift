@@ -2,9 +2,11 @@ import PiSwiftChord
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Test func StateCancelledAcquisitionDoesNotAttach() async throws {
     let harness = try await openTestSession()
-    let token = try SessionDocToken<JSONObject>(kind: "state.cancel", version: 1, initial: { ["n": 0] })
+    let token = try SessionDocToken<JSONObject>(kind: "state.cancel", version: 1, initial: { ["n": 0] }, checkpointWhen: { _, _, _ in false })
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     try await harness.session.unloadDocuments()
     let gate = await harness.storage.holdFindDocument()
@@ -24,7 +26,7 @@ import Testing
 @Test func WatchTypedDecodeFailureEndsOnlyWatch() async throws {
     struct Value: Codable, Sendable { let n: Int }
     let harness = try await openTestSession()
-    let token = try SessionDocToken<Value>(kind: "watch.decode", version: 1, initial: { Value(n: 0) })
+    let token = try SessionDocToken<Value>(kind: "watch.decode", version: 1, initial: { Value(n: 0) }, checkpointWhen: { _, _, _ in false })
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     let watch = try #require(try await harness.session.watchDoc(token, context: .background))
     try watch.start { _, _, _ in }
@@ -66,7 +68,7 @@ func sessionObservationCompileChecks(session: Session, observer: any DocumentObs
 @Test func StateTypedDecodeFailureKeepsLastValue() async throws {
     struct Value: Codable, Sendable { let n: Int }
     let harness = try await openTestSession()
-    let token = try SessionDocToken<Value>(kind: "state.decode", version: 1, initial: { Value(n: 0) })
+    let token = try SessionDocToken<Value>(kind: "state.decode", version: 1, initial: { Value(n: 0) }, checkpointWhen: { _, _, _ in false })
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     let state = try #require(try await harness.session.documentState(token, context: .background))
     try await harness.session.commit({ tx in try await tx.doc(token).set("n", "invalid") }, context: .background)
@@ -80,7 +82,7 @@ func sessionObservationCompileChecks(session: Session, observer: any DocumentObs
 
 @Test func StateSessionCloseDetachesBeforeAdmittedCommitSettles() async throws {
     let harness = try await openTestSession()
-    let token = try SessionDocToken<JSONObject>(kind: "state.close", version: 1, initial: { ["n": 0] })
+    let token = try SessionDocToken<JSONObject>(kind: "state.close", version: 1, initial: { ["n": 0] }, checkpointWhen: { _, _, _ in false })
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     let state = try #require(try await harness.session.documentState(token, context: .background))
     let gate = await harness.storage.holdCommits()

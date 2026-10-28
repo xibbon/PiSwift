@@ -1,9 +1,9 @@
 import PiSwiftChord
 
 /// The saved start data and final result of one code mode call.
-public let CodemodeRunDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode.run", version: 1, initial: { [:] })
+public let CodemodeRunDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode.run", version: 1, initial: { [:] }, checkpointWhen: { _, _, _ in false })
 /// Results in delivery order and the number of calls made after each result.
-public let CodemodeJournalDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode.journal", version: 1, initial: { ["entries": []] })
+public let CodemodeJournalDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode.journal", version: 1, initial: { ["entries": []] }, checkpointWhen: { _, _, _ in false })
 /// Saved script values. Forks copy the values at their entry boundary.
 public let CodemodeStoreDoc = try! RewindableConversationDocToken<JSONObject>(kind: "pi.codemode.store", version: 1, fork: .asOf, initial: { ["values": [:]] }, checkpointWhen: { _, _, info in info.deltasSinceBase >= 64 })
 

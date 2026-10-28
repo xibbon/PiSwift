@@ -2,14 +2,16 @@ import PiSwiftChord
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private enum SessionLifetimeFailure: Error, Equatable { case callback }
 
 @Suite struct SessionLifetimeTests {
     @Test(arguments: [false, true])
     func revokesLoadedAndNewDocumentHandlesAtSettlement(callbackFails: Bool) async throws {
         let harness = try await openTestSession()
-        let loaded = try SessionDocToken<JSONObject>(kind: "lifetime.loaded", version: 1, initial: { ["nested": ["count": 0]] })
-        let created = try SessionDocToken<JSONObject>(kind: "lifetime.created", version: 1, initial: { ["nested": ["count": 0]] })
+        let loaded = try SessionDocToken<JSONObject>(kind: "lifetime.loaded", version: 1, initial: { ["nested": ["count": 0]] }, checkpointWhen: { _, _, _ in false })
+        let created = try SessionDocToken<JSONObject>(kind: "lifetime.created", version: 1, initial: { ["nested": ["count": 0]] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(loaded) }, context: .background)
         let before = await harness.storage.commits.count
         let transactions = SessionTestLog<Transaction>()

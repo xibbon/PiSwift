@@ -4,13 +4,15 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Suite struct HarnessTaskHoldTests {
     // upstream structured:278,542,575,1329
     @Test func workInOwnedConversationHoldsFinishingCommitAndLateWorkExtendsHold() async throws {
         let clock = TestClock()
         let conversationID = Mutex<ConversationID?>(nil)
         let child = harnessHoldingTask(clock: clock)
-        let taskDoc = try TaskDocToken<JSONObject>(kind: "test.held-notes", version: 1, initial: { ["text": "notes"] })
+        let taskDoc = try TaskDocToken<JSONObject>(kind: "test.held-notes", version: 1, initial: { ["text": "notes"] }, checkpointWhen: { _, _, _ in false })
         let parent = harnessOneStep("test.hold-conversation") { _, runtime, context in
             try await runtime.commit({ tx, _ in
                 let conversation = try await tx.createConversation(ownership: .task(taskId: runtime.taskId)).id

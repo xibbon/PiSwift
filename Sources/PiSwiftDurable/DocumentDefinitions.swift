@@ -29,15 +29,16 @@ public struct DocumentDefinition: Sendable {
     public let family: Bool
     let initial: @Sendable (JSONValue?) throws -> JSONObject
     let migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)?
-    let checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)?
+    // Upstream v1.4.0 types.ts:78 requires this policy at compile time for singletons and families.
+    let checkpointWhen: @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool
 
-    init<Value: Codable & Sendable>(kind: String, version: Int, semantics: DocumentSemantics, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)?, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)?) throws {
+    init<Value: Codable & Sendable>(kind: String, version: Int, semantics: DocumentSemantics, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)?, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         try Self.validate(kind, version)
         self.kind = kind; self.version = version; self.semantics = semantics; family = false
         self.initial = { _ in try documentObject(initial()) }
         self.migrate = migrate; self.checkpointWhen = checkpointWhen
     }
-    init<Value: Codable & Sendable, Seed: Codable & Sendable>(kind: String, version: Int, semantics: DocumentSemantics, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)?, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)?) throws {
+    init<Value: Codable & Sendable, Seed: Codable & Sendable>(kind: String, version: Int, semantics: DocumentSemantics, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)?, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         try Self.validate(kind, version)
         self.kind = kind; self.version = version; self.semantics = semantics; family = true
         self.initial = { seed in
@@ -100,7 +101,7 @@ public struct SessionDocToken<Value: Codable & Sendable>: Sendable {
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .session(), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
 }
@@ -110,7 +111,7 @@ public struct ConversationDocToken<Value: Codable & Sendable>: Sendable {
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         guard fork != .asOf else { throw DocumentDefinitionError("Latest conversation documents cannot use asOf forks") }
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .conversation(history: .latest, fork: fork), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
@@ -121,7 +122,7 @@ public struct RewindableConversationDocToken<Value: Codable & Sendable>: Sendabl
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .conversation(history: .rewindable, fork: fork), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
 }
@@ -131,7 +132,7 @@ public struct TaskDocToken<Value: Codable & Sendable>: Sendable {
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, initial: @escaping @Sendable () throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .task(), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
 }
@@ -141,7 +142,7 @@ public struct SessionDocFamilyToken<Value: Codable & Sendable, Seed: Codable & S
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .session(), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
 }
@@ -151,7 +152,7 @@ public struct ConversationDocFamilyToken<Value: Codable & Sendable, Seed: Codabl
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         guard fork != .asOf else { throw DocumentDefinitionError("Latest conversation documents cannot use asOf forks") }
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .conversation(history: .latest, fork: fork), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
@@ -162,7 +163,7 @@ public struct RewindableConversationDocFamilyToken<Value: Codable & Sendable, Se
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, fork: DocumentFork, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .conversation(history: .rewindable, fork: fork), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
 }
@@ -172,7 +173,7 @@ public struct TaskDocFamilyToken<Value: Codable & Sendable, Seed: Codable & Send
     /// The document definition carried by this typed token.
     public let definition: DocumentDefinition
     /// Defines the typed document initialization, migration, and checkpoint policy for this scope.
-    public init(kind: String, version: Int, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws {
+    public init(kind: String, version: Int, initial: @escaping @Sendable (Seed) throws -> Value, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, checkpointWhen: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool) throws {
         definition = try DocumentDefinition(kind: kind, version: version, semantics: .task(), initial: initial, migrate: migrate, checkpointWhen: checkpointWhen)
     }
 }

@@ -6,6 +6,8 @@ import PiSwiftChord
 import PiSwiftDurable
 import PiSwiftDurableTesting
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private final class ExampleLog<Value: Sendable>: Sendable {
     private let state = Mutex<[Value]>([])
     var values: [Value] { state.withLock { $0 } }
@@ -52,7 +54,7 @@ private struct ExampleAgentRegistry: Codable, Sendable, Equatable {
     var agents: [String: Agent] = [:]
 }
 private func exampleNotes() throws -> RewindableConversationDocToken<ExampleNotes> {
-    try .init(kind: "example.notes", version: 1, fork: .asOf, initial: { ExampleNotes() })
+    try .init(kind: "example.notes", version: 1, fork: .asOf, initial: { ExampleNotes() }, checkpointWhen: { _, _, _ in false })
 }
 private func exampleHarness(registry: Registry = createRegistry(), models: FakeDurableModels = FakeDurableModels(),
                             settings: HarnessSettingsProvider? = nil) async throws -> Harness {
@@ -146,7 +148,7 @@ private func exampleShow(_ message: Message) -> String {
         let session = try await Session.open(storage: MemoryStorage(), context: .background)
         let supervisor = TaskDefinition<JSONValue, ExampleCheckpoint, JSONValue, NoTaskHooks>(name: "example.supervisor", version: 1,
             initial: { _ in ExampleCheckpoint() }, phase: { _, _, _ in }, abort: { _, _, _ in })
-        let registry = try ConversationDocToken<ExampleAgentRegistry>(kind: "example.agent-registry", version: 1, fork: .initial, initial: { .init() })
+        let registry = try ConversationDocToken<ExampleAgentRegistry>(kind: "example.agent-registry", version: 1, fork: .initial, initial: { .init() }, checkpointWhen: { _, _, _ in false })
         let main = try await session.commit({ tx in try await tx.createConversation(ownership: .ownerless()) }, context: .background)
         let setup = try await session.commit({ tx in
             let task = try await tx.createTask(supervisor, input: .null, options: .init(ownership: .conversation(), conversationId: main.id, background: true))
@@ -318,7 +320,7 @@ private func exampleShow(_ message: Message) -> String {
     }
 
     @Test func example11ExtensionState() async throws {
-        let todos = try RewindableConversationDocToken<ExampleTodos>(kind: "example.todos", version: 1, fork: .asOf, initial: { .init() })
+        let todos = try RewindableConversationDocToken<ExampleTodos>(kind: "example.todos", version: 1, fork: .asOf, initial: { .init() }, checkpointWhen: { _, _, _ in false })
         let todo = try ToolRegistration(name: "todo", description: "Add an item to your todo list", parameters: ["type": "object", "properties": .object(["item": .object(["type": "string"])])]) { args, api, context in
             let item = args["item"]?.stringValue ?? ""
             try await api.commit({ tx in try await tx.doc(todos, conversationId: api.conversationId).child("items")!.append(.string(item)) }, context: context)

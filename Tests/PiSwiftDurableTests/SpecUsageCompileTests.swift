@@ -4,6 +4,8 @@ import PiSwiftAI
 import PiSwiftChord
 import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 // Port of durable/test/spec-usage.test.ts at v1.1.0. These functions are
 // compiled with normal imports. No function below starts a harness or a request.
 // TypeScript-only shapes: Type.Object is a JSON Schema plus Decodable arguments;
@@ -94,7 +96,7 @@ private func specExtensions(_ app: SpecDependencies) throws -> (extensions: [Ext
     let venv = Extension(name: "venv", tools: [try createBashTool(
         options: .init(commandPrefix: "source .venv/bin/activate"))])
     let planDoc = try ConversationDocToken<SpecPlan>(kind: "app.plan-mode", version: 1,
-        fork: .current, initial: { SpecPlan() })
+        fork: .current, initial: { SpecPlan() }, checkpointWhen: { _, _, _ in false })
     let planMode = Extension(name: "plan-mode", hooks: [hook(toolTask, handlers: ToolHooks(
         beforeTool: { call, api, context in
             let plan = try await api.read.snapshot(planDoc, conversationId: api.conversationId, context: context)
@@ -205,7 +207,7 @@ private func specHostSequences(_ app: SpecDependencies, context: ChordContext) a
     try await root.configure(change: AgentChange(tools: .set(.remove([try createBashTool()]))), context: context)
     try await root.configure(change: AgentChange(tools: .clear), context: context)
     try await root.configure(change: AgentChange(extensions: .set(.edit(add: [Extension(name: "venv")]))), context: context)
-    let plan = try ConversationDocToken<SpecPlan>(kind: "app.plan-mode", version: 1, fork: .current, initial: { SpecPlan() })
+    let plan = try ConversationDocToken<SpecPlan>(kind: "app.plan-mode", version: 1, fork: .current, initial: { SpecPlan() }, checkpointWhen: { _, _, _ in false })
     try await root.commit({ tx in
         try await tx.doc(plan, conversationId: root.id).set("enabled", .bool(true))
     }, context: context)
@@ -213,7 +215,7 @@ private func specHostSequences(_ app: SpecDependencies, context: ChordContext) a
     try await harness.close(context: context)
 
     let container = try ConversationDocToken<SpecContainer>(kind: "app.container", version: 1,
-        fork: .current, initial: { SpecContainer() })
+        fork: .current, initial: { SpecContainer() }, checkpointWhen: { _, _, _ in false })
     let containerOptions = HarnessOptions(models: app.models, registry: createRegistry(), env: { target, context in
         if let value = try await target.read.snapshot(container, conversationId: target.conversationId, context: context) {
             return try await app.containerEnv(value.image, target.cwd ?? "/work", context)

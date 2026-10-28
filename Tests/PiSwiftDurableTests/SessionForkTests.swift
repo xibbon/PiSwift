@@ -2,13 +2,15 @@ import Testing
 import PiSwiftChord
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private func forkAsOf(_ kind: String = "fork.asOf", version: Int = 1,
                       migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil) throws -> RewindableConversationDocToken<JSONObject> {
     try RewindableConversationDocToken(kind: kind, version: version, fork: .asOf,
-                                      initial: { ["value": "initial"] }, migrate: migrate)
+                                      initial: { ["value": "initial"] }, migrate: migrate, checkpointWhen: { _, _, _ in false })
 }
 private func forkCurrent(_ kind: String = "fork.current") throws -> ConversationDocToken<JSONObject> {
-    try ConversationDocToken(kind: kind, version: 1, fork: .current, initial: { ["value": "initial"] })
+    try ConversationDocToken(kind: kind, version: 1, fork: .current, initial: { ["value": "initial"] }, checkpointWhen: { _, _, _ in false })
 }
 private func forkChild(_ session: Session, _ parent: ConversationID, _ entry: EntryID) async throws -> ConversationRecord {
     try await session.commit({ tx in try await tx.forkConversation(parent, at: entry, ownership: .ownerless()) }, context: .background)
@@ -29,9 +31,9 @@ private func forkCopies(_ writes: [StorageWrite]) -> [(DocumentCreate, DocumentC
     @Test func ForkCopiesPoliciesAndFamilies() async throws {
         let h = try await openTestSession(); let parent = try await createConversation(h.session)
         let asOf = try forkAsOf(); let current = try forkCurrent()
-        let initial = try ConversationDocToken<JSONObject>(kind: "fork.initial", version: 1, fork: .initial, initial: { [:] })
-        let asFamily = try RewindableConversationDocFamilyToken<JSONObject, String>(kind: "fork.asFamily", version: 1, fork: .asOf, initial: { ["value": .string($0)] })
-        let currentFamily = try ConversationDocFamilyToken<JSONObject, String>(kind: "fork.currentFamily", version: 1, fork: .current, initial: { ["value": .string($0)] })
+        let initial = try ConversationDocToken<JSONObject>(kind: "fork.initial", version: 1, fork: .initial, initial: { [:] }, checkpointWhen: { _, _, _ in false })
+        let asFamily = try RewindableConversationDocFamilyToken<JSONObject, String>(kind: "fork.asFamily", version: 1, fork: .asOf, initial: { ["value": .string($0)] }, checkpointWhen: { _, _, _ in false })
+        let currentFamily = try ConversationDocFamilyToken<JSONObject, String>(kind: "fork.currentFamily", version: 1, fork: .current, initial: { ["value": .string($0)] }, checkpointWhen: { _, _, _ in false })
         let point = try await h.session.commit({ tx in
             let point = try await tx.appendEntry(parent, value: EntryDraft(kind: "point")).id
             try await tx.doc(asOf, conversationId: parent).set("value", "as-at-fork")
@@ -280,8 +282,8 @@ private func forkCopies(_ writes: [StorageWrite]) -> [(DocumentCreate, DocumentC
     // :610
     @Test func ForkCopiesOnlyConversationScope() async throws {
         let h = try await openTestSession(); let parent = try await createConversation(h.session); let copied = try forkCurrent()
-        let sessionDoc = try SessionDocToken<JSONObject>(kind: "session", version: 1, initial: { ["value": "session"] })
-        let taskDoc = try TaskDocToken<JSONObject>(kind: "task", version: 1, initial: { ["value": "task"] })
+        let sessionDoc = try SessionDocToken<JSONObject>(kind: "session", version: 1, initial: { ["value": "session"] }, checkpointWhen: { _, _, _ in false })
+        let taskDoc = try TaskDocToken<JSONObject>(kind: "task", version: 1, initial: { ["value": "task"] }, checkpointWhen: { _, _, _ in false })
         let work = TaskKind<String, JSONObject>(name: "work", version: 1, initial: { _ in [:] })
         let data = try await h.session.commit({ tx in
             let point = try await tx.appendEntry(parent, value: EntryDraft(kind: "point")).id
@@ -300,7 +302,7 @@ private func forkCopies(_ writes: [StorageWrite]) -> [(DocumentCreate, DocumentC
     // :664
     @Test func ForkCopiesAllScanPages() async throws {
         let h = try await openTestSession(); let parent = try await createConversation(h.session); let point = try await forkPoint(h.session, parent)
-        let family = try ConversationDocFamilyToken<JSONObject, Int>(kind: "pagination", version: 1, fork: .current, initial: { ["value": .number(Double($0))] })
+        let family = try ConversationDocFamilyToken<JSONObject, Int>(kind: "pagination", version: 1, fork: .current, initial: { ["value": .number(Double($0))] }, checkpointWhen: { _, _, _ in false })
         try await h.session.commit({ tx in
             for index in 0..<260 { _ = try await tx.doc(family, conversationId: parent, key: "member-\(index)", seed: index) }
         }, context: .background)
@@ -322,7 +324,7 @@ private func forkCopies(_ writes: [StorageWrite]) -> [(DocumentCreate, DocumentC
     @Test func ForkRetainsDistinctUnicodeFamilyKeys() async throws {
         let h = try await openTestSession(); let parent = try await createConversation(h.session)
         let point = try await forkPoint(h.session, parent)
-        let family = try ConversationDocFamilyToken<JSONObject, Int>(kind: "unicode", version: 1, fork: .current, initial: { ["value": .number(Double($0))] })
+        let family = try ConversationDocFamilyToken<JSONObject, Int>(kind: "unicode", version: 1, fork: .current, initial: { ["value": .number(Double($0))] }, checkpointWhen: { _, _, _ in false })
         let composed = "\u{00E9}"; let decomposed = "e\u{0301}"
         try await h.session.commit({ tx in
             _ = try await tx.doc(family, conversationId: parent, key: composed, seed: 1)
@@ -340,7 +342,7 @@ private func forkCopies(_ writes: [StorageWrite]) -> [(DocumentCreate, DocumentC
     @Test func ForkMigrationHistoricalAncestry() async throws {
         let h = try await openTestSession(); let parent = try await createConversation(h.session)
         let old = try forkAsOf("history.migration"); let migrated = try forkAsOf("history.migration", version: 3, migrate: { value, _ in var value = value; value["version"] = 3; return value })
-        let family = try RewindableConversationDocFamilyToken<JSONObject, String>(kind: "history.family", version: 1, fork: .asOf, initial: { ["seed": .string($0), "count": 0] })
+        let family = try RewindableConversationDocFamilyToken<JSONObject, String>(kind: "history.family", version: 1, fork: .asOf, initial: { ["seed": .string($0), "count": 0] }, checkpointWhen: { _, _, _ in false })
         let first = try await h.session.commit({ tx in try await tx.doc(old, conversationId: parent).set("count", 1); try await tx.doc(family, conversationId: parent, key: "member", seed: "seed").set("count", 1); return try await tx.appendEntry(parent, value: EntryDraft(kind: "first")).id }, context: .background)
         let second = try await h.session.commit({ tx in try await tx.doc(old, conversationId: parent).set("count", 2); return try await tx.appendEntry(parent, value: EntryDraft(kind: "second")).id }, context: .background)
         let third = try await h.session.commit({ tx in _ = try await tx.doc(migrated, conversationId: parent); return try await tx.appendEntry(parent, value: EntryDraft(kind: "third")).id }, context: .background)

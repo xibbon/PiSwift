@@ -2,6 +2,8 @@ import Testing
 import PiSwiftChord
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 struct DefinitionState: Codable, Sendable, Equatable {
     let value: Int
 }
@@ -11,11 +13,11 @@ struct DefinitionState: Codable, Sendable, Equatable {
     @Test func SessionDefinitionsValidateVersions() throws {
         for version in [0, -1, 9_007_199_254_740_992] {
             #expect(throws: DocumentDefinitionError.self) {
-                try SessionDocToken<DefinitionState>(kind: "k", version: version, initial: { DefinitionState(value: 0) })
+                try SessionDocToken<DefinitionState>(kind: "k", version: version, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
             }
         }
-        let empty = try SessionDocToken<DefinitionState>(kind: "", version: 1, initial: { DefinitionState(value: 0) })
-        let token = try SessionDocToken<DefinitionState>(kind: "t.session", version: 1, initial: { DefinitionState(value: 0) })
+        let empty = try SessionDocToken<DefinitionState>(kind: "", version: 1, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
+        let token = try SessionDocToken<DefinitionState>(kind: "t.session", version: 1, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
         #expect(empty.definition.kind == "")
         #expect(token.definition.kind == "t.session")
     }
@@ -46,14 +48,14 @@ struct DefinitionState: Codable, Sendable, Equatable {
 }
 
 struct DefinitionTokens: Sendable {
-    let session = try! SessionDocToken<DefinitionState>(kind: "t.session", version: 1, initial: { DefinitionState(value: 0) })
-    let latest = try! ConversationDocToken<DefinitionState>(kind: "t.latest", version: 1, fork: .current, initial: { DefinitionState(value: 0) })
-    let rewindable = try! RewindableConversationDocToken<DefinitionState>(kind: "t.rewindable", version: 1, fork: .asOf, initial: { DefinitionState(value: 0) })
-    let task = try! TaskDocToken<DefinitionState>(kind: "t.task", version: 1, initial: { DefinitionState(value: 0) })
-    let sessionFamily = try! SessionDocFamilyToken<DefinitionState, Int>(kind: "t.session-family", version: 1, initial: { DefinitionState(value: $0) })
-    let latestFamily = try! ConversationDocFamilyToken<DefinitionState, Int>(kind: "t.latest-family", version: 1, fork: .initial, initial: { DefinitionState(value: $0) })
-    let rewindableFamily = try! RewindableConversationDocFamilyToken<DefinitionState, Int>(kind: "t.rewindable-family", version: 1, fork: .initial, initial: { DefinitionState(value: $0) })
-    let taskFamily = try! TaskDocFamilyToken<DefinitionState, Int>(kind: "t.task-family", version: 1, initial: { DefinitionState(value: $0) })
+    let session = try! SessionDocToken<DefinitionState>(kind: "t.session", version: 1, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
+    let latest = try! ConversationDocToken<DefinitionState>(kind: "t.latest", version: 1, fork: .current, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
+    let rewindable = try! RewindableConversationDocToken<DefinitionState>(kind: "t.rewindable", version: 1, fork: .asOf, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
+    let task = try! TaskDocToken<DefinitionState>(kind: "t.task", version: 1, initial: { DefinitionState(value: 0) }, checkpointWhen: { _, _, _ in false })
+    let sessionFamily = try! SessionDocFamilyToken<DefinitionState, Int>(kind: "t.session-family", version: 1, initial: { DefinitionState(value: $0) }, checkpointWhen: { _, _, _ in false })
+    let latestFamily = try! ConversationDocFamilyToken<DefinitionState, Int>(kind: "t.latest-family", version: 1, fork: .initial, initial: { DefinitionState(value: $0) }, checkpointWhen: { _, _, _ in false })
+    let rewindableFamily = try! RewindableConversationDocFamilyToken<DefinitionState, Int>(kind: "t.rewindable-family", version: 1, fork: .initial, initial: { DefinitionState(value: $0) }, checkpointWhen: { _, _, _ in false })
+    let taskFamily = try! TaskDocFamilyToken<DefinitionState, Int>(kind: "t.task-family", version: 1, initial: { DefinitionState(value: $0) }, checkpointWhen: { _, _, _ in false })
     init() throws {}
 }
 

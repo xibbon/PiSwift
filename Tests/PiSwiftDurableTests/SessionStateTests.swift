@@ -2,11 +2,13 @@ import PiSwiftChord
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 struct ObservationStateDelivery: Sendable, Equatable { let value: ObservationValue?; let sequence: Int }
 
 @Suite struct SessionStateTests {
     @Test("never creates an absent document") func absent() async throws {
-        let harness = try await openTestSession(); let token = try observationToken(); let family = try SessionDocFamilyToken<JSONObject, String>(kind: "state.family", version: 1, initial: { ["value": .number(Double($0.count))] })
+        let harness = try await openTestSession(); let token = try observationToken(); let family = try SessionDocFamilyToken<JSONObject, String>(kind: "state.family", version: 1, initial: { ["value": .number(Double($0.count))] }, checkpointWhen: { _, _, _ in false })
         #expect(try await harness.session.documentState(token, context: .background) == nil)
         #expect(try await harness.session.documentState(family, key: "missing", context: .background) == nil)
         #expect(await harness.storage.commits.isEmpty); #expect(await harness.storage.mintCount == 0)
@@ -56,7 +58,7 @@ struct ObservationStateDelivery: Sendable, Equatable { let value: ObservationVal
     }
 
     @Test("cold-loads a definition-free fork copy") func coldForkCopy() async throws {
-        let harness = try await openTestSession(); let token = try ConversationDocToken<DefinitionState>(kind: "state.copied", version: 1, fork: .current, initial: { .init(value: 0) }); let parent = try await createConversation(harness.session)
+        let harness = try await openTestSession(); let token = try ConversationDocToken<DefinitionState>(kind: "state.copied", version: 1, fork: .current, initial: { .init(value: 0) }, checkpointWhen: { _, _, _ in false }); let parent = try await createConversation(harness.session)
         let entry = try await harness.session.commit({ tx in let entry = try await tx.appendEntry(parent, value: EntryDraft(kind: "point")); try await tx.doc(token, conversationId: parent).set("value", 7); return entry.id }, context: .background)
         let child = try await harness.session.commit({ tx in try await tx.forkConversation(parent, at: entry, ownership: .ownerless()).id }, context: .background)
         let reads = await harness.storage.documentReadCount; let state = try #require(try await harness.session.documentState(token, conversationId: child, context: .background))
@@ -64,7 +66,7 @@ struct ObservationStateDelivery: Sendable, Equatable { let value: ObservationVal
     }
 
     @Test("hydrates a migrated tracker without writing and skips an equal version-base update") func migration() async throws {
-        let harness = try await openTestSession(); let old = try SessionDocToken<JSONObject>(kind: "state.migration", version: 1, initial: { ["value": 3] }); let current = try SessionDocToken<JSONObject>(kind: "state.migration", version: 2, initial: { ["value": 0, "migrated": false] }, migrate: { value, _ in ["value": value["value"]!, "migrated": true] })
+        let harness = try await openTestSession(); let old = try SessionDocToken<JSONObject>(kind: "state.migration", version: 1, initial: { ["value": 3] }, checkpointWhen: { _, _, _ in false }); let current = try SessionDocToken<JSONObject>(kind: "state.migration", version: 2, initial: { ["value": 0, "migrated": false] }, migrate: { value, _ in ["value": value["value"]!, "migrated": true] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(old) }, context: .background); try await harness.session.unloadDocuments(); let commits = await harness.storage.commits.count
         let state = try #require(try await harness.session.documentState(current, context: .background)); #expect(state.value == ["value": 3, "migrated": true]); #expect(await harness.storage.commits.count == commits)
         let batches = SessionTestLog<[Delta.Op]>(); state.subscribeOperations { ops, _, _ in batches.append(ops) }

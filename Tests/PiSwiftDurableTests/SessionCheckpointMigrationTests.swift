@@ -2,9 +2,11 @@ import Testing
 import PiSwiftChord
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private enum CheckpointFailure: Error { case predicate, rollback }
 private struct CheckpointCount: Codable, Sendable, Equatable { var count: Int }
-private func checkpointToken(kind: String = "checkpoint", version: Int = 1, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, predicate: (@Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool)? = nil) throws -> SessionDocToken<CheckpointCount> {
+private func checkpointToken(kind: String = "checkpoint", version: Int = 1, migrate: (@Sendable (JSONObject, Int) throws -> JSONObject)? = nil, predicate: @escaping @Sendable (JSONObject, [Delta.Op], CheckpointInfo) throws -> Bool = { _, _, _ in false }) throws -> SessionDocToken<CheckpointCount> {
     try SessionDocToken(kind: kind, version: version, initial: { CheckpointCount(count: 0) }, migrate: migrate, checkpointWhen: predicate)
 }
 private func increment(_ token: SessionDocToken<CheckpointCount>, _ session: Session) async throws {
@@ -185,9 +187,9 @@ private func contentKinds(_ writes: [[StorageWrite]]) -> [String] {
 
     // :648. Fork document copies are D6; current and historical migration are tested here.
     @Test func SessionMigrationCurrentAndHistorical() async throws {
-        let v1 = try RewindableConversationDocToken<CheckpointCount>(kind: "history", version: 1, fork: .asOf, initial: { CheckpointCount(count: 0) })
-        let migrations = SessionTestLog<Int>(); let v3 = try RewindableConversationDocToken<CheckpointCount>(kind: "history", version: 3, fork: .asOf, initial: { CheckpointCount(count: 0) }, migrate: { value, from in migrations.append(from); return value })
-        let family = try RewindableConversationDocFamilyToken<JSONObject, String>(kind: "history.family", version: 1, fork: .asOf, initial: { ["seed": .string($0), "count": .number(0)] })
+        let v1 = try RewindableConversationDocToken<CheckpointCount>(kind: "history", version: 1, fork: .asOf, initial: { CheckpointCount(count: 0) }, checkpointWhen: { _, _, _ in false })
+        let migrations = SessionTestLog<Int>(); let v3 = try RewindableConversationDocToken<CheckpointCount>(kind: "history", version: 3, fork: .asOf, initial: { CheckpointCount(count: 0) }, migrate: { value, from in migrations.append(from); return value }, checkpointWhen: { _, _, _ in false })
+        let family = try RewindableConversationDocFamilyToken<JSONObject, String>(kind: "history.family", version: 1, fork: .asOf, initial: { ["seed": .string($0), "count": .number(0)] }, checkpointWhen: { _, _, _ in false })
         let harness = try await openTestSession(); let id = try await createConversation(harness.session)
         let first = try await harness.session.commit({ tx in let entry = try await tx.appendEntry(id, value: EntryDraft(kind: "first")); try await tx.doc(v1, conversationId: id).set("count", .number(1)); try await tx.doc(family, conversationId: id, key: "member", seed: "seed").set("count", .number(1)); return entry.id }, context: .background)
         let second = try await harness.session.commit({ tx in let entry = try await tx.appendEntry(id, value: EntryDraft(kind: "second")); try await tx.doc(v1, conversationId: id).set("count", .number(2)); return entry.id }, context: .background)
@@ -201,7 +203,7 @@ private func contentKinds(_ writes: [[StorageWrite]]) -> [String] {
 
     // :735
     @Test func SessionHistoricalIncarnations() async throws {
-        let token = try RewindableConversationDocToken<JSONObject>(kind: "incarnation", version: 1, fork: .asOf, initial: { ["value": .string("initial")] })
+        let token = try RewindableConversationDocToken<JSONObject>(kind: "incarnation", version: 1, fork: .asOf, initial: { ["value": .string("initial")] }, checkpointWhen: { _, _, _ in false })
         let harness = try await openTestSession(); let id = try await createConversation(harness.session)
         let before = try await harness.session.commit({ tx in try await tx.appendEntry(id, value: EntryDraft(kind: "before")).id }, context: .background)
         let create = try await harness.session.commit({ tx in let entry = try await tx.appendEntry(id, value: EntryDraft(kind: "create")); try await tx.doc(token, conversationId: id).set("value", .string("old")); return entry.id }, context: .background)
@@ -217,8 +219,8 @@ private func contentKinds(_ writes: [[StorageWrite]]) -> [String] {
 
     // :792
     @Test func SessionMigrationCachedOlderToken() async throws {
-        let old = try SessionDocToken<JSONObject>(kind: "cache", version: 1, initial: { ["name": .string("first")] })
-        let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": .array([])] }, migrate: { value, _ in ["names": .array([value["name"]!])] })
+        let old = try SessionDocToken<JSONObject>(kind: "cache", version: 1, initial: { ["name": .string("first")] }, checkpointWhen: { _, _, _ in false })
+        let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": .array([])] }, migrate: { value, _ in ["names": .array([value["name"]!])] }, checkpointWhen: { _, _, _ in false })
         let harness = try await openTestSession(); _ = try await harness.session.commit({ tx in try await tx.doc(old) }, context: .background)
         #expect(try await harness.session.snapshot(current, context: .background)?["names"] == .array([.string("first")]))
         try await harness.session.commit({ tx in try await tx.doc(current).child("names")!.append(.string("second")) }, context: .background)
@@ -228,8 +230,8 @@ private func contentKinds(_ writes: [[StorageWrite]]) -> [String] {
 
     // :833
     @Test func SessionMigrationOlderTokenReloadsStorage() async throws {
-        let old = try SessionDocToken<JSONObject>(kind: "cache", version: 1, initial: { ["name": .string("first")] })
-        let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": .array([])] }, migrate: { value, _ in ["names": .array([value["name"]!])] })
+        let old = try SessionDocToken<JSONObject>(kind: "cache", version: 1, initial: { ["name": .string("first")] }, checkpointWhen: { _, _, _ in false })
+        let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": .array([])] }, migrate: { value, _ in ["names": .array([value["name"]!])] }, checkpointWhen: { _, _, _ in false })
         let harness = try await openTestSession(); _ = try await harness.session.commit({ tx in try await tx.doc(old) }, context: .background)
         #expect(try await harness.session.snapshot(current, context: .background)?["names"] == .array([.string("first")]))
         #expect(try await harness.session.snapshot(old, context: .background)?["name"] == .string("first"))

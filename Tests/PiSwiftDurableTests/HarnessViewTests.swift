@@ -5,6 +5,8 @@ import PiSwiftAI
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private struct ViewTestFrame: Sendable { let value: ConversationView; let ops: [Delta.Op] }
 private final class ViewTestRecorder: Sendable {
     let watch: CommittedWatch<ConversationView>
@@ -186,7 +188,7 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     }
     @Test func oneCommitCombinesDocumentAndSeveralEntriesAndIgnoresCustomDocuments() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), recorder = try await ViewTestRecorder(chat.root)
-        let other = try ConversationDocToken<JSONObject>(kind: "app.other", version: 1, fork: .initial, initial: { ["n": 0] })
+        let other = try ConversationDocToken<JSONObject>(kind: "app.other", version: 1, fork: .initial, initial: { ["n": 0] }, checkpointWhen: { _, _, _ in false })
         try await chat.root.commit({ tx in
             _ = try await tx.appendEntry(chat.root.id, value: .init(kind: "a"))
             try await tx.doc(LiveDoc, conversationId: chat.root.id).set("tools", [])

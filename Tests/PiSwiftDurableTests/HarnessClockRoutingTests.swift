@@ -5,6 +5,8 @@ import Synchronization
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private final class RoutingTimerHost: Sendable {
     struct Timer: Sendable { let id: Int; let delay: Double; let background: Bool; let callback: @Sendable () -> Void }
     private struct State: Sendable {
@@ -43,7 +45,7 @@ private final class RoutingTimerHost: Sendable {
 
 @Test func sessionEvictionUsesHostTimeAndRechecksAnEarlyTimer() async throws {
     let host = RoutingTimerHost()
-    let token = try SessionDocToken<JSONObject>(kind: "test.host-clock-retention", version: 1, initial: { ["value": 1] })
+    let token = try SessionDocToken<JSONObject>(kind: "test.host-clock-retention", version: 1, initial: { ["value": 1] }, checkpointWhen: { _, _, _ in false })
     let session = try await Session.open(storage: MemoryStorage(), now: { host.now }, documentRetentionMs: 500,
                                          setTimer: host.setTimer, context: .background)
     try await session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
@@ -62,7 +64,7 @@ private final class RoutingTimerHost: Sendable {
 @Test func sessionEvictionCanBeDeclinedWithoutAForegroundFallback() async throws {
     let host = RoutingTimerHost(declineBackground: true)
     let reports = SessionTestLog<String>()
-    let token = try SessionDocToken<JSONObject>(kind: "test.host-clock-declined", version: 1, initial: { ["value": 1] })
+    let token = try SessionDocToken<JSONObject>(kind: "test.host-clock-declined", version: 1, initial: { ["value": 1] }, checkpointWhen: { _, _, _ in false })
     let session = try await Session.open(storage: MemoryStorage(), now: { host.now }, documentRetentionMs: 500,
         setTimer: host.setTimer, onReport: { reports.append(String(describing: $0)) }, context: .background)
     try await session.commit({ tx in _ = try await tx.doc(token) }, context: .background)

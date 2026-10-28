@@ -2,10 +2,12 @@ import Testing
 import PiSwiftChord
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private let tableWork = TaskKind<JSONObject, JSONObject>(name: "test.work", version: 1, initial: { _ in ["phase": "start"] })
-private let tableProgress = try! TaskDocToken<JSONObject>(kind: "test.progress", version: 1, initial: { ["lines": []] })
-private let tableStep = try! TaskDocFamilyToken<JSONObject, JSONValue>(kind: "test.step", version: 1, initial: { _ in ["lines": []] })
-private let tableNotes = try! RewindableConversationDocToken<JSONObject>(kind: "test.notes", version: 1, fork: .asOf, initial: { ["text": ""] })
+private let tableProgress = try! TaskDocToken<JSONObject>(kind: "test.progress", version: 1, initial: { ["lines": []] }, checkpointWhen: { _, _, _ in false })
+private let tableStep = try! TaskDocFamilyToken<JSONObject, JSONValue>(kind: "test.step", version: 1, initial: { _ in ["lines": []] }, checkpointWhen: { _, _, _ in false })
+private let tableNotes = try! RewindableConversationDocToken<JSONObject>(kind: "test.notes", version: 1, fork: .asOf, initial: { ["text": ""] }, checkpointWhen: { _, _, _ in false })
 
 private func tableTask(_ session: Session, _ conversation: ConversationID, withDocument: Bool = false) async throws -> TaskID {
     try await session.commit({ tx in
@@ -332,7 +334,7 @@ struct SessionTableTests {
         let entry = try await h.session.commit({ tx in try await tx.appendEntry(conversation, value: EntryDraft(kind: "note")) }, context: .background)
         let child = try await h.session.commit({ tx in try await tx.forkConversation(conversation, at: entry.id, ownership: .ownerless()) }, context: .background)
         #expect(child.parent == ConversationParent(conversationId: conversation, at: entry.id))
-        let current = try ConversationDocToken<JSONObject>(kind: "copy", version: 1, fork: .current, initial: { [:] })
+        let current = try ConversationDocToken<JSONObject>(kind: "copy", version: 1, fork: .current, initial: { [:] }, checkpointWhen: { _, _, _ in false })
         try await h.session.commit({ tx in _ = try await tx.doc(current, conversationId: conversation) }, context: .background)
         let count = await h.storage.commits.count
         let copiedChild = try await h.session.commit({ tx in

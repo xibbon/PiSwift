@@ -6,9 +6,11 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private enum RetentionEdgeFailure: Error { case callback, setting, timer }
 private func retentionEdgeToken(_ kind: String = "retention.edge") throws -> SessionDocToken<JSONObject> {
-    try SessionDocToken(kind: kind, version: 1, initial: { ["count": 0] })
+    try SessionDocToken(kind: kind, version: 1, initial: { ["count": 0] }, checkpointWhen: { _, _, _ in false })
 }
 private func retentionEdgeWait(_ condition: () async throws -> Bool) async throws {
     for _ in 0..<10_000 {

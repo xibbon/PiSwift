@@ -44,7 +44,7 @@ public struct NestedCallState: Sendable, Codable, Equatable {
     public init(taskId: TaskID? = nil, result: NestedToolExecutionResult? = nil) { self.taskId = taskId; self.result = result }
 }
 public let NestedCallDoc = try! TaskDocFamilyToken<NestedCallState, JSONValue?>(
-    kind: "pi.tool.nested-call", version: 1, initial: { _ in NestedCallState() })
+    kind: "pi.tool.nested-call", version: 1, initial: { _ in NestedCallState() }, checkpointWhen: { _, _, _ in false })
 
 /// Options for a nested call. A key identifies the same call on a safe replay.
 public struct NestedToolOptions: Sendable {

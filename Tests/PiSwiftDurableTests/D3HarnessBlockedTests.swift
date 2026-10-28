@@ -4,6 +4,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private struct D3Opened: Sendable {
     let harness: Harness
     let storage: D3TestStorage
@@ -400,7 +402,7 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
         fields["trace"] = trace; fields["links"] = links; fields["future"] = opaque
         raw = .object(fields)
         try await d3Seed(base, raw.decode(TaskRecord.self))
-        let output = try TaskDocToken<JSONObject>(kind: "test.d3-output", version: 1, initial: { ["text": ""] })
+        let output = try TaskDocToken<JSONObject>(kind: "test.d3-output", version: 1, initial: { ["text": ""] }, checkpointWhen: { _, _, _ in false })
         let definition = harnessOneStep("test.loop") { task, runtime, context in
             if complete.withLock({ $0 }) {
                 try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)

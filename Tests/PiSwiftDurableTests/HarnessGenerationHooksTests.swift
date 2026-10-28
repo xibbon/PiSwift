@@ -5,10 +5,12 @@ import PiSwiftChord
 @testable import PiSwiftDurable
 import PiSwiftDurableTesting
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 struct HarnessGenerationHooksTests {
     @Test func sectionsReadConversationDocuments() async throws {
         struct State: Codable, Sendable { var cwd = "/"; var kind = "main" }
-        let token = try ConversationDocToken<State>(kind: "test.generation-agent", version: 1, fork: .current, initial: { State() })
+        let token = try ConversationDocToken<State>(kind: "test.generation-agent", version: 1, fork: .current, initial: { State() }, checkpointWhen: { _, _, _ in false })
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "prompt", sections: [
             section("cwd") { input, context in try await input.read.snapshot(token, conversationId: input.conversationId, context: context)?.cwd },

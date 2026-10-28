@@ -2,12 +2,14 @@ import PiSwiftChord
 import Testing
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 @Suite struct SessionObservationMigrationTests {
     // session-checkpoints-migrations.test.ts:376 watch assertions.
     @Test("writes the required base on the first successful transaction, then writes deltas: watches") func requiredBaseWatchFrames() async throws {
         let harness = try await openTestSession()
-        let old = try SessionDocToken<JSONObject>(kind: "migration.transition", version: 1, initial: { ["count": 4] })
-        let current = try SessionDocToken<JSONObject>(kind: "migration.transition", version: 3, initial: { ["count": 0] }, migrate: { value, from in ["count": .number(value["count"]!.numberValue! + Double(from) - 1)] })
+        let old = try SessionDocToken<JSONObject>(kind: "migration.transition", version: 1, initial: { ["count": 4] }, checkpointWhen: { _, _, _ in false })
+        let current = try SessionDocToken<JSONObject>(kind: "migration.transition", version: 3, initial: { ["count": 0] }, migrate: { value, from in ["count": .number(value["count"]!.numberValue! + Double(from) - 1)] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(old) }, context: .background); try await harness.session.unloadDocuments()
         let watch = try #require(try await harness.session.watchDoc(old, context: .background)); let frames = SessionTestLog<(JSONObject?, [Delta.Op])>()
         try watch.start { value, ops, _ in frames.append((value, ops)) }
@@ -23,8 +25,8 @@ import Testing
     // :810. JSONObject can represent both the old and the new shape.
     @Test("sends observers of an older shape a root replacement after a newer token writes") func olderShapeReplacement() async throws {
         let harness = try await openTestSession()
-        let old = try SessionDocToken<JSONObject>(kind: "cache", version: 1, initial: { ["name": "first"] })
-        let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": []] }, migrate: { value, _ in ["names": .array([value["name"]!])] })
+        let old = try SessionDocToken<JSONObject>(kind: "cache", version: 1, initial: { ["name": "first"] }, checkpointWhen: { _, _, _ in false })
+        let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": []] }, migrate: { value, _ in ["names": .array([value["name"]!])] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(old) }, context: .background)
         let state = try #require(try await harness.session.documentState(old, context: .background)); let watch = try #require(try await harness.session.watchDoc(old, context: .background)); let batches = SessionTestLog<[Delta.Op]>()
         try watch.start { _, ops, _ in batches.append(ops) }

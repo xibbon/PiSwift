@@ -6,6 +6,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+// Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
+
 private func h6ExpectClosed<Value>(_ operation: () async throws -> Value) async {
     do { _ = try await operation(); Issue.record("Closed operation returned") }
     catch { #expect(String(describing: error).contains("closed")) }
@@ -173,7 +175,7 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         let directory = try sqliteTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("supervisor.sqlite").path
-        let children = try ConversationDocToken<JSONObject>(kind: "test.h6-children", version: 1, fork: .initial, initial: { [:] })
+        let children = try ConversationDocToken<JSONObject>(kind: "test.h6-children", version: 1, fork: .initial, initial: { [:] }, checkpointWhen: { _, _, _ in false })
         let supervisor = harnessOneStep("test.h6-supervisor") { task, runtime, context in
             let parent = try ConversationID(Int64(task.input))
             let state = try #require(try await runtime.snapshot(children, conversationId: parent, context: context))
