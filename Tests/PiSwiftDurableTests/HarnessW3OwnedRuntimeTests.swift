@@ -14,7 +14,9 @@ import PiSwiftDurableTesting
         let control = W3LifetimeControl(), hold = control.definition(), runtimes = SessionTestLog<TaskRuntime>()
         let probe = harnessOneStep("test.w3.probe") { _, runtime, context in
             runtimes.append(runtime)
-            try await runtime.sleep(until: 1_000_000, context: context)
+            // Upstream harness-scheduler-indexes.test.ts:49-56 waits for a gate or abort.
+            // scheduler.ts:2168: hold the probe until its invocation is aborted.
+            try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
         }
         let definitions = [AnyTaskDefinition(hold), AnyTaskDefinition(probe)]
         let first = try await harnessOpen(definitions, storage: SqliteStorage.open(path: path), clock: control.clock)
@@ -59,7 +61,8 @@ import PiSwiftDurableTesting
         let hold = control.definition()
         let probe = harnessOneStep("test.w3.abort-probe") { _, runtime, context in
             runtimes.append(runtime)
-            try await runtime.sleep(until: 1_000_000, context: context)
+            // No upstream abortOwned test. scheduler.ts:2168: hold until abort.
+            try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
         }
         let harness = try await harnessOpen([AnyTaskDefinition(hold), AnyTaskDefinition(probe)], clock: control.clock)
         let root = try await harness.root(context: .background)
@@ -128,7 +131,8 @@ import PiSwiftDurableTesting
         let control = W3LifetimeControl(), worker = control.definition(), runtimes = SessionTestLog<TaskRuntime>()
         let probe = harnessOneStep("test.w3.restart-probe") { _, runtime, context in
             runtimes.append(runtime)
-            try await runtime.sleep(until: 1_000_000, context: context)
+            // No upstream abortOwned test. scheduler.ts:2168: hold until abort.
+            try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
         }
         let first = try await harnessOpen([AnyTaskDefinition(probe), AnyTaskDefinition(worker)], storage: SqliteStorage.open(path: path), clock: control.clock)
         let root = try await first.root(context: .background)

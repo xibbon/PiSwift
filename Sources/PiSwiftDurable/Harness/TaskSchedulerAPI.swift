@@ -121,14 +121,20 @@ extension TaskScheduler {
         if case .waiting(_, let on, let policy, _) = next {
             try await validateWait(tx, invocation: invocation, current: current, on: on, policy: policy)
         }
+        if case .sleeping(_, let until, _) = next {
+            if invocation.abort { throw SessionError.message("Abort handler of task \(current.id.rawValue) cannot sleep") }
+            guard until.isFinite, until >= 0 else {
+                throw SessionError.message("Task \(current.id.rawValue) cannot sleep until \(sleepTimeText(until)): not a time in milliseconds")
+            }
+        }
         switch next {
         case .terminal(let outcome, _):
             guard outcome.status != "faulted", outcome.status != "orphaned" else {
                 throw SessionError.message("Only the scheduler can commit \(outcome.status) outcomes")
             }
             try await terminate(tx, record: current, outcome: outcome)
-        case .running, .waiting: try tx.setTask(current.replacing(state: next))
-        default: throw SessionError.message("A task handler can commit only running, waiting, or terminal state")
+        case .running, .waiting, .sleeping: try tx.setTask(current.replacing(state: next))
+        default: throw SessionError.message("A task handler can commit only running, waiting, sleeping, or terminal state")
         }
     }
     func settleIdle() {
@@ -148,25 +154,30 @@ extension TaskScheduler {
         scheduleExpiry()
     }
     private func scheduleExpiry() {
-        let retention = settings().contextRetentionMs, now = now()
-        state.withLock { state in
-            let deadline = state.contexts.values.compactMap { $0.idleSince.map { $0 + retention } }.min()
-            if state.expiryAt == deadline { return }
-            state.expiry?.cancel(); state.expiry = nil; state.expiryAt = nil
-            guard let deadline, !state.closing else { return }
-            state.expiryAt = deadline
+        let retention = settings().contextRetentionMs
+        let changed = state.withLock { state -> (UUID, Int64?, HarnessDisarm?)? in
+            let deadline = state.closing ? nil : state.contexts.values.compactMap { $0.idleSince.map { $0 + retention } }.min()
+            if state.expiryAt == deadline { return nil }
+            let previous = state.expiry; state.expiry = nil; state.expiryAt = deadline
             let id = UUID(); state.expiryID = id
-            state.expiry = Task { [weak self, clock] in
-                do { try await clock.sleep(until: now + min(max(0, deadline - now), 2_147_483_647)) }
-                catch { return }
-                guard let self else { return }
-                let valid = self.state.withLock { state -> Bool in
-                    guard state.expiryID == id, !state.closing else { return false }
-                    state.expiry = nil; state.expiryAt = nil; return true
-                }
-                if valid { self.settleIdle() }
-            }
+            return (id, deadline, previous)
         }
+        guard let (id, deadline, previous) = changed else { return }
+        previous?()
+        guard let deadline else { return }
+        let disarm = timers.setTimer({ [weak self] in
+            guard let self else { return }
+            let valid = self.state.withLock { state in
+                guard state.expiryID == id, !state.closing else { return false }
+                state.expiry = nil; state.expiryAt = nil; return true
+            }
+            if valid { self.settleIdle() }
+        }, until: Double(deadline), options: .init(background: true))
+        let installed = state.withLock { state in
+            guard state.expiryID == id, state.expiryAt != nil, !state.closing else { return false }
+            state.expiry = disarm; return true
+        }
+        if !installed { disarm?() }
     }
     func readContext(_ invocation: TaskInvocation, id: ConversationID, at: EntryID?, context: ChordContext) async throws -> ContextView {
         try invocation.check()
@@ -183,4 +194,11 @@ extension TaskScheduler {
         }
         return result.view
     }
+}
+
+private func sleepTimeText(_ value: Double) -> String {
+    if value.isNaN { return "NaN" }
+    if value == .infinity { return "Infinity" }
+    if value == -.infinity { return "-Infinity" }
+    return (try? JSONValue.number(value).jsonText()) ?? String(value)
 }

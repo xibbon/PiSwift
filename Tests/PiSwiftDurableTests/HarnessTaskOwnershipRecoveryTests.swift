@@ -15,7 +15,8 @@ import PiSwiftDurableTesting
         let definition = harnessOneStep("test.late-owner-edge", run: { _, _, _ in
             Issue.record("Cancelled work ran")
         }, abort: { task, runtime, context in
-            if task.input == 0 { try await runtime.sleep(until: 100, context: context) }
+            // scheduler.ts:2168: Keep this invocation active until the timer fires.
+            if task.input == 0 { try await holdInvocationUntil(100, runtime: runtime, context: context) }
             try await runtime.commit({ _, _ in .terminal(outcome: .aborted(reason: "owner")) }, context: context)
         })
         let first = try await harnessOpen([AnyTaskDefinition(definition)], storage: SqliteStorage.open(path: path), clock: clock)
@@ -80,7 +81,8 @@ import PiSwiftDurableTesting
         try await original.close(context: .background)
         let clock = TestClock()
         let definition = harnessOneStep("test.edge-recovery") { task, runtime, context in
-            try await runtime.sleep(until: task.input == 1 ? 100 : 1_000, context: context)
+            // scheduler.ts:2168: Keep this invocation active until the timer fires.
+            try await holdInvocationUntil(task.input == 1 ? 100 : 1_000, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
         let reopened = try await SqliteStorage.open(path: path)

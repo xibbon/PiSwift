@@ -120,6 +120,15 @@ public struct EnvTarget: Sendable {
 }
 /// Creates or selects the execution environment for one conversation.
 public typealias HarnessEnvFactory = @Sendable (EnvTarget, ChordContext) async throws -> (any ExecutionEnv)?
+/// Work that is active now and the next stored sleep deadline.
+public struct HarnessWake: Sendable, Equatable {
+    /// Whether work can proceed now.
+    public var active: Bool
+    /// The next sleep deadline in epoch milliseconds.
+    public var at: Double?
+    /// Creates a synchronous view of scheduler work.
+    public init(active: Bool, at: Double? = nil) { self.active = active; self.at = at }
+}
 /// Host services and live settings required to open a harness.
 public struct HarnessOptions: Sendable {
     /// The model service used by this harness or task.
@@ -134,6 +143,10 @@ public struct HarnessOptions: Sendable {
     public var clock: any DurableClock
     /// An optional callback for the current time in milliseconds.
     public var now: (@Sendable () -> Int64)?
+    /// Arms one-shot timers. A host can decline background timers.
+    public var setTimer: HarnessSetTimer?
+    /// Receives changes to the work and sleep deadlines that need a host alarm.
+    public var onWake: (@Sendable (HarnessWake) throws -> Void)?
     /// Runs inside the transaction that creates a conversation.
     public var conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?
     /// Receives nonfatal errors from handlers and observers.
@@ -142,10 +155,11 @@ public struct HarnessOptions: Sendable {
     public init(models: any DurableModels, registry: any RegistryReader,
                 settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
+                setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: (@Sendable (any Error) -> Void)? = nil) {
         self.models = models; self.registry = registry; self.settings = settings; self.env = env
-        self.clock = clock; self.now = now; self.conversationCreated = conversationCreated; self.onReport = onReport
+        self.clock = clock; self.now = now; self.setTimer = setTimer; self.onWake = onWake; self.conversationCreated = conversationCreated; self.onReport = onReport
     }
 }
 

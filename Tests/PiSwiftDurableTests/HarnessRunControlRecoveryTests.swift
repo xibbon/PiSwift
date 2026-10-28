@@ -33,7 +33,9 @@ private func h6Checkpoint(_ harness: Harness, _ id: TaskID) async throws -> Gene
     let record = try #require(try await harness.getTask(id: id, context: .background))
     let raw: JSONValue
     switch record.state {
-    case .pending(let checkpoint, _), .running(let checkpoint, _), .waiting(let checkpoint, _, _, _): raw = checkpoint
+    // generation.ts:238,252: retry and poll checkpoints also live in sleeping records.
+    case .pending(let checkpoint, _), .running(let checkpoint, _), .waiting(let checkpoint, _, _, _),
+         .sleeping(let checkpoint, _, _): raw = checkpoint
     default: throw TaskDefinitionError("Expected a recoverable generation")
     }
     return try raw.decode(GenerationCheckpoint.self)
@@ -144,7 +146,7 @@ private func h6Reacquire(_ harness: Harness, _ id: SubmissionID) async throws ->
         try await opened.harness.close(context: .background)
     }
 
-    // upstream harness-generation-recovery.test.ts:164.
+    // Upstream v1.4.0 harness-generation-recovery.test.ts:186.
     @Test func retryBackoffResumesAtStoredDeadline() async throws {
         let path = try h6RecoveryPath()
         defer { try? FileManager.default.removeItem(at: path.deletingLastPathComponent()) }
@@ -159,7 +161,12 @@ private func h6Reacquire(_ harness: Harness, _ id: SubmissionID) async throws ->
         let taskId = try await h6RunTask(opened)
         try await opened.harness.close(context: .background)
         opened = try await openChat(storage: SqliteStorage.open(path: path.path), setup: retained)
-        let checkpoint = try await h6Checkpoint(opened.harness, taskId)
+        let record = try #require(await opened.harness.getTask(id: taskId, context: .background))
+        guard case .sleeping(let raw, let until, _) = record.state else {
+            throw TaskDefinitionError("Expected sleeping generation retry")
+        }
+        let checkpoint = try raw.decode(GenerationCheckpoint.self)
+        #expect(until == 61_000)
         #expect(checkpoint.phase == .retry && checkpoint.until == 61000 && checkpoint.attempt == 1)
         clock.advance(by: 60000)
         #expect(try await h6Reacquire(opened.harness, submitted.id).wait(context: .background).status == "done")
@@ -210,6 +217,8 @@ private func h6Reacquire(_ harness: Harness, _ id: SubmissionID) async throws ->
             try await eventually { try await firstHarness.snapshot(LiveDoc, conversationId: rootId, context: .background)?.generation?.deferred != nil }
         } else { await reached.wait() }
         try await opened.harness.close(context: .background)
+        // generation.ts:252 resolves the pinned poll model only when the deadline is due.
+        if poll { clock.advance(by: 60_000) }
         let empty = FakeDurableModels(options: .init(provider: "empty"))
         opened = try await openChat(storage: SqliteStorage.open(path: path.path), setup: setup, models: empty)
         let receipt = try await h6Reacquire(opened.harness, submitted.id).wait(context: .background)

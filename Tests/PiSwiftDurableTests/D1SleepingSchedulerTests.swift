@@ -171,10 +171,10 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
         try await d1Store(storage, [owner, d1Sleeper(child, until: 10.5, owner: parent)])
         let harness = try await harnessOpen([AnyTaskDefinition(d1SleepTask(runs))], storage: storage, clock: clock)
         try harness.resume()
-        try await harnessEventually { clock.pendingSleeperCount == 1 }
+        try await d1LabeledWait("owner: timer registration", harness: harness, clock: clock) { clock.pendingSleeperCount == 1 }
         #expect(try await harness.getTask(id: parent, context: .background)?.state.status == "completing")
         clock.advance(by: 11)
-        try await harnessEventually { try await harness.getTask(id: parent, context: .background)?.state.status == "terminal" }
+        try await d1LabeledWait("owner: terminal after deadline", harness: harness, clock: clock) { try await harness.getTask(id: parent, context: .background)?.state.status == "terminal" }
         #expect(runs.values == [17])
         try await harness.close(context: .background)
     }
@@ -191,13 +191,29 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
         }
         let harness = try await harnessOpen([AnyTaskDefinition(definition), AnyTaskDefinition(d1SleepTask(runs))], storage: storage, clock: clock)
         try harness.resume()
-        try await harnessEventually { clock.pendingSleeperCount == 1 }
+        try await d1LabeledWait("waiter: timer registration", harness: harness, clock: clock) { clock.pendingSleeperCount == 1 }
         let inspection = try await harness.inspect(context: .background)
         guard case .waiting(let on)? = inspection.tasks.first(where: { $0.record.id == waiter })?.state else { throw TaskDefinitionError("Dependency was not retained") }
         #expect(on == [sleeper] && runs.values.isEmpty)
         clock.advance(by: 11)
-        try await harnessEventually { try await harness.getTask(id: waiter, context: .background)?.state.status == "terminal" }
+        try await d1LabeledWait("waiter: terminal after deadline", harness: harness, clock: clock) { try await harness.getTask(id: waiter, context: .background)?.state.status == "terminal" }
         #expect(runs.values == [17, 23])
         try await harness.close(context: .background)
+    }
+}
+
+private func d1LabeledWait(_ label: String, harness: Harness, clock: TestClock,
+                           condition: @escaping @Sendable () async throws -> Bool) async throws {
+    do {
+        try await harnessEventually(condition)
+    } catch {
+        let detail = harness.tasks.state.withLock { state in
+            "live=\(state.live.values.map { "\($0.id.rawValue):\($0.state.status)" }.sorted()) " +
+            "runnable=\(state.runnable.map(\.rawValue).sorted()) invocations=\(state.invocations.keys.map(\.rawValue).sorted()) " +
+            "sleepAt=\(String(describing: state.sleepAt)) dirty=\(state.dirty) pumping=\(state.pumping) " +
+            "wakeScheduled=\(state.wakeScheduled) wakeDirty=\(state.wakeDirty) " +
+            "recovery=\(state.reconcilingWork) finalize=\(state.finalizeChecks.map(\.rawValue).sorted())"
+        }
+        throw TaskDefinitionError("\(label) expired: now=\(clock.now()) work=\(clock.pendingSleeperCount) retention=\(clock.pendingDocumentRetentionCount) \(detail); \(error)")
     }
 }

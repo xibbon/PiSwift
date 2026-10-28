@@ -40,7 +40,9 @@ private func startHandover(_ root: Conversation, _ definition: HandoverTask) asy
         let entered = SessionTestGate(), abortRuns = SessionTestLog<Int>()
         let definition = harnessOneStep("test.vanishing", run: { _, runtime, context in
             entered.release()
-            try await runtime.sleep(until: 60_000, context: context)
+            // Upstream harness-tasks-recovery.test.ts:558-561 waits for abort.
+            // scheduler.ts:2168: hold the run until its invocation is aborted.
+            try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
         }, abort: { _, _, _ in abortRuns.append(1); Issue.record("Missing definition's abort handler ran") })
         let clock = TestClock(now: 1000)
         let registry = Registry()

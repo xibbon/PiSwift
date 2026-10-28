@@ -92,15 +92,16 @@ public final class Session: Sendable {
     /// Creates a session over the supplied storage without reading persisted records.
     /// Unobserved documents leave the cache after ten minutes by default.
     /// A retention of zero releases them after use; positive infinity keeps them.
-    /// Negative values and NaN use the default. Retention timers use real elapsed time.
+    /// Negative values and NaN use the default. Retention timers use the host time source.
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             documentRetentionMs: Double? = nil,
+                            setTimer: HarnessSetTimer? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error) -> Void = { _ in },
                             context: ChordContext) async throws -> Session {
         try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
-            hooks: hooks, onReport: onReport, context: context)
+            documentTimer: .host(HarnessTimers(now: now, setTimer: setTimer, report: onReport)), hooks: hooks, onReport: onReport, context: context)
     }
     /// Opens a Session with an internal timer hook for retention tests.
     internal static func open(storage: any DurableStorage,
@@ -116,13 +117,13 @@ public final class Session: Sendable {
     internal static func openWithDocumentRetention(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             documentRetentionMs: @escaping @Sendable () throws -> Double?,
-                            documentTimer: SessionDocumentTimer = .continuous,
+                            documentTimer: SessionDocumentTimer? = nil,
                             cacheNow: (@Sendable () throws -> Int64)? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error) -> Void = { _ in },
                             context: ChordContext) async throws -> Session {
         let session = Session(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
-            documentTimer: documentTimer, cacheNow: cacheNow, hooks: hooks, report: onReport)
+            documentTimer: documentTimer ?? .host(HarnessTimers(now: now, report: onReport)), cacheNow: cacheNow, hooks: hooks, report: onReport)
         session.failureLatch.install { [weak session] error in
             guard let session else { return }
             _ = session.beginClose(context: .background)
@@ -401,7 +402,7 @@ public final class Session: Sendable {
         // Take the sleep clock first. A concurrent advance must not move a deadline later.
         let sleepNow = documentTimer.now()
         let time: Int64
-        do { time = try cacheNow() } catch { time = SystemDurableClock().now() }
+        do { time = try cacheNow() } catch { time = now() }
         let retention: Double
         do { retention = Self.documentRetention(try documentRetentionMs()) }
         catch { retention = Self.defaultDocumentRetentionMs }

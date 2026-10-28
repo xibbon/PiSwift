@@ -11,8 +11,8 @@ func classifyGeneration(_ runtime: TaskRuntime, request: GenerationCheckpoint, m
         try await runtime.commit({ tx, _ in
             let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
             try live.set("generation", JSONValue(encoding: LiveGeneration(attempt: attempt, deferred: LiveDeferred(pollAt: pollAt))))
-            return try generationTask.running(GenerationCheckpoint(phase: .poll, attempt: attempt, compacted: request.compacted,
-                model: request.model, cutoff: request.cutoff, handle: GenerationDeferredHandle(handle), pollAt: pollAt))
+            return try generationTask.sleeping(GenerationCheckpoint(phase: .poll, attempt: attempt, compacted: request.compacted,
+                model: request.model, cutoff: request.cutoff, handle: GenerationDeferredHandle(handle), pollAt: pollAt), until: Double(pollAt))
         }, context: context)
         return
     }
@@ -50,7 +50,7 @@ func classifyGeneration(_ runtime: TaskRuntime, request: GenerationCheckpoint, m
         _ = try await appendGenerationAssistant(tx: tx, conversationId: runtime.conversationId, message: message)
         if retry {
             try live.set("generation", JSONValue(encoding: LiveGeneration(attempt: attempt, retry: LiveRetry(at: until, error: message.errorMessage ?? ""))))
-            return try generationTask.running(GenerationCheckpoint(phase: .retry, attempt: attempt, compacted: request.compacted, until: until))
+            return try generationTask.sleeping(GenerationCheckpoint(phase: .retry, attempt: attempt, compacted: request.compacted, until: until), until: Double(until))
         }
         let text = message.errorMessage ?? "Model response ended with stop reason \(message.stopReason.rawValue)"
         try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "model_error", detail: .string(text)))

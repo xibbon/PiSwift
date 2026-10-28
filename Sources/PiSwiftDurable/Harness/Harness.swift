@@ -46,16 +46,19 @@ public final class Harness: Sendable {
             let missing = ["pi.generation", "pi.tool", "pi.compaction"].filter { snapshot.task(name: $0) == nil }
             if !missing.isEmpty { throw HarnessOpenError.missingBuiltins(missing) }
             let hooks = HarnessSessionHooks(app: options.conversationCreated)
-            let now = options.now ?? { options.clock.now() }
+            let timers = HarnessTimers(clock: options.clock, now: options.now, setTimer: options.setTimer,
+                report: options.onReport ?? { _ in })
+            let now = timers.now
             let settings: @Sendable () -> Settings = { options.settings?.resolve() ?? resolveSettings() }
             let session = try await Session.openWithDocumentRetention(storage: storage, now: now,
                 documentRetentionMs: { settings().documentRetentionMs },
+                documentTimer: .host(timers),
                 hooks: hooks, onReport: options.onReport ?? { _ in }, context: context)
             let storage = session.storage
             let report: @Sendable (any Error) -> Void = options.onReport ?? { _ in }
             let reference = Mutex(WeakHarness())
             let scheduler = TaskScheduler(session: session, registry: options.registry, models: options.models,
-                clock: options.clock, now: now, settings: settings,
+                timers: timers, now: now, onWake: options.onWake, settings: settings,
                 agent: { id, snapshot, callContext in
                     let state = try await session.snapshot(AgentDoc, conversationId: id, context: callContext)
                     return resolveAgent(state: state, snapshot: snapshot, settings: settings(), report: report)

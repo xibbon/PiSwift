@@ -158,6 +158,16 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
         await expectRuntimeEnded { try await runtime.agent(context: runtime.context) }
         #expect(throws: (any Error).self) { _ = try runtime.now() }
         #expect(throws: (any Error).self) { try runtime.report(TaskDefinitionError("late")) }
+        // v1.4.0 harness-tasks.test.ts:573: sleep admission rejects an ended invocation.
+        await expectRuntimeEnded {
+            try await runtime.sleepUntil(0, checkpoint: .object(["phase": .string("run")]), context: .background)
+        }
+        // v1.4.0 harness-sleep.test.ts:229: arming after end gives a no-op disarm.
+        let lateTimer = SessionTestLog<Bool>()
+        let disarm = runtime.setTimer({ lateTimer.append(true) }, delay: 0)
+        disarm(); disarm()
+        for _ in 0..<10 { await Task.yield() }
+        #expect(lateTimer.values.isEmpty)
         try await harness.close(context: .background)
     }
 
@@ -198,28 +208,49 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
         try await harness.close(context: .background)
     }
 
-    // upstream harness-tasks.test.ts:712
-    @Test func sleepHonorsOwnContextCancellationAndInvocationAbort() async throws {
-        let clock = TestClock(now: 1000), entered = SessionTestGate(), results = SessionTestLog<String>()
-        let signalled = harnessOneStep("test.runtime-sleep-abort") { _, runtime, context in
-            entered.release()
-            do { try await runtime.sleep(until: 60_000, context: context); Issue.record("Sleep returned") }
-            catch { results.append("signalled"); throw error }
-        }
+    // v1.4.0 replaces the removed v1.3.0 harness-tasks.test.ts:711 sleep case.
+    @Test func cancelledSleepContextRejectsBeforeAdmission() async throws {
+        let clock = TestClock(now: 1_000), results = SessionTestLog<String>()
         let cancelled = harnessOneStep("test.runtime-sleep-cancel") { _, runtime, context in
             let caller = context.withCancel(); caller.cancel(TaskDefinitionError("stop sleeping"))
-            do { try await runtime.sleep(until: 60_000, context: caller.context); Issue.record("Sleep returned") }
-            catch { results.append(String(describing: error)) }
+            do {
+                try await runtime.sleepUntil(60_000,
+                    checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint(phase: .joined)), context: caller.context)
+                Issue.record("Cancelled sleep returned")
+            } catch { results.append(String(describing: error)) }
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
-        let harness = try await harnessOpen([AnyTaskDefinition(signalled), AnyTaskDefinition(cancelled)], clock: clock)
-        let root = try await harness.root(context: .background)
-        let a = try await harnessStart(root, signalled), b = try await harnessStart(root, cancelled)
-        _ = try await harness.waitForTask(id: b, context: .background)
-        await entered.wait()
-        _ = try await harness.abortTask(id: a, context: .background)
-        #expect(try await harness.waitForTask(id: a, context: .background).outcome == .aborted(reason: "test"))
-        #expect(Set(results.values) == ["stop sleeping", "signalled"])
+        let storage = ControlledStorage()
+        let harness = try await harnessOpen([AnyTaskDefinition(cancelled)], storage: storage, clock: clock)
+        let root = try await harness.root(context: .background), id = try await harnessStart(root, cancelled)
+        #expect(try await harness.waitForTask(id: id, context: .background).outcome == .completed(result: .number(1)))
+        #expect(results.values == ["stop sleeping"])
+        let commits = await storage.commits.flatMap { $0 }
+        #expect(!commits.contains { if case .task(let task, _) = $0 { return task.id == id && task.state.status == "sleeping" }; return false })
+        try await harness.close(context: .background)
+    }
+
+    // v1.4.0 harness-sleep.test.ts:339: abort acts on a saved sleep, without a live invocation.
+    @Test func abortOfCommittedSleepRunsAbortHandler() async throws {
+        let clock = TestClock(now: 1_000), after = SessionTestLog<Bool>()
+        let sleeper = harnessOneStep("test.runtime-sleep-abort") { task, runtime, context in
+            if task.checkpoint.phase == .run {
+                try await runtime.sleepUntil(60_000,
+                    checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint(phase: .joined)), context: context)
+                return
+            }
+            after.append(true)
+            try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
+        }
+        let harness = try await harnessOpen([AnyTaskDefinition(sleeper)], clock: clock)
+        let root = try await harness.root(context: .background), id = try await harnessStart(root, sleeper)
+        try harness.resume()
+        try await harnessEventually { try await harness.getTask(id: id, context: .background)?.state.status == "sleeping" }
+        try await harnessEventually { harness.tasks.state.withLock { $0.invocations[id] == nil } }
+        _ = try await harness.abortTask(id: id, context: .background)
+        #expect(try await harness.waitForTask(id: id, context: .background).outcome == .aborted(reason: "test"))
+        #expect(after.values.isEmpty)
+        #expect(clock.now() == 1_000)
         try await harness.close(context: .background)
     }
     // upstream harness-tasks.test.ts:655. Hold acquisition and end the invocation explicitly to fix the race order.

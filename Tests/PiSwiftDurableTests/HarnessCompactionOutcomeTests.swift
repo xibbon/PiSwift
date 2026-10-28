@@ -127,7 +127,11 @@ struct HarnessCompactionOutcomeTests {
         let id = try await chat.root.compact(context: .background)
         if name == "retries run out" {
             for attempt in 1...2 {
-                try await eventually { try await compactionLive(chat).compactions?.contains { $0.attempt == attempt && $0.retry != nil } == true }
+                // v1.4.0 compaction.ts:208,219 commits retry sleeps. Label the
+                // publication waits; publishing a retry need not arm its timer yet.
+                try await compactionRetryWait("attempt \(attempt): retry published", chat: chat, clock: clock) {
+                    try await compactionLive(chat).compactions?.contains { $0.attempt == attempt && $0.retry != nil } == true
+                }
                 clock.advance(by: 100_000)
             }
         }
@@ -139,4 +143,20 @@ struct HarnessCompactionOutcomeTests {
         #expect(try await !compactionKinds(chat.root).contains("pi.compaction"))
         try await chat.harness.close(context: .background)
     }
+}
+
+private func compactionRetrySnapshot(_ chat: CompactionChat, _ clock: TestClock) -> String {
+    let detail = chat.harness.tasks.state.withLock { state in
+        "live=\(state.live.values.map { "\($0.id.rawValue):\($0.state)" }.sorted()) " +
+        "runnable=\(state.runnable.map(\.rawValue).sorted()) invocations=\(state.invocations.keys.map(\.rawValue).sorted()) " +
+        "sleepAt=\(String(describing: state.sleepAt)) dirty=\(state.dirty) pumping=\(state.pumping) " +
+        "wakeScheduled=\(state.wakeScheduled) wakeDirty=\(state.wakeDirty)"
+    }
+    return "now=\(clock.now()) work=\(clock.pendingSleeperCount) \(detail)"
+}
+
+private func compactionRetryWait(_ label: String, chat: CompactionChat, clock: TestClock,
+                                 condition: @escaping @Sendable () async throws -> Bool) async throws {
+    do { try await eventually(condition) }
+    catch { throw TaskDefinitionError("\(label) expired: \(compactionRetrySnapshot(chat, clock)); \(error)") }
 }

@@ -50,7 +50,8 @@ import PiSwiftDurableTesting
                 #expect(!outcomes.isEmpty)
                 try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(7))) }, context: context)
             } else {
-                try await runtime.sleep(until: 1_000, context: context)
+                // scheduler.ts:2168: Keep this invocation active until the timer fires.
+                try await holdInvocationUntil(1_000, runtime: runtime, context: context)
                 try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(2))) }, context: context)
             }
         }, abort: { task, runtime, context in
@@ -113,7 +114,8 @@ import PiSwiftDurableTesting
                         return .waiting(checkpoint: try JSONValue(encoding: checkpoint), on: [first, second], policy: .failFast)
                     }, context: context)
                 } else {
-                    try await runtime.sleep(until: 1_000, context: context)
+                    // scheduler.ts:2168: Keep this invocation active until the timer fires.
+                    try await holdInvocationUntil(1_000, runtime: runtime, context: context)
                     try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(Double(task.input)))) }, context: context)
                 }
             case .joined:

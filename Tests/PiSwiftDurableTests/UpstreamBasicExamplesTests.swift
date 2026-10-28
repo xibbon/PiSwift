@@ -387,7 +387,8 @@ private func exampleShow(_ message: Message) -> String {
                 // Hold tick 2 before its outcome commit. This makes the crash point deterministic.
                 if n == 2 && ticks.count == 2 && clock.now() == 0 {
                     tickTwo.release()
-                    try await runtime.sleep(until: 1, context: context)
+                    // scheduler.ts:2168: Keep this invocation active until the timer fires.
+                    try await holdInvocationUntil(1, runtime: runtime, context: context)
                 }
                 try await runtime.commit({ _, _ in
                     n == task.input ? try completed("counted to \(n)") : .running(checkpoint: try JSONValue(encoding: ExampleTickerCheckpoint(n: n + 1)))

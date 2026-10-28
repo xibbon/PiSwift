@@ -102,7 +102,10 @@ public let compactionTask = TaskDefinition<CompactionInput, CompactionCheckpoint
         case .select: try await selectCompaction(task, runtime, context)
         case .summarize(let request): try await summarizeCompaction(task, request, runtime, context)
         case .retry(var request, let until):
-            try await runtime.sleep(until: until, context: context)
+            if until > (try runtime.now()) {
+                try await runtime.sleepUntil(Double(until), checkpoint: JSONValue(encoding: task.checkpoint), context: context)
+                return
+            }
             request.attempt += 1
             let next = request
             try await runtime.commit({ tx, _ in
@@ -213,7 +216,7 @@ private func summarizeCompaction(_ task: RunningTask<CompactionInput, Compaction
             if let status = try compactionStatus(live: live, taskId: runtime.taskId) {
                 try status.set("retry", JSONValue(encoding: LiveRetry(at: until, error: message.errorMessage ?? "")))
             }
-            return try compactionTask.running(.retry(request, until: until))
+            return try compactionTask.sleeping(.retry(request, until: until), until: Double(until))
         }
         let text = compactionSummaryFailure(message)
         try failCompactionStatus(live: live, taskId: runtime.taskId, error: text)

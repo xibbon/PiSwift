@@ -38,7 +38,11 @@ private struct HarnessTransferReceipt: Codable, Sendable { let receipt: Int }
                         let result = task.input * 10; values[key] = result; return result
                     }
                     let stop = interrupt.withLock { value in let wasSet = value; value = false; return wasSet }
-                    if stop { try await runtime.sleep(until: 1_000_000, context: context) }
+                    if stop {
+                        // Upstream harness-tasks-recovery.test.ts:78-84 waits for abort.
+                        // scheduler.ts:2168: hold after the effect until close.
+                        try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
+                    }
                     try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: try JSONValue(encoding: HarnessTransferReceipt(receipt: receipt)))) }, context: context)
                 }
             }, abort: { _, runtime, context in try await runtime.commit({ _, _ in .terminal(outcome: .aborted()) }, context: context) })

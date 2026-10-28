@@ -17,6 +17,7 @@ internal final class TaskInvocation: Sendable {
         var ended = false
         var work: Task<Void, Never>?
         var watches: [UUID: @Sendable () -> Void] = [:]
+        var timers: [UUID: HarnessDisarm] = [:]
     }
     let state = Mutex(State())
     init(_ record: TaskRecord, abort: Bool, context: ChordContext) {
@@ -46,7 +47,9 @@ internal final class TaskScheduler: Sendable {
     let storage: any DurableStorage
     let registry: any RegistryReader
     let models: any DurableModels
-    let clock: any DurableClock
+    let timers: HarnessTimers
+    var clock: any DurableClock { timers.clock }
+    let onWake: (@Sendable (HarnessWake) throws -> Void)?
     let now: @Sendable () -> Int64
     let settings: @Sendable () -> Settings
     let resolveAgent: @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent
@@ -69,9 +72,13 @@ internal final class TaskScheduler: Sendable {
         var intent = Set<TaskID>()
         var runnable = Set<TaskID>()
         var sleeping = Set<TaskID>()
-        var sleepWork: Task<Void, Never>?
+        var sleepDisarm: HarnessDisarm?
         var sleepAt: Double?
         var sleepID = UUID()
+        var wakeScheduled = false
+        var wakeDirty = false
+        var lastWake: HarnessWake?
+        var reconcilingWork = 0
         var finalizeChecks = Set<TaskID>()
         var waiters: [TaskID: Set<TaskID>] = [:]
         var failFastChecks = Set<TaskID>()
@@ -96,7 +103,7 @@ internal final class TaskScheduler: Sendable {
         var subscriptions: [SessionSubscription] = []
         var unsubscribe: (@Sendable () -> Void)?
         var contexts: [ConversationID: KeptContext] = [:]
-        var expiry: Task<Void, Never>?
+        var expiry: HarnessDisarm?
         var expiryAt: Int64?
         var expiryID = UUID()
     }
@@ -104,7 +111,8 @@ internal final class TaskScheduler: Sendable {
     let taskWaiters = Waiters<TaskID, SettledTask>()
     let idleWaiters = Waiters<ConversationID?, Void>()
     init(session: Session, registry: any RegistryReader, models: any DurableModels,
-         clock: any DurableClock, now: @escaping @Sendable () -> Int64,
+         timers: HarnessTimers, now: @escaping @Sendable () -> Int64,
+         onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
          settings: @escaping @Sendable () -> Settings,
          agent: @escaping @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent,
          env: @escaping @Sendable (ConversationID, ChordContext) async throws -> (any ExecutionEnv)?,
@@ -113,7 +121,7 @@ internal final class TaskScheduler: Sendable {
          settleOutcome: @escaping @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void = { _, _, _ in },
          withdrawInputs: @escaping @Sendable (Transaction, ConversationID) async throws -> Void = { _, _ in }) {
         self.session = session; storage = session.storage; self.registry = registry; self.models = models
-        self.clock = clock; self.now = now; self.settings = settings; resolveAgent = agent; self.env = env
+        self.timers = timers; self.now = now; self.onWake = onWake; self.settings = settings; resolveAgent = agent; self.env = env
         self.conversation = conversation; self.report = report; self.context = context.withoutAbortSignal()
         self.settleOutcome = settleOutcome; self.withdrawInputs = withdrawInputs
     }
@@ -145,6 +153,7 @@ internal final class TaskScheduler: Sendable {
         }, context: context)
         state.withLock { $0.cascadePending = true }
         scheduleReconcile()
+        scheduleWake()
     }
     func resume() { state.withLock { $0.enabled = true }; kick() }
     func join() async {
@@ -159,11 +168,12 @@ internal final class TaskScheduler: Sendable {
         let (expiry, sleep, unsubscribe) = state.withLock { state in
             state.closing = true; state.contexts = [:]
             let expiry = state.expiry; state.expiry = nil; state.expiryAt = nil
-            let sleep = state.sleepWork; state.sleepWork = nil; state.sleepAt = nil
+            let sleep = state.sleepDisarm; state.sleepDisarm = nil; state.sleepAt = nil
+            state.sleepID = UUID(); state.expiryID = UUID()
             let unsubscribe = state.unsubscribe; state.unsubscribe = nil
             return (expiry, sleep, unsubscribe)
         }
-        unsubscribe?(); expiry?.cancel(); sleep?.cancel()
+        unsubscribe?(); expiry?(); sleep?()
         let error: any Error = session.failure.map { SessionFailed($0) } ?? closedError()
         taskWaiters.rejectAll(error); idleWaiters.rejectAll(error)
     }
@@ -231,7 +241,7 @@ internal final class TaskScheduler: Sendable {
         if changed { settleIdle(); kick() }
     }
     /// A Task is created under the lock. It cannot enter the pump until the lock is released.
-    func kick() {
+    func kick(offerWake: Bool = true) {
         state.withLock { state in
             guard !state.closing else { return }
             state.dirty = true
@@ -239,7 +249,7 @@ internal final class TaskScheduler: Sendable {
             state.pumping = true
             state.worker = Task { [weak self] in await self?.pump() }
         }
-        scheduleSleep()
+        if offerWake { scheduleWake() }
     }
     private func pump() async {
         while state.withLock({ state in
@@ -268,10 +278,16 @@ internal final class TaskScheduler: Sendable {
                 catch { if !self.closing { self.session.fail(error) } }
                 self.settleIdle()
                 _ = self.state.withLock { $0.reconciles.removeValue(forKey: id) }
+                self.scheduleWake()
             }
         }
     }
     private func reconcile() async throws {
+        let work = state.withLock { state in
+            let work = state.cascadePending || !state.finalizeChecks.isEmpty || !state.failFastChecks.isEmpty
+            if work { state.reconcilingWork += 1 }; return work
+        }
+        defer { if work { state.withLock { $0.reconcilingWork -= 1 } }; scheduleWake() }
         let (cascade, checks) = state.withLock { state in
             let cascade = state.cascadePending, checks = Array(state.failFastChecks)
             state.candidateEntries += checks.count
@@ -428,7 +444,8 @@ internal final class TaskScheduler: Sendable {
     func end(_ invocation: TaskInvocation) {
         let watches = invocation.state.withLock { state -> [@Sendable () -> Void]? in
             guard !state.ended else { return nil }; state.ended = true
-            let watches = Array(state.watches.values); state.watches = [:]; return watches
+            let stops = Array(state.watches.values) + Array(state.timers.values)
+            state.watches = [:]; state.timers = [:]; return stops
         }
         guard let watches else { return }
         state.withLock {

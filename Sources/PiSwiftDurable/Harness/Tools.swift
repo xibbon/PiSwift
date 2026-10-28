@@ -92,6 +92,8 @@ public struct RetainedToolOutput: Sendable, Equatable {
     public init(text: String, truncated: Bool) { self.text = text; self.truncated = truncated }
 }
 
+private struct MissingToolClock: Error, Sendable {}
+
 /// Tool operations bound to a task invocation.
 public struct ToolExecutionApi: Sendable {
     internal var nestedCalls: NestedToolCalls?
@@ -111,6 +113,8 @@ public struct ToolExecutionApi: Sendable {
     public var agent: @Sendable (ChordContext) async throws -> Agent
     /// The model service used by this harness or task.
     public var models: any DurableModels
+    /// Returns the Harness time in epoch milliseconds.
+    public var now: @Sendable () throws -> Int64
     /// The optional execution environment for the conversation.
     public var env: (any ExecutionEnv)?
     /// Document snapshot services available to this hook or renderer.
@@ -131,6 +135,7 @@ public struct ToolExecutionApi: Sendable {
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                 models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                 outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
+                now: (@Sendable () throws -> Int64)? = nil,
                 agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                 output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void = { _, _ in },
                 retainedOutput: @escaping @Sendable () throws -> RetainedToolOutput = { .init(text: "", truncated: false) },
@@ -138,6 +143,7 @@ public struct ToolExecutionApi: Sendable {
                 details: @escaping @Sendable (JSONValue, ChordContext) async throws -> Void = { _, _ in },
                 memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil }) {
         self.runtime = runtime
+        self.now = now ?? { guard let runtime else { throw MissingToolClock() }; return try runtime.now() }
         self.taskId = taskId; self.conversationId = conversationId; self.callId = callId; self.registry = registry
         self.models = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
         self.output = output; self.retainedOutput = retainedOutput; self.diagnostic = diagnostic; self.details = details; self.memo = memo
@@ -146,6 +152,7 @@ public struct ToolExecutionApi: Sendable {
                   models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                   outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime,
                   lifetime: ToolInvocationLifetime,
+                  now: (@Sendable () throws -> Int64)? = nil,
                   agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                   output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void,
                   retainedOutput: @escaping @Sendable () throws -> RetainedToolOutput,
@@ -158,6 +165,7 @@ public struct ToolExecutionApi: Sendable {
         self.init(taskId: taskId, conversationId: conversationId, callId: callId, registry: registry,
                   models: models, env: env, read: toolBoundReader(read, check: check),
                   outputWindow: outputWindow, runtime: runtime,
+                  now: { try check(); return try (now ?? { try runtime.now() })() },
                   agent: { context in try check(); return try await agent(context) },
                   output: { chunk, skipped in try lifetime.check(); try check(); try output(chunk, skipped) },
                   retainedOutput: { try lifetime.check(); try check(); return try retainedOutput() },

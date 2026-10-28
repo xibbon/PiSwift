@@ -17,7 +17,9 @@ import PiSwiftDurableTesting
                 try await runtime.commit({ _, _ in .running(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint(phase: .joined))) }, context: context)
             } else {
                 nextRuns.append(1)
-                try await runtime.sleep(until: 1_000_000, context: context)
+                // Upstream harness-cancellation-barrier.test.ts:54-56 waits for abort.
+                // scheduler.ts:2168: keep the next phase active until abort.
+                try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
             }
         }
         let harness = try await harnessOpen([AnyTaskDefinition(parent), AnyTaskDefinition(child)], storage: storage, clock: control.clock)

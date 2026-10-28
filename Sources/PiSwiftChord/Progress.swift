@@ -83,7 +83,7 @@ public actor Progress {
         else {
             timer = Task {
                 do { try await clock.sleep(until: deadline) } catch { return }
-                timer = nil; flush()
+                timer = nil; schedule()
             }
         }
     }

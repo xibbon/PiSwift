@@ -16,9 +16,12 @@ private typealias HarnessExampleJob = TaskDefinition<Int, HarnessExampleWork, In
         let directory = try sqliteTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("public-example.sqlite").path
+        let heldChild = SessionTestGate()
+        defer { heldChild.release() }
         let child = HarnessExampleJob(name: "app.child", version: 1,
-            initial: { _ in HarnessExampleWork() }, phase: { task, runtime, context in
-                try await runtime.sleep(until: Int64(task.input), context: context)
+            initial: { _ in HarnessExampleWork() }, phase: { _, runtime, context in
+                // scheduler.ts:2168: Keep child work active until its invocation is aborted.
+                try await holdInvocation(on: heldChild, runtime: runtime, context: context)
                 try await runtime.commit({ _, _ in try completed(1) }, context: context)
             }, abort: { _, runtime, context in
                 try await runtime.commit({ _, _ in abortedWith("stop") }, context: context)

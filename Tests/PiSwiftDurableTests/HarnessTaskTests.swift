@@ -173,9 +173,14 @@ func harnessOpen(_ tasks: [AnyTaskDefinition], storage: any DurableStorage = Mem
     @Test func absoluteSleepUsesTestClockAndAbortCancelsSleep() async throws {
         let clock = TestClock(now: 100)
         let entered = SessionTestGate()
-        let definition = harnessOneStep("test.sleep") { _, runtime, context in
-            entered.release()
-            try await runtime.sleep(until: 200, context: context)
+        // v1.4.0 harness-sleep.test.ts:88 replaces the old invocation-held sleep.
+        let definition = harnessOneStep("test.sleep") { task, runtime, context in
+            if task.checkpoint.phase == .run {
+                entered.release()
+                try await runtime.sleepUntil(200,
+                    checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint(phase: .joined)), context: context)
+                return
+            }
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], clock: clock)
@@ -185,7 +190,7 @@ func harnessOpen(_ tasks: [AnyTaskDefinition], storage: any DurableStorage = Mem
         await entered.wait()
         try await harnessEventually { clock.pendingSleeperCount > 0 }
         clock.advance(by: 99)
-        #expect(try await harness.getTask(id: id, context: .background)?.state.status == "running")
+        #expect(try await harness.getTask(id: id, context: .background)?.state.status == "sleeping")
         clock.advance(by: 1)
         #expect(try await wait.value.outcome == .completed(result: .number(1)))
         let aborted = try await harnessStart(root, definition)

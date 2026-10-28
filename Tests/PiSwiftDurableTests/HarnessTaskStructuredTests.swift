@@ -111,8 +111,11 @@ import PiSwiftDurableTesting
     // upstream harness-structured.test.ts:799, ownership:188,239
     @Test func conversationAbortKeepsBackgroundAndDirectAbortCrossesIt() async throws {
         let clock = TestClock()
+        let held = SessionTestGate()
+        defer { held.release() }
         let definition = harnessOneStep("test.background") { _, runtime, context in
-            try await runtime.sleep(until: 100_000, context: context)
+            // scheduler.ts:2168: Keep this invocation active until it is aborted.
+            try await holdInvocation(on: held, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], clock: clock)
@@ -133,7 +136,8 @@ import PiSwiftDurableTesting
         let clock = TestClock()
         let log = SessionTestLog<String>()
         let grandchild = harnessOneStep("test.abort-grandchild", run: { _, runtime, context in
-            try await runtime.sleep(until: 100_000, context: context)
+            // scheduler.ts:2168: Keep this invocation active until it is aborted.
+            try await holdInvocationUntil(100_000, runtime: runtime, context: context)
         }, abort: { _, runtime, context in
             log.append("grandchild")
             try await runtime.commit({ _, _ in .terminal(outcome: .aborted(reason: "test")) }, context: context)

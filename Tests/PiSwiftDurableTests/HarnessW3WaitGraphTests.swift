@@ -200,7 +200,11 @@ private final class W3WaitNodes: Sendable {
                 return .waiting(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint(phase: .joined)), on: [a], policy: .allSettled)
             }, context: context)
         }
-        nodes.script("c") { _, runtime, context in try await runtime.sleep(until: 100_000, context: context) }
+        nodes.script("c") { _, runtime, context in
+            // Upstream harness-structured.test.ts:649-654 uses defaultRun:83-87.
+            // scheduler.ts:2168: keep the child invocation active until abort.
+            try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
+        }
         nodes.abort("c") { _, runtime, context in
             cleanupEntered.release(); await cleanup.wait()
             try await runtime.commit({ _, _ in .terminal(outcome: .aborted(reason: "c")) }, context: context)

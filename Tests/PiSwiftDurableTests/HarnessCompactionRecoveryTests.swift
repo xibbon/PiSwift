@@ -115,7 +115,7 @@ private func compactionStoredCheckpoint(_ chat: CompactionChat, _ id: TaskID) as
         #expect(after.input > before.input && after.output - before.output == 2)
         try await chat.harness.close(context: .background)
     }
-    // Upstream :1652.
+    // Upstream v1.4.0 harness-compaction.test.ts:1739.
     @Test func durableRetryDeadlineSurvivesReopen() async throws {
         let path = try compactionRecoveryPath(), clock = TestClock(now: 1000)
         defer { try? FileManager.default.removeItem(at: path.deletingLastPathComponent()) }
@@ -125,7 +125,11 @@ private func compactionStoredCheckpoint(_ chat: CompactionChat, _ id: TaskID) as
         chat.script.appendSummary([.message(compactionFailure("overloaded"))])
         let id = try await chat.root.compact(context: .background), first = chat
         try await eventually { try await compactionLive(first).compactions?.first?.retry != nil }
-        let checkpoint = try await compactionStoredCheckpoint(chat, id)
+        let record = try #require(await chat.harness.getTask(id: id, context: .background))
+        guard case .sleeping(let checkpoint, let until, _) = record.state else {
+            throw TaskDefinitionError("Expected sleeping compaction retry")
+        }
+        #expect(until == 61_000 && checkpoint["until"] == .number(61_000))
         #expect(checkpoint["phase"] == .string("retry") && checkpoint["attempt"] == .number(1))
         try await chat.harness.close(context: .background)
         clock.advance(by: 120_000)

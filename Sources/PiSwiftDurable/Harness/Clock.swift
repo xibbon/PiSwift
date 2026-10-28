@@ -8,6 +8,12 @@ public protocol DurableClock: Sendable {
     func sleep(until deadline: Int64) async throws
 }
 
+/// Allows a clock adapter to account for cache timers separately from work waits.
+/// Both kinds of wait use the same time source and advance together.
+package protocol DurableRetentionClock: DurableClock {
+    func sleepForDocumentRetention(until deadline: Int64) async throws
+}
+
 /// A wall clock with Swift task cancellation during sleep.
 public struct SystemDurableClock: DurableClock {
     /// Creates a wall clock backed by the system time source.

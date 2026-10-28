@@ -29,7 +29,8 @@ private func structuredLabels(_ log: HarnessEventLog) -> [String] {
         let clock = TestClock(now: 0), setup = HarnessChatSetup(clock: clock)
         let reference = Mutex<Harness?>(nil), childIDs = SessionTestLog<TaskID>()
         let child = harnessOneStep("test.event-hooked") { _, runtime, context in
-            try await runtime.sleep(until: 100, context: context)
+            // scheduler.ts:2168: Keep this invocation active until the timer fires.
+            try await holdInvocationUntil(100, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }
         try setup.registry.install(Extension(name: "event-children", tasks: [AnyTaskDefinition(child)]))
@@ -100,7 +101,8 @@ private func structuredLabels(_ log: HarnessEventLog) -> [String] {
         let abortEntered = HarnessChatSignal(), releaseAbort = SessionTestGate(), childIDs = SessionTestLog<TaskID>()
         defer { releaseAbort.release() }
         let child = harnessOneStep("test.event-owned", run: { _, runtime, context in
-            try await runtime.sleep(until: 100, context: context)
+            // scheduler.ts:2168: Keep this invocation active until the timer fires.
+            try await holdInvocationUntil(100, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }, abort: { _, runtime, context in
             abortEntered.signal(); await releaseAbort.wait()

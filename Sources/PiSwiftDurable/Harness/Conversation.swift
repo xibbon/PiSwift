@@ -40,7 +40,7 @@ public final class Conversation: Sendable {
     }
     /// Writes a reset boundary and optional handoff text for the conversation.
     public func reset(handoff: String? = nil, context: ChordContext) async throws {
-        let now = harness.options.now?() ?? harness.options.clock.now()
+        let now = harness.tasks.now()
         let model = try handoff.map { try EntryRecord.encodeMessages([.user(UserMessage(content: .text($0), timestamp: now))]) }
         _ = try await submit(.write(entry: EntryDraft(kind: resetEntry.kind, model: model, head: .self)), context: context)
     }

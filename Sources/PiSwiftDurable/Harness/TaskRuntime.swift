@@ -1,3 +1,4 @@
+import Foundation
 import PiSwiftChord
 import Synchronization
 
@@ -88,20 +89,41 @@ public final class TaskRuntime: Sendable {
     public func env(context: ChordContext) async throws -> (any ExecutionEnv)? {
         try await withTaskCancellationContext(context) { context in try invocation.check(); try context.abortSignal?.throwIfAborted(); return try await scheduler.env(conversationId, context) }
     }
-    /// Waits until the clock deadline or context cancellation.
-    public func sleep(until deadline: Int64, context: ChordContext) async throws {
-        try await withTaskCancellationContext(context) { context in
-            try invocation.check()
-            let bound = context.withAbortSignal(signal)
-            while true {
-                try bound.abortSignal?.throwIfAborted()
-                let now = scheduler.now()
-                if deadline <= now { return }
-                let step = now + min(deadline - now, 2_147_483_647)
-                let work = Task { try await scheduler.clock.sleep(until: step) }
-                defer { work.cancel() }
-                try await awaitWithContext(work, bound)
+    /// Commits a sleep and resumes at the checkpoint when the deadline is due.
+    /// Return from the phase handler after this call.
+    public func sleepUntil(_ until: Double, checkpoint: JSONValue, context: ChordContext) async throws {
+        try await commit({ _, _ in .sleeping(checkpoint: checkpoint, until: until) }, context: context)
+    }
+    /// Arms a timer that is disarmed when this invocation ends.
+    public func setTimer(_ callback: @escaping @Sendable () -> Void, delay: Double) -> HarnessDisarm {
+        setInvocationTimer(callback) { scheduler.timers.setTimer($0, delay: delay) }
+    }
+    internal func setTimer(_ callback: @escaping @Sendable () -> Void, until deadline: Double) -> HarnessDisarm {
+        setInvocationTimer(callback) { scheduler.timers.setTimer($0, until: deadline) }
+    }
+    private func setInvocationTimer(_ callback: @escaping @Sendable () -> Void,
+                                    arm: (@escaping @Sendable () -> Void) -> HarnessDisarm?) -> HarnessDisarm {
+        let id = UUID()
+        let active = invocation.state.withLock { state in
+            guard !state.ended else { return false }
+            state.timers[id] = {}; return true
+        }
+        guard active else { return {} }
+        let disarm = arm({ [invocation] in
+            let active = invocation.state.withLock { state in
+                let timer = state.timers.removeValue(forKey: id)
+                return timer != nil && !state.ended
             }
+            if active { callback() }
+        }) ?? {}
+        let installed = invocation.state.withLock { state in
+            guard !state.ended, state.timers[id] != nil else { return false }
+            state.timers[id] = disarm; return true
+        }
+        if !installed { disarm() }
+        return { [invocation] in
+            let stop = invocation.state.withLock { $0.timers.removeValue(forKey: id) }
+            stop?()
         }
     }
     /// Returns the current durable task record, or nil when it is absent.

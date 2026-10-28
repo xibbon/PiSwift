@@ -4,7 +4,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 
 @Suite struct HarnessDocumentRetentionTests {
-    @Test func documentRetentionDoesNotUseTheHarnessSleepClock() async throws {
+    // v1.4.0 uses Harness timers for eviction; SessionDocumentTimer.continuous was removed.
+    @Test func documentRetentionUsesTheHarnessTimerClock() async throws {
         let clock = TestClock(now: 1_000)
         let setup = HarnessChatSetup(settings: .init(documentRetentionMs: 600_000), clock: clock)
         let harness = try await Harness.open(storage: MemoryStorage(), options: .init(
@@ -17,15 +18,17 @@ import PiSwiftDurableTesting
         }, context: .background)
         try await harness.session.readOnLine {}
         #expect(harness.session.documentCacheSizes.cached == 1)
+        try await eventually { clock.pendingDocumentRetentionCount == 1 }
         #expect(clock.pendingSleeperCount == 0)
 
         clock.advance(by: 600_000)
-        try await harness.session.commit({ _ in }, context: .background)
-        #expect(harness.session.documentCacheSizes.cached == 0)
+        try await eventually { harness.session.documentCacheSizes.cached == 0 }
+        #expect(clock.pendingDocumentRetentionCount == 0)
         #expect(clock.pendingSleeperCount == 0)
         #expect(try await harness.session.snapshot(token, context: .background) == ["count": 7])
         try await harness.close(context: .background)
         #expect(clock.pendingSleeperCount == 0)
+        #expect(clock.pendingDocumentRetentionCount == 0)
     }
 
     @Test func settingsResolveDocumentRetentionWithoutChangingContextRetention() {

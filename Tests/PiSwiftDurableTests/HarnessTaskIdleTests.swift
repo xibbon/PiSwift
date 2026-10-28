@@ -8,7 +8,8 @@ import PiSwiftDurableTesting
     @Test func separateConversationIdleScopesIgnoreBackgroundAndCallerCancellation() async throws {
         let clock = TestClock()
         let definition = harnessOneStep("test.idle-scopes") { task, runtime, context in
-            try await runtime.sleep(until: Int64(task.input), context: context)
+            // scheduler.ts:2168: Keep this invocation active until the timer fires.
+            try await holdInvocationUntil(Int64(task.input), runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
         }
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], clock: clock)

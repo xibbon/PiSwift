@@ -22,9 +22,12 @@ private actor GenerationPartialThrottle {
     }
     private func schedule() {
         guard !stopped, timer == nil, inFlight == nil, pending != nil else { return }
-        let deadline = runtime.scheduler.clock.now() + interval
+        let clock = InvocationClock(runtime: runtime)
+        let deadline = clock.now() + interval
         timer = Task {
-            do { try await runtime.scheduler.clock.sleep(until: deadline) } catch { return }
+            do {
+                repeat { try await clock.sleep(until: deadline) } while clock.now() < deadline
+            } catch { return }
             flush()
         }
     }

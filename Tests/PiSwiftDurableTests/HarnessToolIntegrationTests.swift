@@ -414,7 +414,9 @@ extension HarnessToolIntegrationTests {
         let path = directory.appendingPathComponent("tool-child.sqlite").path
         let setup = HarnessChatSetup(), running = HarnessChatSignal(), children = SessionTestLog<TaskID>()
         let child = harnessOneStep("test.integration-cascade", run: { _, runtime, context in
-            try await runtime.sleep(until: Int64.max / 2, context: context)
+            // Upstream harness-ownership.test.ts:1196-1222 uses Hold:54-56.
+            // scheduler.ts:2168: keep the child invocation active until abort.
+            try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
         })
         try setup.registry.install(Extension(name: "cascade", tasks: [AnyTaskDefinition(child)]))
         try installHarnessTool(harnessTestTool(execute: { _, api, context in

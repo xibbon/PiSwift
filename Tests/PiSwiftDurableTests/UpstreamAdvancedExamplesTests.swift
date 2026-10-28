@@ -504,7 +504,8 @@ extension UpstreamAdvancedExamplesTests {
                     return
                 }
                 charged.withLock { _ = $0.insert(card) }
-                try await runtime.sleep(until: task.checkpoint.at, context: context)
+                // scheduler.ts:2168: Keep the payment running until the timer fires.
+                try await holdInvocationUntil(task.checkpoint.at, runtime: runtime, context: context)
                 try await runtime.commit({ _, _ in try completed(task.input) }, context: context)
             }, abort: { task, runtime, context in
                 let refunded = charged.withLock { $0.remove(task.input.card) != nil }

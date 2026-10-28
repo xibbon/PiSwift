@@ -27,7 +27,10 @@ final class W3LifetimeControl: Sendable {
     func wait(_ key: Int, runtime: TaskRuntime, context: ChordContext) async throws {
         let gate = signal(key)
         if !gate.signal.aborted {
-            do { try await runtime.sleep(until: 1_000_000, context: context.withAbortSignal(gate.signal)) }
+            // Upstream harness-scheduler-indexes.test.ts:29-31 races the gate and abort.
+            // scheduler.ts:2168: hold this invocation without a durable sleep.
+            let signals = [gate.signal, runtime.signal] + (context.abortSignal.map { [$0] } ?? [])
+            do { try await harnessToolAwaitAbort(context.withAbortSignal(.any(signals))) }
             catch { if !gate.signal.aborted { throw error } }
         }
         try runtime.signal.throwIfAborted()

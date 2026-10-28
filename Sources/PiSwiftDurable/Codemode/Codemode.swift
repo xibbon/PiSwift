@@ -60,7 +60,6 @@ private let discoveryNames = ["searchTools", "describeTool", "describeNamespace"
 private let catalogNames = ["models.getModelsOfType", "models.getAvailableOfType", "models.getModelOfType"]
 private let modelNames = ["models.classify", "models.generateImages"]
 private func codemodeHasPrefix(_ name: String, _ prefix: String) -> Bool { name.utf16.starts(with: prefix.utf16) }
-private func nowMs() -> Double { Date().timeIntervalSince1970 * 1000 }
 private func cut(_ value: String, _ max: Int) -> String { value.utf16.count > max ? String(decoding: value.utf16.prefix(max - 3), as: UTF16.self) + "..." : value }
 private func failureResult(_ message: String) -> ToolExecutionResult { .init(output: [.text(.init(text: message))], isError: true) }
 
@@ -120,7 +119,7 @@ internal actor DurableCodemodeCall {
             else { namespaces.append(.init(name: own.name, description: own.description, instructions: own.instructions, tools: [tool.name])) }
         }
         let initialTools = tools, initialNamespaces = namespaces
-        let time = nowMs(), seed = UInt32.random(in: UInt32.min...UInt32.max)
+        let time = Double(try api.now()), seed = UInt32.random(in: UInt32.min...UInt32.max)
         enum Found: Sendable { case done(JSONObject); case resume(CodemodeStart, CodemodeJournal, Bool) }
         let found = try await api.commit({ @Sendable tx -> Found in
             let run = try await tx.doc(CodemodeRunDoc, taskId: self.api.taskId)
@@ -148,7 +147,7 @@ internal actor DurableCodemodeCall {
         if start.version != CODEMODE_MODULE_VERSION {
             return try await decide(failureResult("The script cannot resume: it started under code mode version \(start.version), this is \(CODEMODE_MODULE_VERSION)."))
         }
-        let remaining = start.deadline.map { $0 - nowMs() }
+        let remaining = try start.deadline.map { $0 - Double(try api.now()) }
         if let remaining, remaining <= 0 { return try await decide(failureResult("Script timed out: its deadline passed while it was interrupted.")) }
         try context.abortSignal?.throwIfAborted()
         let registration = context.abortSignal?.addAbortListener { [weak self] error in
@@ -316,7 +315,7 @@ internal actor DurableCodemodeCall {
                 global = .init(name: call.name, args: call.args, outcome: outcome)
             }
             guard await active() else { return }
-            queue.append(.init(id: call.id, at: nowMs(), outcome: outcome, global: global)); await pump()
+            queue.append(.init(id: call.id, at: Double(try api.now()), outcome: outcome, global: global)); await pump()
         } catch { await callFailed(call, error) }
     }
     func callFailed(_ call: CodemodeHostCall, _ error: any Error) async {
@@ -378,7 +377,7 @@ internal actor DurableCodemodeCall {
     }
     func complete(_ result: CodemodeResult) async throws -> ToolExecutionResult {
         let calls = details()
-        let formatted = await codemodeFormatResult(result, generatedImages: generatedImages, wallMs: nowMs() - start.startedAt,
+        let formatted = await codemodeFormatResult(result, generatedImages: generatedImages, wallMs: Double(try api.now()) - start.startedAt,
             maxOutputTokens: start.maxOutputTokens, calls: calls, limits: .init(maxBytes: 4 * 1024 * 1024, maxLines: 100_000, retain: .tail), write: { name, data in await self.writeOutput(name, data: data) })
         var detail: JSONObject = ["calls": try JSONValue(encoding: calls)]
         if let path = formatted.fullOutputPath { detail["fullOutputPath"] = .string(path) }

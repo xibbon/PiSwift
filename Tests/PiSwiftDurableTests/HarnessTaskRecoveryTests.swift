@@ -199,7 +199,9 @@ import PiSwiftDurableTesting
             log.append("abort")
             if blockAbort.withLock({ $0 }) {
                 abortEntered.release()
-                try await runtime.sleep(until: 1_000_000, context: context)
+                // Upstream harness-tasks-recovery.test.ts:193-199 waits for abort.
+                // scheduler.ts:2168: keep the abort invocation active until close.
+                try await harnessToolAwaitAbort(context.withAbortSignal(runtime.signal))
             }
             try await runtime.commit({ _, _ in .terminal(outcome: .aborted(reason: "stop")) }, context: context)
         })

@@ -12,10 +12,11 @@ private struct GraphCheckpoint: TaskCheckpoint {
 }
 private typealias GraphTask = TaskDefinition<Int, GraphCheckpoint, Int, NoTaskHooks>
 
-private func graphFamily(_ clock: TestClock) -> (parent: GraphTask, child: GraphTask) {
+private func graphFamily(childGate: SessionTestGate, lateGate: SessionTestGate) -> (parent: GraphTask, child: GraphTask) {
     let child = GraphTask(name: "test.graph-child", version: 1, initial: { _ in GraphCheckpoint(phase: .work) },
         phase: { task, runtime, context in
-            try await runtime.sleep(until: task.input == 0 ? 100 : 200, context: context)
+            // Upstream graph test:33 holds a gate; scheduler.ts:2168 removes TaskRuntime.sleep.
+            try await holdInvocation(on: task.input == 0 ? childGate : lateGate, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }, abort: { _, runtime, context in
             try await runtime.commit({ _, _ in .terminal(outcome: .aborted(reason: "test")) }, context: context)
@@ -67,7 +68,8 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
 @Suite struct HarnessTaskGraphTests {
     // upstream harness-task-graph.test.ts:84.
     @Test func followsLiveStatusesOwnerEdgesAndOwnedConversations() async throws {
-        let clock = TestClock(now: 0), family = graphFamily(clock)
+        let clock = TestClock(now: 0), childGate = SessionTestGate(), lateGate = SessionTestGate()
+        let family = graphFamily(childGate: childGate, lateGate: lateGate)
         let harness = try await harnessOpen([AnyTaskDefinition(family.parent), AnyTaskDefinition(family.child)], clock: clock)
         let root = try await harness.root(context: .background)
         let seen = SessionTestLog<TaskGraph>()
@@ -92,7 +94,7 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         #expect(first.owner == parent && first.conversationId == root.id)
         #expect(try await harness.conversation(id: #require(parentNode.conversations.first), context: .background) != nil)
         graph = try await graphRebuild(harness, graph, seen)
-        clock.advance(by: 100)
+        childGate.release()
         let secondGraph = graph
         try await eventually { secondGraph.value.tasks[parentKey]?.state.status == "completing" &&
             secondGraph.value.tasks.values.contains { $0.kind == "test.graph-child" && $0.state.status == "running" } }
@@ -100,7 +102,7 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         #expect(graph.value.tasks[String(first.id.rawValue)] == nil)
         #expect(graph.value.tasks[parentKey]?.conversations == parentNode.conversations)
         graph = try await graphRebuild(harness, graph, seen)
-        clock.advance(by: 100)
+        lateGate.release()
         _ = try await harness.waitForTask(id: parent, context: .background)
         await graph.waitUntilIdle()
         #expect(graph.value == TaskGraph())
@@ -115,9 +117,11 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
     @Test func buildsCommittedTasksAfterReopenAndPublishesExactAbortFrames() async throws {
         let directory = try sqliteTestDirectory(), path = directory.appendingPathComponent("graph.sqlite")
         defer { try? FileManager.default.removeItem(at: directory) }
+        let held = SessionTestGate()
         let clock = TestClock(now: 0)
         let work = harnessOneStep("test.graph-work") { _, runtime, context in
-            try await runtime.sleep(until: 100, context: context)
+            // Upstream graph test uses a gate; scheduler.ts:2168 removes TaskRuntime.sleep.
+            try await holdInvocation(on: held, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }
         var harness = try await harnessOpen([AnyTaskDefinition(work)], storage: SqliteStorage.open(path: path.path), clock: clock)
@@ -163,13 +167,14 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         #expect(frames.values.last == [.delete(["tasks", .key(background)])])
         #expect(replica.withLock { $0?.objectValue?["tasks"]?.objectValue?.keys } == [foreground])
         _ = await watch.stop()
-        clock.advance(by: 100)
+        held.release()
         _ = try await harness.waitForTask(id: ids.0, context: .background)
         try await harness.close(context: .background)
     }
 
     // upstream harness-task-graph.test.ts:240.
     @Test func sortsOwnedConversationsFromOneCommitAndRebuildsTheSameGraph() async throws {
+        let held = SessionTestGate()
         let clock = TestClock(now: 0), created = SessionTestLog<ConversationID>(), entry = Mutex<EntryID?>(nil)
         let spawner = harnessOneStep("test.graph-spawner") { task, runtime, context in
             try await runtime.commit({ tx, _ in
@@ -180,7 +185,8 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
                 for record in records { created.append(record.id) }
                 return nil
             }, context: context)
-            try await runtime.sleep(until: 100, context: context)
+            // Upstream graph test uses a gate; scheduler.ts:2168 removes TaskRuntime.sleep.
+            try await holdInvocation(on: held, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }
         let harness = try await harnessOpen([AnyTaskDefinition(spawner)], clock: clock)
@@ -200,7 +206,7 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         let rebuilt = try await harness.taskGraph(context: .background)
         #expect(rebuilt.value == advanced && rebuilt.value !== advanced)
         rebuilt.dispose()
-        clock.advance(by: 100)
+        held.release()
         _ = try await harness.waitForTask(id: id, context: .background)
         try await harness.close(context: .background)
     }
@@ -234,11 +240,13 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
 
     // upstream harness-task-graph.test.ts:312.
     @Test func sharesOneMountAndPublishesNoRevisionForMemos() async throws {
+        let held = SessionTestGate()
         let clock = TestClock(now: 0), reached = SessionTestGate()
         let memo = harnessOneStep("test.graph-memo") { _, runtime, context in
             _ = try await runtime.memo("seen", value: true, context: context)
             reached.release()
-            try await runtime.sleep(until: 100, context: context)
+            // Upstream graph test uses a gate; scheduler.ts:2168 removes TaskRuntime.sleep.
+            try await holdInvocation(on: held, runtime: runtime, context: context)
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .null)) }, context: context)
         }
         let harness = try await harnessOpen([AnyTaskDefinition(memo)], clock: clock)
@@ -251,7 +259,7 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         await reached.wait()
         await first.waitUntilIdle()
         #expect(updates.values == ["running"])
-        clock.advance(by: 100)
+        held.release()
         _ = try await harness.waitForTask(id: id, context: .background)
         await first.waitUntilIdle()
         #expect(updates.values == ["running", "gone"])
