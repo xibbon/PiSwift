@@ -9,9 +9,21 @@ public protocol CodemodeModels: DurableModels {
     func getModelOfType(_ type: ModelType, provider: String, id: String) -> AnyModel?
     func classify(model: ClassifierModel, context: ClassifierContext, operation: ChordContext) async throws -> ClassifierResult
     func generateImages(model: ImageModel, context: ImagesContext, operation: ChordContext) async throws -> AssistantImages
+    func classify(model: ClassifierModel, context: ClassifierContext, options: ClassifierOptions, operation: ChordContext) async throws -> ClassifierResult
+    func generateImages(model: ImageModel, context: ImagesContext, options: ImagesOptions, operation: ChordContext) async throws -> AssistantImages
 }
 
 public extension CodemodeModels {
+    /// Supports model services that implement the original classifier interface.
+    func classify(model: ClassifierModel, context: ClassifierContext, options: ClassifierOptions, operation: ChordContext) async throws -> ClassifierResult {
+        try await classify(model: model, context: context, operation: operation)
+    }
+
+    /// Supports model services that implement the original image interface.
+    func generateImages(model: ImageModel, context: ImagesContext, options: ImagesOptions, operation: ChordContext) async throws -> AssistantImages {
+        try await generateImages(model: model, context: context, operation: operation)
+    }
+
     func getModelOfType(_ type: ModelType, provider: String, id: String) -> AnyModel? {
         getModelsOfType(type, provider: provider).first { $0.id.utf16.elementsEqual(id.utf16) }
     }

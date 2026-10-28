@@ -9,17 +9,35 @@ import PiSwiftDurableTesting
 struct HarnessToolTests {
     // Upstream harness-tools.test.ts:82,115,138.
     @Test func roundResultsAndModels() async throws {
-        let setup = HarnessChatSetup(), seen = Mutex(0)
+        let setup = HarnessChatSetup(), seen = Mutex<[any DurableModels]>([])
         try installHarnessTool(harnessTestTool(execute: { args, api, _ in
-            #expect((api.models as? FakeDurableModels) === setup.models); seen.withLock { $0 += 1 }
+            // Upstream v1.4.0 harness-tools.test.ts:135–137: tools and hooks share the identity wrapper.
+            let models = api.models
+            seen.withLock { values in
+                if let first = values.first {
+                    let sameWrapper = (first as AnyObject) === (models as AnyObject)
+                    #expect(sameWrapper)
+                }
+                values.append(models)
+            }
+            #expect(setup.models.models.compactMap { models.getModel(provider: $0.provider, modelId: $0.id)?.provider } == setup.models.models.map(\.provider))
             return ToolExecutionResult(output: [.text(TextContent(text: "echo hi"))])
         }), setup: setup)
         try setup.registry.install(Extension(name: "audit", hooks: [hook(ToolHooks(beforeTool: { _, api, _ in
-            #expect((api.models as? FakeDurableModels) === setup.models); seen.withLock { $0 += 1 }; return nil
+            // Upstream v1.4.0 harness-tools.test.ts:135–137: tools and hooks share the identity wrapper.
+            let models = api.models
+            seen.withLock { values in
+                if let first = values.first {
+                    let sameWrapper = (first as AnyObject) === (models as AnyObject)
+                    #expect(sameWrapper)
+                }
+                values.append(models)
+            }
+            #expect(setup.models.models.compactMap { models.getModel(provider: $0.provider, modelId: $0.id)?.provider } == setup.models.models.map(\.provider)); return nil
         }))]))
         let (opened, entries) = try await runHarnessTools(setup, calls: [("ghost", [:], "ghost"), ("echo", ["text": "hi"], "echo")])
         let results = try harnessToolResults(entries)
-        #expect(results.count == 2 && seen.withLock { $0 } == 2)
+        #expect(results.count == 2 && seen.withLock { $0.count } == 2)
         #expect(results.first { $0.toolCallId == "ghost" }?.isError == true)
         #expect(harnessToolText(try #require(results.first { $0.toolCallId == "echo" })) == "echo hi")
         #expect(entries.map(\.kind) == ["pi.user", "pi.system", "pi.assistant", "pi.tool-result", "pi.tool-result", "pi.assistant"])

@@ -112,7 +112,11 @@ public struct ToolExecutionApi: Sendable {
     /// The agent configuration used for this conversation.
     public var agent: @Sendable (ChordContext) async throws -> Agent
     /// The model service used by this harness or task.
-    public var models: any DurableModels
+    public var models: any DurableModels {
+        get { modelsProvider() }
+        set { modelsProvider = { newValue } }
+    }
+    private var modelsProvider: @Sendable () -> any DurableModels
     /// Returns the Harness time in epoch milliseconds.
     public var now: @Sendable () throws -> Int64
     /// The optional execution environment for the conversation.
@@ -133,7 +137,7 @@ public struct ToolExecutionApi: Sendable {
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
     /// Binds tool services and publication callbacks to one task invocation.
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
-                models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
+                models: @autoclosure @escaping @Sendable () -> any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                 outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
                 now: (@Sendable () throws -> Int64)? = nil,
                 agent: @escaping @Sendable (ChordContext) async throws -> Agent,
@@ -145,11 +149,11 @@ public struct ToolExecutionApi: Sendable {
         self.runtime = runtime
         self.now = now ?? { guard let runtime else { throw MissingToolClock() }; return try runtime.now() }
         self.taskId = taskId; self.conversationId = conversationId; self.callId = callId; self.registry = registry
-        self.models = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
+        self.modelsProvider = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
         self.output = output; self.retainedOutput = retainedOutput; self.diagnostic = diagnostic; self.details = details; self.memo = memo
     }
     internal init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
-                  models: any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
+                  models: @autoclosure @escaping @Sendable () -> any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                   outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime,
                   lifetime: ToolInvocationLifetime,
                   now: (@Sendable () throws -> Int64)? = nil,
@@ -163,7 +167,7 @@ public struct ToolExecutionApi: Sendable {
             try runtime.invocation.check()
         }
         self.init(taskId: taskId, conversationId: conversationId, callId: callId, registry: registry,
-                  models: models, env: env, read: toolBoundReader(read, check: check),
+                  models: models(), env: env, read: toolBoundReader(read, check: check),
                   outputWindow: outputWindow, runtime: runtime,
                   now: { try check(); return try (now ?? { try runtime.now() })() },
                   agent: { context in try check(); return try await agent(context) },

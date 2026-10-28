@@ -117,7 +117,7 @@ internal func openDurable(_ options: OpenDurableOptions,
         let sqlite = try await dependencies.makeStorage(location.database)
         storage = sqlite
         let opened = try await Harness.open(storage: sqlite,
-            options: HarnessOptions(models: models.models, registry: registry, settings: settings,
+            options: HarnessOptions(models: models.models, registry: registry, identity: getCodingAgentClientIdentity(manager), settings: settings,
                                     env: envs.factory, onReport: { error, info in reports.report(error, info: info) }), context: .background)
         harness = opened
         let initial = location.created ? await models.initial(manager) : nil

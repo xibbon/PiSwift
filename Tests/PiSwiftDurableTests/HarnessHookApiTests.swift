@@ -12,9 +12,14 @@ import PiSwiftDurableTesting
             let api = runtime.hookApi
             retained.withLock { $0 = api }
             #expect(api.taskId == runtime.taskId); #expect(api.conversationId == runtime.conversationId)
-            let apiModels = try #require(api.models as? FakeDurableModels)
-            let runtimeModels = try #require(runtime.models as? FakeDurableModels)
-            #expect(apiModels === runtimeModels)
+            // E2: upstream harness-tools.test.ts:135–137 shares the Harness identity wrapper.
+            let apiModels = api.models
+            let runtimeModels = runtime.models
+            let sameWrapper = (apiModels as AnyObject) === (runtimeModels as AnyObject)
+            #expect(sameWrapper)
+            let model = try #require(FakeDurableModels().models.first)
+            let resolved = try #require(apiModels.getModel(provider: model.provider, modelId: model.id))
+            #expect(try JSONValue(encoding: resolved) == JSONValue(encoding: model))
             let value = try await api.read.snapshot(token, context: context)
             #expect(value == ["text": "committed"])
             let first = try await api.memo("shared", .number(7), context)

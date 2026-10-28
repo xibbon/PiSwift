@@ -7,6 +7,10 @@ import Synchronization
 /// Uses coding-agent authentication and model routing for durable requests.
 public final class RegistryDurableModels: DurableModels {
     private let registry: ModelRegistry
+
+    /// Returns the current identity default from the host registry.
+    public var clientIdentity: ClientIdentity? { registry.resolveClientIdentity() }
+
     private struct Snapshot: Sendable {
         var models: [Model] = []
         var generation: UInt64 = 0
@@ -100,6 +104,7 @@ public final class RegistryDurableModels: DurableModels {
             let resolved = try await prepareRequest(model: model, apiKey: options.apiKey, headers: options.headers,
                                                     env: options.env, signal: options.signal)
             var prepared = options
+            prepared.identity = registry.resolveClientIdentity(options.identity)
             prepared.apiKey = options.apiKey ?? resolved.auth.apiKey
             prepared.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
             prepared.env = mergeEnvironment(resolved.auth.env, options.env)
@@ -114,6 +119,7 @@ public final class RegistryDurableModels: DurableModels {
         let resolved = try await prepareRequest(model: model, apiKey: options.apiKey, headers: options.headers,
                                                 env: options.env, signal: options.signal)
         var prepared = options
+        prepared.identity = registry.resolveClientIdentity(options.identity)
         prepared.apiKey = options.apiKey ?? resolved.auth.apiKey
         prepared.headers = mergeProviderHeaders(resolved.auth.headers, options.headers)
         prepared.env = mergeEnvironment(resolved.auth.env, options.env)

@@ -1,3 +1,4 @@
+import PiSwiftAI
 import PiSwiftChord
 
 /// Whether the harness is paused, running, or closing.
@@ -134,7 +135,9 @@ public struct HarnessWake: Sendable, Equatable {
 /// Host services and live settings required to open a harness.
 public struct HarnessOptions: Sendable {
     /// The model service used by this harness or task.
-    public let models: any DurableModels
+    public let models: HarnessModelsProvider
+    /// The host identity applied over the pi and model service defaults.
+    public let identity: ClientIdentity?
     /// The installed extension and task definitions used by this harness.
     public let registry: any RegistryReader
     /// An optional callback that supplies live host settings.
@@ -154,23 +157,46 @@ public struct HarnessOptions: Sendable {
     /// Receives nonfatal errors from handlers and observers.
     public var onReport: (@Sendable (any Error, ReportInfo) -> Void)?
     /// Supplies host model, registry, clock, settings, and environment services.
-    public init(models: any DurableModels, registry: any RegistryReader,
+    public init(models: any DurableModels, registry: any RegistryReader, identity: ClientIdentity? = nil,
                 settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: (@Sendable (any Error, ReportInfo) -> Void)? = nil) {
-        self.models = models; self.registry = registry; self.settings = settings; self.env = env
+        let wrapped = harnessModels(models, identity: identity)
+        self.models = { wrapped }; self.identity = identity; self.registry = registry; self.settings = settings; self.env = env
         self.clock = clock; self.now = now; self.setTimer = setTimer; self.onWake = onWake; self.conversationCreated = conversationCreated; self.onReport = onReport
     }
     /// Adapts a callback that receives only the original error.
-    public init(models: any DurableModels, registry: any RegistryReader,
+    public init(models: any DurableModels, registry: any RegistryReader, identity: ClientIdentity? = nil,
                 settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: @escaping @Sendable (any Error) -> Void) {
-        self.init(models: models, registry: registry, settings: settings, env: env, clock: clock, now: now,
+        self.init(models: models, registry: registry, identity: identity, settings: settings, env: env, clock: clock, now: now,
+                  setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
+                  onReport: { error, _ in onReport(error) })
+    }
+
+    /// Supplies host model, registry, clock, settings, and environment services.
+    public init(models: @escaping HarnessModelsProvider, registry: any RegistryReader, identity: ClientIdentity? = nil,
+                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
+                setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
+                conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
+                onReport: (@Sendable (any Error, ReportInfo) -> Void)? = nil) {
+        self.models = { harnessModels(try models(), identity: identity) }; self.identity = identity; self.registry = registry; self.settings = settings; self.env = env
+        self.clock = clock; self.now = now; self.setTimer = setTimer; self.onWake = onWake; self.conversationCreated = conversationCreated; self.onReport = onReport
+    }
+    /// Adapts a callback that receives only the original error.
+    public init(models: @escaping HarnessModelsProvider, registry: any RegistryReader, identity: ClientIdentity? = nil,
+                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
+                setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
+                conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
+                onReport: @escaping @Sendable (any Error) -> Void) {
+        self.init(models: models, registry: registry, identity: identity, settings: settings, env: env, clock: clock, now: now,
                   setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
                   onReport: { error, _ in onReport(error) })
     }

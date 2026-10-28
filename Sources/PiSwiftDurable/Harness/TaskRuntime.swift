@@ -38,7 +38,13 @@ public final class TaskRuntime: Sendable {
     /// The context and cancellation signal bound to this invocation.
     public var context: ChordContext { invocation.context }
     /// The model service used by this harness or task.
-    public var models: any DurableModels { scheduler.models }
+    public var models: any DurableModels {
+        do { return try scheduler.models() }
+        catch {
+            scheduler.report(error, .hostError(callback: .models, task: invocation.reportTask))
+            return UnavailableDurableModels(error: error)
+        }
+    }
     /// The current host settings or resolved task settings.
     public var settings: Settings { scheduler.settings() }
     /// The installed extension and task definitions used by this harness.

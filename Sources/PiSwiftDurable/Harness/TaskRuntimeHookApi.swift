@@ -3,7 +3,7 @@ import PiSwiftChord
 extension TaskRuntime {
     /// Hooks share this invocation's document reads, model service, and memos.
     public var hookApi: HookApi {
-        HookApi(taskId: taskId, conversationId: conversationId, models: models,
+        HookApi(taskId: taskId, conversationId: conversationId, models: self.models,
                 read: invocationDocumentReader(), memo: { name, candidate, context in
                     try await self.memo(name, value: candidate, context: context.withAbortSignal(self.signal))
                 })

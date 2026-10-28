@@ -8,6 +8,9 @@ public final class RegistryCodemodeModels: CodemodeModels {
     private let registry: ModelRegistry
     private let durable: RegistryDurableModels
 
+    /// Returns the current identity default from the host registry.
+    public var clientIdentity: ClientIdentity? { registry.resolveClientIdentity() }
+
     private init(registry: ModelRegistry, durable: RegistryDurableModels) {
         self.registry = registry
         self.durable = durable
@@ -81,15 +84,33 @@ public final class RegistryCodemodeModels: CodemodeModels {
 
     /// Runs a classifier with host credentials and operation cancellation.
     public func classify(model: ClassifierModel, context: ClassifierContext, operation: ChordContext) async throws -> ClassifierResult {
-        await withContextCancellation(operation) { token in
-            await registry.classify(model, context: context, options: ClassifierOptions(signal: token))
-        }
+        try await classify(model: model, context: context, options: .init(), operation: operation)
+    }
+
+    /// Runs a classifier with request options and operation cancellation.
+    public func classify(model: ClassifierModel, context: ClassifierContext, options: ClassifierOptions,
+                         operation: ChordContext) async throws -> ClassifierResult {
+        let bridge = ContextCancellationBridge(context: operation, token: options.signal ?? CancellationToken())
+        defer { withExtendedLifetime(bridge) {} }
+        var prepared = options
+        prepared.signal = bridge.token
+        prepared.telemetry = options.telemetry ?? operation.telemetry
+        return await registry.classify(model, context: context, options: prepared)
     }
 
     /// Generates images with host credentials and operation cancellation.
     public func generateImages(model: ImageModel, context: ImagesContext, operation: ChordContext) async throws -> AssistantImages {
-        await withContextCancellation(operation) { token in
-            await registry.generateImages(model, context: context, options: ImagesOptions(signal: token))
-        }
+        try await generateImages(model: model, context: context, options: .init(), operation: operation)
+    }
+
+    /// Generates images with request options and operation cancellation.
+    public func generateImages(model: ImageModel, context: ImagesContext, options: ImagesOptions,
+                               operation: ChordContext) async throws -> AssistantImages {
+        let bridge = ContextCancellationBridge(context: operation, token: options.signal ?? CancellationToken())
+        defer { withExtendedLifetime(bridge) {} }
+        var prepared = options
+        prepared.signal = bridge.token
+        prepared.telemetry = options.telemetry ?? operation.telemetry
+        return await registry.generateImages(model, context: context, options: prepared)
     }
 }

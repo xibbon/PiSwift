@@ -51,7 +51,7 @@ internal final class TaskScheduler: Sendable {
     let session: Session
     let storage: any DurableStorage
     let registry: any RegistryReader
-    let models: any DurableModels
+    let models: HarnessModelsProvider
     let timers: HarnessTimers
     var clock: any DurableClock { timers.clock }
     let onWake: (@Sendable (HarnessWake) throws -> Void)?
@@ -118,7 +118,7 @@ internal final class TaskScheduler: Sendable {
     let state = Mutex(State())
     let taskWaiters = Waiters<TaskID, SettledTask>()
     let idleWaiters = Waiters<ConversationID?, Void>()
-    init(session: Session, registry: any RegistryReader, models: any DurableModels,
+    init(session: Session, registry: any RegistryReader, models: @escaping HarnessModelsProvider,
          timers: HarnessTimers, now: @escaping @Sendable () -> Int64,
          onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
          settings: @escaping @Sendable () -> Settings,

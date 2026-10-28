@@ -5,6 +5,8 @@ import PiSwiftChord
 /// The five model operations used by the durable harness.
 /// Request contexts use `PiSwiftAI.Context`; operation contexts use `ChordContext`.
 public protocol DurableModels: Sendable {
+    /// The current identity defaults supplied by the model service.
+    var clientIdentity: ClientIdentity? { get }
     /// Resolves the provider and model ID, or throws when no matching model exists.
     func getModel(provider: String, modelId: String) -> Model?
     /// Starts an assistant response stream from the selected model.
@@ -31,6 +33,9 @@ public enum DurableModelsError: Error, Sendable, Equatable, CustomStringConverti
 }
 
 extension DurableModels {
+    /// Model services without an identity policy inherit the Harness default.
+    public var clientIdentity: ClientIdentity? { nil }
+
     /// Returns one complete assistant response from the selected model.
     public func completeSimple(model: Model, context: PiSwiftAI.Context, options: SimpleStreamOptions) async -> AssistantMessage {
         await streamSimple(model: model, context: context, options: options).result()
