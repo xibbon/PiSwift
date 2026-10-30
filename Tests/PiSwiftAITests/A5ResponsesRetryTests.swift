@@ -26,7 +26,7 @@ private func a5CaptureResponsesPayload(model: Model, apiKey: String) async throw
         context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hi")))])),
         options: OpenAIResponsesOptions(
             temperature: 0.5, maxTokens: 1000, apiKey: apiKey, httpClient: client,
-            cacheRetention: .long, onPayload: { snapshot in captured.withLock { $0 = snapshot.json } },
+            cacheRetention: .long, onPayload: { snapshot in captured.withLock { $0 = snapshot.json }; return nil },
             maxRetries: 0
         )
     ).result()

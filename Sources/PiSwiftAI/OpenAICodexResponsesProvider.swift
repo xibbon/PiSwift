@@ -92,7 +92,10 @@ public func streamOpenAICodexResponses(
                 include: options.include
             )
             transformCodexRequestBody(&body, options: requestOptions, prompt: nil, model: model)
-            emitPayload(options.onPayload, jsonObject: body)
+            let requestData = try await transformPayload(options.onPayload, jsonObject: body)
+            if let replacement = try JSONSerialization.jsonObject(with: requestData) as? [String: Any] {
+                body = replacement
+            }
 
             var currentBlockIndex: Int? = nil
             var currentBlockKind: String? = nil
@@ -464,7 +467,6 @@ public func streamOpenAICodexResponses(
                 }
             }
 
-            let requestData = try JSONSerialization.data(withJSONObject: body, options: [])
             var request = URLRequest(url: codexResponsesUrl(baseUrl: model.baseUrl))
             request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
             request.httpMethod = "POST"

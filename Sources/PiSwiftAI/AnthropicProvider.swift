@@ -256,10 +256,9 @@ public func streamAnthropic(
                     isOAuthToken: isOAuthToken,
                     toolDefinitions: toolDefinitions
                 ) ?? encodedBody
-                let rawRequestBody = try prepareAnthropicRawPayload(
+                let rawRequestBody = try await transformPayload(options.onPayload, data: prepareAnthropicRawPayload(
                     constrainedBody, model: model, context: Context(messages: context.messages), options: options
-                )
-                emitPayload(options.onPayload, data: rawRequestBody)
+                ))
                 let httpClient = buildAnthropicHttpClient(
                     providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
                     isOAuthToken: isOAuthToken,

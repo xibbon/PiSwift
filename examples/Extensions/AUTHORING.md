@@ -97,7 +97,7 @@ expression. The TUI provides real implementations; in non-interactive mode
 | `agent_start` / `agent_end` | `AgentStartEvent` / `AgentEndEvent` | LLM call boundaries |
 | `turn_start` / `turn_end` | `TurnStartEvent` / `TurnEndEvent` | Each agent turn (tool-call loop iteration) |
 | `model_select` | `ModelSelectEvent` | User changed the model |
-| `before_provider_request` | `BeforeProviderRequestEvent` | About to POST to provider — payload as JSON string |
+| `before_provider_request` | `BeforeProviderRequestEvent` | Before the request is sent. Return `BeforeProviderRequestEventResult(payload: json)` to replace the JSON body. |
 | `after_provider_response` | `AfterProviderResponseEvent` | HTTP response received, before stream consume |
 | `session_before_compact` / `session_compact` | events | Compaction lifecycle |
 | `session_before_fork` / `session_before_tree` / `session_before_switch` | events | Branching & navigation |

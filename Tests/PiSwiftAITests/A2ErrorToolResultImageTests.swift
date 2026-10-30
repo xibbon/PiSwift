@@ -40,7 +40,7 @@ private func a2AnthropicImagePayload(_ context: Context, model: Model) async thr
     let snapshot = LockedState<Data?>(nil)
     _ = await streamAnthropic(model: model, context: normalizeContext(context),
         options: AnthropicOptions(apiKey: "fake-key", httpClient: client, cacheRetention: .short,
-            onPayload: { value in snapshot.withLock { $0 = Data(value.json.utf8) } }, maxRetries: 0)).result()
+            onPayload: { value in snapshot.withLock { $0 = Data(value.json.utf8) }; return nil }, maxRetries: 0)).result()
     let request = try #require(await client.request)
     let body = try #require(request.httpBody)
     let captured = try #require(snapshot.withLock { $0 })

@@ -265,7 +265,11 @@ public func streamBedrock(
         do {
             let region = resolveBedrockRegion(model: model, options: options)
             let auth = try resolveBedrockAuth(options: options)
-            let (request, body) = try buildBedrockRequest(model: model, context: context, options: options, region: region)
+            let (originalRequest, originalBody) = try buildBedrockRequest(model: model, context: context, options: options, region: region)
+            let body = try await transformPayload(options.onPayload, data: originalBody)
+            if options.signal?.isCancelled == true { throw BedrockStreamError.aborted }
+            var request = originalRequest
+            request.httpBody = body
             var signedRequest = try signBedrockRequest(request: request, body: body, region: region, auth: auth)
             signedRequest.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
 
@@ -273,6 +277,7 @@ public func streamBedrock(
             var attempt = 0
             var responseRequestId: String?
             while true {
+                if options.signal?.isCancelled == true { throw BedrockStreamError.aborted }
                 do {
                     let session = proxySession(for: signedRequest.url, env: options.env)
                     let (bytes, response) = try await session.bytes(for: signedRequest)
@@ -708,7 +713,6 @@ func buildBedrockRequest(
 
     let encoder = JSONEncoder()
     let body = try encoder.encode(requestBody)
-    emitPayload(options.onPayload, payload: requestBody)
 
     var request = URLRequest(url: url)
     request.httpMethod = "POST"

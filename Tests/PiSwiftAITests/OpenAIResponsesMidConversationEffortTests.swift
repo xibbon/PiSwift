@@ -66,7 +66,7 @@ private func runEffortResponses(
     let result = await streamOpenAIResponses(
         model: model, context: normalizeContext(Context(messages: messages)),
         options: OpenAIResponsesOptions(apiKey: apiKey, httpClient: client, reasoningEffort: effort,
-            onPayload: { value in snapshot.withLock { $0 = value.json } }, maxRetries: 0)
+            onPayload: { value in snapshot.withLock { $0 = value.json }; return nil }, maxRetries: 0)
     ).result()
     #expect(result.stopReason == (withToolCall ? .toolUse : .stop))
     let data = try #require(await client.payload())

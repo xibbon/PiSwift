@@ -141,7 +141,7 @@ public func streamAzureOpenAIResponses(
             capturedRequest.httpMethod = "POST"
             capturedRequest.httpBody = encodedQuery
             capturedRequest = middlewares.reduce(capturedRequest) { $1.intercept(request: $0) }
-            emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
+            capturedRequest.httpBody = try await transformPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
 
@@ -150,6 +150,7 @@ public func streamAzureOpenAIResponses(
                 || options.httpClient != nil
                 || options.env != nil
                 || options.onProviderStreamEvent != nil
+                || options.onPayload != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000

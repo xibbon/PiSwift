@@ -69,7 +69,7 @@ private func mistral085Payload(_ client: Mistral085Client) async throws -> [Stri
         options: MistralOptions(maxTokens: 123, apiKey: "secret", httpClient: client,
             toolChoice: AnyCodable(["type": "function", "function": ["name": "lookup"]] as [String: Any]),
             promptMode: "reasoning", reasoningEffort: "high", sessionId: "session-1", headers: ["x-custom": "value"],
-            onPayload: { snapshot in payloadSnapshot.withLock { $0 = snapshot.json } },
+            onPayload: { snapshot in payloadSnapshot.withLock { $0 = snapshot.json }; return nil },
             onResponse: { snapshot in responseSnapshot.withLock { $0 = snapshot } })).result()
     #expect(message.stopReason == .stop)
     let request = try #require(await client.lastRequest())

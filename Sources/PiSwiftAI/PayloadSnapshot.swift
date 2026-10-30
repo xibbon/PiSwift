@@ -1,29 +1,25 @@
 import Foundation
 
-func emitPayload<T: Encodable>(_ handler: PayloadHandler?, payload: T) {
-    guard let handler else { return }
-    let encoder = JSONEncoder()
-    guard let data = try? encoder.encode(payload),
-          let json = String(data: data, encoding: .utf8) else {
-        return
+/// Apply the callback after provider fields have been assembled. Keep the returned bytes
+/// so fields that are absent from an SDK request type still reach the provider.
+func transformPayload(_ handler: PayloadHandler?, data: Data) async throws -> Data {
+    guard let handler else { return data }
+    let snapshot = PayloadSnapshot(json: String(decoding: data, as: UTF8.self))
+    guard let replacement = try await handler(snapshot) else { return data }
+    let replacementData = Data(replacement.json.utf8)
+    guard case .object = try OrderedJSON.parse(replacement.json) else {
+        throw PayloadError.expectedObject
     }
-    handler(PayloadSnapshot(json: json))
+    return replacementData
 }
 
-func emitPayload(_ handler: PayloadHandler?, jsonObject: Any) {
-    guard let handler else { return }
-    guard JSONSerialization.isValidJSONObject(jsonObject),
-          let data = try? JSONSerialization.data(withJSONObject: jsonObject, options: []),
-          let json = String(data: data, encoding: .utf8) else {
-        return
-    }
-    handler(PayloadSnapshot(json: json))
+func transformPayload(_ handler: PayloadHandler?, jsonObject: Any) async throws -> Data {
+    let data = try JSONSerialization.data(withJSONObject: jsonObject)
+    return try await transformPayload(handler, data: data)
 }
 
-func emitPayload(_ handler: PayloadHandler?, data: Data) {
-    guard let handler,
-          let json = String(data: data, encoding: .utf8) else {
-        return
-    }
-    handler(PayloadSnapshot(json: json))
+private enum PayloadError: LocalizedError {
+    case expectedObject
+
+    var errorDescription: String? { "The provider request payload must be a JSON object" }
 }

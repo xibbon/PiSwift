@@ -36,7 +36,7 @@ private func r1Capture(_ api: Api = .openAIResponses, compat: OpenAICompat = r1C
                        messages: [Message], choice: OpenAIToolChoice? = nil) async throws -> [String: Any] {
     let client = R1CaptureClient()
     let snapshot = Mutex<String?>(nil)
-    let callback: PayloadHandler = { value in snapshot.withLock { $0 = value.json } }
+    let callback: PayloadHandler = { value in snapshot.withLock { $0 = value.json }; return nil }
     let context = normalizeContext(Context(messages: messages))
     let model = r1Model(api, compat: compat)
     switch api {

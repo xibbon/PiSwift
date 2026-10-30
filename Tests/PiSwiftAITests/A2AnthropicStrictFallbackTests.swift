@@ -73,7 +73,7 @@ struct A2AnthropicStrictFallbackTests {
         let payloadCalls = LockedState(0)
         let responseCalls = LockedState(0)
         var options = fallbackOptions(client)
-        options.onPayload = { _ in payloadCalls.withLock { $0 += 1 } }
+        options.onPayload = { _ in payloadCalls.withLock { $0 += 1 }; return nil }
         options.onResponse = { _ in responseCalls.withLock { $0 += 1 } }
         let stream = streamAnthropic(model: fallbackModel(), context: context, options: options)
         var eventTypes: [String] = []

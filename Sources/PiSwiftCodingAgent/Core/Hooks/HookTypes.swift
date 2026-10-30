@@ -1692,6 +1692,15 @@ public struct BeforeProviderRequestEvent: HookEvent, Sendable {
     }
 }
 
+/// Replaces the JSON payload before the provider request is sent.
+public struct BeforeProviderRequestEventResult: Sendable {
+    public var payload: String
+
+    public init(payload: String) {
+        self.payload = payload
+    }
+}
+
 public struct CacheWarmingDecisionEventResult: Sendable {
     public var action: CacheWarmingAction?
 

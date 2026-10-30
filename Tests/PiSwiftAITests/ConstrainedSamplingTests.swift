@@ -240,6 +240,7 @@ private func applyResponsesMiddleware(
                 apiKey: "test-key",
                 onPayload: { snapshot in
                     capturedPayload.withLock { $0 = snapshot.json }
+                    return nil
                 }
             )
         )

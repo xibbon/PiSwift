@@ -36,8 +36,7 @@ public func streamMistral(
                 normalizer: normalizer
             )
 
-            emitPayload(options.onPayload, jsonObject: payload)
-            let bodyData = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let bodyData = try await transformPayload(options.onPayload, jsonObject: payload)
 
             var request = URLRequest(url: mistralChatCompletionsUrl(baseUrl: model.baseUrl))
             // Keep the nominal deadline for custom clients. The transport policy below prevents

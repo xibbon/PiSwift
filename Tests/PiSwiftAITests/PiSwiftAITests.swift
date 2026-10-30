@@ -1829,7 +1829,7 @@ private func runCodexSessionRequest(
             ])),
             options: OpenAICompletionsOptions(
                 apiKey: "test-key",
-                onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json } }
+                onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json }; return nil }
             )
         )
         _ = await stream.result()
@@ -3288,6 +3288,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 toolChoice: .required,
                 onPayload: { snapshot in
                     capturedPayloadJson.withLock { $0 = snapshot.json }
+                    return nil
                 }
             )
         )
@@ -3454,7 +3455,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 options: OpenAICompletionsOptions(
                     apiKey: "test-key",
                     reasoningEffort: .xhigh,
-                    onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json } }
+                    onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json }; return nil }
                 )
             )
             _ = await stream.result()
@@ -5976,7 +5977,7 @@ struct ApiRegistryTests {
             options: GoogleOptions(
                 apiKey: "google-key",
                 thinking: GoogleOptions.ThinkingConfig(enabled: false),
-                onPayload: { snapshot in capturedPayload.withLock { $0 = snapshot.json } }
+                onPayload: { snapshot in capturedPayload.withLock { $0 = snapshot.json }; return nil }
             )
         )
         for await _ in stream {}
@@ -6064,7 +6065,7 @@ struct ApiRegistryTests {
                         thinking: GoogleOptions.ThinkingConfig(enabled: false),
                         project: "proj-test",
                         location: "us-central1",
-                        onPayload: { snapshot in capturedPayload.withLock { $0 = snapshot.json } }
+                        onPayload: { snapshot in capturedPayload.withLock { $0 = snapshot.json }; return nil }
                     )
                 )
                 for await _ in stream {}
@@ -6264,7 +6265,7 @@ struct ApiRegistryTests {
         cacheRetention: .short,
         sessionId: "session-1",
         headers: ["X-Test": "1"],
-        onPayload: { _ in },
+        onPayload: { _ in nil },
         maxRetryDelayMs: 1234,
         metadata: ["trace": AnyCodable("yes")],
         onResponse: { _ in },
@@ -6695,7 +6696,7 @@ struct ApiRegistryTests {
         ]),
         options: ImagesOptions(
             apiKey: "test-key",
-            onPayload: { snapshot in payloadJSON.withLock { $0 = snapshot.json } },
+            onPayload: { snapshot in payloadJSON.withLock { $0 = snapshot.json }; return nil },
             onResponse: { response in responseStatus.withLock { $0 = response.statusCode } },
             headers: ["X-Test": "1"],
             timeoutMs: 1000,

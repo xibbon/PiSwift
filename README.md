@@ -259,6 +259,35 @@ names. The corrections apply to the built-in catalog and to the pi.dev catalog
 overlay. Names from `models.json` are not changed. See
 `Scripts/model-name-audit.md` for the decisions and sources.
 
+## Provider request payloads
+
+Use `onPayload` to inspect or replace the final JSON request body. The provider
+waits for this async callback before it sends the request. Return `nil` to keep
+the body. Return a `PayloadSnapshot` with a JSON object to replace it. A thrown
+error stops the request before transport retries start.
+
+For example, set the service tier on an OpenAI request:
+
+```swift
+let options = SimpleStreamOptions(onPayload: { snapshot in
+    guard var payload = try JSONSerialization.jsonObject(
+        with: Data(snapshot.json.utf8)
+    ) as? [String: Any] else { return nil }
+    payload["service_tier"] = "fast"
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    return PayloadSnapshot(json: String(decoding: data, as: UTF8.self))
+})
+```
+
+This also works through `AgentOptions.onPayload`. Coding agent extensions can
+return `BeforeProviderRequestEventResult(payload: json)` from a
+`before_provider_request` handler. Handlers run in order; each handler receives
+the payload returned by the previous handler. A `nil` result keeps that payload.
+As with other extension hooks, handler errors are reported and later handlers
+continue.
+
+Existing callbacks that only inspect the payload must now return `nil`.
+
 ## Strict concurrency + errors
 
 This port builds with strict concurrency. Some lock-backed wrappers still use

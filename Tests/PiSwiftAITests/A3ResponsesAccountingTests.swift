@@ -104,7 +104,7 @@ private func a3ResponsesSSE(_ events: [[String: Any]]) throws -> Data {
         model: a3ResponsesModel(), context: normalizeContext(Context(messages: [])),
         options: OpenAIResponsesOptions(
             apiKey: "test", httpClient: A3ResponsesClient(body: try a3ResponsesSSE(events)),
-            serviceTier: .fast, onPayload: { payload in captured.withLock { $0 = payload.json } }
+            serviceTier: .fast, onPayload: { payload in captured.withLock { $0 = payload.json }; return nil }
         )
     ).result()
     #expect(result.stopReason == .stop)

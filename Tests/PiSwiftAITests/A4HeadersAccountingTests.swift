@@ -216,7 +216,7 @@ func a4AnthropicUnsignedThinkingReplayFollowsCompat(allowEmptySignature: Bool) a
         context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("start"))),
             .assistant(earlier), .user(UserMessage(content: .text("continue")))])),
         options: AnthropicOptions(apiKey: "fixture-key", httpClient: client,
-            cacheRetention: .short, onPayload: { snapshot in captured.withLock { $0 = snapshot.json } },
+            cacheRetention: .short, onPayload: { snapshot in captured.withLock { $0 = snapshot.json }; return nil },
             maxRetries: 0)).result()
     let json = try #require(captured.withLock { $0 })
     let body = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])

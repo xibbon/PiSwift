@@ -297,7 +297,7 @@ public func streamOpenAIResponses(
                     return true
                 }
             }
-            emitPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
+            capturedRequest.httpBody = try await transformPayload(options.onPayload, data: capturedRequest.httpBody ?? encodedQuery)
             client = builtClient
             query = builtQuery
             if model.api == .openAIResponses
@@ -306,6 +306,7 @@ public func streamOpenAIResponses(
                 || options.httpClient != nil
                 || options.env != nil
                 || options.onProviderStreamEvent != nil
+                || options.onPayload != nil
                 || (options.maxRetries ?? 0) > 0 {
                 var request = capturedRequest
                 request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000

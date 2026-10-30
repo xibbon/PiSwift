@@ -206,7 +206,7 @@ private func azureA1Simple(_ client: AzureA1HTTPClient, options: SimpleStreamOpt
     let snapshot = LockedState<String?>(nil)
     _ = await azureA1Direct(client, options: OpenAICompletionsOptions(
         samplingParams: ["model": AnyCodable("sampling-model"), "temperature": AnyCodable(0.1)],
-        onPayload: { payload in snapshot.withLock { $0 = payload.json } }, azureDeploymentName: "my-deepseek"))
+        onPayload: { payload in snapshot.withLock { $0 = payload.json }; return nil }, azureDeploymentName: "my-deepseek"))
     let json = try #require(snapshot.withLock { $0 })
     let observed = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     #expect(observed["model"] as? String == "my-deepseek")

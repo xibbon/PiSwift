@@ -28,8 +28,8 @@ public func streamGoogleVertex(
             let location = try resolveVertexLocation(options: options)
             let accessToken = try resolveVertexAccessToken(options: options)
 
-            let requestBody = try buildVertexRequestBody(model: model, context: context, options: options)
-            emitPayload(options.onPayload, data: requestBody)
+            let requestBody = try await transformPayload(options.onPayload,
+                data: buildVertexRequestBody(model: model, context: context, options: options))
             let url = try vertexStreamUrl(model: model, project: project, location: location)
             var request = URLRequest(url: url)
             request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0

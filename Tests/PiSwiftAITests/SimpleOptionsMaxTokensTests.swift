@@ -68,6 +68,7 @@ struct SimpleOptionsMaxTokensTests {
             onPayload: { snapshot in
                 payload.withLock { $0 = snapshot.json }
                 token.cancel()
+                return nil
             },
             maxRetries: 0
         )

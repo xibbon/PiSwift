@@ -56,8 +56,7 @@ public func generateImagesOpenRouter(
         }
 
         let payload = try buildOpenRouterImagesPayload(model: model, context: context)
-        emitPayload(options.onPayload, jsonObject: payload)
-        let body = try JSONSerialization.data(withJSONObject: payload)
+        let body = try await transformPayload(options.onPayload, jsonObject: payload)
 
         let request = try buildOpenRouterImagesRequest(model: model, apiKey: apiKey, options: options, body: body)
         let (data, response) = try await performOpenRouterImagesRequest(

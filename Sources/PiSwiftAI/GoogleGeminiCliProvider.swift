@@ -84,8 +84,7 @@ public func streamGoogleGeminiCli(
             let endpoints = baseUrl.isEmpty ? (isAntigravity ? antigravityEndpointFallbacks : [defaultGeminiCliEndpoint]) : [baseUrl]
 
             let requestBody = try buildGeminiCliRequest(model: model, context: context, projectId: projectId, options: options, isAntigravity: isAntigravity)
-            emitPayload(options.onPayload, jsonObject: requestBody)
-            let requestData = try JSONSerialization.data(withJSONObject: requestBody, options: [])
+            let requestData = try await transformPayload(options.onPayload, jsonObject: requestBody)
 
             var baseHeaders = isAntigravity ? antigravityHeaders : geminiCliHeaders
             if isAntigravity {

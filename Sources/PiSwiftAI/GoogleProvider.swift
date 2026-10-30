@@ -28,8 +28,8 @@ public func streamGoogle(
                 throw GoogleProviderError.aborted
             }
 
-            let requestBody = try buildGoogleRequestBody(model: model, context: context, options: options)
-            emitPayload(options.onPayload, data: requestBody)
+            let requestBody = try await transformPayload(options.onPayload,
+                data: buildGoogleRequestBody(model: model, context: context, options: options))
             let url = try googleStreamUrl(model: model, apiKey: apiKey)
             var request = URLRequest(url: url)
             request.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0

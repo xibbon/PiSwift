@@ -35,7 +35,7 @@ private func thinkingSamplingPayload(
 ) async throws -> [String: Any] {
     let captured = LockedState<String?>(nil)
     let client = ThinkingSamplingHTTPClient()
-    let onPayload: PayloadHandler = { snapshot in captured.withLock { $0 = snapshot.json } }
+    let onPayload: PayloadHandler = { snapshot in captured.withLock { $0 = snapshot.json }; return nil }
     let context = normalizeContext(Context(messages: [.user(UserMessage(content: .text("Hello")))]))
     if simple {
         let options = SimpleStreamOptions(samplingParams: request, apiKey: "test", httpClient: client,
@@ -153,7 +153,7 @@ private func thinkingSamplingPayload(
             .medium: ["temperature": AnyCodable(0.8), "top_k": AnyCodable(64)]])
         let captured = LockedState<String?>(nil)
         let options = SimpleStreamOptions(apiKey: "test", httpClient: ThinkingSamplingHTTPClient(),
-            reasoning: .low, onPayload: { snapshot in captured.withLock { $0 = snapshot.json } }, maxRetries: 0)
+            reasoning: .low, onPayload: { snapshot in captured.withLock { $0 = snapshot.json }; return nil }, maxRetries: 0)
         var mapped = mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: "test")
         #expect(mapped.samplingParams?["temperature"] == AnyCodable(0.6))
         mapped.reasoningEffort = .medium

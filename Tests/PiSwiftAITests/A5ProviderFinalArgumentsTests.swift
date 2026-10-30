@@ -242,7 +242,7 @@ func a5CodexRequestUsesUniqueFallbackIDsForTwoTextBlocks() async throws {
     let token = Data(#"{"https://api.openai.com/auth":{"chatgpt_account_id":"test"}}"#.utf8).base64EncodedString()
     let result = await streamOpenAICodexResponses(model: model, context: normalizeContext(context),
         options: OpenAICodexResponsesOptions(apiKey: "e30.\(token).sig", httpClient: client, transport: .sse,
-            onPayload: { snapshot in payload.withLock { $0 = snapshot.json } })).result()
+            onPayload: { snapshot in payload.withLock { $0 = snapshot.json }; return nil })).result()
     #expect(result.stopReason == .stop, "\(result.errorMessage ?? "")")
     let json = try #require(payload.withLock { $0 })
     let body = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])

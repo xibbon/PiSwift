@@ -1033,11 +1033,9 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
 
     // Wire onPayload to emit BeforeProviderRequestEvent to extensions.
     let onPayloadHook: OnPayloadFn? = { [hookRunner] snapshot in
-        guard hookRunner.hasHandlers("before_provider_request") else { return }
-        let event = BeforeProviderRequestEvent(payload: snapshot.json)
-        Task {
-            _ = await hookRunner.emit(event)
-        }
+        guard hookRunner.hasHandlers("before_provider_request") else { return nil }
+        guard let payload = await hookRunner.emitBeforeProviderRequest(snapshot.json) else { return nil }
+        return PayloadSnapshot(json: payload)
     }
 
     // v0.68.0: wire onResponse to emit AfterProviderResponseEvent so extensions can

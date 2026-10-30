@@ -964,6 +964,23 @@ public final class HookRunner: Sendable {
     @available(*, unavailable, message: "Use emitBoundary(_:buildContext:) for agent_before_settle")
     public func emit(_ event: AgentBeforeSettleEvent) async -> Any? { nil }
 
+    /// Apply payload replacements in handler order. Each handler receives the
+    /// current payload. Return nil when no handler replaces the payload.
+    public func emitBeforeProviderRequest(_ payload: String) async -> String? {
+        var currentPayload = payload
+        var modified = false
+        await dispatchEvent(BeforeProviderRequestEvent(payload: payload), eventForHandler: {
+            BeforeProviderRequestEvent(payload: currentPayload)
+        }) { result, _ in
+            if let result = result as? BeforeProviderRequestEventResult {
+                currentPayload = result.payload
+                modified = true
+            }
+            return false
+        }
+        return modified ? currentPayload : nil
+    }
+
     /// Apply each returned header set in handler order.
     /// A nil value deletes a provider or API default header.
     public func emitBeforeProviderHeaders(_ headers: ProviderHeaders) async -> ProviderHeaders {

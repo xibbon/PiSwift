@@ -42,12 +42,12 @@ private func a3SamplingPayload(
     if simple {
         let options = SimpleStreamOptions(temperature: temperature, samplingParams: requestSampling,
             apiKey: "test", httpClient: client,
-            onPayload: { snapshot in captured.withLock { $0 = snapshot.json } }, maxRetries: 0)
+            onPayload: { snapshot in captured.withLock { $0 = snapshot.json }; return nil }, maxRetries: 0)
         // Use the same mapper as streamSimple without touching its process-wide provider registry.
         let mapped = mapOpenAICompletionsSimpleOptions(model: model, options: options, apiKey: "test")
         _ = await streamOpenAICompletions(model: model, context: context, options: mapped).result()
     } else {
-        let onPayload: PayloadHandler = { snapshot in captured.withLock { $0 = snapshot.json } }
+        let onPayload: PayloadHandler = { snapshot in captured.withLock { $0 = snapshot.json }; return nil }
         switch api {
         case .openAICompletions:
             _ = await streamOpenAICompletions(model: model, context: context,
@@ -185,7 +185,7 @@ private func a3AnthropicCacheEvents(startDetail: [String: Int]?, deltaDetail: [S
             .user(UserMessage(content: .text("second")))])
         let captured = LockedState<String?>(nil)
         let options = SimpleStreamOptions(apiKey: "test", httpClient: A3PresentHTTPClient(),
-            onPayload: { snapshot in captured.withLock { $0 = snapshot.json } }, maxRetries: 0)
+            onPayload: { snapshot in captured.withLock { $0 = snapshot.json }; return nil }, maxRetries: 0)
         _ = await (try streamSimple(model: model, context: context, options: options)).result()
         let payload = try a3Payload(captured)
         let messages = try #require(payload["messages"] as? [[String: Any]])

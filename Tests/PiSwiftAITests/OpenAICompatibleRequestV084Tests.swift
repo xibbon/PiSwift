@@ -51,7 +51,7 @@ private func captureCompletionsPayload(
     }
 
     var resolvedOptions = options
-    resolvedOptions.onPayload = { snapshot in captured.withLock { $0 = snapshot.json } }
+    resolvedOptions.onPayload = { snapshot in captured.withLock { $0 = snapshot.json }; return nil }
     resolvedOptions.maxRetries = 0
     let stream = streamOpenAICompletions(
         model: model,
@@ -83,7 +83,7 @@ private func captureResponsesPayload(
     }
 
     var resolvedOptions = options
-    resolvedOptions.onPayload = { snapshot in captured.withLock { $0 = snapshot.json } }
+    resolvedOptions.onPayload = { snapshot in captured.withLock { $0 = snapshot.json }; return nil }
     resolvedOptions.maxRetries = 0
     let stream = streamOpenAIResponses(
         model: model,
@@ -115,7 +115,7 @@ private func captureAzureResponsesPayload(
 
     var resolvedOptions = options
     resolvedOptions.azureBaseUrl = "https://sampling-azure.example/openai/v1"
-    resolvedOptions.onPayload = { snapshot in captured.withLock { $0 = snapshot.json } }
+    resolvedOptions.onPayload = { snapshot in captured.withLock { $0 = snapshot.json }; return nil }
     resolvedOptions.maxRetries = 0
     let stream = streamAzureOpenAIResponses(
         model: model,
@@ -220,7 +220,7 @@ private func captureAzureResponsesPayload(
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
             options: GoogleOptions(
                 apiKey: "test-key",
-                onPayload: { snapshot in captured.withLock { $0 = snapshot.json } },
+                onPayload: { snapshot in captured.withLock { $0 = snapshot.json }; return nil },
                 maxRetries: 0
             )
         )

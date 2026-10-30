@@ -475,7 +475,10 @@ public struct PayloadSnapshot: Sendable {
     }
 }
 
-public typealias PayloadHandler = @Sendable (PayloadSnapshot) -> Void
+/// Inspect or replace the final provider request body before it is sent.
+/// Return nil to keep the body. A replacement must contain a JSON object.
+/// The provider waits for the handler; a thrown error stops the request.
+public typealias PayloadHandler = @Sendable (PayloadSnapshot) async throws -> PayloadSnapshot?
 
 /// v0.67.6: snapshot of the provider HTTP response surfaced via `onResponse`.
 /// Exposes status and headers so callers (e.g., extensions, telemetry) can inspect

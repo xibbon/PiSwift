@@ -872,7 +872,7 @@ private func streamZaiCompletions(
     body = applyOpenAISamplingParams(data: body, samplingParams: options.samplingParams)
     request.httpBody = body
     request = applyingAzureDeploymentName(request, model: model, options: options)
-    emitPayload(options.onPayload, data: requestBodyData(request))
+    request.httpBody = try await transformPayload(options.onPayload, data: requestBodyData(request))
     return try await streamChatCompletions(request: request, model: model, options: options)
 }
 
@@ -1446,7 +1446,7 @@ private func streamManualOpenAICompletions(
         to: &request
     )
     request = applyingAzureDeploymentName(request, model: model, options: options)
-    emitPayload(options.onPayload, data: requestBodyData(request))
+    request.httpBody = try await transformPayload(options.onPayload, data: requestBodyData(request))
     return try await streamChatCompletions(request: request, model: model, options: options)
 }
 
