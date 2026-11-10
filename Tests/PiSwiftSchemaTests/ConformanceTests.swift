@@ -55,7 +55,6 @@ private func suiteCases() throws -> [SuiteCase] {
     for draft in ["draft2020-12", "draft7"] {
         for url in try jsonFiles(root.appendingPathComponent(draft)) {
             let name = String(url.path.dropFirst(root.path.count + 1).dropLast(5))
-            if name.contains("/optional/format/") { continue }
             guard case let .array(groups) = try SchemaValue.parse(json: Data(contentsOf: url)) else { throw FixtureError.invalid(name) }
             for group in groups {
                 guard case let .object(group) = group,
@@ -77,7 +76,7 @@ private enum FixtureError: Error { case invalid(String) }
 
 @Test(arguments: try suiteCases()) private func jsonSchemaConformance(item: SuiteCase) throws {
     let schemas = try sharedSchemas.get()
-    let validator = try compile(item.schema, options: .init(draft: item.draft == "draft7" ? .draft7 : .draft2020_12, schemas: schemas))
+    let validator = try compile(item.schema, options: .init(draft: item.draft == "draft7" ? .draft7 : .draft2020_12, formats: item.id.contains("/optional/format/") ? standardFormats : nil, schemas: schemas))
     let actual = validator.check(item.data)
     #expect(validator.errors(item.data).isEmpty == actual, "Errors agree with check: \(item.id)")
     if knownFailures.contains(item.id) {
@@ -95,6 +94,7 @@ private struct ErrorFixtureCase: Sendable, CustomTestStringConvertible {
     let schema: SchemaValue
     let data: SchemaValue
     let expected: [SchemaIssue]
+    let format: Bool
 }
 
 private func errorFixtureCases() throws -> [ErrorFixtureCase] {
@@ -130,7 +130,8 @@ private func errorFixtureCases() throws -> [ErrorFixtureCase] {
             }
             cases.append(ErrorFixtureCase(id: "\(name)/\(groupNumber)/\(testNumber)",
                                           draft: name.hasPrefix("draft7/") ? .draft7 : .draft2020_12,
-                                          reject: false, schema: schema, data: data, expected: expected))
+                                          reject: false, schema: schema, data: data, expected: expected,
+                                          format: name.contains("/optional/format/")))
         } else {
             guard let id = row["id"]?.stringValue, let schema = row["schema"], let data = row["data"] else {
                 throw FixtureError.invalid("extra error case")
@@ -139,20 +140,29 @@ private func errorFixtureCases() throws -> [ErrorFixtureCase] {
             cases.append(ErrorFixtureCase(id: id,
                                           draft: options?["draft"] == .string("7") ? .draft7 : .draft2020_12,
                                           reject: options?["unresolvedRefs"] == .string("reject"),
-                                          schema: schema, data: data, expected: expected))
+                                          schema: schema, data: data, expected: expected, format: false))
         }
     }
     return cases
 }
 
 @Test(arguments: try errorFixtureCases()) private func differentialErrors(item: ErrorFixtureCase) throws {
-    let validator = try compile(item.schema, options: .init(draft: item.draft, schemas: try sharedSchemas.get(),
+    let validator = try compile(item.schema, options: .init(draft: item.draft, formats: item.format ? standardFormats : nil, schemas: try sharedSchemas.get(),
                                                             unresolvedRefs: item.reject ? .reject : .throw))
     #expect(validator.errors(item.data) == item.expected, "\(item.id)")
 }
 
 @Test func knownFailureNamesExist() throws {
     #expect(knownFailures.isSubset(of: Set(try suiteCases().map(\.id))))
+}
+
+@Test func formatConformanceCoverage() throws {
+    let root = fixtures.appendingPathComponent("json-schema-test-suite/tests")
+    let files = try ["draft2020-12", "draft7"].flatMap {
+        try jsonFiles(root.appendingPathComponent($0))
+    }.filter { $0.path.contains("/optional/format/") }
+    #expect(files.count == 40)
+    #expect(try suiteCases().filter { $0.id.contains("/optional/format/") }.count == 1_710)
 }
 
 private struct DifferentialCase: Sendable, CustomTestStringConvertible {
@@ -164,6 +174,7 @@ private struct DifferentialCase: Sendable, CustomTestStringConvertible {
     let reject: Bool
     let expected: Bool?
     let thrown: String?
+    let format: Bool
 }
 
 private func differentialCases() throws -> [DifferentialCase] {
@@ -176,7 +187,7 @@ private func differentialCases() throws -> [DifferentialCase] {
             throw FixtureError.invalid("differential JSONL")
         }
         // Swift SchemaValue represents JSON only; JS undefined and bigint have no JSON value.
-        if item["format"] == .bool(true) || item["dataKind"] != nil { continue }
+        if item["dataKind"] != nil { continue }
         let draft: String
         if case let .string(value)? = item["draft"] { draft = value } else { draft = "2020-12" }
         let expected: Bool?
@@ -184,13 +195,15 @@ private func differentialCases() throws -> [DifferentialCase] {
         let thrown: String?
         if case let .string(value)? = item["thrown"] { thrown = value } else { thrown = nil }
         cases.append(DifferentialCase(id: id, schema: schema, data: data, draft: draft,
-                                      reject: item["unresolvedRefs"] == .string("reject"), expected: expected, thrown: thrown))
+                                      reject: item["unresolvedRefs"] == .string("reject"), expected: expected, thrown: thrown,
+                                      format: item["format"] == .bool(true)))
     }
     return cases
 }
 
 @Test(arguments: try differentialCases()) private func differentialCheck(item: DifferentialCase) throws {
     let options = CompileOptions(draft: item.draft == "7" ? .draft7 : .draft2020_12,
+                                 formats: item.format ? standardFormats : nil,
                                  schemas: try sharedSchemas.get(), unresolvedRefs: item.reject ? .reject : .throw)
     if let expected = item.expected {
         let validator = try compile(item.schema, options: options)

@@ -1,5 +1,5 @@
 // Ported from packages/schema/test/validator.test.ts at pi-mono v1.5.2.
-// JavaScript-only values, built-in formats, and coercion are outside this test group.
+// JavaScript-only values and coercion are outside this test group.
 import Foundation
 import Testing
 import PiSwiftSchema
@@ -82,11 +82,26 @@ import PiSwiftSchema
     func customFormatOptions() throws {
         let schema = ##"{"type":"string","format":"email"}"##
         #expect(try validator(schema).check(.string("not an email")))
-        // The custom format tests the options API. Built-in email rules are in S2.
+        let builtIn = try validator(schema, .init(formats: standardFormats))
+        #expect(!builtIn.check(.string("not an email")))
+        #expect(builtIn.check(.string("a@example.com")))
+        // The custom format also tests the options API.
         let options = CompileOptions(formats: ["email": { $0 == "a@example.com" }])
         let v = try validator(schema, options)
         #expect(!v.check(.string("not an email")))
         #expect(v.check(.string("a@example.com")))
+    }
+
+    @Test("checks TypeBox's url and json-pointer-uri-fragment formats")
+    func extraFormats() throws {
+        let url = try validator(##"{"type":"string","format":"url"}"##, .init(formats: standardFormats))
+        #expect(url.check(.string("https://example.com/a?b=1")))
+        #expect(!url.check(.string("not a url")))
+        let fragment = try validator(##"{"type":"string","format":"json-pointer-uri-fragment"}"##,
+                                     .init(formats: standardFormats))
+        #expect(fragment.check(.string("#/a/b~1c")))
+        #expect(!fragment.check(.string("#/a b")))
+        #expect(!fragment.check(.string("/a")))
     }
 
     @Test("resolves $ref to registered documents; throws for a $ref that names nothing")

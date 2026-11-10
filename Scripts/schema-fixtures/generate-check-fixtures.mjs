@@ -58,6 +58,7 @@ try {
     if (readFileSync(objectOutput, 'utf8') !== objectBytes) throw new Error('Object text fixture differs');
   } else writeFileSync(objectOutput, objectBytes);
   const bytes = lines.join('\n') + '\n';
+  if (Buffer.byteLength(bytes) > 1_500_000) throw new Error('Check fixture exceeds 1.5 MB');
   if (process.argv.includes('--check')) {
     if (readFileSync(output, 'utf8') !== bytes) throw new Error('Generated fixture differs');
   } else writeFileSync(output, bytes);
