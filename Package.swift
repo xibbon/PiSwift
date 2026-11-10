@@ -26,6 +26,7 @@ let package = Package(
             name: "PiSwiftChord",
             targets: ["PiSwiftChord"]
         ),
+        .library(name: "PiSwiftSchema", targets: ["PiSwiftSchema"]),
         .library(
             name: "PiSwiftAI",
             targets: ["PiSwiftAI"]
@@ -100,6 +101,10 @@ let package = Package(
         ),
         .target(
             name: "PiSwiftTelemetry",
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiSwiftSchema",
             swiftSettings: strictConcurrencySettings
         ),
         .target(
@@ -217,6 +222,12 @@ let package = Package(
         .testTarget(
             name: "PiSwiftChordTests",
             dependencies: ["PiSwiftChord"],
+            resources: [.copy("Fixtures")],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiSwiftSchemaTests",
+            dependencies: ["PiSwiftSchema"],
             resources: [.copy("Fixtures")],
             swiftSettings: strictConcurrencySettings
         ),
