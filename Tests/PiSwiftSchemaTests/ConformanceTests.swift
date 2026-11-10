@@ -79,11 +79,76 @@ private enum FixtureError: Error { case invalid(String) }
     let schemas = try sharedSchemas.get()
     let validator = try compile(item.schema, options: .init(draft: item.draft == "draft7" ? .draft7 : .draft2020_12, schemas: schemas))
     let actual = validator.check(item.data)
+    #expect(validator.errors(item.data).isEmpty == actual, "Errors agree with check: \(item.id)")
     if knownFailures.contains(item.id) {
         #expect(actual != item.valid, "Known failure now passes: \(item.id)")
     } else {
         #expect(actual == item.valid, "\(item.id): expected \(item.valid), got \(actual)")
     }
+}
+
+private struct ErrorFixtureCase: Sendable, CustomTestStringConvertible {
+    var testDescription: String { id }
+    let id: String
+    let draft: SchemaDraft
+    let reject: Bool
+    let schema: SchemaValue
+    let data: SchemaValue
+    let expected: [SchemaIssue]
+}
+
+private func errorFixtureCases() throws -> [ErrorFixtureCase] {
+    let url = fixtures.appendingPathComponent("generated/errors-v1.5.2.jsonl")
+    let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+    var files: [String: [SchemaValue]] = [:]
+    var cases: [ErrorFixtureCase] = []
+    for line in lines.dropFirst() {
+        guard case let .object(row) = try SchemaValue.parse(json: String(line)),
+              case let .array(issues)? = row["expected"] else { throw FixtureError.invalid("error JSONL") }
+        let expected = try issues.map { issue -> SchemaIssue in
+            guard case let .object(item) = issue,
+                  let path = item["path"]?.stringValue,
+                  let keyword = item["keyword"]?.stringValue,
+                  let message = item["message"]?.stringValue else { throw FixtureError.invalid("issue") }
+            return SchemaIssue(path: path, keyword: keyword, message: message)
+        }
+        if let name = row["file"]?.stringValue {
+            if files[name] == nil {
+                let file = fixtures.appendingPathComponent("json-schema-test-suite/tests/\(name).json")
+                guard case let .array(groups) = try SchemaValue.parse(json: Data(contentsOf: file)) else {
+                    throw FixtureError.invalid(name)
+                }
+                files[name] = groups
+            }
+            guard let groups = files[name], let groupNumber = row["group"]?.numberValue.map(Int.init),
+                  let testNumber = row["test"]?.numberValue.map(Int.init),
+                  groups.indices.contains(groupNumber),
+                  case let .object(group) = groups[groupNumber], let schema = group["schema"],
+                  case let .array(tests)? = group["tests"], tests.indices.contains(testNumber),
+                  case let .object(test) = tests[testNumber], let data = test["data"] else {
+                throw FixtureError.invalid(name)
+            }
+            cases.append(ErrorFixtureCase(id: "\(name)/\(groupNumber)/\(testNumber)",
+                                          draft: name.hasPrefix("draft7/") ? .draft7 : .draft2020_12,
+                                          reject: false, schema: schema, data: data, expected: expected))
+        } else {
+            guard let id = row["id"]?.stringValue, let schema = row["schema"], let data = row["data"] else {
+                throw FixtureError.invalid("extra error case")
+            }
+            let options = row["options"]?.objectValue
+            cases.append(ErrorFixtureCase(id: id,
+                                          draft: options?["draft"] == .string("7") ? .draft7 : .draft2020_12,
+                                          reject: options?["unresolvedRefs"] == .string("reject"),
+                                          schema: schema, data: data, expected: expected))
+        }
+    }
+    return cases
+}
+
+@Test(arguments: try errorFixtureCases()) private func differentialErrors(item: ErrorFixtureCase) throws {
+    let validator = try compile(item.schema, options: .init(draft: item.draft, schemas: try sharedSchemas.get(),
+                                                            unresolvedRefs: item.reject ? .reject : .throw))
+    #expect(validator.errors(item.data) == item.expected, "\(item.id)")
 }
 
 @Test func knownFailureNamesExist() throws {

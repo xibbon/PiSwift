@@ -67,3 +67,33 @@ import PiSwiftSchema
     #expect(validator.check(.string("ok")))
     #expect(!validator.check(.number(3)))
 }
+
+@Test(arguments: [
+    #"{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]}"#,
+    ##"{"$id":"https://example.test/tree.json","type":"object","properties":{"n":{"type":"integer"},"children":{"type":"array","items":{"$ref":"#"}}},"required":["n"]}"##,
+    ##"{"$id":"https://example.test/dynamic.json","$dynamicAnchor":"node","type":"object","properties":{"n":{"type":"integer"},"children":{"type":"array","items":{"$dynamicRef":"#node"}}},"required":["n"]}"##,
+])
+func validatorErrorsAndChecksConcurrently(schemaText: String) async throws {
+    let validator = try compile(.parse(json: schemaText))
+    let valid = try SchemaValue.parse(json: #"{"n":1,"children":[]}"#)
+    let invalid = try SchemaValue.parse(json: #"{"n":"x","children":[{"n":2,"children":[]}] }"#)
+    let expected = validator.errors(invalid)
+    #expect(!expected.isEmpty)
+    let results = await withTaskGroup(of: Bool.self, returning: [Bool].self) { group in
+        for index in 0..<256 {
+            group.addTask {
+                switch index % 4 {
+                case 0: return validator.check(valid)
+                case 1: return !validator.check(invalid)
+                case 2: return validator.errors(invalid) == expected
+                default: return validator.errors(valid).isEmpty
+                }
+            }
+        }
+        var values: [Bool] = []
+        for await result in group { values.append(result) }
+        return values
+    }
+    #expect(results.count == 256)
+    #expect(results.allSatisfy { $0 })
+}

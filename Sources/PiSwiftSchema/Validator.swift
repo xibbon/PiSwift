@@ -6,6 +6,9 @@ private final class DynamicCheckGate: Sendable {
     func run(_ check: Check, _ value: SchemaValue) -> Bool {
         mutex.withLock { _ in check(value) }
     }
+    func runErrors(_ explainer: Explainer, _ value: SchemaValue) -> [SchemaIssue] {
+        mutex.withLock { _ in explainer.errors(value) }
+    }
 }
 
 /// A compiled schema whose check is safe to call from concurrent tasks.
@@ -13,6 +16,7 @@ public final class Validator: Sendable {
     let compiler: Compiler
     private let checkFunction: Check
     private let dynamicGate: DynamicCheckGate?
+    private let explainer = Mutex<Explainer?>(nil)
 
     init(compiler: Compiler, check: @escaping Check) {
         self.compiler = compiler
@@ -24,6 +28,25 @@ public final class Validator: Sendable {
     public func check(_ value: SchemaValue) -> Bool {
         if let dynamicGate { return dynamicGate.run(checkFunction, value) }
         return checkFunction(value)
+    }
+
+    /// Returns ordered issues for a failed value, or an empty array for a valid value.
+    public func errors(_ value: SchemaValue) -> [SchemaIssue] {
+        if check(value) { return [] }
+        let source = explainer.withLock { cached -> Explainer in
+            if let cached { return cached }
+            let created = Explainer(c: compiler, schema: compiler.schema)
+            cached = created
+            return created
+        }
+        if let dynamicGate { return dynamicGate.runErrors(source, value) }
+        return source.errors(value)
+    }
+
+    /// Returns the original value when it passes, or its ordered issues.
+    public func validate(_ value: SchemaValue) -> SchemaParseResult {
+        if check(value) { return .ok(value) }
+        return .failed(errors(value))
     }
 }
 

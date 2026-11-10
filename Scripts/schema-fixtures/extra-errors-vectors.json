@@ -1,0 +1,3861 @@
+[
+  {
+    "id": "leaf/string/root",
+    "schema": {
+      "type": "string"
+    },
+    "data": 1
+  },
+  {
+    "id": "leaf/string/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "p": 1
+    }
+  },
+  {
+    "id": "leaf/string/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 1
+    }
+  },
+  {
+    "id": "leaf/string/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": [
+      1
+    ]
+  },
+  {
+    "id": "leaf/string/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "string"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 1
+  },
+  {
+    "id": "leaf/string/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": 1
+  },
+  {
+    "id": "leaf/string/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "x": 1
+    }
+  },
+  {
+    "id": "leaf/string/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "xyz": 1
+    }
+  },
+  {
+    "id": "leaf/integer/root",
+    "schema": {
+      "type": "integer"
+    },
+    "data": "x"
+  },
+  {
+    "id": "leaf/integer/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "integer"
+        }
+      }
+    },
+    "data": {
+      "p": "x"
+    }
+  },
+  {
+    "id": "leaf/integer/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "integer"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": "x"
+    }
+  },
+  {
+    "id": "leaf/integer/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "data": [
+      "x"
+    ]
+  },
+  {
+    "id": "leaf/integer/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "integer"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": "x"
+  },
+  {
+    "id": "leaf/integer/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "data": "x"
+  },
+  {
+    "id": "leaf/integer/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "data": {
+      "x": "x"
+    }
+  },
+  {
+    "id": "leaf/integer/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "integer"
+        }
+      }
+    },
+    "data": {
+      "xyz": "x"
+    }
+  },
+  {
+    "id": "leaf/minimum/root",
+    "schema": {
+      "type": "number",
+      "minimum": 3
+    },
+    "data": 2
+  },
+  {
+    "id": "leaf/minimum/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "number",
+          "minimum": 3
+        }
+      }
+    },
+    "data": {
+      "p": 2
+    }
+  },
+  {
+    "id": "leaf/minimum/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "number",
+          "minimum": 3
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 2
+    }
+  },
+  {
+    "id": "leaf/minimum/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 3
+      }
+    },
+    "data": [
+      2
+    ]
+  },
+  {
+    "id": "leaf/minimum/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "number",
+          "minimum": 3
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 2
+  },
+  {
+    "id": "leaf/minimum/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number",
+          "minimum": 3
+        }
+      ]
+    },
+    "data": 2
+  },
+  {
+    "id": "leaf/minimum/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 3
+      }
+    },
+    "data": {
+      "x": 2
+    }
+  },
+  {
+    "id": "leaf/minimum/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "number",
+          "minimum": 3
+        }
+      }
+    },
+    "data": {
+      "xyz": 2
+    }
+  },
+  {
+    "id": "leaf/maximum/root",
+    "schema": {
+      "type": "number",
+      "maximum": 3
+    },
+    "data": 4
+  },
+  {
+    "id": "leaf/maximum/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "number",
+          "maximum": 3
+        }
+      }
+    },
+    "data": {
+      "p": 4
+    }
+  },
+  {
+    "id": "leaf/maximum/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "number",
+          "maximum": 3
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 4
+    }
+  },
+  {
+    "id": "leaf/maximum/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "maximum": 3
+      }
+    },
+    "data": [
+      4
+    ]
+  },
+  {
+    "id": "leaf/maximum/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "number",
+          "maximum": 3
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 4
+  },
+  {
+    "id": "leaf/maximum/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number",
+          "maximum": 3
+        }
+      ]
+    },
+    "data": 4
+  },
+  {
+    "id": "leaf/maximum/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "maximum": 3
+      }
+    },
+    "data": {
+      "x": 4
+    }
+  },
+  {
+    "id": "leaf/maximum/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "number",
+          "maximum": 3
+        }
+      }
+    },
+    "data": {
+      "xyz": 4
+    }
+  },
+  {
+    "id": "leaf/exclusiveMinimum/root",
+    "schema": {
+      "exclusiveMinimum": 3
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/exclusiveMinimum/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "exclusiveMinimum": 3
+        }
+      }
+    },
+    "data": {
+      "p": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMinimum/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "exclusiveMinimum": 3
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMinimum/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "exclusiveMinimum": 3
+      }
+    },
+    "data": [
+      3
+    ]
+  },
+  {
+    "id": "leaf/exclusiveMinimum/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "exclusiveMinimum": 3
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/exclusiveMinimum/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "exclusiveMinimum": 3
+        }
+      ]
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/exclusiveMinimum/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "exclusiveMinimum": 3
+      }
+    },
+    "data": {
+      "x": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMinimum/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "exclusiveMinimum": 3
+        }
+      }
+    },
+    "data": {
+      "xyz": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMaximum/root",
+    "schema": {
+      "exclusiveMaximum": 3
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/exclusiveMaximum/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "exclusiveMaximum": 3
+        }
+      }
+    },
+    "data": {
+      "p": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMaximum/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "exclusiveMaximum": 3
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMaximum/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "exclusiveMaximum": 3
+      }
+    },
+    "data": [
+      3
+    ]
+  },
+  {
+    "id": "leaf/exclusiveMaximum/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "exclusiveMaximum": 3
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/exclusiveMaximum/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "exclusiveMaximum": 3
+        }
+      ]
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/exclusiveMaximum/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "exclusiveMaximum": 3
+      }
+    },
+    "data": {
+      "x": 3
+    }
+  },
+  {
+    "id": "leaf/exclusiveMaximum/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "exclusiveMaximum": 3
+        }
+      }
+    },
+    "data": {
+      "xyz": 3
+    }
+  },
+  {
+    "id": "leaf/multipleOf/root",
+    "schema": {
+      "multipleOf": 2
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/multipleOf/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "multipleOf": 2
+        }
+      }
+    },
+    "data": {
+      "p": 3
+    }
+  },
+  {
+    "id": "leaf/multipleOf/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "multipleOf": 2
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 3
+    }
+  },
+  {
+    "id": "leaf/multipleOf/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "multipleOf": 2
+      }
+    },
+    "data": [
+      3
+    ]
+  },
+  {
+    "id": "leaf/multipleOf/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "multipleOf": 2
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/multipleOf/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "multipleOf": 2
+        }
+      ]
+    },
+    "data": 3
+  },
+  {
+    "id": "leaf/multipleOf/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "multipleOf": 2
+      }
+    },
+    "data": {
+      "x": 3
+    }
+  },
+  {
+    "id": "leaf/multipleOf/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "multipleOf": 2
+        }
+      }
+    },
+    "data": {
+      "xyz": 3
+    }
+  },
+  {
+    "id": "leaf/minLength/root",
+    "schema": {
+      "minLength": 3
+    },
+    "data": "ab"
+  },
+  {
+    "id": "leaf/minLength/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "minLength": 3
+        }
+      }
+    },
+    "data": {
+      "p": "ab"
+    }
+  },
+  {
+    "id": "leaf/minLength/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "minLength": 3
+        }
+      }
+    },
+    "data": {
+      "a/b~c": "ab"
+    }
+  },
+  {
+    "id": "leaf/minLength/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "minLength": 3
+      }
+    },
+    "data": [
+      "ab"
+    ]
+  },
+  {
+    "id": "leaf/minLength/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "minLength": 3
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": "ab"
+  },
+  {
+    "id": "leaf/minLength/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "minLength": 3
+        }
+      ]
+    },
+    "data": "ab"
+  },
+  {
+    "id": "leaf/minLength/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "minLength": 3
+      }
+    },
+    "data": {
+      "x": "ab"
+    }
+  },
+  {
+    "id": "leaf/minLength/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "minLength": 3
+        }
+      }
+    },
+    "data": {
+      "xyz": "ab"
+    }
+  },
+  {
+    "id": "leaf/maxLength/root",
+    "schema": {
+      "maxLength": 1
+    },
+    "data": "ab"
+  },
+  {
+    "id": "leaf/maxLength/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "maxLength": 1
+        }
+      }
+    },
+    "data": {
+      "p": "ab"
+    }
+  },
+  {
+    "id": "leaf/maxLength/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "maxLength": 1
+        }
+      }
+    },
+    "data": {
+      "a/b~c": "ab"
+    }
+  },
+  {
+    "id": "leaf/maxLength/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "maxLength": 1
+      }
+    },
+    "data": [
+      "ab"
+    ]
+  },
+  {
+    "id": "leaf/maxLength/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "maxLength": 1
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": "ab"
+  },
+  {
+    "id": "leaf/maxLength/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "maxLength": 1
+        }
+      ]
+    },
+    "data": "ab"
+  },
+  {
+    "id": "leaf/maxLength/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "maxLength": 1
+      }
+    },
+    "data": {
+      "x": "ab"
+    }
+  },
+  {
+    "id": "leaf/maxLength/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "maxLength": 1
+        }
+      }
+    },
+    "data": {
+      "xyz": "ab"
+    }
+  },
+  {
+    "id": "leaf/pattern/root",
+    "schema": {
+      "pattern": "^a+$"
+    },
+    "data": "b"
+  },
+  {
+    "id": "leaf/pattern/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "pattern": "^a+$"
+        }
+      }
+    },
+    "data": {
+      "p": "b"
+    }
+  },
+  {
+    "id": "leaf/pattern/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "pattern": "^a+$"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": "b"
+    }
+  },
+  {
+    "id": "leaf/pattern/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "pattern": "^a+$"
+      }
+    },
+    "data": [
+      "b"
+    ]
+  },
+  {
+    "id": "leaf/pattern/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "pattern": "^a+$"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": "b"
+  },
+  {
+    "id": "leaf/pattern/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "pattern": "^a+$"
+        }
+      ]
+    },
+    "data": "b"
+  },
+  {
+    "id": "leaf/pattern/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "pattern": "^a+$"
+      }
+    },
+    "data": {
+      "x": "b"
+    }
+  },
+  {
+    "id": "leaf/pattern/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "pattern": "^a+$"
+        }
+      }
+    },
+    "data": {
+      "xyz": "b"
+    }
+  },
+  {
+    "id": "leaf/const/root",
+    "schema": {
+      "const": "a"
+    },
+    "data": "b"
+  },
+  {
+    "id": "leaf/const/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "const": "a"
+        }
+      }
+    },
+    "data": {
+      "p": "b"
+    }
+  },
+  {
+    "id": "leaf/const/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "const": "a"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": "b"
+    }
+  },
+  {
+    "id": "leaf/const/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "const": "a"
+      }
+    },
+    "data": [
+      "b"
+    ]
+  },
+  {
+    "id": "leaf/const/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "const": "a"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": "b"
+  },
+  {
+    "id": "leaf/const/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "const": "a"
+        }
+      ]
+    },
+    "data": "b"
+  },
+  {
+    "id": "leaf/const/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "const": "a"
+      }
+    },
+    "data": {
+      "x": "b"
+    }
+  },
+  {
+    "id": "leaf/const/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "const": "a"
+        }
+      }
+    },
+    "data": {
+      "xyz": "b"
+    }
+  },
+  {
+    "id": "leaf/enum/root",
+    "schema": {
+      "enum": [
+        "a",
+        "b"
+      ]
+    },
+    "data": "c"
+  },
+  {
+    "id": "leaf/enum/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    },
+    "data": {
+      "p": "c"
+    }
+  },
+  {
+    "id": "leaf/enum/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    },
+    "data": {
+      "a/b~c": "c"
+    }
+  },
+  {
+    "id": "leaf/enum/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    "data": [
+      "c"
+    ]
+  },
+  {
+    "id": "leaf/enum/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": "c"
+  },
+  {
+    "id": "leaf/enum/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            "a",
+            "b"
+          ]
+        }
+      ]
+    },
+    "data": "c"
+  },
+  {
+    "id": "leaf/enum/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    "data": {
+      "x": "c"
+    }
+  },
+  {
+    "id": "leaf/enum/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    },
+    "data": {
+      "xyz": "c"
+    }
+  },
+  {
+    "id": "leaf/boolean/root",
+    "schema": {
+      "type": "boolean"
+    },
+    "data": 0
+  },
+  {
+    "id": "leaf/boolean/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "boolean"
+        }
+      }
+    },
+    "data": {
+      "p": 0
+    }
+  },
+  {
+    "id": "leaf/boolean/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "boolean"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": 0
+    }
+  },
+  {
+    "id": "leaf/boolean/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "data": [
+      0
+    ]
+  },
+  {
+    "id": "leaf/boolean/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "boolean"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": 0
+  },
+  {
+    "id": "leaf/boolean/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "data": 0
+  },
+  {
+    "id": "leaf/boolean/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "data": {
+      "x": 0
+    }
+  },
+  {
+    "id": "leaf/boolean/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "boolean"
+        }
+      }
+    },
+    "data": {
+      "xyz": 0
+    }
+  },
+  {
+    "id": "leaf/null/root",
+    "schema": {
+      "type": "null"
+    },
+    "data": false
+  },
+  {
+    "id": "leaf/null/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "null"
+        }
+      }
+    },
+    "data": {
+      "p": false
+    }
+  },
+  {
+    "id": "leaf/null/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "null"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": false
+    }
+  },
+  {
+    "id": "leaf/null/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "null"
+      }
+    },
+    "data": [
+      false
+    ]
+  },
+  {
+    "id": "leaf/null/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "null"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": false
+  },
+  {
+    "id": "leaf/null/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "data": false
+  },
+  {
+    "id": "leaf/null/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "null"
+      }
+    },
+    "data": {
+      "x": false
+    }
+  },
+  {
+    "id": "leaf/null/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "null"
+        }
+      }
+    },
+    "data": {
+      "xyz": false
+    }
+  },
+  {
+    "id": "leaf/array/root",
+    "schema": {
+      "type": "array"
+    },
+    "data": {}
+  },
+  {
+    "id": "leaf/array/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "array"
+        }
+      }
+    },
+    "data": {
+      "p": {}
+    }
+  },
+  {
+    "id": "leaf/array/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "array"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": {}
+    }
+  },
+  {
+    "id": "leaf/array/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "array"
+      }
+    },
+    "data": [
+      {}
+    ]
+  },
+  {
+    "id": "leaf/array/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "array"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": {}
+  },
+  {
+    "id": "leaf/array/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "array"
+        }
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "leaf/array/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array"
+      }
+    },
+    "data": {
+      "x": {}
+    }
+  },
+  {
+    "id": "leaf/array/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "array"
+        }
+      }
+    },
+    "data": {
+      "xyz": {}
+    }
+  },
+  {
+    "id": "leaf/object/root",
+    "schema": {
+      "type": "object"
+    },
+    "data": []
+  },
+  {
+    "id": "leaf/object/property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "p": {
+          "type": "object"
+        }
+      }
+    },
+    "data": {
+      "p": []
+    }
+  },
+  {
+    "id": "leaf/object/escaped-property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a/b~c": {
+          "type": "object"
+        }
+      }
+    },
+    "data": {
+      "a/b~c": []
+    }
+  },
+  {
+    "id": "leaf/object/item",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "data": [
+      []
+    ]
+  },
+  {
+    "id": "leaf/object/ref",
+    "schema": {
+      "$defs": {
+        "leaf": {
+          "type": "object"
+        }
+      },
+      "$ref": "#/$defs/leaf"
+    },
+    "data": []
+  },
+  {
+    "id": "leaf/object/allOf",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "data": []
+  },
+  {
+    "id": "leaf/object/additional-property",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "data": {
+      "x": []
+    }
+  },
+  {
+    "id": "leaf/object/pattern-property",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^x": {
+          "type": "object"
+        }
+      }
+    },
+    "data": {
+      "xyz": []
+    }
+  },
+  {
+    "id": "object/required/0",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field0"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/0",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field0": 1
+    }
+  },
+  {
+    "id": "object/minProperties/0",
+    "schema": {
+      "minProperties": 1
+    },
+    "data": {}
+  },
+  {
+    "id": "object/maxProperties/0",
+    "schema": {
+      "maxProperties": 0
+    },
+    "data": {
+      "0": 0
+    }
+  },
+  {
+    "id": "array/minItems/0",
+    "schema": {
+      "minItems": 1
+    },
+    "data": []
+  },
+  {
+    "id": "array/maxItems/0",
+    "schema": {
+      "maxItems": 0
+    },
+    "data": [
+      0
+    ]
+  },
+  {
+    "id": "array/uniqueItems/0",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-min/0",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 1
+    },
+    "data": []
+  },
+  {
+    "id": "array/contains-max/0",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 0
+    },
+    "data": [
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/0",
+    "schema": {
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0
+    ]
+  },
+  {
+    "id": "object/required/1",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field1"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/1",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field1": 1
+    }
+  },
+  {
+    "id": "object/minProperties/1",
+    "schema": {
+      "minProperties": 2
+    },
+    "data": {
+      "0": 0
+    }
+  },
+  {
+    "id": "object/maxProperties/1",
+    "schema": {
+      "maxProperties": 1
+    },
+    "data": {
+      "0": 0,
+      "1": 1
+    }
+  },
+  {
+    "id": "array/minItems/1",
+    "schema": {
+      "minItems": 2
+    },
+    "data": [
+      0
+    ]
+  },
+  {
+    "id": "array/maxItems/1",
+    "schema": {
+      "maxItems": 1
+    },
+    "data": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "array/uniqueItems/1",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      1,
+      1
+    ]
+  },
+  {
+    "id": "array/contains-min/1",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 2
+    },
+    "data": [
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/1",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 1
+    },
+    "data": [
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/1",
+    "schema": {
+      "prefixItems": [
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/2",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field2"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/2",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field2": 1
+    }
+  },
+  {
+    "id": "object/minProperties/2",
+    "schema": {
+      "minProperties": 3
+    },
+    "data": {
+      "0": 0,
+      "1": 1
+    }
+  },
+  {
+    "id": "object/maxProperties/2",
+    "schema": {
+      "maxProperties": 2
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2
+    }
+  },
+  {
+    "id": "array/minItems/2",
+    "schema": {
+      "minItems": 3
+    },
+    "data": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "array/maxItems/2",
+    "schema": {
+      "maxItems": 2
+    },
+    "data": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "array/uniqueItems/2",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      2,
+      2
+    ]
+  },
+  {
+    "id": "array/contains-min/2",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 3
+    },
+    "data": [
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/2",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 2
+    },
+    "data": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/2",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/3",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field3"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/3",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field3": 1
+    }
+  },
+  {
+    "id": "object/minProperties/3",
+    "schema": {
+      "minProperties": 4
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2
+    }
+  },
+  {
+    "id": "object/maxProperties/3",
+    "schema": {
+      "maxProperties": 3
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3
+    }
+  },
+  {
+    "id": "array/minItems/3",
+    "schema": {
+      "minItems": 4
+    },
+    "data": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "array/maxItems/3",
+    "schema": {
+      "maxItems": 3
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "array/uniqueItems/3",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      3,
+      3
+    ]
+  },
+  {
+    "id": "array/contains-min/3",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 4
+    },
+    "data": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/3",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 3
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/3",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/4",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field4"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/4",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field4": 1
+    }
+  },
+  {
+    "id": "object/minProperties/4",
+    "schema": {
+      "minProperties": 5
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3
+    }
+  },
+  {
+    "id": "object/maxProperties/4",
+    "schema": {
+      "maxProperties": 4
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4
+    }
+  },
+  {
+    "id": "array/minItems/4",
+    "schema": {
+      "minItems": 5
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "array/maxItems/4",
+    "schema": {
+      "maxItems": 4
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "array/uniqueItems/4",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      4,
+      4
+    ]
+  },
+  {
+    "id": "array/contains-min/4",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 5
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/4",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 4
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/4",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/5",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field5"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/5",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field5": 1
+    }
+  },
+  {
+    "id": "object/minProperties/5",
+    "schema": {
+      "minProperties": 6
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4
+    }
+  },
+  {
+    "id": "object/maxProperties/5",
+    "schema": {
+      "maxProperties": 5
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5
+    }
+  },
+  {
+    "id": "array/minItems/5",
+    "schema": {
+      "minItems": 6
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "array/maxItems/5",
+    "schema": {
+      "maxItems": 5
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "array/uniqueItems/5",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      5,
+      5
+    ]
+  },
+  {
+    "id": "array/contains-min/5",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 6
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/5",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 5
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/5",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/6",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field6"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/6",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field6": 1
+    }
+  },
+  {
+    "id": "object/minProperties/6",
+    "schema": {
+      "minProperties": 7
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5
+    }
+  },
+  {
+    "id": "object/maxProperties/6",
+    "schema": {
+      "maxProperties": 6
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6
+    }
+  },
+  {
+    "id": "array/minItems/6",
+    "schema": {
+      "minItems": 7
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "array/maxItems/6",
+    "schema": {
+      "maxItems": 6
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "array/uniqueItems/6",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      6,
+      6
+    ]
+  },
+  {
+    "id": "array/contains-min/6",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 7
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/6",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 6
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/6",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/7",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field7"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/7",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field7": 1
+    }
+  },
+  {
+    "id": "object/minProperties/7",
+    "schema": {
+      "minProperties": 8
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6
+    }
+  },
+  {
+    "id": "object/maxProperties/7",
+    "schema": {
+      "maxProperties": 7
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7
+    }
+  },
+  {
+    "id": "array/minItems/7",
+    "schema": {
+      "minItems": 8
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "array/maxItems/7",
+    "schema": {
+      "maxItems": 7
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "array/uniqueItems/7",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      7,
+      7
+    ]
+  },
+  {
+    "id": "array/contains-min/7",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 8
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/7",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 7
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/7",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/8",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field8"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/8",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field8": 1
+    }
+  },
+  {
+    "id": "object/minProperties/8",
+    "schema": {
+      "minProperties": 9
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7
+    }
+  },
+  {
+    "id": "object/maxProperties/8",
+    "schema": {
+      "maxProperties": 8
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7,
+      "8": 8
+    }
+  },
+  {
+    "id": "array/minItems/8",
+    "schema": {
+      "minItems": 9
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "array/maxItems/8",
+    "schema": {
+      "maxItems": 8
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "array/uniqueItems/8",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      8,
+      8
+    ]
+  },
+  {
+    "id": "array/contains-min/8",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 9
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/8",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 8
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/8",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "object/required/9",
+    "schema": {
+      "type": "object",
+      "required": [
+        "field9"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "object/additional/9",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "data": {
+      "field9": 1
+    }
+  },
+  {
+    "id": "object/minProperties/9",
+    "schema": {
+      "minProperties": 10
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7,
+      "8": 8
+    }
+  },
+  {
+    "id": "object/maxProperties/9",
+    "schema": {
+      "maxProperties": 9
+    },
+    "data": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7,
+      "8": 8,
+      "9": 9
+    }
+  },
+  {
+    "id": "array/minItems/9",
+    "schema": {
+      "minItems": 10
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "array/maxItems/9",
+    "schema": {
+      "maxItems": 9
+    },
+    "data": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  {
+    "id": "array/uniqueItems/9",
+    "schema": {
+      "uniqueItems": true
+    },
+    "data": [
+      9,
+      9
+    ]
+  },
+  {
+    "id": "array/contains-min/9",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 10
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/contains-max/9",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 0,
+      "maxContains": 9
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "array/prefixItems/9",
+    "schema": {
+      "prefixItems": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "special/false",
+    "schema": false,
+    "data": 1
+  },
+  {
+    "id": "special/true",
+    "schema": true,
+    "data": 1
+  },
+  {
+    "id": "special/valid",
+    "schema": {
+      "type": "string"
+    },
+    "data": "a"
+  },
+  {
+    "id": "special/tag-invalid",
+    "schema": {
+      "anyOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "image"
+            },
+            "width": {
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "width"
+          ]
+        }
+      ]
+    },
+    "data": {
+      "kind": "video"
+    }
+  },
+  {
+    "id": "special/anyOf",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "special/oneOf-none",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "special/oneOf-many",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "data": 1
+  },
+  {
+    "id": "special/not",
+    "schema": {
+      "not": {
+        "type": "string"
+      }
+    },
+    "data": "a"
+  },
+  {
+    "id": "special/if-then",
+    "schema": {
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "minLength": 3
+      }
+    },
+    "data": "a"
+  },
+  {
+    "id": "special/if-else",
+    "schema": {
+      "if": {
+        "type": "string"
+      },
+      "else": {
+        "minimum": 3
+      }
+    },
+    "data": 1
+  },
+  {
+    "id": "special/dependentRequired",
+    "schema": {
+      "dependentRequired": {
+        "a": [
+          "b"
+        ]
+      }
+    },
+    "data": {
+      "a": 1
+    }
+  },
+  {
+    "id": "special/dependentSchemas",
+    "schema": {
+      "dependentSchemas": {
+        "a": {
+          "required": [
+            "b"
+          ]
+        }
+      }
+    },
+    "data": {
+      "a": 1
+    }
+  },
+  {
+    "id": "special/propertyNames",
+    "schema": {
+      "propertyNames": {
+        "minLength": 2
+      }
+    },
+    "data": {
+      "a": 1
+    }
+  },
+  {
+    "id": "special/unevaluatedProperties",
+    "schema": {
+      "properties": {
+        "a": true
+      },
+      "unevaluatedProperties": false
+    },
+    "data": {
+      "a": 1,
+      "b": 2
+    }
+  },
+  {
+    "id": "special/unevaluatedItems",
+    "schema": {
+      "prefixItems": [
+        true
+      ],
+      "unevaluatedItems": false
+    },
+    "data": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "special/recursive",
+    "schema": {
+      "$id": "Tree",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "Tree"
+          }
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "data": {
+      "name": "a",
+      "children": [
+        {
+          "name": 3
+        }
+      ]
+    }
+  },
+  {
+    "id": "special/relative-id",
+    "schema": {
+      "$id": "schemas/tool.json",
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/n"
+        }
+      },
+      "$defs": {
+        "n": {
+          "type": "integer"
+        }
+      }
+    },
+    "data": {
+      "count": "x"
+    }
+  },
+  {
+    "id": "special/format-annotation",
+    "schema": {
+      "type": "string",
+      "format": "email"
+    },
+    "data": "invalid"
+  },
+  {
+    "id": "special/enum-limit",
+    "schema": {
+      "enum": [
+        "v0",
+        "v1",
+        "v2",
+        "v3",
+        "v4",
+        "v5",
+        "v6",
+        "v7",
+        "v8",
+        "v9",
+        "v10",
+        "v11",
+        "v12",
+        "v13",
+        "v14",
+        "v15",
+        "v16",
+        "v17",
+        "v18",
+        "v19",
+        "v20",
+        "v21",
+        "v22",
+        "v23",
+        "v24"
+      ]
+    },
+    "data": "missing"
+  },
+  {
+    "id": "special/required-order",
+    "schema": {
+      "required": [
+        "b",
+        "a"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "special/multiple-errors",
+    "schema": {
+      "properties": {
+        "a": {
+          "minimum": 1
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "c"
+      ],
+      "additionalProperties": false
+    },
+    "data": {
+      "a": 0,
+      "b": 1,
+      "extra": true
+    }
+  },
+  {
+    "id": "special/ref-two-paths",
+    "schema": {
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/P"
+        },
+        "b": {
+          "$ref": "#/$defs/P"
+        }
+      },
+      "$defs": {
+        "P": {
+          "properties": {
+            "n": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "data": {
+      "a": {
+        "n": "x"
+      },
+      "b": {
+        "n": "x"
+      }
+    }
+  },
+  {
+    "id": "target/mixed-key-order",
+    "schema": {
+      "properties": {
+        "z": {
+          "type": "string"
+        },
+        "10": {
+          "type": "string"
+        },
+        "2": {
+          "type": "string"
+        },
+        "a": {
+          "type": "string"
+        },
+        "01": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "z": 0,
+      "10": 0,
+      "2": 0,
+      "a": 0,
+      "01": 0
+    }
+  },
+  {
+    "id": "target/multiple-required",
+    "schema": {
+      "required": [
+        "third",
+        "first",
+        "second"
+      ]
+    },
+    "data": {}
+  },
+  {
+    "id": "target/const-object",
+    "schema": {
+      "const": {
+        "b": [
+          1,
+          {
+            "x": true
+          }
+        ],
+        "a": 2
+      }
+    },
+    "data": {
+      "a": 2,
+      "b": [
+        1,
+        {
+          "x": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "target/long-enum-values",
+    "schema": {
+      "enum": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx0",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx2",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx3",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx4",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx5",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx6",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx7",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx8",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx9",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx10",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx11",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx12",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx13",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx14",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx15",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx16",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx17",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx18",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx19",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx20",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx21",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx22",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx23"
+      ]
+    },
+    "data": "missing"
+  },
+  {
+    "id": "target/tagged-selected-branch",
+    "schema": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "image"
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "kind",
+              "width"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "data": [
+      {
+        "kind": "text",
+        "text": "a"
+      },
+      {
+        "kind": "image",
+        "width": -1
+      }
+    ]
+  },
+  {
+    "id": "target/declared-key-blame",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "eq": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "eq"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "and": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "and"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "data": {
+      "field": "a",
+      "eq": 1,
+      "x": 2
+    }
+  },
+  {
+    "id": "target/draft7-dependencies-list",
+    "schema": {
+      "dependencies": {
+        "a": [
+          "b",
+          "c"
+        ]
+      }
+    },
+    "data": {
+      "a": 1
+    },
+    "options": {
+      "draft": "7"
+    }
+  },
+  {
+    "id": "target/draft7-dependencies-schema",
+    "schema": {
+      "dependencies": {
+        "a": {
+          "properties": {
+            "b": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "b"
+          ]
+        }
+      }
+    },
+    "data": {
+      "a": 1,
+      "b": 2
+    },
+    "options": {
+      "draft": "7"
+    }
+  },
+  {
+    "id": "target/draft7-ref-sibling",
+    "schema": {
+      "definitions": {
+        "s": {
+          "type": "string"
+        }
+      },
+      "$ref": "#/definitions/s",
+      "maxLength": 1
+    },
+    "data": "ab",
+    "options": {
+      "draft": "7"
+    }
+  },
+  {
+    "id": "target/modern-ref-sibling",
+    "schema": {
+      "definitions": {
+        "s": {
+          "type": "string"
+        }
+      },
+      "$ref": "#/definitions/s",
+      "maxLength": 1
+    },
+    "data": "ab"
+  },
+  {
+    "id": "target/unresolved-reject-local-present",
+    "schema": {
+      "properties": {
+        "t": {
+          "$ref": "#/missing"
+        }
+      }
+    },
+    "data": {
+      "t": 1
+    },
+    "options": {
+      "unresolvedRefs": "reject"
+    }
+  },
+  {
+    "id": "target/unresolved-reject-local-absent",
+    "schema": {
+      "properties": {
+        "t": {
+          "$ref": "#/missing"
+        }
+      }
+    },
+    "data": {},
+    "options": {
+      "unresolvedRefs": "reject"
+    }
+  },
+  {
+    "id": "target/unresolved-reject-external-present",
+    "schema": {
+      "properties": {
+        "t": {
+          "$ref": "https://example.test/missing.json"
+        }
+      }
+    },
+    "data": {
+      "t": 1
+    },
+    "options": {
+      "unresolvedRefs": "reject"
+    }
+  },
+  {
+    "id": "target/unresolved-reject-external-absent",
+    "schema": {
+      "properties": {
+        "t": {
+          "$ref": "https://example.test/missing.json"
+        }
+      }
+    },
+    "data": {},
+    "options": {
+      "unresolvedRefs": "reject"
+    }
+  },
+  {
+    "id": "target/contains-wording-default",
+    "schema": {
+      "contains": {
+        "type": "number"
+      }
+    },
+    "data": [
+      "a"
+    ]
+  },
+  {
+    "id": "target/contains-wording-minimum",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 2
+    },
+    "data": [
+      "a"
+    ]
+  },
+  {
+    "id": "target/contains-wording-maximum",
+    "schema": {
+      "contains": {
+        "type": "string"
+      },
+      "minContains": 0,
+      "maxContains": 0
+    },
+    "data": [
+      "a"
+    ]
+  },
+  {
+    "id": "target/contains-wording-range",
+    "schema": {
+      "contains": {
+        "type": "number"
+      },
+      "minContains": 1,
+      "maxContains": 3
+    },
+    "data": [
+      "a"
+    ]
+  },
+  {
+    "id": "target/nested-pointer",
+    "schema": {
+      "properties": {
+        "a/b~c": {
+          "items": {
+            "properties": {
+              "~/": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "data": {
+      "a/b~c": [
+        {
+          "~/": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "target/astral-minimum",
+    "schema": {
+      "minLength": 2
+    },
+    "data": "😀"
+  },
+  {
+    "id": "target/astral-maximum",
+    "schema": {
+      "maxLength": 1
+    },
+    "data": "😀😀"
+  },
+  {
+    "id": "target/astral-valid",
+    "schema": {
+      "maxLength": 1
+    },
+    "data": "😀"
+  },
+  {
+    "id": "target/ref-chain",
+    "schema": {
+      "$defs": {
+        "a": {
+          "$ref": "#/$defs/b"
+        },
+        "b": {
+          "$ref": "#/$defs/c"
+        },
+        "c": {
+          "type": "integer"
+        }
+      },
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/a"
+        }
+      }
+    },
+    "data": {
+      "value": "x"
+    }
+  },
+  {
+    "id": "target/dynamic-ref",
+    "schema": {
+      "$id": "https://example.test/tree",
+      "$comment": "dynamic recursive tree",
+      "$dynamicAnchor": "node",
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "integer"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$dynamicRef": "#node"
+          }
+        }
+      }
+    },
+    "data": {
+      "value": 1,
+      "children": [
+        {
+          "value": "x"
+        }
+      ]
+    }
+  },
+  {
+    "id": "target/tool-read",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "data": {
+      "offset": 0,
+      "limit": "20",
+      "extra": true
+    }
+  },
+  {
+    "id": "target/tool-edit",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "oldText": {
+          "type": "string",
+          "minLength": 1
+        },
+        "newText": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "oldText",
+        "newText"
+      ],
+      "additionalProperties": false
+    },
+    "data": {
+      "path": 1,
+      "oldText": "",
+      "newText": false
+    }
+  },
+  {
+    "id": "target/tool-bash",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "data": {
+      "command": [],
+      "timeout": -1
+    }
+  },
+  {
+    "id": "builders/recursive-tree-error",
+    "schema": {
+      "$id": "Tree",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "children": { "type": "array", "items": { "$ref": "Tree" } }
+      },
+      "required": ["name", "children"],
+      "additionalProperties": false
+    },
+    "data": { "name": "a", "children": [{ "name": "b", "children": [{ "name": 1, "children": [] }] }] }
+  },
+  {
+    "id": "builders/declared-semantics-error",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "data": { "name": "", "tags": ["x", "x"], "other": 1 }
+  }
+]

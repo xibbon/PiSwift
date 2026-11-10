@@ -40,3 +40,28 @@ public enum SchemaCompileError: Error, Sendable, CustomStringConvertible {
         }
     }
 }
+
+/// One failed schema keyword at a JSON Pointer path.
+public struct SchemaIssue: Sendable, Equatable {
+    /// The JSON Pointer to the failed value.
+    public let path: String
+    /// The failed schema keyword.
+    public let keyword: String
+    /// The explanation shown for the failure.
+    public let message: String
+
+    /// Creates a schema issue.
+    public init(path: String, keyword: String, message: String) {
+        self.path = path
+        self.keyword = keyword
+        self.message = message
+    }
+}
+
+/// The original value when valid, or its ordered schema issues.
+public enum SchemaParseResult: Sendable {
+    /// The original value passed validation.
+    case ok(SchemaValue)
+    /// The value failed with these ordered issues.
+    case failed([SchemaIssue])
+}

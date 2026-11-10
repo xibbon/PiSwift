@@ -1,20 +1,17 @@
 #!/usr/bin/env node
 // Run with Node 22.19 or later. The source comes only from the local Git tag.
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { extractTaggedSchema } from './tagged-schema.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repo = resolve(root, process.env.PI_MONO_PATH ?? '../pi-mono');
 const output = resolve(root, 'Tests/PiSwiftSchemaTests/Fixtures/generated/check-v1.5.2.jsonl');
-const temp = mkdtempSync(resolve(tmpdir(), 'pi-schema-'));
+const source = extractTaggedSchema(repo);
 try {
-  const commit = execFileSync('git', ['-C', repo, 'rev-parse', 'v1.5.2^{commit}'], { encoding: 'utf8' }).trim();
-  const archive = execFileSync('git', ['-C', repo, 'archive', 'v1.5.2', 'packages/schema'], { maxBuffer: 64 * 1024 * 1024 });
-  execFileSync('tar', ['-x', '-C', temp], { input: archive });
-  const base = resolve(temp, 'packages/schema');
+  const { commit, base } = source;
   const { compile } = await import(pathToFileURL(resolve(base, 'src/index.ts')));
   const { formats } = await import(pathToFileURL(resolve(base, 'src/formats/index.ts')));
   const { suiteFiles, suiteSchemas } = await import(pathToFileURL(resolve(base, 'test/suite.ts')));
@@ -65,4 +62,4 @@ try {
     if (readFileSync(output, 'utf8') !== bytes) throw new Error('Generated fixture differs');
   } else writeFileSync(output, bytes);
   console.log(`${lines.length - 1} cases, ${Buffer.byteLength(bytes)} bytes`);
-} finally { rmSync(temp, { recursive: true, force: true }); }
+} finally { source.dispose(); }
