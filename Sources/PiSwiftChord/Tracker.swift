@@ -28,6 +28,8 @@ public enum TrackerError: Error, Sendable, Equatable, CustomStringConvertible {
     case incompatibleReceiver
     /// The operation has an invalid shape or violates a draft rule.
     case invalidOperation(String)
+    /// A streamed append exceeds its documented resource bound.
+    case appendTextLimit(String)
 
     /// The text description of this value or error.
     public var description: String {
@@ -45,6 +47,7 @@ public enum TrackerError: Error, Sendable, Equatable, CustomStringConvertible {
         case .invalidLength: "Invalid array length"
         case .incompatibleReceiver: "Array mutator called on incompatible receiver"
         case .invalidOperation(let text): text
+        case .appendTextLimit(let text): text
         }
     }
 }
@@ -260,6 +263,9 @@ private final class DraftNode {
     let placement: Bool
     var baseChildren: [Delta.PathSegment: Int] = [:]
     var writes: [Delta.PathSegment: DraftRef] = [:]
+    // An append-only write retains chunks until a read or prepare needs the value.
+    var appends: [Delta.PathSegment: [String]] = [:]
+    var appendBytes: [Delta.PathSegment: Int] = [:]
     var writeOrder: [Delta.PathSegment] = []
     var deletes: Set<Delta.PathSegment> = []
     var deleteOrder: [Delta.PathSegment] = []
@@ -330,7 +336,12 @@ private struct DraftState {
     func objectRef(_ id: Int, _ key: Delta.PathSegment) -> DraftRef? {
         let node = nodes[id]
         if node.deletes.contains(key) { return nil }
-        if let ref = node.writes[key] { return ref }
+        if var ref = node.writes[key] {
+            if let chunks = node.appends[key], case .string(let base) = ref.value {
+                ref.value = .string(base + chunks.joined())
+            }
+            return ref
+        }
         guard let value = node.base[key.propertyKey] else { return nil }
         return DraftRef(value: value, child: node.baseChildren[key])
     }
@@ -412,7 +423,9 @@ private struct DraftState {
     mutating func setObject(_ id: Int, _ key: Delta.PathSegment, _ value: JSONValue) {
         let node = nodes[id]
         let wasDeleted = node.deletes.contains(key)
-        if !wasDeleted, !isContainer(value), objectRef(id, key)?.value == value { return }
+        let hadAppends = node.appends.removeValue(forKey: key) != nil
+        node.appendBytes.removeValue(forKey: key)
+        if !wasDeleted, !hadAppends, !isContainer(value), objectRef(id, key)?.value == value { return }
         if node.writes[key] == nil { node.writeOrder.append(key) }
         node.writes[key] = DraftRef(value: value)
         if wasDeleted, node.base[key.propertyKey] != nil, node.readded.insert(key).inserted { node.readdOrder.append(key) }
@@ -423,6 +436,8 @@ private struct DraftState {
     mutating func removeObject(_ id: Int, _ key: Delta.PathSegment) {
         let node = nodes[id]
         guard objectRef(id, key) != nil else { return }
+        node.appends.removeValue(forKey: key)
+        node.appendBytes.removeValue(forKey: key)
         node.writes.removeValue(forKey: key)
         node.writeOrder.removeAll { $0 == key }
         node.readded.remove(key)
@@ -579,6 +594,54 @@ public final class JSONDraft: Sendable {
                     try draft.setIndex(node, index, value)
                 }
             } else { try validatePlacement(value); draft.setObject(node, .key(key), value) }
+        }
+    }
+    /// Appends text to an object string member and records an append operation.
+    /// An ordinary assignment to the same member restores string comparison at prepare.
+    public func appendText(_ key: String, _ text: String) throws {
+        try context.withAccess { draft in
+            try draft.writable()
+            var depth = 1
+            var parent = draft.nodes[node].parent
+            while let current = parent {
+                depth += 1
+                if depth > maxPendingPathDepth { throw TrackerError.appendTextLimit("appendText() path exceeds 4096 segments") }
+                parent = draft.nodes[current.node].parent
+            }
+            let segment = Delta.PathSegment.key(key)
+            let target = draft.nodes[node]
+            let error = TrackerError.invalidOperation("appendText() needs a string at \(JSONValue.string(key))")
+            guard !target.isArray else { throw error }
+            if target.appends[segment] == nil {
+                guard let ref = draft.objectRef(node, segment), case .string = ref.value else { throw error }
+            }
+            let bytes = text.utf8.count
+            if bytes > maxPendingTextBytes { throw TrackerError.appendTextLimit("appendText() text exceeds 16777216 bytes") }
+            if target.appends[segment] != nil {
+                let total = target.appendBytes[segment, default: 0]
+                if total > maxPendingTextBytes - bytes { throw TrackerError.appendTextLimit("appendText() text exceeds 16777216 bytes") }
+                if !text.isEmpty {
+                    target.appends[segment]!.append(text)
+                    target.appendBytes[segment] = total + bytes
+                    draft.mark(node)
+                }
+                return
+            }
+            guard let ref = draft.objectRef(node, segment), case .string(let current) = ref.value else { throw error }
+            if text.isEmpty { return }
+            if target.writes[segment] != nil {
+                // A plain assignment in this change falls back to the normal comparison.
+                let total = target.appendBytes[segment, default: 0]
+                if total > maxPendingTextBytes - bytes { throw TrackerError.appendTextLimit("appendText() text exceeds 16777216 bytes") }
+                draft.setObject(node, segment, .string(current + text))
+                target.appendBytes[segment] = total + bytes
+            } else {
+                target.writes[segment] = DraftRef(value: .string(current))
+                target.writeOrder.append(segment)
+                target.appends[segment] = [text]
+                target.appendBytes[segment] = bytes
+                draft.mark(node)
+            }
         }
     }
     /// Assigns an array element; rejects indices that would create holes.
@@ -860,6 +923,10 @@ private extension DraftState {
         for key in node.readdOrder where node.base[key.propertyKey] != nil { ops.append(.delete(path + [key])) }
         for key in node.writeOrder {
             if ops.count > 4096 { return }
+            if let chunks = node.appends[key] {
+                ops.append(.append(path + [key], chunks.joined()))
+                continue
+            }
             let before = node.readded.contains(key) ? nil : node.base[key.propertyKey]
             changed(path + [key], before, snapshotRef(node.writes[key]!), &ops)
         }

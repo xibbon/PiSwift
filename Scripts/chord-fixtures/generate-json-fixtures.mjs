@@ -85,6 +85,20 @@ for (const input of invalidInputs) {
 }
 const parse = { valid: validInputs.map(input => ({ input, text: JSON.stringify(JSON.parse(input)) })), invalid: invalidInputs };
 const output = fixtureJSON({ provenance: { oracle: 'Node JSON.stringify, JSON.parse and Object.keys', node: process.version, reviewedAgainst: 'pi-mono v1.4.0', upstreamSourceExecuted: false }, numbers, keyOrders, strings, parse }) + '\n';
+if (process.argv.includes('--v152')) {
+  const { createHash } = await import('node:crypto');
+  const old = JSON.parse(readFileSync(fixturePath, 'utf8'));
+  const payload = { numbers, keyOrders, strings, parse };
+  const manifest = JSON.stringify({ upstream: 'pi-mono v1.5.2', oracle: 'Node JSON.stringify, JSON.parse and Object.keys',
+    payloadSha256: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+    sameAsV140: JSON.stringify(payload) === JSON.stringify({ numbers: old.numbers, keyOrders: old.keyOrders, strings: old.strings, parse: old.parse }) }) + '\n';
+  const path = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/json-v152-fixtures.json', import.meta.url));
+  assertFixtureBudget({ 'json-v152-fixtures.json': manifest });
+  if (process.argv.includes('--check')) {
+    if (readFileSync(path, 'utf8') !== manifest) throw new Error('v1.5.2 JSON fixture differs');
+    console.log(`JSON v1.5.2 fixture check passed: same payload: ${JSON.parse(manifest).sameAsV140}.`);
+  } else { writeFileSync(path, manifest); console.log('Wrote JSON v1.5.2 fixture.'); }
+} else {
 assertFixtureBudget({ 'json-fixtures.json': output });
 if (process.argv.includes('--check')) {
   const temporaryPath = fileURLToPath(new URL(`.json-fixtures-${process.pid}.tmp`, import.meta.url));
@@ -98,4 +112,5 @@ if (process.argv.includes('--check')) {
 } else {
   writeFileSync(fixturePath, output);
   console.log(`Wrote ${numbers.length} numbers, ${keyOrders.length} key orders, ${strings.length} strings, ${parse.valid.length} valid parses, ${parse.invalid.length} invalid parses.`);
+}
 }

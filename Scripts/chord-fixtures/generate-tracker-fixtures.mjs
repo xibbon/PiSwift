@@ -1,6 +1,6 @@
 import { assertFixtureBudget } from './fixture-budget.mjs';
 // Node 22 oracle. Load the tag's complete tracker; never load the working tree.
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -25,10 +25,16 @@ function expectedText(text) {
 }
 
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-fixtures.json', import.meta.url));
+const selectedTag = process.argv.includes('--v152') ? 'v1.5.2' : 'v1.4.0';
 const temporary = mkdtempSync(join(tmpdir(), 'chord-tracker-'));
 try {
-  const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.4.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
-  execFileSync('tar', ['-x', '-C', temporary], { input: archive });
+  const sourceRoot = join(temporary, 'packages/chord/src');
+  mkdirSync(join(sourceRoot, 'delta'), { recursive: true });
+  for (const name of ['json.ts', 'delta/index.ts', 'delta/diff.ts', 'delta/tracker.ts',
+    'delta/draft.ts', 'delta/apply-immutable-trusted.ts', ...(selectedTag === 'v1.5.2' ? ['delta/pending.ts'] : [])]) {
+    writeFileSync(join(sourceRoot, name), execFileSync('git',
+      ['-C', '/Users/miguel/cvs/pi/pi-mono', 'show', `${selectedTag}:packages/chord/src/${name}`]));
+  }
   const { track } = await import(pathToFileURL(join(temporary, 'packages/chord/src/delta/tracker.ts')).href);
   let seed = 0x43a71e29;
   function word() { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; }
@@ -343,6 +349,19 @@ try {
   for (const key of Object.keys(counts)) delete counts[key];
   Object.assign(counts, existingCounts);
   const output = fixtureJSON({ upstream: 'pi-mono v1.4.0', seed: '0x43a71e29', counts, cases }) + '\n';
+  if (selectedTag === 'v1.5.2') {
+    const old = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    const payload = { counts, cases };
+    const manifest = JSON.stringify({ upstream: 'pi-mono v1.5.2', source: 'packages/chord/src/delta/tracker.ts',
+      cases: cases.length, payloadSha256: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+      sameAsV140: JSON.stringify(payload) === JSON.stringify({ counts: old.counts, cases: old.cases }) }) + '\n';
+    const path = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/tracker-v152-fixtures.json', import.meta.url));
+    assertFixtureBudget({ 'tracker-v152-fixtures.json': manifest });
+    if (process.argv.includes('--check')) {
+      if (readFileSync(path, 'utf8') !== manifest) throw new Error('v1.5.2 tracker fixture differs');
+      console.log(`Tracker v1.5.2 fixture check passed: ${cases.length} cases; same payload: ${JSON.stringify(payload) === JSON.stringify({ counts: old.counts, cases: old.cases })}.`);
+    } else { writeFileSync(path, manifest); console.log('Wrote tracker v1.5.2 fixture.'); }
+  } else {
   assertFixtureBudget({ 'tracker-fixtures.json': output, 'tracker-v140-fixtures.json': additions });
   if (process.argv.includes('--check')) {
     if (readFileSync(additionsPath, 'utf8') !== additions) throw new Error('v1.4 tracker fixtures differ');
@@ -354,5 +373,6 @@ try {
   } else {
     writeFileSync(fixturePath, output);
     console.log(`Wrote ${cases.length} tracker cases; ${JSON.stringify(counts)}.`);
+  }
   }
 } finally { rmSync(temporary, { recursive: true, force: true }); }

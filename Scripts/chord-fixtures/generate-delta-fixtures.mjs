@@ -1,6 +1,6 @@
 import { assertFixtureBudget } from './fixture-budget.mjs';
 // Node 22 reference cases for the PiSwiftChord delta tests.
-import { readFileSync, writeFileSync, unlinkSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -26,12 +26,18 @@ function expectedText(text) {
 }
 
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/overlap-fixtures.json', import.meta.url));
+const selectedTag = process.argv.includes('--v152') ? 'v1.5.2' : 'v1.4.0';
 
 // Import the full tag source. No copied algorithm is an oracle.
 const temporary = mkdtempSync(join(tmpdir(), 'chord-delta-'));
 try {
-const archive = execFileSync('git', ['-C', '/Users/miguel/cvs/pi/pi-mono', 'archive', 'v1.4.0', 'packages/chord/src'], { maxBuffer: 16 * 1024 * 1024 });
-execFileSync('tar', ['-x', '-C', temporary], { input: archive });
+const sourceRoot = join(temporary, 'packages/chord/src');
+mkdirSync(join(sourceRoot, 'delta'), { recursive: true });
+for (const name of ['json.ts', 'delta/index.ts', 'delta/diff.ts', 'delta/tracker.ts',
+  'delta/draft.ts', 'delta/apply-immutable-trusted.ts', ...(selectedTag === 'v1.5.2' ? ['delta/pending.ts'] : [])]) {
+  writeFileSync(join(sourceRoot, name), execFileSync('git',
+    ['-C', '/Users/miguel/cvs/pi/pi-mono', 'show', `${selectedTag}:packages/chord/src/${name}`]));
+}
 const { overlap, apply: applyOps, applyImmutable } = await import(pathToFileURL(join(temporary, 'packages/chord/src/delta/index.ts')).href);
 const isObj = value => value !== null && typeof value === 'object';
 const RESERVED_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -237,6 +243,22 @@ for (const [index, path] of [['values','missing'], ['missing'], ['values',0], ['
 const additionsPath = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/delta-v140-fixtures.json', import.meta.url));
 const additionsOutput = fixtureJSON({ upstream: 'pi-mono v1.4.0', source: 'packages/chord/test/delta-apply-immutable.test.ts', frozenFixture: 'delta-v130-fixtures', payload: 'apply', count: additions.length, sha256: createHash('sha256').update(JSON.stringify(additions)).digest('hex') }) + '\n';
 
+if (selectedTag === 'v1.5.2') {
+  const old = JSON.parse(readFileSync(fixturePath, 'utf8'));
+  const payload = { overlap: overlapCases, apply: applyCases };
+  const oldPayload = { overlap: old.overlap, apply: old.apply };
+  const manifest = JSON.stringify({ upstream: 'pi-mono v1.5.2', source: 'packages/chord/src/delta',
+    overlap: overlapCases.length, apply: applyCases.length,
+    payloadSha256: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+    sameAsV140: JSON.stringify(payload) === JSON.stringify(oldPayload) }) + '\n';
+  const path = fileURLToPath(new URL('../../Tests/PiSwiftChordTests/Fixtures/delta-v152-fixtures.json', import.meta.url));
+  assertFixtureBudget({ 'delta-v152-fixtures.json': manifest });
+  if (process.argv.includes('--check')) {
+    if (readFileSync(path, 'utf8') !== manifest) throw new Error('v1.5.2 delta fixture differs');
+    console.log(`Delta v1.5.2 fixture check passed: ${overlapCases.length} overlap, ${applyCases.length} apply; same payload: ${JSON.stringify(payload) === JSON.stringify(oldPayload)}.`);
+  } else { writeFileSync(path, manifest); console.log('Wrote delta v1.5.2 fixture.'); }
+} else {
+
 const output = fixtureJSON({ upstream: 'pi-mono v1.4.0', seed: '0x3c71a5d9', overlap: overlapCases, apply: applyCases }) + '\n';
 assertFixtureBudget({ 'overlap-fixtures.json': output, 'delta-v140-fixtures.json': additionsOutput });
 if (process.argv.includes('--check')) {
@@ -256,6 +278,7 @@ if (process.argv.includes('--check')) {
 } else {
   writeFileSync(fixturePath, output);
   console.log(`Wrote ${counts}.`);
+}
 }
 
 } finally { rmSync(temporary, { recursive: true, force: true }); }
