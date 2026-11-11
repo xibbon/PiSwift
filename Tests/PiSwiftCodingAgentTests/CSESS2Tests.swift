@@ -178,10 +178,15 @@ struct CSESS2Tests {
         let old = makeSession(oldManager, oldAPI)
         let next = makeSession(nextManager, nextAPI)
         let runtime = AgentSessionRuntime(agentDir: root.path, factory: { _ in next }, initialSession: old)
+        // v1.5.2 agent-session-runtime.ts:189-196: the host rebind is awaited before session_start.
+        runtime.setRebindSession { session in
+            await Task.yield()
+            trace.withLock { $0.append("rebind:\(session === next)") }
+        }
         _ = try await runtime.replaceSession(args: AgentSessionRuntimeFactoryArgs(
             cwd: root.path, agentDir: root.path, sessionManager: nextManager,
             sessionStartEvent: AgentSessionStartEvent(reason: .resume)))
-        #expect(trace.withLock { $0 } == ["shutdown:resume", "start:resume"])
+        #expect(trace.withLock { $0 } == ["shutdown:resume", "rebind:true", "start:resume"])
         runtime.dispose()
     }
 

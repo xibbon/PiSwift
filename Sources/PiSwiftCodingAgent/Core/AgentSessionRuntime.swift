@@ -28,6 +28,7 @@ public final class AgentSessionRuntime: Sendable {
     private let factory: CreateAgentSessionRuntimeFactory
     private let agentDirState: LockedState<String>
     private let sessionState: LockedState<AgentSession?>
+    private let rebindState = LockedState<(@Sendable (AgentSession) async -> Void)?>(nil)
 
     public init(
         agentDir: String,
@@ -56,6 +57,13 @@ public final class AgentSessionRuntime: Sendable {
             bindSession(session)
             return session
         }, initialSession: initialSession)
+    }
+
+    /// v1.5.2 agent-session-runtime.ts:189-196 (`finishSessionReplacement`): the host's mode
+    /// binds its UI and handlers to the replacement here. The runtime awaits it after the
+    /// swap and before it emits `session_start` on the new session.
+    public func setRebindSession(_ handler: (@Sendable (AgentSession) async -> Void)?) {
+        rebindState.withLock { $0 = handler }
     }
 
     /// The current live session. `nil` only after `dispose()`.
@@ -192,6 +200,7 @@ public final class AgentSessionRuntime: Sendable {
             prev.dispose()
         }
         sessionState.withLock { $0 = next }
+        if let rebind = rebindState.withLock({ $0 }) { await rebind(next) }
         if let runner = next.hookRunner {
             let reason = SessionStartReason(rawValue: args.sessionStartEvent.reason.rawValue) ?? .resume
             _ = await runner.emit(SessionStartEvent(reason: reason,
