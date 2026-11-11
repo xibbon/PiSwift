@@ -47,13 +47,16 @@ private func searchCandidate(_ name: String, description: String, parameters: JS
     }
 
     @Test func schemaRejectsInvalidArgumentTypes() async throws {
-        let values: [JSONValue] = [[:], ["query": .null], ["query": []], ["query": [:]],
+        let values: [JSONValue] = [[:], ["query": []], ["query": [:]],
             ["query": "issue", "limit": "one"], ["query": "issue", "limit": false]]
         for value in values {
             await #expect(throws: (any Error).self) {
                 try await createToolSearchTool().execute(value, searchApi([]), .background)
             }
         }
+        // v1.5.2 S4: tool-search-null coerces required null to the string "null".
+        let nullQuery = try await createToolSearchTool().execute(["query": .null], searchApi([]), .background)
+        #expect(toolResultText(nullQuery) == "No matching tools found.")
         #expect(String(describing: ToolSearchError.emptyQuery) == "query must not be empty")
         #expect(String(describing: ToolSearchError.invalidLimit) == "limit must be a positive integer")
     }

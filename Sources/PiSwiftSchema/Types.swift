@@ -29,7 +29,7 @@ public struct CompileOptions: Sendable {
 }
 
 /// A failure to compile a schema.
-public enum SchemaCompileError: Error, Sendable, CustomStringConvertible {
+public enum SchemaCompileError: Error, Sendable, CustomStringConvertible, LocalizedError {
     case malformedSchema(String)
     case unresolvedReference(String)
     case invalidPattern(String)
@@ -42,6 +42,7 @@ public enum SchemaCompileError: Error, Sendable, CustomStringConvertible {
         case .nestedTooDeep: return "schema is nested too deeply"
         }
     }
+    public var errorDescription: String? { description }
 }
 
 /// One failed schema keyword at a JSON Pointer path.

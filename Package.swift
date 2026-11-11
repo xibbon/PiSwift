@@ -116,6 +116,7 @@ let package = Package(
         .target(
             name: "PiSwiftAI",
             dependencies: [
+                "PiSwiftSchema",
                 "PiSwiftTelemetry",
                 .product(name: "OpenAI", package: "OpenAI"),
                 .product(name: "SwiftAnthropic", package: "SwiftAnthropic"),

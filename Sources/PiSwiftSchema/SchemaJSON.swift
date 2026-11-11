@@ -67,6 +67,53 @@ extension SchemaValue {
         return output
     }
 
+    /// Returns JSON with JavaScript JSON.stringify's space indentation.
+    public func stringify(indent: Int) -> String {
+        let width = min(max(indent, 0), 10)
+        guard width > 0 else { return stringify() }
+        enum Step {
+            case value(SchemaValue, Int)
+            case text(String)
+        }
+        var pending: [Step] = [.value(self, 0)]
+        var output = ""
+        while let step = pending.popLast() {
+            switch step {
+            case .text(let text): output += text
+            case .value(let value, let depth):
+                let current = String(repeating: " ", count: width * depth)
+                let next = String(repeating: " ", count: width * (depth + 1))
+                switch value {
+                case .null: output += "null"
+                case .bool(let boolean): output += boolean ? "true" : "false"
+                case .number(let number): output += Self.jsonNumber(number)
+                case .string(let string): output += Self.jsonString(string)
+                case .array(let values):
+                    guard !values.isEmpty else { output += "[]"; continue }
+                    output += "[\n"
+                    pending.append(.text("\n" + current + "]"))
+                    for index in values.indices.reversed() {
+                        pending.append(.value(values[index], depth + 1))
+                        pending.append(.text(next))
+                        if index > 0 { pending.append(.text(",\n")) }
+                    }
+                case .object(let object):
+                    let members = Array(object)
+                    guard !members.isEmpty else { output += "{}"; continue }
+                    output += "{\n"
+                    pending.append(.text("\n" + current + "}"))
+                    for index in members.indices.reversed() {
+                        let member = members[index]
+                        pending.append(.value(member.value, depth + 1))
+                        pending.append(.text(next + Self.jsonString(member.key) + ": "))
+                        if index > 0 { pending.append(.text(",\n")) }
+                    }
+                }
+            }
+        }
+        return output
+    }
+
     private static func jsonString(_ string: String) -> String {
         var output = "\""
         for scalar in string.unicodeScalars {

@@ -237,7 +237,7 @@ func localSchemaReferencesRejectInvalidArrayIndexes(reference: String) {
     #expect(result.errors.first?.message == "unresolved local schema reference")
 }
 
-@Test func optionalNullsAreRemovedInsideReferencedObjects() throws {
+@Test func optionalNullsInsideReferencedObjectsFollowTaggedConversion() throws {
     let options: [String: Any] = ["type": "object", "properties": ["limit": ["type": "integer"]]]
     let schema: [String: Any] = [
         "type": "object",
@@ -255,9 +255,10 @@ func localSchemaReferencesRejectInvalidArrayIndexes(reference: String) {
         "list": AnyCodable([["limit": NSNull()]])
     ]
     let result = try validateToolArguments(tool: tool, toolCall: ToolCall(id: "call", name: "pydantic", arguments: arguments))
-    #expect((result["opts"]?.value as? [String: Any])?.isEmpty == true)
-    #expect((result["maybe"]?.value as? [String: Any])?.isEmpty == true)
-    #expect((result["list"]?.value as? [[String: Any]])?.first?.isEmpty == true)
+    // v1.5.2 S4: optional-null-under-ref converts null to 0 inside referenced objects.
+    #expect(((result["opts"]?.value as? [String: Any])?["limit"] as? Int) == 0)
+    #expect(((result["maybe"]?.value as? [String: Any])?["limit"] as? Int) == 0)
+    #expect(((result["list"]?.value as? [[String: Any]])?.first?["limit"] as? Int) == 0)
 }
 
 @Test func optionalNullsAreKeptForNullableReferenceTargets() throws {
@@ -267,6 +268,9 @@ func localSchemaReferencesRejectInvalidArrayIndexes(reference: String) {
         "$defs": ["Opts": ["type": "object", "properties": ["limit": ["anyOf": [["$ref": "#/$defs/Count"], ["type": "null"]]]]],
                   "Count": ["type": "integer"]]
     ]
-    let normalized = normalizeOptionalNulls(["opts": ["limit": NSNull()]], schema: schema) as? [String: Any]
-    #expect((normalized?["opts"] as? [String: Any])?["limit"] is NSNull)
+    // v1.5.2 S4: test optional null handling through the tool boundary.
+    let tool = AITool(name: "echo", description: "", parameters: schema.mapValues(AnyCodable.init))
+    let normalized = try validateToolArguments(tool: tool, toolCall: ToolCall(id: "call", name: "echo",
+        arguments: ["opts": AnyCodable(["limit": NSNull()])]))
+    #expect((normalized["opts"]?.value as? [String: Any])?["limit"] is NSNull)
 }

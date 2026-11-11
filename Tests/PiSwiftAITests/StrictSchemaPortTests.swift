@@ -90,15 +90,32 @@ private func strictPortSchema() -> [String: AnyCodable] {
     let value: [String: Any] = ["optional": NSNull(), "required": NSNull(), "unknown": NSNull()]
     let arraySchemas: [[String: Any]] = [["type": "array", "items": optionalObject], ["type": "array", "items": [optionalObject]]]
     for schema in arraySchemas {
-        let normalized = try #require(normalizeOptionalNulls([value], schema: schema) as? [[String: Any]])
-        #expect(normalized[0]["optional"] == nil)
-        #expect(normalized[0]["required"] is NSNull)
-        #expect(normalized[0]["unknown"] is NSNull)
+        // v1.5.2 S4: test null handling through validateToolArguments.
+        let tool = AITool(name: "echo", description: "", parameters: ["type": AnyCodable("object"),
+            "properties": AnyCodable(["items": schema])])
+        let normalized = try validateToolArguments(tool: tool, toolCall: ToolCall(id: "call", name: "echo",
+            arguments: ["items": AnyCodable([value])]))
+        let items = try #require(normalized["items"]?.value as? [[String: Any]])
+        #expect(items[0]["optional"] == nil)
+        // v1.5.2 S4: required-string-null-in-array converts null to "null".
+        #expect(items[0]["required"] as? String == "null")
+        #expect(items[0]["unknown"] is NSNull)
     }
-    let nullable: [[String: Any]] = [["type": "null"], ["type": ["string", "null"]], ["const": NSNull()], ["enum": ["x", NSNull()]], ["anyOf": [["type": "string"], ["type": "null"]]], ["$ref": "external"]]
+    let nullable: [[String: Any]] = [["type": "null"], ["type": ["string", "null"]], ["const": NSNull()], ["enum": ["x", NSNull()]], ["anyOf": [["type": "string"], ["type": "null"]]]]
     for property in nullable {
         let schema: [String: Any] = ["type": "object", "properties": ["value": property]]
-        #expect((normalizeOptionalNulls(["value": NSNull()], schema: schema) as? [String: Any])?["value"] is NSNull)
+        let tool = AITool(name: "echo", description: "", parameters: schema.mapValues(AnyCodable.init))
+        // v1.5.2 S4: the tagged validator defines this boundary result.
+        let result = try validateToolArguments(tool: tool, toolCall: ToolCall(id: "call", name: "echo",
+            arguments: ["value": AnyCodable(NSNull())]))
+        #expect(result["value"]?.value is NSNull)
+    }
+    // v1.5.2 S4: dangling-external-null gives a validation failure at value.
+    let unresolved: [String: Any] = ["type": "object", "properties": ["value": ["$ref": "external"]]]
+    let tool = AITool(name: "echo", description: "", parameters: unresolved.mapValues(AnyCodable.init))
+    #expect(throws: ValidationError.self) {
+        try validateToolArguments(tool: tool, toolCall: ToolCall(id: "call", name: "echo",
+            arguments: ["value": AnyCodable(NSNull())]))
     }
 }
 

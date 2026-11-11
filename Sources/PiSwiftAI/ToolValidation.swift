@@ -1,4 +1,7 @@
+import CoreFoundation
 import Foundation
+import PiSwiftSchema
+import Synchronization
 
 /// Errors that can occur during tool validation.
 public enum ValidationError: Error, LocalizedError {
@@ -16,9 +19,10 @@ public enum ValidationError: Error, LocalizedError {
         case .invalidArguments(let toolName, let message):
             return "Invalid arguments for tool \"\(toolName)\": \(message)"
         case .validationFailed(let toolName, let errors, let receivedArguments):
-            let errorMessages = errors.map { $0.errorDescription ?? "Unknown error" }.joined(separator: "\n")
-            let argsJson = formatArguments(receivedArguments)
-            return "Validation failed for tool \"\(toolName)\":\n\(errorMessages)\n\nReceived arguments:\n\(argsJson)"
+            let lines = errors.map { $0.errorDescription ?? "Unknown error" }.joined(separator: "\n")
+            let source = toolArgumentsSource(receivedArguments)
+            let json = toolSchemaObject(receivedArguments, source: validOrderSource(source, arguments: receivedArguments)).stringify(indent: 2)
+            return "Validation failed for tool \"\(toolName)\":\n\(lines)\n\nReceived arguments:\n\(json)"
         case .schemaMissing(let name):
             return "Tool \"\(name)\" has no parameter schema"
         case .constrainedSampling(let message), .unsupportedStrictSchema(let message):
@@ -27,22 +31,33 @@ public enum ValidationError: Error, LocalizedError {
     }
 }
 
-private func formatArguments(_ arguments: [String: AnyCodable]) -> String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    if let data = try? encoder.encode(arguments),
-       let json = String(data: data, encoding: .utf8) {
-        return json
-    }
-    return String(describing: arguments)
+private struct CachedToolValidator {
+    let parameters: [String: AnyCodable]
+    let validator: CoercingValidator
 }
 
-/// Finds a tool by name and validates the tool call arguments against its JSON Schema.
-/// - Parameters:
-///   - tools: Array of tool definitions
-///   - toolCall: The tool call from the LLM
-/// - Returns: The validated (and potentially coerced) arguments
-/// - Throws: ValidationError if tool is not found or validation fails
+private let toolValidators = Mutex([CachedToolValidator]())
+
+private func validator(for tool: AITool) throws -> CoercingValidator {
+    if let cached = toolValidators.withLock({ cache -> CoercingValidator? in
+        guard let index = cache.lastIndex(where: { $0.parameters == tool.parameters }) else { return nil }
+        let value = cache.remove(at: index)
+        cache.append(value)
+        return value.validator
+    }) { return cached }
+    let compiled = try compileCoercing(toolSchemaObject(tool.parameters),
+                                       options: .init(formats: standardFormats, unresolvedRefs: .reject))
+    return toolValidators.withLock { cache in
+        if let index = cache.lastIndex(where: { $0.parameters == tool.parameters }) {
+            return cache[index].validator
+        }
+        if cache.count == 256 { cache.removeFirst() }
+        cache.append(CachedToolValidator(parameters: tool.parameters, validator: compiled))
+        return compiled
+    }
+}
+
+/// Finds a tool by name and validates its call arguments.
 public func validateToolCall(tools: [AITool], toolCall: ToolCall) throws -> [String: AnyCodable] {
     guard let tool = tools.first(where: { $0.name == toolCall.name }) else {
         throw ValidationError.toolNotFound(toolCall.name)
@@ -50,154 +65,106 @@ public func validateToolCall(tools: [AITool], toolCall: ToolCall) throws -> [Str
     return try validateToolArguments(tool: tool, toolCall: toolCall)
 }
 
-/// Validates tool call arguments against the tool's JSON Schema.
-/// - Parameters:
-///   - tool: The tool definition with JSON Schema
-///   - toolCall: The tool call from the LLM
-/// - Returns: The validated (and potentially coerced) arguments
-/// - Throws: ValidationError with formatted message if validation fails
+/// Validates and coerces tool arguments with pi-schema.
 public func validateToolArguments(tool: AITool, toolCall: ToolCall) throws -> [String: AnyCodable] {
-    if let argumentsError = toolCall.argumentsError, !argumentsError.isEmpty {
-        throw ValidationError.invalidArguments(toolName: toolCall.name, message: argumentsError)
+    if let error = toolCall.argumentsError, !error.isEmpty {
+        throw ValidationError.invalidArguments(toolName: toolCall.name, message: error)
     }
-
-    guard tool.name == toolCall.name else {
-        throw ValidationError.toolNotFound(toolCall.name)
+    guard tool.name == toolCall.name else { throw ValidationError.toolNotFound(toolCall.name) }
+    let compiled = try validator(for: tool)
+    let order = validOrderSource(toolCall.argumentsJSON, arguments: toolCall.arguments)
+    let input = toolSchemaObject(toolCall.arguments, source: order)
+    switch compiled.parse(input) {
+    case .ok(let result):
+        if schemaEqual(result, input) { return toolCall.arguments }
+        guard case .object(let object) = result else { return toolCall.arguments }
+        return Dictionary(uniqueKeysWithValues: object.map { ($0.key, toolAnyCodable($0.value)) })
+    case .failed(let issues):
+        let errors = issues.map { SchemaValidationError(path: toolValidationPath($0.path), message: $0.message) }
+        throw ValidationError.validationFailed(toolName: toolCall.name, errors: errors,
+                                               receivedArguments: order == nil ? withoutArgumentOrder(toolCall.arguments) : toolCall.arguments)
     }
-
-    // Convert tool parameters (AnyCodable) to a schema dictionary
-    let schema = extractSchema(from: tool.parameters)
-
-    // If no schema or empty schema, trust the arguments
-    if schema.isEmpty {
-        return toolCall.arguments
-    }
-
-    // Convert arguments to plain dictionary for validation
-    let argumentsDict = normalizeOptionalNulls(extractValues(from: toolCall.arguments), schema: schema)
-
-    // Validate using JSON Schema validator
-    let validator = JSONSchemaValidator.shared
-    let result = validator.validate(argumentsDict, against: schema, path: "root", coerceTypes: true)
-
-    if result.isValid {
-        // Return coerced values if available
-        if let coerced = result.coercedValue as? [String: Any] {
-            return convertToAnyCodable(coerced)
-        }
-        return (argumentsDict as? [String: Any] ?? [:]).mapValues(AnyCodable.init)
-    }
-
-    throw ValidationError.validationFailed(
-        toolName: toolCall.name,
-        errors: result.errors,
-        receivedArguments: toolCall.arguments
-    )
 }
 
-/// Extract a schema dictionary from AnyCodable parameters.
-private func extractSchema(from parameters: [String: AnyCodable]) -> [String: Any] {
-    var schema: [String: Any] = [:]
-
-    for (key, value) in parameters {
-        schema[key] = extractValue(from: value)
-    }
-
-    return schema
+private func toolValidationPath(_ pointer: String) -> String {
+    if pointer.isEmpty { return "root" }
+    return pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map {
+        $0.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+    }.joined(separator: ".")
 }
 
-/// Extract a plain value from AnyCodable.
-private func extractValue(from codable: AnyCodable) -> Any {
-    let value = codable.value
-
-    if value is NSNull {
-        return NSNull()
-    }
-
-    if let dict = value as? [String: AnyCodable] {
-        var result: [String: Any] = [:]
-        for (k, v) in dict {
-            result[k] = extractValue(from: v)
-        }
+private func withoutArgumentOrder(_ arguments: [String: AnyCodable]) -> [String: AnyCodable] {
+    arguments.mapValues { value in
+        var result = value
+        result.toolArgumentsSource = nil
         return result
     }
+}
 
-    if let array = value as? [AnyCodable] {
-        return array.map { extractValue(from: $0) }
+private func validOrderSource(_ source: OrderedJSON?, arguments: [String: AnyCodable]) -> SchemaValue? {
+    guard let source, let parsed = try? SchemaValue.parse(json: source.serialized(escapeSlashes: false)),
+          schemaEqual(parsed, toolSchemaObject(arguments)) else { return nil }
+    return parsed
+}
+
+private func toolSchemaObject(_ values: [String: AnyCodable], source: SchemaValue? = nil) -> SchemaValue {
+    var object = SchemaObject()
+    let keys: [String]
+    if case .object(let sourceObject) = source { keys = sourceObject.keys }
+    else { keys = values.keys.sorted(by: utf16Less) }
+    for key in keys {
+        if let value = values[key] { object[key] = toolSchemaValue(value.value, depth: 0, source: schemaMember(source, key)) }
     }
-
-    return value
+    return .object(object)
 }
 
-/// Extract plain dictionary from AnyCodable arguments.
-private func extractValues(from arguments: [String: AnyCodable]) -> [String: Any] {
-    var result: [String: Any] = [:]
-    for (key, value) in arguments {
-        result[key] = extractValue(from: value)
-    }
-    return result
+private func utf16Less(_ left: String, _ right: String) -> Bool {
+    left.utf16.lexicographicallyPrecedes(right.utf16)
 }
 
-/// Convert a plain dictionary back to AnyCodable.
-private func convertToAnyCodable(_ dict: [String: Any]) -> [String: AnyCodable] {
-    dict.mapValues(AnyCodable.init)
+private func schemaMember(_ source: SchemaValue?, _ key: String) -> SchemaValue? {
+    guard case .object(let object) = source else { return nil }
+    return object[key]
 }
 
-func normalizeOptionalNulls(_ value: Any, schema: [String: Any]) -> Any {
-    normalizeOptionalNulls(value, schema: schema, root: schema)
-}
-
-private func normalizeOptionalNulls(_ value: Any, schema rawSchema: [String: Any], root: [String: Any]) -> Any {
-    guard let schema = nullNormalizationSchema(rawSchema, root: root) else {
-        return value
-    }
+private func toolSchemaValue(_ value: Any, depth: Int, source: SchemaValue? = nil) -> SchemaValue {
+    // Keep one more wrapper than the library limit so parse reports its depth issue.
+    if depth > 513 { return .null }
+    if value is NSNull { return .null }
+    if let boolean = jsonBoolean(value) { return .bool(boolean) }
+    if let number = value as? NSNumber { return .number(number.doubleValue) }
+    if let string = value as? String { return .string(string) }
     if let array = value as? [Any] {
-        return array.enumerated().map { index, item in
-            if let tuple = schema["items"] as? [[String: Any]], index < tuple.count {
-                return normalizeOptionalNulls(item, schema: tuple[index], root: root)
-            }
-            if let items = schema["items"] as? [String: Any] {
-                return normalizeOptionalNulls(item, schema: items, root: root)
-            }
-            return item
-        }
+        let sourceValues: [SchemaValue]
+        if case .array(let values) = source { sourceValues = values } else { sourceValues = [] }
+        return .array(array.enumerated().map { index, item in
+            toolSchemaValue(item, depth: depth + 1, source: sourceValues.indices.contains(index) ? sourceValues[index] : nil)
+        })
     }
-    guard var object = value as? [String: Any], let properties = schema["properties"] as? [String: Any] else { return value }
-    let required = Set(schema["required"] as? [String] ?? [])
-    for (key, rawSchema) in properties {
-        guard let item = object[key], let property = rawSchema as? [String: Any] else { continue }
-        // An unresolved reference can accept null, so keep the value for the validator.
-        if item is NSNull && !required.contains(key) && !schemaAllowsNull(property),
-           nullNormalizationSchema(property, root: root) != nil,
-           !JSONSchemaValidator.shared.validate(NSNull(), against: property, root: root, coerceTypes: false).isValid {
-            object.removeValue(forKey: key)
-        } else {
-            object[key] = normalizeOptionalNulls(item, schema: property, root: root)
+    if let dictionary = value as? [String: Any] {
+        var object = SchemaObject()
+        let keys: [String]
+        if case .object(let sourceObject) = source { keys = sourceObject.keys }
+        else { keys = dictionary.keys.sorted(by: utf16Less) }
+        for key in keys {
+            if let item = dictionary[key] { object[key] = toolSchemaValue(item, depth: depth + 1, source: schemaMember(source, key)) }
         }
+        return .object(object)
     }
-    return object
+    return .string(String(describing: value))
 }
 
-/// Follow local references and the single non-null branch of an optional union.
-/// Returns nil when a reference cannot be resolved.
-private func nullNormalizationSchema(_ schema: [String: Any], root: [String: Any]) -> [String: Any]? {
-    var current = schema
-    for _ in 0..<32 {
-        if let reference = current["$ref"] {
-            guard let reference = reference as? String,
-                  let target = JSONSchemaValidator.resolveLocalReference(reference, in: root) as? [String: Any] else {
-                return nil
-            }
-            current = target
-            continue
-        }
-        let branches = current["anyOf"] as? [[String: Any]] ?? current["oneOf"] as? [[String: Any]]
-        let valueBranches = branches?.filter { $0["type"] as? String != "null" } ?? []
-        if valueBranches.count == 1 {
-            current = valueBranches[0]
-            continue
-        }
-        return current
+private func toolAnyCodable(_ value: SchemaValue) -> AnyCodable {
+    switch value {
+    case .null: return AnyCodable(NSNull())
+    case .bool(let boolean): return AnyCodable(boolean)
+    case .number(let number):
+        if number.isFinite, number.rounded() == number, abs(number) <= 9_007_199_254_740_992,
+           let integer = Int(exactly: number) { return AnyCodable(integer) }
+        return AnyCodable(number)
+    case .string(let string): return AnyCodable(string)
+    case .array(let array): return AnyCodable(array.map { toolAnyCodable($0).value })
+    case .object(let object):
+        return AnyCodable(Dictionary(uniqueKeysWithValues: object.map { ($0.key, toolAnyCodable($0.value).value) }))
     }
-    return nil
 }

@@ -84,6 +84,10 @@ public struct AnyCodable: Codable, Sendable, Equatable {
         case unsupported(String)
 
         init(_ value: Any) {
+            if let wrapped = value as? AnyCodable {
+                self = wrapped.storage
+                return
+            }
             // Foundation bridges JSON booleans to NSNumber. Test the CF type before numbers.
             if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() {
                 self = .bool(number.boolValue)
