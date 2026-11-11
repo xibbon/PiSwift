@@ -298,6 +298,7 @@ public struct Settings: Sendable {
     /// Global setting only: each refresh can incur provider charges.
     public var cacheWarming: CacheWarmingMode?
     public var shellPath: String?
+    public var externalEditor: String?
     public var shellCommandPrefix: String?
     public var quietStartup: QuietStartup?
     public var collapseChangelog: Bool?
@@ -1039,6 +1040,20 @@ public final class SettingsManager: Sendable {
         settings.shellPath.map { ($0 as NSString).expandingTildeInPath }
     }
 
+    /// settings-manager.ts:974-984 (`getExternalEditorCommand`): the `externalEditor` setting,
+    /// then `VISUAL`, then `EDITOR`, then `nano`. The environment is a parameter for tests.
+    public func getExternalEditorCommand(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String {
+        if let configured = settings.externalEditor,
+           !configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return configured
+        }
+        if let visual = environment["VISUAL"], !visual.isEmpty { return visual }
+        if let editor = environment["EDITOR"], !editor.isEmpty { return editor }
+        return "nano"
+    }
+
     public func setShellPath(_ path: String?) {
         globalSettings.shellPath = path
         markModified("shellPath")
@@ -1765,6 +1780,7 @@ public final class SettingsManager: Sendable {
         settings.showCacheMissNotices = decodeTruthyBoolean(json["showCacheMissNotices"])
         settings.cacheWarming = (json["cacheWarming"] as? String).flatMap(CacheWarmingMode.init(rawValue:))
         settings.shellPath = json["shellPath"] as? String
+        settings.externalEditor = json["externalEditor"] as? String
         settings.shellCommandPrefix = json["shellCommandPrefix"] as? String
         if let value = json["quietStartup"] {
             if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() {
@@ -2085,6 +2101,7 @@ public final class SettingsManager: Sendable {
         json["showCacheMissNotices"] = settings.showCacheMissNotices
         json["cacheWarming"] = settings.cacheWarming?.rawValue
         json["shellPath"] = settings.shellPath
+        json["externalEditor"] = settings.externalEditor
         json["shellCommandPrefix"] = settings.shellCommandPrefix
         json["quietStartup"] = settings.quietStartup?.jsonValue
         json["collapseChangelog"] = settings.collapseChangelog
@@ -2363,6 +2380,7 @@ public final class SettingsManager: Sendable {
         if override.showCacheMissNotices != nil { result.showCacheMissNotices = override.showCacheMissNotices }
         // cacheWarming is intentionally global only.
         if override.shellPath != nil { result.shellPath = override.shellPath }
+        if override.externalEditor != nil { result.externalEditor = override.externalEditor }
         if override.shellCommandPrefix != nil { result.shellCommandPrefix = override.shellCommandPrefix }
         if override.quietStartup != nil { result.quietStartup = override.quietStartup }
         if override.collapseChangelog != nil { result.collapseChangelog = override.collapseChangelog }
