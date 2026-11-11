@@ -1,5 +1,9 @@
 import Foundation
 
+// PiSwiftSchema and Foundation permit 512; recursive Swift value conversions need
+// this lower bound on a 512 KB test stack (224 passes, 232 overflows).
+let toolArgumentsMaximumDepth = 224
+
 /// Repair string escapes without changing text outside strings.
 public func repairJSON(_ json: String) -> String {
     let bytes = Array(json.utf8)
@@ -87,6 +91,9 @@ public func parseToolCallArguments(_ json: String?) -> (arguments: [String: AnyC
 
 private func finalArguments(_ json: String?) -> (arguments: [String: AnyCodable], source: OrderedJSON?, error: String?) {
     guard let json, !trimJavaScriptWhitespace(json).isEmpty else { return ([:], nil, nil) }
+    guard !jsonNestingDepthExceeds(json, limit: toolArgumentsMaximumDepth) else {
+        return ([:], nil, "Invalid JSON.\n\nReceived arguments:\n\(json)")
+    }
     do {
         let parsed = try parsedJSONWithRepair(json)
         guard let object = parsed.value.value as? [String: Any] else {
@@ -99,6 +106,24 @@ private func finalArguments(_ json: String?) -> (arguments: [String: AnyCodable]
     }
 }
 
+private func jsonNestingDepthExceeds(_ text: String, limit: Int) -> Bool {
+    var depth = 0
+    var inString = false
+    var escaped = false
+    for byte in text.utf8 {
+        if inString {
+            if escaped { escaped = false }
+            else if byte == 92 { escaped = true }
+            else if byte == 34 { inString = false }
+        } else if byte == 34 { inString = true }
+        else if byte == 123 || byte == 91 {
+            depth += 1
+            if depth > limit { return true }
+        } else if byte == 125 || byte == 93 { depth = max(0, depth - 1) }
+    }
+    return false
+}
+
 /// Parse a full repaired object, then an incomplete object, then a repaired incomplete object.
 public func parseStreamingJSON(_ partialJson: String?) -> [String: AnyCodable] {
     streamingArguments(partialJson).arguments
@@ -106,6 +131,7 @@ public func parseStreamingJSON(_ partialJson: String?) -> [String: AnyCodable] {
 
 private func streamingArguments(_ json: String?) -> (arguments: [String: AnyCodable], source: OrderedJSON?) {
     guard let json, !trimJavaScriptWhitespace(json).isEmpty else { return ([:], nil) }
+    guard !jsonNestingDepthExceeds(json, limit: toolArgumentsMaximumDepth) else { return ([:], nil) }
     if let parsed = try? parsedJSONWithRepair(json) {
         guard let object = parsed.value.value as? [String: Any] else { return ([:], nil) }
         let source = toolArgumentsSource(parsed.source)
@@ -140,7 +166,7 @@ extension ToolCall {
 }
 
 /// Convert partial values without serializing the whole subtree at each level.
-private func partialJSONValue(_ value: OrderedJSON) -> Any {
+func partialJSONValue(_ value: OrderedJSON) -> Any {
     switch value {
     case .object(let pairs): return Dictionary(uniqueKeysWithValues: pairs.map { ($0.0, partialJSONValue($0.1)) })
     case .array(let values): return values.map(partialJSONValue)

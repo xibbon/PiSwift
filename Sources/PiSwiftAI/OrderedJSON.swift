@@ -41,7 +41,7 @@ public indirect enum OrderedJSON: Sendable {
         switch self {
         case .null: "null"
         case .bool(let value): value ? "true" : "false"
-        case .number(let value): value
+        case .number(let value): value == "Infinity" || value == "-Infinity" || value == "NaN" ? "null" : value
         case .string(let value): Self.quote(value, escapeSlashes: escapeSlashes)
         case .array(let values): "[" + values.map { $0.serialized(escapeSlashes: escapeSlashes) }.joined(separator: ",") + "]"
         case .object(let pairs): "{" + pairs.map { Self.quote($0.0, escapeSlashes: escapeSlashes) + ":" + $0.1.serialized(escapeSlashes: escapeSlashes) }.joined(separator: ",") + "}"

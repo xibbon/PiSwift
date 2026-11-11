@@ -1,6 +1,12 @@
 // JSON text support for packages/schema/src/compiler.ts at pi-mono v1.5.2.
 import Foundation
 
+/// JavaScript Number(text), checked against the schema port's Node vectors.
+public func javaScriptNumber(from text: String) -> Double { jsNumber(text) }
+
+/// JSON.stringify text for a JavaScript Number, including negative zero.
+public func javaScriptNumberText(_ value: Double) -> String { SchemaValue.number(value).stringify() }
+
 /// An error in a JSON value or its Foundation representation.
 public enum SchemaJSONError: Error, Sendable, Equatable {
     case invalidUTF8

@@ -335,7 +335,7 @@ public func streamAnthropic(
             stream.push(.start(partial: output))
 
             var indexMap: [Int: Int] = [:]
-            var toolCallPartials: [Int: String] = [:]
+            var toolCallPartials: [Int: ToolCallArgumentsStream] = [:]
 
             for try await decodedEvent in anthropicStream {
                 if options.signal?.isCancelled == true {
@@ -405,7 +405,7 @@ public func streamAnthropic(
                         let tool = ToolCall(id: block.id ?? "", name: toolName, arguments: [:])
                         output.content.append(.toolCall(tool))
                         indexMap[index] = output.content.count - 1
-                        toolCallPartials[index] = ""
+                        toolCallPartials[index] = ToolCallArgumentsStream()
                         stream.push(.toolCallStart(contentIndex: output.content.count - 1, partial: output))
                     default:
                         break
@@ -431,9 +431,10 @@ public func streamAnthropic(
                         case "input_json_delta":
                             if case .toolCall(var toolCall) = output.content[contentIndex] {
                                 let deltaText = event.delta?.partialJson ?? ""
-                                let partial = (toolCallPartials[index] ?? "") + deltaText
-                                toolCallPartials[index] = partial
-                                toolCall.setArguments(from: partial)
+                                let arguments = toolCallPartials[index] ?? ToolCallArgumentsStream()
+                                toolCallPartials[index] = arguments
+                                toolCall.arguments = arguments.append(deltaText)
+                                toolCall.argumentsJSON = nil
                                 output.content[contentIndex] = .toolCall(toolCall)
                                 stream.push(.toolCallDelta(contentIndex: contentIndex, delta: deltaText, partial: output))
                             }
@@ -455,8 +456,7 @@ public func streamAnthropic(
                     case .thinking(let thinkingBlock):
                         stream.push(.thinkingEnd(contentIndex: contentIndex, content: thinkingBlock.thinking, partial: output))
                     case .toolCall(var toolCall):
-                        let partial = toolCallPartials[index] ?? ""
-                        toolCall.finalizeArguments(from: partial)
+                        toolCall.finalizeArguments(from: toolCallPartials.removeValue(forKey: index)?.text ?? "")
                         output.content[contentIndex] = .toolCall(toolCall)
                         stream.push(.toolCallEnd(contentIndex: contentIndex, toolCall: toolCall, partial: output))
                     default:

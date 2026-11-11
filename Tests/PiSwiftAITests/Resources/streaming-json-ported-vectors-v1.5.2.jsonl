@@ -1,0 +1,74 @@
+{"input":"\"","hasValue":true,"expectedJSON":"\"\""}
+{"input":"[\"","hasValue":true,"expectedJSON":"[\"\"]"}
+{"input":"{\"\": \"","hasValue":true,"expectedJSON":"{\"\":\"\"}"}
+{"input":"n","hasValue":true,"expectedJSON":"null"}
+{"input":"t","hasValue":true,"expectedJSON":"true"}
+{"input":"f","hasValue":true,"expectedJSON":"false"}
+{"input":"0","hasValue":true,"expectedJSON":"0"}
+{"input":"-1.25e+4","hasValue":true,"expectedJSON":"-12500"}
+{"input":"-1.25e+","hasValue":true,"expectedJSON":"-1.25"}
+{"input":"-1.25e","hasValue":true,"expectedJSON":"-1.25"}
+{"input":"\" \\x12","hasValue":true,"expectedJSON":"\" \\\\x12\""}
+{"input":"I","hasValue":false,"expectedJSON":null}
+{"input":"-I","hasValue":false,"expectedJSON":null}
+{"input":"N","hasValue":false,"expectedJSON":null}
+{"input":"","hasValue":false,"expectedJSON":null}
+{"input":"nul","hasValue":true,"expectedJSON":"null"}
+{"input":"t","hasValue":true,"expectedJSON":"true"}
+{"input":"fals","hasValue":true,"expectedJSON":"false"}
+{"input":"12.2","hasValue":true,"expectedJSON":"12.2"}
+{"input":"-12","hasValue":true,"expectedJSON":"-12"}
+{"input":"-","hasValue":false,"expectedJSON":null}
+{"input":"2.5e","hasValue":true,"expectedJSON":"2.5"}
+{"input":"2.5e-","hasValue":true,"expectedJSON":"2.5"}
+{"input":"2.5e3","hasValue":true,"expectedJSON":"2500"}
+{"input":"-2.5e3","hasValue":true,"expectedJSON":"-2500"}
+{"input":"2.5E","hasValue":true,"expectedJSON":"2.5"}
+{"input":"2.5E-","hasValue":true,"expectedJSON":"2.5"}
+{"input":"2.5E3","hasValue":true,"expectedJSON":"2500"}
+{"input":"-2.5E3","hasValue":true,"expectedJSON":"-2500"}
+{"input":"12.34e","hasValue":true,"expectedJSON":"12.34"}
+{"input":"5e","hasValue":true,"expectedJSON":"5"}
+{"input":"\"abc","hasValue":true,"expectedJSON":"\"abc\""}
+{"input":"\"value with \\\"quoted\\\" text and \\\\ escape","hasValue":true,"expectedJSON":"\"value with \\\"quoted\\\" text and \\\\ escape\""}
+{"input":"\"value with \\","hasValue":true,"expectedJSON":"\"value with \""}
+{"input":"\"\\u","hasValue":true,"expectedJSON":"\"\""}
+{"input":"\"\\u12","hasValue":true,"expectedJSON":"\"\""}
+{"input":"\"text \\u00","hasValue":true,"expectedJSON":"\"text \""}
+{"input":"{\"a\":\"\\u12","hasValue":true,"expectedJSON":"{\"a\":\"\"}"}
+{"input":"\"value with unicode <\"","hasValue":true,"expectedJSON":"\"value with unicode <\""}
+{"input":"[","hasValue":true,"expectedJSON":"[]"}
+{"input":"[[1], [2","hasValue":true,"expectedJSON":"[[1],[2]]"}
+{"input":"[[\"1\"], [\"2","hasValue":true,"expectedJSON":"[[\"1\"],[\"2\"]]"}
+{"input":"[[false], [nu","hasValue":true,"expectedJSON":"[[false],[null]]"}
+{"input":"[[[]], [[]","hasValue":true,"expectedJSON":"[[[]],[[]]]"}
+{"input":"[[{}], [{","hasValue":true,"expectedJSON":"[[{}],[{}]]"}
+{"input":"[1, ","hasValue":true,"expectedJSON":"[1]"}
+{"input":"[[], 123","hasValue":true,"expectedJSON":"[[],123]"}
+{"input":"{\"key\":","hasValue":true,"expectedJSON":"{}"}
+{"input":"{\"a\": {\"b\": 1}, \"c\": {\"d\": 2","hasValue":true,"expectedJSON":"{\"a\":{\"b\":1},\"c\":{\"d\":2}}"}
+{"input":"{\"a\": {\"b\": \"1\"}, \"c\": {\"d\": 2","hasValue":true,"expectedJSON":"{\"a\":{\"b\":\"1\"},\"c\":{\"d\":2}}"}
+{"input":"{\"a\": {\"b\": false}, \"c\": {\"d\": 2","hasValue":true,"expectedJSON":"{\"a\":{\"b\":false},\"c\":{\"d\":2}}"}
+{"input":"{\"a\": {\"b\": []}, \"c\": {\"d\": 2","hasValue":true,"expectedJSON":"{\"a\":{\"b\":[]},\"c\":{\"d\":2}}"}
+{"input":"{\"a\": {\"b\": {}}, \"c\": {\"d\": 2","hasValue":true,"expectedJSON":"{\"a\":{\"b\":{}},\"c\":{\"d\":2}}"}
+{"input":"{\"ke","hasValue":true,"expectedJSON":"{}"}
+{"input":"{\"k1\": 1, \"k2","hasValue":true,"expectedJSON":"{\"k1\":1}"}
+{"input":"{\"k1\": 1, \"k2\":","hasValue":true,"expectedJSON":"{\"k1\":1}"}
+{"input":"{\"key\": \"value\"  ","hasValue":true,"expectedJSON":"{\"key\":\"value\"}"}
+{"input":"{\"a\": {\"b\": {}","hasValue":true,"expectedJSON":"{\"a\":{\"b\":{}}}"}
+{"input":"[1, [2, 3, [","hasValue":true,"expectedJSON":"[1,[2,3,[]]]"}
+{"input":"[false, [true, [","hasValue":true,"expectedJSON":"[false,[true,[]]]"}
+{"input":"{\"key\": {\"subKey\":","hasValue":true,"expectedJSON":"{\"key\":{}}"}
+{"input":"{\"key\": 123, \"key2\": {\"subKey\":","hasValue":true,"expectedJSON":"{\"key\":123,\"key2\":{}}"}
+{"input":"{\"key\": null, \"key2\": {\"subKey\":","hasValue":true,"expectedJSON":"{\"key\":null,\"key2\":{}}"}
+{"input":"{\"key\": [1, 2, {","hasValue":true,"expectedJSON":"{\"key\":[1,2,{}]}"}
+{"input":"[1, 2, {\"key\": \"value\",","hasValue":true,"expectedJSON":"[1,2,{\"key\":\"value\"}]"}
+{"input":"{\"a\": {\"b\": [\"c\", {\"d\": \"e\",","hasValue":true,"expectedJSON":"{\"a\":{\"b\":[\"c\",{\"d\":\"e\"}]}}"}
+{"input":"{\"a\": {\"b\": {\"c\": {\"d\":","hasValue":true,"expectedJSON":"{\"a\":{\"b\":{\"c\":{}}}}"}
+{"input":"{\"a\": 1, \"b\": [","hasValue":true,"expectedJSON":"{\"a\":1,\"b\":[]}"}
+{"input":"{\"a\": 1, \"b\": {","hasValue":true,"expectedJSON":"{\"a\":1,\"b\":{}}"}
+{"input":"{\"a\": 1, \"b\": \"","hasValue":true,"expectedJSON":"{\"a\":1,\"b\":\"\"}"}
+{"input":"{\n  \"a\": [\n    {\n      \"a1\": \"v1\",\n      \"a2\": \"v2\",\n      \"a3\": \"v3\"\n    }\n  ],\n  \"b\": [\n    {\n      \"b1\": \"n","hasValue":true,"expectedJSON":"{\"a\":[{\"a1\":\"v1\",\"a2\":\"v2\",\"a3\":\"v3\"}],\"b\":[{\"b1\":\"n\"}]}"}
+{"input":"{\"type\":\"div\",\"children\":[{\"type\":\"Card\",\"props\":{}","hasValue":true,"expectedJSON":"{\"type\":\"div\",\"children\":[{\"type\":\"Card\",\"props\":{}}]}"}
+{"input":"12.","hasValue":false,"expectedJSON":null}
+{"input":"12.e","hasValue":false,"expectedJSON":null}

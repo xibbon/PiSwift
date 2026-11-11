@@ -67,7 +67,7 @@ public func streamMistral(
 
             var currentBlockIndex: Int? = nil
             var currentBlockKind: String? = nil
-            var toolCallArgsByIndex: [Int: String] = [:]
+            var toolCallArgsByIndex: [Int: ToolCallArgumentsStream] = [:]
             var toolCallContentIndexByKey: [String: Int] = [:]
 
             func finishCurrentBlock() {
@@ -227,13 +227,13 @@ public func streamMistral(
                             toolCallContentIndexByKey[key] = contentIndex
                             stream.push(.toolCallStart(contentIndex: contentIndex, partial: output))
                         }
-                        let prior = toolCallArgsByIndex[contentIndex] ?? ""
-                        let combined = prior + argDelta
-                        toolCallArgsByIndex[contentIndex] = combined
+                        let arguments = toolCallArgsByIndex[contentIndex] ?? ToolCallArgumentsStream()
+                        toolCallArgsByIndex[contentIndex] = arguments
                         if case .toolCall(var block) = output.content[contentIndex] {
                             if !name.isEmpty { block.name = name }
                             if let rawId, !rawId.isEmpty, rawId != "null" { block.id = rawId }
-                            block.setArguments(from: combined)
+                            block.arguments = arguments.append(argDelta)
+                            block.argumentsJSON = nil
                             output.content[contentIndex] = .toolCall(block)
                         }
                         stream.push(.toolCallDelta(contentIndex: contentIndex, delta: argDelta, partial: output))
@@ -244,7 +244,7 @@ public func streamMistral(
             finishCurrentBlock()
             for (index, args) in toolCallArgsByIndex {
                 if case .toolCall(var block) = output.content[index] {
-                    block.finalizeArguments(from: args)
+                    block.finalizeArguments(from: args.text)
                     output.content[index] = .toolCall(block)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: block, partial: output))
                 }

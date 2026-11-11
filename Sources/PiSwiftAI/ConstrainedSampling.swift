@@ -42,11 +42,63 @@ public func getGrammarToolInput(
 public func appendGrammarToolInputJsonDelta(
     buffer: inout GrammarToolInputJsonBuffer,
     inputProperty: String,
+    inputDelta: String
+) throws -> String? {
+    if buffer.closed {
+        throw ValidationError.constrainedSampling(
+            "grammar tool input for property \"\(inputProperty)\" changed after it was closed"
+        )
+    }
+    guard !inputDelta.isEmpty else { return nil }
+    buffer.input += inputDelta
+    var delta = ""
+    if !buffer.started {
+        delta += "{\(jsonStringLiteral(inputProperty)):\""
+        buffer.started = true
+    }
+    delta += jsonStringLiteral(inputDelta).dropFirst().dropLast()
+    return delta
+}
+
+public func closeGrammarToolInputJson(
+    buffer: inout GrammarToolInputJsonBuffer,
+    inputProperty: String,
+    finalInput: String?
+) throws -> String? {
+    if buffer.closed {
+        if finalInput == nil || finalInput == buffer.input { return nil }
+        throw ValidationError.constrainedSampling(
+            "grammar tool input for property \"\(inputProperty)\" changed after it was closed"
+        )
+    }
+    if let finalInput, !finalInput.hasPrefix(buffer.input) {
+        throw ValidationError.constrainedSampling(
+            "grammar tool input for property \"\(inputProperty)\" changed non-monotonically"
+        )
+    }
+    let rest = finalInput.map { String($0.dropFirst(buffer.input.count)) } ?? ""
+    if let finalInput { buffer.input = finalInput }
+    buffer.closed = true
+    var delta = ""
+    if !buffer.started {
+        delta += "{\(jsonStringLiteral(inputProperty)):\""
+        buffer.started = true
+    }
+    delta += jsonStringLiteral(rest).dropFirst().dropLast()
+    delta += "\"}"
+    return delta
+}
+
+/// Compatibility with callers that still supply the complete input at each step.
+@available(*, deprecated, message: "Pass inputDelta to appendGrammarToolInputJsonDelta, then call closeGrammarToolInputJson")
+public func appendGrammarToolInputJsonDelta(
+    buffer: inout GrammarToolInputJsonBuffer,
+    inputProperty: String,
     nextInput: String,
     close: Bool
 ) throws -> String? {
+    if close { return try closeGrammarToolInputJson(buffer: &buffer, inputProperty: inputProperty, finalInput: nextInput) }
     if buffer.closed {
-        if close, nextInput == buffer.input { return nil }
         throw ValidationError.constrainedSampling(
             "grammar tool input for property \"\(inputProperty)\" changed after it was closed"
         )
@@ -56,23 +108,8 @@ public func appendGrammarToolInputJsonDelta(
             "grammar tool input for property \"\(inputProperty)\" changed non-monotonically"
         )
     }
-
-    let inputDelta = String(nextInput.dropFirst(buffer.input.count))
-    if !close, inputDelta.isEmpty { return nil }
-
-    var delta = ""
-    if !buffer.started {
-        delta += "{\(jsonStringLiteral(inputProperty)):\""
-        buffer.started = true
-    }
-    delta += jsonStringLiteral(inputDelta).dropFirst().dropLast()
-    buffer.input = nextInput
-
-    if close {
-        delta += "\"}"
-        buffer.closed = true
-    }
-    return delta
+    return try appendGrammarToolInputJsonDelta(buffer: &buffer, inputProperty: inputProperty,
+                                               inputDelta: String(nextInput.dropFirst(buffer.input.count)))
 }
 
 public func inferGrammarInputProperty(tool: AITool) throws -> String {

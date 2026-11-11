@@ -101,41 +101,37 @@ private func applyResponsesMiddleware(
 
 @Test func grammarInputBufferWrapsDeltasAndRejectsMalformedReplay() throws {
     var buffer = GrammarToolInputJsonBuffer()
+    // v1.5.2 A-STR: append a delta, then close with the complete input.
     #expect(try appendGrammarToolInputJsonDelta(
         buffer: &buffer,
         inputProperty: "value",
-        nextInput: "hello",
-        close: false
+        inputDelta: "hello"
     ) == #"{"value":"hello"#)
     #expect(try appendGrammarToolInputJsonDelta(
         buffer: &buffer,
         inputProperty: "value",
-        nextInput: "hello world",
-        close: false
+        inputDelta: " world"
     ) == " world")
-    #expect(try appendGrammarToolInputJsonDelta(
+    #expect(try closeGrammarToolInputJson(
         buffer: &buffer,
         inputProperty: "value",
-        nextInput: "hello world",
-        close: true
+        finalInput: "hello world"
     ) == "\"}")
 
     #expect(throws: ValidationError.self) {
         _ = try appendGrammarToolInputJsonDelta(
             buffer: &buffer,
             inputProperty: "value",
-            nextInput: "changed",
-            close: false
+            inputDelta: "changed"
         )
     }
 
     var nonMonotonic = GrammarToolInputJsonBuffer(input: "prefix", started: true, closed: false)
     #expect(throws: ValidationError.self) {
-        _ = try appendGrammarToolInputJsonDelta(
+        _ = try closeGrammarToolInputJson(
             buffer: &nonMonotonic,
             inputProperty: "value",
-            nextInput: "other",
-            close: false
+            finalInput: "other"
         )
     }
 }
@@ -264,5 +260,40 @@ private func applyResponsesMiddleware(
         }
         let tools = payload?["tools"] as? [[String: Any]]
         #expect(tools?.first?["type"] as? String == "custom")
+    }
+}
+
+// v1.5.2 A-STR: upstream's append-only and close assertions.
+@Test("keeps grammar input JSON deltas append-only")
+func grammarInputDeltasAreAppendOnly() throws {
+    var buffer = GrammarToolInputJsonBuffer()
+    let first = try appendGrammarToolInputJsonDelta(buffer: &buffer, inputProperty: "payload", inputDelta: "a\"") ?? ""
+    let second = try closeGrammarToolInputJson(buffer: &buffer, inputProperty: "payload", finalInput: "a\"\nb") ?? ""
+    let parsed = try JSONSerialization.jsonObject(with: Data((first + second).utf8)) as? [String: String]
+    #expect(parsed?["payload"] == "a\"\nb")
+    #expect(try closeGrammarToolInputJson(buffer: &buffer, inputProperty: "payload", finalInput: "a\"\nb") == nil)
+    do {
+        _ = try closeGrammarToolInputJson(buffer: &buffer, inputProperty: "payload", finalInput: "changed")
+        Issue.record("Expected closed-input error")
+    } catch let error as ValidationError {
+        #expect(error.errorDescription == "grammar tool input for property \"payload\" changed after it was closed")
+    }
+    do {
+        _ = try appendGrammarToolInputJsonDelta(buffer: &buffer, inputProperty: "payload", inputDelta: "x")
+        Issue.record("Expected append-after-close error")
+    } catch let error as ValidationError {
+        #expect(error.errorDescription == "grammar tool input for property \"payload\" changed after it was closed")
+    }
+}
+
+@Test("rejects a final grammar input that does not continue the streamed input")
+func grammarFinalInputRejectsNonMonotonicText() throws {
+    var buffer = GrammarToolInputJsonBuffer()
+    _ = try appendGrammarToolInputJsonDelta(buffer: &buffer, inputProperty: "payload", inputDelta: "abc")
+    do {
+        _ = try closeGrammarToolInputJson(buffer: &buffer, inputProperty: "payload", finalInput: "abd")
+        Issue.record("Expected non-monotonic error")
+    } catch let error as ValidationError {
+        #expect(error.errorDescription == "grammar tool input for property \"payload\" changed non-monotonically")
     }
 }

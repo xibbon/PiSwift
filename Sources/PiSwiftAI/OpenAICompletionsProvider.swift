@@ -2,11 +2,16 @@ import Foundation
 import CoreFoundation
 import OpenAI
 
-private struct StreamingCompletionsToolCall: Sendable {
+private final class StreamingCompletionsToolCall {
     var streamIndex: Int?
     var arguments = ""
+    var argumentStream = ToolCallArgumentsStream()
     var grammarInputProperty: String?
     var grammarInputBuffer = GrammarToolInputJsonBuffer()
+    init(streamIndex: Int? = nil, grammarInputProperty: String? = nil) {
+        self.streamIndex = streamIndex
+        self.grammarInputProperty = grammarInputProperty
+    }
 }
 
 public func streamOpenAICompletions(
@@ -105,11 +110,12 @@ public func streamOpenAICompletions(
                 if contentIndex == nil {
                     let index = output.content.count
                     let inputProperty = custom ? grammarToolInputProperties[name] ?? "input" : nil
-                    let tool = ToolCall(
+                    var tool = ToolCall(
                         id: id ?? "",
                         name: name,
                         arguments: inputProperty.map { [$0: AnyCodable("")] } ?? [:]
                     )
+                    tool.argumentsJSON = nil
                     output.content.append(.toolCall(tool))
                     streamingToolCalls[index] = StreamingCompletionsToolCall(
                         streamIndex: streamIndex,
@@ -134,7 +140,7 @@ public func streamOpenAICompletions(
                         streamingToolCalls[index]?.grammarInputProperty = inputProperty
                         streamingToolCalls[index]?.arguments = ""
                         tool.arguments = [inputProperty: AnyCodable("")]
-                        tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+                        tool.argumentsJSON = nil
                     }
                     output.content[index] = .toolCall(tool)
                 }
@@ -212,8 +218,10 @@ public func streamOpenAICompletions(
                     if case .toolCall(var tool) = output.content[index],
                        var state = streamingToolCalls[index] {
                         let argsDelta = toolCall.function?.arguments ?? ""
-                        state.arguments += argsDelta
-                        if !argsDelta.isEmpty { tool.setArguments(from: state.arguments) }
+                        if !argsDelta.isEmpty {
+                            tool.arguments = state.argumentStream.append(argsDelta)
+                            tool.argumentsJSON = nil
+                        }
                         streamingToolCalls[index] = state
                         output.content[index] = .toolCall(tool)
                         stream.push(.toolCallDelta(contentIndex: index, delta: argsDelta, partial: output))
@@ -234,11 +242,10 @@ public func streamOpenAICompletions(
                     let jsonDelta = customCall.input.isEmpty ? nil : try appendGrammarToolInputJsonDelta(
                         buffer: &state.grammarInputBuffer,
                         inputProperty: inputProperty,
-                        nextInput: state.arguments,
-                        close: false
+                        inputDelta: customCall.input
                     )
                     tool.arguments = [inputProperty: AnyCodable(state.arguments)]
-                    tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+                    tool.argumentsJSON = nil
                     streamingToolCalls[index] = state
                     output.content[index] = .toolCall(tool)
                     stream.push(.toolCallDelta(contentIndex: index, delta: jsonDelta ?? "", partial: output))
@@ -255,18 +262,17 @@ public func streamOpenAICompletions(
                 case .toolCall(var tool):
                     if var state = streamingToolCalls.removeValue(forKey: index) {
                         if let inputProperty = state.grammarInputProperty {
-                            if let delta = try appendGrammarToolInputJsonDelta(
+                            if let delta = try closeGrammarToolInputJson(
                                 buffer: &state.grammarInputBuffer,
                                 inputProperty: inputProperty,
-                                nextInput: state.arguments,
-                                close: true
+                                finalInput: state.arguments
                             ) {
                                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
                             }
                             tool.arguments = [inputProperty: AnyCodable(state.arguments)]
                             tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
                         } else {
-                            tool.finalizeArguments(from: state.arguments)
+                            tool.finalizeArguments(from: state.argumentStream.text)
                         }
                         output.content[index] = .toolCall(tool)
                     }

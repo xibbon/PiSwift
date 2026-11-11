@@ -239,7 +239,7 @@ private struct AwsEventStreamParser {
 
 struct BedrockStreamState {
     var indexMap: [Int: Int] = [:]
-    var toolCallPartials: [Int: String] = [:]
+    var toolCallPartials: [Int: ToolCallArgumentsStream] = [:]
     var redactedChunks: [Int: Data] = [:]
 }
 
@@ -483,7 +483,7 @@ private func handleContentBlockStart(
     output.content.append(.toolCall(toolCall))
     let contentIndex = output.content.count - 1
     state.indexMap[blockIndex] = contentIndex
-    state.toolCallPartials[blockIndex] = ""
+    state.toolCallPartials[blockIndex] = ToolCallArgumentsStream()
     stream.push(.toolCallStart(contentIndex: contentIndex, partial: output))
 }
 
@@ -508,9 +508,10 @@ private func handleContentBlockDelta(
     if let toolUse = delta.toolUse {
         guard let contentIndex = state.indexMap[blockIndex] else { return }
         if case .toolCall(var toolCall) = output.content[contentIndex] {
-            let partial = (state.toolCallPartials[blockIndex] ?? "") + (toolUse.input ?? "")
-            state.toolCallPartials[blockIndex] = partial
-            toolCall.setArguments(from: partial)
+            let arguments = state.toolCallPartials[blockIndex] ?? ToolCallArgumentsStream()
+            state.toolCallPartials[blockIndex] = arguments
+            toolCall.arguments = arguments.append(toolUse.input ?? "")
+            toolCall.argumentsJSON = nil
             output.content[contentIndex] = .toolCall(toolCall)
             stream.push(.toolCallDelta(contentIndex: contentIndex, delta: toolUse.input ?? "", partial: output))
         }
@@ -562,8 +563,7 @@ private func handleContentBlockStop(
     case .thinking(let thinkingContent):
         stream.push(.thinkingEnd(contentIndex: contentIndex, content: thinkingContent.thinking, partial: output))
     case .toolCall(var toolCall):
-        let partial = state.toolCallPartials[blockIndex] ?? ""
-        toolCall.finalizeArguments(from: partial)
+        toolCall.finalizeArguments(from: state.toolCallPartials[blockIndex]?.text ?? "")
         output.content[contentIndex] = .toolCall(toolCall)
         state.toolCallPartials.removeValue(forKey: blockIndex)
         stream.push(.toolCallEnd(contentIndex: contentIndex, toolCall: toolCall, partial: output))

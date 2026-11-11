@@ -68,7 +68,7 @@ public func streamProxy(model: Model, context: TranscriptContext, options: Proxy
             stopReason: .stop
         )
 
-        var toolCallPartials: [Int: String] = [:]
+        var toolCallPartials: [Int: ToolCallArgumentsStream] = [:]
 
         do {
             let url = URL(string: "\(options.proxyUrl)/api/stream")
@@ -164,7 +164,7 @@ func encodeProxyRequestPayload(model: Model, context: TranscriptContext, options
 private func processProxyEvent(
     _ proxyEvent: ProxyAssistantMessageEvent,
     partial: inout AssistantMessage,
-    toolCallPartials: inout [Int: String]
+    toolCallPartials: inout [Int: ToolCallArgumentsStream]
 ) throws -> AssistantMessageEvent? {
     switch proxyEvent {
     case .start:
@@ -211,7 +211,7 @@ private func processProxyEvent(
         return .thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: partial)
 
     case .toolCallStart(let index, let id, let toolName, let namespace):
-        toolCallPartials[index] = ""
+        toolCallPartials[index] = ToolCallArgumentsStream()
         let toolCall = ToolCall(id: id, name: toolName, arguments: [:], namespace: namespace)
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
         return .toolCallStart(contentIndex: index, partial: partial)
@@ -220,10 +220,10 @@ private func processProxyEvent(
         guard case .toolCall(var toolCall) = contentBlock(partial.content, index: index) else {
             throw ProxyStreamError.invalidEventPayload("Received toolcall_delta for non-toolCall content")
         }
-        let existing = toolCallPartials[index] ?? ""
-        let updated = existing + delta
-        toolCallPartials[index] = updated
-        toolCall.setArguments(from: updated)
+        let arguments = toolCallPartials[index] ?? ToolCallArgumentsStream()
+        toolCallPartials[index] = arguments
+        toolCall.arguments = arguments.append(delta)
+        toolCall.argumentsJSON = nil
         setContentBlock(&partial.content, index: index, block: .toolCall(toolCall))
         return .toolCallDelta(contentIndex: index, delta: delta, partial: partial)
 

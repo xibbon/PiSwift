@@ -7,12 +7,23 @@ private enum RawResponsesSlotKind {
     case grammar
 }
 
-private struct RawResponsesSlot {
+private final class RawResponsesSlot {
     let kind: RawResponsesSlotKind
     let contentIndex: Int
     var partialInput: String
     let inputProperty: String?
     var jsonBuffer: GrammarToolInputJsonBuffer
+    var argumentStream: ToolCallArgumentsStream
+    init(kind: RawResponsesSlotKind, contentIndex: Int, partialInput: String,
+         inputProperty: String?, jsonBuffer: GrammarToolInputJsonBuffer,
+         argumentStream: ToolCallArgumentsStream = ToolCallArgumentsStream()) {
+        self.kind = kind
+        self.contentIndex = contentIndex
+        self.partialInput = partialInput
+        self.inputProperty = inputProperty
+        self.jsonBuffer = jsonBuffer
+        self.argumentStream = argumentStream
+    }
 }
 
 func processRawOpenAIResponsesStream(
@@ -77,19 +88,22 @@ func processRawOpenAIResponsesStream(
             let callId = item["call_id"] as? String ?? ""
             let itemId = item["id"] as? String ?? ""
             let arguments = item["arguments"] as? String ?? ""
-            let tool = ToolCall(
+            let argumentStream = ToolCallArgumentsStream()
+            var tool = ToolCall(
                 id: "\(callId)|\(itemId)",
                 name: item["name"] as? String ?? "",
-                arguments: parseStreamingJSON(arguments),
+                arguments: argumentStream.append(arguments),
                 namespace: item["namespace"] as? String
             )
+            tool.argumentsJSON = nil
             output.content.append(.toolCall(tool))
             slots[index] = RawResponsesSlot(
                 kind: .function,
                 contentIndex: contentIndex,
                 partialInput: arguments,
                 inputProperty: nil,
-                jsonBuffer: GrammarToolInputJsonBuffer()
+                jsonBuffer: GrammarToolInputJsonBuffer(),
+                argumentStream: argumentStream
             )
             stream.push(.toolCallStart(contentIndex: contentIndex, partial: output))
         case "custom_tool_call":
@@ -98,12 +112,13 @@ func processRawOpenAIResponsesStream(
             let name = item["name"] as? String ?? ""
             let input = item["input"] as? String ?? ""
             let property = grammarToolInputProperties[name] ?? "input"
-            let tool = ToolCall(
+            var tool = ToolCall(
                 id: "\(callId)|\(itemId)",
                 name: name,
                 arguments: [property: AnyCodable(input)],
                 namespace: item["namespace"] as? String
             )
+            tool.argumentsJSON = nil
             output.content.append(.toolCall(tool))
             slots[index] = RawResponsesSlot(
                 kind: .grammar,
@@ -118,23 +133,30 @@ func processRawOpenAIResponsesStream(
         }
     }
 
-    func appendGrammar(index: Int, nextInput: String, close: Bool) throws {
+    func appendGrammar(index: Int, nextInput: String, close: Bool, inputDelta: String? = nil) throws {
         guard var slot = slots[index], slot.kind == .grammar,
               let property = slot.inputProperty,
               case .toolCall(var tool) = output.content[slot.contentIndex] else { return }
-        if let delta = try appendGrammarToolInputJsonDelta(
-            buffer: &slot.jsonBuffer,
-            inputProperty: property,
-            nextInput: nextInput,
-            close: close
-        ) {
-            stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
+        let delta: String?
+        if close {
+            delta = try closeGrammarToolInputJson(buffer: &slot.jsonBuffer, inputProperty: property, finalInput: nextInput)
+            slot.partialInput = nextInput
+        } else if let inputDelta {
+            let piece = slot.jsonBuffer.input.isEmpty && !slot.partialInput.isEmpty
+                ? slot.partialInput + inputDelta : inputDelta
+            delta = try appendGrammarToolInputJsonDelta(buffer: &slot.jsonBuffer, inputProperty: property,
+                                                       inputDelta: piece)
+            slot.partialInput += inputDelta
+        } else {
+            return
         }
-        slot.partialInput = nextInput
-        tool.arguments = [property: AnyCodable(nextInput)]
-        tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+        tool.arguments = [property: AnyCodable(slot.partialInput)]
+        tool.argumentsJSON = nil
         output.content[slot.contentIndex] = .toolCall(tool)
         slots[index] = slot
+        if let delta {
+            stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
+        }
     }
 
     for try await frame in iterateSseEvents(body: response.body, signal: signal) {
@@ -183,8 +205,8 @@ func processRawOpenAIResponsesStream(
             guard var slot = slots[index], slot.kind == .function,
                   let delta = event["delta"] as? String,
                   case .toolCall(var tool) = output.content[slot.contentIndex] else { continue }
-            slot.partialInput += delta
-            tool.setArguments(from: slot.partialInput)
+            tool.arguments = slot.argumentStream.append(delta)
+            tool.argumentsJSON = nil
             output.content[slot.contentIndex] = .toolCall(tool)
             slots[index] = slot
             stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
@@ -192,16 +214,18 @@ func processRawOpenAIResponsesStream(
             guard var slot = slots[index], slot.kind == .function,
                   let arguments = event["arguments"] as? String,
                   case .toolCall(var tool) = output.content[slot.contentIndex] else { continue }
-            if let delta = finalToolCallArgumentsDelta(previous: slot.partialInput, final: arguments) {
-                stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
-            }
+            let delta = finalToolCallArgumentsDelta(previous: slot.argumentStream.text, final: arguments)
             slot.partialInput = arguments
-            tool.setArguments(from: arguments)
+            tool.arguments = slot.argumentStream.replace(arguments).arguments
+            tool.argumentsJSON = nil
             output.content[slot.contentIndex] = .toolCall(tool)
             slots[index] = slot
+            if let delta {
+                stream.push(.toolCallDelta(contentIndex: slot.contentIndex, delta: delta, partial: output))
+            }
         case "response.custom_tool_call_input.delta":
             guard let slot = slots[index], let delta = event["delta"] as? String else { continue }
-            try appendGrammar(index: index, nextInput: slot.partialInput + delta, close: false)
+            try appendGrammar(index: index, nextInput: "", close: false, inputDelta: delta)
         case "response.custom_tool_call_input.done":
             try appendGrammar(index: index, nextInput: event["input"] as? String ?? "", close: true)
         case "response.output_item.done":
@@ -239,7 +263,7 @@ func processRawOpenAIResponsesStream(
             case .function:
                 if case .toolCall(var tool) = output.content[slot.contentIndex] {
                     let finalArguments = item["arguments"] as? String ?? ""
-                    let arguments = finalArguments.isEmpty ? slot.partialInput : finalArguments
+                    let arguments = finalArguments.isEmpty ? slot.argumentStream.text : finalArguments
                     tool.finalizeArguments(from: arguments)
                     output.content[slot.contentIndex] = .toolCall(tool)
                     stream.push(.toolCallEnd(contentIndex: slot.contentIndex, toolCall: tool, partial: output))
@@ -250,7 +274,9 @@ func processRawOpenAIResponsesStream(
                     nextInput: item["input"] as? String ?? slot.partialInput,
                     close: true
                 )
-                if case .toolCall(let tool) = output.content[slot.contentIndex] {
+                if case .toolCall(var tool) = output.content[slot.contentIndex] {
+                    tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
+                    output.content[slot.contentIndex] = .toolCall(tool)
                     stream.push(.toolCallEnd(contentIndex: slot.contentIndex, toolCall: tool, partial: output))
                 }
             }

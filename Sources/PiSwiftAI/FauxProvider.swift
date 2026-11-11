@@ -732,6 +732,7 @@ private func streamFauxWithDeltas(
             partial.content.append(.toolCall(ToolCall(id: toolCall.id, name: toolCall.name, arguments: [:])))
             stream.push(.toolCallStart(contentIndex: index, partial: partial))
             let argsJSON = toolArgumentsToOrderedJSON(toolCall.arguments, argumentsJSON: toolCall.argumentsJSON).serialized()
+            let argumentStream = ToolCallArgumentsStream()
             for chunk in splitStringByTokenSize(argsJSON, minTokenSize: minTokenSize, maxTokenSize: maxTokenSize) {
                 await scheduleFauxChunk(chunk, tokensPerSecond: tokensPerSecond)
                 if signal?.isCancelled == true {
@@ -740,6 +741,11 @@ private func streamFauxWithDeltas(
                     stream.push(.error(reason: .aborted, error: partial))
                     stream.end()
                     return
+                }
+                if case .toolCall(var growing) = partial.content[index] {
+                    growing.arguments = argumentStream.append(chunk)
+                    growing.argumentsJSON = nil
+                    partial.content[index] = .toolCall(growing)
                 }
                 stream.push(.toolCallDelta(contentIndex: index, delta: chunk, partial: partial))
             }

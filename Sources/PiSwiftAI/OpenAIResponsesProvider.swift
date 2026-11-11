@@ -346,11 +346,10 @@ public func streamOpenAIResponses(
             stream.push(.start(partial: output))
 
             var currentBlockIndex: Int? = nil
-            var currentToolCallArgs = ""
             // Responses events are multiplexed: a reasoning item can finish after
             // a later text/tool item has started. Track each item by output_index.
             var blockIndexByOutputIndex: [Int: Int] = [:]
-            var toolCallArgsByOutputIndex: [Int: String] = [:]
+            var toolCallArgsByOutputIndex: [Int: ToolCallArgumentsStream] = [:]
 
             func startBlock(outputIndex: Int, kind: String, block: ContentBlock) {
                 output.content.append(block)
@@ -376,14 +375,16 @@ public func streamOpenAIResponses(
                 case .thinking(let thinkingContent):
                     stream.push(.thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: output))
                 case .toolCall(var toolCall):
-                    toolCall.setArguments(from: currentToolCallArgs)
+                    let arguments = toolCallArgsByOutputIndex.first {
+                        blockIndexByOutputIndex[$0.key] == index
+                    }?.value.text ?? ""
+                    toolCall.finalizeArguments(from: arguments)
                     output.content[index] = .toolCall(toolCall)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                 default:
                     break
                 }
                 currentBlockIndex = nil
-                currentToolCallArgs = ""
             }
 
             for try await event in openAIStream {
@@ -404,8 +405,9 @@ public func streamOpenAIResponses(
                             let idPart = toolCall.id ?? ""
                             let combinedId = "\(toolCall.callId)|\(idPart)"
                             let call = ToolCall(id: combinedId, name: toolCall.name, arguments: [:])
-                            currentToolCallArgs = toolCall.arguments
-                            toolCallArgsByOutputIndex[added.outputIndex] = toolCall.arguments
+                            let argumentStream = ToolCallArgumentsStream()
+                            _ = argumentStream.append(toolCall.arguments)
+                            toolCallArgsByOutputIndex[added.outputIndex] = argumentStream
                             startBlock(outputIndex: added.outputIndex, kind: "toolCall", block: .toolCall(call))
                         default:
                             break
@@ -440,7 +442,7 @@ public func streamOpenAIResponses(
                             }
                             var call = ToolCall(id: combinedId, name: resolvedName, arguments: [:])
                             let finalArguments = toolCall.arguments.isEmpty
-                                ? toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
+                                ? toolCallArgsByOutputIndex[doneEvent.outputIndex]?.text ?? ""
                                 : toolCall.arguments
                             call.finalizeArguments(from: finalArguments)
                             if let index = blockIndexByOutputIndex[doneEvent.outputIndex] {
@@ -490,17 +492,20 @@ public func streamOpenAIResponses(
                     switch argumentsEvent {
                     case .delta(let deltaEvent):
                         if let index = blockIndexByOutputIndex[deltaEvent.outputIndex], case .toolCall(var tool) = output.content[index] {
-                            let args = (toolCallArgsByOutputIndex[deltaEvent.outputIndex] ?? "") + deltaEvent.delta
-                            toolCallArgsByOutputIndex[deltaEvent.outputIndex] = args
-                            tool.setArguments(from: args)
+                            let arguments = toolCallArgsByOutputIndex[deltaEvent.outputIndex] ?? ToolCallArgumentsStream()
+                            toolCallArgsByOutputIndex[deltaEvent.outputIndex] = arguments
+                            tool.arguments = arguments.append(deltaEvent.delta)
+                            tool.argumentsJSON = nil
                             output.content[index] = .toolCall(tool)
                             stream.push(.toolCallDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
                         }
                     case .done(let doneEvent):
                         if let index = blockIndexByOutputIndex[doneEvent.outputIndex], case .toolCall(var tool) = output.content[index] {
-                            let previousArgs = toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ""
-                            toolCallArgsByOutputIndex[doneEvent.outputIndex] = doneEvent.arguments
-                            tool.setArguments(from: doneEvent.arguments)
+                            let arguments = toolCallArgsByOutputIndex[doneEvent.outputIndex] ?? ToolCallArgumentsStream()
+                            let previousArgs = arguments.text
+                            toolCallArgsByOutputIndex[doneEvent.outputIndex] = arguments
+                            tool.arguments = arguments.replace(doneEvent.arguments).arguments
+                            tool.argumentsJSON = nil
                             output.content[index] = .toolCall(tool)
                             if let delta = finalToolCallArgumentsDelta(previous: previousArgs, final: doneEvent.arguments) {
                                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))

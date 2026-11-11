@@ -100,6 +100,7 @@ public func streamOpenAICodexResponses(
             var currentBlockIndex: Int? = nil
             var currentBlockKind: String? = nil
             var currentToolCallPartial = ""
+            var currentToolArgumentStream = ToolCallArgumentsStream()
             var currentGrammarInputProperty: String?
             var grammarInputBuffer = GrammarToolInputJsonBuffer()
             var hasStartedStream = false
@@ -141,39 +142,47 @@ public func streamOpenAICodexResponses(
             func updateToolCallDelta(_ delta: String) {
                 guard let index = currentBlockIndex, currentBlockKind == "toolCall",
                       case .toolCall(var tool) = output.content[index] else { return }
-                currentToolCallPartial += delta
-                tool.setArguments(from: currentToolCallPartial)
+                tool.arguments = currentToolArgumentStream.append(delta)
+                tool.argumentsJSON = nil
                 output.content[index] = .toolCall(tool)
                 stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
             }
 
-            func updateGrammarToolCallInput(_ nextInput: String, close: Bool) throws {
+            func updateGrammarToolCallInput(_ nextInput: String, close: Bool, inputDelta: String? = nil) throws {
                 guard let index = currentBlockIndex,
                       currentBlockKind == "toolCall",
                       let inputProperty = currentGrammarInputProperty,
                       case .toolCall(var tool) = output.content[index] else { return }
-                if let delta = try appendGrammarToolInputJsonDelta(
-                    buffer: &grammarInputBuffer,
-                    inputProperty: inputProperty,
-                    nextInput: nextInput,
-                    close: close
-                ) {
+                let delta: String?
+                if close {
+                    delta = try closeGrammarToolInputJson(buffer: &grammarInputBuffer, inputProperty: inputProperty,
+                                                          finalInput: nextInput)
+                    currentToolCallPartial = nextInput
+                } else if let inputDelta {
+                    let piece = grammarInputBuffer.input.isEmpty && !currentToolCallPartial.isEmpty
+                        ? currentToolCallPartial + inputDelta : inputDelta
+                    delta = try appendGrammarToolInputJsonDelta(buffer: &grammarInputBuffer,
+                                                               inputProperty: inputProperty, inputDelta: piece)
+                    currentToolCallPartial += inputDelta
+                } else {
+                    return
+                }
+                tool.arguments = [inputProperty: AnyCodable(currentToolCallPartial)]
+                tool.argumentsJSON = nil
+                output.content[index] = .toolCall(tool)
+                if let delta {
                     stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
                 }
-                tool.arguments = [inputProperty: AnyCodable(nextInput)]
-                tool.argumentsJSON = toolArgumentsToOrderedJSON(tool.arguments)
-                output.content[index] = .toolCall(tool)
-                currentToolCallPartial = nextInput
             }
 
             func finishToolCallArguments(_ arguments: String) {
                 guard let index = currentBlockIndex, currentBlockKind == "toolCall",
                       case .toolCall(var tool) = output.content[index] else { return }
-                let previous = currentToolCallPartial
-                currentToolCallPartial = arguments
-                tool.setArguments(from: currentToolCallPartial)
+                let previous = currentToolArgumentStream.text
+                tool.arguments = currentToolArgumentStream.replace(arguments).arguments
+                tool.argumentsJSON = nil
                 output.content[index] = .toolCall(tool)
-                if let delta = finalToolCallArgumentsDelta(previous: previous, final: currentToolCallPartial) {
+                if let delta = finalToolCallArgumentsDelta(previous: previous, final: arguments) {
                     stream.push(.toolCallDelta(contentIndex: index, delta: delta, partial: output))
                 }
             }
@@ -206,7 +215,9 @@ public func streamOpenAICodexResponses(
                         let itemId = item["id"] as? String ?? ""
                         let name = item["name"] as? String ?? ""
                         let combinedId = "\(callId)|\(itemId)"
-                        currentToolCallPartial = item["arguments"] as? String ?? ""
+                        currentToolCallPartial = ""
+                        currentToolArgumentStream = ToolCallArgumentsStream()
+                        _ = currentToolArgumentStream.append(item["arguments"] as? String ?? "")
                         let toolCall = ToolCall(id: combinedId, name: name, arguments: [:], namespace: item["namespace"] as? String)
                         startBlock(kind: "toolCall", block: .toolCall(toolCall))
                     } else if type == "custom_tool_call" {
@@ -218,12 +229,13 @@ public func streamOpenAICodexResponses(
                         currentGrammarInputProperty = inputProperty
                         grammarInputBuffer = GrammarToolInputJsonBuffer()
                         currentToolCallPartial = input
-                        let toolCall = ToolCall(
+                        var toolCall = ToolCall(
                             id: "\(callId)|\(itemId)",
                             name: name,
                             arguments: [inputProperty: AnyCodable(input)],
                             namespace: item["namespace"] as? String
                         )
+                        toolCall.argumentsJSON = nil
                         startBlock(kind: "toolCall", block: .toolCall(toolCall))
                     }
 
@@ -254,7 +266,7 @@ public func streamOpenAICodexResponses(
 
                 case "response.custom_tool_call_input.delta":
                     let delta = rawEvent["delta"] as? String ?? ""
-                    try updateGrammarToolCallInput(currentToolCallPartial + delta, close: false)
+                    try updateGrammarToolCallInput("", close: false, inputDelta: delta)
 
                 case "response.custom_tool_call_input.done":
                     let input = rawEvent["input"] as? String ?? ""
@@ -294,11 +306,11 @@ public func streamOpenAICodexResponses(
                         let namespace = item["namespace"] as? String ?? existing.namespace
                         let finalArguments: String
                         if let text = item["arguments"] as? String {
-                            finalArguments = text.isEmpty ? currentToolCallPartial : text
+                            finalArguments = text.isEmpty ? currentToolArgumentStream.text : text
                         } else if let value = event.json?["item"]?["arguments"] {
                             finalArguments = javascriptPropertyOrder(value).serialized()
                         } else {
-                            finalArguments = currentToolCallPartial
+                            finalArguments = currentToolArgumentStream.text
                         }
                         var toolCall = ToolCall(id: combinedId, name: resolvedName, arguments: [:], namespace: namespace)
                         toolCall.finalizeArguments(from: finalArguments)
@@ -317,6 +329,7 @@ public func streamOpenAICodexResponses(
                         try updateGrammarToolCallInput(input, close: true)
                         if case .toolCall(var call) = output.content[index] {
                             call.namespace = item["namespace"] as? String ?? call.namespace
+                            call.argumentsJSON = toolArgumentsToOrderedJSON(call.arguments)
                             output.content[index] = .toolCall(call)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
                         }

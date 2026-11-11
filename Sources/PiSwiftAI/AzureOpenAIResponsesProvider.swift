@@ -191,6 +191,7 @@ public func streamAzureOpenAIResponses(
             var currentBlockIndex: Int? = nil
             var currentBlockKind: String? = nil
             var currentToolCallArgs = ""
+            var currentToolArgumentStream = ToolCallArgumentsStream()
             var pendingToolCallIndices: Set<Int> = []
 
             func startBlock(kind: String, block: ContentBlock) {
@@ -218,7 +219,7 @@ public func streamAzureOpenAIResponses(
                 case .thinking(let thinkingContent):
                     stream.push(.thinkingEnd(contentIndex: index, content: thinkingContent.thinking, partial: output))
                 case .toolCall(var toolCall):
-                    toolCall.setArguments(from: currentToolCallArgs)
+                    toolCall.finalizeArguments(from: currentToolArgumentStream.text)
                     output.content[index] = .toolCall(toolCall)
                     stream.push(.toolCallEnd(contentIndex: index, toolCall: toolCall, partial: output))
                 default:
@@ -227,6 +228,7 @@ public func streamAzureOpenAIResponses(
                 currentBlockIndex = nil
                 currentBlockKind = nil
                 currentToolCallArgs = ""
+                currentToolArgumentStream = ToolCallArgumentsStream()
             }
 
             for try await event in openAIStream {
@@ -251,6 +253,8 @@ public func streamAzureOpenAIResponses(
                             let combinedId = "\(toolCall.callId)|\(idPart)"
                             let call = ToolCall(id: combinedId, name: toolCall.name, arguments: [:])
                             currentToolCallArgs = toolCall.arguments
+                            currentToolArgumentStream = ToolCallArgumentsStream()
+                            _ = currentToolArgumentStream.append(toolCall.arguments)
                             startBlock(kind: "toolCall", block: .toolCall(call))
                         default:
                             break
@@ -284,7 +288,7 @@ public func streamAzureOpenAIResponses(
                                   existing.id == combinedId else { break }
                             let resolvedName = toolCall.name.isEmpty ? existing.name : toolCall.name
                             var call = ToolCall(id: combinedId, name: resolvedName, arguments: [:])
-                            let finalArguments = toolCall.arguments.isEmpty ? currentToolCallArgs : toolCall.arguments
+                            let finalArguments = toolCall.arguments.isEmpty ? currentToolArgumentStream.text : toolCall.arguments
                             call.finalizeArguments(from: finalArguments)
                             output.content[index] = .toolCall(call)
                             stream.push(.toolCallEnd(contentIndex: index, toolCall: call, partial: output))
@@ -333,15 +337,16 @@ public func streamAzureOpenAIResponses(
                     switch argumentsEvent {
                     case .delta(let deltaEvent):
                         if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
-                            currentToolCallArgs += deltaEvent.delta
-                            tool.setArguments(from: currentToolCallArgs)
+                            tool.arguments = currentToolArgumentStream.append(deltaEvent.delta)
+                            tool.argumentsJSON = nil
                             output.content[index] = .toolCall(tool)
                             stream.push(.toolCallDelta(contentIndex: index, delta: deltaEvent.delta, partial: output))
                         }
                     case .done(let doneEvent):
                         if currentBlockKind == "toolCall", let index = currentBlockIndex, case .toolCall(var tool) = output.content[index] {
                             currentToolCallArgs = doneEvent.arguments
-                            tool.setArguments(from: currentToolCallArgs)
+                            tool.arguments = currentToolArgumentStream.replace(doneEvent.arguments).arguments
+                            tool.argumentsJSON = nil
                             output.content[index] = .toolCall(tool)
                         }
                     }
