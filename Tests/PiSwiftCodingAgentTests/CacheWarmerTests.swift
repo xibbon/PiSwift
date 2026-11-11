@@ -13,6 +13,7 @@ private final class ManualWarmingClock: Sendable {
     private struct State: Sendable {
         var now: Int64 = 0
         var waiters: [Waiter] = []
+        var schedules = 0
     }
 
     private let state = LockedState(State())
@@ -25,6 +26,7 @@ private final class ManualWarmingClock: Sendable {
                     let due = self.state.withLock { state -> Bool in
                         guard delay > 0 else { return true }
                         state.waiters.append(Waiter(deadline: state.now + delay, continuation: continuation))
+                        state.schedules += 1
                         return false
                     }
                     if due { continuation.resume() }
@@ -49,6 +51,8 @@ private final class ManualWarmingClock: Sendable {
         for waiter in ready { waiter.continuation.resume() }
         for _ in 0..<200 { await Task.yield() }
     }
+
+    var scheduleCount: Int { state.withLock { $0.schedules } }
 }
 
 // Waits by wall-clock time, not by scheduler turns: a fixed number of Task.yield() calls
@@ -139,6 +143,7 @@ private final class WarmingHarness: Sendable {
     private let manualClock: ManualWarmingClock
 
     func advance(by delta: Int64) async { await manualClock.advance(by: delta) }
+    var scheduleCount: Int { manualClock.scheduleCount }
     var calls: [SimpleStreamOptions] { state.withLock { $0.calls } }
     var events: [CacheWarmingDecisionEvent] { state.withLock { $0.events } }
     var warmed: [UsageEntry] { state.withLock { $0.warmed } }
@@ -150,24 +155,26 @@ private final class WarmingHarness: Sendable {
 }
 
 @Test func cacheWarmingEligibilityAndTiming() {
+    // v1.5.2 A-THRh: cache-warmer.test.ts:127-187 imports shared PiSwiftAI policy.
     var long = SimpleStreamOptions(cacheRetention: .long)
-    #expect(getPromptCacheTtlMs(model: warmingModel) == 300_000)
-    #expect(getPromptCacheTtlMs(model: warmingModel, options: long) == 3_600_000)
+    #expect(CacheWarmingPolicy.getPromptCacheTtlMs(model: warmingModel) == 300_000)
+    #expect(CacheWarmingPolicy.getPromptCacheTtlMs(model: warmingModel, options: long) == 3_600_000)
     long.cacheRetention = CacheRetention.none
-    #expect(getPromptCacheTtlMs(model: warmingModel, options: long) == nil)
-    #expect(getPromptCacheTtlMs(model: warmingModel, environment: ["PI_CACHE_RETENTION": "long"]) == 3_600_000)
-    #expect(getCacheWarmingDelayMs(300_000) == 270_000)
-    #expect(getCacheWarmingDelayMs(60_000) == 50_000)
-    #expect(getCacheWarmingDelayMs(10_000) == nil)
-    #expect(isCacheWarmReplayable(model: warmingModel, options: SimpleStreamOptions(reasoning: .medium)))
+    #expect(CacheWarmingPolicy.getPromptCacheTtlMs(model: warmingModel, options: long) == nil)
+    #expect(CacheWarmingPolicy.getPromptCacheTtlMs(model: warmingModel,
+        options: SimpleStreamOptions(env: ["PI_CACHE_RETENTION": "long"])) == 3_600_000)
+    #expect(CacheWarmingPolicy.getCacheWarmingDelayMs(300_000) == 270_000)
+    #expect(CacheWarmingPolicy.getCacheWarmingDelayMs(60_000) == 50_000)
+    #expect(CacheWarmingPolicy.getCacheWarmingDelayMs(10_000) == nil)
+    #expect(CacheWarmingPolicy.isCacheWarmingReplayable(model: warmingModel, options: SimpleStreamOptions(reasoning: .medium)))
     let budget = Model(
         id: "budget", name: "Budget", api: .anthropicMessages,
         provider: "anthropic", baseUrl: "", reasoning: true, input: [.text],
         cost: warmingModel.cost, contextWindow: 200_000, maxTokens: 16_000,
         promptCache: ModelPromptCache(short: 300)
     )
-    #expect(!isCacheWarmReplayable(model: budget, options: SimpleStreamOptions(reasoning: .medium)))
-    #expect(isCacheWarmReplayable(model: budget))
+    #expect(!CacheWarmingPolicy.isCacheWarmingReplayable(model: budget, options: SimpleStreamOptions(reasoning: .medium)))
+    #expect(CacheWarmingPolicy.isCacheWarmingReplayable(model: budget))
 }
 
 @Test(.timeLimit(.minutes(1))) func cacheWarmingReplaysProfitableRequestAndRecordsUsage() async {
@@ -181,6 +188,8 @@ private final class WarmingHarness: Sendable {
     #expect(harness.calls.count == 1)
     #expect(harness.calls.first?.maxTokens == 1)
     #expect(harness.calls.first?.maxRetries == 0)
+    // v1.5.2 A-THRh: cache-warmer.test.ts:155-169, replay must leave message threads untouched.
+    #expect(harness.calls.first?.disableContinuation == true)
     #expect(harness.calls.first?.sessionId == "s")
     #expect(harness.calls.first?.reasoning == .high)
     #expect(harness.calls.first?.signal !== originalToken)
@@ -191,6 +200,22 @@ private final class WarmingHarness: Sendable {
     await harness.advance(by: 270_000)
     #expect(harness.calls.count == 2)
     await harness.warmer.cancel()
+}
+
+@Test(.timeLimit(.minutes(1))) func cacheWarmingIdleHasOneWakeUpAndStopsAfterDispose() async {
+    let harness = WarmingHarness(mode: .idle)
+    await harness.start()
+    await harness.warmer.onAgentSettled()
+    for _ in 0..<500 {
+        if harness.scheduleCount == 1 { break }
+        await Task.yield()
+    }
+    #expect(harness.scheduleCount == 1)
+    #expect(harness.calls.isEmpty)
+    harness.warmer.cancelImmediately()
+    await harness.advance(by: 270_000)
+    #expect(harness.calls.isEmpty)
+    #expect(harness.scheduleCount == 1)
 }
 
 @Test(.timeLimit(.minutes(1))) func cacheWarmingStopsAfterDelayedTimerAndDecision() async {
@@ -337,5 +362,6 @@ private final class WarmingHarness: Sendable {
         id: "u", timestamp: "", kind: "cache_warm", provider: "anthropic",
         model: "claude-opus-4-6", usage: usage, note: "extension override"
     )
-    #expect(formatCacheWarmingUsage(entry) == "Cache warmed (extension override): $0.029497")
+    // v1.5.2 A-THRh: cache-warmer.test.ts:338-341.
+    #expect(formatCacheWarmingUsage(entry.usage.cost.total, entry.note) == "Cache warmed (extension override): $0.029497")
 }

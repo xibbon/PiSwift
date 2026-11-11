@@ -963,7 +963,7 @@ public final class SettingsManager: Sendable {
     }
 
     public func getCacheWarmingMode() -> CacheWarmingMode {
-        globalSettings.cacheWarming ?? .streaming
+        globalSettings.cacheWarming ?? .idle
     }
 
     public func setCacheWarmingMode(_ mode: CacheWarmingMode) {

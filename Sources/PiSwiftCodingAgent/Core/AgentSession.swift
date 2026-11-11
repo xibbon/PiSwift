@@ -1223,7 +1223,14 @@ public final class AgentSession: Sendable {
     }
 
     public func dispose() {
-        if let cacheWarmer { Task { await cacheWarmer.cancel() } }
+        state.withLock { $0.agentRunAbortRequested = true }
+        idleWaiter.requestAbort()
+        abortRetry()
+        abortCompaction()
+        abortBranchSummary()
+        abortBash()
+        agent.abort()
+        cacheWarmer?.cancelImmediately()
         unsubscribeAgent?()
         unsubscribeAgent = nil
         let runner = _hookRunner
@@ -1232,6 +1239,31 @@ public final class AgentSession: Sendable {
         // v0.67.4: reap any detached bash subprocesses the user spawned during this session
         // so we don't leave orphans hanging around after `/quit` or session shutdown.
         killTrackedDetachedChildren()
+        // v1.5.2: release provider threads and session-scoped sockets after warmer cancellation.
+        // Cleanup callbacks all run even if one throws; retain the aggregate for callers.
+        cleanupSessionResourcesRecordingError(sessionId)
+    }
+
+    private let sessionResourceCleanupError = LockedState<(any Error)?>(nil)
+
+    /// Last session cleanup error, if a registered cleanup callback threw.
+    public var lastSessionResourceCleanupError: (any Error)? {
+        sessionResourceCleanupError.withLock { $0 }
+    }
+
+    private func cleanupSessionResourcesRecordingError(_ id: String) {
+        do {
+            try cleanupSessionResources(id)
+            sessionResourceCleanupError.withLock { $0 = nil }
+        } catch {
+            sessionResourceCleanupError.withLock { $0 = error }
+        }
+    }
+
+    /// End the outgoing session before its manager replaces the session ID.
+    private func cleanupOutgoingSession(_ oldSessionId: String) async {
+        if let cacheWarmer { await cacheWarmer.cancel() }
+        cleanupSessionResourcesRecordingError(oldSessionId)
     }
 
     public internal(set) var hookRunner: HookRunner? {
@@ -3179,6 +3211,7 @@ public final class AgentSession: Sendable {
         } catch {
             return false
         }
+        await cleanupOutgoingSession(sessionId)
         _ = sessionManager.newSession(options)
         agent.sessionId = sessionManager.getSessionId()
         steeringMessages.removeAll()
@@ -3206,6 +3239,7 @@ public final class AgentSession: Sendable {
         } catch {
             return false
         }
+        await cleanupOutgoingSession(sessionId)
         steeringMessages.removeAll()
         followUpMessages.removeAll()
         pendingNextTurnMessages.removeAll()
@@ -3519,6 +3553,9 @@ public final class AgentSession: Sendable {
         guard let leafId = sessionManager.getLeafId() else {
             throw AgentSessionError.invalidEntryIdForForking
         }
+        guard !sessionManager.getBranch(leafId).isEmpty else {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
         let previousSession = sessionFile
 
         if let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_fork") {
@@ -3530,6 +3567,7 @@ public final class AgentSession: Sendable {
 
         await abort()
         try agent.reset()
+        await cleanupOutgoingSession(sessionId)
 
         // position: "at" — branch from the leaf so the new session inherits the leaf entry
         // (rather than forking from its parent, which would drop it).
@@ -3557,6 +3595,9 @@ public final class AgentSession: Sendable {
         let selectedText = extractUserContentText(user.content)
         let previousSession = sessionFile
         var skipConversationRestore = false
+        if let parentId = msg.parentId, sessionManager.getBranch(parentId).isEmpty {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
 
         if let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_fork") {
             if let result = await hookRunner.emit(SessionBeforeForkEvent(entryId: entryId)) as? SessionBeforeForkResult {
@@ -3569,6 +3610,7 @@ public final class AgentSession: Sendable {
 
         await abort()
         try agent.reset()
+        await cleanupOutgoingSession(sessionId)
         if msg.parentId == nil {
             _ = sessionManager.newSession(NewSessionOptions(parentSession: previousSession))
         } else if let parentId = msg.parentId {

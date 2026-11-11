@@ -1,74 +1,31 @@
 import Foundation
 import PiSwiftAI
 
-private let maxWarmingAgeMs: Int64 = 60 * 60_000
-private let maxIdleWarmingAgeMs: Int64 = 30 * 60_000
-private let minimumExpectedSavings = 0.05
-private let idleContinuationProbability = 0.15
-
-/// Returns the delay before a cache refresh. The refresh retains at least ten seconds of TTL.
+/// Kept for clients of the original CodingAgent API. New code uses PiSwiftAI directly.
+@available(*, deprecated, message: "Use CacheWarmingPolicy.getCacheWarmingDelayMs")
 public func getCacheWarmingDelayMs(_ ttlMs: Int64) -> Int64? {
-    guard ttlMs > 10_000 else { return nil }
-    return max(1, min(Int64(Double(ttlMs) * 0.9), ttlMs - 10_000))
+    CacheWarmingPolicy.getCacheWarmingDelayMs(ttlMs)
 }
 
-/// Returns the lifetime of the request's prompt-cache retention tier.
+@available(*, deprecated, message: "Use CacheWarmingPolicy.getPromptCacheTtlMs")
 public func getPromptCacheTtlMs(
     model: Model,
     options: SimpleStreamOptions? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment
 ) -> Int64? {
-    let retention = options?.cacheRetention
-        ?? (environment["PI_CACHE_RETENTION"] == "long" ? CacheRetention.long : .short)
-    switch retention {
-    case .none:
-        return nil
-    case .short:
-        return model.promptCache?.short.map { Int64($0) * 1_000 }
-    case .long:
-        return model.promptCache?.long.map { Int64($0) * 1_000 }
-    }
+    var scoped = options ?? SimpleStreamOptions()
+    if scoped.env == nil { scoped.env = environment }
+    return CacheWarmingPolicy.getPromptCacheTtlMs(model: model, options: scoped)
 }
 
-/// Anthropic budget-based thinking can change the prompt-cache key when replayed with one output token.
+@available(*, deprecated, message: "Use CacheWarmingPolicy.isCacheWarmingReplayable")
 public func isCacheWarmReplayable(model: Model, options: SimpleStreamOptions? = nil) -> Bool {
-    if options?.reasoning == nil || model.api != .anthropicMessages { return true }
-    return model.compat?.forceAdaptiveThinking == true
+    CacheWarmingPolicy.isCacheWarmingReplayable(model: model, options: options)
 }
 
-public enum CacheWarmingAction: String, Sendable, Equatable {
-    case warm
-    case stop
-}
-
-public enum CacheWarmingPhase: String, Sendable, Equatable {
-    case streaming
-    case idle
-}
-
-public struct CacheWarmingDecision: Sendable, Equatable {
-    public var phase: CacheWarmingPhase
-    public var warmCost: Double
-    public var missCost: Double
-    public var continuationProbability: Double
-    public var expectedSavings: Double
-    public var economicsAvailable: Bool
-    public var action: CacheWarmingAction
-
-    public init(
-        phase: CacheWarmingPhase, warmCost: Double, missCost: Double,
-        continuationProbability: Double, expectedSavings: Double,
-        economicsAvailable: Bool, action: CacheWarmingAction
-    ) {
-        self.phase = phase
-        self.warmCost = warmCost
-        self.missCost = missCost
-        self.continuationProbability = continuationProbability
-        self.expectedSavings = expectedSavings
-        self.economicsAvailable = economicsAvailable
-        self.action = action
-    }
-}
+public typealias CacheWarmingAction = CacheWarmingPolicy.CacheWarmingAction
+public typealias CacheWarmingPhase = CacheWarmingPolicy.CacheWarmingPhase
+public typealias CacheWarmingDecision = CacheWarmingPolicy.CacheWarmingDecision
 
 public struct CacheWarmingDecisionEvent: HookEvent, Sendable, Equatable {
     public let type = "cache_warming_decision"
@@ -167,6 +124,11 @@ public actor CacheWarmer {
     private let decide: Decision
     private let onWarmed: (@Sendable (UsageEntry) async -> Void)?
     private let clock: CacheWarmingClock
+    private struct CancellationState: Sendable {
+        var token: CancellationToken?
+        var disposed = false
+    }
+    private nonisolated let cancellationState = LockedState(CancellationState())
     private var run: Run?
     private var inactive = CacheWarmingStatus(state: .inactive, reason: "waiting for first request")
 
@@ -206,28 +168,31 @@ public actor CacheWarmer {
     /// A new real request replaces the prior warming run.
     public func start(_ request: CacheWarmRequest, isCurrent: @escaping @Sendable () -> Bool) {
         clearRun()
+        guard !cancellationState.withLock({ $0.disposed }) else { return }
         if getMode() == .off {
             stop("cache warming disabled")
             return
         }
-        if !isCacheWarmReplayable(model: request.model, options: request.options) {
+        if !CacheWarmingPolicy.isCacheWarmingReplayable(model: request.model, options: request.options) {
             stop("request cannot be replayed safely")
             return
         }
-        guard let ttlMs = getPromptCacheTtlMs(model: request.model, options: request.options) else {
+        guard let ttlMs = CacheWarmingPolicy.getPromptCacheTtlMs(model: request.model, options: request.options) else {
             stop(request.options.cacheRetention == CacheRetention.none
                 ? "request disabled prompt caching" : "cache lifetime unavailable")
             return
         }
-        guard let delayMs = getCacheWarmingDelayMs(ttlMs) else {
+        guard let delayMs = CacheWarmingPolicy.getCacheWarmingDelayMs(ttlMs) else {
             stop("cache lifetime unavailable")
             return
         }
         let now = clock.nowMs()
+        let token = CancellationToken()
+        cancellationState.withLock { $0.token = token }
         run = Run(
             id: UUID(), request: request, isCurrent: isCurrent,
             ttlMs: ttlMs, delayMs: delayMs, refreshDeadlineAt: 0, startedAt: now,
-            token: CancellationToken(), phase: .streaming, nextWarmAt: 0,
+            token: token, phase: .streaming, nextWarmAt: 0,
             extensionOverride: false, timer: nil
         )
         schedule()
@@ -241,7 +206,7 @@ public actor CacheWarmer {
         }
         active.phase = .idle
         run = active
-        let deadline = active.startedAt + maxIdleWarmingAgeMs
+        let deadline = active.startedAt + CacheWarmingPolicy.cacheWarmingMaxIdleAgeMs
         if active.nextWarmAt > deadline || clock.nowMs() >= deadline {
             stop("30-minute idle safety limit reached")
         }
@@ -256,9 +221,19 @@ public actor CacheWarmer {
         stop("inactive")
     }
 
+    /// Cancel an active replay before a synchronous session disposal returns.
+    public nonisolated func cancelImmediately() {
+        cancellationState.withLock {
+            $0.disposed = true
+            $0.token?.cancel()
+        }
+        Task { await self.cancel() }
+    }
+
     private func clearRun() {
         guard let active = run else { return }
         run = nil
+        cancellationState.withLock { $0.token = nil }
         active.timer?.cancel()
         active.token.cancel()
     }
@@ -277,11 +252,13 @@ public actor CacheWarmer {
 
     private func schedule() {
         guard var active = run else { return }
+        guard !cancellationState.withLock({ $0.disposed }) else { stop("inactive"); return }
         active.extensionOverride = false
         let now = clock.nowMs()
         active.nextWarmAt = now + active.delayMs
         active.refreshDeadlineAt = active.nextWarmAt + (active.ttlMs - active.delayMs) / 2
-        let horizon = active.startedAt + (active.phase == .idle ? maxIdleWarmingAgeMs : maxWarmingAgeMs)
+        let horizon = active.startedAt + (active.phase == .idle
+            ? CacheWarmingPolicy.cacheWarmingMaxIdleAgeMs : CacheWarmingPolicy.cacheWarmingMaxAgeMs)
         if active.nextWarmAt > horizon || now >= horizon {
             stop(active.phase == .idle
                 ? "30-minute idle safety limit reached" : "one-hour safety limit reached")
@@ -333,10 +310,7 @@ public actor CacheWarmer {
         guard var current = run, current.id == id else { return }
         current.extensionOverride = extensionOverride
         run = current
-        var options = current.request.options
-        options.maxTokens = 1
-        options.maxRetries = 0
-        options.signal = current.token
+        let options = CacheWarmingPolicy.getCacheWarmingRequestOptions(current.request.options, signal: current.token)
         do {
             let message = try await stream(current.request.model, current.request.context, options)
             if validate(id), message.stopReason != .error, message.stopReason != .aborted {
@@ -363,6 +337,10 @@ public actor CacheWarmer {
 
     private func validate(_ id: UUID) -> Bool {
         guard let run, run.id == id else { return false }
+        if run.token.isCancelled || cancellationState.withLock({ $0.disposed }) {
+            stop("inactive")
+            return false
+        }
         if let reason = modeStopReason(run) ?? (!run.isCurrent() ? "conversation context changed" : nil) {
             stop(reason)
             return false
@@ -377,21 +355,8 @@ public actor CacheWarmer {
     }
 
     private func evaluate(_ run: Run) -> CacheWarmingDecision {
-        let promptTokens = lastPromptTokens(sessionManager.getBranch())
-        let hitCost = price(run.request.model, cacheRead: promptTokens)
-        let missCost = run.request.model.cost.cacheWrite > 0
-            ? price(run.request.model, cacheWrite: promptTokens)
-            : price(run.request.model, input: promptTokens)
-        let warmCost = price(run.request.model, output: 1, cacheRead: promptTokens)
-        let loss = max(0, missCost - hitCost)
-        let probability = run.phase == .idle ? idleContinuationProbability : 1
-        let available = promptTokens > 0 && (hitCost > 0 || missCost > 0)
-        let savings = probability * loss - warmCost
-        return CacheWarmingDecision(
-            phase: run.phase, warmCost: warmCost, missCost: loss,
-            continuationProbability: probability, expectedSavings: savings,
-            economicsAvailable: available,
-            action: savings >= minimumExpectedSavings ? .warm : .stop
+        CacheWarmingPolicy.evaluateCacheWarming(
+            model: run.request.model, promptTokens: lastPromptTokens(sessionManager.getBranch()), phase: run.phase
         )
     }
 }
@@ -403,17 +368,6 @@ private func lastPromptTokens(_ entries: [SessionEntry]) -> Int {
         }
     }
     return 0
-}
-
-private func price(
-    _ model: Model, input: Int = 0, output: Int = 0,
-    cacheRead: Int = 0, cacheWrite: Int = 0
-) -> Double {
-    var usage = Usage(
-        input: input, output: output, cacheRead: cacheRead,
-        cacheWrite: cacheWrite, totalTokens: 0
-    )
-    return calculateCost(model: model, usage: &usage).total
 }
 
 private func dollars(_ amount: Double) -> String {
@@ -429,7 +383,7 @@ private func economics(_ decision: CacheWarmingDecision) -> String {
         ? "\(probability)% continuation probability while agent is running"
         : "\(probability)% continuation probability"
     let comparison = decision.action == .warm ? ">=" : "<"
-    return "\(probabilityText), expected savings \(dollars(decision.expectedSavings)) \(comparison) $0.050"
+    return "\(probabilityText), expected savings \(dollars(decision.expectedSavings)) \(comparison) \(dollars(CacheWarmingPolicy.cacheWarmingMinimumExpectedSavings))"
 }
 
 /// One-line diagnostic for the session display.
@@ -466,14 +420,19 @@ public func formatCacheWarmingStatus(
     }
 }
 
-/// One-line transcript notice for persisted cache warming usage.
-public func formatCacheWarmingUsage(_ entry: UsageEntry) -> String {
-    let note = entry.note.map { " (\($0))" } ?? ""
-    var cost = String(format: "%.6f", entry.usage.cost.total)
+/// One-line transcript notice for the total cost of consecutive cache warms.
+public func formatCacheWarmingUsage(_ totalCost: Double, _ note: String? = nil) -> String {
+    let noteText = note.map { " (\($0))" } ?? ""
+    var cost = String(format: "%.6f", totalCost)
     if let dot = cost.firstIndex(of: ".") {
         while cost.last == "0" && cost.distance(from: dot, to: cost.endIndex) > 4 {
             cost.removeLast()
         }
     }
-    return "Cache warmed\(note): $\(cost)"
+    return "Cache warmed\(noteText): $\(cost)"
+}
+
+@available(*, deprecated, message: "Use formatCacheWarmingUsage(_:_:)")
+public func formatCacheWarmingUsage(_ entry: UsageEntry) -> String {
+    formatCacheWarmingUsage(entry.usage.cost.total, entry.note)
 }

@@ -23,6 +23,8 @@ import PiSwiftAI
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let manager = SettingsManager.inMemory()
+    // v1.5.2 A-THRh: settings-manager.test.ts:415,418.
+    #expect(manager.getCacheWarmingMode() == .idle)
     // C1 U3: SDK tool-list validation now throws.
     let created = try await createAgentSession(CreateAgentSessionOptions(
         cwd: directory.path, agentDir: directory.path,

@@ -33,6 +33,7 @@ import PiSwiftAI
     let path = agent.appendingPathComponent("settings.json")
     try Data(#"{"cacheWarming":"idle","compaction":{"reserveTokens":7000,"modelOverrides":{"openai/gpt-4-turbo":{"keepRecentTokens":9000}}}}"#.utf8).write(to: path)
     let manager = SettingsManager.create(root.path, agent.path)
+    // v1.5.2 A-THRh: settings-manager.test.ts:415,418; explicit idle still parses.
     #expect(manager.getCacheWarmingMode() == .idle)
     #expect(manager.getCompactionSettingsOverrides().modelOverrides?["openai/gpt-4-turbo"]?.keepRecentTokens == 9_000)
     manager.setCacheWarmingMode(.streaming)
@@ -48,6 +49,8 @@ import PiSwiftAI
 }
 
 @Test func c4CacheWarmingModeIgnoresProjectOverride() {
+    // v1.5.2 A-THRh: settings-manager.test.ts:415-425.
+    #expect(SettingsManager.inMemory().getCacheWarmingMode() == .idle)
     var global = Settings()
     global.cacheWarming = .idle
     var project = Settings()
@@ -55,4 +58,25 @@ import PiSwiftAI
     let manager = SettingsManager.inMemory(global)
     manager.applyOverrides(project)
     #expect(manager.getCacheWarmingMode() == .idle)
+}
+
+@Test func athrhCacheWarmingDefaultAndAllParsedModes() throws {
+    // v1.5.2 A-THRh: settings-manager.test.ts:413-425.
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("athrh-settings-\(UUID().uuidString)")
+    let agent = root.appendingPathComponent("agent")
+    try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let path = agent.appendingPathComponent("settings.json")
+    #expect(SettingsManager.create(root.path, agent.path).getCacheWarmingMode() == .idle)
+    for mode in CacheWarmingMode.allCases {
+        try Data("{\"cacheWarming\":\"\(mode.rawValue)\"}".utf8).write(to: path)
+        #expect(SettingsManager.create(root.path, agent.path).getCacheWarmingMode() == mode)
+    }
+    try Data(#"{"cacheWarming":"bogus"}"#.utf8).write(to: path)
+    #expect(SettingsManager.create(root.path, agent.path).getCacheWarmingMode() == .idle)
+    let project = root.appendingPathComponent(".pi")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    try Data(#"{"cacheWarming":"streaming"}"#.utf8)
+        .write(to: project.appendingPathComponent("settings.json"), options: .atomic)
+    #expect(SettingsManager.create(root.path, agent.path).getCacheWarmingMode() == .idle)
 }

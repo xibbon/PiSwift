@@ -323,6 +323,27 @@ func codemodeHostDisablesLateCallsAfterTimeoutOrAbort(abort: Bool) async throws 
     #expect(dispatches.withLock { $0 } == 0)
 }
 
+@Test(.timeLimit(.minutes(1))) func codemodeHostValidationKeepsScriptArgumentOrder() async throws {
+    // v1.5.2 A-THRh: Codemode/Execute.swift passes the parsed argument source to validation.
+    let tool = AgentTool(label: "read", name: "read", description: "Read",
+        parameters: ["type": AnyCodable("object"),
+                     "properties": AnyCodable(["alpha": ["type": "string"], "zeta": ["type": "string"]])]) {
+        _, _, _, _ in AgentToolResult(content: [])
+    }
+    let context = hostContext(tool) { name, args, _ in
+        Issue.record("Invalid arguments reached the native tool: \(name), \(args.count) arguments")
+        return AgentToolCallOutcome(toolCall: AgentToolCall(id: "unexpected", name: name, arguments: args),
+                                    result: AgentToolResult(content: []), isError: false)
+    }
+    let result = try await executeCodemode(toolCallId: "argument-order",
+        params: ["code": AnyCodable("try { await tools.read({zeta: {bad:true}, alpha: {bad:true}}) } catch (e) { text(e.message) }")],
+        context: context)
+    let message = hostText(result)
+    let zeta = try #require(message.range(of: "\"zeta\""))
+    let alpha = try #require(message.range(of: "\"alpha\""))
+    #expect(zeta.lowerBound < alpha.lowerBound)
+}
+
 @Test(.timeLimit(.minutes(1))) func codemodeHostPublishesLateRejectedCallAfterAbort() async throws {
     let signal = CancellationToken()
     let dispatches = LockedState(0)

@@ -466,8 +466,11 @@ private func handleTool(_ call: CodemodeRuntimeCall, tool: AgentTool?, context: 
             if let prepare = tool.prepareArguments, let rewritten = try await prepare(prepared) {
                 prepared = rewritten
             }
+            let source = parseToolArgumentsSource(argsJSON)
             args = try validateToolArguments(tool: tool.aiTool,
-                toolCall: ToolCall(id: "\(call.id)", name: tool.name, arguments: prepared))
+                toolCall: ToolCall(id: "\(call.id)", name: tool.name,
+                                   arguments: toolArgumentsWithOrder(prepared, argumentsJSON: source),
+                                   argumentsJSON: source))
         } catch {
             throw CodemodeBridgeError.message((options.validationErrorPrefix ?? "") + error.localizedDescription)
         }

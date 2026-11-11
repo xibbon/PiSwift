@@ -1554,6 +1554,13 @@ public final class SessionManager: Sendable {
         state.withLock { st in
             st.entries = newEntries
             rebuildIndexLocked(&st)
+            // v1.5.2 A-THRh: a fork is a new session even without a file.
+            // Keep its branch, but give provider session resources a fresh key.
+            let newId = UUID().uuidString
+            st.sessionId = newId
+            st.header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION,
+                id: newId, timestamp: isoNow(), cwd: st.cwd,
+                parentSession: nil, metadata: st.header?.metadata)
         }
         // An in-memory branch has no file path. Return a success marker so callers
         // can distinguish it from an unknown leaf ID.
