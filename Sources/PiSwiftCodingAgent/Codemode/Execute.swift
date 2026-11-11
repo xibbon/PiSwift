@@ -405,7 +405,10 @@ private actor CodemodeCallState {
                 calls[index].status = .outcomeUnknown
                 calls[index].error = "outcome_unknown: the native operation may still be running"
             } else {
+                // The script ended while the call was still in preparation or validation,
+                // before dispatch: it never started.
                 calls[index].status = .cancelled
+                calls[index].error = calls[index].error ?? codemodeNotStartedMessage
             }
         }
         publish()
