@@ -34,7 +34,7 @@ extension Harness {
         try assertOpen()
         try context.abortSignal?.throwIfAborted()
         let result = Mutex<DurableAgentEventWatch?>(nil)
-        let backing = Mutex<CommittedWatch<[DurableAgentEvent]>?>(nil)
+        let backing = Mutex<DurableEventBuffer?>(nil)
         _ = try await views.attach(id: conversationId, context: context) { initial, release, storage in
             let completing = try await scanAll { cursor in
                 try await storage.scanTasks(.init(conversationId: conversationId, kind: "pi.generation", status: .completing),
@@ -43,8 +43,8 @@ extension Harness {
             let held = Mutex(Set(completing.map(\.id)))
             let initialSnapshot = try durableEventSnapshot(initial)
             let current = Mutex(initialSnapshot)
-            let watch = CommittedWatch<[DurableAgentEvent]>(value: [], replacement: { _ in .array([]) }, detach: release,
-                replace: { [.snapshot(current.withLock { $0 })] }, report: { self.session.report($0) })
+            let watch = DurableEventBuffer(detach: release,
+                snapshot: { current.withLock { $0 } }, report: { self.session.report($0) })
             backing.withLock { $0 = watch }
             result.withLock { $0 = DurableAgentEventWatch(snapshot: initialSnapshot, watch: watch) }
             return ConversationViewObserver(publication: { before, after, ops, publication, context in
@@ -55,7 +55,7 @@ extension Harness {
                         try translateDurableEvents(conversationId: conversationId, before: before, after: after,
                             viewOps: ops, publication: publication, held: &$0)
                     }
-                    if !events.isEmpty { watch.advance(value: events, ops: [], context: context) }
+                    if !events.isEmpty { watch.advance(events, context: context) }
                 } catch { watch.fail(error) }
             }, closeSession: { watch.closeSession(self.session.failure) })
         }

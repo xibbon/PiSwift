@@ -199,7 +199,10 @@ private func exampleShow(_ message: Message) -> String {
         let watch = try #require(try await session.watchDoc(notes, conversationId: chat.id, context: .background))
         #expect(watch.value == ExampleNotes(text: "first"))
         let values = ExampleLog<ExampleNotes?>(), delivered = ExampleGate()
-        try watch.start { value, _, _ in values.append(value); delivered.release() }
+        // v1.5.2 CH3 mechanical: chord/watch.ts:16–40 tagged value call.
+        try watch.start { call, _ in
+            if case .value(let value, _, _) = call { values.append(value); delivered.release() }
+        }
         try await session.commit({ tx in try await tx.doc(notes, conversationId: chat.id).set("text", "observed asynchronously") }, context: .background)
         await delivered.wait()
         #expect(values.values == [ExampleNotes(text: "observed asynchronously")])

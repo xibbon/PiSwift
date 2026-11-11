@@ -133,7 +133,7 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
         }]))
         let root = try await harness.root(context: .background)
         let watch = try #require(try await harness.watchDoc(LiveDoc, conversationId: root.id, context: .background))
-        try watch.start { _, _, _ in throw TaskDefinitionError("listener") }
+        try watch.start { _, _ in throw TaskDefinitionError("listener") }
         try await root.commit({ tx in try await tx.doc(LiveDoc, conversationId: root.id).set("compactions", []) }, context: .background)
         _ = await watch.closed
         _ = try await root.agent(context: .background)

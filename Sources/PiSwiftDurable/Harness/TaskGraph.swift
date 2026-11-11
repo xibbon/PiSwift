@@ -153,22 +153,25 @@ public final class TaskGraph: Sendable, Equatable, Codable {
     fileprivate var json: JSONValue { .object(["tasks": .object(JSONObject(tasks.map { ($0.key, $0.value.json) }))]) }
 }
 /// A stream of committed task graphs. Call stop() to release its observer.
-public typealias TaskGraphWatch = CommittedWatch<TaskGraph>
+public typealias TaskGraphWatch = Watch<TaskGraph>
 
 private final class TaskGraphObserverID: Sendable {}
 private enum TaskGraphObserver: Sendable {
     case state(CommittedStateSource<TaskGraph>)
     case watch(TaskGraphWatch)
+    case observer(GuardedObserver<WatchCall<TaskGraph>>)
     func advance(_ value: TaskGraph, _ ops: [Delta.Op], _ context: ChordContext) {
         switch self {
         case .state(let source): source.advance(value: value, ops: ops, context: context)
-        case .watch(let watch): watch.advance(value: value, ops: ops, context: context)
+        case .watch(let watch): watch.advance(.value(value: value, ops: ops, retired: false), context: context)
+        case .observer(let observer): observer.advance(.value(value: value, ops: ops, retired: false), context: context)
         }
     }
     func close(_ error: (any Error)? = nil) {
         switch self {
         case .state(let source): source.closeSession()
-        case .watch(let watch): watch.closeSession(error)
+        case .watch(let watch): watch.end(error.map { .failed(.message(String(describing: $0))) } ?? .ended)
+        case .observer(let observer): observer.end(.failed(.message(error.map { String(describing: $0) } ?? "session closed")))
         }
     }
 }
@@ -237,6 +240,19 @@ internal final class TaskGraphView: Sendable {
             } catch { source.closeSession(); throw error }
         }
     }
+    // v1.5.2 CH3: Host observers receive every publication, without watch folding.
+    func observe(_ observer: Observer<TaskGraph>, context: ChordContext) async throws -> Observation<TaskGraph> {
+        let (value, guarded) = try await session.readOnLine {
+            try await attach(context: context) { value, release in
+                let guarded = GuardedObserver(advance: observer.advance, end: observer.end,
+                    detach: release, report: { self.session.report($0) })
+                return ((value, guarded), .observer(guarded))
+            }
+        }
+        do { try context.abortSignal?.throwIfAborted() }
+        catch { guarded.detach(); throw error }
+        return Observation(value: value, detach: { guarded.detach() })
+    }
     func watch(context: ChordContext) async throws -> TaskGraphWatch {
         let watch = try await session.readOnLine {
             try await attach(context: context) { value, release in
@@ -246,10 +262,10 @@ internal final class TaskGraphView: Sendable {
         }
         do {
             try context.abortSignal?.throwIfAborted()
-            if let signal = context.abortSignal { try watch.observeCancellation(signal) }
+            if let signal = context.abortSignal { try watch.observeAbort(signal) }
             try context.abortSignal?.throwIfAborted()
             return watch
-        } catch { watch.cancel(); throw error }
+        } catch { watch.abort(); throw error }
     }
     private func attach<Observer: Sendable>(context: ChordContext,
         create: (TaskGraph, @escaping @Sendable () -> Void) -> (Observer, TaskGraphObserver)
@@ -374,6 +390,13 @@ internal final class TaskGraphView: Sendable {
 }
 
 extension Harness {
+    /// Observe each graph change on the Session line. Detach to release the observer.
+    public func observeTaskGraph(_ observer: Observer<TaskGraph>, context: ChordContext) async throws -> Observation<TaskGraph> {
+        try await withTaskCancellationContext(context) { context in
+            try assertOpen()
+            return try await graph.observe(observer, context: context)
+        }
+    }
     /// A disposable read-only Chord state of every live task.
     public func taskGraph(context: ChordContext) async throws -> AttachedReplicatedState<TaskGraph> {
         try await withTaskCancellationContext(context) { context in
@@ -381,7 +404,7 @@ extension Harness {
             return try await graph.attached(context: context)
         }
     }
-    /// Exact committed graph frames. The watch keeps at most 100 pending frames.
+    /// Committed graph changes. Pending changes are folded into one delivery.
     public func watchTaskGraph(context: ChordContext) async throws -> TaskGraphWatch {
         try await withTaskCancellationContext(context) { context in
             try assertOpen()

@@ -50,45 +50,6 @@ private final class ObservationRevision: Sendable {
 }
 
 extension Session {
-    internal func currentWatch<Value: Codable & Sendable>(
-        _ definition: DocumentDefinition, address: DocumentAddress,
-        context: ChordContext
-    ) async throws -> CommittedWatch<Value?>? {
-        let watch: CommittedWatch<Value?>? = try await readOnLine {
-            try context.abortSignal?.throwIfAborted()
-            guard let loaded = try await loadDocument(definition, address: address, context: context) else {
-                try context.abortSignal?.throwIfAborted()
-                return nil
-            }
-            try context.abortSignal?.throwIfAborted()
-            try definition.check(loaded.record)
-            try definition.checkVersion(loaded.storedVersion, record: loaded.record)
-            let value = try loaded.snapshot(Value.self)
-            let revision = ObservationRevision(version: loaded.valueVersion, value: loaded.tracker.value.objectValue!)
-            let subscriptions = ObservationSubscriptions()
-            let watch = CommittedWatch<Value?>(value: value, replacement: { _ in revision.tree }, detach: { subscriptions.release() }, report: { self.report($0) })
-            do {
-                try attachObservation(address: address, recordID: loaded.record.id, revision: revision, subscriptions: subscriptions,
-                    advance: { change, ops, context in
-                        do {
-                            let value = try change.value.map { try JSONValue.object($0).decode(Value.self) }
-                            watch.advance(value: value, ops: ops, context: context, retired: change.value == nil)
-                        } catch { watch.fail(error) }
-                    }, close: { watch.closeSession(self.failure) })
-                if let signal = context.abortSignal { try watch.observeCancellation(signal) }
-                try context.abortSignal?.throwIfAborted()
-                return watch
-            } catch {
-                watch.cancel()
-                subscriptions.release()
-                throw error
-            }
-        }
-        do { try context.abortSignal?.throwIfAborted() }
-        catch { watch?.cancel(); throw error }
-        return watch
-    }
-
     internal func currentDocumentState<Value: Codable & Sendable>(
         _ definition: DocumentDefinition, address: DocumentAddress,
         context: ChordContext

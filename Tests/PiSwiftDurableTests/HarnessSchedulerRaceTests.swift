@@ -182,7 +182,7 @@ extension HarnessSchedulerRaceTests {
     @Test func closeSealsBeforeSignalCallbacksAndClosesWatchesBeforeJoining() async throws {
         let notes = try SessionDocToken<JSONObject>(kind: "test.reentrant-notes", version: 1, initial: { JSONObject() }, checkpointWhen: { _, _, _ in false })
         let reference = Mutex<Harness?>(nil), callback = Mutex<Task<Void, any Error>?>(nil)
-        let entered = SessionTestGate(), end = Mutex<PiSwiftDurable.WatchEnd?>(nil) // v1.5.2 CH2: qualified, the chord Watch API has the same name
+        let entered = SessionTestGate(), end = Mutex<PiSwiftChord.WatchEnd?>(nil) // v1.5.2 CH3: Use the shared Chord end reason.
         let definition = harnessOneStep("test.reentrant-close") { _, runtime, _ in
             let watch = try #require(try await runtime.watchDoc(notes, context: .background))
             runtime.signal.addAbortListener { _ in
@@ -202,7 +202,8 @@ extension HarnessSchedulerRaceTests {
         try harness.resume(); await entered.wait(); try await harness.close(context: .background)
         let queued = try #require(callback.withLock { $0 })
         await #expect(throws: (any Error).self) { try await queued.value }
-        guard case .sessionClosed? = end.withLock({ $0 }) else { Issue.record("Watch did not close with Session"); return }
+        // v1.5.2 CH3: Session closure ends Chord watches.
+        guard case .ended? = end.withLock({ $0 }) else { Issue.record("Watch did not close with Session"); return }
     }
 
     // upstream harness-tasks.test.ts:886; queued cancelled and closed waits must reject.

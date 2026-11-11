@@ -2,80 +2,80 @@ import PiSwiftChord
 import Testing
 @testable import PiSwiftDurable
 
-@Suite("Watch and state source generic core")
+@Suite("Watch and state source generic core", .timeLimit(.minutes(1)))
 struct WatchCoreTests {
+    // v1.5.2 CH3 chord/watch.ts:305–381; session-watches.test.ts:203: count remaining ops.
     @Test("Generic overflow uses the supplied JSON representation")
     func genericReplacement() async throws {
-        let watch = CommittedWatch<Int>(value: 0, replacement: { .string("value:\($0)") }, detach: {})
-        for value in 1...101 {
-            watch.advance(value: value, ops: [.set(["value"], .number(Double(value)))], context: .background)
+        let watch = Watch<Int>(value: 0, replacement: { .string("value:\($0)") }, detach: {})
+        for value in 1...10_001 {
+            watch.advance(.value(value: value, ops: [.set([.key("k\(value)")], .number(Double(value)))], retired: false), context: .background)
         }
         #expect(watch.value == 0)
         let values = SessionTestLog<Int>()
         let operations = SessionTestLog<[Delta.Op]>()
-        try watch.start { value, ops, _ in values.append(value); operations.append(ops) }
+        try watch.start { call, _ in
+            guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected failure"); return }
+            values.append(value); operations.append(ops)
+        }
         await watch.waitUntilIdle()
-        #expect(values.values == [101])
-        #expect(operations.values == [[.replace(.string("value:101"))]])
-        #expect(watch.value == 101)
+        #expect(values.values == [10_001])
+        #expect(operations.values == [[.replace(.string("value:10001"))]])
+        #expect(watch.value == 10_001)
         _ = await watch.stop()
     }
 
+    // v1.5.2 CH3 chord/watch.ts:398–438: source snapshot replacement belongs to NativeWatch.
     @Test("An overflow replacement can publish a later frame without a lock")
     func reentrantReplacement() async throws {
-        let watches = SessionTestLog<CommittedWatch<Int>>()
-        let watch = CommittedWatch<Int>(value: 0, replacement: { .number(Double($0)) }, detach: {}, replace: {
-            watches.values[0].advance(value: 102, ops: [.replace(102)], context: .background)
+        let watches = SessionTestLog<NativeWatch<Int>>()
+        let watch = NativeWatch<Int>(value: 0, detach: {}, replace: {
+            watches.values[0].advance(102, context: .background)
             return 101
         })
         watches.append(watch)
-        for value in 1...101 { watch.advance(value: value, ops: [], context: .background) }
+        for value in 1...101 { watch.advance(value, context: .background) }
         let values = SessionTestLog<Int>()
-        try watch.start { value, _, _ in values.append(value) }
+        try watch.start { call, _ in if case .value(let value) = call { values.append(value) } }
         await watch.waitUntilIdle()
         #expect(values.values == [101, 102])
         _ = await watch.stop()
     }
 
+    // v1.5.2 CH3 chord/watch.ts:398–438: native batches have no JSON operations.
     @Test("Generic overflow can replace an event batch with a source snapshot")
     func genericSnapshotReplacement() async throws {
         let current = SessionTestLog<Int>()
         let replacements = SessionTestLog<Int>()
-        let watch = CommittedWatch<[Int]>(value: [], replacement: { .array($0.map { .number(Double($0)) }) },
-                                         detach: {}, replace: { replacements.append(1); return current.values })
+        let watch = NativeWatch<[Int]>(value: [], detach: {}, replace: { replacements.append(1); return current.values })
         for value in 1...101 {
             current.append(value)
-            watch.advance(value: [value], ops: [], context: .background)
+            watch.advance([value], context: .background)
         }
         let values = SessionTestLog<[Int]>()
-        let operations = SessionTestLog<[Delta.Op]>()
-        try watch.start { value, ops, _ in values.append(value); operations.append(ops) }
+        try watch.start { call, _ in if case .value(let value) = call { values.append(value) } }
         await watch.waitUntilIdle()
         #expect(values.values == [Array(1...101)])
         #expect(replacements.values == [1])
-        #expect(operations.values == [[.replace(.array((1...101).map { .number(Double($0)) }))]])
         _ = await watch.stop()
-        watch.advance(value: [102], ops: [], context: .background)
+        watch.advance([102], context: .background)
         #expect(replacements.values == [1])
     }
 
-    @Test("Retirement at overflow keeps the canonical terminal operations")
+    // v1.5.2 CH3 session-watches.test.ts:262: retirement is a call and the address stays open.
+    @Test("Retirement at overflow retains the last value and permits later values")
     func retirementAtOverflow() async throws {
-        let watch = CommittedWatch<Int?>(value: 0, replacement: { value in
-            value.map { .number(Double($0)) } ?? .null
-        }, detach: {})
-        for value in 1...100 {
-            watch.advance(value: value, ops: [], context: .background)
+        let watch = Watch<Int>(value: 0, replacement: { .number(Double($0)) }, detach: {})
+        for value in 1...10_001 {
+            watch.advance(.value(value: value, ops: [.set([.key("k\(value)")], .number(Double(value)))], retired: false), context: .background)
         }
-        watch.advance(value: nil, ops: [], context: .background, retired: true)
-        watch.advance(value: 999, ops: [], context: .background)
-        let values = SessionTestLog<Int?>()
-        let operations = SessionTestLog<[Delta.Op]>()
-        try watch.start { value, ops, _ in values.append(value); operations.append(ops) }
+        watch.advance(.value(value: 10_001, ops: [], retired: true), context: .background)
+        watch.advance(.value(value: 999, ops: [.replace(999)], retired: false), context: .background)
+        let calls = SessionTestLog<WatchCall<Int>>()
+        try watch.start { call, _ in calls.append(call) }
         await watch.waitUntilIdle()
-        #expect(values.values == [nil])
-        #expect(operations.values == [[.replace(.null)]])
-        guard case .retired = await watch.closed else { Issue.record("Expected retirement"); return }
+        #expect(calls.values == [.value(value: 999, ops: [.replace(999)], retired: true)])
+        #expect(await watch.stop() == .stopped)
     }
 
     @Test("Source attachment registration captures its value and buffers later frames")

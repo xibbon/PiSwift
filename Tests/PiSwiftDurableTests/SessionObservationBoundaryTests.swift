@@ -1,5 +1,7 @@
 import PiSwiftChord
 import Testing
+
+// v1.5.2 CH3 mechanical: chord WatchCall replaces the three-argument listener (chord/watch.ts:16–40).
 @testable import PiSwiftDurable
 
 // Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
@@ -29,7 +31,7 @@ import Testing
     let token = try SessionDocToken<Value>(kind: "watch.decode", version: 1, initial: { Value(n: 0) }, checkpointWhen: { _, _, _ in false })
     try await harness.session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     let watch = try #require(try await harness.session.watchDoc(token, context: .background))
-    try watch.start { _, _, _ in }
+    try watch.start { _, _ in }
     try await harness.session.commit({ tx in
         let draft = try await tx.doc(token)
         try draft.set("n", .string("invalid"))

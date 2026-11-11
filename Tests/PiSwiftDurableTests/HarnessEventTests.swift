@@ -200,7 +200,9 @@ import PiSwiftDurableTesting
 
     @Test func harnessCloseEndsEventStream() async throws {
         let opened = try await openChat(setup: HarnessChatSetup()), stream = try await opened.harness.watchEvents(conversationId: opened.root.id, context: .background)
-        try await opened.harness.close(context: .background); if case .sessionClosed = await stream.closed {} else { Issue.record("Stream did not close with Session") }
+        try await opened.harness.close(context: .background)
+        // v1.5.2 CH3: Session closure ends the event adapter with the shared reason.
+        if case .ended = await stream.closed {} else { Issue.record("Stream did not close with Session") }
     }
 
     @Test func firstPartialStartsOnceAndAbortEndsConvertedEntry() async throws {
@@ -257,7 +259,9 @@ import PiSwiftDurableTesting
     @Test func acquisitionCancellationEndsAttachedStream() async throws {
         let opened = try await openChat(setup: HarnessChatSetup()), controller = AbortController()
         let stream = try await opened.harness.watchEvents(conversationId: opened.root.id, context: .background.withAbortSignal(controller.signal))
-        controller.abort(); if case .cancelled = await stream.closed {} else { Issue.record("Expected cancelled stream") }
+        controller.abort()
+        // v1.5.2 CH3: Cancellation uses the shared aborted reason.
+        if case .aborted = await stream.closed {} else { Issue.record("Expected cancelled stream") }
         try await opened.harness.close(context: .background)
     }
     @Test func listenerFailureEndsStream() async throws {

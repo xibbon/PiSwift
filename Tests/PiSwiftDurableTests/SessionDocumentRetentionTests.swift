@@ -1,5 +1,7 @@
 import Synchronization
 import Testing
+
+// v1.5.2 CH3 mechanical: chord WatchCall replaces the three-argument listener (chord/watch.ts:16–40).
 import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
@@ -73,7 +75,7 @@ private func retentionEventually(_ condition: () async throws -> Bool) async thr
         let watch = try #require(try await h.session.watchDoc(token, conversationId: id, context: .background))
         let state = try #require(try await h.session.documentState(token, conversationId: id, context: .background))
         let seen = SessionTestLog<Int>()
-        try watch.start { value, _, _ in seen.append(value?.count ?? -1) }
+        try watch.start { call, _ in guard case .value(let value, _, _) = call else { Issue.record("Unexpected watch failure"); return }; seen.append(value.count) }
         h.clock.advance(by: 1_000_000); try await h.bump(id); await state.waitUntilIdle(); await watch.waitUntilIdle()
         #expect(state.value?.count == 2); #expect(seen.values.contains(2))
         let reads = await h.storage.documentReadCount

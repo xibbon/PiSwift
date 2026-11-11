@@ -96,7 +96,8 @@ import PiSwiftDurableTesting
         let observed = Mutex<[ConversationView]>([])
         let watch = try await root.watch(context: context)
         let initial = watch.value
-        try watch.start { value, ops, _ in
+        try watch.start { call, _ in
+            guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }
             // A UI can render value. A remote observer can apply the exact ops.
             observed.withLock { $0.append(value) }
             print(ops.count)

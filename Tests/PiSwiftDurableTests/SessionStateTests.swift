@@ -1,5 +1,7 @@
 import PiSwiftChord
 import Testing
+
+// v1.5.2 CH3 mechanical: chord WatchCall replaces the three-argument listener (chord/watch.ts:16–40).
 @testable import PiSwiftDurable
 
 // Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
@@ -105,12 +107,12 @@ struct ObservationStateDelivery: Sendable, Equatable { let value: ObservationVal
             harness.session.documentState(tokens.sessionFamily, key: "k", context: .background), harness.session.documentState(tokens.latestFamily, conversationId: conversation, key: "k", context: .background), harness.session.documentState(tokens.rewindableFamily, conversationId: conversation, key: "k", context: .background), harness.session.documentState(tokens.taskFamily, taskId: task, key: "k", context: .background)
         ].compactMap { $0 }
         #expect(watches.count == 8); #expect(states.count == 8)
-        for watch in watches { try watch.start { _, _, _ in } }
+        for watch in watches { try watch.start { _, _ in } }
         try await harness.session.commit({ tx in
             try await tx.doc(tokens.session).set("value", 9); try await tx.doc(tokens.latest, conversationId: conversation).set("value", 9); try await tx.doc(tokens.rewindable, conversationId: conversation).set("value", 9); try await tx.doc(tokens.task, taskId: task).set("value", 9)
             try await tx.doc(tokens.sessionFamily, key: "k", seed: 0).set("value", 9); try await tx.doc(tokens.latestFamily, conversationId: conversation, key: "k", seed: 0).set("value", 9); try await tx.doc(tokens.rewindableFamily, conversationId: conversation, key: "k", seed: 0).set("value", 9); try await tx.doc(tokens.taskFamily, taskId: task, key: "k", seed: 0).set("value", 9)
         }, context: .background)
-        for watch in watches { await watch.waitUntilIdle(); #expect(watch.value?.value == 9); _ = await watch.stop() }
+        for watch in watches { await watch.waitUntilIdle(); #expect(watch.value.value == 9); _ = await watch.stop() }
         for state in states { await state.waitUntilIdle(); #expect(state.value?.value == 9); state.dispose() }
     }
 }

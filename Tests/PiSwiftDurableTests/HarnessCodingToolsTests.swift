@@ -81,7 +81,7 @@ func codingChat(storage: any DurableStorage = MemoryStorage(), setup: HarnessCha
         let first = try await codingChat(storage: SqliteStorage.open(path: path), setup: setup, directory: directory.path)
         let watch = try #require(try await first.harness.watchDoc(LiveDoc, conversationId: first.root.id, context: .background))
         let started = HarnessChatSignal()
-        try watch.start { live, _, _ in if live?.tools?.first?.output == "started\n" { started.signal() } }
+        try watch.start { call, _ in if case .value(let live, _, _) = call, live.tools?.first?.output == "started\n" { started.signal() } }
         let id = try await first.root.submit(.input(content: .text("go")), context: .background).id
         await started.wait()
         try await first.harness.close(context: .background)

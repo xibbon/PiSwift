@@ -50,49 +50,49 @@ extension ToolExecutionApi {
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable>(_ token: SessionDocToken<Value>, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable>(_ token: SessionDocToken<Value>, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: SessionDocFamilyToken<Value, Seed>, key: String, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: SessionDocFamilyToken<Value, Seed>, key: String, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, key: key, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable>(_ token: ConversationDocToken<Value>, conversationId: ConversationID, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable>(_ token: ConversationDocToken<Value>, conversationId: ConversationID, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, conversationId: conversationId, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: ConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: ConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, conversationId: conversationId, key: key, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable>(_ token: RewindableConversationDocToken<Value>, conversationId: ConversationID, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable>(_ token: RewindableConversationDocToken<Value>, conversationId: ConversationID, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, conversationId: conversationId, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: RewindableConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: RewindableConversationDocFamilyToken<Value, Seed>, conversationId: ConversationID, key: String, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, conversationId: conversationId, key: key, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable>(_ token: TaskDocToken<Value>, taskId: TaskID, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable>(_ token: TaskDocToken<Value>, taskId: TaskID, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, taskId: taskId, context: context)
         }
     }
     /// Attaches a stream of committed document values, or nil when no document exists.
-    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: TaskDocFamilyToken<Value, Seed>, taskId: TaskID, key: String, context: ChordContext) async throws -> CommittedWatch<Value?>? {
+    public func watchDoc<Value: Codable & Sendable, Seed: Codable & Sendable>(_ token: TaskDocFamilyToken<Value, Seed>, taskId: TaskID, key: String, context: ChordContext) async throws -> Watch<Value>? {
         try await withTaskCancellationContext(context) { context in
             return try await taskRuntime().watchDoc(token, taskId: taskId, key: key, context: context)
         }

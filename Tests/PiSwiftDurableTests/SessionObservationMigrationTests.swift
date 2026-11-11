@@ -1,5 +1,7 @@
 import PiSwiftChord
 import Testing
+
+// v1.5.2 CH3 mechanical: chord WatchCall replaces the three-argument listener (chord/watch.ts:16–40).
 @testable import PiSwiftDurable
 
 // Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
@@ -12,10 +14,10 @@ import Testing
         let current = try SessionDocToken<JSONObject>(kind: "migration.transition", version: 3, initial: { ["count": 0] }, migrate: { value, from in ["count": .number(value["count"]!.numberValue! + Double(from) - 1)] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(old) }, context: .background); try await harness.session.unloadDocuments()
         let watch = try #require(try await harness.session.watchDoc(old, context: .background)); let frames = SessionTestLog<(JSONObject?, [Delta.Op])>()
-        try watch.start { value, ops, _ in frames.append((value, ops)) }
+        try watch.start { call, _ in guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }; frames.append((value, ops)) }
         let snapshot = try await harness.session.snapshot(current, context: .background)
         let newer = try #require(try await harness.session.watchDoc(current, context: .background)); let newFrames = SessionTestLog<JSONObject?>()
-        try newer.start { value, _, _ in newFrames.append(value) }
+        try newer.start { call, _ in guard case .value(let value, _, _) = call else { Issue.record("Unexpected watch failure"); return }; newFrames.append(value) }
         try await harness.session.commit({ tx in _ = try await tx.doc(current) }, context: .background); await watch.waitUntilIdle(); await newer.waitUntilIdle()
         #expect(frames.count == 1); #expect(frames.values[0].0 == ["count": 4]); #expect(frames.values[0].1 == [.replace(["count": 4])]); #expect(newFrames.count == 0)
         #expect(try await harness.session.snapshot(current, context: .background) == snapshot)
@@ -29,7 +31,7 @@ import Testing
         let current = try SessionDocToken<JSONObject>(kind: "cache", version: 2, initial: { ["names": []] }, migrate: { value, _ in ["names": .array([value["name"]!])] }, checkpointWhen: { _, _, _ in false })
         try await harness.session.commit({ tx in _ = try await tx.doc(old) }, context: .background)
         let state = try #require(try await harness.session.documentState(old, context: .background)); let watch = try #require(try await harness.session.watchDoc(old, context: .background)); let batches = SessionTestLog<[Delta.Op]>()
-        try watch.start { _, ops, _ in batches.append(ops) }
+        try watch.start { call, _ in guard case .value(_, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }; batches.append(ops) }
         try await harness.session.commit({ tx in try await tx.doc(current).child("names")!.append("second") }, context: .background)
         await watch.waitUntilIdle(); await state.waitUntilIdle()
         #expect(state.value == ["names": ["first", "second"]]); #expect(watch.value == ["names": ["first", "second"]]); #expect(batches.values == [[.replace(["names": ["first", "second"]])]])

@@ -116,6 +116,7 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
         var waiters: [CheckedContinuation<WatchEnd, Never>] = []
         var idleWaiters: [CheckedContinuation<Void, Never>] = []
         var newestValue: Value?
+        var newestReplacement: JSONValue?
         var newestContext: ChordContext?
         var lone: WatchCall<Value>?
         var failure: WatchFailure?
@@ -228,6 +229,17 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
 
     // watch.ts:305-324 advance
     public func advance(_ call: WatchCall<Value>, context: ChordContext) {
+        advance(call, capturedReplacement: nil, context: context)
+    }
+
+    /// Queue a typed value with its exact JSON snapshot. Overflow uses this snapshot,
+    /// even if the source advances while the delivery worker takes the value.
+    /// v1.5.2 CH3: TypeScript's value is already JSON; Swift's generic value may not be.
+    public func advance(_ call: WatchCall<Value>, replacement: JSONValue, context: ChordContext) {
+        advance(call, capturedReplacement: replacement, context: context)
+    }
+
+    private func advance(_ call: WatchCall<Value>, capturedReplacement: JSONValue?, context: ChordContext) {
         if case .failed(let error) = call { fail(error, context: context); return }
         let run = state.withLock { s -> Bool in
             if s.end != nil || s.ending { return false }
@@ -239,6 +251,7 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
                 ops.push(operations)
             }
             s.newestValue = value
+            s.newestReplacement = capturedReplacement
             s.newestContext = context
             if retired { s.retired = true }
             return schedule(&s)
@@ -253,6 +266,7 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
             _ = ops.take()
             s.lone = nil
             s.newestValue = nil
+            s.newestReplacement = nil
             s.failure = error
             s.newestContext = context
             s.replacing = true
@@ -301,7 +315,7 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
     }
 
     private enum Taken {
-        case value(Value, PendingTake, Bool, ChordContext, @Sendable (Value) -> JSONValue)
+        case value(Value, PendingTake, Bool, ChordContext, JSONValue?, @Sendable (Value) -> JSONValue)
         case failure(WatchFailure, ChordContext)
         case done(Bool)
     }
@@ -321,14 +335,18 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
                 }
                 let value = s.newestValue!
                 s.newestValue = nil
+                let captured = s.newestReplacement
+                s.newestReplacement = nil
                 let retired = s.retired
                 s.retired = false
                 s.replacing = false
                 s.value = value
-                return .value(value, .replace, retired, context, s.replacement!)
+                return .value(value, .replace, retired, context, captured, s.replacement!)
             }
             let value = s.newestValue!
             s.newestValue = nil
+            let captured = s.newestReplacement
+            s.newestReplacement = nil
             let retired = s.retired
             s.retired = false
             let lone = s.lone
@@ -338,7 +356,7 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
             if case .value(_, let original, _) = lone, case .ops = batch { operations = .ops(original) }
             else { operations = batch }
             s.value = value
-            return .value(value, operations, retired, context, s.replacement!)
+            return .value(value, operations, retired, context, captured, s.replacement!)
         }
     }
 
@@ -353,11 +371,11 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
             guard let listener = state.withLock({ $0.listener }) else { return }
             do {
                 switch next {
-                case .value(let value, let pending, let retired, let context, let replacement):
+                case .value(let value, let pending, let retired, let context, let captured, let replacement):
                     let operations: [Delta.Op]
                     switch pending {
                     case .ops(let ops): operations = ops
-                    case .replace: operations = [.replace(replacement(value))]
+                    case .replace: operations = [.replace(captured ?? replacement(value))]
                     }
                     try await listener(.value(value: value, ops: operations, retired: retired), context.withoutAbortSignal())
                 case .failure(let error, let context):
@@ -384,6 +402,7 @@ public final class Watch<Value: Sendable>: WatchHandle, Sendable {
             s.end = end
             _ = ops.take()
             s.newestValue = nil
+            s.newestReplacement = nil
             s.newestContext = nil
             s.lone = nil
             s.failure = nil

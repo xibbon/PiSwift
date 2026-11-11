@@ -39,7 +39,8 @@ import PiSwiftDurableTesting
         try await eventually { harness.tasks.closing }
         await #expect(throws: HarnessClosedError.self) { _ = try await harness.taskGraph(context: .background) }
         await #expect(throws: HarnessClosedError.self) { _ = try await harness.watchTaskGraph(context: .background) }
-        if case .sessionClosed = await watch.closed {} else { Issue.record("Close must end the graph watch") }
+        // v1.5.2 CH3: harness-view.test.ts:299 uses the shared ended reason.
+        if case .ended = await watch.closed {} else { Issue.record("Close must end the graph watch") }
         await held.release()
         try await blocking.value
         await #expect(throws: (any Error).self) { _ = try await queuedState.value }
@@ -70,7 +71,7 @@ import PiSwiftDurableTesting
         try await harness.close(context: .background)
     }
 
-    @Test func watchOverflowReplacesOnlyPendingSuffixAndKeepsExactFrames() async throws {
+    @Test func watchFoldsPendingChangesAndKeepsTheActiveCall() async throws {
         let task = harnessOneStep("test.graph-overflow") { _, _, _ in }
         let harness = try await harnessOpen([AnyTaskDefinition(task)])
         let root = try await harness.root(context: .background)
@@ -78,7 +79,8 @@ import PiSwiftDurableTesting
         let replica = Mutex<JSONValue?>(try JSONValue(encoding: watch.value))
         let firstEntered = SessionTestGate(), releaseFirst = SessionTestGate()
         let frames = SessionTestLog<[Delta.Op]>()
-        try watch.start { value, ops, context in
+        try watch.start { call, context in
+            guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }
             let tree = try replica.withLock { tree in
                 tree = try Delta.applyImmutable(tree, ops)
                 return tree
@@ -96,9 +98,10 @@ import PiSwiftDurableTesting
         releaseFirst.release()
         await watch.waitUntilIdle()
         #expect(frames.count == 2)
-        if case .replace(let replacement) = frames.values.last?.first {
-            #expect(replacement == (try JSONValue(encoding: watch.value)))
-        } else { Issue.record("Pending overflow must use a replacement frame") }
+        // v1.5.2 CH3: PendingOps folds 101 graph changes without a root replacement.
+        #expect(frames.values.last?.count == 101)
+        if case .replace = frames.values.last?.first { Issue.record("Pending changes must retain delta operations") }
+        #expect(replica.withLock { $0 } == (try JSONValue(encoding: watch.value)))
         #expect(watch.value.tasks.count == 102)
         _ = await watch.stop()
         try await harness.close(context: .background)
@@ -112,7 +115,8 @@ import PiSwiftDurableTesting
         let watch = try await harness.watchTaskGraph(context: .background.withAbortSignal(controller.signal))
         let initial = watch.value
         controller.abort()
-        if case .cancelled = await watch.closed {} else { Issue.record("Context cancellation must end the graph watch") }
+        // v1.5.2 CH3: Context cancellation aborts the shared Chord watch.
+        if case .aborted = await watch.closed {} else { Issue.record("Context cancellation must end the graph watch") }
         let state = try await harness.taskGraph(context: .background)
         #expect(state.value !== initial && state.value == initial)
         _ = try await harnessStart(root, task)

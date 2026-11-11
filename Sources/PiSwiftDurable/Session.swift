@@ -52,6 +52,7 @@ public final class Session: Sendable {
     private struct CommitListener: Sendable {
         let id: Int
         let call: @Sendable (CommitPublication, ChordContext) -> Void
+        var end: (@Sendable (WatchEnd) -> Void)? = nil
     }
     private struct InternalListener: Sendable {
         let id: Int
@@ -254,6 +255,32 @@ public final class Session: Sendable {
     /// The first cause of Session failure.
     public var failure: (any Error)? { failureLatch.failure }
 
+    // v1.5.2 CH3 session/session.ts:1839–1853 closeEnds.
+    internal var watchCloseEnd: WatchEnd {
+        failure.map { .failed(.message(String(describing: $0))) } ?? .ended
+    }
+    internal var observerCloseEnd: WatchEnd {
+        failure.map { .failed(.message(String(describing: $0))) } ?? .failed(.message("session closed"))
+    }
+
+    /// Attach a synchronous commit observer. A listener error does not reject a stored commit.
+    public func observeCommits(_ observer: CommitObserver) throws -> CommitObservation {
+        let subscriptions = ObserverSubscriptions()
+        let guarded = GuardedObserver(advance: observer.advance, end: observer.end,
+            detach: { subscriptions.detach() }, report: { [weak self] in self?.report($0) })
+        let id = try state.withLock { state in
+            try failureLatch.check()
+            if state.closing != nil { throw SessionError.closed }
+            state.nextListener += 1
+            let id = state.nextListener
+            state.commits.append(CommitListener(id: id,
+                call: { guarded.advance($0, context: $1) }, end: { guarded.end($0) }))
+            return id
+        }
+        subscriptions.add(SessionSubscription { [weak self] in self?.state.withLock { $0.commits.removeAll { $0.id == id } } })
+        return CommitObservation { guarded.detach() }
+    }
+
     /// Resolves after backend close has finished, including a failed close.
     public var closed: SessionCloseResult {
         get async {
@@ -302,6 +329,9 @@ public final class Session: Sendable {
                 let ticket = self.line.reserve()
                 await ticket.wait()
                 defer { self.line.release(); self.finishClose() }
+                // v1.5.2 CH3 session/session.ts:797–802: end after the last publication.
+                let observers = self.state.withLock { $0.commits }
+                for observer in observers { observer.end?(self.observerCloseEnd) }
                 self.state.withLock { $0.commits.removeAll(); $0.internals.removeAll(); self.clearDocumentCache(&$0); $0.attachedDocuments.removeAll() }
                 do { try await self.storage.close(context: cleanup) }
                 catch { self.fail(error); throw error }

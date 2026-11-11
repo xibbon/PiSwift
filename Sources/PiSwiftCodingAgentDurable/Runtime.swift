@@ -126,7 +126,8 @@ internal func openDurable(_ options: OpenDurableOptions,
             thinkingLevel: initial?.thinkingLevel.map { .set($0) } ?? .unchanged,
             cwd: .set(location.cwd))), context: .background)
         let summaries = try await runtimeSummaries(opened)
-        let attached = try await root.viewState(context: .background)
+        // v1.5.2 CH3: Durable's view source is now a Chord Watch (harness/view.ts:200-218).
+        let attached = try await root.watch(context: .background)
         let source = RuntimeViewSource(DurableView(
             session: .init(id: location.id, directory: location.directory, cwd: location.cwd),
             conversation: attached.value, conversations: summaries,
@@ -262,11 +263,9 @@ private actor DurableRuntime {
     let models: any DurableModels
     let source: RuntimeViewSource
     var current: Conversation
-    var conversation: AttachedReplicatedState<ConversationView>
-    var conversationSubscription: ReplicatedStateSubscription?
+    var conversation: ConversationWatch
     var commits: SessionSubscription?
-    var tasks: AttachedReplicatedState<TaskGraph>?
-    var taskSubscription: ReplicatedStateSubscription?
+    var tasks: TaskGraphWatch?
     var tasksVisible = false
     var conversationGeneration = 0
     var taskGeneration = 0
@@ -277,15 +276,16 @@ private actor DurableRuntime {
 
     init(harness: Harness, envs: ExecutionEnvs, location: SessionLocation,
          sandbox: JSCCodemodeSandbox, models: any DurableModels, source: RuntimeViewSource, current: Conversation,
-         conversation: AttachedReplicatedState<ConversationView>) {
+         conversation: ConversationWatch) {
         self.harness = harness; self.envs = envs; self.location = location
         self.sandbox = sandbox
         self.models = models; self.source = source; self.current = current; self.conversation = conversation
     }
     func attach() async throws {
-        attachConversation()
-        let graph = try await harness.taskGraph(context: .background)
-        guard !closed else { graph.dispose(); return }
+        try attachConversation()
+        // v1.5.2 CH3: The task graph also emits tagged Chord Watch calls (harness/task-graph.ts:272).
+        let graph = try await harness.watchTaskGraph(context: .background)
+        guard !closed else { _ = await graph.stop(); return }
         tasks = graph
         commits = try harness.subscribeCommits { [source, graph] publication, _ in
             source.record(publication, graph: graph.value)
@@ -297,8 +297,8 @@ private actor DurableRuntime {
         }
         source.updateTasks(graph.value, visible: tasksVisible)
         let generation = taskGeneration
-        taskSubscription = graph.subscribe { [weak self] _, _, _ in
-            await self?.receiveTasks(graph, generation: generation)
+        try graph.start { [weak self] call, _ in
+            await self?.receiveTasks(call, generation: generation)
         }
     }
     func observeTermination(seal: @escaping @Sendable () -> Void) {
@@ -321,21 +321,21 @@ private actor DurableRuntime {
         if let failure = harness.failure { throw SessionFailed(failure) }
         if closed { throw SessionError.message("Durable session is closed") }
     }
-    private func attachConversation() {
+    private func attachConversation() throws {
         let generation = conversationGeneration
         let state = conversation
         source.updateConversation(state.value)
-        conversationSubscription = state.subscribe { [weak self] _, _, _ in
-            await self?.receiveConversation(state, generation: generation)
+        try state.start { [weak self] call, _ in
+            await self?.receiveConversation(call, generation: generation)
         }
     }
-    private func receiveConversation(_ state: AttachedReplicatedState<ConversationView>, generation: Int) {
+    private func receiveConversation(_ call: WatchCall<ConversationView>, generation: Int) {
         guard !closed, generation == conversationGeneration else { return }
-        source.updateConversation(state.value)
+        if case .value(let value, _, _) = call { source.updateConversation(value) }
     }
-    private func receiveTasks(_ graph: AttachedReplicatedState<TaskGraph>, generation: Int) {
+    private func receiveTasks(_ call: WatchCall<TaskGraph>, generation: Int) {
         guard !closed, generation == taskGeneration else { return }
-        source.updateTasks(graph.value, visible: tasksVisible)
+        if case .value(let value, _, _) = call { source.updateTasks(value, visible: tasksVisible) }
     }
     func submit(_ text: String, whenBusy: SubmitWhenBusy) async throws {
         try assertOpen()
@@ -419,32 +419,30 @@ private actor DurableRuntime {
         tasksVisible.toggle()
         source.updateTasks(tasks?.value, visible: tasksVisible)
     }
-    private func closeTasks() {
+    private func closeTasks() async {
         taskGeneration += 1
-        taskSubscription?.cancel(); taskSubscription = nil
-        tasks?.dispose(); tasks = nil
+        if let tasks { _ = await tasks.stop() }
+        tasks = nil
     }
     func switchConversation(_ id: ConversationID) async throws {
         try assertOpen()
         guard let next = try await harness.conversation(id: id, context: .background) else {
             throw SessionError.message("Conversation \(id.rawValue) does not exist")
         }
-        let nextState = try await next.viewState(context: .background)
-        guard !closed else { nextState.dispose(); return }
+        let nextState = try await next.watch(context: .background)
+        guard !closed else { _ = await nextState.stop(); return }
         conversationGeneration += 1
-        conversationSubscription?.cancel()
-        conversation.dispose()
+        _ = await conversation.stop()
         current = next; conversation = nextState
-        attachConversation()
+        try attachConversation()
     }
     func close() async {
         if let closing { await closing.value; return }
         closed = true
         conversationGeneration += 1
-        conversationSubscription?.cancel(); conversationSubscription = nil
         commits?.cancel(); commits = nil
-        conversation.dispose()
-        closeTasks()
+        _ = await conversation.stop()
+        await closeTasks()
         let pending = Array(watches.values)
         for task in pending { task.cancel() }
         let task = Task { await self.finishClose(pending: pending) }

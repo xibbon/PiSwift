@@ -12,11 +12,14 @@ import PiSwiftDurableTesting
         let root = try await harness.root(context: .background)
         let failed = try await root.watch(context: .background), healthy = try await root.watch(context: .background)
         let failure = HarnessStorageFailure("observer broke"), seen = SessionTestLog<[EntryID]>()
-        try failed.start { _, _, _ in throw failure }
-        try healthy.start { view, _, _ in seen.append(view.entries.map(\.id)) }
+        try failed.start { _, _ in throw failure }
+        try healthy.start { call, _ in
+            if case .value(let view, _, _) = call { seen.append(view.entries.map(\.id)) }
+        }
         let first = try await failureNote(root)
         guard case .listenerError(let error) = await failed.closed else { Issue.record("Watch listener failure did not end watch"); return }
-        #expect((error as? HarnessStorageFailure) === failure)
+        // v1.5.2 CH3: Chord WatchEnd stores the listener error text.
+        #expect(error == String(describing: failure))
         let second = try await failureNote(root)
         await healthy.waitUntilIdle()
         #expect(seen.values == [[first.id], [first.id, second.id]])
@@ -24,7 +27,8 @@ import PiSwiftDurableTesting
         #expect((opened.reports.values.first as? HarnessStorageFailure) === failure)
         #expect(harness.failure == nil)
         try await harness.close(context: .background)
-        if case .sessionClosed = await healthy.closed {} else { Issue.record("Healthy watch did not end with Session") }
+        // v1.5.2 CH3: harness-view.test.ts:299 uses the shared ended reason.
+        if case .ended = await healthy.closed {} else { Issue.record("Healthy watch did not end with Session") }
     }
 
     @Test func documentWatchFailureEndsOnlyThatWatchAndReportsError() async throws {
@@ -32,10 +36,11 @@ import PiSwiftDurableTesting
         let root = try await harness.root(context: .background)
         let watch = try #require(try await harness.watchDoc(LiveDoc, conversationId: root.id, context: .background))
         let failure = HarnessStorageFailure("listener broke")
-        try watch.start { _, _, _ in throw failure }
+        try watch.start { _, _ in throw failure }
         try await root.commit({ tx in try await tx.doc(LiveDoc, conversationId: root.id).set("compactions", []) }, context: .background)
         guard case .listenerError(let error) = await watch.closed else { Issue.record("Document watch did not end for its listener error"); return }
-        #expect((error as? HarnessStorageFailure) === failure)
+        // v1.5.2 CH3: Chord WatchEnd stores the listener error text.
+        #expect(error == String(describing: failure))
         #expect(opened.reports.count == 1)
         #expect((opened.reports.values.first as? HarnessStorageFailure) === failure)
         _ = try await failureNote(root)
@@ -50,14 +55,15 @@ import PiSwiftDurableTesting
         let opened = try await openTasks(tasks: [AnyTaskDefinition(definition)]), harness = opened.harness
         let root = try await harness.root(context: .background)
         let watch = try #require(try await harness.watchDoc(LiveDoc, conversationId: root.id, context: .background))
-        try watch.start { _, _, _ in throw OpaqueError() }
+        try watch.start { _, _ in throw OpaqueError() }
         let id = try await harnessStart(root, definition)
         let receipt = try await harness.waitForTask(id: id, context: .background)
         guard case .faulted(let error, _) = receipt.outcome else { Issue.record("Thrown error did not fault task"); return }
         #expect(!error.message.isEmpty)
         try await root.commit({ tx in try await tx.doc(LiveDoc, conversationId: root.id).set("compactions", []) }, context: .background)
         guard case .listenerError(let error) = await watch.closed else { Issue.record("Thrown error did not end watch"); return }
-        #expect(error is OpaqueError)
+        // v1.5.2 CH3: Chord WatchEnd stores the listener error text.
+        #expect(error == String(describing: OpaqueError()))
         _ = try await failureNote(root)
         #expect(harness.failure == nil)
         try await harness.close(context: .background)

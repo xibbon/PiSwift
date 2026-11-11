@@ -151,7 +151,7 @@ private func hostExampleJSONRun(directory: URL, models: any DurableModels, model
     do {
         let root = try await harness.root(options: .init(agent: .init(
             model: .set(model))), context: .background)
-        let events: DurableAgentEventWatch?, watch: CommittedWatch<ConversationView>?
+        let events: DurableAgentEventWatch?, watch: Watch<ConversationView>?
         switch mode {
         case .events:
             let stream = try await harness.watchEvents(conversationId: root.id, context: .background)
@@ -161,7 +161,7 @@ private func hostExampleJSONRun(directory: URL, models: any DurableModels, model
         case .ops:
             let stream = try await root.watch(context: .background)
             try print.json(["view": JSONValue(encoding: stream.value)])
-            try stream.start { _, ops, _ in try print.json(["ops": JSONValue(encoding: ops)]) }
+            try stream.start { call, _ in if case .value(_, let ops, _) = call { try print.json(["ops": JSONValue(encoding: ops)]) } }
             events = nil; watch = stream
         }
         let submission = try await root.submit(.input(content: .text("What is in this directory?")), context: .background)
@@ -248,8 +248,9 @@ private func hostExampleRealModelRun(directory: URL, models: any DurableModels, 
             model: .set(model), thinkingLevel: .set(.high))), context: .background)
         let liveWatch = try #require(try await harness.watchDoc(LiveDoc, conversationId: root.id, context: .background))
         let output = HostExamplePartialPrint(), print = HostExamplePrint()
-        try liveWatch.start { value, _, _ in
-            if let block = value?.generation?.message?["content"]?.arrayValue?.first(where: { $0["type"] == "text" }),
+        try liveWatch.start { call, _ in
+            guard case .value(let value, _, _) = call else { Issue.record("Unexpected watch failure"); return }
+            if let block = value.generation?.message?["content"]?.arrayValue?.first(where: { $0["type"] == "text" }),
                let text = block["text"]?.stringValue { output.printText(text) }
         }
         try harness.resume()

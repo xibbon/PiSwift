@@ -99,7 +99,7 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
     @Test func documentReadsAndWatchesAreBoundToInvocation() async throws {
         let tokens = try DefinitionTokens()
         let captured = Mutex<TaskRuntime?>(nil)
-        let watches = SessionTestLog<CommittedWatch<DefinitionState?>>()
+        let watches = SessionTestLog<Watch<DefinitionState>>()
         let delivered = SessionTestLog<Int>()
         let definition = harnessOneStep("test.runtime-documents") { _, runtime, context in
             captured.withLock { $0 = runtime }
@@ -135,7 +135,7 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
             for (index, watch) in acquired.enumerated() {
                 let watch = try #require(watch)
                 watches.append(watch)
-                if index == 0 { try watch.start { value, _, _ in delivered.append(value?.value ?? -1) } }
+                if index == 0 { try watch.start { call, _ in if case .value(let value, _, _) = call { delivered.append(value.value) } } }
             }
             let stopped = try #require(acquired[2])
             _ = await stopped.stop()
@@ -151,7 +151,8 @@ private func expectRuntimeEnded<Value>(_ operation: () async throws -> Value) as
         try await harnessEventually { do { _ = try runtime.now(); return false } catch { return true } }
         for watch in watches.values {
             let end = await watch.closed
-            switch end { case .stopped, .retired: break; default: Issue.record("Watch did not stop or retire") }
+            // v1.5.2 CH3: Invocation release stops its document watches.
+            switch end { case .stopped, .ended: break; default: Issue.record("Watch did not stop or retire") }
         }
         try await root.commit({ tx in try await tx.doc(tokens.session).set("value", .number(9)) }, context: .background)
         #expect(delivered.values.isEmpty)

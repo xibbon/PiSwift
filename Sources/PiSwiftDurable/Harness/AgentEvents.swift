@@ -323,13 +323,13 @@ public final class DurableAgentEventWatch: Sendable {
     public typealias Listener = @Sendable ([DurableAgentEvent], ChordContext) async throws -> Void
     /// The conversation state captured when this event watch was acquired.
     public let snapshot: DurableAgentSnapshot
-    private let watch: CommittedWatch<[DurableAgentEvent]>
-    internal init(snapshot: DurableAgentSnapshot, watch: CommittedWatch<[DurableAgentEvent]>) {
+    private let watch: DurableEventBuffer
+    internal init(snapshot: DurableAgentSnapshot, watch: DurableEventBuffer) {
         self.snapshot = snapshot; self.watch = watch
     }
     /// Installs one listener for serial event batches. It does not deliver the acquisition snapshot.
     public func start(_ listener: @escaping Listener) throws {
-        try watch.start { events, _, context in try await listener(events, context) }
+        try watch.start(listener)
     }
     /// Stops future event delivery and returns the watch end reason. An active listener can finish later.
     public func stop() async -> WatchEnd { await watch.stop() }

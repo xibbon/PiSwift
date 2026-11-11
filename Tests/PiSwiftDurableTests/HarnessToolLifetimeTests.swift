@@ -137,7 +137,7 @@ struct HarnessToolLifetimeTests {
     }
     // :800 child tasks and :1102 detached waits and watches.
     @Test func childTaskAndDetachedWait() async throws {
-        let setup = HarnessChatSetup(), detached = Mutex<Task<SettledTask, any Error>?>(nil), retainedWatch = Mutex<CommittedWatch<LiveState?>?>(nil)
+        let setup = HarnessChatSetup(), detached = Mutex<Task<SettledTask, any Error>?>(nil), retainedWatch = Mutex<Watch<LiveState>?>(nil)
         let child = harnessOneStep("test.tool-child") { task, runtime, context in
             try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(Double(task.input)))) }, context: context)
         }

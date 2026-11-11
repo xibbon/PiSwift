@@ -146,7 +146,8 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         #expect(watch.value.tasks[background]?.background == true)
         let replica = Mutex<JSONValue?>(try JSONValue(encoding: watch.value))
         let frames = SessionTestLog<[Delta.Op]>()
-        try watch.start { value, ops, context in
+        try watch.start { call, context in
+            guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }
             let next = try replica.withLock { tree in
                 tree = try Delta.applyImmutable(tree, ops)
                 return tree

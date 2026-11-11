@@ -7,7 +7,8 @@ private actor GenerationPartialThrottle {
     let attempt: Int
     let interval: Int64
     let context: ChordContext
-    var pending: JSONValue?
+    let changes = PartialChanges()
+    var pending: AssistantMessage?
     var timer: Task<Void, Never>?
     var inFlight: Task<Void, Never>?
     var stopped = false
@@ -15,9 +16,10 @@ private actor GenerationPartialThrottle {
         self.runtime = runtime; self.attempt = attempt; self.context = context
         interval = runtime.settings.progress.partialIntervalMs
     }
-    func offer(_ message: AssistantMessage) throws {
+    func offer(_ message: AssistantMessage, event: AssistantMessageEvent) async {
         guard !stopped, !message.content.isEmpty else { return }
-        pending = try EntryRecord.encodeMessages([.assistant(message)])[0]
+        await changes.observe(event)
+        pending = message
         schedule()
     }
     private func schedule() {
@@ -33,18 +35,24 @@ private actor GenerationPartialThrottle {
     }
     private func flush() {
         timer = nil
-        guard !stopped, let partial = pending else { return }
+        guard !stopped, pending != nil else { return }
         pending = nil
-        let runtime = self.runtime, attempt = self.attempt, context = self.context
+        let runtime = self.runtime, attempt = self.attempt, context = self.context, changes = self.changes
         inFlight = Task {
+            var taken: PartialCommit?
             do {
+                guard let batch = try await changes.takeLatest() else { finished(); return }
+                taken = batch.commit
                 try await runtime.commit({ tx, _ in
                     let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
                     if try live.child("generation") == nil { try live.set("generation", .object(["attempt": .number(Double(attempt))])) }
-                    try assignJSON(target: live.child("generation")!, key: "message", value: partial)
+                    try await changes.commit(live.child("generation")!, message: batch.message, taken: batch.commit)
                     return nil
                 }, context: context)
-            } catch { if !runtime.signal.aborted { runtime.reportTaskError(error) } }
+            } catch {
+                if let taken { await changes.restore(taken) }
+                if !runtime.signal.aborted { runtime.reportTaskError(error) }
+            }
             finished()
         }
     }
@@ -69,7 +77,7 @@ func streamGeneration(runtime: TaskRuntime, model: Model, messages: [Message], o
                  .thinkingStart(_, let message), .thinkingDelta(_, _, let message), .thinkingEnd(_, _, let message),
                  .toolCallStart(_, let message), .toolCallDelta(_, _, let message), .toolCallEnd(_, _, let message): partial = message
             }
-            if let partial { try await throttle.offer(partial) }
+            if let partial { await throttle.offer(partial, event: event) }
         }
         let message = await events.result()
         await throttle.stop()

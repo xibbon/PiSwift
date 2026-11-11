@@ -9,12 +9,15 @@ import PiSwiftDurableTesting
 
 private struct ViewTestFrame: Sendable { let value: ConversationView; let ops: [Delta.Op] }
 private final class ViewTestRecorder: Sendable {
-    let watch: CommittedWatch<ConversationView>
+    let watch: Watch<ConversationView>
     let initial: ConversationView
     private let recorded = Mutex<[ViewTestFrame]>([])
     init(_ conversation: Conversation) async throws {
         watch = try await conversation.watch(context: .background); initial = watch.value
-        try watch.start { [self] value, ops, _ in recorded.withLock { $0.append(.init(value: value, ops: ops)) } }
+        try watch.start { [self] call, _ in
+            guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }
+            recorded.withLock { $0.append(.init(value: value, ops: ops)) }
+        }
     }
     var frames: [ViewTestFrame] { recorded.withLock { $0 } }
     func drain() async { await watch.waitUntilIdle() }
@@ -78,6 +81,8 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         let recorder = try await ViewTestRecorder(chat.root)
         _ = try await viewNote(other, "note")
         try await chat.root.configure(change: AgentChange(thinkingLevel: .set(.high)), context: .background)
+        // v1.5.2 CH3: Finish this delivery before the next commit can fold into it.
+        await recorder.drain()
         _ = try await viewNote(chat.root, "note"); await recorder.drain()
         #expect(recorder.frames.count == 2)
         #expect(recorder.frames[0].ops == [.set(["docs", "pi.agent", "thinkingLevel"], "high")])
@@ -90,7 +95,10 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         let chat = try await openChat(setup: HarnessChatSetup())
         _ = try await viewNote(chat.root, "a"); let b = try await viewNote(chat.root, "b"); _ = try await viewNote(chat.root, "c")
         let recorder = try await ViewTestRecorder(chat.root)
-        let summary = try await viewNote(chat.root, "summary", head: b.id); _ = try await viewNote(chat.root, "d")
+        let summary = try await viewNote(chat.root, "summary", head: b.id)
+        // v1.5.2 CH3: Inspect each head change after its watch delivery has finished.
+        await recorder.drain()
+        _ = try await viewNote(chat.root, "d"); await recorder.drain()
         try await chat.root.reset(context: .background); await recorder.drain()
         #expect(recorder.frames.map { $0.value.entries.map(\.kind) } == [["summary", "b", "c"], ["summary", "b", "c", "d"], ["pi.reset"]])
         #expect(recorder.frames[0].ops == [.splice(["entries"], index: 0, remove: 1, items: [try JSONValue(encoding: summary)])])
@@ -127,21 +135,30 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     @Test func retirementDeletesDocumentAndRecreationSetsWholeDocument() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), recorder = try await ViewTestRecorder(chat.root)
         try await chat.root.commit({ tx in try await tx.retireDoc(LiveDoc, conversationId: chat.root.id) }, context: .background)
+        // v1.5.2 CH3: Deliver retirement before recreation can fold into the pending call.
+        await recorder.drain()
         try await chat.root.commit({ tx in try await tx.doc(LiveDoc, conversationId: chat.root.id).set("tools", []) }, context: .background)
         await recorder.drain()
         #expect(recorder.frames.map(\.ops) == [[.delete(["docs", "pi.live"])], [.set(["docs", "pi.live"], ["tools": []])]])
         #expect(recorder.frames[0].value.docs["pi.live"] == nil)
         await recorder.stop(); try await chat.harness.close(context: .background)
     }
-    @Test func overflowReplaces101PendingFramesWithNewestView() async throws {
+    @Test func folds101PendingCommitsIntoTheNewestView() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), watch = try await chat.root.watch(context: .background)
+        let initial = watch.value
         for _ in 0..<101 { _ = try await viewNote(chat.root, "note") }
         let frames = Mutex<[ViewTestFrame]>([])
-        try watch.start { value, ops, _ in frames.withLock { $0.append(.init(value: value, ops: ops)) } }
+        try watch.start { call, _ in
+            guard case .value(let value, let ops, _) = call else { Issue.record("Unexpected watch failure"); return }
+            frames.withLock { $0.append(.init(value: value, ops: ops)) }
+        }
         await watch.waitUntilIdle()
         let frame = try #require(frames.withLock { $0.first })
         #expect(frames.withLock { $0.count } == 1)
-        #expect(frame.ops == [.replace(try JSONValue(encoding: frame.value))]); #expect(frame.value.entries.count == 101)
+        // v1.5.2 CH3: harness-view.test.ts:251–268 folds pending commits without a root replacement.
+        if case .replace = frame.ops.first { Issue.record("Pending changes must retain delta operations") }
+        #expect(try Delta.applyImmutable(JSONValue(encoding: initial), frame.ops) == JSONValue(encoding: frame.value))
+        #expect(frame.value.entries.count == 101)
         _ = await watch.stop(); try await chat.harness.close(context: .background)
     }
     @Test func independentStateAndWatchRemountAfterLastRelease() async throws {
@@ -155,7 +172,8 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     @Test func closeEndsStateAndWatchAndRejectsAcquisition() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), watch = try await chat.root.watch(context: .background), state = try await chat.root.viewState(context: .background)
         try await chat.harness.close(context: .background)
-        if case .sessionClosed = await watch.closed {} else { Issue.record("Watch did not close with Session") }
+        // v1.5.2 CH3: harness-view.test.ts:299 uses the shared ended reason.
+        if case .ended = await watch.closed {} else { Issue.record("Watch did not close with Session") }
         #expect(state.value.entries.isEmpty)
         await #expect(throws: (any Error).self) { _ = try await chat.root.watch(context: .background) }
         await #expect(throws: (any Error).self) { _ = try await chat.root.viewState(context: .background) }
@@ -180,8 +198,11 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     @Test func sharedMountIsolatesFailingListener() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), failing = try await chat.root.watch(context: .background), recorder = try await ViewTestRecorder(chat.root), shared = try await chat.root.viewState(context: .background)
         #expect(failing.value == shared.value); shared.dispose()
-        try failing.start { _, _, _ in throw D2TestError("listener failed") }
-        _ = try await viewNote(chat.root, "one"); _ = try await viewNote(chat.root, "two"); await recorder.drain()
+        try failing.start { _, _ in throw D2TestError("listener failed") }
+        _ = try await viewNote(chat.root, "one")
+        // v1.5.2 CH3: Keep the healthy watch's two deliveries separate.
+        await recorder.drain()
+        _ = try await viewNote(chat.root, "two"); await recorder.drain()
         if case .listenerError = await failing.closed {} else { Issue.record("Listener error did not end watch") }
         #expect(recorder.frames.count == 2)
         await recorder.stop(); try await chat.harness.close(context: .background)

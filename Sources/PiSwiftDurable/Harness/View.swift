@@ -9,6 +9,12 @@ public struct ConversationView: Sendable, Equatable, Codable {
     public let entries: [EntryRecord]
     /// The current built-in document objects indexed by document kind.
     public let docs: [String: JSONObject]
+    // Only Watch values carry this cache. It belongs to the same immutable revision as the fields.
+    internal var watchJSON: JSONValue?
+    private enum CodingKeys: String, CodingKey { case conversation, entries, docs }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.conversation == rhs.conversation && lhs.entries == rhs.entries && lhs.docs == rhs.docs
+    }
     /// Pairs conversation metadata with its active entries and built-in documents.
     public init(conversation: ConversationRecord, entries: [EntryRecord], docs: [String: JSONObject]) {
         self.conversation = conversation; self.entries = entries; self.docs = docs
@@ -16,7 +22,7 @@ public struct ConversationView: Sendable, Equatable, Codable {
 }
 
 /// A stream of committed conversation views. Call stop() to release its observer.
-public typealias ConversationWatch = CommittedWatch<ConversationView>
+public typealias ConversationWatch = Watch<ConversationView>
 
 /// Callbacks run on the Session line. They must not call Session operations.
 internal final class ConversationViewObserver: Sendable {
@@ -94,23 +100,44 @@ internal final class ConversationViews: Sendable {
             } catch { observer.closeSession(); throw error }
         }
     }
-    func watch(id: ConversationID, context: ChordContext) async throws -> CommittedWatch<ConversationView> {
-        let result = Mutex<CommittedWatch<ConversationView>?>(nil)
+    // v1.5.2 CH3: The context controls attachment only. Host callbacks run on the Session line.
+    func observe(id: ConversationID, observer: Observer<ConversationView>, context: ChordContext) async throws -> Observation<ConversationView> {
+        let result = Mutex<(ConversationView, GuardedObserver<WatchCall<ConversationView>>)?>(nil)
         _ = try await attach(id: id, context: context) { value, release, _ in
-            let tree = Mutex(try JSONValue(encoding: value))
-            let watch = CommittedWatch(value: value, replacement: { _ in tree.withLock { $0 } }, detach: release, report: { self.session.report($0) })
+            let guarded = GuardedObserver(advance: observer.advance, end: observer.end,
+                detach: release, report: { self.session.report($0) })
+            result.withLock { $0 = (value, guarded) }
+            return ConversationViewObserver(advance: { value, ops, context in
+                guarded.advance(.value(value: value, ops: ops, retired: false), context: context)
+            }, closeSession: { guarded.end(self.session.observerCloseEnd) })
+        }
+        let (value, guarded) = result.withLock { $0! }
+        do { try context.abortSignal?.throwIfAborted() }
+        catch { guarded.detach(); throw error }
+        return Observation(value: value, detach: { guarded.detach() })
+    }
+    func watch(id: ConversationID, context: ChordContext) async throws -> Watch<ConversationView> {
+        let result = Mutex<Watch<ConversationView>?>(nil)
+        _ = try await attach(id: id, context: context) { value, release, _ in
+            var initial = value
+            initial.watchJSON = try JSONValue(encoding: value)
+            let watch = Watch(value: initial, replacement: { $0.watchJSON! }, detach: release, report: { self.session.report($0) })
             result.withLock { $0 = watch }
             return ConversationViewObserver(advance: { value, ops, context in
-                do { let next = try JSONValue(encoding: value); tree.withLock { $0 = next }; watch.advance(value: value, ops: ops, context: context) }
-                catch { watch.fail(error) }
-            }, closeSession: { watch.closeSession(self.session.failure) })
+                do {
+                    var next = value
+                    next.watchJSON = try JSONValue(encoding: value)
+                    watch.advance(.value(value: next, ops: ops, retired: false), context: context)
+                }
+                catch { self.session.report(error); watch.end(.failed(.message(String(describing: error)))) }
+            }, closeSession: { watch.end(self.session.watchCloseEnd) })
         }
         let watch = result.withLock { $0! }
         do {
-            if let signal = context.abortSignal { try watch.observeCancellation(signal) }
+            if let signal = context.abortSignal { try watch.observeAbort(signal) }
             try context.abortSignal?.throwIfAborted()
             return watch
-        } catch { watch.cancel(); throw error }
+        } catch { watch.abort(); throw error }
     }
     func attachedState(id: ConversationID, context: ChordContext) async throws -> AttachedReplicatedState<ConversationView> {
         let result = Mutex<CommittedStateSource<ConversationView>?>(nil)
@@ -253,6 +280,16 @@ extension Conversation {
     public func watch(context: ChordContext) async throws -> ConversationWatch {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen(); return try await harness.views.watch(id: id, context: context)
+        }
+    }
+}
+
+extension Harness {
+    /// Observe each conversation change on the Session line. Detach to release the observer.
+    public func observeConversation(_ id: ConversationID, observer: Observer<ConversationView>, context: ChordContext) async throws -> Observation<ConversationView> {
+        try await withTaskCancellationContext(context) { context in
+            try assertOpen()
+            return try await views.observe(id: id, observer: observer, context: context)
         }
     }
 }
