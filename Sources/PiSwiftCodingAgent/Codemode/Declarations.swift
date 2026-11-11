@@ -5,6 +5,9 @@ import PiSwiftAgent
 import PiSwiftCodemodeRuntime
 
 public let defaultCodemodeInputSchemaMaxChars = 16_000
+private let maxSchemaRenderDepth = 64
+private let maxSchemaRenderNodes = 10_000
+private let maxSchemaRenderedChars = 1_000_000
 
 /// The script-visible description of a tool or global. C5b can attach execution separately.
 public struct CodemodeDeclaration: Sendable {
@@ -126,24 +129,35 @@ private struct SchemaContext {
     let tags: Bool
     var resolving: Set<String> = []
     var expansions = 0
+    var depth = 0
+    var visitedNodes = 0
+    var renderedChars = 0
+    var exceededLimit = false
+}
 
-    func resolve(_ ref: String) -> Any? {
-        guard ref == "#" || ref.hasPrefix("#/") else { return nil }
-        var current: Any = root
-        for segment in ref.dropFirst(2).split(separator: "/").filter({ !$0.isEmpty }) {
-            let key = (String(segment).removingPercentEncoding ?? String(segment))
-                .replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
-            guard let next = object(current)?[key] else { return nil }
-            current = next
-        }
-        return boolean(current) != nil || object(current) != nil ? current : nil
+/// Return the schema named by a local reference. Decode URI and JSON Pointer escapes in each segment.
+/// Return nil for remote references, missing names, and malformed URI escapes.
+public func resolveSchemaRef(_ ref: String, root: AnyCodable) -> AnyCodable? {
+    resolveSchemaRefValue(ref, root: root.value).map(AnyCodable.init)
+}
+
+private func resolveSchemaRefValue(_ ref: String, root: Any) -> Any? {
+    guard ref == "#" || ref.hasPrefix("#/") else { return nil }
+    var current: Any = root
+    for segment in ref.dropFirst(2).split(separator: "/").filter({ !$0.isEmpty }) {
+        guard let decoded = String(segment).removingPercentEncoding else { return nil }
+        let key = decoded.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+        guard let next = object(current)?[key] else { return nil }
+        current = next
     }
+    return boolean(current) != nil || object(current) != nil ? current : nil
 }
 
 public func schemaToType(_ schema: AnyCodable, maxChars: Int? = nil) -> String {
     func render(tags: Bool) -> String {
         var context = SchemaContext(root: schema.value, tags: tags)
-        return typeText(schema.value, &context)
+        let text = typeText(schema.value, &context)
+        return context.exceededLimit ? "unknown" : text
     }
     let rendered = render(tags: true)
     guard let maxChars, rendered.utf16.count > maxChars else { return rendered }
@@ -156,11 +170,29 @@ public func schemaToType(_ schema: [String: AnyCodable], maxChars: Int? = nil) -
 }
 
 private func typeText(_ value: Any, _ context: inout SchemaContext) -> String {
+    if context.exceededLimit { return "unknown" }
+    guard context.depth < maxSchemaRenderDepth, context.visitedNodes < maxSchemaRenderNodes else {
+        context.exceededLimit = true
+        return "unknown"
+    }
+    context.depth += 1
+    context.visitedNodes += 1
+    let text = typeTextBody(value, &context)
+    context.depth -= 1
+    guard !context.exceededLimit, text.utf16.count <= maxSchemaRenderedChars - context.renderedChars else {
+        context.exceededLimit = true
+        return "unknown"
+    }
+    context.renderedChars += text.utf16.count
+    return text
+}
+
+private func typeTextBody(_ value: Any, _ context: inout SchemaContext) -> String {
     if let flag = boolean(value) { return flag ? "unknown" : "never" }
     guard let schema = object(value) else { return "unknown" }
     if let ref = string(schema["$ref"]) {
         guard !context.resolving.contains(ref), context.expansions < 32,
-              let target = context.resolve(ref) else { return "unknown" }
+              let target = resolveSchemaRefValue(ref, root: context.root) else { return "unknown" }
         context.expansions += 1
         context.resolving.insert(ref)
         defer { context.resolving.remove(ref) }
@@ -202,7 +234,13 @@ private func typeText(_ value: Any, _ context: inout SchemaContext) -> String {
 private func arrayType(_ schema: [String: Any], _ context: inout SchemaContext) -> String {
     if let items = schema["items"], array(items) == nil { return "Array<\(typeText(items, &context))>" }
     let tuple = array(schema["prefixItems"]) ?? array(schema["items"]) ?? []
-    return tuple.isEmpty ? "unknown[]" : "[\(tuple.map { typeText($0, &context) }.joined(separator: ", "))]"
+    if tuple.isEmpty { return "unknown[]" }
+    var elements: [String] = []
+    for item in tuple {
+        elements.append(typeText(item, &context))
+        if context.exceededLimit { return "unknown" }
+    }
+    return "[\(elements.joined(separator: ", "))]"
 }
 
 private func propertyKey(_ name: String) -> String {
@@ -276,8 +314,11 @@ private func objectType(_ schema: [String: Any], _ context: inout SchemaContext)
     let required = Set((array(schema["required"]) ?? []).compactMap { string($0) })
     // JavaScript's default Array.sort compares UTF-16 code units.
     let names = properties.keys.sorted { $0.utf16.lexicographicallyPrecedes($1.utf16) }
-    var members = names.map { name in
-        "\(propertyKey(name))\(required.contains(name) ? "" : "?"): \(typeText(properties[name]!, &context));"
+    var members: [String] = []
+    for name in names {
+        let member = "\(propertyKey(name))\(required.contains(name) ? "" : "?"): \(typeText(properties[name]!, &context));"
+        if context.exceededLimit { return "unknown" }
+        members.append(member)
     }
     if let additional = schema["additionalProperties"], boolean(additional) != false {
         members.append("[key: string]: \(boolean(additional) == true ? "unknown" : typeText(additional, &context));")

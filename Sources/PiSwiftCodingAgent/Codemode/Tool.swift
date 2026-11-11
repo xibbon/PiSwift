@@ -107,25 +107,56 @@ private func codemodeDescriptionOptions(_ options: CodemodeToolOptions,
         searchResultDetail: options.searchResultDetail)
 }
 
-private func describeFields(_ schema: Any?, depth: Int) -> String? {
-    guard let fields = schema as? [String: Any], fields["type"] as? String == "object",
+private func followRef(_ schema: Any?, root: AnyCodable) -> Any? {
+    var current = schema
+    var seen = Set<String>()
+    while let fields = current as? [String: Any], let ref = fields["$ref"] as? String,
+          seen.insert(ref).inserted, let target = resolveSchemaRef(ref, root: root) {
+        current = target.value
+    }
+    return current
+}
+
+private func describeFields(_ schema: Any?, root: AnyCodable, depth: Int) -> String? {
+    guard let fields = followRef(schema, root: root) as? [String: Any], fields["type"] as? String == "object",
           let properties = fields["properties"] as? [String: Any] else { return nil }
     let required = Set(fields["required"] as? [String] ?? [])
     let names = properties.keys.sorted().map { name in
-        let nested = depth > 0 ? describeFields(properties[name], depth: depth - 1) : nil
+        let property = followRef(properties[name], root: root) as? [String: Any]
+        let constant = property?["const"].flatMap(jsonLiteral)
+        let nested = constant ?? (depth > 0 ? describeFields(properties[name], root: root, depth: depth - 1) : nil)
         return name + (required.contains(name) ? "" : "?") + (nested.map { ": " + $0 } ?? "")
     }
     return "{ \(names.joined(separator: ", ")) }"
 }
 
+private func jsonLiteral(_ value: Any) -> String? {
+    guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes]) else { return nil }
+    return String(data: data, encoding: .utf8)
+}
+
+private func describeUnionFields(_ schema: Any?, root: AnyCodable) -> String? {
+    guard let fields = followRef(schema, root: root) as? [String: Any],
+          let variants = (fields["anyOf"] ?? fields["oneOf"]) as? [Any], !variants.isEmpty else { return nil }
+    let described = variants.map { describeFields($0, root: root, depth: 0) }
+    guard described.allSatisfy({ $0 != nil }) else { return nil }
+    return described.compactMap { $0 }.joined(separator: " | ")
+}
+
+private func describeOutput(name: String, schema: AnyCodable?) -> String {
+    let type = renderToolOutputType(schema)
+    if type == "string" { return "a string" }
+    if let schema, let fields = describeFields(schema.value, root: schema, depth: 1)
+        ?? describeUnionFields(schema.value, root: schema) {
+        return "`\(fields)`"
+    }
+    if !type.contains("\n") { return "`\(type)`" }
+    return "a value; `await describeTool(\(jsonLiteral(name) ?? "\"\(name)\""))` shows its type"
+}
+
 private func describeScriptCall(_ tool: AgentTool) -> String {
     let schema = CodemodeDeclaration(tool: tool).outputSchema
-    let type = renderToolOutputType(schema)
-    let output: String
-    if type == "string" { output = "a string" }
-    else if let fields = describeFields(schema?.value, depth: 1) {
-        output = "`\(fields)`"
-    } else { output = "`\(type.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression))`" }
+    let output = describeOutput(name: tool.name, schema: schema)
     return tool.description.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\nCodemode: `tools.\(toCodemodeIdentifier(tool.name))(args)` resolves to \(output)."
 }
 

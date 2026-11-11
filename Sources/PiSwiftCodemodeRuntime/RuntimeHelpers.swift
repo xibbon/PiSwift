@@ -24,5 +24,12 @@ package func codemodeToolIdentifierCollision(_ entries: [(name: String, identifi
 
 package func codemodePreview(_ value: String, limit: Int) -> String {
     let utf16 = value as NSString
-    return utf16.length > limit ? utf16.substring(to: max(0, limit - 3)) + "..." : value
+    guard utf16.length > limit else { return value }
+    var end = max(0, limit - 3)
+    if end > 0, end < utf16.length,
+       (0xD800...0xDBFF).contains(Int(utf16.character(at: end - 1))),
+       (0xDC00...0xDFFF).contains(Int(utf16.character(at: end))) {
+        end -= 1
+    }
+    return utf16.substring(to: end) + "..."
 }

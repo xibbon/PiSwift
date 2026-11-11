@@ -7,10 +7,12 @@ public let DEFAULT_TOOL_SEARCH_LIMIT = 8
 public struct ToolSearchDocument: Sendable {
     public var name: String
     public var text: String
+    public var namespaceText: String
 
-    public init(name: String, text: String) {
+    public init(name: String, text: String, namespaceText: String = "") {
         self.name = name
         self.text = text
+        self.namespaceText = namespaceText
     }
 }
 
@@ -86,15 +88,10 @@ private func stemToolSearchTerm(_ term: String) -> String {
     return term
 }
 
-/// The ASCII token rules used by the upstream BM25 search.
+/// Segment Unicode words and split ASCII identifier boundaries.
 public func tokenize(_ text: String) -> [String] {
-    let scalars = Array(text.unicodeScalars)
-    var words: [String] = []
-    var word = ""
-    func finish() {
-        if !word.isEmpty && !toolSearchStopWords.contains(word) { words.append(stemToolSearchTerm(word)) }
-        word = ""
-    }
+    let scalars = Array(text.precomposedStringWithCanonicalMapping.unicodeScalars)
+    var separated = ""
     for index in scalars.indices {
         let scalar = scalars[index]
         let previous = index > 0 ? scalars[index - 1] : nil
@@ -102,33 +99,114 @@ public func tokenize(_ text: String) -> [String] {
         if asciiUpper(scalar), let previous,
            (asciiLower(previous) || asciiDigit(previous) ||
             (asciiUpper(previous) && next.map(asciiLower) == true)) {
-            finish()
+            separated.append(" ")
         }
-        if asciiLower(scalar) || asciiDigit(scalar) {
-            word.unicodeScalars.append(scalar)
-        } else if asciiUpper(scalar) {
-            word.unicodeScalars.append(Unicode.Scalar(scalar.value + 32)!)
-        } else {
-            finish()
+        separated.unicodeScalars.append(scalar)
+    }
+    let normalized = separated.lowercased()
+    var filtered = ""
+    for scalar in normalized.unicodeScalars {
+        switch scalar.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+             .nonspacingMark, .spacingMark, .enclosingMark,
+             .decimalNumber, .letterNumber, .otherNumber:
+            filtered.unicodeScalars.append(scalar)
+        default:
+            filtered.append(" ")
         }
     }
-    finish()
-    return words
+    let words: [String]
+    if filtered.unicodeScalars.allSatisfy({ asciiLower($0) || asciiDigit($0) || $0 == " " }) {
+        words = filtered.split(separator: " ").map(String.init)
+    } else {
+        var segments: [String] = []
+        var previousEnd: String.Index?
+        filtered.enumerateSubstrings(in: filtered.startIndex..<filtered.endIndex, options: .byWords) {
+            substring, range, _, _ in
+            guard let substring else { return }
+            let ascii = substring.unicodeScalars.allSatisfy { asciiLower($0) || asciiDigit($0) }
+            if ascii, previousEnd == range.lowerBound, let last = segments.last,
+               last.unicodeScalars.allSatisfy({ asciiLower($0) || asciiDigit($0) }) {
+                segments[segments.count - 1] += substring
+            } else {
+                segments.append(substring)
+            }
+            previousEnd = range.upperBound
+        }
+        words = segments
+    }
+    return words.filter { !toolSearchStopWords.contains($0) }.map { word in
+        word.unicodeScalars.allSatisfy { asciiLower($0) || asciiDigit($0) } ? stemToolSearchTerm(word) : word
+    }
 }
 
-private func appendSchemaText(_ schema: Any?, to parts: inout [String]) {
+private func resolveSearchSchemaRef(_ ref: String, root: Any) -> (path: String, value: Any)? {
+    guard ref == "#" || ref.hasPrefix("#/") else { return nil }
+    var current = root
+    var path = "#"
+    if ref == "#" { return (path, current) }
+    for segment in ref.dropFirst(2).split(separator: "/", omittingEmptySubsequences: false) {
+        guard let decoded = String(segment).removingPercentEncoding else { return nil }
+        let key = decoded.replacingOccurrences(of: "~1", with: "/")
+            .replacingOccurrences(of: "~0", with: "~")
+        guard let next = (current as? [String: Any])?[key] else { return nil }
+        current = next
+        path += "/" + key.replacingOccurrences(of: "~", with: "~0")
+            .replacingOccurrences(of: "/", with: "~1")
+    }
+    return (path, current)
+}
+
+private struct SearchTextBudget {
+    static let maxBytes = 1_000_000
+    static let maxNodes = 4_096
+    static let maxDepth = 64
+    var bytes = 0
+    var nodes = 0
+
+    mutating func append(_ value: String, to parts: inout [String]) {
+        let separatorBytes = parts.isEmpty ? 0 : 1
+        let remaining = Self.maxBytes - bytes - separatorBytes
+        guard remaining > 0 else { return }
+        let clipped = value.utf8.prefix(remaining)
+        let text = String(bytes: clipped, encoding: .utf8)
+            ?? (1...3).lazy.compactMap { String(bytes: clipped.dropLast(min($0, clipped.count)), encoding: .utf8) }.first
+            ?? ""
+        guard !text.isEmpty else { return }
+        parts.append(text)
+        bytes += separatorBytes + text.utf8.count
+    }
+}
+
+private func appendSchemaText(_ schema: Any?, root: Any, to parts: inout [String],
+                              seen: inout Set<String>, budget: inout SearchTextBudget, depth: Int) {
     guard let schema = schema as? [String: Any] else { return }
-    if let description = schema["description"] as? String { parts.append(description) }
+    guard budget.nodes < SearchTextBudget.maxNodes, depth <= SearchTextBudget.maxDepth,
+          budget.bytes < SearchTextBudget.maxBytes else { return }
+    budget.nodes += 1
+    if let ref = schema["$ref"] as? String,
+       let resolved = resolveSearchSchemaRef(ref, root: root),
+       resolved.value is [String: Any], seen.insert(resolved.path).inserted {
+        appendSchemaText(resolved.value, root: root, to: &parts, seen: &seen,
+                         budget: &budget, depth: depth + 1)
+    }
+    if let description = schema["description"] as? String { budget.append(description, to: &parts) }
     if let properties = schema["properties"] as? [String: Any] {
         for name in properties.keys.sorted() {
-            parts.append(name)
-            appendSchemaText(properties[name], to: &parts)
+            guard budget.nodes < SearchTextBudget.maxNodes, budget.bytes < SearchTextBudget.maxBytes else { break }
+            budget.append(name, to: &parts)
+            appendSchemaText(properties[name], root: root, to: &parts, seen: &seen,
+                             budget: &budget, depth: depth + 1)
         }
     }
-    appendSchemaText(schema["items"], to: &parts)
+    appendSchemaText(schema["items"], root: root, to: &parts, seen: &seen,
+                     budget: &budget, depth: depth + 1)
     for key in ["anyOf", "oneOf", "allOf"] {
         if let variants = schema[key] as? [Any] {
-            for variant in variants { appendSchemaText(variant, to: &parts) }
+            for variant in variants {
+                appendSchemaText(variant, root: root, to: &parts, seen: &seen,
+                                 budget: &budget, depth: depth + 1)
+            }
         }
     }
 }
@@ -148,15 +226,51 @@ public func matchesToolNamespace(name: String, namespace: ToolNamespace) -> Bool
 }
 
 public func createToolSearchDocument(_ tool: ToolInfo, namespace: ToolNamespace? = nil) -> ToolSearchDocument {
-    var parts = [tool.name, tool.name.replacingOccurrences(of: "_", with: " "), tool.description]
+    var parts: [String] = []
+    var budget = SearchTextBudget()
+    budget.append(tool.description, to: &parts)
     if let parameters = tool.parameters {
-        appendSchemaText(parameters.mapValues(\.value), to: &parts)
+        let root = parameters.mapValues(\.value)
+        var seen: Set<String> = ["#"]
+        appendSchemaText(root, root: root, to: &parts, seen: &seen, budget: &budget, depth: 0)
     }
-    if let namespace = namespace ?? tool.namespace { parts += [namespace.name, namespace.description ?? "", namespace.instructions ?? ""] }
-    return ToolSearchDocument(name: tool.name, text: parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " "))
+    var namespaceParts: [String] = []
+    if let namespace = namespace ?? tool.namespace {
+        budget.append([namespace.name, namespace.description ?? "", namespace.instructions ?? ""].joined(separator: " "),
+                      to: &namespaceParts)
+    }
+    let namespaceText = namespaceParts.joined(separator: " ")
+    return ToolSearchDocument(name: tool.name,
+        text: parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: " "),
+        namespaceText: namespaceText)
 }
 
-/// Okapi BM25. Equal scores retain document order.
+private func normalizeSearchName(_ name: String) -> String {
+    String(String.UnicodeScalarView(name.trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased().unicodeScalars.map { scalar in
+            asciiLower(scalar) || asciiDigit(scalar) || scalar == "_" || scalar == "$" ? scalar : "_"
+        }))
+}
+
+private struct IndexedSearchDocument {
+    let name: String
+    let nameTerms: Set<String>
+    let localNameTerms: Set<String>
+    let textCounts: [String: Int]
+    let textLength: Int
+    let namespaceTerms: Set<String>
+
+    init(_ document: ToolSearchDocument) {
+        name = document.name
+        nameTerms = Set(tokenize(document.name))
+        localNameTerms = Set(tokenize(String(document.name.components(separatedBy: "__").last ?? "")))
+        textCounts = tokenize(document.text).reduce(into: [:]) { $0[$1, default: 0] += 1 }
+        textLength = textCounts.values.reduce(0, +)
+        namespaceTerms = Set(tokenize(document.namespaceText))
+    }
+}
+
+/// Okapi BM25 over the description, with separate name and namespace weights.
 public struct Bm25Ranker: ToolRanker {
     public let k1: Double
     public let b: Double
@@ -170,27 +284,44 @@ public struct Bm25Ranker: ToolRanker {
         var seen: Set<String> = []
         let queryTerms = tokenize(query).filter { seen.insert($0).inserted }
         guard !queryTerms.isEmpty, !documents.isEmpty, limit > 0 else { return [] }
-        let counts = documents.map { document in
-            tokenize(document.text).reduce(into: [String: Int]()) { $0[$1, default: 0] += 1 }
-        }
-        let lengths = counts.map { $0.values.reduce(0, +) }
-        let average = Double(lengths.reduce(0, +)) / Double(documents.count)
+        let indexed = documents.map(IndexedSearchDocument.init)
+        let average = Double(indexed.reduce(0) { $0 + $1.textLength }) / Double(indexed.count)
         let averageLength = average == 0 ? 1 : average
         let idf = Dictionary(uniqueKeysWithValues: queryTerms.map { term in
-            let frequency = counts.filter { $0[term] != nil }.count
+            let frequency = indexed.filter {
+                $0.nameTerms.contains(term) || $0.textCounts[term] != nil || $0.namespaceTerms.contains(term)
+            }.count
             return (term, log(1 + (Double(documents.count - frequency) + 0.5) / (Double(frequency) + 0.5)))
         })
-        var matches: [(index: Int, match: ToolSearchMatch)] = []
-        for (index, document) in documents.enumerated() {
+        let fullNameBonus = queryTerms.reduce(0.0) { $0 + (idf[$1] ?? 0) }
+        let exactQuery = normalizeSearchName(query)
+        var matches: [(index: Int, match: ToolSearchMatch, covered: Int, exact: Bool)] = []
+        for (index, document) in indexed.enumerated() {
             var score = 0.0
+            var covered = 0
+            let norm = k1 * (1 - b + b * Double(document.textLength) / averageLength)
             for term in queryTerms {
-                guard let count = counts[index][term], count > 0 else { continue }
-                let norm = k1 * (1 - b + b * Double(lengths[index]) / averageLength)
-                score += (idf[term] ?? 0) * (Double(count) * (k1 + 1) / (Double(count) + norm))
+                let count = Double(document.textCounts[term] ?? 0)
+                let weight = (document.nameTerms.contains(term) ? 3.0 : 0.0)
+                    + (document.namespaceTerms.contains(term) ? 0.5 : 0.0)
+                    + count * (k1 + 1) / (count + norm)
+                if weight > 0 { covered += 1 }
+                score += (idf[term] ?? 0) * weight
             }
-            if score > 0 { matches.append((index, ToolSearchMatch(name: document.name, score: score))) }
+            guard score > 0 else { continue }
+            if !document.localNameTerms.isEmpty && document.localNameTerms.isSubset(of: Set(queryTerms)) {
+                score += fullNameBonus
+            }
+            let normalized = normalizeSearchName(document.name)
+            let exact = normalized == exactQuery || normalized.hasSuffix("__" + exactQuery)
+            matches.append((index, ToolSearchMatch(name: document.name, score: score), covered, exact))
         }
-        return matches.sorted { $0.match.score == $1.match.score ? $0.index < $1.index : $0.match.score > $1.match.score }
+        return matches.sorted {
+            if $0.exact != $1.exact { return $0.exact }
+            if $0.covered != $1.covered { return $0.covered > $1.covered }
+            if $0.match.score != $1.match.score { return $0.match.score > $1.match.score }
+            return $0.index < $1.index
+        }
             .prefix(limit).map(\.match)
     }
 }

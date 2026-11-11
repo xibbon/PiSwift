@@ -92,6 +92,9 @@ func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
     try process.run()
     defer {
         try? input.fileHandleForWriting.close()
+        // Another child process of the test run can inherit the pipe's write end, and then
+        // the lock holder never sees end-of-file. Do not depend on it: terminate the holder.
+        process.terminate()
         process.waitUntilExit()
     }
     try #require(output.fileHandleForReading.read(upToCount: 1) == Data("R".utf8))

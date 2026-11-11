@@ -30,7 +30,8 @@ public struct CodemodeNestedCall: Sendable, Codable {
     }
 
     public static func preview(_ value: String, limit: Int) -> String {
-        PiSwiftCodemodeRuntime.codemodePreview(value, limit: limit)
+        let utf16 = value as NSString
+        return utf16.length > limit ? codemodeSliceHead(utf16, units: limit - 3) + "..." : value
     }
 }
 
@@ -76,6 +77,28 @@ private func valueText(_ value: AnyCodable) -> String {
     return String(describing: value.value)
 }
 
+/// Keep a UTF-16 budget without cutting a surrogate pair.
+private func codemodeSliceHead(_ text: NSString, units: Int) -> String {
+    var end = min(max(0, units), text.length)
+    if end > 0, end < text.length,
+       (0xD800...0xDBFF).contains(Int(text.character(at: end - 1))),
+       (0xDC00...0xDFFF).contains(Int(text.character(at: end))) {
+        end -= 1
+    }
+    return text.substring(to: end)
+}
+
+private func codemodeSliceTail(_ text: NSString, units: Int) -> String {
+    guard units > 0 else { return "" }
+    var start = max(0, text.length - units)
+    if start > 0, start < text.length,
+       (0xDC00...0xDFFF).contains(Int(text.character(at: start))),
+       (0xD800...0xDBFF).contains(Int(text.character(at: start - 1))) {
+        start += 1
+    }
+    return text.substring(from: start)
+}
+
 private func truncateOutput(_ items: [ContentBlock], maxTokens: Int) -> (items: [ContentBlock], fullOutputPath: String?) {
     let texts = items.compactMap { block -> String? in
         if case .text(let value) = block { return value.text }
@@ -88,8 +111,8 @@ private func truncateOutput(_ items: [ContentBlock], maxTokens: Int) -> (items: 
     let headChars = budget / 2
     let tailChars = budget - headChars
     let ns = combined as NSString
-    let head = ns.substring(to: headChars)
-    let tail = tailChars > 0 ? ns.substring(from: length - tailChars) : ""
+    let head = codemodeSliceHead(ns, units: headChars)
+    let tail = codemodeSliceTail(ns, units: tailChars)
     let removed = length - budget
     let lineCount = combined.components(separatedBy: "\n").count
     var text = "Warning: truncated output (original token count: \((length + 3) / 4))\nTotal output lines: \(lineCount)\n\n\(head)…\((removed + 3) / 4) tokens truncated…\(tail)"
