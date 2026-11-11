@@ -107,6 +107,42 @@ public struct OAuthAuthInfo: Sendable {
     }
 }
 
+/// Device authorization details for a host that presents a confirmation action.
+public struct OAuthDeviceCodeInfo: Sendable {
+    public var userCode: String
+    public var verificationUri: String
+    public var intervalSeconds: Double?
+    public var expiresInSeconds: Double?
+    public var openBrowserOnConfirm: Bool
+    public var copyCodeOnConfirm: Bool
+
+    public init(userCode: String, verificationUri: String, intervalSeconds: Double? = nil,
+                expiresInSeconds: Double? = nil, openBrowserOnConfirm: Bool = true,
+                copyCodeOnConfirm: Bool = true) {
+        self.userCode = userCode
+        self.verificationUri = verificationUri
+        self.intervalSeconds = intervalSeconds
+        self.expiresInSeconds = expiresInSeconds
+        self.openBrowserOnConfirm = openBrowserOnConfirm
+        self.copyCodeOnConfirm = copyCodeOnConfirm
+    }
+}
+
+/// Normalize server-supplied URLs before a host can open them.
+public func trustedOAuthHttpURL(_ value: Any?) -> String? {
+    guard let value = value as? String, !value.isEmpty,
+          var components = URLComponents(string: value),
+          let scheme = components.scheme?.lowercased(),
+          scheme == "https" || scheme == "http",
+          let host = components.host, !host.isEmpty else { return nil }
+    components.scheme = scheme
+    components.host = host.lowercased()
+    if components.port == (scheme == "https" ? 443 : 80) { components.port = nil }
+    if components.path.isEmpty { components.path = "/" }
+    guard let url = components.url else { return nil }
+    return url.absoluteString
+}
+
 public struct OAuthProviderInfo: Sendable {
     public var id: OAuthProvider
     public var name: String
@@ -125,6 +161,7 @@ public struct OAuthProviderInfo: Sendable {
 
 public struct OAuthLoginCallbacks: Sendable {
     public var onAuth: @MainActor @Sendable (OAuthAuthInfo) -> Void
+    public var onDeviceCode: (@MainActor @Sendable (OAuthDeviceCodeInfo) -> Void)?
     public var onPrompt: @MainActor @Sendable (OAuthPrompt) async throws -> String
     public var onProgress: (@MainActor @Sendable (String) -> Void)?
     public var onManualCodeInput: (@MainActor @Sendable () async throws -> String?)?
@@ -138,6 +175,7 @@ public struct OAuthLoginCallbacks: Sendable {
     public init(
         onAuth: @escaping @MainActor @Sendable (OAuthAuthInfo) -> Void,
         onPrompt: @escaping @MainActor @Sendable (OAuthPrompt) async throws -> String,
+        onDeviceCode: (@MainActor @Sendable (OAuthDeviceCodeInfo) -> Void)? = nil,
         onProgress: (@MainActor @Sendable (String) -> Void)? = nil,
         onManualCodeInput: (@MainActor @Sendable () async throws -> String?)? = nil,
         signal: CancellationToken? = nil,
@@ -146,6 +184,7 @@ public struct OAuthLoginCallbacks: Sendable {
         agentName: String? = nil
     ) {
         self.onAuth = onAuth
+        self.onDeviceCode = onDeviceCode
         self.onPrompt = onPrompt
         self.onProgress = onProgress
         self.onManualCodeInput = onManualCodeInput
@@ -153,6 +192,14 @@ public struct OAuthLoginCallbacks: Sendable {
         self.getDeviceId = getDeviceId
         self.onSelect = onSelect
         self.agentName = agentName
+    }
+}
+
+func notifyDeviceCode(_ info: OAuthDeviceCodeInfo, callbacks: OAuthLoginCallbacks) async {
+    if let onDeviceCode = callbacks.onDeviceCode {
+        await onDeviceCode(info)
+    } else {
+        await callbacks.onAuth(OAuthAuthInfo(url: info.verificationUri, instructions: "Enter code: \(info.userCode)"))
     }
 }
 
@@ -1037,12 +1084,18 @@ private func startDeviceFlow(domain: String) async throws -> DeviceCodeResponse 
         throw OAuthError.tokenExchangeFailed(message)
     }
 
-    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw OAuthError.tokenExchangeFailed("Invalid device code response")
+    }
+    guard
           let deviceCode = json["device_code"] as? String,
           let userCode = json["user_code"] as? String,
-          let verificationUri = json["verification_uri"] as? String,
+          let verificationUri = trustedOAuthHttpURL(json["verification_uri"]),
           let interval = json["interval"] as? Int,
           let expiresIn = json["expires_in"] as? Int else {
+        if json["verification_uri"] != nil && trustedOAuthHttpURL(json["verification_uri"]) == nil {
+            throw OAuthError.tokenExchangeFailed("Untrusted verification_uri in device code response")
+        }
         throw OAuthError.tokenExchangeFailed("Invalid device code response")
     }
 
@@ -1324,10 +1377,8 @@ public func loginGitHubCopilot(_ callbacks: OAuthLoginCallbacks) async throws ->
     let device = try await startDeviceFlow(domain: domain)
 
     // Show verification URL and code to user
-    await callbacks.onAuth(OAuthAuthInfo(
-        url: device.verificationUri,
-        instructions: "Enter code: \(device.userCode)"
-    ))
+    await notifyDeviceCode(OAuthDeviceCodeInfo(userCode: device.userCode, verificationUri: device.verificationUri,
+        intervalSeconds: Double(device.interval), expiresInSeconds: Double(device.expiresIn)), callbacks: callbacks)
 
     // Poll for access token
     let githubAccessToken = try await pollForGitHubAccessToken(
@@ -1553,10 +1604,9 @@ public func loginXai(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCred
     }
 
     let device = try await requestXaiDeviceCode(signal: callbacks.signal)
-    await callbacks.onAuth(OAuthAuthInfo(
-        url: device.verificationUriComplete ?? device.verificationUri,
-        instructions: "Enter code: \(device.userCode)"
-    ))
+    await notifyDeviceCode(OAuthDeviceCodeInfo(userCode: device.userCode,
+        verificationUri: device.verificationUriComplete ?? device.verificationUri,
+        intervalSeconds: device.intervalSeconds, expiresInSeconds: device.expiresInSeconds), callbacks: callbacks)
     return try await pollForXaiTokens(device: device, signal: callbacks.signal)
 }
 
@@ -1601,17 +1651,6 @@ private func kimiCodingOAuthHost() -> String {
     let host = override?.trimmingCharacters(in: .whitespacesAndNewlines)
     return (host.flatMap { $0.isEmpty ? nil : $0 } ?? kimiCodingDefaultOAuthHost)
         .replacingOccurrences(of: #"/+$"#, with: "", options: .regularExpression)
-}
-
-private func trustedKimiHttpUrl(_ value: Any?) -> String? {
-    guard let value = value as? String,
-          !value.isEmpty,
-          let url = URL(string: value),
-          let scheme = url.scheme?.lowercased(),
-          scheme == "http" || scheme == "https" else {
-        return nil
-    }
-    return url.absoluteString
 }
 
 private func kimiFormBody(_ fields: [String: String]) -> Data? {
@@ -1664,8 +1703,8 @@ private func startKimiCodingDeviceAuthorization(
           !deviceCode.isEmpty,
           let userCode = json?["user_code"] as? String,
           !userCode.isEmpty,
-          let verificationUri = trustedKimiHttpUrl(json?["verification_uri"]),
-          let verificationUriComplete = trustedKimiHttpUrl(json?["verification_uri_complete"]) else {
+          let verificationUri = trustedOAuthHttpURL(json?["verification_uri"]),
+          let verificationUriComplete = trustedOAuthHttpURL(json?["verification_uri_complete"]) else {
         throw OAuthError.tokenExchangeFailed("Invalid Kimi Code device authorization response")
     }
     let interval = oauthJSONNumber(json?["interval"])
@@ -1758,10 +1797,9 @@ private func pollForKimiCodingToken(
 public func loginKimiCoding(_ callbacks: OAuthLoginCallbacks) async throws -> OAuthCredentials {
     try throwIfOAuthCancelled(callbacks.signal)
     let device = try await startKimiCodingDeviceAuthorization(signal: callbacks.signal)
-    await callbacks.onAuth(OAuthAuthInfo(
-        url: device.verificationUriComplete,
-        instructions: "Enter code: \(device.userCode)"
-    ))
+    await notifyDeviceCode(OAuthDeviceCodeInfo(userCode: device.userCode,
+        verificationUri: device.verificationUriComplete, intervalSeconds: device.intervalSeconds,
+        expiresInSeconds: device.expiresInSeconds), callbacks: callbacks)
     return try await pollForKimiCodingToken(device: device, signal: callbacks.signal)
 }
 

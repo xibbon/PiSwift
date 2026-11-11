@@ -161,6 +161,9 @@ public func streamOpenAICompletions(
                 if let rawUsage = chunk.rawUsage {
                     output.usage = parseCompletionsUsage(rawUsage)
                     calculateCost(model: model, usage: &output.usage)
+                    if isOpenRouterModel(provider: model.provider, baseUrl: model.baseUrl) {
+                        applyOpenRouterReportedCost(rawUsage.accounting, usage: &output.usage)
+                    }
                 } else if let usage = result.usage {
                     output.usage = parseCompletionsUsage(usage)
                     calculateCost(model: model, usage: &output.usage)
@@ -935,6 +938,13 @@ private struct OpenAICompletionsRawUsage: Decodable {
     let cachedTokens: Int?
     let promptTokensDetails: PromptTokensDetails?
     let completionTokensDetails: CompletionTokensDetails?
+    let cost: Double?
+    let isBYOK: Bool?
+    let costDetails: OpenRouterUsageAccounting.CostDetails?
+
+    var accounting: OpenRouterUsageAccounting {
+        OpenRouterUsageAccounting(cost: cost, isBYOK: isBYOK, costDetails: costDetails)
+    }
 
     struct PromptTokensDetails: Decodable {
         let cachedTokens: Int?
@@ -962,6 +972,9 @@ private struct OpenAICompletionsRawUsage: Decodable {
         case cachedTokens = "cached_tokens"
         case promptTokensDetails = "prompt_tokens_details"
         case completionTokensDetails = "completion_tokens_details"
+        case cost
+        case isBYOK = "is_byok"
+        case costDetails = "cost_details"
     }
 }
 
@@ -994,7 +1007,10 @@ private func parseCompletionsUsage(_ usage: ChatResult.CompletionUsage) -> Usage
                 cacheWriteTokens: nil
             )
         },
-        completionTokensDetails: nil
+        completionTokensDetails: nil,
+        cost: nil,
+        isBYOK: nil,
+        costDetails: nil
     )
     return parseCompletionsUsage(rawUsage)
 }

@@ -485,15 +485,7 @@ public func compact(
 }
 
 private func combineSummaryUsage(_ a: Usage, _ b: Usage) -> Usage {
-    Usage(
-        input: a.input + b.input, output: a.output + b.output,
-        cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite,
-        reasoning: a.reasoning == nil && b.reasoning == nil ? nil : (a.reasoning ?? 0) + (b.reasoning ?? 0),
-        totalTokens: a.totalTokens + b.totalTokens,
-        cost: UsageCost(input: a.cost.input + b.cost.input, output: a.cost.output + b.cost.output,
-                        cacheRead: a.cost.cacheRead + b.cost.cacheRead, cacheWrite: a.cost.cacheWrite + b.cost.cacheWrite,
-                        total: a.cost.total + b.cost.total)
-    )
+    combineUsage(a, b)
 }
 
 /// Runs split-turn summarization requests in provider-safe sequence.

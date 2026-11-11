@@ -65,17 +65,6 @@ private func metaErrorDetail(_ json: [String: Any]?) -> String {
     return ""
 }
 
-private func metaTrustedURL(_ value: Any?) -> String? {
-    guard let value = value as? String,
-          !value.isEmpty,
-          let components = URLComponents(string: value),
-          let scheme = components.scheme?.lowercased(),
-          (scheme == "https" || scheme == "http"),
-          let host = components.host, !host.isEmpty,
-          let url = components.url else { return nil }
-    return url.absoluteString
-}
-
 private func metaPositiveNumber(_ value: Any?) -> Double? {
     guard let value = value as? NSNumber,
           CFGetTypeID(value) != CFBooleanGetTypeID() else { return nil }
@@ -98,8 +87,8 @@ private func startMetaDeviceAuthorization(
     }
     guard let deviceCode = json?["device_code"] as? String, !deviceCode.isEmpty,
           let userCode = json?["user_code"] as? String, !userCode.isEmpty,
-          let verificationURI = metaTrustedURL(json?["verification_uri_complete"])
-            ?? metaTrustedURL(json?["verification_uri"]) else {
+          let verificationURI = trustedOAuthHttpURL(json?["verification_uri_complete"])
+            ?? trustedOAuthHttpURL(json?["verification_uri"]) else {
         throw OAuthError.tokenExchangeFailed("Invalid Meta device authorization response")
     }
     return MetaDeviceAuthorization(
@@ -176,7 +165,7 @@ private func mintMetaAPIKey(
         )
     }
     guard let apiKey = json?["api_key"] as? String, !apiKey.isEmpty else {
-        let action = metaTrustedURL(json?["action_url"]).map { " Complete setup at \($0)" } ?? ""
+        let action = trustedOAuthHttpURL(json?["action_url"]).map { " Complete setup at \($0)" } ?? ""
         throw OAuthError.tokenExchangeFailed("Meta did not issue an API key.\(action)")
     }
     return OAuthCredentials(refresh: identityToken, access: apiKey, expires: now() + metaKeyLifetimeMs)
@@ -193,10 +182,9 @@ func loginMeta(
 ) async throws -> OAuthCredentials {
     do {
         let device = try await startMetaDeviceAuthorization(signal: callbacks.signal, httpClient: httpClient)
-        await callbacks.onAuth(OAuthAuthInfo(
-            url: device.verificationURI,
-            instructions: "Enter code: \(device.userCode)"
-        ))
+        await notifyDeviceCode(OAuthDeviceCodeInfo(userCode: device.userCode,
+            verificationUri: device.verificationURI, intervalSeconds: device.intervalSeconds,
+            expiresInSeconds: device.expiresInSeconds), callbacks: callbacks)
         let identityToken = try await pollMetaIdentityToken(
             device: device, signal: callbacks.signal, httpClient: httpClient
         )

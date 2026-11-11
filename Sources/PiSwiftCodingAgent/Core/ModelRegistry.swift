@@ -940,6 +940,10 @@ public final class ModelRegistry: Sendable {
                 resolveCredential: { [authStorage] signal in
                     await authStorage.getApiKey(providerId, signal: signal)
                 },
+                refreshAuth: provider == .openrouter ? .credential : .configured,
+                hasConfiguredAuth: { [weak self] in
+                    self?.hasProviderConfiguredAuth(providerId) ?? false
+                },
                 baseUrl: { [weak self] in
                     self?.refreshBaseUrl(providerId: providerId)
                 },
@@ -1436,7 +1440,15 @@ public final class ModelRegistry: Sendable {
 
     public func resolveModelRequest(_ model: ClassifierModel, signal: CancellationToken? = nil, env: [String: String]? = nil) async -> ResolvedClassifierModelRequest {
         let auth = await getApiKeyAndHeaders(provider: model.provider, headers: model.headers, modelId: model.id, type: .classifier, signal: signal, env: env)
-        return ResolvedClassifierModelRequest(model: model, auth: auth)
+        var resolved = model
+        if model.provider == OAuthProvider.githubCopilot.rawValue {
+            let enterpriseDomain: String? = {
+                if case .oauth(let oauth) = authStorage.get(model.provider) { return oauth.enterpriseUrl }
+                return nil
+            }()
+            resolved.baseUrl = getGitHubCopilotBaseUrl(token: auth.apiKey, enterpriseDomain: enterpriseDomain)
+        }
+        return ResolvedClassifierModelRequest(model: resolved, auth: auth)
     }
 
     private struct RequestConfiguration {

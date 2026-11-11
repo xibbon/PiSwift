@@ -57,7 +57,10 @@ public func calculateCost(model: any CatalogModel, usage: inout Usage) -> UsageC
     let longWrite = usage.cacheWrite1h ?? 0
     let shortWrite = usage.cacheWrite - longWrite
     usage.cost.cacheWrite = (rates.cacheWrite * Double(shortWrite) + rates.input * 2 * Double(longWrite)) / 1_000_000
+    // Upstream models.ts:1297-1298: the catalog estimate always replaces the total. A provider's
+    // billed total is applied after this call (see applyOpenRouterReportedCost).
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
+    usage.cost.totalFromProvider = false
     return usage.cost
 }
 

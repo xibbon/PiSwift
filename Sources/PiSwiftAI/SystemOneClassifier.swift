@@ -109,7 +109,8 @@ private func systemOnePayload(model: ClassifierModel, context: ClassifierContext
 
 private func systemOneURL(model: ClassifierModel, transport: SystemOneTransport) throws -> URL {
     let base = model.baseUrl.replacingOccurrences(of: "/+$", with: "", options: .regularExpression)
-    guard let url = URL(string: base + "/" + transport.path), url.scheme != nil else {
+    let prefix = transport == .typesafe && model.provider == "github-copilot" ? "/v1" : ""
+    guard let url = URL(string: base + prefix + "/" + transport.path), url.scheme != nil else {
         throw ClassifierError(message: "Invalid classifier base URL: \(model.baseUrl)")
     }
     return url

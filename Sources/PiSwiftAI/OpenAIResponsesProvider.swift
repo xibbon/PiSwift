@@ -781,6 +781,7 @@ func applyServiceTierPricing(
     usage.cost.cacheRead *= multiplier
     usage.cost.cacheWrite *= multiplier
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
+    usage.cost.totalFromProvider = false
 }
 
 func finalToolCallArgumentsDelta(previous: String, final: String) -> String? {

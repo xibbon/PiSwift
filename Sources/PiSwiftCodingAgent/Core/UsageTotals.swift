@@ -32,7 +32,8 @@ public func combineUsage(_ first: Usage, _ second: Usage) -> Usage {
             output: first.cost.output + second.cost.output,
             cacheRead: first.cost.cacheRead + second.cost.cacheRead,
             cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
-            total: first.cost.total + second.cost.total
+            total: first.cost.total + second.cost.total,
+            totalFromProvider: first.cost.totalFromProvider == true && second.cost.totalFromProvider == true
         )
     )
 }

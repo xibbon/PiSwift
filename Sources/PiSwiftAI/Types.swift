@@ -1456,13 +1456,16 @@ public struct UsageCost: Sendable {
     public var cacheRead: Double
     public var cacheWrite: Double
     public var total: Double
+    /// True when the provider reported the billed total. A false or absent value means a catalog estimate.
+    public var totalFromProvider: Bool?
 
-    public init(input: Double = 0, output: Double = 0, cacheRead: Double = 0, cacheWrite: Double = 0, total: Double = 0) {
+    public init(input: Double = 0, output: Double = 0, cacheRead: Double = 0, cacheWrite: Double = 0, total: Double = 0, totalFromProvider: Bool? = nil) {
         self.input = input
         self.output = output
         self.cacheRead = cacheRead
         self.cacheWrite = cacheWrite
         self.total = total
+        self.totalFromProvider = totalFromProvider
     }
 }
 

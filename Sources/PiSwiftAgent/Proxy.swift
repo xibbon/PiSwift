@@ -610,6 +610,7 @@ private struct ProxyUsageCost: Decodable {
     let cacheRead: Double
     let cacheWrite: Double
     let total: Double
+    let totalFromProvider: Bool?
 }
 
 private struct ProxyUsage: Decodable {
@@ -634,7 +635,8 @@ private struct ProxyUsage: Decodable {
                 output: cost.output,
                 cacheRead: cost.cacheRead,
                 cacheWrite: cost.cacheWrite,
-                total: cost.total
+                total: cost.total,
+                totalFromProvider: cost.totalFromProvider
             )
         )
     }

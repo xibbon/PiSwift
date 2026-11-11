@@ -82,7 +82,13 @@ public struct ModelsRefreshResult: Sendable {
 }
 
 public struct ModelsRefreshSource: Sendable {
+    public enum RefreshAuth: Sendable {
+        case credential
+        case configured
+    }
     public let id: String
+    public let refreshAuth: RefreshAuth
+    public let hasConfiguredAuth: @Sendable () async -> Bool
     public let baseUrl: @Sendable () -> String?
     public let readStoredCredential: @Sendable () async throws -> String?
     public let resolveCredential: @Sendable (CancellationToken) async throws -> String?
@@ -92,10 +98,14 @@ public struct ModelsRefreshSource: Sendable {
         id: String,
         readStoredCredential: @escaping @Sendable () async throws -> String?,
         resolveCredential: @escaping @Sendable (CancellationToken) async throws -> String?,
+        refreshAuth: RefreshAuth = .credential,
+        hasConfiguredAuth: @escaping @Sendable () async -> Bool = { false },
         baseUrl: @escaping @Sendable () -> String? = { nil },
         refresh: @escaping @Sendable (RefreshModelsContext) async throws -> Void
     ) {
         self.id = id
+        self.refreshAuth = refreshAuth
+        self.hasConfiguredAuth = hasConfiguredAuth
         self.baseUrl = baseUrl
         self.readStoredCredential = readStoredCredential
         self.resolveCredential = resolveCredential
@@ -209,9 +219,19 @@ public actor ModelCatalogRefreshCoordinator {
                 return ProviderRefreshOutcome(providerId: source.id)
             }
 
-            guard let credential = try await source.resolveCredential(providerSignal),
-                  !providerSignal.isCancelled else {
-                return ProviderRefreshOutcome(providerId: source.id)
+            let credential: String?
+            switch source.refreshAuth {
+            case .configured:
+                guard await source.hasConfiguredAuth(), !providerSignal.isCancelled else {
+                    return ProviderRefreshOutcome(providerId: source.id)
+                }
+                credential = nil
+            case .credential:
+                guard let resolved = try await source.resolveCredential(providerSignal),
+                      !providerSignal.isCancelled else {
+                    return ProviderRefreshOutcome(providerId: source.id)
+                }
+                credential = resolved
             }
             try await runPhase(
                 source: source,

@@ -238,6 +238,7 @@ private func parseOpenRouterImagesUsage(_ rawUsage: [String: Any], model: ImageM
     usage.cost.cacheRead = (model.cost.cacheRead / 1_000_000) * Double(cacheReadTokens)
     usage.cost.cacheWrite = (model.cost.cacheWrite / 1_000_000) * Double(cacheWriteTokens)
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite
+    usage.cost.totalFromProvider = false
     return usage
 }
 

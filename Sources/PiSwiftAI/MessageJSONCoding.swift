@@ -87,6 +87,11 @@ public func usageToJSONObject(_ usage: Usage) -> [String: Any] {
             "total": usage.cost.total,
         ],
     ]
+    if let totalFromProvider = usage.cost.totalFromProvider {
+        var cost = result["cost"] as? [String: Any] ?? [:]
+        cost["totalFromProvider"] = totalFromProvider
+        result["cost"] = cost
+    }
     if let reasoning = usage.reasoning { result["reasoning"] = reasoning }
     if let cacheWrite1h = usage.cacheWrite1h { result["cacheWrite1h"] = cacheWrite1h }
     return result
@@ -106,6 +111,7 @@ public func usageFromJSONObject(_ dict: [String: Any]) -> Usage {
         usage.cost.cacheRead = cost["cacheRead"] as? Double ?? 0
         usage.cost.cacheWrite = cost["cacheWrite"] as? Double ?? 0
         usage.cost.total = cost["total"] as? Double ?? 0
+        usage.cost.totalFromProvider = cost["totalFromProvider"] as? Bool
     }
     return usage
 }
