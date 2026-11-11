@@ -372,7 +372,7 @@ public func getServerPrefix(_ serverName: String, mode: String) -> String {
         return short
     }
     if mode == "mcp" {
-        return "mcp__" + serverName.replacingOccurrences(of: "-", with: "_")
+        return PiSwiftMCP.mcpNamespace(serverName)
     }
     return serverName.replacingOccurrences(of: "-", with: "_")
 }

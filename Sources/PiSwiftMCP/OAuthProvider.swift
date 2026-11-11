@@ -28,12 +28,40 @@ public protocol McpOAuthStateStore: Sendable {
     func save(_ state: McpOAuthState) async throws
 }
 
-public actor McpMemoryOAuthStateStore: McpOAuthStateStore {
+/// A state store with a lock held from the token read through the token save.
+/// The lock is not reentrant. Throw `McpRefreshLockBusyError` if its wait limit expires.
+public protocol McpOAuthServerStore: McpOAuthStateStore {
+    func withRefreshLock<Result: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result
+}
+
+public typealias McpOAuthRefreshLockingStateStore = McpOAuthServerStore
+
+public struct McpRefreshLockBusyError: Error, LocalizedError, Sendable {
+    public init() {}
+    public var errorDescription: String? { "Another process is refreshing the MCP server's tokens" }
+}
+
+public actor McpMemoryOAuthStateStore: McpOAuthServerStore {
     private var value: McpOAuthState?
+    private var refreshHeld = false
 
     public init() {}
     public func load() -> McpOAuthState? { value }
     public func save(_ state: McpOAuthState) { value = state }
+
+    public func withRefreshLock<Result: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        while refreshHeld {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        refreshHeld = true
+        defer { refreshHeld = false }
+        return try await operation()
+    }
 }
 
 /// Holds OAuth state for one exact MCP server URL.

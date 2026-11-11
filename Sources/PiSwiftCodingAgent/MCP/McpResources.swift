@@ -103,7 +103,7 @@ private let readOutputSchema = resourceSchema([
 private func resourceJsonResult(tool: String, server: String?, payload: [String: Any]) async -> AgentToolResult {
     let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys, .fragmentsAllowed])) ?? Data("{}".utf8)
     let text = String(decoding: data, as: UTF8.self)
-    let limited = await limitMcpContent([.text(TextContent(text: text))])
+    let limited = await PiSwiftMCP.limitMcpContent([.text(TextContent(text: text))], saveOutput: saveMcpOutput)
     return AgentToolResult(content: limited.content,
         details: McpToolDetails(server: server ?? "", tool: tool, fullOutputPath: limited.fullOutputPath).value,
         structuredContent: AnyCodable(payload))
@@ -207,7 +207,9 @@ public func createMcpResourceToolDefinitions(
                 blocks.append(McpContent(type: "resource", resource: item))
             }
             let converted = await mcpModelContent(server: serverName, blocks: blocks)
-            let limited = await limitMcpContent(converted.isEmpty ? [.text(TextContent(text: "Resource \(uri) is empty."))] : converted)
+            let limited = await PiSwiftMCP.limitMcpContent(
+                converted.isEmpty ? [.text(TextContent(text: "Resource \(uri) is empty."))] : converted,
+                saveOutput: saveMcpOutput)
             var values: [[String: Any]] = []
             for item in contents {
                 var object = resourceObject(item, server: serverName)

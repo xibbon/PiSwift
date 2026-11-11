@@ -58,9 +58,11 @@ public struct McpOAuthFlowOptions: Sendable {
     public var authorizationServerMetadataURL: URL?
     public var skipIssuerValidation: Bool
     public var skipRefresh: Bool
+    public var refreshOnly: Bool
+    public var authorizationRedirectURL: URL?
 
     public init(serverURL: URL, authorizationCode: String? = nil, iss: String? = nil, scope: String? = nil,
-                resourceMetadataURL: URL? = nil, authorizationServerMetadataURL: URL? = nil, skipIssuerValidation: Bool = false, skipRefresh: Bool = false) {
+                resourceMetadataURL: URL? = nil, authorizationServerMetadataURL: URL? = nil, skipIssuerValidation: Bool = false, skipRefresh: Bool = false, refreshOnly: Bool = false, authorizationRedirectURL: URL? = nil) {
         self.serverURL = serverURL
         self.authorizationCode = authorizationCode
         self.iss = iss
@@ -69,6 +71,8 @@ public struct McpOAuthFlowOptions: Sendable {
         self.authorizationServerMetadataURL = authorizationServerMetadataURL
         self.skipIssuerValidation = skipIssuerValidation
         self.skipRefresh = skipRefresh
+        self.refreshOnly = refreshOnly
+        self.authorizationRedirectURL = authorizationRedirectURL
     }
 }
 
@@ -227,13 +231,20 @@ public enum McpOAuthFlow {
         http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()
     ) async throws -> McpOAuthFlowResult {
         for attempt in 0..<2 {
+            let storedClientID = options.refreshOnly ? try await provider.clientInformation()?.clientID : nil
             do { return try await runFlow(provider: provider, options: options, http: http) }
             catch let error as McpOAuthError {
                 if Task.isCancelled { throw error }
                 guard attempt == 0 else { throw error }
                 if case .authorization(let code, _, _) = error {
                     if code == "invalid_client" || code == "unauthorized_client" {
-                        try await provider.invalidateCredentials(.all)
+                        if options.refreshOnly {
+                            if try await provider.clientInformation()?.clientID == storedClientID {
+                                try await provider.invalidateCredentials(.client)
+                                try await provider.invalidateCredentials(.tokens)
+                                try await provider.invalidateCredentials(.discovery)
+                            }
+                        } else { try await provider.invalidateCredentials(.all) }
                         continue
                     }
                     if code == "invalid_grant" {
@@ -290,8 +301,14 @@ public enum McpOAuthFlow {
                 throw McpOAuthError.invalidMetadata("client metadata redirect URL")
             }
         }
+        let redirectURL = document?.redirectURL ?? provider.redirectURL
+        if options.authorizationCode != nil, let requested = options.authorizationRedirectURL,
+           requested != redirectURL {
+            throw McpSignInResponseError(message: "The code exchange would use the redirect URI \(redirectURL.absoluteString), but the authorization request used \(requested.absoluteString)")
+        }
         var client = stored ?? document.map { McpOAuthClientInformation(clientID: $0.url.absoluteString) }
         if client == nil {
+            if options.refreshOnly { return .redirect }
             if options.authorizationCode != nil { throw McpOAuthError.invalidMetadata("client information missing during code exchange") }
             client = try await registerClient(authorizationServerURL: info.authorizationServerURL,
                 metadata: info.authorizationServerMetadata, clientMetadata: provider.clientMetadata,
@@ -299,7 +316,6 @@ public enum McpOAuthFlow {
             if let client { try await provider.saveClientInformation(client) }
         }
         guard let client else { throw McpOAuthError.invalidMetadata("client information") }
-        let redirectURL = document?.redirectURL ?? provider.redirectURL
         if let code = options.authorizationCode {
             let metadata = info.authorizationServerMetadata
             if options.iss != nil || metadata?.authorizationResponseIssParameterSupported == true,
@@ -333,6 +349,7 @@ public enum McpOAuthFlow {
                 }
             }
         }
+        if options.refreshOnly { return .redirect }
         let authorization = try startAuthorization(authorizationServerURL: info.authorizationServerURL,
             metadata: info.authorizationServerMetadata, clientInformation: client,
             redirectURL: redirectURL, scope: scope, state: try await provider.state(), resource: resource)

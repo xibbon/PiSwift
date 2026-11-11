@@ -79,26 +79,26 @@ private actor RetryResourceTransport: McpTransport {
 }
 
 @Test(.timeLimit(.minutes(1))) func mcpToolNamesExposureAndOutputGuard() async throws {
-    #expect(createMcpToolName(server: "alpha", tool: "search") == "mcp__alpha__search")
-    #expect(createMcpToolName(server: "alpha", tool: "a.b") == "mcp__alpha__a_b")
+    #expect(PiSwiftMCP.createMcpToolName(server: "alpha", tool: "search") == "mcp__alpha__search")
+    #expect(PiSwiftMCP.createMcpToolName(server: "alpha", tool: "a.b") == "mcp__alpha__a_b")
     // Upstream mcp-extension.test.ts #10239 normalizes dashed server and tool names.
-    #expect(createMcpToolName(server: "my-server", tool: "get.item/v2") == "mcp__my_server__get_item_v2")
-    #expect(createMcpToolName(server: "alpha", tool: "😀") == "mcp__alpha____")
-    #expect(createMcpToolName(server: "alpha", tool: "search", isTaken: { _ in true }) == "mcp__alpha__search_0ab588c2")
-    let long = createMcpToolName(server: "alpha", tool: String(repeating: "x", count: 80))
+    #expect(PiSwiftMCP.createMcpToolName(server: "my-server", tool: "get.item/v2") == "mcp__my_server__get_item_v2")
+    #expect(PiSwiftMCP.createMcpToolName(server: "alpha", tool: "😀") == "mcp__alpha____")
+    #expect(PiSwiftMCP.createMcpToolName(server: "alpha", tool: "search", isTaken: { _ in true }) == "mcp__alpha__search_0ab588c2")
+    let long = PiSwiftMCP.createMcpToolName(server: "alpha", tool: String(repeating: "x", count: 80))
     #expect(long.count == 64)
     #expect(long.hasPrefix("mcp__alpha__"))
     // Upstream v1.0.0 maps codemode exposure to deferred.
     #expect(mcpToolExposure(.codemode) == .deferred)
     let saved = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-output-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: saved) }
-    let content: [ContentBlock] = [.text(TextContent(text: String(repeating: "x", count: MCP_OUTPUT_MAX_BYTES + 100)))]
-    let limited = await limitMcpContent(content, saveOutput: { data, _ in
+    let content: [ContentBlock] = [.text(TextContent(text: String(repeating: "x", count: PiSwiftMCP.MCP_OUTPUT_MAX_BYTES + 100)))]
+    let limited = await PiSwiftMCP.limitMcpContent(content, saveOutput: { data, _ in
         try data.write(to: saved)
         return saved
     })
     #expect(limited.fullOutputPath == saved.path)
-    #expect(try Data(contentsOf: saved).count == MCP_OUTPUT_MAX_BYTES + 100)
+    #expect(try Data(contentsOf: saved).count == PiSwiftMCP.MCP_OUTPUT_MAX_BYTES + 100)
     guard case .text(let text) = limited.content.first else { Issue.record("Expected text"); return }
     #expect(text.text.contains("Warning: truncated output"))
     #expect(text.text.contains("[Full output: "))

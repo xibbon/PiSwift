@@ -1,0 +1,511 @@
+{
+  "tag": "v1.5.2",
+  "commit": "b4afdddf44e059c67ccf5097e5317d913521b470",
+  "sourcePath": "packages/mcp/src/naming.ts",
+  "cases": [
+    {
+      "id": "plain-0",
+      "server": "docs",
+      "tool": "search",
+      "taken": false,
+      "name": "mcp__docs__search",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-1",
+      "server": "docs",
+      "tool": "search",
+      "taken": true,
+      "name": "mcp__docs__search_12790ead",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-2",
+      "server": "my-server",
+      "tool": "get.item/v2",
+      "taken": false,
+      "name": "mcp__my_server__get_item_v2",
+      "namespace": "mcp__my_server"
+    },
+    {
+      "id": "taken-3",
+      "server": "my-server",
+      "tool": "get.item/v2",
+      "taken": true,
+      "name": "mcp__my_server__get_item_v2_71e0dba3",
+      "namespace": "mcp__my_server"
+    },
+    {
+      "id": "plain-4",
+      "server": "my_server",
+      "tool": "a_b",
+      "taken": false,
+      "name": "mcp__my_server__a_b",
+      "namespace": "mcp__my_server"
+    },
+    {
+      "id": "taken-5",
+      "server": "my_server",
+      "tool": "a_b",
+      "taken": true,
+      "name": "mcp__my_server__a_b_57b3b6fd",
+      "namespace": "mcp__my_server"
+    },
+    {
+      "id": "plain-6",
+      "server": "s",
+      "tool": "a-b",
+      "taken": false,
+      "name": "mcp__s__a_b",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "taken-7",
+      "server": "s",
+      "tool": "a-b",
+      "taken": true,
+      "name": "mcp__s__a_b_ed3867d6",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "plain-8",
+      "server": "s",
+      "tool": "a_b",
+      "taken": false,
+      "name": "mcp__s__a_b",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "taken-9",
+      "server": "s",
+      "tool": "a_b",
+      "taken": true,
+      "name": "mcp__s__a_b_8d47d403",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "plain-10",
+      "server": "s",
+      "tool": "a.b",
+      "taken": false,
+      "name": "mcp__s__a_b",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "taken-11",
+      "server": "s",
+      "tool": "a.b",
+      "taken": true,
+      "name": "mcp__s__a_b_407e8e5c",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "plain-12",
+      "server": "s",
+      "tool": "a/b",
+      "taken": false,
+      "name": "mcp__s__a_b",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "taken-13",
+      "server": "s",
+      "tool": "a/b",
+      "taken": true,
+      "name": "mcp__s__a_b_fb3c0e4c",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "plain-14",
+      "server": "s",
+      "tool": "a b",
+      "taken": false,
+      "name": "mcp__s__a_b",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "taken-15",
+      "server": "s",
+      "tool": "a b",
+      "taken": true,
+      "name": "mcp__s__a_b_eae83beb",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "plain-16",
+      "server": "s",
+      "tool": "a:b",
+      "taken": false,
+      "name": "mcp__s__a_b",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "taken-17",
+      "server": "s",
+      "tool": "a:b",
+      "taken": true,
+      "name": "mcp__s__a_b_c68aff7a",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "plain-18",
+      "server": "S_09",
+      "tool": "T_09",
+      "taken": false,
+      "name": "mcp__S_09__T_09",
+      "namespace": "mcp__S_09"
+    },
+    {
+      "id": "taken-19",
+      "server": "S_09",
+      "tool": "T_09",
+      "taken": true,
+      "name": "mcp__S_09__T_09_55db3ffb",
+      "namespace": "mcp__S_09"
+    },
+    {
+      "id": "plain-20",
+      "server": "",
+      "tool": "",
+      "taken": false,
+      "name": "mcp____",
+      "namespace": "mcp__"
+    },
+    {
+      "id": "taken-21",
+      "server": "",
+      "tool": "",
+      "taken": true,
+      "name": "mcp_____6e340b9c",
+      "namespace": "mcp__"
+    },
+    {
+      "id": "plain-22",
+      "server": "",
+      "tool": "search",
+      "taken": false,
+      "name": "mcp____search",
+      "namespace": "mcp__"
+    },
+    {
+      "id": "taken-23",
+      "server": "",
+      "tool": "search",
+      "taken": true,
+      "name": "mcp____search_2156536e",
+      "namespace": "mcp__"
+    },
+    {
+      "id": "plain-24",
+      "server": "docs",
+      "tool": "",
+      "taken": false,
+      "name": "mcp__docs__",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-25",
+      "server": "docs",
+      "tool": "",
+      "taken": true,
+      "name": "mcp__docs___2d180f83",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-26",
+      "server": "123",
+      "tool": "456",
+      "taken": false,
+      "name": "mcp__123__456",
+      "namespace": "mcp__123"
+    },
+    {
+      "id": "taken-27",
+      "server": "123",
+      "tool": "456",
+      "taken": true,
+      "name": "mcp__123__456_cf4188c1",
+      "namespace": "mcp__123"
+    },
+    {
+      "id": "plain-28",
+      "server": "é",
+      "tool": "café",
+      "taken": false,
+      "name": "mcp_____caf_",
+      "namespace": "mcp__é"
+    },
+    {
+      "id": "taken-29",
+      "server": "é",
+      "tool": "café",
+      "taken": true,
+      "name": "mcp_____caf__ee8d419b",
+      "namespace": "mcp__é"
+    },
+    {
+      "id": "plain-30",
+      "server": "docs",
+      "tool": "😀",
+      "taken": false,
+      "name": "mcp__docs____",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-31",
+      "server": "docs",
+      "tool": "😀",
+      "taken": true,
+      "name": "mcp__docs_____d1844ca6",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-32",
+      "server": "docs",
+      "tool": "👩‍💻",
+      "taken": false,
+      "name": "mcp__docs_______",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-33",
+      "server": "docs",
+      "tool": "👩‍💻",
+      "taken": true,
+      "name": "mcp__docs________6d05ecf7",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-34",
+      "server": "docs",
+      "tool": "é",
+      "taken": false,
+      "name": "mcp__docs__e_",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-35",
+      "server": "docs",
+      "tool": "é",
+      "taken": true,
+      "name": "mcp__docs__e__14c49748",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-36",
+      "server": "日本",
+      "tool": "検索",
+      "taken": false,
+      "name": "mcp________",
+      "namespace": "mcp__日本"
+    },
+    {
+      "id": "taken-37",
+      "server": "日本",
+      "tool": "検索",
+      "taken": true,
+      "name": "mcp_________73b2f554",
+      "namespace": "mcp__日本"
+    },
+    {
+      "id": "plain-38",
+      "server": "docs",
+      "tool": "\n\t",
+      "taken": false,
+      "name": "mcp__docs____",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-39",
+      "server": "docs",
+      "tool": "\n\t",
+      "taken": true,
+      "name": "mcp__docs_____bbb82222",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-40",
+      "server": "docs",
+      "tool": "\\quote\"",
+      "taken": false,
+      "name": "mcp__docs___quote_",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "taken-41",
+      "server": "docs",
+      "tool": "\\quote\"",
+      "taken": true,
+      "name": "mcp__docs___quote__de0a94ca",
+      "namespace": "mcp__docs"
+    },
+    {
+      "id": "plain-42",
+      "server": "a__b",
+      "tool": "c__d",
+      "taken": false,
+      "name": "mcp__a__b__c__d",
+      "namespace": "mcp__a__b"
+    },
+    {
+      "id": "taken-43",
+      "server": "a__b",
+      "tool": "c__d",
+      "taken": true,
+      "name": "mcp__a__b__c__d_8e001c48",
+      "namespace": "mcp__a__b"
+    },
+    {
+      "id": "plain-44",
+      "server": "a-b",
+      "tool": "c-d",
+      "taken": false,
+      "name": "mcp__a_b__c_d",
+      "namespace": "mcp__a_b"
+    },
+    {
+      "id": "taken-45",
+      "server": "a-b",
+      "tool": "c-d",
+      "taken": true,
+      "name": "mcp__a_b__c_d_e6beae85",
+      "namespace": "mcp__a_b"
+    },
+    {
+      "id": "boundary-0",
+      "server": "s",
+      "tool": "",
+      "taken": false,
+      "name": "mcp__s__",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-1",
+      "server": "s",
+      "tool": "x",
+      "taken": false,
+      "name": "mcp__s__x",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-51",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-52",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-53",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-54",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-55",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-63",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_1246ba3a",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-64",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_092e71aa",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-65",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_c656a658",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "boundary-100",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_244cf40d",
+      "namespace": "mcp__s"
+    },
+    {
+      "id": "long-server",
+      "server": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "tool": "read",
+      "taken": false,
+      "name": "mcp__ssssssssssssssssssssssssssssssssssssssssssssssssss_4b4a2d20",
+      "namespace": "mcp__ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+    },
+    {
+      "id": "same-head-a",
+      "server": "server",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxa",
+      "taken": false,
+      "name": "mcp__server__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_81217cdb",
+      "namespace": "mcp__server"
+    },
+    {
+      "id": "same-head-b",
+      "server": "server",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxb",
+      "taken": false,
+      "name": "mcp__server__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_a9a79fe7",
+      "namespace": "mcp__server"
+    },
+    {
+      "id": "raw-hash-hyphen",
+      "server": "ser-ver",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__ser_ver__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_44134d9a",
+      "namespace": "mcp__ser_ver"
+    },
+    {
+      "id": "raw-hash-underscore",
+      "server": "ser_ver",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "taken": false,
+      "name": "mcp__ser_ver__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_2494a637",
+      "namespace": "mcp__ser_ver"
+    },
+    {
+      "id": "astral-boundary",
+      "server": "s",
+      "tool": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
+      "taken": false,
+      "name": "mcp__s__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx__",
+      "namespace": "mcp__s"
+    }
+  ]
+}

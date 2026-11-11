@@ -1,31 +1,23 @@
 import Foundation
-import CryptoKit
 import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftMCP
 
-public let MCP_OUTPUT_MAX_BYTES = 20 * 1024
+@available(*, deprecated, renamed: "PiSwiftMCP.MCP_OUTPUT_MAX_BYTES")
+public let MCP_OUTPUT_MAX_BYTES = PiSwiftMCP.MCP_OUTPUT_MAX_BYTES
 
 public func mcpToolExposure(_ exposure: McpExposure) -> ToolExposure {
     exposure == .codemode ? .deferred : ToolExposure(rawValue: exposure.rawValue) ?? .hidden
 }
 
-/// Names follow upstream's ASCII replacement and eight digit SHA-256 suffix rule.
+@available(*, deprecated, renamed: "PiSwiftMCP.createMcpToolName")
 public func createMcpToolName(server: String, tool: String, isTaken: (String) -> Bool = { _ in false }) -> String {
-    let source = "mcp__\(server)__\(tool)"
-    // JavaScript's non-Unicode global regex replaces UTF-16 code units. A surrogate
-    // pair therefore becomes two underscores, which affects the 64 character cut.
-    let name = String(source.utf16.map { unit -> Character in
-        if (65...90).contains(unit) || (97...122).contains(unit) || (48...57).contains(unit)
-            || unit == 95 {
-            return Character(UnicodeScalar(unit)!)
-        }
-        return "_"
-    })
-    if name.count <= 64 && !isTaken(name) { return name }
-    let digest = SHA256.hash(data: Data("\(server)\u{0}\(tool)".utf8))
-    let suffix = digest.prefix(4).map { String(format: "%02x", $0) }.joined()
-    return "\(name.prefix(55))_\(suffix)"
+    PiSwiftMCP.createMcpToolName(server: server, tool: tool, isTaken: isTaken)
+}
+
+@available(*, deprecated, renamed: "PiSwiftMCP.normalizeMcpInputSchema")
+public func normalizeMcpInputSchema(_ schema: [String: Any]) -> [String: Any] {
+    PiSwiftMCP.normalizeMcpInputSchema(schema)
 }
 
 public struct McpToolDetails: Sendable {
@@ -44,32 +36,17 @@ public struct McpToolDetails: Sendable {
     }
 }
 
-public typealias McpOutputSaver = @Sendable (Data, String) async throws -> URL
+@available(*, deprecated, renamed: "PiSwiftMCP.McpOutputSaver")
+public typealias McpOutputSaver = PiSwiftMCP.McpOutputSaver
 
 public func saveMcpOutput(_ data: Data, extension fileExtension: String) async throws -> URL {
     let path = try writeOutputFile(prefix: "pi-mcp", extension: fileExtension, data: data)
     return URL(fileURLWithPath: path)
 }
 
-public func limitMcpContent(_ content: [ContentBlock], saveOutput: McpOutputSaver = saveMcpOutput) async -> (content: [ContentBlock], fullOutputPath: String?) {
-    let combined = content.compactMap { block -> String? in
-        if case .text(let text) = block { return text.text }
-        return nil
-    }.joined(separator: "\n")
-    let cut = truncateMiddle(combined, maxBytes: MCP_OUTPUT_MAX_BYTES)
-    guard cut.truncated else { return (content, nil) }
-    var path: String?
-    let whereText: String
-    do {
-        let url = try await saveOutput(Data(combined.utf8), ".txt")
-        path = url.path
-        whereText = "[Full output: \(url.path) (read it with offset/limit)]"
-    } catch {
-        whereText = "[Could not save the full output: \(error.localizedDescription)]"
-    }
-    let tokens = (cut.totalBytes + 3) / 4
-    let text = "Warning: truncated output (original token count: \(tokens))\nTotal output lines: \(cut.totalLines)\n\n\(cut.content)\n\n\(whereText)"
-    return ([.text(TextContent(text: text))] + content.filter { if case .image = $0 { true } else { false } }, path)
+@available(*, deprecated, renamed: "PiSwiftMCP.limitMcpContent")
+public func limitMcpContent(_ content: [ContentBlock], saveOutput: @escaping McpOutputSaver = saveMcpOutput) async -> (content: [ContentBlock], fullOutputPath: String?) {
+    await PiSwiftMCP.limitMcpContent(content, saveOutput: saveOutput)
 }
 
 private let mcpSchemaDataKeywords: Set<String> = ["const", "enum", "default", "examples"]
@@ -160,7 +137,7 @@ public func mcpModelContent(server: String, blocks: [McpContent], readableResour
 }
 
 public func convertMcpResult(server: String, tool: String, result: McpToolResult,
-                             readableResources: Bool = false, saveOutput: McpOutputSaver = saveMcpOutput) async -> AgentToolResult {
+                             readableResources: Bool = false, saveOutput: @escaping PiSwiftMCP.McpOutputSaver = saveMcpOutput) async -> AgentToolResult {
     var converted = result.content.isEmpty ? toLlmContent(result) : await mcpModelContent(server: server, blocks: result.content,
                                                                                            readableResources: readableResources, saveOutput: saveOutput)
     if result.isError && !converted.contains(where: { if case .text(let text) = $0 { return !text.text.isEmpty }; return false }) {
@@ -185,9 +162,7 @@ public func createMcpToolDefinition(server: String, tool: McpTool, name: String,
                                     readableResources: @escaping @Sendable () async -> Bool = { false }) -> CustomTool {
     let title = tool.title ?? tool.annotations?.title
     let label = "\(server)/\(tool.name)"
-    var parameters = tool.inputSchema?.value as? [String: Any] ?? [:]
-    if parameters["type"] == nil { parameters["type"] = "object" }
-    if parameters["properties"] == nil { parameters["properties"] = [String: Any]() }
+    let parameters = PiSwiftMCP.normalizeMcpInputSchema(tool.inputSchema?.value as? [String: Any] ?? [:])
     let hints = tool.annotations
     let annotations: ToolAnnotations? = hints.flatMap { value in
         guard value.readOnlyHint != nil || value.destructiveHint != nil ||

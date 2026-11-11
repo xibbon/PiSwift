@@ -156,7 +156,7 @@ func c1McpCollidingToolNamesRouteIndependently(_ reverse: Bool) async throws {
     let tools = api.tools.values.filter { $0.namespace?.name == "mcp__docs" }
     #expect(tools.count == 2)
     #expect(tools.allSatisfy { $0.name.hasPrefix("mcp__docs__read_file_") && $0.name.count == "mcp__docs__read_file_".count + 8 })
-    #expect(Set(tools.map(\.name)) == Set(["read-file", "read_file"].map { createMcpToolName(server: "docs", tool: $0, isTaken: { _ in true }) }))
+    #expect(Set(tools.map(\.name)) == Set(["read-file", "read_file"].map { PiSwiftMCP.createMcpToolName(server: "docs", tool: $0, isTaken: { _ in true }) }))
     for description in ["dashed", "underscored"] {
         let tool = try #require(tools.first { $0.description == description })
         let result = try await tool.execute("collision", [:], nil, c1ToolContext(), nil)

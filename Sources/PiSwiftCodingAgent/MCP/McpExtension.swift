@@ -357,13 +357,13 @@ public actor McpBuiltinRuntime {
         let namespace = ToolNamespace(name: mcpNamespace(name),
             description: description?.isEmpty == false ? description : nil, instructions: instructions,
             aliases: [name])
-        let plain = Set(tools.map(\.name)).map { createMcpToolName(server: name, tool: $0) }
+        let plain = Set(tools.map(\.name)).map { PiSwiftMCP.createMcpToolName(server: name, tool: $0) }
         let collisions = Dictionary(grouping: plain, by: { $0 }).filter { $0.value.count > 1 }
         let previous = serverTools[name] ?? []
         var current: Set<String> = []
         for tool in tools {
             let owner = "\(name)\u{0}\(tool.name)"
-            let toolName = createMcpToolName(server: name, tool: tool.name) { candidate in
+            let toolName = PiSwiftMCP.createMcpToolName(server: name, tool: tool.name) { candidate in
                 (toolOwners[candidate] != nil && toolOwners[candidate] != owner) || current.contains(candidate) || collisions[candidate] != nil
             }
             toolOwners[toolName] = owner

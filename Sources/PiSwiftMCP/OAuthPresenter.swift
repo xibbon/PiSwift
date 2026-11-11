@@ -33,7 +33,9 @@ public actor McpPasteRedirectPresenter: McpSignInPresenter {
 
     public func present(authorizationURL: URL, state: String) async throws -> URL {
         try await openAuthorizationURL(authorizationURL)
-        guard let url = URL(string: try await pasteRedirectURL()) else { throw McpOAuthError.invalidRedirect }
+        let pasted = try await pasteRedirectURL().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pasted.isEmpty else { throw McpSignInCancelledError() }
+        guard let url = URL(string: pasted) else { throw McpOAuthError.invalidRedirect }
         return url
     }
 }
@@ -141,9 +143,9 @@ private actor FirstOAuthRedirect {
         guard !stopped else { return }
         manualTask = Task {
             do {
-                guard let url = URL(string: try await paste()) else {
-                    throw McpOAuthError.invalidRedirect
-                }
+                let pasted = try await paste().trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !pasted.isEmpty else { throw McpSignInCancelledError() }
+                guard let url = URL(string: pasted) else { throw McpOAuthError.invalidRedirect }
                 finish(.success(url))
             } catch { finish(.failure(error)) }
         }
@@ -157,9 +159,7 @@ private actor FirstOAuthRedirect {
     }
 
     private func finishCallback(_ value: Result<URL, any Error>) {
-        if case .failure(let error) = value,
-           timeoutRequested,
-           error.localizedDescription == "OAuth callback server closed" {
+        if case .failure = value, timeoutRequested {
             finish(.failure(McpCallbackTimeoutError()))
         } else {
             finish(value)

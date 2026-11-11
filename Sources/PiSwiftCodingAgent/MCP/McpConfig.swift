@@ -1,6 +1,7 @@
 import Foundation
 import CoreFoundation
 import PiSwiftAI
+import PiSwiftMCP
 
 /// How MCP tools are made available to the model.
 public enum McpExposure: String, Codable, Sendable, CaseIterable {
@@ -23,8 +24,9 @@ public enum McpExposure: String, Codable, Sendable, CaseIterable {
 }
 
 /// Namespace shared by the server's tools and credential key.
+@available(*, deprecated, renamed: "PiSwiftMCP.mcpNamespace")
 public func mcpNamespace(_ server: String) -> String {
-    "mcp__" + server.replacingOccurrences(of: "-", with: "_")
+    PiSwiftMCP.mcpNamespace(server)
 }
 
 public struct McpServerAuthConfig: Codable, Sendable, Equatable {
@@ -223,61 +225,17 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
             }
         }
     }
-    if let enabled = object["enabled"], !mcpIsBool(enabled) { return prefix + "enabled must be a boolean" }
-    if let description = object["description"], !(description is String) { return prefix + "description must be a string" }
-    if let timeout = object["timeout"], (!mcpIsNumber(timeout) || (timeout as? NSNumber)?.doubleValue ?? 0 <= 0) {
-        return prefix + "timeout must be a positive number of seconds"
+    let base = PiSwiftMCP.validateMcpServerConfig(name: name, value: object) { callbackURL in
+        if let callback = callbackURL.flatMap(URLComponents.init(string:)),
+           ["::1", "[::1]"].contains(callback.host ?? "") || callback.path != "/callback" {
+            return "oauth.clientRegistration \"cimd\" requires oauth.callbackUrl on localhost or 127.0.0.1 with path /callback"
+        }
+        return nil
     }
-    let type = object["type"] as? String
-    if type == "sse" { return prefix + "legacy SSE transport is not supported; use the streamable HTTP URL" }
-    if let url = object["url"] as? String, type == nil || type == "http" || type == "streamable-http" {
-        guard let parsed = URL(string: url), ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""), parsed.host != nil else {
-            return prefix + "url must be an http or https URL"
-        }
-        if let headers = object["headers"], !mcpStringMap(headers) { return prefix + "headers must map names to strings" }
-        if let oauth = object["oauth"] {
-            guard let oauth = oauth as? [String: Any] else { return prefix + "oauth must be an object" }
-            for key in ["clientId", "clientSecret"] {
-                if let value = oauth[key], !(value is String) { return prefix + "oauth.\(key) must be a string" }
-            }
-            if let port = oauth["callbackPort"] {
-                guard mcpIsNumber(port), let number = port as? NSNumber,
-                      number.doubleValue.rounded() == number.doubleValue, (1...65535).contains(number.intValue) else {
-                    return prefix + "oauth.callbackPort must be a port number"
-                }
-            }
-            if let redirect = oauth["callbackUrl"] {
-                guard let redirect = redirect as? String, isLoopbackRedirectUri(redirect) else {
-                    return prefix + "oauth.callbackUrl must be an http URI on localhost, 127.0.0.1, or [::1] without query or fragment"
-                }
-                let uriPort = URLComponents(string: redirect)?.port
-                if let uriPort, let configured = (oauth["callbackPort"] as? NSNumber)?.intValue, uriPort != configured {
-                    return prefix + "oauth.callbackUrl and oauth.callbackPort name different ports"
-                }
-            }
-            if let scope = oauth["scope"], !(scope is String) { return prefix + "oauth.scope must be a string" }
-            if let value = oauth["clientName"],
-               !(value is String) || (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
-                return prefix + "oauth.clientName must be a non-empty string"
-            }
-            if let registration = oauth["clientRegistration"], (registration as? String) != "dcr" {
-                guard (registration as? String) == "cimd" else {
-                    return prefix + "oauth.clientRegistration must be \"dcr\" or \"cimd\""
-                }
-                if oauth["clientId"] != nil || oauth["clientName"] != nil {
-                    return prefix + "oauth.clientRegistration \"cimd\" cannot be combined with oauth.clientId or oauth.clientName"
-                }
-                if let callback = (oauth["callbackUrl"] as? String).flatMap(URLComponents.init(string:)),
-                   ["::1", "[::1]"].contains(callback.host ?? "") || callback.path != "/callback" {
-                    return prefix + "oauth.clientRegistration \"cimd\" requires oauth.callbackUrl on localhost or 127.0.0.1 with path /callback"
-                }
-            }
-            if let value = oauth["authServerMetadataUrl"] {
-                guard let text = value as? String, mcpIsSecureOrLoopbackURL(text) else {
-                    return prefix + "oauth.authServerMetadataUrl must be an https URL, or http on localhost, 127.0.0.1, or [::1]"
-                }
-            }
-        }
+    switch base {
+    case .invalid(let error): return error
+    case .http:
+        let url = object["url"] as! String
         if let value = object["auth"] {
             guard let auth = value as? [String: Any], let provider = auth["provider"] as? String, !provider.isEmpty else {
                 return prefix + "auth.provider must be a provider name"
@@ -287,18 +245,13 @@ public func validateMcpServerConfig(name: String, value: Any) -> String? {
             }
         }
         return nil
-    }
-    if object["command"] is String, type == nil || type == "stdio" {
-        if let args = object["args"], !(args is [String]) { return prefix + "args must be an array of strings" }
-        if let env = object["env"], !mcpStringMap(env) { return prefix + "env must map names to strings" }
-        if let cwd = object["cwd"], !(cwd is String) { return prefix + "cwd must be a string" }
+    case .stdio:
         #if os(iOS)
         return prefix + "stdio transport is unavailable on iOS"
         #else
         return nil
         #endif
     }
-    return "server \"\(name)\" needs either \"command\" (stdio) or \"url\" (streamable HTTP)"
 }
 
 private func mcpIsSecureOrLoopbackURL(_ text: String) -> Bool {

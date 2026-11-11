@@ -24,7 +24,7 @@ private func c1McpConfigDirectory() throws -> URL {
     #expect(loaded.servers.map(\.name) == ["work-files"])
     #expect(loaded.errors.count == 2)
     #expect(loaded.errors.allSatisfy { $0.hasSuffix("server \"work_files\" conflicts with \"work-files\"") })
-    #expect(mcpNamespace("work-files") == "mcp__work_files")
+    #expect(PiSwiftMCP.mcpNamespace("work-files") == "mcp__work_files")
 }
 
 // mcp-extension.test.ts: descriptions and both exposure alias forms.

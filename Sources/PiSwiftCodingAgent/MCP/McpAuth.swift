@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 import PiSwiftMCP
 #if os(macOS)
 import AppKit
@@ -56,8 +57,11 @@ private actor McpRefreshGate {
     private var held: Set<String> = []
 
     func acquire(_ key: String) async throws {
+        try Task.checkCancellation()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
         while held.contains(key) {
             try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw McpRefreshLockBusyError() }
             try await Task.sleep(for: .milliseconds(25))
         }
         held.insert(key)
@@ -82,8 +86,8 @@ public final class McpOAuthCredentialStore: Sendable {
         self.lockDirectory = lockDirectory
     }
 
-    public func forServer(name: String, url: URL) -> any McpOAuthStateStore {
-        ServerStore(owner: self, key: Self.key(name: name, url: url), legacyKey: Self.key(url))
+    public func forServer(name: String, url: URL) -> any McpOAuthServerStore {
+        ServerStore(owner: self, name: name, url: url, key: Self.key(name: name, url: url), legacyKey: Self.key(url))
     }
 
     /// Load state and take over a legacy URL-only entry, if present.
@@ -131,10 +135,24 @@ public final class McpOAuthCredentialStore: Sendable {
             if let lockDirectory {
                 let digest = SHA256.hash(data: Data(key.utf8))
                 let hash = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-                let lock = FileAuthStorageBackend(lockDirectory.appendingPathComponent("mcp-auth-refresh-\(hash)").path)
-                value = try await lock.withLockAsync { _ in
-                    AuthStorageLockResult(result: try await operation())
+                let path = lockDirectory.appendingPathComponent("mcp-auth-refresh-\(hash)").path
+                try FileManager.default.createDirectory(at: lockDirectory, withIntermediateDirectories: true)
+                let descriptor = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+                guard descriptor >= 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
                 }
+                defer { close(descriptor) }
+                let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+                while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+                    let code = errno
+                    guard code == EWOULDBLOCK || code == EAGAIN else {
+                        throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+                    }
+                    guard ContinuousClock.now < deadline else { throw McpRefreshLockBusyError() }
+                    try await Task.sleep(for: .milliseconds(25))
+                }
+                defer { flock(descriptor, LOCK_UN) }
+                value = try await operation()
             } else {
                 value = try await operation()
             }
@@ -198,10 +216,18 @@ public final class McpOAuthCredentialStore: Sendable {
         return String(decoding: try encoder.encode(states), as: UTF8.self) + "\n"
     }
 
-    private struct ServerStore: McpOAuthStateStore {
+    private struct ServerStore: McpOAuthServerStore {
         let owner: McpOAuthCredentialStore
+        let name: String
+        let url: URL
         let key: String
         let legacyKey: String
+
+        func withRefreshLock<Result: Sendable>(
+            _ operation: @escaping @Sendable () async throws -> Result
+        ) async throws -> Result {
+            try await owner.withRefreshLock(name: name, url: url, operation)
+        }
 
         func load() async throws -> McpOAuthState? {
             try owner.load(key: key, legacyKey: legacyKey)
@@ -237,134 +263,63 @@ private func mcpClientMetadataDocumentProvider(
     }
 }
 
-// A caller can stop waiting while the refresh saves a token that the server rotated.
-private actor McpRefreshWaiter {
-    private var result: Result<Void, any Error>?
-    private var continuation: CheckedContinuation<Void, any Error>?
-
-    func complete(_ value: Result<Void, any Error>) {
-        guard result == nil else { return }
-        result = value
-        continuation?.resume(with: value)
-        continuation = nil
-    }
-
-    func wait() async throws {
-        try await withTaskCancellationHandler {
-            try Task.checkCancellation()
-            try await withCheckedThrowingContinuation { continuation in
-                if let result { continuation.resume(with: result) }
-                else { self.continuation = continuation }
-            }
-        } onCancel: {
-            Task { await self.complete(.failure(CancellationError())) }
-        }
-    }
-}
-
-private func waitForMcpRefresh(_ task: Task<Void, any Error>?) async throws {
-    try Task.checkCancellation()
-    guard let task else { return }
-    let waiter = McpRefreshWaiter()
-    Task { await waiter.complete(await task.result) }
-    try await waiter.wait()
-}
-
 /// Sends stored tokens and refreshes them before expiry or after HTTP 401.
 public actor McpServerAuthProvider: McpAuthProvider {
-    private let serverURL: URL
-    private let name: String
-    private let credentials: McpOAuthCredentialStore
-    private let settingsResolver: @Sendable () throws -> McpOAuthConfig
-    private let http: any McpOAuthHTTPClient
-    private let clientMetadataDocumentURL: URL?
-    private var refreshTask: Task<Void, Error>?
+    private let provider: McpStoredAuthProvider
     public private(set) var challenge: McpOAuthChallenge?
 
     public init(name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore,
                 settings: McpOAuthConfig = .init(),
-                clientMetadataDocumentURL: URL? = nil,
+                clientMetadataDocumentURL: URL? = nil, redirectURL: URL? = nil,
                 http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()) {
-        self.serverURL = serverURL
-        self.name = name
-        self.credentials = credentials
-        self.clientMetadataDocumentURL = clientMetadataDocumentURL
-        self.settingsResolver = { settings }
-        self.http = TimedMcpOAuthHTTPClient(base: http)
+        self.provider = Self.makeProvider(name: name, serverURL: serverURL, credentials: credentials,
+            settings: { settings }, clientMetadataDocumentURL: clientMetadataDocumentURL,
+            redirectURL: redirectURL, http: http)
     }
 
     public init(name: String = "", serverURL: URL, credentials: McpOAuthCredentialStore,
                 settings: @escaping @Sendable () throws -> McpOAuthConfig,
-                clientMetadataDocumentURL: URL? = nil,
+                clientMetadataDocumentURL: URL? = nil, redirectURL: URL? = nil,
                 http: any McpOAuthHTTPClient = McpURLSessionOAuthHTTPClient()) {
-        self.serverURL = serverURL
-        self.name = name
-        self.credentials = credentials
-        self.clientMetadataDocumentURL = clientMetadataDocumentURL
-        self.settingsResolver = settings
-        self.http = TimedMcpOAuthHTTPClient(base: http)
+        self.provider = Self.makeProvider(name: name, serverURL: serverURL, credentials: credentials,
+            settings: settings, clientMetadataDocumentURL: clientMetadataDocumentURL,
+            redirectURL: redirectURL, http: http)
     }
 
-    public func token() async throws -> String? {
-        _ = try? await waitForMcpRefresh(refreshTask)
-        try Task.checkCancellation()
-        let state = try credentials.state(name: name, url: serverURL)
-        let token = state?.tokens?.accessToken
-        if let expiry = state?.tokensExpireAt,
-           expiry.timeIntervalSinceNow <= 30,
-           state?.tokens?.refreshToken != nil {
-            try? await refresh(staleToken: token, challenge: nil)
-            try Task.checkCancellation()
-            return try credentials.tokens(name: name, url: serverURL)?.accessToken
+    private static func makeProvider(
+        name: String, serverURL: URL, credentials: McpOAuthCredentialStore,
+        settings: @escaping @Sendable () throws -> McpOAuthConfig,
+        clientMetadataDocumentURL: URL?, redirectURL: URL?, http: any McpOAuthHTTPClient
+    ) -> McpStoredAuthProvider {
+        let store = credentials.forServer(name: name, url: serverURL)
+        return McpStoredAuthProvider(store: store) { state, challenge in
+            let settings = try settings()
+            let registered = state.clientInformation?.metadata?.redirectURIs.first
+            let redirect = redirectURL?.absoluteString ?? settings.callbackUrl ?? registered ?? "http://127.0.0.1/callback"
+            guard let redirectURL = URL(string: redirect) else { throw McpOAuthError.invalidRedirect }
+            let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
+                clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
+                clientID: settings.clientId, clientSecret: settings.clientSecret,
+                clientMetadataDocument: mcpClientMetadataDocumentProvider(
+                    settings: settings, url: clientMetadataDocumentURL, redirectURL: redirectURL),
+                store: store, onRedirect: { _ in })
+            return try await McpOAuthFlow.authorize(provider: provider,
+                options: McpOAuthFlowOptions(serverURL: serverURL,
+                    scope: challenge?.scope, resourceMetadataURL: challenge?.resourceMetadataURL,
+                    authorizationServerMetadataURL: settings.authServerMetadataUrl.flatMap(URL.init(string:)),
+                    refreshOnly: true),
+                http: TimedMcpOAuthHTTPClient(base: http))
         }
-        return token
     }
+
+    public func token() async throws -> String? { try await provider.token() }
 
     public func onUnauthorized(challenge: String?, serverURL: URL, rejectedToken: String?) async throws {
-        let parsed = McpOAuthDiscovery.parseWWWAuthenticate(challenge)
-        self.challenge = parsed
-        if parsed.error == "insufficient_scope" { throw McpOAuthError.authorizationRequired }
-        try await refresh(staleToken: rejectedToken, challenge: parsed)
+        self.challenge = McpOAuthDiscovery.parseWWWAuthenticate(challenge)
+        try await provider.onUnauthorized(challenge: challenge, serverURL: serverURL, rejectedToken: rejectedToken)
     }
 
-    public func settled() async { _ = try? await refreshTask?.value }
-
-    private func refresh(staleToken: String?, challenge: McpOAuthChallenge?) async throws {
-        try Task.checkCancellation()
-        if refreshTask == nil {
-            let credentials = self.credentials
-            let serverURL = self.serverURL
-            let name = self.name
-            let settingsResolver = self.settingsResolver
-            let http = self.http
-            let clientMetadataDocumentURL = self.clientMetadataDocumentURL
-            refreshTask = Task {
-                defer { self.refreshTask = nil }
-                try await credentials.withRefreshLock(name: name, url: serverURL) {
-                    let stored = try credentials.state(name: name, url: serverURL)
-                    if stored?.tokens?.accessToken != staleToken { return }
-                    guard stored?.tokens?.refreshToken != nil else { throw McpOAuthError.authorizationRequired }
-                    let settings = try settingsResolver()
-                    let registered = stored?.clientInformation?.metadata?.redirectURIs.first
-                    let redirect = settings.callbackUrl ?? registered ?? "http://127.0.0.1/callback"
-                    guard let redirectURL = URL(string: redirect) else { throw McpOAuthError.invalidRedirect }
-                    let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
-                        clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
-                        clientID: settings.clientId, clientSecret: settings.clientSecret,
-                        clientMetadataDocument: mcpClientMetadataDocumentProvider(
-                            settings: settings, url: clientMetadataDocumentURL, redirectURL: redirectURL),
-                        store: credentials.forServer(name: name, url: serverURL), onRedirect: { _ in })
-                    let result = try await McpOAuthFlow.authorize(provider: provider,
-                        options: McpOAuthFlowOptions(serverURL: serverURL,
-                            scope: challenge?.scope, resourceMetadataURL: challenge?.resourceMetadataURL,
-                            authorizationServerMetadataURL: settings.authServerMetadataUrl.flatMap(URL.init(string:))),
-                        http: http)
-                    if result == .redirect { throw McpOAuthError.authorizationRequired }
-                }
-            }
-        }
-        try await waitForMcpRefresh(refreshTask)
-    }
+    public func settled() async { await provider.settled() }
 }
 
 /// Run interactive OAuth for one server. The presenter supplies macOS loopback or an iOS host flow.
@@ -389,7 +344,7 @@ public func signInMcpServer(
 }
 
 func isMcpSignInCancellation(_ error: any Error) -> Bool {
-    Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+    Task.isCancelled || error is CancellationError || error is McpSignInCancelledError || (error as? URLError)?.code == .cancelled
 }
 
 private func performMcpSignIn(
@@ -401,11 +356,6 @@ private func performMcpSignIn(
         throw McpRuntimeError.invalidConfig(mcpMissingClientMetadataDocument)
     }
     let store = credentials.forServer(name: name, url: serverURL)
-    let previous = try await store.load()
-    if var stored = previous {
-        stored.oauthState = nil
-        try await store.save(stored)
-    }
     var generator = SystemRandomNumberGenerator()
     let state = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }.joined()
     let redirectURL = try await presenter.redirectURL(for: state)
@@ -421,55 +371,42 @@ private func performMcpSignIn(
     if let expectedPort = settings.callbackPort, redirectURL.port != expectedPort {
         throw McpOAuthError.invalidRedirect
     }
-    if var stored = try await store.load() {
-        let keepClient = settings.clientId != nil || (settings.clientRegistration == .cimd
-            ? stored.clientInformation == nil
-            : stored.clientInformation?.metadata?.redirectURIs.contains(redirectURL.absoluteString) == true)
-        if !keepClient {
-            stored.clientInformation = nil
-            stored.tokens = nil
-            stored.tokensExpireAt = nil
-            try await store.save(stored)
-        }
-    }
-    let stepUp = challenge?.error == "insufficient_scope"
-    let challengedScope = stepUp
-        ? McpOAuthFlow.stepUpScope(granted: previous?.tokens?.scope, challenged: challenge?.scope)
-        : challenge?.scope
-    let combinedScope = [settings.scope, challengedScope].compactMap { $0 }
-        .flatMap { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
-    var seen: Set<String> = []
-    let scope = combinedScope.filter { seen.insert($0).inserted }.joined(separator: " ")
-    let capture = McpSignInCapture()
-    let provider = McpOAuthProvider(serverURL: serverURL, redirectURL: redirectURL,
+    let options = McpSignInOptions(serverURL: serverURL, redirectURL: redirectURL, initialState: state,
+        replaceRegisteredClientForDocument: settings.clientRegistration == .cimd, store: store,
         clientMetadata: McpOAuthClientMetadata(clientName: settings.clientName ?? "pi"),
         clientID: settings.clientId, clientSecret: settings.clientSecret,
         clientMetadataDocument: mcpClientMetadataDocumentProvider(
             settings: settings, url: clientMetadataDocumentURL, redirectURL: redirectURL),
-        initialState: state, store: store,
-        onRedirect: { url in
-            let callback = try await presenter.present(authorizationURL: url, state: state)
-            await capture.save(callback)
-        })
-    let options = McpOAuthFlowOptions(serverURL: serverURL,
-        scope: scope.isEmpty ? nil : scope,
-        resourceMetadataURL: challenge?.resourceMetadataURL,
+        challenge: challenge, scope: settings.scope,
         authorizationServerMetadataURL: settings.authServerMetadataUrl.flatMap(URL.init(string:)),
-        skipRefresh: stepUp)
-    let result = try await McpOAuthFlow.authorize(provider: provider,
-        options: options, http: TimedMcpOAuthHTTPClient(base: http))
-    try Task.checkCancellation()
-    if result == .redirect {
-        guard let callback = await capture.url else { throw McpOAuthError.invalidRedirect }
-        _ = try await McpOAuthFlow.completeRedirect(provider: provider,
-            callbackURL: callback, options: options,
-            http: TimedMcpOAuthHTTPClient(base: http))
+        http: TimedMcpOAuthHTTPClient(base: http))
+    switch try await McpOAuthSignIn.startMcpSignIn(options: options) {
+    case .authorized:
+        return
+    case .redirect(let authorization):
+        let callback = try await presenter.present(authorizationURL: authorization.authorizationURL,
+            state: authorization.state)
+        try Task.checkCancellation()
+        let expected = authorization.redirectURL
+        guard callback.scheme == expected.scheme, callback.host == expected.host,
+              callback.port == expected.port, callback.path == expected.path,
+              let components = URLComponents(url: callback, resolvingAgainstBaseURL: false) else {
+            throw McpOAuthError.invalidRedirect
+        }
+        let parameter: (String) -> String? = { name in
+            components.queryItems?.first { $0.name == name }?.value
+        }
+        if let error = parameter("error") {
+            throw McpOAuthError.authorization(code: error,
+                message: parameter("error_description") ?? error, uri: parameter("error_uri"))
+        }
+        guard let responseState = parameter("state"), responseState == authorization.state else {
+            throw McpOAuthError.invalidState
+        }
+        guard let code = parameter("code"), !code.isEmpty else { throw McpOAuthError.invalidRedirect }
+        try await McpOAuthSignIn.completeMcpSignIn(options: options, authorization: authorization,
+            response: McpAuthorizationResponse(code: code, state: responseState, iss: parameter("iss")))
     }
-}
-
-private actor McpSignInCapture {
-    var url: URL?
-    func save(_ value: URL) { url = value }
 }
 
 #if os(macOS)
