@@ -88,8 +88,14 @@ public struct ToolDefinition: Sendable, Decodable {
     /// Custom rendering for tool calls
     public let renderCall: (@Sendable ([String: AnyCodable], Theme) -> HookComponent)?
 
+    /// Custom call rendering with the host's configured keybinding hints.
+    public let renderCallWithContext: (@Sendable ([String: AnyCodable], Theme, HookToolRenderContext) -> HookComponent)?
+
     /// Custom rendering for tool results
     public let renderResult: (@Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent)?
+
+    /// Custom result rendering with the host's configured keybinding hints.
+    public let renderResultWithContext: (@Sendable (HookMessage, HookMessageRenderOptions, Theme, HookToolRenderContext) -> HookComponent)?
 
     public var renderShell: ToolRenderShell
     
@@ -101,6 +107,8 @@ public struct ToolDefinition: Sendable, Decodable {
         promptGuidelines: [String]? = nil,
         renderCall: (@Sendable ([String: AnyCodable], Theme) -> HookComponent)? = nil,
         renderResult: (@Sendable (HookMessage, HookMessageRenderOptions, Theme) -> HookComponent)? = nil,
+        renderCallWithContext: (@Sendable ([String: AnyCodable], Theme, HookToolRenderContext) -> HookComponent)? = nil,
+        renderResultWithContext: (@Sendable (HookMessage, HookMessageRenderOptions, Theme, HookToolRenderContext) -> HookComponent)? = nil,
         renderShell: ToolRenderShell = .default
     ) {
         self.name = name
@@ -110,6 +118,8 @@ public struct ToolDefinition: Sendable, Decodable {
         self.parameters = parameters
         self.renderCall = renderCall
         self.renderResult = renderResult
+        self.renderCallWithContext = renderCallWithContext
+        self.renderResultWithContext = renderResultWithContext
         self.renderShell = renderShell
     }
 

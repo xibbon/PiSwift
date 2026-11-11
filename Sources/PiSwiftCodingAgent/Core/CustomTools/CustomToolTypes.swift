@@ -214,6 +214,21 @@ public struct RenderResultOptions: Sendable {
     }
 }
 
+/// Host keybinding hints for an extension tool's call and result renderers.
+/// The UI host supplies its active keybindings when it invokes a context-aware slot.
+public struct HookToolRenderContext: Sendable {
+    public var keybindingHints: HookKeybindingHints
+
+    public init(keybindingHints: HookKeybindingHints = .init()) {
+        self.keybindingHints = keybindingHints
+    }
+
+    public func keyText(_ keybinding: String) -> String { keybindingHints.keyText(keybinding) }
+    public func keyHint(_ keybinding: String, _ description: String) -> String {
+        keybindingHints.keyHint(keybinding, description)
+    }
+}
+
 public typealias CustomToolExecute = @Sendable (
     _ toolCallId: String,
     _ params: [String: AnyCodable],
@@ -233,6 +248,8 @@ public typealias CustomToolReachesTools = @Sendable (_ input: [String: AnyCodabl
 public typealias CustomToolSessionHandler = @Sendable (_ event: CustomToolSessionEvent, _ context: CustomToolContext) async throws -> Void
 public typealias CustomToolRenderCall = @Sendable (_ args: [String: AnyCodable], _ theme: Theme) throws -> HookComponent?
 public typealias CustomToolRenderResult = @Sendable (_ result: CustomToolResult, _ options: RenderResultOptions, _ theme: Theme) throws -> HookComponent?
+public typealias CustomToolRenderCallWithContext = @Sendable (_ args: [String: AnyCodable], _ theme: Theme, _ context: HookToolRenderContext) throws -> HookComponent?
+public typealias CustomToolRenderResultWithContext = @Sendable (_ result: CustomToolResult, _ options: RenderResultOptions, _ theme: Theme, _ context: HookToolRenderContext) throws -> HookComponent?
 
 /// A renderer family drawn by the host.
 public enum BuiltInToolRenderer: Sendable, Equatable {
@@ -244,21 +261,29 @@ public struct CustomToolRenderers: Sendable {
     public var renderShell: ToolRenderShell?
     public var renderCall: CustomToolRenderCall?
     public var renderResult: CustomToolRenderResult?
+    public var renderCallWithContext: CustomToolRenderCallWithContext?
+    public var renderResultWithContext: CustomToolRenderResultWithContext?
     public var builtIn: BuiltInToolRenderer?
 
     public init(renderShell: ToolRenderShell? = nil,
                 renderCall: CustomToolRenderCall? = nil,
                 renderResult: CustomToolRenderResult? = nil,
+                renderCallWithContext: CustomToolRenderCallWithContext? = nil,
+                renderResultWithContext: CustomToolRenderResultWithContext? = nil,
                 builtIn: BuiltInToolRenderer? = nil) {
         self.renderShell = renderShell
         self.renderCall = renderCall
         self.renderResult = renderResult
+        self.renderCallWithContext = renderCallWithContext
+        self.renderResultWithContext = renderResultWithContext
         self.builtIn = builtIn
     }
 
     public init(tool: CustomTool) {
         self.init(renderShell: tool.renderShell, renderCall: tool.renderCall,
-                  renderResult: tool.renderResult)
+                  renderResult: tool.renderResult,
+                  renderCallWithContext: tool.renderCallWithContext,
+                  renderResultWithContext: tool.renderResultWithContext)
     }
 }
 
@@ -277,6 +302,8 @@ public struct CustomTool: Sendable {
     public var onSession: CustomToolSessionHandler?
     public var renderCall: CustomToolRenderCall?
     public var renderResult: CustomToolRenderResult?
+    public var renderCallWithContext: CustomToolRenderCallWithContext?
+    public var renderResultWithContext: CustomToolRenderResultWithContext?
     public var renderShell: ToolRenderShell
     /// Explicitly disable provider-side constrained sampling when replacing a built-in tool.
     public var constrainedSampling: ConstrainedSampling?
@@ -301,6 +328,8 @@ public struct CustomTool: Sendable {
         onSession: CustomToolSessionHandler? = nil,
         renderCall: CustomToolRenderCall? = nil,
         renderResult: CustomToolRenderResult? = nil,
+        renderCallWithContext: CustomToolRenderCallWithContext? = nil,
+        renderResultWithContext: CustomToolRenderResultWithContext? = nil,
         renderShell: ToolRenderShell = .default,
         constrainedSampling: ConstrainedSampling? = nil,
         outputSchema: [String: AnyCodable]? = nil,
@@ -322,6 +351,8 @@ public struct CustomTool: Sendable {
         self.onSession = onSession
         self.renderCall = renderCall
         self.renderResult = renderResult
+        self.renderCallWithContext = renderCallWithContext
+        self.renderResultWithContext = renderResultWithContext
         self.renderShell = renderShell
         self.constrainedSampling = constrainedSampling
         self.outputSchema = outputSchema

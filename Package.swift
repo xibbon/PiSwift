@@ -170,6 +170,8 @@ let package = Package(
                 "PiSwiftAI",
                 "PiSwiftAgent",
                 "PiSwiftCodingAgent",
+                "PiSwiftMCP",
+                "PiSwiftSchema",
             ],
             swiftSettings: strictConcurrencySettings
         ),

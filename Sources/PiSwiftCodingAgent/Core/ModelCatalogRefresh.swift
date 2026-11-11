@@ -79,6 +79,31 @@ public struct ModelsRefreshResult: Sendable {
         self.aborted = aborted
         self.errors = errors
     }
+
+    /// OAuth failures affect only the catalog for the provider that needs a new login.
+    /// A command host can show these warnings and fail only for `catalogFailures`.
+    public func catalogWarnings(commandName: String = "pi") -> [String] {
+        errors.compactMap { provider, error in
+            guard Self.isOAuthRefreshFailure(error) else { return nil }
+            return "Warning: skipped model catalog for \(provider): \(error.localizedDescription)\n" +
+                "Log in again with `\(commandName) auth login \(provider)` to refresh it."
+        }.sorted()
+    }
+
+    /// Errors that still make a model catalog update fail.
+    public var catalogFailures: [String: any Error] {
+        errors.filter { !Self.isOAuthRefreshFailure($0.value) }
+    }
+
+    private static func isOAuthRefreshFailure(_ error: any Error) -> Bool {
+        guard let error = error as? OAuthError else { return false }
+        switch error {
+        case .refreshFailed, .tokenExchangeFailed, .invalidToken, .missingCredentials:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 public struct ModelsRefreshSource: Sendable {

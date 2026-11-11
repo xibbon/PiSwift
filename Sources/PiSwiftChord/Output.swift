@@ -63,9 +63,19 @@ public struct OutputSlice: Sendable, Equatable {
     /// The number of lines removed from the full output.
     public let droppedLines: Int
 }
-/// Removes control characters that must not enter visible tool output.
+enum OutputSanitizerPattern {
+    // This is the pattern in packages/chord/src/output.ts:36-37 at v1.5.2.
+    static let source = #"\x1b[\]PX^_][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|\x1b[\x20-\x2f]*[\x30-\x7e]"#
+    static let expression = try! NSRegularExpression(pattern: source)
+}
+
+/// Removes whole 7-bit ANSI escape sequences and invalid control characters.
 public func sanitizeOutput(_ text: String) -> String {
-    String(String.UnicodeScalarView(text.unicodeScalars.filter {
+    // Match OSC, DCS, APC, PM and SOS strings through BEL or ST, then CSI and short ESC forms.
+    // Keep this pass before single-character removal.
+    let withoutEscapes = OutputSanitizerPattern.expression.stringByReplacingMatches(
+        in: text, range: NSRange(location: 0, length: text.utf16.count), withTemplate: "")
+    return String(String.UnicodeScalarView(withoutEscapes.unicodeScalars.filter {
         !((0...8).contains($0.value) || (11...31).contains($0.value) || (0xfff9...0xfffb).contains($0.value))
     }))
 }

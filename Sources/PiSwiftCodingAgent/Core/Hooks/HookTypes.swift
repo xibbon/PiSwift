@@ -169,15 +169,35 @@ public struct HookCustomOptions: Sendable {
     public var overlay: Bool
     public var overlayOptions: HookOverlayOptionsSource?
     public var onHandle: (@Sendable (HookOverlayHandle) -> Void)?
+    /// Report a blocked program status while the custom component exists.
+    /// An overlay keeps this status while hidden and clears it when `done` runs.
+    public var blocked: HookBlockedStatus?
 
     public init(
         overlay: Bool = false,
         overlayOptions: HookOverlayOptionsSource? = nil,
-        onHandle: (@Sendable (HookOverlayHandle) -> Void)? = nil
+        onHandle: (@Sendable (HookOverlayHandle) -> Void)? = nil,
+        blocked: HookBlockedStatus? = nil
     ) {
         self.overlay = overlay
         self.overlayOptions = overlayOptions
         self.onHandle = onHandle
+        self.blocked = blocked
+    }
+}
+
+/// A program status request. The UI host owns status reporting and source IDs.
+public struct HookBlockedStatus: Sendable, Equatable {
+    public enum Kind: String, Sendable {
+        case permission, question, auth
+    }
+
+    public var kind: Kind
+    public var message: String
+
+    public init(kind: Kind, message: String) {
+        self.kind = kind
+        self.message = message
     }
 }
 
@@ -186,6 +206,20 @@ public protocol HookEditorTheme: Sendable {}
 public protocol HookKeybindings: Sendable {
     func matches(_ data: String, _ action: AppAction) -> Bool
     func getDisplayString(_ action: AppAction) -> String
+}
+
+/// Host keybinding text used by extension renderers.
+public struct HookKeybindingHints: Sendable {
+    public var keyText: @Sendable (String) -> String
+    public var keyHint: @Sendable (String, String) -> String
+
+    public init(
+        keyText: @escaping @Sendable (String) -> String = { _ in "" },
+        keyHint: @escaping @Sendable (String, String) -> String = { _, _ in "" }
+    ) {
+        self.keyText = keyText
+        self.keyHint = keyHint
+    }
 }
 
 public typealias HookEditorComponentFactory = @MainActor @Sendable (_ ui: HookUIHost, _ theme: HookEditorTheme, _ keybindings: HookKeybindings) -> HookComponent
@@ -199,10 +233,17 @@ public struct HookMessageRenderOptions: Sendable {
     public var expanded: Bool
     /// Horizontal padding set by the host.
     public var outputPad: Int
+    public var keybindingHints: HookKeybindingHints
 
-    public init(expanded: Bool, outputPad: Int = 1) {
+    public init(expanded: Bool, outputPad: Int = 1, keybindingHints: HookKeybindingHints = .init()) {
         self.expanded = expanded
         self.outputPad = outputPad
+        self.keybindingHints = keybindingHints
+    }
+
+    public func keyText(_ keybinding: String) -> String { keybindingHints.keyText(keybinding) }
+    public func keyHint(_ keybinding: String, _ description: String) -> String {
+        keybindingHints.keyHint(keybinding, description)
     }
 }
 
@@ -212,29 +253,53 @@ public enum MarkdownMessageType: String, Sendable {
     case user
     case assistant
     case assistantThinking = "assistant-thinking"
+    case custom
+    case summary
+    case changelog
 }
 
 public struct MarkdownTransformContext: Sendable {
     public var messageType: MarkdownMessageType
     public var isStreaming: Bool
     public var availableWidth: Int
+    public var messageId: String?
+    public var timestamp: String?
 
-    public init(messageType: MarkdownMessageType, isStreaming: Bool, availableWidth: Int) {
+    public init(messageType: MarkdownMessageType, isStreaming: Bool, availableWidth: Int,
+                messageId: String? = nil, timestamp: String? = nil) {
         self.messageType = messageType
         self.isStreaming = isStreaming
         self.availableWidth = availableWidth
+        self.messageId = messageId
+        self.timestamp = timestamp
     }
 }
 
-/// Display-only transform for user and assistant Markdown.
+/// Display-only Markdown transform.
 public typealias MarkdownTransformer = @Sendable (String, MarkdownTransformContext) -> String
+
+public struct MarkdownTransformerOptions: Sendable {
+    /// Defaults to the three transcript surfaces when omitted.
+    public var messageTypes: Set<MarkdownMessageType>?
+
+    public init(messageTypes: Set<MarkdownMessageType>? = nil) {
+        self.messageTypes = messageTypes
+    }
+}
 
 /// Rendering options for persisted display-only custom entries.
 public struct EntryRenderOptions: Sendable {
     public var expanded: Bool
+    public var keybindingHints: HookKeybindingHints
 
-    public init(expanded: Bool) {
+    public init(expanded: Bool, keybindingHints: HookKeybindingHints = .init()) {
         self.expanded = expanded
+        self.keybindingHints = keybindingHints
+    }
+
+    public func keyText(_ keybinding: String) -> String { keybindingHints.keyText(keybinding) }
+    public func keyHint(_ keybinding: String, _ description: String) -> String {
+        keybindingHints.keyHint(keybinding, description)
     }
 }
 
@@ -2760,9 +2825,16 @@ public final class HookAPI: Sendable {
     }
 
     /// Register a display-only Markdown transformer. Transformers run in registration order.
-    public func registerMarkdownTransformer(_ transformer: @escaping MarkdownTransformer) {
+    public func registerMarkdownTransformer(
+        _ transformer: @escaping MarkdownTransformer,
+        options: MarkdownTransformerOptions = .init()
+    ) {
         guard loadFailure.withLock({ $0 == nil }) else { return }
-        markdownTransformers.append(transformer)
+        let messageTypes = options.messageTypes ?? [.user, .assistant, .assistantThinking]
+        markdownTransformers.append { markdown, context in
+            guard messageTypes.contains(context.messageType) else { return markdown }
+            return transformer(markdown, context)
+        }
     }
 
     /// Register a renderer for a persisted display-only custom entry.

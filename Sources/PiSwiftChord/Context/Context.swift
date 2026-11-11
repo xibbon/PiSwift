@@ -132,6 +132,25 @@ public struct ChordContext: Sendable, CustomStringConvertible {
 
 /// Runs a child span with the supplied context as its explicit parent.
 public func traceIn<Result>(
+    _ options: SpanOptions,
+    _ body: (ChordContext) throws -> Result,
+    _ context: ChordContext
+) rethrows -> Result {
+    try context.traceIn(options, body: body)
+}
+
+/// Runs asynchronous work with the supplied context as its explicit parent.
+public func traceIn<Result: Sendable>(
+    _ options: SpanOptions,
+    _ body: @Sendable (ChordContext) async throws -> Result,
+    _ context: ChordContext
+) async rethrows -> Result {
+    try await context.traceIn(options, body: body)
+}
+
+/// Runs a child span with the supplied context as its explicit parent.
+@available(*, deprecated, message: "Use traceIn(options, body, context).")
+public func traceIn<Result>(
     _ context: ChordContext,
     _ options: SpanOptions,
     body: (ChordContext) throws -> Result
@@ -140,6 +159,7 @@ public func traceIn<Result>(
 }
 
 /// Runs asynchronous work with the supplied context as its explicit parent.
+@available(*, deprecated, message: "Use traceIn(options, body, context).")
 public func traceIn<Result: Sendable>(
     _ context: ChordContext,
     _ options: SpanOptions,

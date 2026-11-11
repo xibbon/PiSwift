@@ -128,7 +128,7 @@ struct TelemetryContextTests {
                 #expect(context.telemetry.metrics === noopTelemetryMetrics)
                 #expect(context.telemetry.propagation === noopTelemetryPropagation)
 
-                let result = traceIn(context, SpanOptions(name: "outer")) { child in
+                let result = traceIn(SpanOptions(name: "outer"), { child in
                     #expect(child.value(key) == "owner")
                     #expect(child.abortSignal === context.abortSignal)
                     child.telemetry.addEvent("started")
@@ -138,7 +138,7 @@ struct TelemetryContextTests {
                         nested.telemetry.addLink(SpanLink(context: child.telemetry))
                         return 42
                     }
-                }
+                }, context)
                 #expect(result == 42)
                 let spans = root.store.snapshot()
                 #expect(spans.map { $0.options.name } == ["caller", "outer", "inner"])
@@ -162,10 +162,10 @@ struct TelemetryContextTests {
         await root.startSpan(SpanOptions(name: "caller")) { parent in
             let context = ChordContext.background.withTelemetry(parent)
             let gate = ContextTelemetryGate()
-            async let first = traceIn(context, SpanOptions(name: "first")) { child in
+            async let first = traceIn(SpanOptions(name: "first"), { child in
                 await gate.wait()
                 return child.traceIn(SpanOptions(name: "first.child")) { _ in "first" }
-            }
+            }, context)
             async let second = context.traceIn(SpanOptions(name: "second")) { child in
                 let result = child.traceIn(SpanOptions(name: "second.child")) { _ in "second" }
                 await gate.open()
@@ -195,10 +195,10 @@ struct TelemetryContextTests {
         let value = ContextTelemetryValue()
         let syncResult = context.traceIn(SpanOptions(name: "sync")) { _ in value }
         #expect(syncResult === value)
-        let asyncResult = await traceIn(context, SpanOptions(name: "async")) { _ in
+        let asyncResult = await traceIn(SpanOptions(name: "async"), { _ in
             await Task.yield()
             return value
-        }
+        }, context)
         #expect(asyncResult === value)
         let failure = ContextTelemetryError()
         do {

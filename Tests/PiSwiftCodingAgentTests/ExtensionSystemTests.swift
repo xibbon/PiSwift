@@ -286,6 +286,80 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
     }
 }
 
+@Test func compiledExtensionRegistersScopedMarkdownTransformerAndUsesHostKeyHint() async throws {
+    guard let sdkPaths = testSDKPaths() else {
+        Issue.record("SDK paths not available")
+        return
+    }
+
+    try await withTempDir { cacheDir in
+        let source = (cacheDir as NSString).appendingPathComponent("scoped-extension.swift")
+        let code = """
+        import PiExtensionSDK
+
+        @_cdecl("piExtensionMain")
+        public func piExtensionMain(_ raw: UnsafeMutableRawPointer) {
+            withExtensionAPI(raw) { pi in
+                _ = StringEnum(["fast", "slow"], description: "Speed")
+                let schema = SchemaBuilder.obj([SchemaBuilder.Property("name", SchemaBuilder.str())])
+                _ = try? compile(schema, options: CompileOptions(formats: standardFormats))
+                _ = try? compileCoercing(schema)
+                _ = createMcpToolName(server: "example", tool: "lookup")
+                _ = ExtensionMCP.createMcpToolName(server: "example", tool: "lookup")
+                _ = ExtensionMCP.mcpNamespace("example-server")
+                _ = ExtensionMCP.normalizeMcpInputSchema([:])
+                let _ = { (blocks: [ContentBlock]) async in await ExtensionMCP.limitMcpContent(blocks) }
+                pi.registerMarkdownTransformer({ markdown, context in
+                    "\\(context.messageId ?? "-")|\\(context.timestamp ?? "-")|\\(markdown)"
+                }, options: .init(messageTypes: [.custom]))
+                pi.registerEntryRenderer("hint") { _, options, _ in
+                    options.keyHint("app.tools.expand", "to expand")
+                }
+                _ = pi.registerTool(CustomTool(
+                    name: "ext-hint", label: "Extension Hint", description: "Show a key hint",
+                    parameters: ["type": AnyCodable("object"), "properties": AnyCodable([String: AnyCodable]())],
+                    execute: { _, _, _, _, _ in AgentToolResult(content: []) },
+                    renderCallWithContext: { _, _, context in
+                        context.keyHint("app.tools.expand", "to expand")
+                    }
+                ))
+            }
+        }
+        """
+        try code.write(toFile: source, atomically: true, encoding: .utf8)
+        let dylibPath = try await ExtensionCompiler.compileSingleFile(
+            sourcePath: source, cacheDir: cacheDir, sdkPaths: sdkPaths)
+        let hook = try ExtensionDylibLoader.loadAndInitialize(
+            dylibPath: dylibPath, extensionPath: source, eventBus: createEventBus(), cwd: cacheDir)
+        let runner = HookRunner([hook], cacheDir, SessionManager.inMemory(),
+                                ModelRegistry(AuthStorage(":memory:")))
+        let context = MarkdownTransformContext(messageType: .custom, isStreaming: false,
+            availableWidth: 80, messageId: "entry-1", timestamp: "2025-01-15T10:30:00.000Z")
+        #expect(runner.transformMarkdown("body", context: context)
+            == "entry-1|2025-01-15T10:30:00.000Z|body")
+        #expect(runner.transformMarkdown("body", context: .init(messageType: .user,
+            isStreaming: false, availableWidth: 80)) == "body")
+
+        let session = SessionManager.inMemory()
+        _ = session.appendCustomEntry("hint", ["value": "test"])
+        guard let renderer = runner.getEntryRenderer("hint"),
+              case .custom(let entry) = session.getEntries().first else {
+            Issue.record("Expected the compiled entry renderer")
+            return
+        }
+        let hints = HookKeybindingHints(keyText: { _ in "ctrl+e" },
+            keyHint: { _, description in "ctrl+e \(description)" })
+        #expect(renderer(entry, EntryRenderOptions(expanded: true, keybindingHints: hints),
+                         Theme.fallback()) as? String == "ctrl+e to expand")
+        guard let toolRenderer = hook.tools["ext-hint"]?.renderCallWithContext else {
+            Issue.record("Expected the compiled tool renderer")
+            return
+        }
+        #expect(try toolRenderer([:], Theme.fallback(), HookToolRenderContext(keybindingHints: hints)) as? String
+                == "ctrl+e to expand")
+    }
+}
+
 @Test func loaderFailsOnMissingEntryPoint() async throws {
     guard let sdkPaths = testSDKPaths() else {
         Issue.record("SDK paths not available")
