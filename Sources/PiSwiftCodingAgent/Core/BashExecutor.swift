@@ -283,28 +283,17 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
     try? stdoutPipe.fileHandleForWriting.close()
     try? stderrPipe.fileHandleForWriting.close()
 
-    // v0.67.4: track the spawned PID so `killTrackedDetachedChildren()` (called from session
-    // teardown / signal handlers) can reap orphans if the user's command spawned detached
-    // children that survive the parent.
     let spawnedPid = process.processIdentifier
     trackDetachedChildPid(spawnedPid)
 
     let cancelledFlag = ManagedAtomic(false)
 
-    let cancellationTimer = DispatchSource.makeTimerSource()
-    cancellationTimer.schedule(deadline: .now(), repeating: .milliseconds(50))
-    cancellationTimer.setEventHandler {
-        if options?.signal?.isCancelled == true {
-            cancelledFlag.store(true)
-            if process.isRunning {
-                killProcessTree(process.processIdentifier)
-            }
-            stdoutReader.cancel()
-            stderrReader.cancel()
-            cancellationTimer.cancel()
-        }
+    let removeCancellationHandler = options?.signal?.onCancel {
+        cancelledFlag.store(true)
+        if process.isRunning { killProcessTree(process.processIdentifier) }
+        stdoutReader.cancel()
+        stderrReader.cancel()
     }
-    cancellationTimer.resume()
 
     var timeoutTimer: DispatchSourceTimer?
     if let timeoutSeconds {
@@ -329,7 +318,7 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
         readers.notify(queue: .global()) {
             untrackDetachedChildPid(spawnedPid)
             buffer.flushPending(onChunk: options?.onChunk)
-            cancellationTimer.cancel()
+            removeCancellationHandler?()
             timeoutTimerRef?.cancel()
 
             let combinedData = buffer.snapshot()

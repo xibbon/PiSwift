@@ -225,8 +225,21 @@ public func killProcessTree(_ pid: pid_t) {
     process.standardError = FileHandle.nullDevice
     try? process.run()
     #else
-    let descendants = collectDescendantPids(of: pid)
+    #if os(macOS)
+    // v1.5.2 shell.ts (#11252): stop the group before killing it. On macOS,
+    // a child exit can wake a shell between signals to group members.
+    _ = kill(-pid, SIGSTOP)
+    #endif
     if kill(-pid, SIGKILL) != 0 {
+        #if os(macOS)
+        // Foundation Process does not create a new process group. Freeze its
+        // leader before taking the fallback descendant snapshot.
+        _ = kill(pid, SIGSTOP)
+        #endif
+        let descendants = collectDescendantPids(of: pid)
+        #if os(macOS)
+        for childPid in descendants { _ = kill(childPid, SIGSTOP) }
+        #endif
         for childPid in descendants.sorted(by: >) {
             _ = kill(childPid, SIGKILL)
         }
@@ -274,9 +287,8 @@ private func childPids(of pid: pid_t) -> [pid_t] {
 }
 #endif
 
-/// v0.67.4: registry of detached child PIDs spawned by long-running tools (e.g., bash with `&`).
-/// On normal session shutdown / signal-driven exit (SIGINT, SIGTERM), `killTrackedDetachedChildren()`
-/// reaps them so the user doesn't end up with orphans.
+/// Registry of shell PIDs spawned by the bash executor. The host calls
+/// `killTrackedDetachedChildren()` at process shutdown to stop remaining shells.
 ///
 /// Mirrors upstream `coding-agent/src/utils/shell.ts:trackedDetachedChildPids`.
 private let trackedDetachedChildPids = LockedState<Set<pid_t>>([])
@@ -294,8 +306,8 @@ public func getTrackedDetachedChildPids() -> Set<pid_t> {
     trackedDetachedChildPids.withLock { $0 }
 }
 
-/// Kill every tracked detached child and clear the registry. Call from `dispose()` /
-/// signal handlers / `/quit` shutdown.
+/// Kill every tracked shell and clear the registry. Only the process host calls this
+/// at shutdown; a session ends its own commands through their cancellation tokens.
 public func killTrackedDetachedChildren() {
     let pids = trackedDetachedChildPids.withLock { snap -> Set<pid_t> in
         let result = snap

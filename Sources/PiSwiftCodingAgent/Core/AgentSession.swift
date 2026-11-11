@@ -1236,9 +1236,6 @@ public final class AgentSession: Sendable {
         let runner = _hookRunner
         _hookRunner = nil
         runner?.dispose()
-        // v0.67.4: reap any detached bash subprocesses the user spawned during this session
-        // so we don't leave orphans hanging around after `/quit` or session shutdown.
-        killTrackedDetachedChildren()
         // v1.5.2: release provider threads and session-scoped sockets after warmer cancellation.
         // Cleanup callbacks all run even if one throws; retain the aggregate for callers.
         cleanupSessionResourcesRecordingError(sessionId)

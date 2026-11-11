@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import PiSwiftAI
 @testable import PiSwiftCodingAgent
 #if canImport(CryptoKit)
 import CryptoKit
@@ -348,7 +349,7 @@ private final class GitUpdateTestFixture {
     #endif
 }
 
-@Test func temporaryPinnedGitSourcesAreNotRefreshed() async throws {
+@Test func temporaryBranchGitSourcesAreRefreshed() async throws {
     #if canImport(CryptoKit)
     let fixture = try GitUpdateTestFixture()
     let gitHost = "github.com"
@@ -393,9 +394,85 @@ private final class GitUpdateTestFixture {
     }
 
     _ = try await fixture.packageManager.resolveExtensionSources(["\(gitSource)@main"], options: PackageResolveOptions(temporary: true))
-    #expect(collector.snapshot().isEmpty)
+    // v1.5.2 C-TB: bec60c54b, package-manager.test.ts:2962. A branch ref moves.
+    #expect(collector.snapshot().contains { $0.contains("git fetch origin main") })
     #expect(try getFileContent(repoDir: cachedDir, filename: "pi-extensions/session-breakdown.ts") == "// pinned")
     #else
     Issue.record("CryptoKit unavailable")
+    #endif
+}
+
+// v1.5.2 C-TB: e3da248ea, package-manager.ts:2149-2180.
+@Test(.timeLimit(.minutes(1))) func gitUpdateMarkerRetriesAfterResetAndCleanFailures() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("ctb-git-marker-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bare = root.appendingPathComponent("bare.git")
+    let seed = root.appendingPathComponent("seed")
+    let agent = root.appendingPathComponent("agent")
+    let installed = agent.appendingPathComponent("git/github.com/test/extension")
+    try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+    _ = try git(["init", "--bare", bare.path], cwd: root.path)
+    _ = try git(["clone", bare.path, seed.path], cwd: root.path)
+    _ = try git(["config", "user.email", "test@test.com"], cwd: seed.path)
+    _ = try git(["config", "user.name", "Test"], cwd: seed.path)
+    _ = try createCommit(repoDir: seed.path, filename: "extension.swift", content: "// one", message: "one")
+    _ = try git(["push", "origin", "HEAD:main"], cwd: seed.path)
+    _ = try git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd: bare.path)
+    try FileManager.default.createDirectory(at: installed.deletingLastPathComponent(), withIntermediateDirectories: true)
+    _ = try git(["clone", bare.path, installed.path], cwd: root.path)
+    let nextHead = try createCommit(repoDir: seed.path, filename: "extension.swift", content: "// two", message: "two")
+    _ = try git(["push", "origin", "HEAD:main"], cwd: seed.path)
+    let marker = installed.deletingLastPathComponent().appendingPathComponent(".extension.pi-update-incomplete")
+    let settings = SettingsManager.inMemory()
+    settings.setPackages([.simple("git:github.com/test/extension")])
+    let manager = DefaultPackageManager(cwd: root.path, agentDir: agent.path, settingsManager: settings)
+    let phase = LockedState(0)
+    let markerSeenBeforeReset = LockedState(false)
+    manager.setCommandRunnerForTests { command, args, cwd in
+        if command == "git" && args.first == "reset" && phase.withLock({ $0 }) == 0 {
+            markerSeenBeforeReset.withLock { $0 = FileManager.default.fileExists(atPath: marker.path) }
+            throw URLError(.cannotWriteToFile)
+        }
+        if command == "git" && args.first == "clean" && phase.withLock({ $0 }) == 1 {
+            throw URLError(.cannotWriteToFile)
+        }
+        let result = try await execCommand("/usr/bin/git", args, cwd)
+        if result.code != 0 { throw URLError(.badServerResponse) }
+        return result
+    }
+    do { try await manager.update(nil); Issue.record("reset should fail") } catch { }
+    #expect(markerSeenBeforeReset.withLock { $0 })
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+    phase.withLock { $0 = 1 }
+    try await manager.update(nil)
+    #expect(try git(["rev-parse", "HEAD"], cwd: installed.path) == nextHead)
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+    phase.withLock { $0 = 2 }
+    try await manager.update(nil)
+    #expect(!FileManager.default.fileExists(atPath: marker.path))
+}
+
+// v1.5.2 C-TB: bec60c54b, package-manager.test.ts:2979-2993.
+@Test(.timeLimit(.minutes(1))) func temporaryCheckedOutCommitSkipsGitFetch() async throws {
+    #if canImport(CryptoKit)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("ctb-git-hash-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let packagePath = "test/commit-skip-\(UUID().uuidString.lowercased())"
+    let source = "git:github.com/\(packagePath)"
+    let head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    let ref = String(head.prefix(12))
+    let manager = DefaultPackageManager(cwd: root.path, agentDir: root.path, settingsManager: .inMemory())
+    let path = manager.temporaryGitDirectory(host: "github.com", path: packagePath, ref: ref)
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: path), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    let calls = LockedState<[[String]]>([])
+    manager.setCommandRunnerForTests { command, args, _ in
+        if command == "git" { calls.withLock { $0.append(args) } }
+        return ExecResult(stdout: args == ["rev-parse", "HEAD"] ? head : "", stderr: "", code: 0, killed: false)
+    }
+    _ = try await manager.resolveExtensionSources(["\(source)@\(ref)"], options: .init(temporary: true))
+    #expect(calls.withLock { $0 } == [["rev-parse", "HEAD"]])
     #endif
 }

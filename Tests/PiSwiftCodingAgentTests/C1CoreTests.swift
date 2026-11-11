@@ -213,7 +213,8 @@ private struct C1CatalogClient: ProviderHTTPClient {
         return DefaultPackageManager(cwd: root.path, agentDir: root.path,
             settingsManager: SettingsManager.inMemory(settings))
     }
-    #expect(try manager(["npm"]).gitDependencyInstallArgs() == ["install", "--omit=dev", "--legacy-peer-deps"])
+    // v1.5.2 C-TB: 5fb9a0b11, package-manager.ts:2007 disables audit and fund output.
+    #expect(try manager(["npm"]).gitDependencyInstallArgs() == ["install", "--omit=dev", "--legacy-peer-deps", "--no-audit", "--no-fund"])
     #expect(try manager(["pnpm"]).gitDependencyInstallArgs().contains("--config.auto-install-peers=false"))
     #expect(try manager(["bun"]).gitDependencyInstallArgs() == ["install", "--omit=dev", "--omit=peer"])
     #expect(try manager(["mise", "exec", "node@20", "--", "npm"]).gitDependencyInstallArgs().contains("--legacy-peer-deps"))

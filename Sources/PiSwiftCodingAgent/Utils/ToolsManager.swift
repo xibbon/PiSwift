@@ -85,7 +85,12 @@ private struct ToolTransportClient: ProviderHTTPClient {
 /// Return the release asset for a supported platform. Linux assets use musl on both architectures.
 public func toolDownloadAssetName(_ tool: String, version: String, platform: String, architecture: String) -> String? {
     guard let config = ManagedTool.named(tool) else { return nil }
-    let architecture = architecture == "arm64" ? "aarch64" : "x86_64"
+    let archSuffix: String
+    switch architecture {
+    case "arm64": archSuffix = "aarch64"
+    case "x64": archSuffix = "x86_64"
+    default: return nil
+    }
     let suffix: String
     switch platform {
     case "darwin": suffix = "apple-darwin.tar.gz"
@@ -93,7 +98,7 @@ public func toolDownloadAssetName(_ tool: String, version: String, platform: Str
     case "win32": suffix = "pc-windows-msvc.zip"
     default: return nil
     }
-    return "\(config.name)-\(config.tagPrefix)\(version)-\(architecture)-\(suffix)"
+    return "\(config.name)-\(config.tagPrefix)\(version)-\(archSuffix)-\(suffix)"
 }
 
 /// Library-only tool installation. Progress is sent to the callback, never to stdout.
@@ -185,6 +190,10 @@ public struct ToolManager: Sendable {
             onStatus?(ToolStatus(type: .warning, message: "\(config.name) not found. Tool installation is unavailable on this platform."))
             return nil
         }
+        if toolDownloadAssetName(config.binaryName, version: "0", platform: platform, architecture: architecture) == nil {
+            onStatus?(ToolStatus(type: .warning, message: "\(config.name) not found. Automatic download is not supported on \(platform)/\(architecture). Install \(config.name) with your system package manager."))
+            return nil
+        }
         onStatus?(ToolStatus(type: .info, message: "\(config.name) not found. Downloading..."))
         do {
             let path = try await downloadTool(config)
@@ -227,6 +236,9 @@ public struct ToolManager: Sendable {
     }
 
     private func downloadTool(_ config: ManagedTool) async throws -> String {
+        guard toolDownloadAssetName(config.binaryName, version: "0", platform: platform, architecture: architecture) != nil else {
+            throw ToolManagerError("Unsupported platform: \(platform)/\(architecture)")
+        }
         let version = config.binaryName == "fd" && platform == "darwin" && architecture == "x64"
             ? "10.3.0" : try await getLatestVersion(config.repo)
         guard let asset = toolDownloadAssetName(config.binaryName, version: version, platform: platform, architecture: architecture) else {

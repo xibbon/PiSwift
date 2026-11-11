@@ -697,6 +697,17 @@ public final class SettingsManager: Sendable {
         save()
     }
 
+    public func getExtensionChangelogVersion(_ key: String) -> String? {
+        settings.extensionChangelogVersions?[key]
+    }
+
+    public func setExtensionChangelogVersion(_ key: String, version: String) {
+        if globalSettings.extensionChangelogVersions == nil { globalSettings.extensionChangelogVersions = [:] }
+        globalSettings.extensionChangelogVersions?[key] = version
+        markModified("extensionChangelogVersions", key)
+        save()
+    }
+
     public func getDefaultProvider() -> String? {
         settings.defaultProvider
     }

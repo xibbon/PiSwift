@@ -320,9 +320,19 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
                 return readToolResult(content: content)
             }
 
+            // v1.5.2 C-TB: image-process.ts:47-62,72-100 normalizes BMP even when resizing is off.
+            var inlineImage = ImageContent(data: base64, mimeType: mimeType)
+            var textNote = "Read image file [\(mimeType)]"
+            if mimeType == "image/bmp" {
+                guard let converted = convertToPng(base64, mimeType) else {
+                    return readToolResult(content: [.text(TextContent(text: "Read image file [\(mimeType)]\n[Image omitted: could not be converted to a supported inline image format.]"))])
+                }
+                inlineImage = converted
+                textNote = "Read image file [image/png]\n[Image converted from image/bmp to image/png.]"
+            }
             let content: [ContentBlock] = [
-                .text(TextContent(text: "Read image file [\(mimeType)]")),
-                .image(ImageContent(data: base64, mimeType: mimeType)),
+                .text(TextContent(text: textNote)),
+                .image(inlineImage),
             ]
             return readToolResult(content: content)
         }

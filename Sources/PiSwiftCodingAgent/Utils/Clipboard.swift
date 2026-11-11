@@ -376,6 +376,7 @@ private func isWaylandSession() -> Bool {
 
 private func runClipboardCommandBinaryResult(command: String, args: [String]) -> ClipboardImageReadResult {
     let process = Process()
+    process.currentDirectoryURL = URL(fileURLWithPath: "/")
     if command.contains("/") {
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = args
@@ -405,6 +406,7 @@ private func runClipboardCommandBinaryResult(command: String, args: [String]) ->
 #if !canImport(UIKit)
 private func runClipboardCommand(command: String, args: [String], input: String) throws {
     let process = Process()
+    process.currentDirectoryURL = URL(fileURLWithPath: "/")
     if command.contains("/") {
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = args
@@ -435,6 +437,7 @@ private func runClipboardCommand(command: String, args: [String], input: String)
 
 private func runClipboardCommandAsync(command: String, args: [String], input: String) -> Bool {
     let process = Process()
+    process.currentDirectoryURL = URL(fileURLWithPath: "/")
     if command.contains("/") {
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = args

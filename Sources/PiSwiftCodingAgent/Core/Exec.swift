@@ -12,21 +12,31 @@ public struct ExecOptions: Sendable {
     public var cwd: String?
     /// Stop the child process when captured stdout exceeds this byte count.
     public var maxOutputBytes: Int?
+    /// Combined stdout and stderr cap. Defaults to 256 MiB.
+    public var maxBuffer: Int? {
+        get { maxOutputBytes }
+        set { maxOutputBytes = newValue }
+    }
     /// Discard stderr instead of retaining it in memory.
     public var captureStderr: Bool
+    /// Delay before forcing a child that ignores SIGTERM to exit.
+    public var terminationGracePeriod: TimeInterval
 
     public init(
         signal: CancellationToken? = nil,
         timeout: TimeInterval? = nil,
         cwd: String? = nil,
         maxOutputBytes: Int? = nil,
-        captureStderr: Bool = true
+        maxBuffer: Int? = nil,
+        captureStderr: Bool = true,
+        terminationGracePeriod: TimeInterval = 5
     ) {
         self.signal = signal
         self.timeout = timeout
         self.cwd = cwd
-        self.maxOutputBytes = maxOutputBytes.flatMap { $0 >= 0 ? $0 : nil }
+        self.maxOutputBytes = maxBuffer ?? maxOutputBytes
         self.captureStderr = captureStderr
+        self.terminationGracePeriod = terminationGracePeriod
     }
 }
 
@@ -36,6 +46,7 @@ public struct ExecResult: Sendable {
     public var code: Int
     public var killed: Bool
     public var outputExceeded: Bool
+    public var truncated: Bool { outputExceeded }
 
     public init(stdout: String, stderr: String, code: Int, killed: Bool, outputExceeded: Bool = false) {
         self.stdout = stdout
@@ -49,6 +60,8 @@ public struct ExecResult: Sendable {
 public enum ShellExecutionError: LocalizedError, Sendable {
     case invalidTimeout
     case timeoutExceedsMaximum
+    case invalidMaxBuffer
+    case invalidTerminationGracePeriod
 
     public var errorDescription: String? {
         switch self {
@@ -56,6 +69,10 @@ public enum ShellExecutionError: LocalizedError, Sendable {
             return "Invalid timeout: must be a finite number of seconds"
         case .timeoutExceedsMaximum:
             return "Invalid timeout: maximum is \(maximumShellTimeoutSeconds) seconds"
+        case .invalidMaxBuffer:
+            return "maxBuffer must be an integer between 0 and \(Int.max) bytes"
+        case .invalidTerminationGracePeriod:
+            return "terminationGracePeriod must be a finite, nonnegative number of seconds"
         }
     }
 }
@@ -77,6 +94,12 @@ func validatedShellTimeout(_ timeout: TimeInterval?) throws -> TimeInterval? {
 #if !canImport(UIKit)
 public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ options: ExecOptions? = nil) async throws -> ExecResult {
     let timeout = try validatedShellTimeout(options?.timeout)
+    let maxBuffer = options?.maxOutputBytes ?? 256 * 1_024 * 1_024
+    guard maxBuffer >= 0 else { throw ShellExecutionError.invalidMaxBuffer }
+    let terminationGracePeriod = options?.terminationGracePeriod ?? 5
+    guard terminationGracePeriod.isFinite, terminationGracePeriod >= 0 else {
+        throw ShellExecutionError.invalidTerminationGracePeriod
+    }
     let process = Process()
 
     #if os(Windows)
@@ -100,10 +123,33 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     process.standardOutput = stdoutPipe
     process.standardError = stderrPipe ?? FileHandle.nullDevice
 
-    let stdoutBuffer = OutputBuffer(limit: options?.maxOutputBytes)
+    let stdoutBuffer = OutputBuffer()
     let stderrBuffer = OutputBuffer()
+    let outputBudget = ExecOutputBudget(limit: maxBuffer)
     let outputExceeded = ManagedAtomic(false)
     let killedFlag = ManagedAtomic(false)
+    let terminationRequested = ManagedAtomic(false)
+    let forceKillTimer = LockedState<DispatchSourceTimer?>(nil)
+    let requestTermination: @Sendable () -> Void = {
+        guard terminationRequested.exchangeTrue() == false else { return }
+        killedFlag.store(true)
+        guard process.isRunning else { return }
+        // v1.5.2 C-TB: c466a3595, exec.ts:78-93. Give SIGTERM a grace period.
+        #if canImport(Darwin) || canImport(Glibc)
+        _ = kill(process.processIdentifier, SIGTERM)
+        #else
+        process.terminate()
+        #endif
+        let timer = DispatchSource.makeTimerSource()
+        timer.schedule(deadline: .now() + max(0, terminationGracePeriod))
+        timer.setEventHandler {
+            if process.isRunning { killProcessTree(process.processIdentifier) }
+            timer.cancel()
+        }
+        forceKillTimer.withLock { $0 = timer }
+        timer.resume()
+    }
+    let cancelReadersOnLimit = LockedState<(@Sendable () -> Void)?>(nil)
 
     // Each pipe has its own queue. Cancel closes the handle after the last read.
     let readers = DispatchGroup()
@@ -151,21 +197,41 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
         return source
     }
     let stdoutReader = startReader(stdoutPipe) { data in
-        if !stdoutBuffer.append(data) {
+        let (kept, exceeded) = outputBudget.take(data)
+        _ = stdoutBuffer.append(kept)
+        if exceeded {
             outputExceeded.store(true)
-            killedFlag.store(true)
-            if process.isRunning {
-                killProcessTree(process.processIdentifier)
-            }
+            requestTermination()
+            cancelReadersOnLimit.withLock { $0 }?()
         }
     }
     let stderrReader = stderrPipe.map { pipe in
-        startReader(pipe) { data in _ = stderrBuffer.append(data) }
+        startReader(pipe) { data in
+            let (kept, exceeded) = outputBudget.take(data)
+            _ = stderrBuffer.append(kept)
+            if exceeded {
+                outputExceeded.store(true)
+                requestTermination()
+                cancelReadersOnLimit.withLock { $0 }?()
+            }
+        }
+    }
+    cancelReadersOnLimit.withLock { value in
+        value = {
+            stdoutReader.cancel()
+            stderrReader?.cancel()
+        }
     }
 
     // Foundation reports exit independently of the queues that drain the pipes.
     readers.enter()
-    process.terminationHandler = { _ in readers.leave() }
+    process.terminationHandler = { _ in
+        if outputExceeded.load() {
+            stdoutReader.cancel()
+            stderrReader?.cancel()
+        }
+        readers.leave()
+    }
     do {
         try process.run()
     } catch {
@@ -173,35 +239,23 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
         readers.leave()
         stdoutReader.cancel()
         stderrReader?.cancel()
-        return ExecResult(stdout: "", stderr: error.localizedDescription, code: 1, killed: true)
+        return ExecResult(stdout: "", stderr: error.localizedDescription, code: 1, killed: false)
     }
     try? stdoutPipe.fileHandleForWriting.close()
     try? stderrPipe?.fileHandleForWriting.close()
 
-    let cancellationTimer = DispatchSource.makeTimerSource()
-    cancellationTimer.schedule(deadline: .now(), repeating: .milliseconds(50))
-    cancellationTimer.setEventHandler {
-        if options?.signal?.isCancelled == true || outputExceeded.load() {
-            killedFlag.store(true)
-            if process.isRunning {
-                killProcessTree(process.processIdentifier)
-            }
-            stdoutReader.cancel()
-            stderrReader?.cancel()
-            cancellationTimer.cancel()
-        }
+    let removeCancellationHandler = options?.signal?.onCancel {
+        requestTermination()
+        stdoutReader.cancel()
+        stderrReader?.cancel()
     }
-    cancellationTimer.resume()
 
     var timeoutTimer: DispatchSourceTimer?
     if let timeout {
         let timer = DispatchSource.makeTimerSource()
         timer.schedule(deadline: .now() + timeout)
         timer.setEventHandler {
-            killedFlag.store(true)
-            if process.isRunning {
-                killProcessTree(process.processIdentifier)
-            }
+            requestTermination()
             stdoutReader.cancel()
             stderrReader?.cancel()
             timer.cancel()
@@ -213,14 +267,19 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     let timeoutTimerRef = timeoutTimer
     return await withCheckedContinuation { continuation in
         readers.notify(queue: .global()) {
-            cancellationTimer.cancel()
+            removeCancellationHandler?()
             timeoutTimerRef?.cancel()
+            forceKillTimer.withLock { $0?.cancel(); $0 = nil }
 
-            let stdoutText = String(decoding: stdoutBuffer.snapshot(), as: UTF8.self)
-            let stderrText = String(decoding: stderrBuffer.snapshot(), as: UTF8.self)
+            let wasTruncated = outputExceeded.load()
+            let stdoutData = stdoutBuffer.snapshot()
+            let stderrData = stderrBuffer.snapshot()
+            let stdoutText = String(decoding: wasTruncated ? dropIncompleteUTF8Suffix(stdoutData) : stdoutData, as: UTF8.self)
+            let stderrText = String(decoding: wasTruncated ? dropIncompleteUTF8Suffix(stderrData) : stderrData, as: UTF8.self)
 
             let killed = killedFlag.load()
-            let code = Int(process.terminationStatus) + (process.terminationReason == .uncaughtSignal ? 128 : 0)
+            let exitCode = Int(process.terminationStatus) + (process.terminationReason == .uncaughtSignal ? 128 : 0)
+            let code = wasTruncated && exitCode == 0 ? 1 : exitCode
 
             continuation.resume(returning: ExecResult(
                 stdout: stdoutText,
@@ -246,6 +305,14 @@ private final class ManagedAtomic: Sendable {
 
     func load() -> Bool {
         state.withLock { $0 }
+    }
+
+    func exchangeTrue() -> Bool {
+        state.withLock { old in
+            let previous = old
+            old = true
+            return previous
+        }
     }
 }
 
@@ -276,5 +343,33 @@ private final class OutputBuffer: Sendable {
     func snapshot() -> Data {
         state.withLock { $0 }
     }
+}
+
+private final class ExecOutputBudget: Sendable {
+    private let used = LockedState(0)
+    let limit: Int
+
+    init(limit: Int) { self.limit = limit }
+
+    func take(_ data: Data) -> (Data, Bool) {
+        used.withLock { used in
+            let remaining = max(0, limit - used)
+            let count = min(remaining, data.count)
+            used += count
+            return (Data(data.prefix(count)), data.count > remaining)
+        }
+    }
+}
+
+private func dropIncompleteUTF8Suffix(_ data: Data) -> Data {
+    guard let last = data.last, last >= 0x80 else { return data }
+    let bytes = Array(data.suffix(4))
+    var continuationCount = 0
+    for byte in bytes.reversed() {
+        if byte & 0xC0 == 0x80 { continuationCount += 1; continue }
+        let expected = byte & 0xE0 == 0xC0 ? 1 : byte & 0xF0 == 0xE0 ? 2 : byte & 0xF8 == 0xF0 ? 3 : 0
+        return expected > continuationCount ? Data(data.dropLast(continuationCount + 1)) : data
+    }
+    return Data(data.dropLast(continuationCount))
 }
 #endif

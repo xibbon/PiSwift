@@ -98,6 +98,40 @@ private func tinyBmp1x1Red24bpp() -> String {
 #endif
 }
 
+// v1.5.2 C-TB: utils/image-process.ts:47-62 normalizes BMP before resize.
+@Test func resizeImageNormalizesBmpForInlineProviders() {
+#if canImport(AppKit)
+    let bmp = tinyBmp1x1Red24bpp()
+    let result = resizeImage(ImageContent(data: bmp, mimeType: "image/bmp"))
+    #expect(result.mimeType == "image/png")
+    #expect(result.convertedFrom == "image/bmp")
+    #expect(formatDimensionNote(result) == "[Image converted from image/bmp to image/png.]")
+#endif
+}
+
+// v1.5.2 C-TB: image-process.ts:72-100 converts BMP when auto-resize is off.
+@Test func readToolNormalizesBmpWithoutAutoResize() async throws {
+    #if canImport(AppKit)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ctb-read-bmp-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("sample.bmp")
+    try #require(Data(base64Encoded: tinyBmp1x1Red24bpp())).write(to: path)
+    let result = try await createReadTool(cwd: directory.path, options: .init(autoResizeImages: false))
+        .execute("bmp", ["path": AnyCodable(path.path)], nil, nil)
+    let text = result.content.compactMap { block -> String? in
+        if case .text(let value) = block { return value.text }
+        return nil
+    }.joined(separator: "\n")
+    let images = result.content.compactMap { block -> ImageContent? in
+        if case .image(let value) = block { return value }
+        return nil
+    }
+    #expect(text == "Read image file [image/png]\n[Image converted from image/bmp to image/png.]")
+    #expect(images.map(\.mimeType) == ["image/png"])
+    #endif
+}
+
 // MARK: - resizeImage tests
 
 @Test func resizeImageReturnsOriginalIfWithinLimits() {

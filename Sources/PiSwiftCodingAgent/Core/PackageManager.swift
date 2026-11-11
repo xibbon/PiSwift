@@ -26,17 +26,55 @@ public struct ProgressEvent: Sendable {
 
 public typealias ProgressCallback = @Sendable (ProgressEvent) -> Void
 
+public struct PackageInstallFailure: Sendable, Hashable {
+    public let source: String
+    public let scope: String
+    public let message: String
+
+    public init(source: String, scope: String, message: String) {
+        self.source = source
+        self.scope = scope
+        self.message = message
+    }
+}
+
+public struct PackageUpdateSummary: Sendable {
+    public let checked: Int
+    public let updated: [String]
+    public let skippedOffline: Bool
+    public let attempted: Int
+    public let warningCount: Int
+    public let source: String?
+
+    public var message: String {
+        if skippedOffline { return "Skipped package updates (offline mode)" }
+        if !updated.isEmpty {
+            return "Updated \(updated.count) package\(updated.count == 1 ? "" : "s"):\n" +
+                updated.map { "  \($0)" }.joined(separator: "\n")
+        }
+        if warningCount > 0 || checked == 0 {
+            return source.map { "\($0) was not updated, see the warnings above" }
+                ?? "No packages were updated, see the warnings above"
+        }
+        return source.map { "\($0) is already up to date" } ?? "Packages are already up to date"
+    }
+}
+
 public struct PathMetadata: Sendable, Hashable {
     public var source: String
     public var scope: String
     public var origin: String
     public var baseDir: String?
+    public var changelogPath: String?
+    public var packageRoot: String?
 
-    public init(source: String, scope: String, origin: String, baseDir: String? = nil) {
+    public init(source: String, scope: String, origin: String, baseDir: String? = nil, changelogPath: String? = nil, packageRoot: String? = nil) {
         self.source = source
         self.scope = scope
         self.origin = origin
         self.baseDir = baseDir
+        self.changelogPath = changelogPath
+        self.packageRoot = packageRoot
     }
 }
 
@@ -53,13 +91,17 @@ public struct SourceInfo: Sendable, Hashable {
     public var scope: String
     public var origin: String?
     public var baseDir: String?
+    public var changelogPath: String?
+    public var packageRoot: String?
 
-    public init(path: String, source: String, scope: String, origin: String? = nil, baseDir: String? = nil) {
+    public init(path: String, source: String, scope: String, origin: String? = nil, baseDir: String? = nil, changelogPath: String? = nil, packageRoot: String? = nil) {
         self.path = path
         self.source = source
         self.scope = scope
         self.origin = origin
         self.baseDir = baseDir
+        self.changelogPath = changelogPath
+        self.packageRoot = packageRoot
     }
 
     public init(path: String, metadata: PathMetadata) {
@@ -68,6 +110,8 @@ public struct SourceInfo: Sendable, Hashable {
         self.scope = metadata.scope
         self.origin = metadata.origin
         self.baseDir = metadata.baseDir
+        self.changelogPath = metadata.changelogPath
+        self.packageRoot = metadata.packageRoot
     }
 }
 
@@ -103,17 +147,20 @@ public struct ResolvedPaths: Sendable {
     public var skills: [ResolvedResource]
     public var prompts: [ResolvedResource]
     public var themes: [ResolvedResource]
+    public var installFailures: [PackageInstallFailure]
 
     public init(
         extensions: [ResolvedResource] = [],
         skills: [ResolvedResource] = [],
         prompts: [ResolvedResource] = [],
-        themes: [ResolvedResource] = []
+        themes: [ResolvedResource] = [],
+        installFailures: [PackageInstallFailure] = []
     ) {
         self.extensions = extensions
         self.skills = skills
         self.prompts = prompts
         self.themes = themes
+        self.installFailures = installFailures
     }
 }
 
@@ -284,7 +331,7 @@ public final class DefaultPackageManager: PackageManager {
         }
 
         let packageSources = dedupePackages(allPackages)
-        try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: onMissing, offline: offline)
+        let installFailures = try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: onMissing, offline: offline)
 
         let globalBaseDir = agentDir
         let projectBaseDir = URL(fileURLWithPath: cwd).appendingPathComponent(CONFIG_DIR_NAME).path
@@ -318,6 +365,7 @@ public final class DefaultPackageManager: PackageManager {
         )
 
         var resolved = accumulator.toResolvedPaths()
+        resolved.installFailures = installFailures
         for name in builtinExtensions {
             let path = BUILTIN_PATH_PREFIX + name
             resolved.extensions.append(resolveBuiltinExtension(path: path,
@@ -334,8 +382,9 @@ public final class DefaultPackageManager: PackageManager {
         let accumulator = ResourceAccumulator()
         let scope = options.temporary ? "temporary" : (options.local ? "project" : "user")
         let packageSources = sources.filter { !$0.hasPrefix(BUILTIN_PATH_PREFIX) }.map { (PackageSource.simple($0), scope) }
-        try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: nil, offline: offline || options.offline)
+        let installFailures = try await resolvePackageSources(packageSources, accumulator: accumulator, onMissing: nil, offline: offline || options.offline)
         var resolved = accumulator.toResolvedPaths()
+        resolved.installFailures = installFailures
         for path in sources where path.hasPrefix(BUILTIN_PATH_PREFIX) {
             resolved.extensions.append(ResolvedResource(path: path, enabled: true,
                 metadata: PathMetadata(source: "builtin", scope: scope, origin: "top-level")))
@@ -384,51 +433,103 @@ public final class DefaultPackageManager: PackageManager {
     }
 
     public func update(_ source: String?) async throws {
-        guard !offline else {
-            throw PackageManagerError.unsupported(Self.offlineUpdateMessage)
-        }
+        guard !offline else { throw PackageManagerError.unsupported(Self.offlineUpdateMessage) }
+        _ = try await updateWithResult(source)
+    }
+
+    /// Return the outcome that a CLI host can display after progress events.
+    public func updateWithResult(_ source: String?) async throws -> PackageUpdateSummary {
+        guard !offline else { return PackageUpdateSummary(checked: 0, updated: [], skippedOffline: true, attempted: 0, warningCount: 0, source: source) }
         let globalSettings = settingsManager.getGlobalSettings()
         let projectSettings = projectTrusted ? settingsManager.getProjectSettings() : Settings()
 
         let identity = source.map { getPackageIdentity($0) }
+        var checked = 0
+        var updated: [String] = []
+        var npmResults: [(source: String, message: String)] = []
+        var gitResults: [(source: String, message: String)] = []
+        var attempted = 0
+        var warningCount = 0
 
         for pkg in globalSettings.packages ?? [] {
             let sourceStr = packageSourceString(pkg)
             if let identity, getPackageIdentity(sourceStr) != identity {
                 continue
             }
-            try await updateSource(source: sourceStr, scope: "user")
+            let result = try await updateSource(source: sourceStr, scope: "user")
+            checked += result.checked ? 1 : 0
+            attempted += result.attempted ? 1 : 0
+            warningCount += result.warned ? 1 : 0
+            if let message = result.updated {
+                if case .npm = parseSource(sourceStr) { npmResults.append((sourceStr, message)) }
+                else { gitResults.append((sourceStr, message)) }
+            }
         }
         for pkg in projectSettings.packages ?? [] {
             let sourceStr = packageSourceString(pkg)
             if let identity, getPackageIdentity(sourceStr) != identity {
                 continue
             }
-            try await updateSource(source: sourceStr, scope: "project")
+            let result = try await updateSource(source: sourceStr, scope: "project")
+            checked += result.checked ? 1 : 0
+            attempted += result.attempted ? 1 : 0
+            warningCount += result.warned ? 1 : 0
+            if let message = result.updated {
+                if case .npm = parseSource(sourceStr) { npmResults.append((sourceStr, message)) }
+                else { gitResults.append((sourceStr, message)) }
+            }
         }
+        // v1.5.2 C-TB: 342514bdf, package-manager.ts:1259-1282.
+        for entry in npmResults + gitResults {
+            updated.append(entry.message)
+            progressCallback?(ProgressEvent(type: "result", action: "update", source: entry.source, message: entry.message))
+        }
+        return PackageUpdateSummary(checked: checked, updated: updated, skippedOffline: false, attempted: attempted, warningCount: warningCount, source: source)
     }
 
-    private func updateSource(source: String, scope: String) async throws {
+    private func updateSource(source: String, scope: String) async throws -> (checked: Bool, updated: String?, attempted: Bool, warned: Bool) {
         let parsed = parseSource(source)
         switch parsed {
         case .npm(let npm):
-            if npm.pinned { return }
+            if npm.pinned { return (false, nil, false, false) }
             let installedPath = getNpmInstallPath(npm, scope: scope)
-            if let installed = getInstalledNpmVersion(installedPath: installedPath) {
+            let installedBefore = getInstalledNpmVersion(installedPath: installedPath)
+            var announcedVersion: String?
+            if let installed = installedBefore {
                 // A failed lookup preserves the existing explicit-update behavior.
-                if let latest = try? await getLatestNpmVersion(packageName: npm.name),
-                   packageVersionIsNewer(latest, than: installed) == false { return }
+                announcedVersion = try? await getLatestNpmVersion(packageName: npm.name)
+                if let announcedVersion,
+                   packageVersionIsNewer(announcedVersion, than: installed) == false { return (true, nil, false, false) }
             }
             try await withProgress(action: "update", source: source, message: "Updating \(source)...") {
-                try await installNpm(npm, scope: scope, temporary: false)
+                var latestSource = npm
+                latestSource.spec = "\(npm.name)@latest"
+                try await installNpm(latestSource, scope: scope, temporary: false)
             }
+            let installedAfter = getInstalledNpmVersion(installedPath: installedPath)
+            if installedBefore == installedAfter {
+                if let before = installedBefore, let target = announcedVersion {
+                    progressCallback?(ProgressEvent(type: "progress", action: "update", source: source,
+                        message: "\(source) is still \(before) (registry reports \(target)); npm registry metadata may be stale, try again in a few minutes"))
+                }
+                return (true, nil, true, installedBefore != nil && announcedVersion != nil)
+            }
+            let message = "\(source)\(scope == "project" ? " (project)" : "") \(installedBefore ?? "(none)") -> \(installedAfter ?? "(none)")"
+            return (true, message, true, false)
         case .git(let git):
-            if git.pinned { return }
+            let path = getGitInstallPath(git, scope: scope)
+            let before = try? await runCommand("git", ["rev-parse", "HEAD"], cwd: path).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitWarning = LockedState(false)
             try await withProgress(action: "update", source: source, message: "Updating \(source)...") {
-                try await updateGit(git, scope: scope)
+                let warned = try await updateGit(git, scope: scope)
+                gitWarning.withLock { $0 = warned }
             }
+            let after = try? await runCommand("git", ["rev-parse", "HEAD"], cwd: path).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard before != after else { return (true, nil, true, gitWarning.withLock { $0 }) }
+            let message = "\(source)\(scope == "project" ? " (project)" : "") \(before.map { String($0.prefix(7)) } ?? "(none)") -> \(after.map { String($0.prefix(7)) } ?? "(none)")"
+            return (true, message, true, gitWarning.withLock { $0 })
         case .local:
-            return
+            return (false, nil, false, false)
         }
     }
 
@@ -448,7 +549,8 @@ public final class DefaultPackageManager: PackageManager {
         accumulator: ResourceAccumulator,
         onMissing: (@Sendable (String) async -> MissingSourceAction)?,
         offline: Bool
-    ) async throws {
+    ) async throws -> [PackageInstallFailure] {
+        var installFailures: [PackageInstallFailure] = []
         for (pkg, scope) in sources {
             let sourceStr = pkg.source
             let filter = pkg.filter
@@ -475,8 +577,13 @@ public final class DefaultPackageManager: PackageManager {
                         break
                     }
                 }
-                try await self.installParsedSource(parsed, scope: scope)
-                return true
+                do {
+                    try await self.installParsedSource(parsed, scope: scope)
+                    return true
+                } catch {
+                    installFailures.append(PackageInstallFailure(source: sourceStr, scope: scope, message: error.localizedDescription))
+                    return false
+                }
             }
 
             switch parsed {
@@ -485,9 +592,20 @@ public final class DefaultPackageManager: PackageManager {
                 let installed = FileManager.default.fileExists(atPath: installedPath)
                 let needsInstall: Bool
                 if installed {
-                    needsInstall = offline ? false : try await npmNeedsUpdate(npm, installedPath: installedPath)
+                    if !offline && npm.pinned {
+                        needsInstall = try await npmNeedsUpdate(npm, installedPath: installedPath)
+                    } else {
+                        needsInstall = false
+                    }
                 } else {
                     needsInstall = true
+                }
+                if installed && !needsInstall && scope == "temporary" && !npm.pinned && !offline,
+                   (try? await npmNeedsUpdate(npm, installedPath: installedPath)) == true {
+                    var latestSource = npm
+                    latestSource.spec = "\(npm.name)@latest"
+                    // A failed refresh keeps the cached temporary extension.
+                    try? await installNpm(latestSource, scope: scope, temporary: true)
                 }
                 if needsInstall {
                     let installed = try await installMissing()
@@ -500,7 +618,7 @@ public final class DefaultPackageManager: PackageManager {
                 if !FileManager.default.fileExists(atPath: installedPath) {
                     let installed = try await installMissing()
                     if !installed { continue }
-                } else if scope == "temporary" && !git.pinned && !offline {
+                } else if scope == "temporary" && !offline {
                     await refreshTemporaryGitSource(git, source: sourceStr)
                 }
                 metadata.baseDir = installedPath
@@ -509,6 +627,7 @@ public final class DefaultPackageManager: PackageManager {
                 break
             }
         }
+        return installFailures
     }
 
     private func resolveLocalExtensionSource(
@@ -627,7 +746,7 @@ public final class DefaultPackageManager: PackageManager {
         switch manager {
         case "bun": return ["install", "--omit=dev", "--omit=peer"]
         case "pnpm": return ["install", "--prod", "--config.auto-install-peers=false", "--config.strict-peer-dependencies=false", "--config.strict-dep-builds=false"]
-        case "npm": return ["install", "--omit=dev", "--legacy-peer-deps"]
+        case "npm": return ["install", "--omit=dev", "--legacy-peer-deps", "--no-audit", "--no-fund"]
         default: return ["install"]
         }
     }
@@ -637,13 +756,16 @@ public final class DefaultPackageManager: PackageManager {
         throw PackageManagerError.unsupported("npm install not available")
         #else
         let (npmExe, npmPrefix) = resolvedNpmCommand()
+        let npmFlags = URL(fileURLWithPath: npmPrefix.last ?? npmExe).lastPathComponent == "npm"
+            ? ["--no-audit", "--no-fund"] : []
         if scope == "user" && !temporary {
-            _ = try await runCommand(npmExe, npmPrefix + ["install", "-g", source.spec], cwd: cwd)
+            _ = try await runCommand(npmExe, npmPrefix + ["install", "-g", source.spec] + npmFlags, cwd: cwd)
             return
         }
         let installRoot = getNpmInstallRoot(scope: scope, temporary: temporary)
         try ensureNpmProject(installRoot)
-        _ = try await runCommand(npmExe, npmPrefix + ["install", source.spec, "--prefix", installRoot], cwd: cwd)
+        let realRoot = URL(fileURLWithPath: installRoot).resolvingSymlinksInPath().path
+        _ = try await runCommand(npmExe, npmPrefix + ["install", source.spec, "--prefix", realRoot] + npmFlags, cwd: cwd)
         #endif
     }
 
@@ -652,13 +774,16 @@ public final class DefaultPackageManager: PackageManager {
         throw PackageManagerError.unsupported("npm uninstall not available")
         #else
         let (npmExe, npmPrefix) = resolvedNpmCommand()
+        let npmFlags = URL(fileURLWithPath: npmPrefix.last ?? npmExe).lastPathComponent == "npm"
+            ? ["--no-audit", "--no-fund"] : []
         if scope == "user" {
-            _ = try await runCommand(npmExe, npmPrefix + ["uninstall", "-g", source.name], cwd: cwd)
+            _ = try await runCommand(npmExe, npmPrefix + ["uninstall", "-g", source.name] + npmFlags, cwd: cwd)
             return
         }
         let installRoot = getNpmInstallRoot(scope: scope, temporary: false)
         guard FileManager.default.fileExists(atPath: installRoot) else { return }
-        _ = try await runCommand(npmExe, npmPrefix + ["uninstall", source.name, "--prefix", installRoot], cwd: cwd)
+        let realRoot = URL(fileURLWithPath: installRoot).resolvingSymlinksInPath().path
+        _ = try await runCommand(npmExe, npmPrefix + ["uninstall", source.name, "--prefix", realRoot] + npmFlags, cwd: cwd)
         #endif
     }
 
@@ -692,35 +817,67 @@ public final class DefaultPackageManager: PackageManager {
         #endif
     }
 
-    private func updateGit(_ source: GitSource, scope: String) async throws {
+    private func updateGit(_ source: GitSource, scope: String) async throws -> Bool {
         #if canImport(UIKit)
         throw PackageManagerError.unsupported("git update not available")
         #else
         let targetDir = getGitInstallPath(source, scope: scope)
         if !FileManager.default.fileExists(atPath: targetDir) {
             try await installGit(source, scope: scope)
-            return
+            return false
         }
-        _ = try await runCommand("git", ["fetch", "--prune", "origin"], cwd: targetDir)
+        let marker = URL(fileURLWithPath: (targetDir as NSString).deletingLastPathComponent)
+            .appendingPathComponent(".\(URL(fileURLWithPath: targetDir).lastPathComponent).pi-update-incomplete")
+        let localHead = try? await runCommand("git", ["rev-parse", "HEAD"], cwd: targetDir).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        var targetRef: String
+        if let ref = source.ref {
+            _ = try await runCommand("git", ["fetch", "origin", ref], cwd: targetDir)
+            targetRef = "FETCH_HEAD"
+        } else {
+            _ = try await runCommand("git", ["fetch", "--prune", "origin"], cwd: targetDir)
+            targetRef = "@{upstream}"
+            if (try? await runCommand("git", ["rev-parse", targetRef], cwd: targetDir)) == nil {
+                _ = try? await runCommand("git", ["remote", "set-head", "origin", "-a"], cwd: targetDir)
+                targetRef = "origin/HEAD"
+            }
+        }
+        let targetHead = try? await runCommand("git", ["rev-parse", targetRef], cwd: targetDir).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let localHead, !localHead.isEmpty, localHead == targetHead {
+            guard FileManager.default.fileExists(atPath: marker.path) else { return false }
+        } else {
+            // A failed reset leaves this marker so a later update can retry the cleanup.
+            try Data().write(to: marker)
+            _ = try await runCommand("git", ["reset", "--hard", targetRef], cwd: targetDir)
+        }
+        var cleaned = true
         do {
-            _ = try await runCommand("git", ["reset", "--hard", "@{upstream}"], cwd: targetDir)
+            _ = try await runCommand("git", ["clean", "-fdx"], cwd: targetDir)
         } catch {
-            _ = try? await runCommand("git", ["remote", "set-head", "origin", "-a"], cwd: targetDir)
-            _ = try await runCommand("git", ["reset", "--hard", "origin/HEAD"], cwd: targetDir)
+            cleaned = false
+            progressCallback?(ProgressEvent(type: "progress", action: "update", source: targetDir,
+                message: "Could not remove all untracked files in \(targetDir) (\(error.localizedDescription)). Files may be in use by another pi session; close it and run the update again."))
         }
-        _ = try await runCommand("git", ["clean", "-fdx"], cwd: targetDir)
         let packageJsonPath = URL(fileURLWithPath: targetDir).appendingPathComponent("package.json").path
         if FileManager.default.fileExists(atPath: packageJsonPath) {
             let (npmExe, npmPrefix) = resolvedNpmCommand()
             _ = try await runCommand(npmExe, npmPrefix + gitDependencyInstallArgs(), cwd: targetDir)
         }
+        if cleaned { try? FileManager.default.removeItem(at: marker) }
+        return !cleaned
         #endif
     }
 
     private func refreshTemporaryGitSource(_ source: GitSource, source sourceStr: String) async {
         do {
+            if let ref = source.ref,
+               ref.range(of: "^[0-9a-fA-F]{7,64}$", options: .regularExpression) != nil {
+                let path = getGitInstallPath(source, scope: "temporary")
+                let head = try await runCommand("git", ["rev-parse", "HEAD"], cwd: path)
+                    .stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                if head.lowercased().hasPrefix(ref.lowercased()) { return }
+            }
             try await withProgress(action: "pull", source: sourceStr, message: "Refreshing \(sourceStr)...") {
-                try await self.updateGit(source, scope: "temporary")
+                _ = try await self.updateGit(source, scope: "temporary")
             }
         } catch {
             // Keep cached temporary checkout if refresh fails.
@@ -915,6 +1072,10 @@ public final class DefaultPackageManager: PackageManager {
         filter: PackageFilter?,
         metadata: PathMetadata
     ) -> Bool {
+        var metadata = metadata
+        let manifest = readPiManifest(packageRoot: packageRoot)
+        metadata.changelogPath = resolvePackageChangelogPath(packageRoot: packageRoot, manifest: manifest)
+        metadata.packageRoot = packageRoot
         if let filter {
             for resourceType in ResourceType.allCases {
                 let patterns = filter.patterns(for: resourceType)
@@ -927,7 +1088,7 @@ public final class DefaultPackageManager: PackageManager {
             return true
         }
 
-        if let manifest = readPiManifest(packageRoot: packageRoot) {
+        if let manifest, manifest.hasResourceFields {
             for resourceType in ResourceType.allCases {
                 let entries = manifest.entries(for: resourceType)
                 addManifestEntries(entries: entries, root: packageRoot, resourceType: resourceType, accumulator: accumulator, metadata: metadata)
@@ -1012,6 +1173,17 @@ public final class DefaultPackageManager: PackageManager {
             return nil
         }
         return PiManifest(raw: pi)
+    }
+
+    private func resolvePackageChangelogPath(packageRoot: String, manifest: PiManifest?) -> String? {
+        let relative = manifest?.changelogPath ?? "CHANGELOG.md"
+        guard !relative.isEmpty else { return nil }
+        let root = URL(fileURLWithPath: packageRoot).resolvingSymlinksInPath().standardized.path
+        let candidate = URL(fileURLWithPath: packageRoot).appendingPathComponent(relative).standardized
+        let real = candidate.resolvingSymlinksInPath().standardized.path
+        guard real.hasPrefix(root.hasSuffix("/") ? root : root + "/"),
+              (try? candidate.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { return nil }
+        return candidate.path
     }
 
     private func addManifestEntries(
@@ -1615,12 +1787,17 @@ private struct PiManifest {
     var skills: [String]?
     var prompts: [String]?
     var themes: [String]?
+    var changelogPath: String?
+    var hasResourceFields: Bool {
+        extensions != nil || skills != nil || prompts != nil || themes != nil
+    }
 
     init(raw: [String: Any]) {
         extensions = raw["extensions"] as? [String]
         skills = raw["skills"] as? [String]
         prompts = raw["prompts"] as? [String]
         themes = raw["themes"] as? [String]
+        changelogPath = raw["changelogPath"] as? String
     }
 
     func entries(for resourceType: ResourceType) -> [String]? {
@@ -2007,6 +2184,10 @@ private func resolveExtensionEntries(_ dir: String) -> [String]? {
 
     let indexTs = URL(fileURLWithPath: dir).appendingPathComponent("index.ts").path
     let indexJs = URL(fileURLWithPath: dir).appendingPathComponent("index.js").path
+    let packageSwift = URL(fileURLWithPath: dir).appendingPathComponent("Package.swift").path
+    let indexSwift = URL(fileURLWithPath: dir).appendingPathComponent("index.swift").path
+    if FileManager.default.fileExists(atPath: packageSwift) { return [dir] }
+    if FileManager.default.fileExists(atPath: indexSwift) { return [indexSwift] }
     if FileManager.default.fileExists(atPath: indexTs) {
         return [indexTs]
     }
@@ -2046,7 +2227,7 @@ private func collectAutoExtensionEntries(dir: String) -> [String] {
         let ignorePath = isDir ? relative + "/" : relative
         if ig.ignores(ignorePath) { continue }
 
-        if isFile && (name.hasSuffix(".ts") || name.hasSuffix(".js")) {
+        if isFile && (name.hasSuffix(".ts") || name.hasSuffix(".js") || name.hasSuffix(".swift")) {
             entries.append(fullPath)
         } else if isDir, let resolved = resolveExtensionEntries(fullPath) {
             entries.append(contentsOf: resolved)

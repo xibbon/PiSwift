@@ -28,7 +28,7 @@ import Foundation
 private enum AnsiPatterns {
     static let terminator = #"(?:\u0007|\u001B\u005C|\u009C)"#
     static let oscStart = #"\u001B\]"#
-    static let csiStart = #"[\u001B\u009B][\[\]()#;?]*(?:[0-9]{1,4}(?:[;:][0-9]{0,4})*)?"#
+    static let csiStart = #"(?:(?:\u001B\[|\u009B)[<=>]|[\u001B\u009B][\[\]()#;?]*)(?:[0-9]{1,4}(?:[;:][0-9]{0,4})*)?"#
     static let csiFinal = #"[0-9A-PR-TZcf-nq-uy=><~]"#
     static let complete = try! NSRegularExpression(
         pattern: "(?:\(oscStart)[\\s\\S]*?\(terminator))|\(csiStart)\(csiFinal)"

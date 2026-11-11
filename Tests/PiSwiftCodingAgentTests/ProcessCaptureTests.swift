@@ -183,6 +183,7 @@ func processCaptureOutputLimitAndStartFailure() async throws {
     #expect(failed.stdout.isEmpty)
     #expect(!failed.stderr.isEmpty)
     #expect(failed.code == 1)
-    #expect(failed.killed)
+    // v1.5.2 C-TB: c60de42e9, exec.test.ts:12. A spawn error did not kill a child.
+    #expect(!failed.killed)
 }
 #endif

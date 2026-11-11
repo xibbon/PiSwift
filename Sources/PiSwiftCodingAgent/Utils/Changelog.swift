@@ -80,7 +80,15 @@ public func compareVersions(_ lhs: ChangelogEntry, _ rhs: ChangelogEntry) -> Int
 }
 
 public func getNewEntries(_ entries: [ChangelogEntry], lastVersion: String) -> [ChangelogEntry] {
-    let parts = lastVersion.split(separator: ".").map { Int($0) ?? 0 }
+    // v1.5.2 #11753: compare the leading release number, even for prereleases.
+    let pattern = try! NSRegularExpression(pattern: #"^v?(\d+)\.(\d+)\.(\d+)"#)
+    let version = lastVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+    let range = NSRange(location: 0, length: version.utf16.count)
+    guard let match = pattern.firstMatch(in: version, range: range) else { return [] }
+    let parts = (1...3).compactMap { index -> Int? in
+        guard let range = Range(match.range(at: index), in: version) else { return nil }
+        return Int(version[range])
+    }
     let last = ChangelogEntry(
         major: parts.indices.contains(0) ? parts[0] : 0,
         minor: parts.indices.contains(1) ? parts[1] : 0,
@@ -88,4 +96,52 @@ public func getNewEntries(_ entries: [ChangelogEntry], lastVersion: String) -> [
         content: ""
     )
     return entries.filter { compareVersions($0, last) > 0 }
+}
+
+public struct ExtensionChangelogUpdate: Sendable {
+    public let name: String
+    public let version: String
+    public let markdown: String
+}
+
+/// Return package updates for a fresh session and record versions that were seen.
+/// The host chooses how to show these entries and skips this call on resumed sessions.
+public func getExtensionChangelogUpdates(
+    extensions: [ResolvedResource],
+    settings: SettingsManager
+) -> [ExtensionChangelogUpdate] {
+    var seen = Set<String>()
+    var updates: [ExtensionChangelogUpdate] = []
+    for entry in extensions {
+        let metadata = entry.metadata
+        guard metadata.origin == "package", let root = metadata.baseDir,
+              let changelog = metadata.changelogPath else { continue }
+        let source = String(data: try! JSONEncoder().encode(metadata.source), encoding: .utf8)!
+        let scope = String(data: try! JSONEncoder().encode(metadata.scope), encoding: .utf8)!
+        let key = "{\"source\":\(source),\"scope\":\(scope)}"
+        guard seen.insert(key).inserted else { continue }
+        let packageURL = URL(fileURLWithPath: root).appendingPathComponent("package.json")
+        guard let data = try? Data(contentsOf: packageURL),
+              let package = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = package["version"] as? String else { continue }
+        guard let last = settings.getExtensionChangelogVersion(key) else {
+            settings.setExtensionChangelogVersion(key, version: version)
+            continue
+        }
+        let validVersion = last.trimmingCharacters(in: .whitespacesAndNewlines)
+            .range(of: #"^v?\d+\.\d+\.\d+"#, options: .regularExpression) != nil
+        guard validVersion else {
+            settings.setExtensionChangelogVersion(key, version: version)
+            continue
+        }
+        let entries = getNewEntries(parseChangelog(changelog), lastVersion: last)
+        if entries.isEmpty { continue }
+        settings.setExtensionChangelogVersion(key, version: version)
+        let name = package["name"] as? String ?? metadata.source
+        let markdown = entries.map { entry in
+            entry.content.replacingOccurrences(of: #"^##\s+"#, with: "## \(name) ", options: .regularExpression)
+        }.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        updates.append(ExtensionChangelogUpdate(name: name, version: version, markdown: markdown))
+    }
+    return updates
 }

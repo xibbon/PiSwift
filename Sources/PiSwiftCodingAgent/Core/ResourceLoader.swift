@@ -4,10 +4,12 @@ import PiSwiftAI
 public struct ExtensionsResult: Sendable {
     public var paths: [String]
     public var diagnostics: [ResourceDiagnostic]
+    public var installFailures: [PackageInstallFailure]
 
-    public init(paths: [String], diagnostics: [ResourceDiagnostic]) {
+    public init(paths: [String], diagnostics: [ResourceDiagnostic], installFailures: [PackageInstallFailure] = []) {
         self.paths = paths
         self.diagnostics = diagnostics
+        self.installFailures = installFailures
     }
 }
 
@@ -65,6 +67,15 @@ public extension ResourceLoader {
     func areExtensionsDisabled() -> Bool { false }
     func getSystemPromptSource() -> SystemPromptSource? { nil }
     func getAppendSystemPromptSources() -> [SystemPromptSource] { [] }
+
+    func extensionChangelogUpdates(settings: SettingsManager) -> [ExtensionChangelogUpdate] {
+        let metadata = getPathMetadata()
+        let extensions = getExtensions().paths.compactMap { path -> ResolvedResource? in
+            guard let info = metadata[path] else { return nil }
+            return ResolvedResource(path: path, enabled: true, metadata: info)
+        }
+        return getExtensionChangelogUpdates(extensions: extensions, settings: settings)
+    }
 }
 
 public struct DefaultResourceLoaderOptions: Sendable {
@@ -369,6 +380,9 @@ public final class DefaultResourceLoader: ResourceLoader {
         let enabledSkillResources = getEnabledResources(resolvedPaths.skills)
         let enabledPrompts = getEnabledPaths(resolvedPaths.prompts)
         let enabledThemes = getEnabledPaths(resolvedPaths.themes)
+        for resource in resolvedPaths.extensions where resource.enabled {
+            pathMetadata[resource.path] = resource.metadata
+        }
 
         let mapSkillPath: (ResolvedResource) -> String = { resource in
             let path = resource.path
@@ -395,7 +409,7 @@ public final class DefaultResourceLoader: ResourceLoader {
 
         for resource in cliExtensionPaths.extensions {
             if pathMetadata[resource.path] == nil {
-                pathMetadata[resource.path] = PathMetadata(source: "cli", scope: "temporary", origin: "top-level")
+                pathMetadata[resource.path] = resource.metadata
             }
         }
         for resource in cliExtensionPaths.skills {
@@ -413,7 +427,7 @@ public final class DefaultResourceLoader: ResourceLoader {
         extensionsResult = ExtensionsResult(paths: extensionPaths.filter { path in
             !path.hasPrefix(BUILTIN_PATH_PREFIX) ||
                 !disabledBuiltinExtensions.contains(String(path.dropFirst(BUILTIN_PATH_PREFIX.count)))
-        }, diagnostics: [])
+        }, diagnostics: [], installFailures: resolvedPaths.installFailures + cliExtensionPaths.installFailures)
 
         let skillPaths = noSkills
             ? mergePaths(cliEnabledSkills, additionalSkillPaths)

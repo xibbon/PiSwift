@@ -37,6 +37,7 @@ public struct ResizedImage: Sendable {
     public var width: Int
     public var height: Int
     public var wasResized: Bool
+    public var convertedFrom: String?
 
     public init(
         data: String,
@@ -45,7 +46,8 @@ public struct ResizedImage: Sendable {
         originalHeight: Int,
         width: Int,
         height: Int,
-        wasResized: Bool
+        wasResized: Bool,
+        convertedFrom: String? = nil
     ) {
         self.data = data
         self.mimeType = mimeType
@@ -54,6 +56,7 @@ public struct ResizedImage: Sendable {
         self.width = width
         self.height = height
         self.wasResized = wasResized
+        self.convertedFrom = convertedFrom
     }
 }
 
@@ -66,10 +69,16 @@ private struct ImageDimensions: Sendable {
 }
 
 public func formatDimensionNote(_ result: ResizedImage) -> String? {
-    guard result.wasResized, result.width > 0, result.originalWidth > 0 else { return nil }
-    let scale = Double(result.originalWidth) / Double(result.width)
-    let scaleString = String(format: "%.2f", scale)
-    return "[Image: original \(result.originalWidth)x\(result.originalHeight), displayed at \(result.width)x\(result.height). Multiply coordinates by \(scaleString) to map to original image.]"
+    var notes: [String] = []
+    if let from = result.convertedFrom, from != result.mimeType {
+        notes.append("[Image converted from \(from) to \(result.mimeType).]")
+    }
+    if result.wasResized, result.width > 0, result.originalWidth > 0 {
+        let scale = Double(result.originalWidth) / Double(result.width)
+        let scaleString = String(format: "%.2f", scale)
+        notes.append("[Image: original \(result.originalWidth)x\(result.originalHeight), displayed at \(result.width)x\(result.height). Multiply coordinates by \(scaleString) to map to original image.]")
+    }
+    return notes.isEmpty ? nil : notes.joined(separator: "\n")
 }
 
 /// A failed resize can return the original bytes. Callers that add new images
@@ -83,6 +92,13 @@ public func imageFitsResizeLimits(_ result: ResizedImage, options: ImageResizeOp
 public func resizeImage(_ img: ImageContent, options: ImageResizeOptions = ImageResizeOptions()) -> ResizedImage {
     let mimeType = img.mimeType
     let base64Data = img.data
+    if !["image/png", "image/jpeg", "image/gif", "image/webp"].contains(mimeType) {
+        if let converted = convertToPng(base64Data, mimeType) {
+            var result = resizeImage(converted, options: options)
+            result.convertedFrom = mimeType
+            return result
+        }
+    }
     guard let rawData = Data(base64Encoded: base64Data) else {
         return ResizedImage(
             data: base64Data,
