@@ -347,6 +347,8 @@ private struct ResolvedOpenAICompat: Sendable {
     let maxTokensField: OpenAICompatMaxTokensField
     let requiresToolResultName: Bool
     let requiresAssistantAfterToolResult: Bool
+    let requiresNonNullAssistantContent: Bool
+    let requiresToolsWithToolHistory: Bool
     let requiresThinkingAsText: Bool
     let requiresMistralToolIds: Bool
     let thinkingFormat: OpenAICompatThinkingFormat
@@ -362,6 +364,7 @@ private struct ResolvedOpenAICompat: Sendable {
     let sendSessionAffinityHeaders: Bool
     let sessionAffinityFormat: SessionAffinityFormat
     let supportsLongCacheRetention: Bool
+    let promptCacheKeyMode: PromptCacheKeyMode
     let supportsCacheControlOnTools: Bool
     let supportsMidConvoSystemMessages: Bool
     let supportsMidConvoToolAdditions: Bool
@@ -436,6 +439,8 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         maxTokensField: useMaxTokens ? .maxTokens : .maxCompletionTokens,
         requiresToolResultName: false,
         requiresAssistantAfterToolResult: false,
+        requiresNonNullAssistantContent: false,
+        requiresToolsWithToolHistory: false,
         requiresThinkingAsText: false,
         requiresMistralToolIds: false,
         thinkingFormat: thinkingFormat,
@@ -454,6 +459,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
         sendSessionAffinityHeaders: isOpenRouter,
         sessionAffinityFormat: isOpenRouter ? .openrouter : .openai,
         supportsLongCacheRetention: !(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isNvidia || isAntLing),
+        promptCacheKeyMode: .auto,
         supportsCacheControlOnTools: true,
         supportsMidConvoSystemMessages: false,
         supportsMidConvoToolAdditions: false,
@@ -478,6 +484,8 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         maxTokensField: compat.maxTokensField ?? detected.maxTokensField,
         requiresToolResultName: compat.requiresToolResultName ?? detected.requiresToolResultName,
         requiresAssistantAfterToolResult: compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
+        requiresNonNullAssistantContent: compat.requiresNonNullAssistantContent ?? detected.requiresNonNullAssistantContent,
+        requiresToolsWithToolHistory: compat.requiresToolsWithToolHistory ?? detected.requiresToolsWithToolHistory,
         requiresThinkingAsText: compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
         requiresMistralToolIds: compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
         thinkingFormat: compat.thinkingFormat ?? detected.thinkingFormat,
@@ -493,6 +501,7 @@ private func resolveCompat(model: Model) -> ResolvedOpenAICompat {
         sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
         sessionAffinityFormat: compat.sessionAffinityFormat ?? detected.sessionAffinityFormat,
         supportsLongCacheRetention: compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+        promptCacheKeyMode: compat.promptCacheKeyMode ?? detected.promptCacheKeyMode,
         supportsCacheControlOnTools: compat.supportsCacheControlOnTools ?? detected.supportsCacheControlOnTools,
         supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages ?? detected.supportsMidConvoSystemMessages,
         supportsMidConvoToolAdditions: compat.supportsMidConvoToolAdditions ?? detected.supportsMidConvoToolAdditions,
@@ -570,10 +579,10 @@ private func buildCompletionsQuery(
         if let activeTools {
             let converted = try convertCompletionsTools(activeTools, compat: compat)
             if converted.isEmpty {
-                return hasToolHistory(context.messages) ? [] : nil
+                return compat.requiresToolsWithToolHistory && hasToolHistory(context.messages) ? [] : nil
             }
             return converted
-        } else if hasToolHistory(context.messages) {
+        } else if compat.requiresToolsWithToolHistory && hasToolHistory(context.messages) {
             return []
         }
         return nil
@@ -726,7 +735,8 @@ private func convertCompletionsMessages(
 
             if !toolCalls.isEmpty {
                 assistantMessage = ChatQuery.ChatCompletionMessageParam.AssistantMessageParam(
-                    content: compat.requiresAssistantAfterToolResult ? .textContent("") : assistantContent,
+                    content: assistantContent ?? ((compat.requiresAssistantAfterToolResult || compat.requiresNonNullAssistantContent)
+                        ? .textContent("") : nil),
                     toolCalls: toolCalls.map {
                         .init(
                             id: $0.id,
@@ -853,12 +863,14 @@ private func streamZaiCompletions(
     request = OpenAICompletionsReplayMiddleware(fields: replayFields).intercept(request: request)
     var body = requestBodyData(request)
     body = applyOpenAICompletionsMaxTokensField(data: body, field: compat.maxTokensField)
+    body = applyOpenAICompletionsToolOnlyContent(data: body, nonNull: compat.requiresNonNullAssistantContent)
     if let updated = applyOpenAICompletionsPromptCache(
         data: body,
         baseUrl: model.baseUrl,
         sessionId: options.sessionId,
         cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env),
-        supportsLongCacheRetention: compat.supportsLongCacheRetention
+        supportsLongCacheRetention: compat.supportsLongCacheRetention,
+        promptCacheKeyMode: compat.promptCacheKeyMode
     ) {
         body = updated
     }
@@ -996,6 +1008,7 @@ private func buildCompletionsMiddlewares(
     let thinkingBudget = resolvedCompletionsThinkingBudget(model: model, options: options)
     var middlewares: [OpenAIMiddleware] = [
         OpenAICompletionsMaxTokensMiddleware(field: compat.maxTokensField),
+        OpenAICompletionsToolOnlyContentMiddleware(nonNull: compat.requiresNonNullAssistantContent),
     ]
     if compat.sendSessionAffinityHeaders || shouldSendOpenAICompletionsPromptCache(baseUrl: model.baseUrl, cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env), compat: compat) {
         middlewares.append(OpenAICompletionsSessionMiddleware(
@@ -1004,7 +1017,8 @@ private func buildCompletionsMiddlewares(
             cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env),
             sendSessionAffinityHeaders: compat.sendSessionAffinityHeaders,
             sessionAffinityFormat: compat.sessionAffinityFormat,
-            supportsLongCacheRetention: compat.supportsLongCacheRetention
+            supportsLongCacheRetention: compat.supportsLongCacheRetention,
+            promptCacheKeyMode: compat.promptCacheKeyMode
         ))
     }
     if let cacheControl = openAICompatCacheControl(compat: compat, cacheRetention: resolveCacheRetention(options.cacheRetention, env: options.env)) {
@@ -1097,6 +1111,31 @@ private func buildCompletionsMiddlewares(
         middlewares.append(OpenAISamplingParamsMiddleware(samplingParams: samplingParams))
     }
     return middlewares
+}
+
+private func applyOpenAICompletionsToolOnlyContent(data: Data, nonNull: Bool) -> Data {
+    guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          var messages = payload["messages"] as? [[String: Any]] else { return data }
+    for index in messages.indices where messages[index]["role"] as? String == "assistant" &&
+        messages[index]["tool_calls"] != nil && messages[index]["content"] == nil {
+        if nonNull {
+            messages[index]["content"] = ""
+        } else {
+            messages[index]["content"] = NSNull()
+        }
+    }
+    payload["messages"] = messages
+    return (try? JSONSerialization.data(withJSONObject: payload)) ?? data
+}
+
+private struct OpenAICompletionsToolOnlyContentMiddleware: OpenAIMiddleware {
+    let nonNull: Bool
+
+    func intercept(request: URLRequest) -> URLRequest {
+        rewritingOpenAIRequestBodyData(request) { body in
+            applyOpenAICompletionsToolOnlyContent(data: body, nonNull: nonNull)
+        }
+    }
 }
 
 private struct OpenAICompletionsMaxTokensMiddleware: OpenAIMiddleware {
@@ -1227,8 +1266,9 @@ private func shouldSendOpenAICompletionsPromptCache(
     cacheRetention: CacheRetention,
     compat: ResolvedOpenAICompat
 ) -> Bool {
-    (baseUrl.contains("api.openai.com") && cacheRetention != .none) ||
-        (cacheRetention == .long && compat.supportsLongCacheRetention)
+    cacheRetention != .none && compat.promptCacheKeyMode != .disabled &&
+        (compat.promptCacheKeyMode == .enabled || baseUrl.contains("api.openai.com") ||
+            (cacheRetention == .long && compat.supportsLongCacheRetention))
 }
 
 func applyOpenAICompletionsSessionAffinityHeaders(
@@ -1256,11 +1296,13 @@ func applyOpenAICompletionsPromptCache(
     baseUrl: String,
     sessionId: String?,
     cacheRetention: CacheRetention,
-    supportsLongCacheRetention: Bool
+    supportsLongCacheRetention: Bool,
+    promptCacheKeyMode: PromptCacheKeyMode = .auto
 ) -> Data? {
     guard var payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
-    let shouldSendPromptCacheKey = (baseUrl.contains("api.openai.com") && cacheRetention != .none) ||
-        (cacheRetention == .long && supportsLongCacheRetention)
+    let shouldSendPromptCacheKey = cacheRetention != .none && promptCacheKeyMode != .disabled &&
+        (promptCacheKeyMode == .enabled || baseUrl.contains("api.openai.com") ||
+            (cacheRetention == .long && supportsLongCacheRetention))
     if shouldSendPromptCacheKey, let key = clampOpenAIPromptCacheKey(sessionId) {
         payload["prompt_cache_key"] = key
     } else {
@@ -1340,6 +1382,7 @@ private struct OpenAICompletionsSessionMiddleware: OpenAIMiddleware {
     let sendSessionAffinityHeaders: Bool
     let sessionAffinityFormat: SessionAffinityFormat
     let supportsLongCacheRetention: Bool
+    let promptCacheKeyMode: PromptCacheKeyMode
 
     func intercept(request: URLRequest) -> URLRequest {
         let updated = applyOpenAICompletionsSessionAffinityHeaders(
@@ -1354,7 +1397,8 @@ private struct OpenAICompletionsSessionMiddleware: OpenAIMiddleware {
                 baseUrl: baseUrl,
                 sessionId: sessionId,
                 cacheRetention: cacheRetention,
-                supportsLongCacheRetention: supportsLongCacheRetention
+                supportsLongCacheRetention: supportsLongCacheRetention,
+                promptCacheKeyMode: promptCacheKeyMode
             )
         }
     }

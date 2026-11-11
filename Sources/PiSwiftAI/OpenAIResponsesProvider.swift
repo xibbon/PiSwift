@@ -73,6 +73,8 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
     let cacheRetention: CacheRetention
     let promptCacheRetention: String?
     let sessionAffinityFormat: SessionAffinityFormat
+    var promptCacheKeyMode: PromptCacheKeyMode = .auto
+    var sendPromptCacheKeyWithoutRetention = false
     var supportsExplicitPromptCacheMode = false
     var supportsLongCacheRetention = true
     var omitUnsupportedFields = false
@@ -82,16 +84,24 @@ struct OpenAIResponsesCacheMiddleware: OpenAIMiddleware {
 
         if let sessionId, !sessionId.isEmpty {
             if sessionAffinityFormat == .openrouter {
-                updated.setValue(sessionId, forHTTPHeaderField: "x-session-id")
+                if updated.value(forHTTPHeaderField: "x-session-id") == nil {
+                    updated.setValue(sessionId, forHTTPHeaderField: "x-session-id")
+                }
             } else {
                 if sessionAffinityFormat == .openai {
-                    updated.setValue(sessionId, forHTTPHeaderField: "session_id")
+                    if updated.value(forHTTPHeaderField: "session-id") == nil {
+                        updated.setValue(sessionId, forHTTPHeaderField: "session-id")
+                    }
                 }
-                updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
+                if updated.value(forHTTPHeaderField: "x-client-request-id") == nil {
+                    updated.setValue(sessionId, forHTTPHeaderField: "x-client-request-id")
+                }
             }
         }
         return rewritingOpenAIRequestBody(updated) { payload in
-            if cacheRetention != .none, let sessionId, !sessionId.isEmpty {
+            if (cacheRetention != .none || sendPromptCacheKeyWithoutRetention),
+               promptCacheKeyMode != .disabled,
+               let sessionId, !sessionId.isEmpty {
                 payload["prompt_cache_key"] = clampOpenAIPromptCacheKey(sessionId)
             } else {
                 payload.removeValue(forKey: "prompt_cache_key")
@@ -246,6 +256,7 @@ public func streamOpenAIResponses(
                 cacheRetention: cacheRetention,
                 promptCacheRetention: promptCacheRetention,
                 sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai),
+                promptCacheKeyMode: model.compat?.promptCacheKeyMode ?? .auto,
                 supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
                 supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
                 omitUnsupportedFields: isChatGPTSignIn(model: model, apiKey: options.apiKey)

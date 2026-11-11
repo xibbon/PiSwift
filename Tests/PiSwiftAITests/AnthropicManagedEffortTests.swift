@@ -41,7 +41,8 @@ func anthropicManagedPreservesNativeEffort(_ effort: ThinkingLevel) throws {
     let payload = try managedPayload(model: managedEffortModel(), effort: effort)
     #expect(markers(payload) == [effort.rawValue])
     #expect(payload["stream"] as? Bool == true)
-    #expect(payload["output_config"] as? [String: String] == ["effort": "high"])
+    // v1.5.2 A-WIRE: anthropic-mid-conversation-effort.test.ts:111–112 expects low.
+    #expect(payload["output_config"] as? [String: String] == ["effort": "low"])
     #expect(payload["temperature"] == nil)
 }
 

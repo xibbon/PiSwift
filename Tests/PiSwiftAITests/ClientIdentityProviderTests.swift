@@ -64,9 +64,12 @@ private enum IdentityHeaderCase: CaseIterable, Sendable {
 
     func expected(oauth: Bool = false) -> String? {
         switch self {
-        case .defaults, .detailed: oauth ? "claude-cli/2.1.280" : formatUserAgent()
-        case .short: oauth ? "claude-cli/2.1.280" : "pi"
-        case .custom: oauth ? "claude-cli/2.1.280" : "suite/1.0"
+    // v1.5.2 A-WIRE: anthropic-messages.ts:109 updates the Claude Code identity.
+        case .defaults, .detailed: oauth ? "claude-cli/2.1.322" : formatUserAgent()
+    // v1.5.2 A-WIRE: anthropic-messages.ts:109 updates the Claude Code identity.
+        case .short: oauth ? "claude-cli/2.1.322" : "pi"
+    // v1.5.2 A-WIRE: anthropic-messages.ts:109 updates the Claude Code identity.
+        case .custom: oauth ? "claude-cli/2.1.322" : "suite/1.0"
         case .modelOverride: "model/1.0"
         case .requestOverride: "request/1.0"
         case .requestDeletion: nil

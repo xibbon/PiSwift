@@ -18,7 +18,8 @@ private func g2ModelCompat(_ json: String) throws -> OpenAICompat? {
     "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming",
     "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresThinkingAsText", "requiresMistralToolIds",
     "supportsStrictMode", "supportsThinkingTokenBudget", "supportsLongCacheRetention", "sendSessionIdHeader",
-    "supportsEagerToolInputStreaming", "sendSessionAffinityHeaders", "requiresReasoningContentOnAssistantMessages"
+    "supportsEagerToolInputStreaming", "sendSessionAffinityHeaders", "requiresReasoningContentOnAssistantMessages",
+    "requiresNonNullAssistantContent", "requiresToolsWithToolHistory", "supportsMessageThreads"
 ])
 func g2ModelCompatFlagsRequireJSONBooleans(_ field: String) throws {
     for literal in ["0", "1", "false", "true"] {

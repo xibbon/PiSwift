@@ -257,6 +257,10 @@ private let extendedCompatKeys: Set<String> = [
     "chatTemplateKwargs",
     "chatTemplateArgs",
     "allowedFallbackModels",
+    "requiresNonNullAssistantContent",
+    "requiresToolsWithToolHistory",
+    "promptCacheKeyMode",
+    "supportsMessageThreads",
 ]
 
 private func parseCompat(_ value: Any?) -> OpenAICompat? {
@@ -665,6 +669,10 @@ private func mergeCompat(_ base: OpenAICompat?, _ override: OpenAICompat?) -> Op
     merged.maxTokensField = override.maxTokensField ?? base.maxTokensField
     merged.requiresToolResultName = override.requiresToolResultName ?? base.requiresToolResultName
     merged.requiresAssistantAfterToolResult = override.requiresAssistantAfterToolResult ?? base.requiresAssistantAfterToolResult
+    merged.requiresNonNullAssistantContent = override.requiresNonNullAssistantContent ?? base.requiresNonNullAssistantContent
+    merged.requiresToolsWithToolHistory = override.requiresToolsWithToolHistory ?? base.requiresToolsWithToolHistory
+    merged.promptCacheKeyMode = override.promptCacheKeyMode ?? base.promptCacheKeyMode
+    merged.supportsMessageThreads = override.supportsMessageThreads ?? base.supportsMessageThreads
     merged.requiresThinkingAsText = override.requiresThinkingAsText ?? base.requiresThinkingAsText
     merged.requiresMistralToolIds = override.requiresMistralToolIds ?? base.requiresMistralToolIds
     merged.thinkingFormat = override.thinkingFormat ?? base.thinkingFormat

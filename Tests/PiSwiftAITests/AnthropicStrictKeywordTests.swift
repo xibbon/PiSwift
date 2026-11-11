@@ -72,4 +72,24 @@ struct AnthropicStrictKeywordTests {
         let tool = try await captureStrictKeywordTool(supported)
         #expect(tool["strict"] as? Bool == true)
     }
+
+    // anthropic-strict-tool-schema.test.ts:102, #9557.
+    @Test(.timeLimit(.minutes(1)))
+    func keepsRootDefinitionsInNonStrictSchemas() async throws {
+        let parameters: [String: Any] = [
+            "type": "object",
+            "properties": ["value": ["$ref": "#/$defs/value"]],
+            "$defs": ["value": ["type": "string"]],
+            "definitions": ["legacy": ["type": "integer"]],
+            "anyOf": [["type": "object"]],
+            "minProperties": 1,
+        ]
+        let tool = try await captureStrictKeywordTool(parameters)
+        #expect(tool["strict"] == nil)
+        let schema = try #require(tool["input_schema"] as? [String: Any])
+        #expect(schema["$defs"] != nil)
+        #expect(schema["definitions"] != nil)
+        #expect(schema["anyOf"] == nil)
+        #expect(schema["minProperties"] == nil)
+    }
 }

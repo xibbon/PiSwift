@@ -208,3 +208,19 @@ func midConversationSectionUpdateFraming(_ api: Api) async throws {
     #expect(messages.map { $0["role"] as? String } == ["system", "assistant", "tool", "system"])
     #expect(messages.last?["content"] as? String == "After result")
 }
+
+// transcript-tool-changes.test.ts:248, #11091.
+@Test(.timeLimit(.minutes(1))) func holdsAnthropicUpdatePastOmittedAssistant() async throws {
+    let model = midModel(.anthropicMessages)
+    let emptyAssistant = AssistantMessage(content: [], api: model.api, provider: model.provider,
+        model: model.id, usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+        stopReason: .stop)
+    let context = midContext([midSystem("Later"), .assistant(emptyAssistant),
+                              .user(UserMessage(content: .text("next")))])
+    let body = try await captureMidBody(.anthropicMessages,
+        compat: OpenAICompat(supportsMidConvoSystemMessages: true), context: context)
+    let messages = try #require(body["messages"] as? [[String: Any]])
+    #expect(messages.map { $0["role"] as? String } == ["user", "user", "system"])
+    let blocks = try #require(messages.last?["content"] as? [[String: Any]])
+    #expect(blocks.first?["text"] as? String == "Later")
+}

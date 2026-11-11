@@ -484,11 +484,11 @@ private func withFauxUsageEstimate(
         if let previous = registration.replacePrompt(prompt, forSession: sessionId) {
             let cachedChars = commonFauxPromptPrefixLength(previous, prompt)
             cacheRead = (cachedChars + 3) / 4
-            cacheWrite = (promptLength - cachedChars + 3) / 4
-            input = max(0, promptTokens - cacheRead)
+            cacheWrite = max(0, promptTokens - cacheRead)
         } else {
             cacheWrite = promptTokens
         }
+        input = 0
     }
     var copy = message
     copy.usage = Usage(

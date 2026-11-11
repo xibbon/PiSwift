@@ -602,6 +602,12 @@ public enum SessionAffinityFormat: String, Sendable, Codable, Equatable {
     case openrouter
 }
 
+public enum PromptCacheKeyMode: String, Sendable, Codable, Equatable {
+    case auto
+    case enabled
+    case disabled
+}
+
 /// v0.67.0: full OpenRouter provider-selection routing.
 ///
 /// See https://openrouter.ai/docs/guides/routing/provider-selection for upstream docs.
@@ -832,6 +838,8 @@ public struct OpenAICompat: Sendable, Codable {
     public var maxTokensField: OpenAICompatMaxTokensField?
     public var requiresToolResultName: Bool?
     public var requiresAssistantAfterToolResult: Bool?
+    public var requiresNonNullAssistantContent: Bool?
+    public var requiresToolsWithToolHistory: Bool?
     public var requiresThinkingAsText: Bool?
     public var requiresMistralToolIds: Bool?
     public var thinkingFormat: OpenAICompatThinkingFormat?
@@ -858,6 +866,7 @@ public struct OpenAICompat: Sendable, Codable {
     /// inline tool definitions (`inline-tools-2026-09-15`) and `tool_removal` blocks.
     /// Requires `supportsMidConvoSystemMessages`. Defaults to false.
     public var supportsMidConvoToolChanges: Bool?
+    public var supportsMessageThreads: Bool?
     public var supportsStrictMode: Bool?
     /// Maps thinking levels to provider-specific reasoning effort values.
     /// When set, the mapped value is sent instead of the standard level string.
@@ -878,6 +887,7 @@ public struct OpenAICompat: Sendable, Codable {
     /// v0.68.0: when true, OpenAI-compatible Chat Completions sends aligned session-affinity
     /// headers (`session_id`, `x-client-request-id`, `x-session-affinity`) derived from `sessionId`.
     public var sendSessionAffinityHeaders: Bool?
+    public var promptCacheKeyMode: PromptCacheKeyMode?
     /// v0.70.1: when true, replayed assistant messages must include a `reasoning_content` field
     /// (DeepSeek V4 requirement). Empty `reasoning_content` is injected if no thinking content exists.
     public var requiresReasoningContentOnAssistantMessages: Bool?
@@ -911,6 +921,8 @@ public struct OpenAICompat: Sendable, Codable {
         maxTokensField: OpenAICompatMaxTokensField? = nil,
         requiresToolResultName: Bool? = nil,
         requiresAssistantAfterToolResult: Bool? = nil,
+        requiresNonNullAssistantContent: Bool? = nil,
+        requiresToolsWithToolHistory: Bool? = nil,
         requiresThinkingAsText: Bool? = nil,
         requiresMistralToolIds: Bool? = nil,
         thinkingFormat: OpenAICompatThinkingFormat? = nil,
@@ -923,6 +935,7 @@ public struct OpenAICompat: Sendable, Codable {
         supportsMidConvoSystemMessages: Bool? = nil,
         supportsMidConvoToolAdditions: Bool? = nil,
         supportsMidConvoToolChanges: Bool? = nil,
+        supportsMessageThreads: Bool? = nil,
         supportsStrictMode: Bool? = nil,
         reasoningEffortMap: [ThinkingLevel: String]? = nil,
         supportsLongCacheRetention: Bool? = nil,
@@ -930,6 +943,7 @@ public struct OpenAICompat: Sendable, Codable {
         supportsEagerToolInputStreaming: Bool? = nil,
         cacheControlFormat: OpenAICompatCacheControlFormat? = nil,
         sendSessionAffinityHeaders: Bool? = nil,
+        promptCacheKeyMode: PromptCacheKeyMode? = nil,
         requiresReasoningContentOnAssistantMessages: Bool? = nil,
         supportsCacheControlOnTools: Bool? = nil,
         supportsStrictTools: Bool? = nil,
@@ -962,6 +976,8 @@ public struct OpenAICompat: Sendable, Codable {
         self.maxTokensField = maxTokensField
         self.requiresToolResultName = requiresToolResultName
         self.requiresAssistantAfterToolResult = requiresAssistantAfterToolResult
+        self.requiresNonNullAssistantContent = requiresNonNullAssistantContent
+        self.requiresToolsWithToolHistory = requiresToolsWithToolHistory
         self.requiresThinkingAsText = requiresThinkingAsText
         self.requiresMistralToolIds = requiresMistralToolIds
         self.thinkingFormat = thinkingFormat
@@ -974,6 +990,7 @@ public struct OpenAICompat: Sendable, Codable {
         self.supportsMidConvoSystemMessages = supportsMidConvoSystemMessages
         self.supportsMidConvoToolAdditions = supportsMidConvoToolAdditions
         self.supportsMidConvoToolChanges = supportsMidConvoToolChanges
+        self.supportsMessageThreads = supportsMessageThreads
         self.supportsStrictMode = supportsStrictMode
         self.reasoningEffortMap = reasoningEffortMap
         self.supportsLongCacheRetention = supportsLongCacheRetention
@@ -981,6 +998,7 @@ public struct OpenAICompat: Sendable, Codable {
         self.supportsEagerToolInputStreaming = supportsEagerToolInputStreaming
         self.cacheControlFormat = cacheControlFormat
         self.sendSessionAffinityHeaders = sendSessionAffinityHeaders
+        self.promptCacheKeyMode = promptCacheKeyMode
         self.requiresReasoningContentOnAssistantMessages = requiresReasoningContentOnAssistantMessages
         self.supportsCacheControlOnTools = supportsCacheControlOnTools
         self.supportsStrictTools = supportsStrictTools

@@ -248,7 +248,13 @@ func clampSimpleMaxTokensToContext(model: Model, context: Context, maxTokens: In
 
 func clampSimpleMaxTokensToContext(model: Model, context: TranscriptContext, maxTokens: Int) -> Int {
     guard model.contextWindow > 0 else { return max(1, maxTokens) }
-    return min(maxTokens, max(1, model.contextWindow - estimateContextTokens(context).tokens - 4_096))
+    let input = estimateContextTokens(context).tokens
+    let margin = max(4_096, Int((Double(input) * 0.15).rounded(.up)))
+    var room = model.contextWindow - input - margin
+    if room < 32_768 {
+        room = min(32_768, model.contextWindow - input - 4_096)
+    }
+    return min(maxTokens, max(1, room))
 }
 
 public func completeSimple(model: Model, context: Context, options: SimpleStreamOptions? = nil) async throws -> AssistantMessage {

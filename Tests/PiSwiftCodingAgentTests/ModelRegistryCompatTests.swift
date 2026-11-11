@@ -363,3 +363,57 @@ import PiSwiftCodingAgent
     #expect(model.compat?.supportsStrictMode == false)
     #expect(model.compat?.sendSessionIdHeader == false)
 }
+
+private actor AWireRegistryCapture: ProviderHTTPClient {
+    var body: Data?
+    func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
+        body = request.httpBody
+        let frame = "data: {\"id\":\"test\",\"created\":0,\"model\":\"test\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+        return ProviderHTTPResponse(statusCode: 200, body: Data(frame.utf8))
+    }
+}
+
+private func aWireRegistryRequest(_ model: Model) async throws -> [String: Any] {
+    let client = AWireRegistryCapture()
+    _ = await streamOpenAICompletions(model: model,
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
+        options: OpenAICompletionsOptions(apiKey: "test", httpClient: client,
+            cacheRetention: .short, sessionId: "configured-session")).result()
+    let body = try #require(await client.body)
+    return try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+}
+
+// A-WIRE: models.json and extension compat must survive merging into the wire request.
+@Test func aWireCompatDecodesFromModelsJSONAndExtensionDefinitions() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("awire-compat-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let json = """
+    {"providers":{"awire-json":{"api":"openai-completions","baseUrl":"https://proxy.example/v1",
+    "compat":{"promptCacheKeyMode":"enabled","supportsMessageThreads":true},
+    "models":[{"id":"json-model","compat":{"requiresNonNullAssistantContent":true,
+    "requiresToolsWithToolHistory":true}}]}}}
+    """
+    try json.write(to: directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+    let registry = ModelRegistry(AuthStorage(":memory:"), directory.path)
+    let jsonModel = try #require(registry.find("awire-json", "json-model"))
+    #expect(jsonModel.compat?.requiresNonNullAssistantContent == true)
+    #expect(jsonModel.compat?.requiresToolsWithToolHistory == true)
+    #expect(jsonModel.compat?.supportsMessageThreads == true)
+    #expect(jsonModel.compat?.promptCacheKeyMode == .enabled)
+    let jsonWire = try await aWireRegistryRequest(jsonModel)
+    #expect(jsonWire["prompt_cache_key"] as? String == "configured-session")
+
+    registry.registerProvider(HookProviderConfig(provider: "awire-extension", api: .openAICompletions,
+        baseUrl: "https://proxy.example/v1", compat: OpenAICompat(supportsMessageThreads: true,
+            promptCacheKeyMode: .enabled), models: [HookProviderModel(id: "extension-model",
+                compat: OpenAICompat(requiresNonNullAssistantContent: true,
+                    requiresToolsWithToolHistory: true))]), sourceId: "awire-test")
+    let extensionModel = try #require(registry.find("awire-extension", "extension-model"))
+    #expect(extensionModel.compat?.requiresNonNullAssistantContent == true)
+    #expect(extensionModel.compat?.requiresToolsWithToolHistory == true)
+    #expect(extensionModel.compat?.supportsMessageThreads == true)
+    #expect(extensionModel.compat?.promptCacheKeyMode == .enabled)
+    let extensionWire = try await aWireRegistryRequest(extensionModel)
+    #expect(extensionWire["prompt_cache_key"] as? String == "configured-session")
+}

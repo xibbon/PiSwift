@@ -79,7 +79,9 @@ public func streamAzureOpenAIResponses(
                 sessionId: options.sessionId,
                 cacheRetention: .none,
                 promptCacheRetention: nil,
-                sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai)
+                sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : .openai),
+                promptCacheKeyMode: model.compat?.promptCacheKeyMode ?? .auto,
+                sendPromptCacheKeyWithoutRetention: true
             )
             let azureMiddleware = AzureOpenAIResponsesMiddleware(
                 apiKey: apiKey,

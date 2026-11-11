@@ -26,6 +26,10 @@ import PiSwiftCodingAgent
             "chatTemplateKwargs": ["enable_thinking": true, "budget": 512],
             "chatTemplateArgs": ["effort": ["$var": "thinking.effort", "omitWhenOff": true]],
             "allowedFallbackModels": [], // C57: models.json accepts Anthropic fallback metadata.
+            "requiresNonNullAssistantContent": true,
+            "requiresToolsWithToolHistory": true,
+            "promptCacheKeyMode": "disabled",
+            "supportsMessageThreads": true,
         ]
     }
 

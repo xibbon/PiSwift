@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import SwiftAnthropic
 
-private let claudeCodeVersion = "2.1.280"
+private let claudeCodeVersion = "2.1.322"
 
 private let claudeCodeTools: [String] = [
     "Read",
@@ -1148,10 +1148,10 @@ private func convertAnthropicMessages(
                 params.append(MessageParameter.Message(role: .user, content: content))
             }
         case .assistant(let assistant):
-            flushSystemMessages()
             let contentObjects = convertAssistantContent(assistant, isOAuthToken: isOAuthToken,
                 allowEmptySignature: model.compat?.allowEmptySignature == true)
             if !contentObjects.isEmpty {
+                flushSystemMessages()
                 params.append(MessageParameter.Message(role: .assistant, content: .list(contentObjects)))
             }
         case .toolResult:
@@ -1794,6 +1794,8 @@ private func anthropicToolDefinitionJSON(
     schema["type"] = AnyCodable("object")
     schema["properties"] = parameters["properties"] ?? AnyCodable([String: Any]())
     schema["required"] = parameters["required"] ?? AnyCodable([String]())
+    if let definitions = parameters["$defs"] { schema["$defs"] = definitions }
+    if let definitions = parameters["definitions"] { schema["definitions"] = definitions }
     var definition: [String: AnyCodable] = [
         "name": AnyCodable(isOAuthToken ? toClaudeCodeName(tool.name) : tool.name),
         "description": AnyCodable(tool.description),
@@ -2014,7 +2016,7 @@ func prepareAnthropicRawPayload(_ data: Data, model: Model, context: Context, op
     } else if managed {
         payload["thinking"] = ["type": "adaptive", "display": display,
             "block_binding": ["prefix_mismatch_behavior": "drop_block"]]
-        payload["output_config"] = ["effort": "high"]
+        payload["output_config"] = ["effort": "low"]
         payload.removeValue(forKey: "temperature")
         let transformed = transformMessages(context.messages, model: model, normalizeToolCallId: { id, _, _ in
             String(id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression).prefix(64))

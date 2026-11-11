@@ -2081,7 +2081,8 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     let updatedPayload = try #require(try JSONSerialization.jsonObject(with: updatedBody) as? [String: Any])
     #expect(updatedPayload["prompt_cache_key"] as? String == String(repeating: "a", count: 64))
     #expect(updatedPayload["prompt_cache_retention"] as? String == "24h")
-    #expect(updated.value(forHTTPHeaderField: "session_id") == sessionId)
+    // v1.5.2 A-WIRE: openai-responses-compat.test.ts:47,301,440,467 uses session-id.
+    #expect(updated.value(forHTTPHeaderField: "session-id") == sessionId)
     #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == sessionId)
 }
 
@@ -6186,7 +6187,8 @@ struct ApiRegistryTests {
         sessionAffinityFormat: .openai
     )
     let updated = middleware.intercept(request: request)
-    #expect(updated.value(forHTTPHeaderField: "session_id") == "session-xyz")
+    // v1.5.2 A-WIRE: openai-responses-compat.test.ts:47,301,440,467 uses session-id.
+    #expect(updated.value(forHTTPHeaderField: "session-id") == "session-xyz")
     #expect(updated.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
     #expect(updated.value(forHTTPHeaderField: "x-session-affinity") == nil)
 }
@@ -6204,7 +6206,8 @@ struct ApiRegistryTests {
         promptCacheRetention: nil,
         sessionAffinityFormat: .openai
     ).intercept(request: request)
-    #expect(openAI.value(forHTTPHeaderField: "session_id") == "session-xyz")
+    // v1.5.2 A-WIRE: openai-responses-compat.test.ts:47,301,440,467 uses session-id.
+    #expect(openAI.value(forHTTPHeaderField: "session-id") == "session-xyz")
     #expect(openAI.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
     #expect(openAI.value(forHTTPHeaderField: "x-session-id") == nil)
     #expect(openAI.value(forHTTPHeaderField: "x-session-affinity") == nil)
@@ -6215,7 +6218,8 @@ struct ApiRegistryTests {
         promptCacheRetention: nil,
         sessionAffinityFormat: .openaiNosession
     ).intercept(request: request)
-    #expect(openAINosession.value(forHTTPHeaderField: "session_id") == nil)
+    // v1.5.2 A-WIRE: openai-responses-compat.test.ts:47,301,440,467 uses session-id.
+    #expect(openAINosession.value(forHTTPHeaderField: "session-id") == nil)
     #expect(openAINosession.value(forHTTPHeaderField: "x-client-request-id") == "session-xyz")
     #expect(openAINosession.value(forHTTPHeaderField: "x-session-id") == nil)
     #expect(openAINosession.value(forHTTPHeaderField: "x-session-affinity") == nil)
@@ -6227,7 +6231,8 @@ struct ApiRegistryTests {
         sessionAffinityFormat: .openrouter
     ).intercept(request: request)
     #expect(openRouter.value(forHTTPHeaderField: "x-session-id") == "session-xyz")
-    #expect(openRouter.value(forHTTPHeaderField: "session_id") == nil)
+    // v1.5.2 A-WIRE: openai-responses-compat.test.ts:47,301,440,467 uses session-id.
+    #expect(openRouter.value(forHTTPHeaderField: "session-id") == nil)
     #expect(openRouter.value(forHTTPHeaderField: "x-client-request-id") == nil)
     #expect(openRouter.value(forHTTPHeaderField: "x-session-affinity") == nil)
 }

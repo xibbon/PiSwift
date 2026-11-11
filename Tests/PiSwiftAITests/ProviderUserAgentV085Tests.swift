@@ -34,7 +34,8 @@ private enum UserAgent085Adapter: String, CaseIterable, Sendable {
     var defaultUserAgent: String {
         switch self {
         // A4 item 16: upstream v0.87.1 reports the newer Claude Code version.
-        case .anthropicOAuth: "claude-cli/2.1.280"
+    // v1.5.2 A-WIRE: anthropic-messages.ts:109 updates the Claude Code identity.
+        case .anthropicOAuth: "claude-cli/2.1.322"
         case .copilot: "GitHubCopilotChat/0.35.0"
         // Upstream v1.4.0 identity change: use the shared User-Agent format.
         default: formatUserAgent()

@@ -26,25 +26,31 @@ private func a2FauxComplete(_ registration: FauxProviderRegistration, context: T
         registration.setResponses(["a", "b", "c"].map { .message(fauxAssistantMessage(content: [fauxText($0)])) })
         let options = SimpleStreamOptions(cacheRetention: .short, sessionId: "session-1")
         let first = try await a2FauxComplete(registration, context: a2FauxContext(["hello world"]), options: options)
-        #expect(first.usage.input == 4)
+        // v1.5.2 A-WIRE: faux-provider.test.ts:335-349 counts cache writes outside input.
+        #expect(first.usage.input == 0)
         #expect(first.usage.cacheRead == 0)
         #expect(first.usage.cacheWrite == 4)
         #expect(first.usage.output == 1)
-        #expect(first.usage.totalTokens == 9)
+        // v1.5.2 A-WIRE: faux-provider.test.ts:335-349 counts cache writes outside input.
+        #expect(first.usage.totalTokens == 5)
 
         let extended = try await a2FauxComplete(registration, context: a2FauxContext(["hello world", "next"]), options: options)
-        #expect(extended.usage.input == 3)
+        // v1.5.2 A-WIRE: faux-provider.test.ts:335-349 counts cache writes outside input.
+        #expect(extended.usage.input == 0)
         #expect(extended.usage.cacheRead == 4)
         #expect(extended.usage.cacheWrite == 3)
         #expect(extended.usage.output == 1)
-        #expect(extended.usage.totalTokens == 11)
+        // v1.5.2 A-WIRE: faux-provider.test.ts:335-349 counts cache writes outside input.
+        #expect(extended.usage.totalTokens == 8)
 
         let edited = try await a2FauxComplete(registration, context: a2FauxContext(["hello wide", "next"]), options: options)
-        #expect(edited.usage.input == 4)
+        // v1.5.2 A-WIRE: faux-provider.test.ts:335-349 counts cache writes outside input.
+        #expect(edited.usage.input == 0)
         #expect(edited.usage.cacheRead == 3)
         #expect(edited.usage.cacheWrite == 4)
         #expect(edited.usage.output == 1)
-        #expect(edited.usage.totalTokens == 12)
+        // v1.5.2 A-WIRE: faux-provider.test.ts:335-349 counts cache writes outside input.
+        #expect(edited.usage.totalTokens == 8)
     }
 
     @Test func cacheIsSeparateForEachSessionAndRequestsWithoutSession() async throws {
@@ -146,16 +152,18 @@ private func a2FauxComplete(_ registration: FauxProviderRegistration, context: T
         let options = SimpleStreamOptions(cacheRetention: .short, sessionId: "session-1")
         _ = try await a2FauxComplete(registration, context: a2FauxContext(["\r"]), options: options)
         let extended = try await a2FauxComplete(registration, context: a2FauxContext(["\r", "xxxx"]), options: options)
-        #expect(extended.usage.input == 2)
+        // v1.5.2 A-WIRE (upstream f3fa8bd92, faux.ts:263-271): with a session cache every prompt token
+        // is a cache read or a cache write; input is 0 and cacheWrite is promptTokens - cacheRead.
+        #expect(extended.usage.input == 0)
         #expect(extended.usage.cacheRead == 2) // "user:" is the common Character prefix.
-        #expect(extended.usage.cacheWrite == 3)
+        #expect(extended.usage.cacheWrite == 2)
         let edited = try await a2FauxComplete(registration, context: a2FauxContext(["\r", "yyyy"]), options: options)
-        #expect(edited.usage.input == 1)
+        #expect(edited.usage.input == 0)
         #expect(edited.usage.cacheRead == 3)
         #expect(edited.usage.cacheWrite == 1)
         let shorter = try await a2FauxComplete(registration, context: a2FauxContext(["\r"]), options: options)
         #expect(shorter.usage.input == 0)
         #expect(shorter.usage.cacheRead == 2)
-        #expect(shorter.usage.cacheWrite == 1)
+        #expect(shorter.usage.cacheWrite == 0)
     }
 }

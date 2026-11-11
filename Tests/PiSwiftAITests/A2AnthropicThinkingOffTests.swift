@@ -57,7 +57,9 @@ struct A2AnthropicThinkingOffTests {
         let thinking = try #require(payload["thinking"] as? [String: Any])
         #expect(thinking["type"] as? String == "adaptive")
         #expect(thinking["block_binding"] as? [String: String] == ["prefix_mismatch_behavior": "drop_block"])
-        #expect(payload["output_config"] as? [String: String] == ["effort": "high"])
+        // v1.5.2 A-WIRE (upstream e3bc05e87, anthropic-messages.ts:1556): the top-level effort is "low"
+        // when per-message effort markers carry the levels.
+        #expect(payload["output_config"] as? [String: String] == ["effort": "low"])
         let levels = (payload["messages"] as? [[String: Any]] ?? []).compactMap { ($0["output_config"] as? [String: String])?["effort"] }
         #expect(levels == ["low", "medium", "high"])
     }

@@ -141,7 +141,8 @@ func anthropicFinalTransformationsReplaceRatherThanAppend(_ mode: String) async 
     let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
     #expect(payload["stream"] as? Bool == true)
     #expect(payload["temperature"] == nil)
-    #expect(payload["output_config"] as? [String: String] == ["effort": "high"])
+    // v1.5.2 A-WIRE: anthropic-mid-conversation-effort.test.ts:111–112 expects low.
+    #expect(payload["output_config"] as? [String: String] == ["effort": "low"])
     let thinking = try #require(payload["thinking"] as? [String: Any])
     #expect(thinking["type"] as? String == "adaptive")
     #expect(thinking["display"] as? String == "omitted")

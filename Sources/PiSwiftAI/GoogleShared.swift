@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 private let base64SignaturePattern = "^[A-Za-z0-9+/]+={0,2}$"
 
@@ -270,7 +271,7 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false) -> [[Str
         if useParameters {
             declaration["parameters"] = cleanedParameters
         } else {
-            declaration["parametersJsonSchema"] = cleanedParameters
+            declaration["parametersJsonSchema"] = rewriteGoogleSchemaConsts(rawParameters)
         }
         return declaration
     }
@@ -290,11 +291,39 @@ func convertGoogleTools(_ tools: [AITool], useParameters: Bool = false, supports
         if useParameters {
             declaration["parameters"] = cleanedParameters
         } else {
-            declaration["parametersJsonSchema"] = rawParameters
+            declaration["parametersJsonSchema"] = rewriteGoogleSchemaConsts(rawParameters)
         }
         return declaration
     }
     return [["functionDeclarations": declarations]]
+}
+
+private let googleSchemaNameMaps: Set<String> = [
+    "properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies",
+]
+private let googleSchemaSubschemas: Set<String> = [
+    "additionalProperties", "unevaluatedProperties", "propertyNames", "items", "prefixItems",
+    "contains", "allOf", "anyOf", "oneOf", "not", "if", "then", "else", "contentSchema",
+]
+
+private func rewriteGoogleSchemaConsts(_ value: Any, nameMap: Bool = false) -> Any {
+    if let array = value as? [Any] {
+        return array.map { rewriteGoogleSchemaConsts($0) }
+    }
+    guard var schema = value as? [String: Any] else { return value }
+    for (key, child) in schema {
+        if nameMap || googleSchemaSubschemas.contains(key) {
+            schema[key] = rewriteGoogleSchemaConsts(child)
+        } else if googleSchemaNameMaps.contains(key) {
+            schema[key] = rewriteGoogleSchemaConsts(child, nameMap: true)
+        }
+    }
+    if !nameMap, schema["enum"] == nil, let constant = schema["const"],
+       constant is String || ((constant as? NSNumber).map { CFGetTypeID($0) != CFBooleanGetTypeID() } ?? false) {
+        schema.removeValue(forKey: "const")
+        schema["enum"] = [constant]
+    }
+    return schema
 }
 
 func usesGoogleThinkingLevel(model: Model) -> Bool {

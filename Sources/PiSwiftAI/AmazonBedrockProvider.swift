@@ -275,6 +275,7 @@ public func streamBedrock(
 
             let retryLimit = max(0, options.maxRetries ?? 0)
             var attempt = 0
+            var strictFallbackAttempted = false
             var responseRequestId: String?
             while true {
                 if options.signal?.isCancelled == true { throw BedrockStreamError.aborted }
@@ -328,6 +329,26 @@ public func streamBedrock(
                         throw BedrockStreamError.aborted
                     }
                     if error is BedrockProviderStreamEventCallbackError { throw error }
+                    if !strictFallbackAttempted,
+                       model.compat?.supportsStrictMode == true,
+                       hasPreferredStrictBedrockTools(body, tools: context.tools),
+                       isBedrockStrictToolLimitFailure(error) {
+                        strictFallbackAttempted = true
+                        let (fallbackRequest, fallbackBody) = try buildBedrockRequest(
+                            model: model, context: context, options: options, region: region,
+                            disablePreferredStrictTools: true
+                        )
+                        let transformed = try await transformPayload(options.onPayload, data: fallbackBody)
+                        var updated = fallbackRequest
+                        updated.httpBody = transformed
+                        signedRequest = try signBedrockRequest(request: updated, body: transformed, region: region, auth: auth)
+                        signedRequest.timeoutInterval = Double(options.timeoutMs ?? 600_000) / 1000.0
+                        output.diagnostics = (output.diagnostics ?? []) + [AssistantMessageDiagnostic(
+                            type: "bedrock_strict_tools_fallback",
+                            details: ["reason": AnyCodable("strict_tool_limits_exceeded")]
+                        )]
+                        continue
+                    }
                     if attempt < retryLimit, isRetryableTransportError(error) {
                         attempt += 1
                         output.content = []
@@ -673,7 +694,8 @@ func buildBedrockRequest(
     model: Model,
     context: Context,
     options: BedrockOptions,
-    region: String
+    region: String,
+    disablePreferredStrictTools: Bool = false
 ) throws -> (URLRequest, Data) {
     let baseUrlString = resolveBedrockBaseUrl(model: model, options: options, region: region)
 
@@ -699,7 +721,8 @@ func buildBedrockRequest(
     let toolConfig = try convertToolConfig(
         context.tools,
         toolChoice: options.toolChoice,
-        supportsStrictMode: model.compat?.supportsStrictMode ?? false
+        supportsStrictMode: model.compat?.supportsStrictMode ?? false,
+        disablePreferredStrictTools: disablePreferredStrictTools
     )
     let additional = buildAdditionalModelRequestFields(model: model, options: options)
     let requestBody = BedrockRequest(
@@ -1017,12 +1040,19 @@ private func createImageBlock(_ image: ImageContent) -> [String: Any] {
 private func convertToolConfig(
     _ tools: [AITool]?,
     toolChoice: BedrockToolChoice?,
-    supportsStrictMode: Bool
+    supportsStrictMode: Bool,
+    disablePreferredStrictTools: Bool = false
 ) throws -> BedrockToolConfig? {
     guard let tools, !tools.isEmpty else { return nil }
 
     let bedrockTools = try tools.map { tool in
-        let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictMode)
+        let strict: Bool?
+        if disablePreferredStrictTools,
+           case .jsonSchema(strict: .prefer) = tool.constrainedSampling {
+            strict = nil
+        } else {
+            strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: supportsStrictMode)
+        }
         return BedrockTool(
             name: tool.name,
             description: tool.description,
@@ -1305,6 +1335,30 @@ private func makeBedrockHTTPFailure(response: HTTPURLResponse, body: String) -> 
         errorCode: errorCode,
         requestId: requestId
     )
+}
+
+private func isBedrockStrictToolLimitFailure(_ error: Error) -> Bool {
+    guard case let BedrockStreamError.responseFailure(message, status, errorCode, _) = error,
+          status == 400, errorCode?.contains("ValidationException") == true else { return false }
+    return ["The compiled grammar is too large", "Too many strict tools (",
+            "Schemas contains too many parameters with union types ("]
+        .contains { message.contains($0) }
+}
+
+private func hasPreferredStrictBedrockTools(_ body: Data, tools: [AITool]?) -> Bool {
+    let preferred = Set((tools ?? []).compactMap { tool -> String? in
+        if case .jsonSchema(strict: .prefer) = tool.constrainedSampling { return tool.name }
+        return nil
+    })
+    guard !preferred.isEmpty,
+          let payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+          let config = payload["toolConfig"] as? [String: Any],
+          let definitions = config["tools"] as? [[String: Any]] else { return false }
+    return definitions.contains { definition in
+        guard let spec = definition["toolSpec"] as? [String: Any],
+              let name = spec["name"] as? String else { return false }
+        return preferred.contains(name) && spec["strict"] as? Bool == true
+    }
 }
 
 func bedrockFailureDiagnostic(for error: Error) -> AssistantMessageDiagnostic? {

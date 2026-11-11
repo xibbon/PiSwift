@@ -20,6 +20,7 @@ private let nonRetryableProviderLimitErrorPatterns = [
     "subscription_sharing_usage_limit_exceeded",
     // A ChatGPT Business workspace admin must raise this limit.
     "subscription_sharing_workplace_individual_usage_limit_exceeded",
+    #""code"\s*:\s*"?1308(?![0-9])"#,
 ]
 
 private let retryableProviderErrorPatterns = [
@@ -78,6 +79,7 @@ private let retryableProviderErrorPatterns = [
     "stream ended before a terminal response event",
     "http2 request did not get a response",
     "stream disconnected before completion",
+    "cut short after the reply had begun",
     // Node ERR_HTTP2_STREAM_CANCEL: the HTTP/2 session died before the request was
     // sent, e.g. after the Bedrock SDK's 5-minute session timeout (#10379).
     "pending stream has been canceled",
@@ -217,7 +219,7 @@ func isRetryableTransportError(_ error: Error) -> Bool {
 /// flattened into AssistantMessage.errorMessage. The stable prefix is intentional:
 /// localized POSIX descriptions alone cannot be classified reliably on mobile.
 func retryAwareErrorDescription(_ error: Error) -> String {
-    let description = error.localizedDescription
+    let description = providerErrorWithCause(error)
     guard hasRetryableTransportCode(error as NSError, depth: 0) else {
         return description
     }
