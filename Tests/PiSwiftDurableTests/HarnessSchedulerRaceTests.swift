@@ -182,7 +182,7 @@ extension HarnessSchedulerRaceTests {
     @Test func closeSealsBeforeSignalCallbacksAndClosesWatchesBeforeJoining() async throws {
         let notes = try SessionDocToken<JSONObject>(kind: "test.reentrant-notes", version: 1, initial: { JSONObject() }, checkpointWhen: { _, _, _ in false })
         let reference = Mutex<Harness?>(nil), callback = Mutex<Task<Void, any Error>?>(nil)
-        let entered = SessionTestGate(), end = Mutex<WatchEnd?>(nil)
+        let entered = SessionTestGate(), end = Mutex<PiSwiftDurable.WatchEnd?>(nil) // v1.5.2 CH2: qualified, the chord Watch API has the same name
         let definition = harnessOneStep("test.reentrant-close") { _, runtime, _ in
             let watch = try #require(try await runtime.watchDoc(notes, context: .background))
             runtime.signal.addAbortListener { _ in

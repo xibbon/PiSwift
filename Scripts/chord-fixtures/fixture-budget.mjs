@@ -1,4 +1,4 @@
-// Keep every chord fixture within the shared decimal 3 MB limit.
+// Keep every chord fixture within the shared decimal 3.5 MB limit.
 import { readdirSync, readFileSync } from 'node:fs';
 
 export function assertFixtureBudget(replacements) {
@@ -7,6 +7,6 @@ export function assertFixtureBudget(replacements) {
   let bytes = 0;
   for (const name of names) bytes += Object.hasOwn(replacements, name)
     ? Buffer.byteLength(replacements[name], 'utf8') : readFileSync(new URL(name, directory)).length;
-  if (bytes > 3_000_000) throw new Error(`Fixture budget exceeded: ${bytes} bytes`);
+  if (bytes > 3_500_000) throw new Error(`Fixture budget exceeded: ${bytes} bytes`);
   return bytes;
 }

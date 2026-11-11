@@ -119,7 +119,7 @@ func expectFailedEnd(_ harness: Harness, _ failure: HarnessStorageFailure) async
     #expect((error as? HarnessStorageFailure) === failure)
 }
 
-func expectFailedWatch(_ end: WatchEnd, _ failure: HarnessStorageFailure) {
+func expectFailedWatch(_ end: PiSwiftDurable.WatchEnd, _ failure: HarnessStorageFailure) { // v1.5.2 CH2: qualified, the chord Watch API has the same name
     guard case .sessionFailed(let error) = end else { Issue.record("Watch did not end with the Session failure"); return }
     #expect((error as? HarnessStorageFailure) === failure)
 }
