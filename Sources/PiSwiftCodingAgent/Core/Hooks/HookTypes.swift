@@ -423,6 +423,27 @@ public struct HookCompactOptions: Sendable {
 }
 public typealias HookCompactHandler = @Sendable (_ options: HookCompactOptions?) -> Void
 public typealias HookSwitchSessionHandler = @Sendable (_ sessionPath: String) async -> HookCommandResult
+/// Options carried from an extension command to the host. The callback runs only
+/// after the host has installed the replacement session.
+public struct HookSwitchSessionOptions: Sendable {
+    public var withSession: (@Sendable (HookCommandContext) async -> Void)?
+    public init(withSession: (@Sendable (HookCommandContext) async -> Void)? = nil) {
+        self.withSession = withSession
+    }
+}
+public typealias HookSwitchSessionOptionsHandler = @Sendable (_ sessionPath: String, _ options: HookSwitchSessionOptions?) async -> HookCommandResult
+
+public struct HookSwitchSessionAction: Sendable {
+    private let handler: HookSwitchSessionOptionsHandler
+    public init(_ handler: @escaping HookSwitchSessionOptionsHandler) { self.handler = handler }
+    public func callAsFunction(_ sessionPath: String, options: HookSwitchSessionOptions? = nil) async -> HookCommandResult {
+        await handler(sessionPath, options)
+    }
+    public func callAsFunction(_ sessionPath: String, _ options: HookSwitchSessionOptions?) async -> HookCommandResult {
+        await handler(sessionPath, options)
+    }
+}
+public typealias HookShutdownHandler = @Sendable () -> Void
 public typealias HookReloadHandler = @Sendable () async -> Void
 public typealias HookGetActiveToolsSetter = @Sendable (@escaping HookGetActiveToolsHandler) -> Void
 public typealias HookGetAllToolsSetter = @Sendable (@escaping HookGetAllToolsHandler) -> Void
@@ -907,6 +928,7 @@ public struct HookContext: Sendable {
     private var getSystemPromptOptionsHandler: @Sendable () -> BuildSystemPromptOptions
     public var isIdle: @Sendable () -> Bool
     public var abort: @Sendable () -> Void
+    public var shutdown: HookShutdownHandler
     public var hasPendingMessages: @Sendable () -> Bool
     public var getContextUsage: HookGetContextUsageHandler
     public var compact: HookCompactHandler
@@ -925,6 +947,7 @@ public struct HookContext: Sendable {
         systemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
         isIdle: @escaping @Sendable () -> Bool,
         abort: @escaping @Sendable () -> Void,
+        shutdown: @escaping HookShutdownHandler = {},
         hasPendingMessages: @escaping @Sendable () -> Bool,
         getContextUsage: @escaping HookGetContextUsageHandler = { nil },
         compact: @escaping HookCompactHandler = { _ in },
@@ -946,6 +969,7 @@ public struct HookContext: Sendable {
         self.getSystemPromptOptionsHandler = systemPromptOptions ?? { BuildSystemPromptOptions(cwd: cwd) }
         self.isIdle = isIdle
         self.abort = abort
+        self.shutdown = shutdown
         self.hasPendingMessages = hasPendingMessages
         self.getContextUsage = getContextUsage
         self.compact = compact
@@ -1001,13 +1025,16 @@ public struct HookCommandContext: Sendable {
     private var getSystemPromptOptionsHandler: @Sendable () -> BuildSystemPromptOptions
     public var isIdle: @Sendable () -> Bool
     public var abort: @Sendable () -> Void
+    public var shutdown: HookShutdownHandler
     public var hasPendingMessages: @Sendable () -> Bool
     public var waitForIdle: @Sendable () async -> Void
     public var newSession: HookNewSessionHandler
     public var fork: HookForkHandler
     public var navigateTree: HookNavigateTreeHandler
-    public var switchSession: HookSwitchSessionHandler
+    public var switchSession: HookSwitchSessionAction
     public var reload: HookReloadHandler
+    /// Available on a replacement context passed to `withSession`.
+    public var sendMessage: HookSendMessageHandler
     public var sendUserMessage: HookSendUserMessageHandler
     public var setLabel: HookSetLabelHandler
     public var getCommands: HookGetCommandsHandler
@@ -1031,13 +1058,16 @@ public struct HookCommandContext: Sendable {
         systemPromptOptions: (@Sendable () -> BuildSystemPromptOptions)? = nil,
         isIdle: @escaping @Sendable () -> Bool,
         abort: @escaping @Sendable () -> Void,
+        shutdown: @escaping HookShutdownHandler = {},
         hasPendingMessages: @escaping @Sendable () -> Bool,
         waitForIdle: @escaping @Sendable () async -> Void,
         newSession: @escaping HookNewSessionHandler,
         fork: @escaping HookForkHandler,
         navigateTree: @escaping HookNavigateTreeHandler,
         switchSession: @escaping HookSwitchSessionHandler = { _ in HookCommandResult(cancelled: false) },
+        switchSessionWithOptions: HookSwitchSessionOptionsHandler? = nil,
         reload: @escaping HookReloadHandler = {},
+        sendMessage: @escaping HookSendMessageHandler = { _, _ in },
         sendUserMessage: @escaping HookSendUserMessageHandler = { _, _ in },
         setLabel: @escaping HookSetLabelHandler = { _, _ in },
         getCommands: @escaping HookGetCommandsHandler = { [] },
@@ -1060,13 +1090,15 @@ public struct HookCommandContext: Sendable {
         self.getSystemPromptOptionsHandler = systemPromptOptions ?? { BuildSystemPromptOptions(cwd: cwd) }
         self.isIdle = isIdle
         self.abort = abort
+        self.shutdown = shutdown
         self.hasPendingMessages = hasPendingMessages
         self.waitForIdle = waitForIdle
         self.newSession = newSession
         self.fork = fork
         self.navigateTree = navigateTree
-        self.switchSession = switchSession
+        self.switchSession = HookSwitchSessionAction(switchSessionWithOptions ?? { path, _ in await switchSession(path) })
         self.reload = reload
+        self.sendMessage = sendMessage
         self.sendUserMessage = sendUserMessage
         self.setLabel = setLabel
         self.getCommands = getCommands

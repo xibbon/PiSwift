@@ -3265,8 +3265,8 @@ public final class AgentSession: Sendable {
         return true
     }
 
-    public func switchSession(_ sessionPath: String, emitBeforeSwitch: Bool = true) async -> Bool {
-        guard (try? SessionManager.openValidated(sessionPath)) != nil else { return false }
+    public func switchSession(_ sessionPath: String, emitBeforeSwitch: Bool = true, cwdOverride: String? = nil) async -> Bool {
+        guard (try? SessionManager.openValidated(sessionPath, nil, cwdOverride)) != nil else { return false }
         let previousSession = sessionFile
         if emitBeforeSwitch, let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_switch") {
             if let result = await hookRunner.emit(SessionBeforeSwitchEvent(reason: .resume, targetSessionFile: sessionPath)) as? SessionBeforeSwitchResult,
@@ -3284,7 +3284,7 @@ public final class AgentSession: Sendable {
         steeringMessages.removeAll()
         followUpMessages.removeAll()
         pendingNextTurnMessages.removeAll()
-        sessionManager.setSessionFile(sessionPath)
+        sessionManager.setSessionFile(sessionPath, cwdOverride: cwdOverride)
         agent.sessionId = sessionManager.getSessionId()
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(SessionStartEvent(reason: .resume, previousSessionFile: previousSession))
@@ -3302,7 +3302,8 @@ public final class AgentSession: Sendable {
         // v1.5.2 4ea883792: detect a missing stored cwd before making an import copy.
         // The host can present Continue / Fork / Cancel from this issue.
         let sourceManager = try SessionManager.openValidated(source.path)
-        if let issue = getMissingSessionCwdIssue(sourceManager, fallbackCwd: fallbackCwd ?? sessionManager.getCwd()) {
+        if fallbackCwd == nil,
+           let issue = getMissingSessionCwdIssue(sourceManager, fallbackCwd: sessionManager.getCwd()) {
             throw AgentSessionRuntimeError.missingSessionCwd(issue)
         }
         let directory = URL(fileURLWithPath: sessionManager.getSessionDir().isEmpty ? URL(fileURLWithPath: getSessionsDir()).appendingPathComponent("imports").path : sessionManager.getSessionDir())
@@ -3327,8 +3328,8 @@ public final class AgentSession: Sendable {
                 try FileManager.default.copyItem(at: source, to: destination)
                 copied = true
             }
-            _ = try SessionManager.openValidated(destination.path, directory.path)
-            let switched = await switchSession(destination.path, emitBeforeSwitch: false)
+            _ = try SessionManager.openValidated(destination.path, directory.path, fallbackCwd)
+            let switched = await switchSession(destination.path, emitBeforeSwitch: false, cwdOverride: fallbackCwd)
             if !switched, copied { try? FileManager.default.removeItem(at: destination) }
             return HookCommandResult(cancelled: !switched)
         } catch {

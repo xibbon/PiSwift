@@ -39,6 +39,25 @@ public final class AgentSessionRuntime: Sendable {
         self.sessionState = LockedState(initialSession)
     }
 
+    /// Build each replacement from the host's session options. The host supplies its
+    /// inline configuration once; cwd-bound options must be made for each invocation.
+    public convenience init(
+        agentDir: String,
+        initialSession: AgentSession,
+        configure: @escaping @Sendable (AgentSessionRuntimeFactoryArgs) async throws -> CreateAgentSessionOptions,
+        bindSession: @escaping @Sendable (AgentSession) -> Void = { _ in }
+    ) {
+        self.init(agentDir: agentDir, factory: { args in
+            var options = try await configure(args)
+            options.cwd = args.cwd
+            options.agentDir = args.agentDir
+            options.sessionManager = args.sessionManager
+            let session = try await createAgentSession(options).session
+            bindSession(session)
+            return session
+        }, initialSession: initialSession)
+    }
+
     /// The current live session. `nil` only after `dispose()`.
     public var session: AgentSession? {
         sessionState.withLock { $0 }
@@ -65,6 +84,38 @@ public final class AgentSessionRuntime: Sendable {
         return await s.switchSession(sessionPath)
     }
 
+    /// Rebuild the complete session for the target cwd. A veto or a build error leaves
+    /// the current session and its provider state live.
+    @discardableResult
+    public func switchSessionRebinding(_ sessionPath: String, cwdOverride: String? = nil) async throws -> AgentSession {
+        let manager = try SessionManager.openValidated(sessionPath, nil, cwdOverride)
+        if let issue = getMissingSessionCwdIssue(manager, fallbackCwd: session?.sessionManager.getCwd() ?? manager.getCwd()) {
+            throw AgentSessionRuntimeError.missingSessionCwd(issue)
+        }
+        try await checkBeforeSwitch(sessionPath)
+        return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+            cwd: manager.getCwd(), agentDir: agentDir, sessionManager: manager,
+            sessionStartEvent: AgentSessionStartEvent(reason: .resume, previousSessionFile: session?.sessionFile)))
+    }
+
+    /// Create a fork and switch to it as one transaction. A veto or failed build
+    /// removes the new file and keeps the old session active.
+    @discardableResult
+    public func forkAndSwitch(_ sourcePath: String, into cwd: String, sessionDir: String? = nil) async throws -> AgentSession {
+        let manager = try SessionManager.forkFrom(sourcePath, cwd, sessionDir)
+        guard let path = manager.getSessionFile() else { throw SessionManagerError.invalidSessionFile(sourcePath) }
+        do {
+            try await checkBeforeSwitch(path)
+            return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+                cwd: cwd, agentDir: agentDir, sessionManager: manager,
+                sessionStartEvent: AgentSessionStartEvent(reason: .fork, previousSessionFile: session?.sessionFile)),
+                rollbackSessionFile: path)
+        } catch {
+            try? FileManager.default.removeItem(atPath: path)
+            throw error
+        }
+    }
+
     /// Fork the conversation at the given entry id.
     @discardableResult
     public func fork(_ entryId: String) async throws -> (selectedText: String, cancelled: Bool) {
@@ -74,7 +125,45 @@ public final class AgentSessionRuntime: Sendable {
 
     public func importFromJsonl(_ inputPath: String, fallbackCwd: String? = nil) async throws -> HookCommandResult {
         guard let session else { return HookCommandResult(cancelled: true) }
-        return try await session.importFromJsonl(inputPath, fallbackCwd: fallbackCwd)
+        let source = URL(fileURLWithPath: (inputPath as NSString).expandingTildeInPath).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw SessionImportError.fileNotFound(source.path)
+        }
+        let sourceManager = try SessionManager.openValidated(source.path)
+        if fallbackCwd == nil,
+           let issue = getMissingSessionCwdIssue(sourceManager, fallbackCwd: session.sessionManager.getCwd()) {
+            throw AgentSessionRuntimeError.missingSessionCwd(issue)
+        }
+        let dir = session.sessionManager.getSessionDir()
+        let directory = URL(fileURLWithPath: dir.isEmpty ? URL(fileURLWithPath: getSessionsDir()).appendingPathComponent("imports").path : dir)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let original = directory.appendingPathComponent(source.lastPathComponent).standardizedFileURL
+        let stored = source == original
+        var destination = original
+        var suffix = 1
+        if !stored {
+            while FileManager.default.fileExists(atPath: destination.path) {
+                let extensionPart = original.pathExtension.isEmpty ? "" : "." + original.pathExtension
+                destination = directory.appendingPathComponent(original.deletingPathExtension().lastPathComponent + "-\(suffix)" + extensionPart)
+                suffix += 1
+            }
+        }
+        do {
+            try await checkBeforeSwitch(destination.path)
+            if !stored { try FileManager.default.copyItem(at: source, to: destination) }
+            let manager = try SessionManager.openValidated(destination.path, directory.path, fallbackCwd)
+            if let issue = getMissingSessionCwdIssue(manager, fallbackCwd: session.sessionManager.getCwd()) {
+                throw AgentSessionRuntimeError.missingSessionCwd(issue)
+            }
+            _ = try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+                cwd: manager.getCwd(), agentDir: agentDir, sessionManager: manager,
+                sessionStartEvent: AgentSessionStartEvent(reason: .resume, previousSessionFile: session.sessionFile)))
+            return HookCommandResult(cancelled: false)
+        } catch {
+            if !stored { try? FileManager.default.removeItem(at: destination) }
+            if case AgentSessionRuntimeError.switchCancelled = error { return HookCommandResult(cancelled: true) }
+            throw error
+        }
     }
 
     /// Replace the current session with a freshly-built one. Use for cross-cwd switches
@@ -95,9 +184,19 @@ public final class AgentSessionRuntime: Sendable {
         }
         if let prev = session {
             await prev.abort()
+            if let runner = prev.hookRunner {
+                let reason = SessionShutdownReason(rawValue: args.sessionStartEvent.reason.rawValue) ?? .resume
+                _ = await runner.emit(SessionShutdownEvent(reason: reason,
+                    targetSessionFile: args.sessionManager.getSessionFile()))
+            }
             prev.dispose()
         }
         sessionState.withLock { $0 = next }
+        if let runner = next.hookRunner {
+            let reason = SessionStartReason(rawValue: args.sessionStartEvent.reason.rawValue) ?? .resume
+            _ = await runner.emit(SessionStartEvent(reason: reason,
+                previousSessionFile: args.sessionStartEvent.previousSessionFile))
+        }
         return next
     }
 
@@ -132,15 +231,7 @@ public final class AgentSessionRuntime: Sendable {
         guard getMissingSessionCwdIssue(source, fallbackCwd: fallbackCwd) != nil else {
             throw AgentSessionRuntimeError.sessionCwdExists
         }
-        let manager = try SessionManager.forkFrom(sourcePath, fallbackCwd, sessionDir)
-        if let path = manager.getSessionFile() {
-            do { try await checkBeforeSwitch(path) }
-            catch { try? FileManager.default.removeItem(atPath: path); throw error }
-        }
-        return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
-            cwd: fallbackCwd, agentDir: agentDir, sessionManager: manager,
-            sessionStartEvent: AgentSessionStartEvent(reason: .fork, previousSessionFile: session?.sessionFile)),
-            rollbackSessionFile: manager.getSessionFile())
+        return try await forkAndSwitch(sourcePath, into: fallbackCwd, sessionDir: sessionDir)
     }
 
     /// Abort the current run, settle its tool results, release session resources, then wait for

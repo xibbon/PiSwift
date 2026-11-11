@@ -39,6 +39,7 @@ public final class HookRunner: Sendable {
         var isIdle: @Sendable () -> Bool
         var waitForIdle: @Sendable () async -> Void
         var abort: @Sendable () -> Void
+        var shutdownHandler: HookShutdownHandler
         var hasPendingMessages: @Sendable () -> Bool
         var getContextUsage: HookGetContextUsageHandler
         var compactHandler: HookCompactHandler
@@ -46,6 +47,7 @@ public final class HookRunner: Sendable {
         var forkHandler: HookForkHandler
         var navigateTreeHandler: HookNavigateTreeHandler
         var switchSessionHandler: HookSwitchSessionHandler
+        var switchSessionOptionsHandler: HookSwitchSessionOptionsHandler?
         var reloadHandler: HookReloadHandler
         var sendUserMessageHandler: HookSendUserMessageHandler
         var setLabelHandler: HookSetLabelHandler
@@ -175,6 +177,17 @@ public final class HookRunner: Sendable {
         set { state.withLock { $0.switchSessionHandler = newValue } }
     }
 
+    /// Install a host shutdown request after SDK session construction.
+    public func setShutdownHandler(_ handler: @escaping HookShutdownHandler) {
+        state.withLock { $0.shutdownHandler = handler }
+        installCustomToolShutdownHandler(for: sessionManager, handler)
+    }
+
+    /// Install the options-aware switch path after SDK session construction.
+    public func setSwitchSessionOptionsHandler(_ handler: @escaping HookSwitchSessionOptionsHandler) {
+        state.withLock { $0.switchSessionOptionsHandler = handler }
+    }
+
     private var reloadHandler: HookReloadHandler {
         get { state.withLock { $0.reloadHandler } }
         set { state.withLock { $0.reloadHandler = newValue } }
@@ -242,6 +255,7 @@ public final class HookRunner: Sendable {
             isIdle: { true },
             waitForIdle: {},
             abort: {},
+            shutdownHandler: {},
             hasPendingMessages: { false },
             getContextUsage: { nil },
             compactHandler: { _ in },
@@ -249,6 +263,7 @@ public final class HookRunner: Sendable {
             forkHandler: { _ in HookCommandResult(cancelled: false) },
             navigateTreeHandler: { _, _ in HookCommandResult(cancelled: false) },
             switchSessionHandler: { _ in HookCommandResult(cancelled: false) },
+            switchSessionOptionsHandler: nil,
             reloadHandler: {},
             sendUserMessageHandler: { _, _ in },
             setLabelHandler: { _, _ in },
@@ -347,6 +362,8 @@ public final class HookRunner: Sendable {
         forkHandler: HookForkHandler? = nil,
         navigateTreeHandler: HookNavigateTreeHandler? = nil,
         switchSessionHandler: HookSwitchSessionHandler? = nil,
+        switchSessionOptionsHandler: HookSwitchSessionOptionsHandler? = nil,
+        shutdownHandler: HookShutdownHandler? = nil,
         reloadHandler: HookReloadHandler? = nil,
         isIdle: (@Sendable () -> Bool)? = nil,
         waitForIdle: (@Sendable () async -> Void)? = nil,
@@ -367,6 +384,7 @@ public final class HookRunner: Sendable {
         self.isIdle = isIdle ?? { true }
         self.waitForIdle = waitForIdle ?? {}
         self.abort = abort ?? {}
+        if let shutdownHandler { setShutdownHandler(shutdownHandler) }
         self.hasPendingMessages = hasPendingMessages ?? { false }
         self.getContextUsage = getContextUsage ?? { nil }
         self.compactHandler = compactHandler ?? { _ in }
@@ -387,6 +405,9 @@ public final class HookRunner: Sendable {
         }
         if let switchSessionHandler {
             self.switchSessionHandler = switchSessionHandler
+        }
+        if let switchSessionOptionsHandler {
+            state.withLock { $0.switchSessionOptionsHandler = switchSessionOptionsHandler }
         }
         if let reloadHandler {
             self.reloadHandler = reloadHandler
@@ -537,6 +558,7 @@ public final class HookRunner: Sendable {
     }
 
     public func dispose() {
+        removeCustomToolShutdownHandler(for: sessionManager)
         let oldHooks = state.withLock { state -> [LoadedHook] in
             let oldHooks = state.hooks
             state.hooks = []
@@ -777,6 +799,10 @@ public final class HookRunner: Sendable {
             },
             isIdle: { [weak self] in self?.isIdle() ?? true },
             abort: { [weak self] in self?.abort() },
+            shutdown: { [weak self] in
+                let handler = self?.state.withLock { $0.shutdownHandler }
+                handler?()
+            },
             hasPendingMessages: { [weak self] in self?.hasPendingMessages() ?? false },
             getContextUsage: { [weak self] in self?.getContextUsage() },
             compact: { [weak self] options in self?.compactHandler(options) }
@@ -812,6 +838,10 @@ public final class HookRunner: Sendable {
             },
             isIdle: { [weak self] in self?.isIdle() ?? true },
             abort: { [weak self] in self?.abort() },
+            shutdown: { [weak self] in
+                let handler = self?.state.withLock { $0.shutdownHandler }
+                handler?()
+            },
             hasPendingMessages: { [weak self] in self?.hasPendingMessages() ?? false },
             waitForIdle: { [weak self] in await self?.waitForIdle() },
             newSession: { [weak self] options in
@@ -830,8 +860,19 @@ public final class HookRunner: Sendable {
                 guard let self else { return HookCommandResult(cancelled: true) }
                 return await self.switchSessionHandler(sessionPath)
             },
+            switchSessionWithOptions: { [weak self] sessionPath, options in
+                guard let self else { return HookCommandResult(cancelled: true) }
+                if let handler = self.state.withLock({ $0.switchSessionOptionsHandler }) {
+                    return await handler(sessionPath, options)
+                }
+                return await self.switchSessionHandler(sessionPath)
+            },
             reload: { [weak self] in
                 await self?.reloadHandler()
+            },
+            sendMessage: { [weak self] message, options in
+                let handler = self?.state.withLock { $0.wiring?.sendMessageHandler }
+                handler?(message, options)
             },
             sendUserMessage: { [weak self] content, options in
                 self?.sendUserMessageHandler(content, options)

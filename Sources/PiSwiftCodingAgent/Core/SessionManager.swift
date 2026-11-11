@@ -1300,12 +1300,12 @@ public final class SessionManager: Sendable {
         entries
     }
 
-    public func setSessionFile(_ path: String) {
+    public func setSessionFile(_ path: String, cwdOverride: String? = nil) {
         sessionDir = URL(fileURLWithPath: path).deletingLastPathComponent().path
         loadFromFile(path)
         state.withLock { st in
             if let header = st.header {
-                st.cwd = header.cwd
+                st.cwd = cwdOverride ?? header.cwd
             }
         }
     }
