@@ -118,7 +118,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         }
         let type = Self.contentType(response)
         if type == "application/json" {
-            let body = try await readBody(bytes)
+            let body = try await readJSONBody(bytes)
             try checkOpen()
             try enqueueJSON(body)
             return
@@ -269,11 +269,13 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         }
     }
 
-    private func readBody(_ bytes: URLSession.AsyncBytes, limit: Int? = nil) async throws -> Data {
-        let byteLimit = limit ?? maxMessageBytes
+    private func readJSONBody(_ bytes: URLSession.AsyncBytes) async throws -> Data {
         var body = Data()
         for try await byte in bytes {
-            guard body.count < byteLimit else { throw McpTransportError.messageTooLarge(limit: byteLimit) }
+            guard body.count < maxMessageBytes else {
+                bytes.task.cancel()
+                throw McpTransportError.invalidResponse("MCP JSON response exceeds \(maxMessageBytes) bytes")
+            }
             body.append(byte)
         }
         return body
@@ -283,7 +285,10 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         try await withTaskCancellationHandler {
             var body = Data()
             for try await byte in bytes {
-                if body.count == 8 * 1024 { break }
+                if body.count == 8 * 1024 {
+                    bytes.task.cancel()
+                    break
+                }
                 body.append(byte)
             }
             return body
@@ -377,7 +382,13 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
     private func consumeSSE(_ bytes: URLSession.AsyncBytes, cursor: inout SSECursor, responseID: String?) async throws -> Bool {
         try await withTaskCancellationHandler {
             try checkOpen()
-            return try await consumeSSEBytes(bytes, cursor: &cursor, responseID: responseID)
+            do {
+                return try await consumeSSEBytes(bytes, cursor: &cursor, responseID: responseID)
+            } catch {
+                // Releasing AsyncBytes alone can leave an HTTP response open.
+                bytes.task.cancel()
+                throw error
+            }
         } onCancel: {
             bytes.task.cancel()
         }
@@ -387,10 +398,10 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
         var event = SSEEvent()
         var eventBytes = 0
         var rawLine = Data()
+        var skipLeadingLF = false
         func processLine(_ rawLine: Data) throws -> Bool {
             if closed || Task.isCancelled { return false }
-            let text = String(decoding: rawLine, as: UTF8.self)
-            let line = text.hasSuffix("\r") ? String(text.dropLast()) : text
+            let line = String(decoding: rawLine, as: UTF8.self)
             if line.isEmpty {
                 if try dispatch(event, cursor: &cursor, responseID: responseID) { return true }
                 event = SSEEvent()
@@ -405,7 +416,7 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
             switch field {
             case "data":
                 eventBytes += value.utf8.count + (event.dataLines.isEmpty ? 0 : 1)
-                guard eventBytes <= maxMessageBytes else { throw McpTransportError.messageTooLarge(limit: maxMessageBytes) }
+                guard eventBytes <= maxMessageBytes else { throw sseLimitError() }
                 event.dataLines.append(value)
             case "event": event.name = value
             case "id" where !value.contains("\0"):
@@ -418,16 +429,25 @@ public actor StreamableHTTPTransport: McpSessionAwareTransport {
             return false
         }
         for try await byte in bytes {
-            if byte == UInt8(ascii: "\n") {
+            if skipLeadingLF {
+                skipLeadingLF = false
+                if byte == UInt8(ascii: "\n") { continue }
+            }
+            if byte == UInt8(ascii: "\r") || byte == UInt8(ascii: "\n") {
                 if try processLine(rawLine) { return true }
                 rawLine.removeAll(keepingCapacity: true)
+                if byte == UInt8(ascii: "\r") { skipLeadingLF = true }
             } else {
                 rawLine.append(byte)
-                guard rawLine.count <= maxMessageBytes else { throw McpTransportError.messageTooLarge(limit: maxMessageBytes) }
+                guard rawLine.count <= maxMessageBytes else { throw sseLimitError() }
             }
         }
         if !rawLine.isEmpty, try processLine(rawLine) { return true }
         return try dispatch(event, cursor: &cursor, responseID: responseID)
+    }
+
+    private func sseLimitError() -> McpTransportError {
+        .invalidResponse("MCP SSE event exceeds \(maxMessageBytes) bytes")
     }
 
     private func dispatch(_ event: SSEEvent, cursor: inout SSECursor, responseID: String?) throws -> Bool {

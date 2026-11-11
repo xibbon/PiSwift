@@ -141,15 +141,23 @@ public enum McpOAuthDiscovery {
         return origin
     }
 
-    static func validateURL(_ value: String, field: String) throws {
-        guard let url = URL(string: value), let scheme = url.scheme?.lowercased(),
-              !["javascript", "data", "vbscript"].contains(scheme), url.host != nil else {
-            throw McpOAuthError.invalidMetadata(field)
+    static func validateURL(_ value: String, field: String, includeValue: Bool = false) throws {
+        guard let url = URL(string: value), isHTTPURL(url) else {
+            throw McpOAuthError.invalidURL(field, includeValue ? value : nil)
         }
+    }
+
+    static func isHTTPURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), url.host != nil else { return false }
+        return scheme == "http" || scheme == "https"
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, from data: Data, name: String) throws -> T {
         do { return try JSONDecoder().decode(type, from: data) }
+        catch let error as McpOAuthError {
+            if case .invalidURL = error { throw error }
+            throw McpOAuthError.invalidMetadata(name)
+        }
         catch { throw McpOAuthError.invalidMetadata(name) }
     }
 }

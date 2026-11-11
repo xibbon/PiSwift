@@ -6,6 +6,7 @@ import FoundationNetworking
 
 public enum McpOAuthError: Error, LocalizedError, Sendable {
     case invalidMetadata(String)
+    case invalidURL(String, String?)
     case clientMetadataDocumentUnsupported(String)
     case httpStatus(Int, String)
     case issuerMismatch(expected: String?, received: String?)
@@ -20,6 +21,7 @@ public enum McpOAuthError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidMetadata(let field): "Invalid OAuth metadata: \(field)"
+        case .invalidURL(let field, let value): "Invalid \(field)\(value.map { " \($0)" } ?? "")"
         case .clientMetadataDocumentUnsupported(let message): message
         case .httpStatus(let status, let body): "OAuth HTTP \(status): \(body)"
         case .issuerMismatch(let expected, let received): "OAuth issuer mismatch: expected \(formatOAuthIssuer(expected)), received \(formatOAuthIssuer(received))"
@@ -111,10 +113,10 @@ public struct McpOAuthProtectedResourceMetadata: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        resource = try values.decodeRequiredOAuthURL(forKey: .resource)
+        resource = try values.decodeRequiredOAuthURL(forKey: .resource, field: "OAuth protected resource metadata resource")
         authorizationServers = try values.decodeIfPresent([String].self, forKey: .authorizationServers)
         for url in authorizationServers ?? [] {
-            try McpOAuthDiscovery.validateURL(url, field: "authorization_servers")
+            try McpOAuthDiscovery.validateURL(url, field: "authorization server URL")
         }
         scopesSupported = try values.decodeIfPresent([String].self, forKey: .scopesSupported)
     }
@@ -167,10 +169,10 @@ public struct McpOAuthAuthorizationServerMetadata: Codable, Sendable, Equatable 
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        issuer = try values.decodeRequiredOAuthURL(forKey: .issuer)
-        authorizationEndpoint = try values.decodeRequiredOAuthURL(forKey: .authorizationEndpoint)
-        tokenEndpoint = try values.decodeRequiredOAuthURL(forKey: .tokenEndpoint)
-        registrationEndpoint = try values.decodeOptionalOAuthURL(forKey: .registrationEndpoint)
+        issuer = try values.decodeRequiredOAuthURL(forKey: .issuer, field: "authorization server issuer")
+        authorizationEndpoint = try values.decodeRequiredOAuthURL(forKey: .authorizationEndpoint, field: "authorization endpoint")
+        tokenEndpoint = try values.decodeRequiredOAuthURL(forKey: .tokenEndpoint, field: "token endpoint")
+        registrationEndpoint = try values.decodeOptionalOAuthURL(forKey: .registrationEndpoint, field: "registration endpoint")
         scopesSupported = try values.decodeIfPresent([String].self, forKey: .scopesSupported)
         responseTypesSupported = try values.decode([String].self, forKey: .responseTypesSupported)
         grantTypesSupported = try values.decodeIfPresent([String].self, forKey: .grantTypesSupported)
@@ -372,15 +374,15 @@ private extension KeyedDecodingContainer {
         return value
     }
 
-    func decodeRequiredOAuthURL(forKey key: Key) throws -> String {
+    func decodeRequiredOAuthURL(forKey key: Key, field: String) throws -> String {
         let value = try decodeRequiredOAuthString(forKey: key)
-        try McpOAuthDiscovery.validateURL(value, field: key.stringValue)
+        try McpOAuthDiscovery.validateURL(value, field: field)
         return value
     }
 
-    func decodeOptionalOAuthURL(forKey key: Key) throws -> String? {
+    func decodeOptionalOAuthURL(forKey key: Key, field: String) throws -> String? {
         guard let value = try decodeOptionalOAuthString(forKey: key) else { return nil }
-        try McpOAuthDiscovery.validateURL(value, field: key.stringValue)
+        try McpOAuthDiscovery.validateURL(value, field: field)
         return value
     }
 

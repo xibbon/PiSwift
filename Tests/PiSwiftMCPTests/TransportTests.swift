@@ -139,7 +139,8 @@ struct TransportTests {
         try await transport.send(Data(#"{"jsonrpc":"2.0","id":2,"method":"tools/call"}"#.utf8))
         let response = try await transport.receive()
         #expect(String(decoding: response, as: UTF8.self).contains("MCP response stream failed"))
-        #expect(String(decoding: response, as: UTF8.self).contains("messageTooLarge"))
+        // v1.5.2 M1: upstream's text (streamable-http.ts), not the Swift case name.
+        #expect(String(decoding: response, as: UTF8.self).contains("MCP SSE event exceeds 256 bytes"))
         await transport.close()
         await server.stop()
     }

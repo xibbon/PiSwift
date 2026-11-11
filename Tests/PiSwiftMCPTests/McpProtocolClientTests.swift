@@ -386,7 +386,8 @@ private actor EventRecorder {
 @Test func mcpTransportErrorsHaveReadableDescriptions() {
     #expect(McpTransportError.connectionClosed(stderr: "").localizedDescription == "Connection closed")
     #expect(McpTransportError.connectionClosed(stderr: "boom\n").localizedDescription == "Connection closed\nboom")
-    #expect(McpTransportError.messageTooLarge(limit: 16).localizedDescription == "MCP message exceeds 16 bytes")
+    // v1.5.2 M1: Streamable HTTP JSON responses use this upstream size error.
+    #expect(McpTransportError.invalidResponse("MCP JSON response exceeds 16 bytes").localizedDescription == "MCP JSON response exceeds 16 bytes")
     #expect(McpHTTPError(status: 404, body: "", message: "MCP session expired").localizedDescription == "MCP session expired")
 }
 

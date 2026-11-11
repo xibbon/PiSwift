@@ -50,6 +50,7 @@ public protocol McpSessionAwareTransport: McpTransport {
 
 public enum McpTransportError: Error, Sendable, Equatable {
     case messageTooLarge(limit: Int)
+    case stdioMessageTooLarge(limit: Int)
     case stdioUnavailable
     case connectionClosed(stderr: String)
     case invalidResponse(String)
@@ -129,15 +130,19 @@ public actor StdioTransport: McpTransport {
     private let cwd: String?
     private let debug: Bool
     private let onStderr: (@Sendable (String) -> Void)?
+    private let onError: (@Sendable (Error) -> Void)?
     private let maxMessageBytes: Int
     private let maxStderrBytes: Int
     private let closeTimeout: Duration
-    private let chunks = StdioChunkStore()
+    private let lines: JsonRpcLineReader
+    private var stdoutContinuation: AsyncStream<Data>.Continuation?
+    private var stderrContinuation: AsyncStream<Data>.Continuation?
+    private var stdoutTask: Task<Void, Never>?
+    private var stderrTask: Task<Void, Never>?
     private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
     private var pid: pid_t?
-    private var buffer = Data()
     private var closed = false
     private var exited = false
 
@@ -149,6 +154,7 @@ public actor StdioTransport: McpTransport {
         cwd: String? = nil,
         debug: Bool = false,
         onStderr: (@Sendable (String) -> Void)? = nil,
+        onError: (@Sendable (Error) -> Void)? = nil,
         maxMessageBytes: Int = mcpDefaultMaxMessageBytes,
         maxStderrBytes: Int = 64 * 1024,
         closeTimeout: Duration = .seconds(2)
@@ -160,13 +166,15 @@ public actor StdioTransport: McpTransport {
         self.cwd = cwd
         self.debug = debug
         self.onStderr = onStderr
+        self.onError = onError
         self.maxMessageBytes = maxMessageBytes
         self.maxStderrBytes = maxStderrBytes
         self.closeTimeout = closeTimeout
+        self.lines = JsonRpcLineReader(maxMessageBytes: maxMessageBytes, maxStderrBytes: maxStderrBytes, onStderr: onStderr, onError: onError)
     }
 
     public var processID: Int32? { pid }
-    public var stderr: String { get async { await chunks.stderr } }
+    public var stderr: String { get async { await lines.stderr } }
 
     public static func create(
         command: String,
@@ -239,22 +247,30 @@ public actor StdioTransport: McpTransport {
         stdoutPipe = stdout
         stderrPipe = stderr
         pid = child
-        let store = chunks
+        let lineReader = lines
+        let (stdoutBytes, stdoutSink) = AsyncStream<Data>.makeStream()
+        let (stderrBytes, stderrSink) = AsyncStream<Data>.makeStream()
+        stdoutContinuation = stdoutSink
+        stderrContinuation = stderrSink
+        stdoutTask = Task {
+            for await data in stdoutBytes { await lineReader.readStdout(data) }
+            await lineReader.end()
+        }
+        stderrTask = Task {
+            for await data in stderrBytes { await lineReader.readStderr(data) }
+        }
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            Task { await store.enqueue(data.isEmpty ? nil : data) }
+            if data.isEmpty { stdoutSink.finish() }
+            else { stdoutSink.yield(data) }
         }
-        let maxTail = maxStderrBytes
         let showStderr = debug
-        let stderrCallback = onStderr
         stderr.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            if !data.isEmpty {
-                Task { await store.appendStderr(data, limit: maxTail) }
-                if let text = String(data: data, encoding: .utf8) {
-                    stderrCallback?(text)
-                    if showStderr { fputs("[mcp-stdio-stderr] \(text)", Foundation.stderr) }
-                }
+            if data.isEmpty { stderrSink.finish() }
+            else {
+                stderrSink.yield(data)
+                if showStderr { fputs("[mcp-stdio-stderr] \(String(decoding: data, as: UTF8.self))", Foundation.stderr) }
             }
         }
         Task.detached { [weak self] in
@@ -269,7 +285,6 @@ public actor StdioTransport: McpTransport {
         if let pid, kill(-pid, 0) == -1 {
             liveStdioProcessGroups.withLock { $0.remove(pid) }
         }
-        await chunks.enqueue(nil)
     }
 
     public func send(_ data: Data) async throws {
@@ -280,40 +295,25 @@ public actor StdioTransport: McpTransport {
         do {
             try stdinPipe.fileHandleForWriting.write(contentsOf: framed)
         } catch {
-            throw McpTransportError.connectionClosed(stderr: await chunks.stderr)
+            throw McpTransportError.connectionClosed(stderr: await lines.stderr)
         }
     }
 
     public func receive() async throws -> Data {
-        while true {
-            if let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-                var line = Data(buffer[..<newline])
-                buffer.removeSubrange(...newline)
-                if line.last == UInt8(ascii: "\r") { line.removeLast() }
-                if line.isEmpty { continue }
-                guard line.count <= maxMessageBytes else { throw McpTransportError.messageTooLarge(limit: maxMessageBytes) }
-                return line
-            }
-            guard buffer.count <= maxMessageBytes else {
-                buffer.removeAll()
-                throw McpTransportError.messageTooLarge(limit: maxMessageBytes)
-            }
-            guard !closed, let chunk = await chunks.dequeue() else {
-                if !buffer.isEmpty {
-                    throw McpTransportError.invalidResponse("MCP stdio server closed with an incomplete JSON-RPC message; stderr: \(await chunks.stderr)")
-                }
-                throw McpTransportError.connectionClosed(stderr: await chunks.stderr)
-            }
-            buffer.append(chunk)
-        }
+        if let line = await lines.next() { return line }
+        await stderrTask?.value
+        throw McpTransportError.connectionClosed(stderr: await lines.stderr)
     }
 
     public func close() async {
         guard !closed else { return }
         closed = true
         stdinPipe?.fileHandleForWriting.closeFile()
-        await chunks.enqueue(nil)
-        guard let pid else { return }
+        guard let pid else {
+            stdoutContinuation?.finish()
+            stderrContinuation?.finish()
+            return
+        }
         let grace = min(closeTimeout, .milliseconds(500))
         let graceDeadline = ContinuousClock.now + grace
         while !exited && ContinuousClock.now < graceDeadline {
@@ -335,6 +335,8 @@ public actor StdioTransport: McpTransport {
         }
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stdoutContinuation?.finish()
+        stderrContinuation?.finish()
         stdoutPipe?.fileHandleForReading.closeFile()
         stderrPipe?.fileHandleForReading.closeFile()
         stdinPipe = nil
@@ -345,39 +347,9 @@ public actor StdioTransport: McpTransport {
     }
 }
 
-private actor StdioChunkStore {
-    private var chunks: [Data] = []
-    private var waiters: [CheckedContinuation<Data?, Never>] = []
-    private var ended = false
-    private var stderrData = Data()
-
-    var stderr: String { String(decoding: stderrData, as: UTF8.self) }
-
-    func appendStderr(_ data: Data, limit: Int) {
-        stderrData.append(data)
-        if stderrData.count > limit { stderrData.removeFirst(stderrData.count - limit) }
-    }
-
-    func enqueue(_ data: Data?) {
-        if let data {
-            if waiters.isEmpty { chunks.append(data) }
-            else { waiters.removeFirst().resume(returning: data) }
-        } else {
-            ended = true
-            for waiter in waiters { waiter.resume(returning: nil) }
-            waiters.removeAll()
-        }
-    }
-
-    func dequeue() async -> Data? {
-        if !chunks.isEmpty { return chunks.removeFirst() }
-        if ended { return nil }
-        return await withCheckedContinuation { waiters.append($0) }
-    }
-}
 #else
 public actor StdioTransport: McpTransport {
-    public init(command: String, args: [String] = [], env: [String: String]? = nil, inheritEnv: Bool = true, cwd: String? = nil, debug: Bool = false, onStderr: (@Sendable (String) -> Void)? = nil, maxMessageBytes: Int = mcpDefaultMaxMessageBytes, maxStderrBytes: Int = 64 * 1024, closeTimeout: Duration = .seconds(2)) {}
+    public init(command: String, args: [String] = [], env: [String: String]? = nil, inheritEnv: Bool = true, cwd: String? = nil, debug: Bool = false, onStderr: (@Sendable (String) -> Void)? = nil, onError: (@Sendable (Error) -> Void)? = nil, maxMessageBytes: Int = mcpDefaultMaxMessageBytes, maxStderrBytes: Int = 64 * 1024, closeTimeout: Duration = .seconds(2)) {}
     public static func create(command: String, args: [String] = [], env: [String: String]? = nil, cwd: String? = nil, debug: Bool = false) throws -> StdioTransport { throw McpTransportError.stdioUnavailable }
     public func start() async throws { throw McpTransportError.stdioUnavailable }
     public func send(_ data: Data) async throws { throw McpTransportError.stdioUnavailable }
@@ -392,6 +364,8 @@ extension McpTransportError: LocalizedError {
         switch self {
         case .messageTooLarge(let limit):
             return "MCP message exceeds \(limit) bytes"
+        case .stdioMessageTooLarge(let limit):
+            return "MCP stdio message exceeds \(limit) bytes"
         case .stdioUnavailable:
             return "MCP stdio servers are not available on this platform"
         case .connectionClosed(let stderr):

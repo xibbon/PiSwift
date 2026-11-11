@@ -132,9 +132,12 @@ public enum McpOAuthFlow {
         if let methods = metadata?.codeChallengeMethodsSupported, !methods.contains("S256") {
             throw McpOAuthError.invalidMetadata("PKCE S256 is unsupported")
         }
-        guard let url = URL(string: metadata?.authorizationEndpoint ?? "/authorize", relativeTo: authorizationServerURL)?.absoluteURL,
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            throw McpOAuthError.invalidMetadata("authorization endpoint")
+        guard let url = URL(string: metadata?.authorizationEndpoint ?? "/authorize", relativeTo: authorizationServerURL)?.absoluteURL else {
+            throw McpOAuthError.invalidURL("authorization endpoint", nil)
+        }
+        try McpOAuthDiscovery.validateURL(url.absoluteString, field: "authorization endpoint", includeValue: true)
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw McpOAuthError.invalidURL("authorization endpoint", url.absoluteString)
         }
         let pair = try generatePKCE()
         var items = components.queryItems ?? []
