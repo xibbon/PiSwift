@@ -12,38 +12,75 @@ public indirect enum SchemaValue: Sendable, Equatable {
     case object(SchemaObject)
 
     public static func == (lhs: SchemaValue, rhs: SchemaValue) -> Bool {
-        switch (lhs, rhs) {
-        case (.null, .null): return true
-        case let (.bool(a), .bool(b)): return a == b
-        case let (.number(a), .number(b)): return a == b
-        case let (.string(a), .string(b)): return a.utf16.elementsEqual(b.utf16)
-        case let (.array(a), .array(b)): return a == b
-        case let (.object(a), .object(b)): return a == b
-        default: return false
+        var pending: [(SchemaValue, SchemaValue)] = [(lhs, rhs)]
+        while let (left, right) = pending.popLast() {
+            switch (left, right) {
+            case (.null, .null): break
+            case let (.bool(a), .bool(b)) where a == b: break
+            case let (.number(a), .number(b)) where a == b: break
+            case let (.string(a), .string(b)) where a.utf16.elementsEqual(b.utf16): break
+            case let (.array(a), .array(b)):
+                guard a.count == b.count else { return false }
+                for index in a.indices { pending.append((a[index], b[index])) }
+            case let (.object(a), .object(b)):
+                guard a.count == b.count else { return false }
+                for (leftMember, rightMember) in zip(a, b) {
+                    guard leftMember.key.utf16.elementsEqual(rightMember.key.utf16) else { return false }
+                    pending.append((leftMember.value, rightMember.value))
+                }
+            default: return false
+            }
         }
+        return true
     }
 
     /// Converts Foundation JSON values. Dictionary member order is unspecified.
     public init(jsonObject: Any) throws {
-        if jsonObject is NSNull { self = .null; return }
-        if let value = jsonObject as? NSNumber {
-            if CFGetTypeID(value) == CFBooleanGetTypeID() {
-                self = .bool(value.boolValue)
-            } else {
-                self = .number(value.doubleValue)
+        enum Step {
+            case value(Any)
+            case array(Int)
+            case object([String])
+        }
+        var pending: [Step] = [.value(jsonObject)]
+        var finished: [SchemaValue] = []
+        while let step = pending.popLast() {
+            switch step {
+            case .value(let input):
+                if input is NSNull { finished.append(.null); continue }
+                if let value = input as? NSNumber {
+                    finished.append(CFGetTypeID(value) == CFBooleanGetTypeID()
+                                    ? .bool(value.boolValue) : .number(value.doubleValue))
+                    continue
+                }
+                if let value = input as? String { finished.append(.string(value)); continue }
+                if let values = input as? [Any] {
+                    pending.append(.array(values.count))
+                    for value in values.reversed() { pending.append(.value(value)) }
+                    continue
+                }
+                if let values = input as? [String: Any] {
+                    let keys = Array(values.keys)
+                    pending.append(.object(keys))
+                    for key in keys.reversed() {
+                        if let value = values[key] { pending.append(.value(value)) }
+                    }
+                    continue
+                }
+                throw SchemaJSONError.unsupportedFoundationValue
+            case .array(let count):
+                let values = Array(finished.suffix(count))
+                finished.removeLast(count)
+                finished.append(.array(values))
+            case .object(let keys):
+                let values = Array(finished.suffix(keys.count))
+                finished.removeLast(keys.count)
+                var object = SchemaObject()
+                for (key, value) in zip(keys, values) { object[key] = value }
+                finished.append(.object(object))
             }
-            return
         }
-        if let value = jsonObject as? String { self = .string(value); return }
-        if let value = jsonObject as? [Any] {
-            self = .array(try value.map { try SchemaValue(jsonObject: $0) }); return
-        }
-        if let value = jsonObject as? [String: Any] {
-            var object = SchemaObject()
-            for (key, item) in value { object[key] = try SchemaValue(jsonObject: item) }
-            self = .object(object); return
-        }
-        throw SchemaJSONError.unsupportedFoundationValue
+        guard finished.count == 1, let value = finished.first else { throw SchemaJSONError.invalidJSON }
+        self = value
     }
 }
 
@@ -115,16 +152,22 @@ public struct SchemaObject: Sendable, Equatable, Sequence, ExpressibleByDictiona
 
 /// Compares JSON values without regard to object member order.
 public func schemaEqual(_ lhs: SchemaValue, _ rhs: SchemaValue) -> Bool {
-    switch (lhs, rhs) {
-    case let (.array(a), .array(b)):
-        return a.count == b.count && zip(a, b).allSatisfy { schemaEqual($0, $1) }
-    case let (.object(a), .object(b)):
-        guard a.count == b.count else { return false }
-        return a.allSatisfy { member in
-            guard let value = b[member.key] else { return false }
-            return schemaEqual(member.value, value)
+    var pending: [(SchemaValue, SchemaValue)] = [(lhs, rhs)]
+    while let (left, right) = pending.popLast() {
+        switch (left, right) {
+        case let (.array(a), .array(b)):
+            guard a.count == b.count else { return false }
+            for index in a.indices { pending.append((a[index], b[index])) }
+        case let (.object(a), .object(b)):
+            guard a.count == b.count else { return false }
+            for member in a {
+                guard let value = b[member.key] else { return false }
+                pending.append((member.value, value))
+            }
+        case (.array, _), (.object, _): return false
+        default:
+            if left != right { return false }
         }
-    default:
-        return lhs == rhs
     }
+    return true
 }

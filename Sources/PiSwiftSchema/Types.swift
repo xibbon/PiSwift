@@ -33,10 +33,13 @@ public enum SchemaCompileError: Error, Sendable, CustomStringConvertible {
     case malformedSchema(String)
     case unresolvedReference(String)
     case invalidPattern(String)
+    /// The schema exceeds the supported nesting depth.
+    case nestedTooDeep
 
     public var description: String {
         switch self {
         case .malformedSchema(let message), .unresolvedReference(let message), .invalidPattern(let message): return message
+        case .nestedTooDeep: return "schema is nested too deeply"
         }
     }
 }

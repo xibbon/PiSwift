@@ -27,28 +27,44 @@ extension SchemaValue {
 
     /// Returns JSON using JavaScript JSON.stringify conventions.
     public func stringify() -> String {
-        switch self {
-        case .null: return "null"
-        case .bool(let value): return value ? "true" : "false"
-        case .number(let value): return Self.jsonNumber(value)
-        case .string(let value): return Self.jsonString(value)
-        case .array(let values): return "[" + values.map { $0.stringify() }.joined(separator: ",") + "]"
-        case .object(let object):
-            // JavaScript enumerates array-index keys before other own keys.
-            let members = Array(object)
-            let indexed = members.compactMap { item -> (UInt32, SchemaObject.Element)? in
-                guard let index = Self.arrayIndex(item.key) else { return nil }
-                return (index, item)
-            }.sorted { $0.0 < $1.0 }.map(\.1)
-            let others = members.filter { Self.arrayIndex($0.key) == nil }
-            return "{" + (indexed + others).map { Self.jsonString($0.key) + ":" + $0.value.stringify() }.joined(separator: ",") + "}"
+        enum Step {
+            case value(SchemaValue)
+            case text(String)
         }
-    }
-
-    private static func arrayIndex(_ key: String) -> UInt32? {
-        guard !key.isEmpty, key.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
-              (key == "0" || key.utf8.first != 48), let value = UInt32(key), value < UInt32.max else { return nil }
-        return value
+        var pending: [Step] = [.value(self)]
+        var output = ""
+        while let step = pending.popLast() {
+            switch step {
+            case .text(let text): output += text
+            case .value(let value):
+                switch value {
+                case .null: output += "null"
+                case .bool(let boolean): output += boolean ? "true" : "false"
+                case .number(let number): output += Self.jsonNumber(number)
+                case .string(let text): output += Self.jsonString(text)
+                case .array(let values):
+                    output += "["
+                    pending.append(.text("]"))
+                    for index in values.indices.reversed() {
+                        pending.append(.value(values[index]))
+                        if index > 0 { pending.append(.text(",")) }
+                    }
+                case .object(let object):
+                    output += "{"
+                    pending.append(.text("}"))
+                    // SchemaObject already iterates in JavaScript property order.
+                    let members = Array(object)
+                    for index in members.indices.reversed() {
+                        let member = members[index]
+                        pending.append(.value(member.value))
+                        pending.append(.text(":"))
+                        pending.append(.text(Self.jsonString(member.key)))
+                        if index > 0 { pending.append(.text(",")) }
+                    }
+                }
+            }
+        }
+        return output
     }
 
     private static func jsonString(_ string: String) -> String {
@@ -101,11 +117,63 @@ private struct SchemaJSONParser {
     let bytes: [UInt8]
     var offset = 0
 
+    private enum Frame {
+        case array([SchemaValue])
+        case object(SchemaObject, String)
+    }
+
     mutating func parse() throws -> SchemaValue {
-        let result = try value(depth: 0)
-        whitespace()
-        guard offset == bytes.count else { throw SchemaJSONError.invalidJSON }
-        return result
+        var frames: [Frame] = []
+        var current: SchemaValue? = nil
+        while true {
+            if current == nil {
+                guard frames.count <= schemaMaximumValueDepth else { throw SchemaJSONError.nestingTooDeep }
+                whitespace()
+                guard offset < bytes.count else { throw SchemaJSONError.invalidJSON }
+                switch bytes[offset] {
+                case 110: try literal("null"); current = .null
+                case 116: try literal("true"); current = .bool(true)
+                case 102: try literal("false"); current = .bool(false)
+                case 34: current = .string(try string())
+                case 91:
+                    guard frames.count < schemaMaximumValueDepth else { throw SchemaJSONError.nestingTooDeep }
+                    offset += 1; whitespace()
+                    if consume(93) { current = .array([]) }
+                    else { frames.append(.array([])) }
+                case 123:
+                    guard frames.count < schemaMaximumValueDepth else { throw SchemaJSONError.nestingTooDeep }
+                    offset += 1; whitespace()
+                    if consume(125) { current = .object(SchemaObject()) }
+                    else { frames.append(.object(SchemaObject(), try objectKey())) }
+                case 45, 48...57: current = try number()
+                default: throw SchemaJSONError.invalidJSON
+                }
+                if current == nil { continue }
+            }
+            guard let value = current else { throw SchemaJSONError.invalidJSON }
+            guard let frame = frames.popLast() else {
+                whitespace()
+                guard offset == bytes.count else { throw SchemaJSONError.invalidJSON }
+                return value
+            }
+            whitespace()
+            switch frame {
+            case .array(var values):
+                values.append(value)
+                if consume(93) { current = .array(values) }
+                else {
+                    guard consume(44) else { throw SchemaJSONError.invalidJSON }
+                    frames.append(.array(values)); current = nil
+                }
+            case .object(var object, let key):
+                object[key] = value
+                if consume(125) { current = .object(object) }
+                else {
+                    guard consume(44) else { throw SchemaJSONError.invalidJSON }
+                    frames.append(.object(object, try objectKey())); current = nil
+                }
+            }
+        }
     }
     mutating func whitespace() {
         while offset < bytes.count && [9, 10, 13, 32].contains(bytes[offset]) { offset += 1 }
@@ -115,40 +183,13 @@ private struct SchemaJSONParser {
         offset += 1
         return true
     }
-    mutating func value(depth: Int) throws -> SchemaValue {
-        guard depth <= 512 else { throw SchemaJSONError.nestingTooDeep }
+    mutating func objectKey() throws -> String {
         whitespace()
-        guard offset < bytes.count else { throw SchemaJSONError.invalidJSON }
-        switch bytes[offset] {
-        case 110: try literal("null"); return .null
-        case 116: try literal("true"); return .bool(true)
-        case 102: try literal("false"); return .bool(false)
-        case 34: return .string(try string())
-        case 91:
-            offset += 1; whitespace()
-            var values: [SchemaValue] = []
-            if consume(93) { return .array(values) }
-            while true {
-                values.append(try value(depth: depth + 1)); whitespace()
-                if consume(93) { return .array(values) }
-                guard consume(44) else { throw SchemaJSONError.invalidJSON }
-            }
-        case 123:
-            offset += 1; whitespace()
-            var object = SchemaObject()
-            if consume(125) { return .object(object) }
-            while true {
-                whitespace()
-                guard offset < bytes.count, bytes[offset] == 34 else { throw SchemaJSONError.invalidJSON }
-                let key = try string(); whitespace()
-                guard consume(58) else { throw SchemaJSONError.invalidJSON }
-                object[key] = try value(depth: depth + 1); whitespace()
-                if consume(125) { return .object(object) }
-                guard consume(44) else { throw SchemaJSONError.invalidJSON }
-            }
-        case 45, 48...57: return try number()
-        default: throw SchemaJSONError.invalidJSON
-        }
+        guard offset < bytes.count, bytes[offset] == 34 else { throw SchemaJSONError.invalidJSON }
+        let key = try string()
+        whitespace()
+        guard consume(58) else { throw SchemaJSONError.invalidJSON }
+        return key
     }
     mutating func literal(_ literal: StaticString) throws {
         for index in 0..<literal.utf8CodeUnitCount {

@@ -1,0 +1,208 @@
+{"tag":"v1.5.2","commit":"b4afdddf44e059c67ccf5097e5317d913521b470","typebox":"1.3.27","generator":"Scripts/schema-fixtures/generate-typebox-coerce-fixtures.mjs","cases":207,"skippedNonJSON":33,"skippedTests":2}
+{"id":"Value.Convert.Any > Should Convert 1/0","operation":"convertOnly","schema":{},"data":null,"expected":"null"}
+{"id":"Value.Convert.Any > Should Convert 3/1","operation":"convertOnly","schema":{},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.Any > Should Convert 4/2","operation":"convertOnly","schema":{},"data":42,"expected":"42"}
+{"id":"Value.Convert.Any > Should Convert 5/3","operation":"convertOnly","schema":{},"data":true,"expected":"true"}
+{"id":"Value.Convert.Any > Should Convert 6/4","operation":"convertOnly","schema":{},"data":{"x":1},"expected":"{\"x\":1}"}
+{"id":"Value.Convert.Any > Should Convert 7/5","operation":"convertOnly","schema":{},"data":[1,2,3],"expected":"[1,2,3]"}
+{"id":"Value.Convert.Array > Should Convert 1/6","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":[1,3.14,"1","3.14",true,false,"true","false","hello"],"expected":"[1,3.14,1,3.14,1,0,1,0,\"hello\"]"}
+{"id":"Value.Convert.Array > Should Convert 2/7","operation":"convertOnly","schema":{"type":"array","items":{"type":"boolean"}},"data":[1,3.14,"1","3.14",true,false,"true","false","hello"],"expected":"[true,3.14,true,\"3.14\",true,false,true,false,\"hello\"]"}
+{"id":"Value.Convert.Array > Should Convert 3/8","operation":"convertOnly","schema":{"type":"array","items":{"type":"string"}},"data":[1,3.14,"1","3.14",true,false,"true","false","hello"],"expected":"[\"1\",\"3.14\",\"1\",\"3.14\",\"true\",\"false\",\"true\",\"false\",\"hello\"]"}
+{"id":"Value.Convert.Array > Should Convert 4/9","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":"1","expected":"[1]"}
+{"id":"Value.Convert.Array > Should Convert 5/10","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":[],"expected":"[]"}
+{"id":"Value.Convert.Array > Should Convert 6/11","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":42,"expected":"[42]"}
+{"id":"Value.Convert.Array > Should Convert 7/12","operation":"convertOnly","schema":{"type":"array","items":{"type":"boolean"}},"data":true,"expected":"[true]"}
+{"id":"Value.Convert.Array > Should Convert 8/13","operation":"convertOnly","schema":{"type":"array","items":{"type":"null"}},"data":null,"expected":"[null]"}
+{"id":"Value.Convert.Array > Should Convert 11/14","operation":"convertOnly","schema":{"type":"array","items":{"type":"object","properties":{}}},"data":{},"expected":"[{}]"}
+{"id":"Value.Convert.Array > Should Convert 12/15","operation":"convertOnly","schema":{"type":"array","items":{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}}},"data":{"x":1},"expected":"[{\"x\":1}]"}
+{"id":"Value.Convert.Array > Should Convert 13/16","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":"42","expected":"[42]"}
+{"id":"Value.Convert.Array > Should Convert 14/17","operation":"convertOnly","schema":{"type":"array","items":{"type":"boolean"}},"data":"true","expected":"[true]"}
+{"id":"Value.Convert.Array > Should Convert 15/18","operation":"convertOnly","schema":{"type":"array","items":{"type":"boolean"}},"data":0,"expected":"[false]"}
+{"id":"Value.Convert.Array > Should Convert 16/19","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":"hello","expected":"[\"hello\"]"}
+{"id":"Value.Convert.Array > Should Convert 17/20","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":[1],"expected":"[1]"}
+{"id":"Value.Convert.Array > Should Convert 18/21","operation":"convertOnly","schema":{"type":"array","items":{"type":"array","items":{"type":"number"}}},"data":[1,2,3],"expected":"[[1],[2],[3]]"}
+{"id":"Value.Convert.Array > Should Convert 18/22","operation":"check","schema":{"type":"array","items":{"type":"array","items":{"type":"number"}}},"data":[[1],[2],[3]],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 19/23","operation":"convertOnly","schema":{"type":"array","items":{"type":"number"}},"data":{"0":1,"length":1},"expected":"[{\"0\":1,\"length\":1}]"}
+{"id":"Value.Convert.Array > Should Convert 20/24","operation":"convertOnly","schema":{"type":"array","items":{"type":"array","items":{"type":"number"}}},"data":42,"expected":"[[42]]"}
+{"id":"Value.Convert.Array > Should Convert 20/25","operation":"check","schema":{"type":"array","items":{"type":"array","items":{"type":"number"}}},"data":[[42]],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 21/26","operation":"convertOnly","schema":{"type":"array","items":{"anyOf":[{"type":"number"},{"type":"string"}]}},"data":1,"expected":"[1]"}
+{"id":"Value.Convert.Array > Should Convert 21/27","operation":"check","schema":{"type":"array","items":{"anyOf":[{"type":"number"},{"type":"string"}]}},"data":[1],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 22/28","operation":"convertOnly","schema":{"type":"array","items":{"anyOf":[{"type":"number"},{"type":"string"}]}},"data":"hello","expected":"[\"hello\"]"}
+{"id":"Value.Convert.Array > Should Convert 22/29","operation":"check","schema":{"type":"array","items":{"anyOf":[{"type":"number"},{"type":"string"}]}},"data":["hello"],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 23/30","operation":"convertOnly","schema":{"type":"array","items":{"anyOf":[{"type":"number"},{"type":"string"}]}},"data":[1,"hello",true,"3.14"],"expected":"[1,\"hello\",1,\"3.14\"]"}
+{"id":"Value.Convert.Array > Should Convert 23/31","operation":"check","schema":{"type":"array","items":{"anyOf":[{"type":"number"},{"type":"string"}]}},"data":[1,"hello",1,"3.14"],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 24/32","operation":"convertOnly","schema":{"anyOf":[{"type":"array","items":{"type":"number"}},{"type":"string"}]},"data":"1","expected":"\"1\""}
+{"id":"Value.Convert.Array > Should Convert 24/33","operation":"check","schema":{"anyOf":[{"type":"array","items":{"type":"number"}},{"type":"string"}]},"data":"1","expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 25/34","operation":"convertOnly","schema":{"type":"array","items":{"anyOf":[{"type":"array","items":{"type":"number"}},{"type":"string"}]}},"data":42,"expected":"[[42]]"}
+{"id":"Value.Convert.Array > Should Convert 25/35","operation":"check","schema":{"type":"array","items":{"anyOf":[{"type":"array","items":{"type":"number"}},{"type":"string"}]}},"data":[[42]],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 26/36","operation":"convertOnly","schema":{"type":"array","items":{"allOf":[{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]}},"data":{"x":1,"y":2},"expected":"[{\"x\":1,\"y\":2}]"}
+{"id":"Value.Convert.Array > Should Convert 26/37","operation":"check","schema":{"type":"array","items":{"allOf":[{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]}},"data":[{"x":1,"y":2}],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 27/38","operation":"convertOnly","schema":{"type":"array","items":{"allOf":[{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]}},"data":[{"x":"1","y":"2"},{"x":"3","y":"4"}],"expected":"[{\"x\":1,\"y\":2},{\"x\":3,\"y\":4}]"}
+{"id":"Value.Convert.Array > Should Convert 27/39","operation":"check","schema":{"type":"array","items":{"allOf":[{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]}},"data":[{"x":1,"y":2},{"x":3,"y":4}],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 28/40","operation":"convertOnly","schema":{"allOf":[{"type":"array","items":{"type":"number"}},{"type":"array","items":{"type":"number"}}]},"data":42,"expected":"[42]"}
+{"id":"Value.Convert.Array > Should Convert 28/41","operation":"check","schema":{"allOf":[{"type":"array","items":{"type":"number"}},{"type":"array","items":{"type":"number"}}]},"data":[42],"expected":"true"}
+{"id":"Value.Convert.Array > Should Convert 29/42","operation":"convertOnly","schema":{"allOf":[{"type":"array","items":{"type":"number"}},{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}}]},"data":42,"expected":"[42]"}
+{"id":"Value.Convert.Array > Should Convert 29/43","operation":"check","schema":{"allOf":[{"type":"array","items":{"type":"number"}},{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}}]},"data":[42],"expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 1/44","operation":"convertOnly","schema":{"type":"boolean"},"data":"1","expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 2/45","operation":"convertOnly","schema":{"type":"boolean"},"data":"3.14","expected":"\"3.14\""}
+{"id":"Value.Convert.Boolean > Should Convert 3/46","operation":"convertOnly","schema":{"type":"boolean"},"data":"true","expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 4/47","operation":"convertOnly","schema":{"type":"boolean"},"data":"false","expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 5/48","operation":"convertOnly","schema":{"type":"boolean"},"data":1,"expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 6/49","operation":"convertOnly","schema":{"type":"boolean"},"data":3.14,"expected":"3.14"}
+{"id":"Value.Convert.Boolean > Should Convert 7/50","operation":"convertOnly","schema":{"type":"boolean"},"data":1.1,"expected":"1.1"}
+{"id":"Value.Convert.Boolean > Should Convert 8/51","operation":"convertOnly","schema":{"type":"boolean"},"data":true,"expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 9/52","operation":"convertOnly","schema":{"type":"boolean"},"data":false,"expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 10/53","operation":"convertOnly","schema":{"type":"boolean"},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.Boolean > Should Convert 11/54","operation":"convertOnly","schema":{"type":"boolean"},"data":"true","expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 12/55","operation":"convertOnly","schema":{"type":"boolean"},"data":"TRUE","expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 13/56","operation":"convertOnly","schema":{"type":"boolean"},"data":"false","expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 14/57","operation":"convertOnly","schema":{"type":"boolean"},"data":"0","expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 15/58","operation":"convertOnly","schema":{"type":"boolean"},"data":"1","expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 16/59","operation":"convertOnly","schema":{"type":"boolean","default":true},"data":"0","expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 17/60","operation":"convertOnly","schema":{"type":"boolean","default":false},"data":"1","expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 18/61","operation":"convertOnly","schema":{"type":"boolean","default":true},"data":"2","expected":"\"2\""}
+{"id":"Value.Convert.Boolean > Should Convert 19/62","operation":"convertOnly","schema":{"type":"boolean"},"data":0,"expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 21/63","operation":"convertOnly","schema":{"type":"boolean"},"data":1,"expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 22/64","operation":"convertOnly","schema":{"type":"boolean"},"data":2,"expected":"2"}
+{"id":"Value.Convert.Boolean > Should Convert 23/65","operation":"convertOnly","schema":{"type":"boolean","default":true},"data":0,"expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 24/66","operation":"convertOnly","schema":{"type":"boolean","default":false},"data":1,"expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 25/67","operation":"convertOnly","schema":{"type":"boolean","default":true},"data":2,"expected":"2"}
+{"id":"Value.Convert.Boolean > Should Convert 26/68","operation":"convertOnly","schema":{"type":"boolean"},"data":true,"expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 27/69","operation":"convertOnly","schema":{"type":"boolean"},"data":false,"expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 28/70","operation":"convertOnly","schema":{"type":"boolean"},"data":{},"expected":"{}"}
+{"id":"Value.Convert.Boolean > Should Convert 29/71","operation":"convertOnly","schema":{"type":"boolean"},"data":[],"expected":"[]"}
+{"id":"Value.Convert.Boolean > Should Convert 20/72","operation":"convertOnly","schema":{"type":"boolean"},"data":true,"expected":"true"}
+{"id":"Value.Convert.Boolean > Should Convert 21/73","operation":"convertOnly","schema":{"type":"boolean"},"data":false,"expected":"false"}
+{"id":"Value.Convert.Boolean > Should Convert 22/74","operation":"convertOnly","schema":{"type":"boolean"},"data":null,"expected":"false"}
+{"id":"Value.Convert.Enum > Should Convert 1/75","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"enum":[1,2,"hello"]}}},"data":{"x":"1"},"expected":"{\"x\":1}"}
+{"id":"Value.Convert.Enum > Should Convert 1/76","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"enum":[1,2,"hello"]}}},"data":{"x":"2"},"expected":"{\"x\":2}"}
+{"id":"Value.Convert.Enum > Should Convert 1/77","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"enum":[1,2,"hello"]}}},"data":{"x":"hello"},"expected":"{\"x\":\"hello\"}"}
+{"id":"Value.Convert.Enum > Should Convert 1/78","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"enum":[1,2,"hello"]}}},"data":{"x":"world"},"expected":"{\"x\":\"world\"}"}
+{"id":"Value.Convert.Integer > Should Convert 1/79","operation":"convertOnly","schema":{"type":"integer"},"data":"3.14","expected":"3"}
+{"id":"Value.Convert.Integer > Should Convert 2/80","operation":"convertOnly","schema":{"type":"integer"},"data":"42","expected":"42"}
+{"id":"Value.Convert.Integer > Should Convert 3/81","operation":"convertOnly","schema":{"type":"integer"},"data":true,"expected":"1"}
+{"id":"Value.Convert.Integer > Should Convert 4/82","operation":"convertOnly","schema":{"type":"integer"},"data":false,"expected":"0"}
+{"id":"Value.Convert.Integer > Should Convert 5/83","operation":"convertOnly","schema":{"type":"integer"},"data":3.14,"expected":"3"}
+{"id":"Value.Convert.Integer > Should Convert 6/84","operation":"convertOnly","schema":{"type":"integer"},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.Integer > Should Convert 7/85","operation":"convertOnly","schema":{"type":"integer"},"data":"3.14","expected":"3"}
+{"id":"Value.Convert.Integer > Should Convert 8/86","operation":"convertOnly","schema":{"type":"integer"},"data":"-0","expected":"0"}
+{"id":"Value.Convert.Integer > Should Convert 9/87","operation":"convertOnly","schema":{"type":"integer"},"data":"-100","expected":"-100"}
+{"id":"Value.Convert.Integer > Should Convert 10/88","operation":"convertOnly","schema":{"type":"integer"},"data":42,"expected":"42"}
+{"id":"Value.Convert.Integer > Should Convert 11/89","operation":"convertOnly","schema":{"type":"integer"},"data":true,"expected":"1"}
+{"id":"Value.Convert.Integer > Should Convert 12/90","operation":"convertOnly","schema":{"type":"integer"},"data":false,"expected":"0"}
+{"id":"Value.Convert.Integer > Should Convert 13/91","operation":"convertOnly","schema":{"type":"integer"},"data":{},"expected":"{}"}
+{"id":"Value.Convert.Integer > Should Convert 14/92","operation":"convertOnly","schema":{"type":"integer"},"data":[],"expected":"[]"}
+{"id":"Value.Convert.Integer > Should Convert 15/93","operation":"convertOnly","schema":{"type":"integer"},"data":1738213389080,"expected":"1738213389080"}
+{"id":"Value.Convert.Integer > Should Convert 16/94","operation":"convertOnly","schema":{"type":"integer"},"data":1738213389080.5554,"expected":"1738213389080"}
+{"id":"Value.Convert.Integer > Should Convert 17/95","operation":"convertOnly","schema":{"type":"integer"},"data":"1738213389080","expected":"1738213389080"}
+{"id":"Value.Convert.Integer > Should Convert 18/96","operation":"convertOnly","schema":{"type":"integer"},"data":"1738213389080.555","expected":"1738213389080"}
+{"id":"Value.Convert.Intersect > Should Convert intersected objects/97","operation":"convertOnly","schema":{"allOf":[{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]},"data":{"x":"1","y":"2"},"expected":"{\"x\":1,\"y\":2}"}
+{"id":"Value.Convert.Intersect > Should complex intersect 1/98","operation":"convertOnly","schema":{"allOf":[{"type":"number"},{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]},"data":{"x":"1","y":"2"},"expected":"{\"x\":1,\"y\":2}"}
+{"id":"Value.Convert.Intersect > Should complex intersect 2/99","operation":"convertOnly","schema":{"allOf":[{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}},{"type":"number"}]},"data":{"x":"3","y":"4"},"expected":"{\"x\":3,\"y\":4}"}
+{"id":"Value.Convert.Intersect > Should complex intersect 3/100","operation":"convertOnly","schema":{"allOf":[{"type":"number"},{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},{"type":"object","required":["y"],"properties":{"y":{"type":"number"}}}]},"data":"123","expected":"123"}
+{"id":"Value.Convert.Literal > LiteralString: Should convert 1/101","operation":"convertOnly","schema":{"type":"string","const":"1"},"data":1,"expected":"\"1\""}
+{"id":"Value.Convert.Literal > LiteralString: Should convert 2/102","operation":"convertOnly","schema":{"type":"string","const":"1"},"data":2,"expected":"2"}
+{"id":"Value.Convert.Literal > LiteralString: Should convert 3/103","operation":"convertOnly","schema":{"type":"string","const":"true"},"data":true,"expected":"\"true\""}
+{"id":"Value.Convert.Literal > LiteralNumber: Should convert 1/104","operation":"convertOnly","schema":{"type":"number","const":3.14},"data":"3.14","expected":"3.14"}
+{"id":"Value.Convert.Literal > LiteralNumber: Should convert 2/105","operation":"convertOnly","schema":{"type":"number","const":3.14},"data":"3.15","expected":"\"3.15\""}
+{"id":"Value.Convert.Literal > LiteralNumber: Should convert 3/106","operation":"convertOnly","schema":{"type":"number","const":1},"data":true,"expected":"1"}
+{"id":"Value.Convert.Literal > LiteralNumber: Should convert 4/107","operation":"convertOnly","schema":{"type":"number","const":0},"data":false,"expected":"0"}
+{"id":"Value.Convert.Literal > LiteralNumber: Should convert 5/108","operation":"convertOnly","schema":{"type":"number","const":2},"data":true,"expected":"true"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 1/109","operation":"convertOnly","schema":{"type":"boolean","const":true},"data":3.14,"expected":"3.14"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 2/110","operation":"convertOnly","schema":{"type":"boolean","const":true},"data":1,"expected":"true"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 3/111","operation":"convertOnly","schema":{"type":"boolean","const":true},"data":"true","expected":"true"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 4/112","operation":"convertOnly","schema":{"type":"boolean","const":false},"data":"false","expected":"false"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 5/113","operation":"convertOnly","schema":{"type":"boolean","const":true},"data":"1","expected":"true"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 6/114","operation":"convertOnly","schema":{"type":"boolean","const":false},"data":"0","expected":"false"}
+{"id":"Value.Convert.Literal > LiteralBoolean: Should convert 7/115","operation":"convertOnly","schema":{"type":"boolean","const":false},"data":"2","expected":"\"2\""}
+{"id":"Value.Convert.Never > Should not 1/116","operation":"convertOnly","schema":{"not":{}},"data":true,"expected":"true"}
+{"id":"Value.Convert.Never > Should not 2/117","operation":"convertOnly","schema":{"not":{}},"data":42,"expected":"42"}
+{"id":"Value.Convert.Never > Should not 3/118","operation":"convertOnly","schema":{"not":{}},"data":"true","expected":"\"true\""}
+{"id":"Value.Convert.Null > Should Convert 1/119","operation":"convertOnly","schema":{"type":"null"},"data":"null","expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 2/120","operation":"convertOnly","schema":{"type":"null"},"data":"NULL","expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 3/121","operation":"convertOnly","schema":{"type":"null"},"data":"nil","expected":"\"nil\""}
+{"id":"Value.Convert.Null > Should Convert 4/122","operation":"convertOnly","schema":{"type":"null"},"data":"undefined","expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 5/123","operation":"convertOnly","schema":{"type":"null"},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.Null > Should Convert 6/124","operation":"convertOnly","schema":{"type":"null"},"data":null,"expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 7/125","operation":"convertOnly","schema":{"type":"null"},"data":0,"expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 8/126","operation":"convertOnly","schema":{"type":"null"},"data":false,"expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 9/127","operation":"convertOnly","schema":{"type":"null"},"data":"","expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 12/128","operation":"convertOnly","schema":{"type":"null"},"data":false,"expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 13/129","operation":"convertOnly","schema":{"type":"null"},"data":true,"expected":"true"}
+{"id":"Value.Convert.Null > Should Convert 14/130","operation":"convertOnly","schema":{"type":"null"},"data":0,"expected":"null"}
+{"id":"Value.Convert.Null > Should Convert 15/131","operation":"convertOnly","schema":{"type":"null"},"data":1,"expected":"1"}
+{"id":"Value.Convert.Null > Should Convert 16/132","operation":"convertOnly","schema":{"type":"null"},"data":null,"expected":"null"}
+{"id":"Value.Convert.Number > Should Convert 1/133","operation":"convertOnly","schema":{"type":"number"},"data":"3.14","expected":"3.14"}
+{"id":"Value.Convert.Number > Should Convert 2/134","operation":"convertOnly","schema":{"type":"number"},"data":"42","expected":"42"}
+{"id":"Value.Convert.Number > Should Convert 3/135","operation":"convertOnly","schema":{"type":"number"},"data":true,"expected":"1"}
+{"id":"Value.Convert.Number > Should Convert 4/136","operation":"convertOnly","schema":{"type":"number"},"data":false,"expected":"0"}
+{"id":"Value.Convert.Number > Should Convert 5/137","operation":"convertOnly","schema":{"type":"number"},"data":3.14,"expected":"3.14"}
+{"id":"Value.Convert.Number > Should Convert 6/138","operation":"convertOnly","schema":{"type":"number"},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.Number > Should Convert 7/139","operation":"convertOnly","schema":{"type":"number"},"data":"3.14","expected":"3.14"}
+{"id":"Value.Convert.Number > Should Convert 8/140","operation":"convertOnly","schema":{"type":"number"},"data":"-0","expected":"0"}
+{"id":"Value.Convert.Number > Should Convert 9/141","operation":"convertOnly","schema":{"type":"number"},"data":"-100","expected":"-100"}
+{"id":"Value.Convert.Number > Should Convert 10/142","operation":"convertOnly","schema":{"type":"number"},"data":42,"expected":"42"}
+{"id":"Value.Convert.Number > Should Convert 11/143","operation":"convertOnly","schema":{"type":"number"},"data":true,"expected":"1"}
+{"id":"Value.Convert.Number > Should Convert 12/144","operation":"convertOnly","schema":{"type":"number"},"data":false,"expected":"0"}
+{"id":"Value.Convert.Number > Should Convert 13/145","operation":"convertOnly","schema":{"type":"number"},"data":{},"expected":"{}"}
+{"id":"Value.Convert.Number > Should Convert 14/146","operation":"convertOnly","schema":{"type":"number"},"data":[],"expected":"[]"}
+{"id":"Value.Convert.Number > Should Convert 12/147","operation":"convertOnly","schema":{"type":"number"},"data":null,"expected":"0"}
+{"id":"Value.Convert.Number > Should Convert 13/148","operation":"convertOnly","schema":{"type":"number"},"data":"false","expected":"0"}
+{"id":"Value.Convert.Number > Should Convert 14/149","operation":"convertOnly","schema":{"type":"number"},"data":"true","expected":"1"}
+{"id":"Value.Convert.Number > Should Convert 15/150","operation":"convertOnly","schema":{"type":"number"},"data":"123","expected":"123"}
+{"id":"Value.Convert.Number > Should Convert 16/151","operation":"convertOnly","schema":{"type":"number"},"data":"123.456","expected":"123.456"}
+{"id":"Value.Convert.Number > Should Convert 17/152","operation":"convertOnly","schema":{"type":"number"},"data":"123.456","expected":"123.456"}
+{"id":"Value.Convert.Number > Should Convert 18/153","operation":"convertOnly","schema":{"type":"number"},"data":"123n","expected":"123"}
+{"id":"Value.Convert.Number > Should Convert 20/154","operation":"convertOnly","schema":{"type":"number"},"data":"90071992547409910n","expected":"\"90071992547409910n\""}
+{"id":"Value.Convert.Object > Should Convert 1/155","operation":"convertOnly","schema":{"type":"object","required":["x","y","z"],"properties":{"x":{"type":"number"},"y":{"type":"boolean"},"z":{"type":"boolean"}}},"data":{"x":"42","y":"true","z":"hello"},"expected":"{\"x\":42,\"y\":true,\"z\":\"hello\"}"}
+{"id":"Value.Convert.Object > Should Convert 2/156","operation":"convertOnly","schema":{"type":"object","required":["x","y"],"properties":{"x":{"type":"number"},"y":{"type":"boolean"}}},"data":{"x":"42","y":"true","z":"hello"},"expected":"{\"x\":42,\"y\":true,\"z\":\"hello\"}"}
+{"id":"Value.Convert.Object > Should Convert 3/157","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"type":"number"}}},"data":{},"expected":"{}"}
+{"id":"Value.Convert.Object > Should Convert 4/158","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"type":"number"}},"additionalProperties":{"type":"null"}},"data":{"x":"1","y":0},"expected":"{\"x\":1,\"y\":null}"}
+{"id":"Value.Convert.Object > Should Convert 5/159","operation":"convertOnly","schema":{"type":"object","properties":{"x":{"type":"number"}}},"data":{"x":1},"expected":"{\"x\":1}"}
+{"id":"Value.Convert.Object > Should Convert 6/160","operation":"convertOnly","schema":{"type":"object","properties":{"x":{"type":"number"}}},"data":{"x":"1"},"expected":"{\"x\":1}"}
+{"id":"Value.Convert.Record > Should Convert 1/161","operation":"convertOnly","schema":{"type":"object","patternProperties":{"^.*$":{"type":"number"}}},"data":{"x":"42","y":"24","z":"hello"},"expected":"{\"x\":42,\"y\":24,\"z\":\"hello\"}"}
+{"id":"Value.Convert.Record > Should Convert 2/162","operation":"convertOnly","schema":{"anyOf":[{"type":"null"},{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{}}}]},"data":{},"expected":"{}"}
+{"id":"Value.Convert.Record > Should Convert 3/163","operation":"convertOnly","schema":{"anyOf":[{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{}}},{"type":"null"}]},"data":{},"expected":"{}"}
+{"id":"Value.Convert.Record > Should Convert 4/164","operation":"convertOnly","schema":{"anyOf":[{"type":"null"},{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{}}}]},"data":null,"expected":"null"}
+{"id":"Value.Convert.Record > Should Convert 5/165","operation":"convertOnly","schema":{"anyOf":[{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{}}},{"type":"null"}]},"data":null,"expected":"null"}
+{"id":"Value.Convert.Record > Should Convert 6/166","operation":"convertOnly","schema":{"anyOf":[{"type":"null"},{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{}}}]},"data":"NULL","expected":"null"}
+{"id":"Value.Convert.Record > Should Convert 7/167","operation":"convertOnly","schema":{"anyOf":[{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{}}},{"type":"null"}]},"data":"NULL","expected":"null"}
+{"id":"Value.Convert.Record > Should Convert 8/168","operation":"convertOnly","schema":{"type":"object","patternProperties":{"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$":{"type":"number"}},"additionalProperties":{"type":"null"}},"data":{"0":"1","x":0},"expected":"{\"0\":1,\"x\":null}"}
+{"id":"Value.Convert.String > Should Convert 1/169","operation":"convertOnly","schema":{"type":"string"},"data":3.14,"expected":"\"3.14\""}
+{"id":"Value.Convert.String > Should Convert 2/170","operation":"convertOnly","schema":{"type":"string"},"data":3,"expected":"\"3\""}
+{"id":"Value.Convert.String > Should Convert 3/171","operation":"convertOnly","schema":{"type":"string"},"data":true,"expected":"\"true\""}
+{"id":"Value.Convert.String > Should Convert 4/172","operation":"convertOnly","schema":{"type":"string"},"data":false,"expected":"\"false\""}
+{"id":"Value.Convert.String > Should Convert 6/173","operation":"convertOnly","schema":{"type":"string"},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.String > Should Convert 7/174","operation":"convertOnly","schema":{"type":"string"},"data":42,"expected":"\"42\""}
+{"id":"Value.Convert.String > Should Convert 9/175","operation":"convertOnly","schema":{"type":"string"},"data":true,"expected":"\"true\""}
+{"id":"Value.Convert.String > Should Convert 10/176","operation":"convertOnly","schema":{"type":"string"},"data":false,"expected":"\"false\""}
+{"id":"Value.Convert.String > Should Convert 11/177","operation":"convertOnly","schema":{"type":"string"},"data":{},"expected":"{}"}
+{"id":"Value.Convert.String > Should Convert 12/178","operation":"convertOnly","schema":{"type":"string"},"data":[],"expected":"[]"}
+{"id":"Value.Convert.String > Should Convert 13/179","operation":"convertOnly","schema":{"type":"string"},"data":null,"expected":"\"null\""}
+{"id":"Value.Convert.TemplateLiteral > Should Convert 1/180","operation":"convertOnly","schema":{"type":"string","pattern":"^(1|2|3)$"},"data":1,"expected":"\"1\""}
+{"id":"Value.Convert.TemplateLiteral > Should Convert 1/181","operation":"convertOnly","schema":{"type":"string","pattern":"^(1|2|3)$"},"data":2,"expected":"\"2\""}
+{"id":"Value.Convert.TemplateLiteral > Should Convert 1/182","operation":"convertOnly","schema":{"type":"string","pattern":"^(1|2|3)$"},"data":3,"expected":"\"3\""}
+{"id":"Value.Convert.TemplateLiteral > Should Convert 1/183","operation":"convertOnly","schema":{"type":"string","pattern":"^(1|2|3)$"},"data":4,"expected":"\"4\""}
+{"id":"Value.Convert.TemplateLiteral > Should Convert 2/184","operation":"convertOnly","schema":{"type":"object","required":["test"],"properties":{"test":{"type":"string","pattern":"^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(a|b|c)$"}}},"data":{"test":"123b"},"expected":"{\"test\":\"123b\"}"}
+{"id":"Value.Convert.Tuple > Should Convert 1/185","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":["1","true"],"expected":"[1,1]"}
+{"id":"Value.Convert.Tuple > Should Convert 2/186","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":["1"],"expected":"[1]"}
+{"id":"Value.Convert.Tuple > Should Convert 3/187","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":["1","2","3"],"expected":"[1,2,\"3\"]"}
+{"id":"Value.Convert.Tuple > Should Convert 4/188","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":"not an array","expected":"\"not an array\""}
+{"id":"Value.Convert.Tuple > Should Convert 5/189","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":42,"expected":"42"}
+{"id":"Value.Convert.Tuple > Should Convert 6/190","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":null,"expected":"null"}
+{"id":"Value.Convert.Tuple > Should Convert 7/191","operation":"convertOnly","schema":{"type":"array","additionalItems":false,"items":[{"type":"number"},{"type":"number"}],"minItems":2},"data":{"0":"1","1":"2"},"expected":"{\"0\":\"1\",\"1\":\"2\"}"}
+{"id":"Value.Convert.Union > Should Convert 1/192","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"anyOf":[{"type":"number"},{"type":"null"}]}}},"data":{"x":"42"},"expected":"{\"x\":42}"}
+{"id":"Value.Convert.Union > Should Convert 1/193","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"anyOf":[{"type":"number"},{"type":"null"}]}}},"data":{"x":"null"},"expected":"{\"x\":null}"}
+{"id":"Value.Convert.Union > Should Convert 1/194","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"anyOf":[{"type":"number"},{"type":"null"}]}}},"data":{"x":"hello"},"expected":"{\"x\":\"hello\"}"}
+{"id":"Value.Convert.Union > Should Convert 2/195","operation":"convertOnly","schema":{"type":"object","required":["x"],"properties":{"x":{"anyOf":[{"type":"boolean"},{"type":"number"}]}}},"data":{"x":"1"},"expected":"{\"x\":true}"}
+{"id":"Value.Convert.Union > Should Convert 3/196","operation":"convertOnly","schema":{"allOf":[{"anyOf":[{"type":"object","required":["a"],"properties":{"a":{"type":"number"}}},{"type":"object","required":["b"],"properties":{"b":{"type":"number"}}}]},{"type":"object","required":["c"],"properties":{"c":{"type":"number"}}}]},"data":{"a":"1","c":"2"},"expected":"{\"a\":1,\"c\":2}"}
+{"id":"Value.Convert.Union > Should Convert 3/197","operation":"convertOnly","schema":{"allOf":[{"anyOf":[{"type":"object","required":["a"],"properties":{"a":{"type":"number"}}},{"type":"object","required":["b"],"properties":{"b":{"type":"number"}}}]},{"type":"object","required":["c"],"properties":{"c":{"type":"number"}}}]},"data":{"b":"1","c":"2"},"expected":"{\"b\":1,\"c\":2}"}
+{"id":"Value.Convert.Union > Should Convert 3/198","operation":"convertOnly","schema":{"allOf":[{"anyOf":[{"type":"object","required":["a"],"properties":{"a":{"type":"number"}}},{"type":"object","required":["b"],"properties":{"b":{"type":"number"}}}]},{"type":"object","required":["c"],"properties":{"c":{"type":"number"}}}]},"data":{"a":"1","b":"2","c":"3"},"expected":"{\"a\":1,\"b\":\"2\",\"c\":3}"}
+{"id":"Value.Convert.Union > Should guard against Array conversion in Object/199","operation":"convertOnly","schema":{"anyOf":[{"type":"object","required":["type","values"],"properties":{"type":{"type":"string","const":"A"},"values":{"anyOf":[{"type":"string"},{"type":"number"}]}}},{"type":"object","required":["type","values"],"properties":{"type":{"type":"string","const":"B"},"values":{"type":"string"}}}]},"data":[{"type":"A","values":1}],"expected":"[{\"type\":\"A\",\"values\":1}]"}
+{"id":"Value.Convert.Union > Should guard against Array conversion in Record/200","operation":"convertOnly","schema":{"anyOf":[{"type":"object","patternProperties":{"^values$":{"anyOf":[{"type":"string"},{"type":"number"}]}}},{"type":"object","patternProperties":{"^type$":{"anyOf":[{"type":"string"},{"type":"number"}]}}}]},"data":[{"type":"A","values":1}],"expected":"[{\"type\":\"A\",\"values\":1}]"}
+{"id":"Value.Convert.Unknown > Should Convert 1/201","operation":"convertOnly","schema":{},"data":null,"expected":"null"}
+{"id":"Value.Convert.Unknown > Should Convert 3/202","operation":"convertOnly","schema":{},"data":"hello","expected":"\"hello\""}
+{"id":"Value.Convert.Unknown > Should Convert 4/203","operation":"convertOnly","schema":{},"data":42,"expected":"42"}
+{"id":"Value.Convert.Unknown > Should Convert 5/204","operation":"convertOnly","schema":{},"data":true,"expected":"true"}
+{"id":"Value.Convert.Unknown > Should Convert 6/205","operation":"convertOnly","schema":{},"data":{"x":1},"expected":"{\"x\":1}"}
+{"id":"Value.Convert.Unknown > Should Convert 7/206","operation":"convertOnly","schema":{},"data":[1,2,3],"expected":"[1,2,3]"}
