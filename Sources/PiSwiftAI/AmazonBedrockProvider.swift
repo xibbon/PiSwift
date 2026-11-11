@@ -265,7 +265,9 @@ public func streamBedrock(
         do {
             let region = resolveBedrockRegion(model: model, options: options)
             let auth = try resolveBedrockAuth(options: options)
-            let (originalRequest, originalBody) = try buildBedrockRequest(model: model, context: context, options: options, region: region)
+            let rememberedStrictToolLimits = hasExceededStrictToolLimits(options.sessionId)
+            let (originalRequest, originalBody) = try buildBedrockRequest(model: model, context: context, options: options, region: region,
+                disablePreferredStrictTools: rememberedStrictToolLimits)
             let body = try await transformPayload(options.onPayload, data: originalBody)
             if options.signal?.isCancelled == true { throw BedrockStreamError.aborted }
             var request = originalRequest
@@ -275,7 +277,7 @@ public func streamBedrock(
 
             let retryLimit = max(0, options.maxRetries ?? 0)
             var attempt = 0
-            var strictFallbackAttempted = false
+            var strictFallbackAttempted = rememberedStrictToolLimits
             var responseRequestId: String?
             while true {
                 if options.signal?.isCancelled == true { throw BedrockStreamError.aborted }
@@ -334,6 +336,7 @@ public func streamBedrock(
                        hasPreferredStrictBedrockTools(body, tools: context.tools),
                        isBedrockStrictToolLimitFailure(error) {
                         strictFallbackAttempted = true
+                        markStrictToolLimitsExceeded(options.sessionId)
                         let (fallbackRequest, fallbackBody) = try buildBedrockRequest(
                             model: model, context: context, options: options, region: region,
                             disablePreferredStrictTools: true
@@ -1340,9 +1343,7 @@ private func makeBedrockHTTPFailure(response: HTTPURLResponse, body: String) -> 
 private func isBedrockStrictToolLimitFailure(_ error: Error) -> Bool {
     guard case let BedrockStreamError.responseFailure(message, status, errorCode, _) = error,
           status == 400, errorCode?.contains("ValidationException") == true else { return false }
-    return ["The compiled grammar is too large", "Too many strict tools (",
-            "Schemas contains too many parameters with union types ("]
-        .contains { message.contains($0) }
+    return isStrictToolLimitErrorMessage(message)
 }
 
 private func hasPreferredStrictBedrockTools(_ body: Data, tools: [AITool]?) -> Bool {

@@ -203,6 +203,8 @@ public struct StreamOptions: Sendable {
     public var transport: Transport?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
+    /// Prevent this request from using or replacing server continuation state.
+    public var disableContinuation: Bool?
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     public var maxRetryDelayMs: Int?
@@ -237,6 +239,7 @@ public struct StreamOptions: Sendable {
         transport: Transport? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
+        disableContinuation: Bool? = nil,
         headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -263,6 +266,7 @@ public struct StreamOptions: Sendable {
         self.transport = transport
         self.cacheRetention = cacheRetention
         self.sessionId = sessionId
+        self.disableContinuation = disableContinuation
         self.headers = headers
         self.onPayload = onPayload
         self.maxRetryDelayMs = maxRetryDelayMs
@@ -382,6 +386,8 @@ public struct SimpleStreamOptions: Sendable {
     public var reasoning: ThinkingLevel?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
+    /// Prevent this request from using or replacing server continuation state.
+    public var disableContinuation: Bool?
     public var thinkingBudgets: ThinkingBudgets?
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
@@ -418,6 +424,7 @@ public struct SimpleStreamOptions: Sendable {
         reasoning: ThinkingLevel? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
+        disableContinuation: Bool? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
@@ -451,6 +458,7 @@ public struct SimpleStreamOptions: Sendable {
         self.reasoning = reasoning
         self.cacheRetention = cacheRetention
         self.sessionId = sessionId
+        self.disableContinuation = disableContinuation
         self.thinkingBudgets = thinkingBudgets
         self.headers = headers
         self.onPayload = onPayload
@@ -2573,6 +2581,8 @@ public struct AnthropicOptions: Sendable {
     public var httpClient: (any ProviderHTTPClient)?
     public var cacheRetention: CacheRetention?
     public var sessionId: String?
+    /// Prevent this request from using or replacing server continuation state.
+    public var disableContinuation: Bool?
     public var thinkingEnabled: Bool?
     public var thinkingBudgetTokens: Int?
     /// Adaptive thinking effort level. When set on models that support adaptive
@@ -2608,6 +2618,7 @@ public struct AnthropicOptions: Sendable {
         httpClient: (any ProviderHTTPClient)? = nil,
         cacheRetention: CacheRetention? = nil,
         sessionId: String? = nil,
+        disableContinuation: Bool? = nil,
         thinkingEnabled: Bool? = nil,
         thinkingBudgetTokens: Int? = nil,
         effort: ThinkingLevel? = nil,
@@ -2633,6 +2644,7 @@ public struct AnthropicOptions: Sendable {
         self.httpClient = httpClient
         self.cacheRetention = cacheRetention
         self.sessionId = sessionId
+        self.disableContinuation = disableContinuation
         self.thinkingEnabled = thinkingEnabled
         self.thinkingBudgetTokens = thinkingBudgetTokens
         self.effort = effort
@@ -2671,6 +2683,7 @@ public struct BedrockOptions: Sendable {
     public var thinkingBudgets: ThinkingBudgets?
     public var interleavedThinking: Bool?
     public var cacheRetention: CacheRetention?
+    public var sessionId: String?
     public var headers: ProviderHeaders?
     public var onPayload: PayloadHandler?
     /// v0.62.0: AWS Cost Explorer split cost allocation tags forwarded as Converse `requestMetadata`.
@@ -2703,6 +2716,7 @@ public struct BedrockOptions: Sendable {
         thinkingBudgets: ThinkingBudgets? = nil,
         interleavedThinking: Bool? = nil,
         cacheRetention: CacheRetention? = nil,
+        sessionId: String? = nil,
         headers: ProviderHeaders? = nil,
         onPayload: PayloadHandler? = nil,
         requestMetadata: [String: String]? = nil,
@@ -2726,6 +2740,7 @@ public struct BedrockOptions: Sendable {
         self.thinkingBudgets = thinkingBudgets
         self.interleavedThinking = interleavedThinking
         self.cacheRetention = cacheRetention
+        self.sessionId = sessionId
         self.headers = headers
         self.onPayload = onPayload
         self.requestMetadata = requestMetadata

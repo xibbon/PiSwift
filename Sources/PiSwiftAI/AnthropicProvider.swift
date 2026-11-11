@@ -97,6 +97,7 @@ private struct ResolvedAnthropicCompat {
     let supportsStrictTools: Bool
     let supportsMidConvoSystemMessages: Bool
     let supportsMidConvoToolChanges: Bool
+    let supportsMessageThreads: Bool
     let sessionAffinityFormat: SessionAffinityFormat?
 }
 
@@ -115,6 +116,8 @@ private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
         supportsStrictTools: compat?.supportsStrictTools ?? false,
         supportsMidConvoSystemMessages: compat?.supportsMidConvoSystemMessages ?? false,
         supportsMidConvoToolChanges: compat?.supportsMidConvoToolChanges ?? false,
+        supportsMessageThreads: compat?.supportsMessageThreads ??
+            (provider == "anthropic" && baseUrl.contains("api.anthropic.com")),
         sessionAffinityFormat: compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : nil)
     )
 }
@@ -180,8 +183,13 @@ public func streamAnthropic(
             let initialToolNames = nativeToolChanges
                 ? Set(initialTools.map { isOAuthToken ? toClaudeCodeName($0.name) : $0.name })
                 : Set<String>()
-            var disablePreferredStrictTools = false
+            var disablePreferredStrictTools = hasExceededStrictToolLimits(options.sessionId)
+            let threadSessionId = resolveCacheRetention(options.cacheRetention, env: options.env) == .none
+                ? nil : (compat.supportsMessageThreads ? options.sessionId : nil)
             let anthropicStream: AsyncThrowingStream<AnthropicDecodedMessageEvent, Error>
+            var recordedThread: AnthropicThreadRequest?
+            var recordedFullBody: Data?
+            var recordedBetas: [String]?
             while true {
                 if options.signal?.isCancelled == true { throw AnthropicStreamError.aborted }
                 let toolDefinitions = try orderedTools.map {
@@ -194,7 +202,8 @@ public func streamAnthropic(
                     model: model,
                     context: Context(messages: context.messages, tools: currentTools),
                     options: options,
-                    nativeToolChanges: nativeToolChanges
+                    nativeToolChanges: nativeToolChanges,
+                    messageThreads: threadSessionId != nil
                 )
                 if let betaHeaders {
                     logAnthropicDebug("anthropic betaHeaders=\(betaHeaders.joined(separator: ","))")
@@ -259,6 +268,10 @@ public func streamAnthropic(
                 let rawRequestBody = try await transformPayload(options.onPayload, data: prepareAnthropicRawPayload(
                     constrainedBody, model: model, context: Context(messages: context.messages), options: options
                 ))
+                let preparedThread = try threadSessionId.flatMap { sessionId in
+                    options.disableContinuation == true ? nil : try AnthropicMessageThreadStore.shared.prepare(
+                        model: model, sessionId: sessionId, fullBody: rawRequestBody, betas: betaHeaders)
+                }
                 let httpClient = buildAnthropicHttpClient(
                     providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
                     isOAuthToken: isOAuthToken,
@@ -272,7 +285,7 @@ public func streamAnthropic(
                     supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
                     supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
                     thinkingDisabled: anthropicThinkingDisabled(model: model, options: options),
-                    rawRequestBody: rawRequestBody
+                    rawRequestBody: preparedThread?.body ?? rawRequestBody
                 )
                 let service = AnthropicServiceFactory.service(
                     apiKey: apiKey,
@@ -296,32 +309,73 @@ public func streamAnthropic(
                         isAnthropicPreferredStrictTool($0.0) && $0.1["strict"]?.value as? Bool == true
                     }
                 }
+                let requestHeaders = mergedHeaders ?? [:]
+                let send: @Sendable (Data) async throws -> AsyncThrowingStream<AnthropicDecodedMessageEvent, Error> = { body in
+                        let requestClient = buildAnthropicHttpClient(
+                            providerHTTPClient: options.httpClient ?? (options.env == nil ? nil : DefaultProviderHTTPClient(env: options.env)),
+                            isOAuthToken: isOAuthToken, isFederated: federation != nil,
+                            extraHeaders: requestHeaders, baseUrl: model.baseUrl,
+                            metadataUserId: extractAnthropicMetadataUserId(options.metadata),
+                            supportsLongCacheRetention: compat.supportsLongCacheRetention,
+                            cacheRetention: options.cacheRetention, env: options.env,
+                            supportsEagerToolInputStreaming: compat.supportsEagerToolInputStreaming,
+                            supportsCacheControlOnTools: compat.supportsCacheControlOnTools,
+                            thinkingDisabled: anthropicThinkingDisabled(model: model, options: options),
+                            rawRequestBody: body)
+                        return try await streamAnthropicMessagesWithFederation(
+                            federation: federation,
+                            federationClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
+                            apiKey: apiKey, usesBearerTransport: usesBearerTransport,
+                            baseUrl: model.baseUrl, betaHeaders: betaHeaders,
+                            httpClient: requestClient, parameters: parameters,
+                            onResponse: options.onResponse, model: model,
+                            onProviderStreamEvent: options.onProviderStreamEvent)
+                }
                 do {
                     anthropicStream = try await retryProviderRequest(
                         maxRetries: options.maxRetries,
                         maxRetryDelayMs: options.maxRetryDelayMs,
                         signal: options.signal
                     ) {
-                        try await streamAnthropicMessagesWithFederation(
-                            federation: federation,
-                            federationClient: options.httpClient ?? DefaultProviderHTTPClient(env: options.env),
-                            apiKey: apiKey,
-                            usesBearerTransport: usesBearerTransport,
-                            baseUrl: model.baseUrl,
-                            betaHeaders: betaHeaders,
-                            httpClient: httpClient,
-                            parameters: parameters,
-                            onResponse: options.onResponse,
-                            model: model,
-                            onProviderStreamEvent: options.onProviderStreamEvent
-                        )
+                        try await send(preparedThread?.body ?? rawRequestBody)
                     }
+                    recordedThread = preparedThread
+                    recordedFullBody = rawRequestBody
+                    recordedBetas = betaHeaders
                     break
                 } catch {
+                    if let preparedThread, options.signal?.isCancelled != true,
+                       let rejection = anthropicThreadRejection(error) {
+                        var diagnostics = output.diagnostics ?? []
+                        diagnostics.append(AssistantMessageDiagnostic(type: "anthropic_thread_fallback",
+                            details: ["reason": AnyCodable(rejection.reason)],
+                            error: DiagnosticErrorInfo(message: rejection.message)))
+                        output.diagnostics = diagnostics
+                        let fallbackThread: AnthropicThreadRequest?
+                        let fallbackBody: Data
+                        if rejection.startNew {
+                            let created = try AnthropicMessageThreadStore.shared.create(
+                                fullBody: rawRequestBody, from: preparedThread)
+                            fallbackThread = created
+                            fallbackBody = created.body
+                        } else {
+                            fallbackThread = nil
+                            fallbackBody = rawRequestBody
+                        }
+                        anthropicStream = try await retryProviderRequest(
+                            maxRetries: options.maxRetries, maxRetryDelayMs: options.maxRetryDelayMs,
+                            signal: options.signal) { try await send(fallbackBody) }
+                        if !rejection.startNew { AnthropicMessageThreadStore.shared.turnOff(preparedThread) }
+                        recordedThread = fallbackThread
+                        recordedFullBody = rawRequestBody
+                        recordedBetas = betaHeaders
+                        break
+                    }
                     guard options.signal?.isCancelled != true,
                           !disablePreferredStrictTools, hasPreferredStrictTools,
                           let message = anthropicStrictToolLimitErrorMessage(error) else { throw error }
                     disablePreferredStrictTools = true
+                    markStrictToolLimitsExceeded(options.sessionId)
                     var diagnostics = output.diagnostics ?? []
                     diagnostics.append(AssistantMessageDiagnostic(
                         type: "anthropic_strict_tools_fallback",
@@ -510,6 +564,20 @@ public func streamAnthropic(
             }
             if output.stopReason == .error {
                 throw AnthropicStreamError.apiError(output.errorMessage ?? "An unknown error occurred")
+            }
+
+            if let recordedThread, let recordedFullBody, let replyId = output.responseId,
+               output.responseModel == nil {
+                let converted = convertAnthropicMessages(model: model, messages: [.assistant(output)],
+                    isOAuthToken: isOAuthToken).0.filter { $0.role == "assistant" }
+                let replyEncoder = JSONEncoder()
+                replyEncoder.keyEncodingStrategy = .convertToSnakeCase
+                if let reply = converted.first,
+                   let data = try? replyEncoder.encode(reply),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    try AnthropicMessageThreadStore.shared.record(recordedThread, model: model,
+                        fullBody: recordedFullBody, betas: recordedBetas, reply: json, replyId: replyId)
+                }
             }
 
             if let inputTransformations, !inputTransformations.isEmpty {
@@ -1960,7 +2028,8 @@ private enum AnthropicTolerantStreamError: Error, LocalizedError {
 }
 
 func anthropicBetaFeatures(
-    model: Model, context: Context, options: AnthropicOptions, nativeToolChanges: Bool = false
+    model: Model, context: Context, options: AnthropicOptions, nativeToolChanges: Bool = false,
+    messageThreads: Bool = false
 ) -> [String]? {
     var configured: String?? = nil
     for headers in [model.headers, options.headers] {
@@ -1994,6 +2063,9 @@ func anthropicBetaFeatures(
     }
     if nativeToolChanges {
         features.append("inline-tools-2026-09-15")
+    }
+    if messageThreads {
+        features.append("message-threads-2026-08-12")
     }
     return features.isEmpty ? nil : features
 }

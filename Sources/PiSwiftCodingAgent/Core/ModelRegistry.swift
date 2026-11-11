@@ -1729,6 +1729,7 @@ public final class ModelRegistry: Sendable {
                     transport: fullOptions?.transport,
                     cacheRetention: fullOptions?.cacheRetention,
                     sessionId: fullOptions?.sessionId,
+                    disableContinuation: fullOptions?.disableContinuation,
                     headers: fullOptions?.headers,
                     onPayload: fullOptions?.onPayload,
                     maxRetryDelayMs: fullOptions?.maxRetryDelayMs,

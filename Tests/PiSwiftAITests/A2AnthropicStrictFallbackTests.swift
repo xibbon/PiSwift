@@ -211,7 +211,8 @@ struct A2AnthropicStrictFallbackTests {
         #expect(result.diagnostics == nil)
     }
 
-    @Test func laterRequestsStartStrict() async throws {
+    @Test("does not disable strict sampling on later requests without a session")
+    func doesNotDisableStrictSamplingOnLaterRequestsWithoutSession() async throws {
         let client = StrictFallbackHTTPClient { try $0 == 1 ? fallbackRejection() : fallbackSuccess() }
         let context = fallbackContext([fallbackTool("lookup", strict: .prefer)])
         for _ in 0..<2 {
@@ -244,4 +245,31 @@ struct A2AnthropicStrictFallbackTests {
         let legacy = AssistantMessageDiagnostic(type: "legacy", details: [:])
         #expect(legacy.error == nil)
     }
+}
+
+@Test func anthropicStrictFallbackRemembersSessionUntilCleanupV152() async throws {
+    let sessionId = UUID().uuidString
+    defer { cleanupStrictToolLimits(sessionId) }
+    let context = fallbackContext([fallbackTool("preferred", strict: .prefer), fallbackTool("required", strict: .require)])
+    let first = StrictFallbackHTTPClient { try $0 == 1 ? fallbackRejection() : fallbackSuccess() }
+    var firstOptions = fallbackOptions(first)
+    firstOptions.sessionId = sessionId
+    _ = await streamAnthropic(model: fallbackModel(), context: context, options: firstOptions).result()
+    #expect(hasExceededStrictToolLimits(sessionId))
+    let later = StrictFallbackHTTPClient { _ in fallbackSuccess() }
+    var laterOptions = fallbackOptions(later)
+    laterOptions.sessionId = sessionId
+    _ = await streamAnthropic(model: fallbackModel(), context: context, options: laterOptions).result()
+    let laterPayloads = try await fallbackPayloads(later)
+    let tools = try #require(laterPayloads.first?["tools"] as? [[String: Any]])
+    #expect(tools.first?["strict"] as? Bool != true)
+    #expect(tools.last?["strict"] as? Bool == true)
+    try cleanupSessionResources(sessionId)
+    let fresh = StrictFallbackHTTPClient { _ in fallbackSuccess() }
+    var freshOptions = fallbackOptions(fresh)
+    freshOptions.sessionId = sessionId
+    _ = await streamAnthropic(model: fallbackModel(), context: context, options: freshOptions).result()
+    let freshPayloads = try await fallbackPayloads(fresh)
+    let freshTools = try #require(freshPayloads.first?["tools"] as? [[String: Any]])
+    #expect(freshTools.first?["strict"] as? Bool == true)
 }

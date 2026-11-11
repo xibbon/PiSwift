@@ -642,25 +642,35 @@ func codexWebSocketCacheKey(sessionId: String, accountId: String) -> CodexWebSoc
     CodexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
 }
 
-private struct CodexWebSocketLease: Sendable {
+struct CodexWebSocketLease: Sendable {
     let task: URLSessionWebSocketTask
     let cacheKey: CodexWebSocketCacheKey?
     let cached: Bool
 }
 
-private actor CodexWebSocketCache {
-    private struct Entry {
+final class CodexWebSocketCache: Sendable {
+    private struct Entry: Sendable {
         var task: URLSessionWebSocketTask
         var busy: Bool
         var idleTask: Task<Void, Never>?
         let createdAt: Date
     }
 
-    static let shared = CodexWebSocketCache()
+    static let shared: CodexWebSocketCache = {
+        let cache = CodexWebSocketCache()
+        _ = registerSessionResourceCleanup { sessionId in
+            cache.close(sessionId: sessionId)
+        }
+        return cache
+    }()
 
-    private var entries: [CodexWebSocketCacheKey: Entry] = [:]
+    private let entries = LockedState<[CodexWebSocketCacheKey: Entry]>([:])
 
-    private init() {}
+    init() {}
+
+    var sessionKeys: Set<CodexWebSocketCacheKey> {
+        entries.withLock { Set($0.keys) }
+    }
 
     func acquire(
         url: URL,
@@ -668,72 +678,95 @@ private actor CodexWebSocketCache {
         sessionId: String?,
         accountId: String,
         connectTimeoutMs: Int?,
-        env: [String: String]?
+        env: [String: String]?,
+        connectionFactory: (@Sendable () -> URLSessionWebSocketTask)? = nil
     ) -> CodexWebSocketLease {
-        guard let sessionId, !sessionId.isEmpty else {
-            let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
-            return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
-        }
-        let cacheKey = codexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
-
-        if var existing = entries[cacheKey] {
-            existing.idleTask?.cancel()
-            existing.idleTask = nil
-            if !existing.busy, isReusable(existing.task), Date().timeIntervalSince(existing.createdAt) < codexSessionWebSocketMaxAge {
-                existing.busy = true
-                entries[cacheKey] = existing
-                return CodexWebSocketLease(task: existing.task, cacheKey: cacheKey, cached: true)
+        entries.withLock { entries in
+            func makeConnection() -> URLSessionWebSocketTask {
+                connectionFactory?() ?? connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
             }
-            if !isReusable(existing.task) || Date().timeIntervalSince(existing.createdAt) >= codexSessionWebSocketMaxAge {
-                closeSilently(existing.task, reason: "connection_rotation")
-                entries.removeValue(forKey: cacheKey)
-            } else {
-                entries[cacheKey] = existing
-                if existing.busy {
-                    let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
-                    return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
+            guard let sessionId, !sessionId.isEmpty else {
+                let task = makeConnection()
+                return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
+            }
+            let cacheKey = codexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
+
+            if var existing = entries[cacheKey] {
+                existing.idleTask?.cancel()
+                existing.idleTask = nil
+                if !existing.busy, isReusable(existing.task), Date().timeIntervalSince(existing.createdAt) < codexSessionWebSocketMaxAge {
+                    existing.busy = true
+                    entries[cacheKey] = existing
+                    return CodexWebSocketLease(task: existing.task, cacheKey: cacheKey, cached: true)
+                }
+                if !isReusable(existing.task) || Date().timeIntervalSince(existing.createdAt) >= codexSessionWebSocketMaxAge {
+                    closeSilently(existing.task, reason: "connection_rotation")
+                    entries.removeValue(forKey: cacheKey)
+                } else {
+                    entries[cacheKey] = existing
+                    if existing.busy {
+                        let task = makeConnection()
+                        return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
+                    }
                 }
             }
-        }
 
-        let task = connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
-        entries[cacheKey] = Entry(task: task, busy: true, idleTask: nil, createdAt: Date())
-        return CodexWebSocketLease(task: task, cacheKey: cacheKey, cached: true)
+            let task = makeConnection()
+            entries[cacheKey] = Entry(task: task, busy: true, idleTask: nil, createdAt: Date())
+            return CodexWebSocketLease(task: task, cacheKey: cacheKey, cached: true)
+        }
     }
 
     func release(_ lease: CodexWebSocketLease, keep: Bool) {
-        guard lease.cached, let cacheKey = lease.cacheKey else {
-            closeSilently(lease.task)
-            return
-        }
+        entries.withLock { entries in
+            guard lease.cached, let cacheKey = lease.cacheKey else {
+                closeSilently(lease.task)
+                return
+            }
 
-        guard var entry = entries[cacheKey], entry.task === lease.task else {
-            closeSilently(lease.task)
-            return
-        }
+            guard var entry = entries[cacheKey], entry.task === lease.task else {
+                closeSilently(lease.task)
+                return
+            }
 
-        if !keep || !isReusable(entry.task) {
-            entries.removeValue(forKey: cacheKey)
-            closeSilently(entry.task)
-            return
-        }
+            if !keep || !isReusable(entry.task) {
+                entries.removeValue(forKey: cacheKey)
+                closeSilently(entry.task)
+                return
+            }
 
-        entry.busy = false
-        entry.idleTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(codexSessionWebSocketCacheTtl))
-            guard !Task.isCancelled else { return }
-            await self?.expire(cacheKey: cacheKey, expectedTask: lease.task)
+            entry.busy = false
+            entry.idleTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(codexSessionWebSocketCacheTtl))
+                guard !Task.isCancelled else { return }
+                self?.expire(cacheKey: cacheKey, expectedTask: lease.task)
+            }
+            entries[cacheKey] = entry
         }
-        entries[cacheKey] = entry
+    }
+
+    /// Remove entries and request socket cancellation before this function returns.
+    /// This also cancels active streams. Their later release cannot restore an entry.
+    func close(sessionId: String?) {
+        entries.withLock { entries in
+            let keys = entries.keys.filter { sessionId == nil || sessionId == "" || $0.sessionId == sessionId }
+            for key in keys {
+                guard let entry = entries.removeValue(forKey: key) else { continue }
+                entry.idleTask?.cancel()
+                closeSilently(entry.task, reason: "debug_close")
+            }
+        }
     }
 
     private func expire(cacheKey: CodexWebSocketCacheKey, expectedTask: URLSessionWebSocketTask) {
-        guard let entry = entries[cacheKey], entry.task === expectedTask else { return }
-        if entry.busy {
-            return
+        entries.withLock { entries in
+            guard let entry = entries[cacheKey], entry.task === expectedTask else { return }
+            if entry.busy {
+                return
+            }
+            entries.removeValue(forKey: cacheKey)
+            closeSilently(entry.task, reason: "idle_timeout")
         }
-        entries.removeValue(forKey: cacheKey)
-        closeSilently(entry.task, reason: "idle_timeout")
     }
 
     private func connect(url: URL, headers: [String: String], connectTimeoutMs: Int?, env: [String: String]?) -> URLSessionWebSocketTask {
@@ -755,6 +788,12 @@ private actor CodexWebSocketCache {
     private func closeSilently(_ task: URLSessionWebSocketTask, reason: String = "done") {
         task.cancel(with: .normalClosure, reason: reason.data(using: .utf8))
     }
+}
+
+/// Close cached Codex WebSockets for one session, or all sessions if no ID is supplied.
+/// Cache removal and cancellation requests are synchronous. Socket shutdown can finish later.
+public func closeOpenAICodexWebSocketSessions(_ sessionId: String? = nil) {
+    CodexWebSocketCache.shared.close(sessionId: sessionId)
 }
 
 // Upstream v1.1.0: transport fields follow model and caller fields.
@@ -911,7 +950,7 @@ private func processCodexWebSocketStream(
     onStart: () -> Void,
     onEvent: (CodexRawEvent) async throws -> Void
 ) async throws {
-    let lease = await CodexWebSocketCache.shared.acquire(
+    let lease = CodexWebSocketCache.shared.acquire(
         url: url,
         headers: headers,
         sessionId: sessionId,
@@ -956,10 +995,10 @@ private func processCodexWebSocketStream(
         if !sawCompletion {
             throw OpenAICodexStreamError.apiError("WebSocket stream closed before response.completed")
         }
-        await CodexWebSocketCache.shared.release(lease, keep: keepConnection)
+        CodexWebSocketCache.shared.release(lease, keep: keepConnection)
     } catch {
         keepConnection = false
-        await CodexWebSocketCache.shared.release(lease, keep: keepConnection)
+        CodexWebSocketCache.shared.release(lease, keep: keepConnection)
         throw error
     }
 }

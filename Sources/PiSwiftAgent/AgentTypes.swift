@@ -550,6 +550,7 @@ public struct AgentLoopConfig: Sendable {
     public var transport: Transport?
     public var apiKey: String?
     public var sessionId: String?
+    public var disableContinuation: Bool?
     private var identityValue: ClientIdentity?
     internal var identityProvider: (@Sendable () -> ClientIdentity?)?
 
@@ -661,6 +662,7 @@ public struct AgentLoopConfig: Sendable {
         transport: Transport? = nil,
         apiKey: String? = nil,
         sessionId: String? = nil,
+        disableContinuation: Bool? = nil,
         identity: ClientIdentity? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
         maxRetryDelayMs: Int? = nil,
@@ -695,6 +697,7 @@ public struct AgentLoopConfig: Sendable {
         self.transport = transport
         self.apiKey = apiKey
         self.sessionId = sessionId
+        self.disableContinuation = disableContinuation
         self.identityValue = identity
         self.identityProvider = nil
         self.thinkingBudgets = thinkingBudgets

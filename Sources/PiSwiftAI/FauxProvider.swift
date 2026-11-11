@@ -336,6 +336,7 @@ private func toSimpleOptions(_ options: StreamOptions) -> SimpleStreamOptions {
         apiKey: options.apiKey,
         cacheRetention: options.cacheRetention,
         sessionId: options.sessionId,
+        disableContinuation: options.disableContinuation,
         headers: options.headers,
         onPayload: options.onPayload
     )

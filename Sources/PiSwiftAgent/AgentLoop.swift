@@ -425,6 +425,7 @@ private func streamAssistantResponse(
             reasoning: config.reasoning,
             cacheRetention: config.cacheRetention,
             sessionId: config.sessionId,
+            disableContinuation: config.disableContinuation,
             thinkingBudgets: config.thinkingBudgets,
             headers: resolvedHeaders,
             onPayload: config.onPayload,

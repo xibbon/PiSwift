@@ -15,6 +15,7 @@ public struct ProxyStreamOptions: Sendable {
     // choice, retry behavior, header overrides, metadata tagging, and thinking budgets all
     // continue to work end-to-end through the proxy.
     public var sessionId: String?
+    public var disableContinuation: Bool?
     public var transport: Transport?
     public var cacheRetention: CacheRetention?
     public var thinkingBudgets: ThinkingBudgets?
@@ -31,6 +32,7 @@ public struct ProxyStreamOptions: Sendable {
         authToken: String,
         proxyUrl: String,
         sessionId: String? = nil,
+        disableContinuation: Bool? = nil,
         transport: Transport? = nil,
         cacheRetention: CacheRetention? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
@@ -46,6 +48,7 @@ public struct ProxyStreamOptions: Sendable {
         self.authToken = authToken
         self.proxyUrl = proxyUrl
         self.sessionId = sessionId
+        self.disableContinuation = disableContinuation
         self.transport = transport
         self.cacheRetention = cacheRetention
         self.thinkingBudgets = thinkingBudgets
@@ -150,6 +153,7 @@ func encodeProxyRequestPayload(model: Model, context: TranscriptContext, options
             maxTokens: options.maxTokens,
             reasoning: options.reasoning,
             sessionId: options.sessionId,
+            disableContinuation: options.disableContinuation,
             transport: options.transport,
             cacheRetention: options.cacheRetention,
             thinkingBudgets: options.thinkingBudgets,
@@ -286,6 +290,7 @@ private struct ProxyRequestOptions: Encodable {
     let maxTokens: Int?
     let reasoning: ReasoningEffort?
     let sessionId: String?
+    let disableContinuation: Bool?
     let transport: Transport?
     let cacheRetention: CacheRetention?
     let thinkingBudgets: ThinkingBudgets?
@@ -298,6 +303,7 @@ private struct ProxyRequestOptions: Encodable {
         case maxTokens
         case reasoning
         case sessionId
+        case disableContinuation
         case transport
         case cacheRetention
         case thinkingBudgets
@@ -314,6 +320,7 @@ private struct ProxyRequestOptions: Encodable {
             try container.encode(reasoning.rawValue, forKey: .reasoning)
         }
         try container.encodeIfPresent(sessionId, forKey: .sessionId)
+        try container.encodeIfPresent(disableContinuation, forKey: .disableContinuation)
         if let transport {
             try container.encode(transport.rawValue, forKey: .transport)
         }

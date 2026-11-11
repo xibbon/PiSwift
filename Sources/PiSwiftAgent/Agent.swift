@@ -21,6 +21,7 @@ public struct AgentOptions: Sendable {
     public var followUpMode: AgentFollowUpMode?
     public var streamFn: StreamFn?
     public var sessionId: String?
+    public var disableContinuation: Bool?
     public var identity: ClientIdentity?
     public var transport: Transport?
     public var thinkingBudgets: ThinkingBudgets?
@@ -61,6 +62,7 @@ public struct AgentOptions: Sendable {
         followUpMode: AgentFollowUpMode? = nil,
         streamFn: StreamFn? = nil,
         sessionId: String? = nil,
+        disableContinuation: Bool? = nil,
         identity: ClientIdentity? = nil,
         transport: Transport? = nil,
         thinkingBudgets: ThinkingBudgets? = nil,
@@ -92,6 +94,7 @@ public struct AgentOptions: Sendable {
         self.followUpMode = followUpMode
         self.streamFn = streamFn
         self.sessionId = sessionId
+        self.disableContinuation = disableContinuation
         self.identity = identity
         self.transport = transport
         self.thinkingBudgets = thinkingBudgets
@@ -131,6 +134,7 @@ public final class Agent: Sendable {
         var followUpMode: AgentFollowUpMode
         var streamFn: StreamFn
         var sessionId: String?
+        var disableContinuation: Bool?
         var identity: ClientIdentity?
         var transport: Transport
         var thinkingBudgets: ThinkingBudgets?
@@ -211,6 +215,11 @@ public final class Agent: Sendable {
     public var streamFn: StreamFn {
         get { stateBox.withLock { $0.streamFn } }
         set { stateBox.withLock { $0.streamFn = newValue } }
+    }
+
+    public var disableContinuation: Bool? {
+        get { stateBox.withLock { $0.disableContinuation } }
+        set { stateBox.withLock { $0.disableContinuation = newValue } }
     }
 
     public var sessionId: String? {
@@ -359,6 +368,7 @@ public final class Agent: Sendable {
             followUpMode: options.followUpMode ?? .oneAtATime,
             streamFn: stream,
             sessionId: options.sessionId,
+            disableContinuation: options.disableContinuation,
             identity: options.identity,
             transport: options.transport ?? .sse,
             thinkingBudgets: options.thinkingBudgets,
@@ -704,6 +714,7 @@ public final class Agent: Sendable {
             reasoning: reasoning,
             transport: transport,
             sessionId: sessionId,
+            disableContinuation: disableContinuation,
             identity: identity,
             thinkingBudgets: thinkingBudgets,
             maxRetryDelayMs: maxRetryDelayMs,
