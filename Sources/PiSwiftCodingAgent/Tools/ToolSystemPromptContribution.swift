@@ -9,7 +9,7 @@ public struct ToolSystemPromptContribution: Sendable, Equatable {
     }
 }
 
-// Keep this text equal to coding-agent/src/core/tools at upstream v1.1.0.
+// Keep this text equal to coding-agent/src/core/tools at upstream v1.5.2.
 public let readToolSystemPromptContribution = ToolSystemPromptContribution(
     snippet: "Read file contents",
     guidelines: ["Use read to examine files instead of cat or sed."]
@@ -23,10 +23,8 @@ public let bashToolSystemPromptContribution = ToolSystemPromptContribution(
 public let editToolSystemPromptContribution = ToolSystemPromptContribution(
     snippet: "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
     guidelines: [
-        "Use edit for precise changes (edits[].oldText must match exactly)",
-        "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
-        "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
-        "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+        "Use edit for targeted changes. Batch changes to one file in a single call.",
+        "Each edits[].oldText must exactly and uniquely match the original file. Keep matches short and non-overlapping; merge nearby changes without including large unchanged regions.",
     ]
 )
 

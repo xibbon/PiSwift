@@ -114,8 +114,14 @@ public func serializeConversation(_ messages: [Message]) -> String {
                 if case .text(let t) = block { return t.text }
                 return nil
             }.joined()
-            if text.count > 10000 {
-                text = String(text.prefix(10000)) + "\n[...truncated]"
+            // v1.5.2 9e870f6f0, compaction/utils.ts:94-104. JS counts UTF-16 units.
+            let units = Array(text.utf16)
+            if units.count > 2000 {
+                var end = 2000
+                if (0xD800...0xDBFF).contains(units[end - 1]),
+                   (0xDC00...0xDFFF).contains(units[end]) { end -= 1 }
+                text = String(decoding: units.prefix(end), as: UTF16.self)
+                    + "\n\n[... \(units.count - 2000) more characters truncated]"
             }
             if !text.isEmpty {
                 parts.append("[Tool result]: \(text)")

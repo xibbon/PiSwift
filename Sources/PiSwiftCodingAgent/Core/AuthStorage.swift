@@ -592,8 +592,16 @@ public final class AuthStorage: Sendable {
     }
 
     private let state = LockedState(State())
+    /// Refresh transactions that may have spent a single-use token but have not finished saving it.
+    private let pendingCredentialWrites = LockedState<[UUID: Task<Void, Never>]>([:])
     private let storage: any AuthStorageBackend
     private let authPath: String?
+
+    /// Wait for refresh writes already started. This does not start a refresh.
+    public func settled() async {
+        let writes = pendingCredentialWrites.withLock { Array($0.values) }
+        for write in writes { await write.value }
+    }
 
     public init(_ authPath: String) {
         if authPath == ":memory:" {
@@ -1029,7 +1037,7 @@ public final class AuthStorage: Sendable {
         }
         defer { removeWaitCancellation() }
         return try await withTaskCancellationHandler {
-            Task.detached {
+            let write = Task.detached {
                 do {
                     let result = try await self.refreshOAuthTransaction(
                         provider, minimumOAuthValidityMs: minimumOAuthValidityMs, boundary: boundary
@@ -1038,6 +1046,12 @@ public final class AuthStorage: Sendable {
                 } catch {
                     waiter.finish(.failure(error))
                 }
+            }
+            let id = UUID()
+            pendingCredentialWrites.withLock { $0[id] = write }
+            Task.detached { [weak self] in
+                await write.value
+                self?.pendingCredentialWrites.withLock { $0.removeValue(forKey: id) }
             }
             return try await waiter.wait().value
         } onCancel: {

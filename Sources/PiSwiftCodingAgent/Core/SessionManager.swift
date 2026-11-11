@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import PiSwiftAI
 import PiSwiftAgent
 
@@ -14,6 +15,8 @@ public enum SessionManagerError: LocalizedError, Sendable {
     case entryNotFound(String)
     case invalidSessionFile(String)
     case invalidContextEdit(String)
+    case writeFailed(String, Int32)
+    case invalidSessionId
 
     public var errorDescription: String? {
         switch self {
@@ -23,8 +26,42 @@ public enum SessionManagerError: LocalizedError, Sendable {
             return "Entry \(id) not found"
         case .invalidContextEdit(let reason):
             return reason
+        case .writeFailed(let path, let code):
+            return "Could not write session file \(path) (errno \(code))"
+        case .invalidSessionId:
+            return "Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character"
         }
     }
+}
+
+public struct SessionCwdIssue: Sendable, Equatable {
+    public let sessionFile: String?
+    public let sessionCwd: String
+    public let fallbackCwd: String
+
+    public init(sessionFile: String?, sessionCwd: String, fallbackCwd: String) {
+        self.sessionFile = sessionFile
+        self.sessionCwd = sessionCwd
+        self.fallbackCwd = fallbackCwd
+    }
+
+    public var errorMessage: String {
+        let file = sessionFile.map { "\nSession file: \($0)" } ?? ""
+        return "Stored session working directory does not exist: \(sessionCwd)\(file)\nCurrent working directory: \(fallbackCwd)"
+    }
+
+    public var prompt: String { "Session cwd does not exist: \(sessionCwd)" }
+    public var options: [String] {
+        ["Continue in \(fallbackCwd) (asks again next time)",
+         "Fork into \(fallbackCwd) (new session ID, original kept)", "Cancel"]
+    }
+}
+
+public func getMissingSessionCwdIssue(_ manager: SessionManager, fallbackCwd: String) -> SessionCwdIssue? {
+    guard let file = manager.getSessionFile() else { return nil }
+    let cwd = manager.getCwd()
+    guard !cwd.isEmpty, !FileManager.default.fileExists(atPath: cwd) else { return nil }
+    return SessionCwdIssue(sessionFile: file, sessionCwd: cwd, fallbackCwd: fallbackCwd)
 }
 
 public let CURRENT_SESSION_VERSION = 3
@@ -870,6 +907,7 @@ public final class SessionManager: Sendable {
         var labelsById: [String: String]
         var leafId: String?
         var sessionId: String
+        var lastWriteError: String?
     }
 
     private let state: LockedState<State>
@@ -931,7 +969,8 @@ public final class SessionManager: Sendable {
             byId: [:],
             labelsById: [:],
             leafId: nil,
-            sessionId: sessionId ?? UUID().uuidString
+            sessionId: sessionId ?? UUID().uuidString,
+            lastWriteError: nil
         ))
         if let sessionFile {
             loadFromFile(sessionFile)
@@ -941,6 +980,54 @@ public final class SessionManager: Sendable {
     public static func create(_ cwd: String, _ sessionDir: String? = nil, sessionId: String? = nil) -> SessionManager {
         let dir = sessionDir ?? defaultSessionDir(cwd: cwd)
         return SessionManager(cwd, dir, nil, true, sessionId)
+    }
+
+    /// Copy a complete session into a new session in `targetCwd`.
+    /// The source stays unchanged. A failed write removes the provisional file.
+    public static func forkFrom(
+        _ sourcePath: String, _ targetCwd: String, _ sessionDir: String? = nil,
+        options: NewSessionOptions? = nil
+    ) throws -> SessionManager {
+        let source = URL(fileURLWithPath: (sourcePath as NSString).expandingTildeInPath).standardizedFileURL.path
+        let target = URL(fileURLWithPath: targetCwd).standardizedFileURL.path
+        let sourceEntries = loadEntriesFromFile(source)
+        guard !sourceEntries.isEmpty else { throw SessionManagerError.invalidSessionFile(source) }
+        guard sourceEntries.contains(where: { if case .session = $0 { return true }; return false }) else {
+            throw SessionManagerError.invalidSessionFile(source)
+        }
+        let dir = sessionDir ?? defaultSessionDir(cwd: target)
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        if let requested = options?.id {
+            let valid = requested.range(of: "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$", options: .regularExpression) != nil
+            guard valid else { throw SessionManagerError.invalidSessionId }
+        }
+        let id = options?.id ?? UUID().uuidString
+        let timestamp = isoNow()
+        let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
+        let path = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(id).jsonl").path
+        let header = SessionHeader(version: CURRENT_SESSION_VERSION, id: id, timestamp: timestamp,
+                                   cwd: target, parentSession: source)
+        var lines = [encodeSessionHeader(header)]
+        // Preserve the source JSON text, including field order and fields not known to this
+        // version of Swift. This also keeps model-visible content byte-for-byte intact.
+        let knownEntries = sourceEntries.compactMap { entry -> SessionEntry? in
+            if case .entry(let item) = entry { return item }
+            return nil
+        }
+        let validIDs = Set(knownEntries.map(\.id))
+        let rawLines = try String(contentsOfFile: source, encoding: .utf8).split(separator: "\n").compactMap { line -> String? in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  object["type"] as? String != "session",
+                  let id = object["id"] as? String, validIDs.contains(id) else { return nil }
+            return String(line)
+        }
+        if rawLines.count == knownEntries.count {
+            lines.append(contentsOf: rawLines)
+        } else {
+            lines.append(contentsOf: knownEntries.map(encodeSessionEntry))
+        }
+        try writeSessionLines(lines, to: path, createExclusive: true)
+        return SessionManager(target, dir, path, true)
     }
 
     /// Open a specific session file.
@@ -1187,6 +1274,8 @@ public final class SessionManager: Sendable {
     public func getSessionDir() -> String { sessionDir }
     public func getSessionId() -> String { sessionId }
     public func getSessionFile() -> String? { sessionFile }
+    /// The latest disk write error from a source-compatible append method. Cleared by a successful append.
+    public func getLastWriteError() -> String? { state.withLock { $0.lastWriteError } }
     public func getEntryCount() -> Int { state.withLock { $0.byId.count } }
     public func getLeafId() -> String? { leafId }
 
@@ -1291,6 +1380,7 @@ public final class SessionManager: Sendable {
         let newSessionId = options?.id ?? UUID().uuidString
         let timestamp = isoNow()
         return state.withLock { st in
+            let previous = st
             st.sessionId = newSessionId
             let header = SessionHeader(
                 type: "session",
@@ -1312,8 +1402,15 @@ public final class SessionManager: Sendable {
                 let fileTimestamp = timestamp.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
                 let file = URL(fileURLWithPath: dir).appendingPathComponent("\(fileTimestamp)_\(newSessionId).jsonl").path
                 st.sessionFile = file
-                appendLine(file, encodeSessionHeader(header))
-                return file
+                do {
+                    try writeSessionLines([encodeSessionHeader(header)], to: file, createExclusive: true)
+                    st.lastWriteError = nil
+                    return file
+                } catch {
+                    st = previous
+                    st.lastWriteError = String(describing: error)
+                    return nil
+                }
             }
 
             st.sessionFile = nil
@@ -1324,13 +1421,21 @@ public final class SessionManager: Sendable {
     public func startSession(_ initialState: AgentState) {
         state.withLock { st in
             if st.header != nil { return }
+            let previous = st
             let timestamp = isoNow()
             let header = SessionHeader(type: "session", version: CURRENT_SESSION_VERSION, id: st.sessionId, timestamp: timestamp, cwd: st.cwd, parentSession: nil)
             st.header = header
             if persist {
                 ensureSessionFileLocked(&st)
                 if let file = st.sessionFile {
-                    appendLine(file, encodeSessionHeader(header))
+                    do {
+                        try writeSessionLines([encodeSessionHeader(header)], to: file,
+                                              createExclusive: !FileManager.default.fileExists(atPath: file))
+                        st.lastWriteError = nil
+                    } catch {
+                        st = previous
+                        st.lastWriteError = String(describing: error)
+                    }
                 }
             }
         }
@@ -1343,6 +1448,12 @@ public final class SessionManager: Sendable {
     @discardableResult
     public func appendMessage(_ message: AgentMessage) -> String {
         commitEntry(.message(SessionMessageEntry(id: "", timestamp: isoNow(), message: message)))
+    }
+
+    /// Throw on a failed write while leaving the current branch unchanged.
+    @discardableResult
+    public func appendMessageChecked(_ message: AgentMessage) throws -> String {
+        try commitEntryChecked(.message(SessionMessageEntry(id: "", timestamp: isoNow(), message: message)))
     }
 
     @discardableResult
@@ -1362,11 +1473,11 @@ public final class SessionManager: Sendable {
             let projected = PiSwiftCodingAgent.buildSessionProjection(st.entries, st.leafId ?? "null", st.byId)
             var systemMessage = getCurrentSystemMessage(projected.messages)
             systemMessage?.timestamp = sessionTimestampMilliseconds(timestamp) ?? 0
-            return commitEntryLocked(&st, .compaction(CompactionEntry(
+            return (try? commitEntryLocked(&st, .compaction(CompactionEntry(
                 id: "", timestamp: timestamp, summary: summary, firstKeptEntryId: firstKeptEntryId ?? "",
                 tokensBefore: tokensBefore, details: details, fromHook: fromHook, usage: usage,
                 systemMessage: systemMessage
-            )), parent: .leaf)
+            )), parent: .leaf)) ?? ""
         }
     }
 
@@ -1403,7 +1514,7 @@ public final class SessionManager: Sendable {
                 default: normalized = replacement
                 }
             } else { normalized = replacement }
-            return commitEntryLocked(&st, .contextEdit(ContextEditEntry(id: "", timestamp: isoNow(),
+            return try commitEntryLocked(&st, .contextEdit(ContextEditEntry(id: "", timestamp: isoNow(),
                                                                          targetId: targetId, replacement: normalized)), parent: .leaf)
         }
     }
@@ -1445,7 +1556,7 @@ public final class SessionManager: Sendable {
             guard st.byId[targetId] != nil else {
                 throw SessionManagerError.entryNotFound(targetId)
             }
-            return commitEntryLocked(
+            return try commitEntryLocked(
                 &st,
                 .label(LabelEntry(id: "", timestamp: isoNow(), targetId: targetId, label: label)),
                 parent: .leaf
@@ -1472,12 +1583,18 @@ public final class SessionManager: Sendable {
                 throw SessionManagerError.entryNotFound(branchFromId)
             }
             let fromId = st.leafId ?? "root"
+            let previousLeafId = st.leafId
             st.leafId = branchFromId
-            return commitEntryLocked(
-                &st,
-                .branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook, usage: usage)),
-                parent: .explicit(branchFromId)
-            )
+            do {
+                return try commitEntryLocked(
+                    &st,
+                    .branchSummary(BranchSummaryEntry(id: "", timestamp: isoNow(), fromId: fromId, summary: summary, details: details, fromHook: fromHook, usage: usage)),
+                    parent: .explicit(branchFromId)
+                )
+            } catch {
+                st.leafId = previousLeafId
+                throw error
+            }
         }
     }
 
@@ -1525,19 +1642,23 @@ public final class SessionManager: Sendable {
                 parentSession: sessionFile,
                 metadata: self.header?.metadata
             )
-            // Guard against duplicate header if the target file already exists
-            if !FileManager.default.fileExists(atPath: newSessionFile) {
-                appendLine(newSessionFile, encodeSessionHeader(header))
-            }
+            var lines = [encodeSessionHeader(header)]
             for entry in pathWithoutLabels {
-                appendLine(newSessionFile, encodeSessionEntry(entry))
+                lines.append(encodeSessionEntry(entry))
             }
 
             var parentId = pathWithoutLabels.last?.id
             for (targetId, label) in labelsToWrite {
                 let labelEntry = LabelEntry(id: generateId(existing: Set(byId.keys)), parentId: parentId, timestamp: isoNow(), targetId: targetId, label: label)
-                appendLine(newSessionFile, encodeSessionEntry(.label(labelEntry)))
+                lines.append(encodeSessionEntry(.label(labelEntry)))
                 parentId = labelEntry.id
+            }
+
+            do {
+                try writeSessionLines(lines, to: newSessionFile, createExclusive: true)
+            } catch {
+                state.withLock { $0.lastWriteError = String(describing: error) }
+                return nil
             }
 
             loadFromFile(newSessionFile)
@@ -1584,12 +1705,18 @@ public final class SessionManager: Sendable {
     /// commit siblings instead of a chain, silently dropping a branch from the resumed context.
     @discardableResult
     private func commitEntry(_ entry: SessionEntry, parent: ParentResolution = .leaf) -> String {
-        state.withLock { commitEntryLocked(&$0, entry, parent: parent) }
+        (try? commitEntryChecked(entry, parent: parent)) ?? ""
+    }
+
+    @discardableResult
+    private func commitEntryChecked(_ entry: SessionEntry, parent: ParentResolution = .leaf) throws -> String {
+        try state.withLock { try commitEntryLocked(&$0, entry, parent: parent) }
     }
 
     /// Locked core of `commitEntry`. Caller must already hold the state lock.
     @discardableResult
-    private func commitEntryLocked(_ st: inout State, _ entry: SessionEntry, parent: ParentResolution) -> String {
+    private func commitEntryLocked(_ st: inout State, _ entry: SessionEntry, parent: ParentResolution) throws -> String {
+        let previous = st
         ensureSessionFileLocked(&st)
 
         var committed = entry
@@ -1612,14 +1739,21 @@ public final class SessionManager: Sendable {
             st.labelsById[labelEntry.targetId] = labelEntry.label
         }
 
-        if persist, let sessionFile = st.sessionFile {
-            writeEntryLocked(&st, committed, sessionFile)
+        do {
+            if persist, let sessionFile = st.sessionFile {
+                try writeEntryLocked(&st, committed, sessionFile)
+            }
+            st.lastWriteError = nil
+        } catch {
+            st = previous
+            st.lastWriteError = String(describing: error)
+            throw error
         }
         return committed.id
     }
 
     /// Persist a freshly-committed entry. Caller must already hold the state lock.
-    private func writeEntryLocked(_ st: inout State, _ entry: SessionEntry, _ sessionFile: String) {
+    private func writeEntryLocked(_ st: inout State, _ entry: SessionEntry, _ sessionFile: String) throws {
         // C46: the first user or assistant message starts the file. Setup entries stay buffered.
         let hasConversation: Bool
         if case .message(let msg) = entry {
@@ -1632,14 +1766,14 @@ public final class SessionManager: Sendable {
         }
         if hasConversation && !FileManager.default.fileExists(atPath: sessionFile) {
             // First conversation message: flush the header and all buffered entries.
-            if let header = st.header {
-                appendLine(sessionFile, encodeSessionHeader(header))
-            }
+            var lines: [String] = []
+            if let header = st.header { lines.append(encodeSessionHeader(header)) }
             for buffered in st.entries {
-                appendLine(sessionFile, encodeSessionEntry(buffered))
+                lines.append(encodeSessionEntry(buffered))
             }
+            try writeSessionLines(lines, to: sessionFile, createExclusive: true)
         } else if FileManager.default.fileExists(atPath: sessionFile) {
-            appendLine(sessionFile, encodeSessionEntry(entry))
+            try writeSessionLines([encodeSessionEntry(entry)], to: sessionFile, createExclusive: false)
         }
         // Otherwise (no file yet and not an assistant message): skip writing
     }
@@ -1781,17 +1915,28 @@ private func defaultSessionDir(cwd: String, sessionDir: String? = nil) -> String
     getDefaultSessionDir(cwd: cwd, sessionDir: sessionDir)
 }
 
-private func appendLine(_ path: String, _ line: String) {
-    let data = (line + "\n").data(using: .utf8) ?? Data()
-    if FileManager.default.fileExists(atPath: path) {
-        if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) {
-            handle.seekToEndOfFile()
-            try? handle.write(contentsOf: data)
-            try? handle.close()
-            return
+/// Write through one descriptor. If an append fails after a partial write, trim back to the
+/// previous byte offset before the next entry can be committed.
+private func writeSessionLines(_ lines: [String], to path: String, createExclusive: Bool) throws {
+    let data = Data((lines.joined(separator: "\n") + "\n").utf8)
+    let flags: Int32 = createExclusive ? (O_WRONLY | O_CREAT | O_EXCL) : O_WRONLY
+    let descriptor = Darwin.open(path, flags, 0o600)
+    guard descriptor >= 0 else { throw SessionManagerError.writeFailed(path, errno) }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    defer { try? handle.close() }
+    var originalSize: UInt64?
+    do {
+        originalSize = createExclusive ? 0 : try handle.seekToEnd()
+        try handle.write(contentsOf: data)
+    } catch {
+        if createExclusive {
+            try? FileManager.default.removeItem(atPath: path)
+        } else if let originalSize {
+            // `truncate` works even when the file position moved during a failed write.
+            _ = try? handle.truncate(atOffset: originalSize)
         }
+        throw error
     }
-    try? data.write(to: URL(fileURLWithPath: path))
 }
 
 func encodeSessionHeader(_ header: SessionHeader) -> String {

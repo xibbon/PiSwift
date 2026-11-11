@@ -842,6 +842,9 @@ private func normalizeProviderModel(_ model: Model) -> Model {
 
 public final class ModelRegistry: Sendable {
     public let authStorage: AuthStorage
+
+    /// Wait for OAuth refresh writes that have already started. Does not refresh credentials.
+    public func settleCredentialWrites() async { await authStorage.settled() }
     private let modelsDir: String?
     private let networkEnabled: Bool
     /// Read for each request. Request identity fields take precedence.

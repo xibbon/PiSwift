@@ -72,9 +72,9 @@ public final class AgentSessionRuntime: Sendable {
         return try await s.fork(entryId)
     }
 
-    public func importFromJsonl(_ inputPath: String) async throws -> HookCommandResult {
+    public func importFromJsonl(_ inputPath: String, fallbackCwd: String? = nil) async throws -> HookCommandResult {
         guard let session else { return HookCommandResult(cancelled: true) }
-        return try await session.importFromJsonl(inputPath)
+        return try await session.importFromJsonl(inputPath, fallbackCwd: fallbackCwd)
     }
 
     /// Replace the current session with a freshly-built one. Use for cross-cwd switches
@@ -83,22 +83,99 @@ public final class AgentSessionRuntime: Sendable {
     /// Calls the factory closure with `args` describing the target cwd / sessionManager
     /// and the `session_start` event the new session should observe.
     @discardableResult
-    public func replaceSession(args: AgentSessionRuntimeFactoryArgs) async throws -> AgentSession {
+    public func replaceSession(args: AgentSessionRuntimeFactoryArgs, rollbackSessionFile: String? = nil) async throws -> AgentSession {
+        // Build before invalidating the current session. A failed factory leaves the live
+        // session untouched and removes a provisional fork, when the caller supplied one.
+        let next: AgentSession
+        do {
+            next = try await factory(args)
+        } catch {
+            if let rollbackSessionFile { try? FileManager.default.removeItem(atPath: rollbackSessionFile) }
+            throw error
+        }
         if let prev = session {
             await prev.abort()
             prev.dispose()
         }
-        let next = try await factory(args)
         sessionState.withLock { $0 = next }
         return next
     }
 
-    /// Tear down the runtime and the live session.
+    private func checkBeforeSwitch(_ targetSessionFile: String) async throws {
+        guard let runner = session?.hookRunner, runner.hasHandlers("session_before_switch") else { return }
+        let result = await runner.emit(SessionBeforeSwitchEvent(reason: .resume, targetSessionFile: targetSessionFile))
+        if (result as? SessionBeforeSwitchResult)?.cancel == true {
+            throw AgentSessionRuntimeError.switchCancelled
+        }
+    }
+
+    /// Continue a session with a missing stored cwd in the host's current directory.
+    /// The session header stays unchanged, so resume asks again next time.
+    @discardableResult
+    public func continueMissingCwd(_ sourcePath: String, in fallbackCwd: String) async throws -> AgentSession {
+        let manager = try SessionManager.openValidated(sourcePath, nil, fallbackCwd)
+        guard getMissingSessionCwdIssue(SessionManager.open(sourcePath), fallbackCwd: fallbackCwd) != nil else {
+            throw AgentSessionRuntimeError.sessionCwdExists
+        }
+        try await checkBeforeSwitch(sourcePath)
+        return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+            cwd: fallbackCwd, agentDir: agentDir, sessionManager: manager,
+            sessionStartEvent: AgentSessionStartEvent(reason: .resume, previousSessionFile: session?.sessionFile)))
+    }
+
+    /// Fork a session with a missing stored cwd into the host's current directory.
+    /// The fork gets a new ID; failure in the factory removes its provisional file.
+    @discardableResult
+    public func forkMissingCwd(_ sourcePath: String, into fallbackCwd: String,
+                               sessionDir: String? = nil) async throws -> AgentSession {
+        let source = try SessionManager.openValidated(sourcePath)
+        guard getMissingSessionCwdIssue(source, fallbackCwd: fallbackCwd) != nil else {
+            throw AgentSessionRuntimeError.sessionCwdExists
+        }
+        let manager = try SessionManager.forkFrom(sourcePath, fallbackCwd, sessionDir)
+        if let path = manager.getSessionFile() {
+            do { try await checkBeforeSwitch(path) }
+            catch { try? FileManager.default.removeItem(atPath: path); throw error }
+        }
+        return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+            cwd: fallbackCwd, agentDir: agentDir, sessionManager: manager,
+            sessionStartEvent: AgentSessionStartEvent(reason: .fork, previousSessionFile: session?.sessionFile)),
+            rollbackSessionFile: manager.getSessionFile())
+    }
+
+    /// Abort the current run, settle its tool results, release session resources, then wait for
+    /// credential writes already in progress. Disposal never starts an OAuth refresh.
+    public func disposeAndWait() async {
+        if let session {
+            let registry = session.modelRegistry
+            await session.abort()
+            session.dispose()
+            await registry.settleCredentialWrites()
+        }
+        sessionState.withLock { $0 = nil }
+    }
+
+    /// Tear down the runtime and the live session synchronously. This compatibility API does not
+    /// wait for tool settlement or pending credential writes; use `disposeAndWait()` for shutdown.
     public func dispose() {
         if let s = session {
             s.dispose()
         }
         sessionState.withLock { $0 = nil }
+    }
+}
+
+public enum AgentSessionRuntimeError: LocalizedError, Sendable {
+    case sessionCwdExists
+    case missingSessionCwd(SessionCwdIssue)
+    case switchCancelled
+
+    public var errorDescription: String? {
+        switch self {
+        case .sessionCwdExists: return "Stored session working directory exists."
+        case .missingSessionCwd(let issue): return issue.errorMessage
+        case .switchCancelled: return "Session switch cancelled"
+        }
     }
 }
 

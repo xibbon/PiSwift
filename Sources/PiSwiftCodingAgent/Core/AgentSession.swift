@@ -345,6 +345,11 @@ public enum AgentSessionError: LocalizedError, Sendable {
     case compactionInProgress
     case invalidBoundaryDraft
     case recoveryEntryMissing
+    case reloadDuringResponse
+    case reloadDuringCompaction
+    case treeNavigationDuringResponse
+    case treeNavigationDuringCompaction
+    case promptDuringCompaction
 
     public var errorDescription: String? {
         switch self {
@@ -375,6 +380,16 @@ public enum AgentSessionError: LocalizedError, Sendable {
             return "Invalid boundary draft"
         case .recoveryEntryMissing:
             return "Cannot persist recovery omission because a projected message has no source entry"
+        case .reloadDuringResponse:
+            return "Wait for the current response to finish before reloading."
+        case .reloadDuringCompaction:
+            return "Wait for compaction to finish before reloading."
+        case .treeNavigationDuringResponse:
+            return "Wait for the current response to finish before navigating the session tree."
+        case .treeNavigationDuringCompaction:
+            return "Wait for the current compaction or tree navigation to finish before navigating the session tree."
+        case .promptDuringCompaction:
+            return "Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry."
         }
     }
 }
@@ -694,13 +709,25 @@ public final class AgentSession: Sendable {
     }
 
     private func recordSelection() {
+        let branch = sessionManager.getBranch()
         let selected = agent.state.model
-        let recorded = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find)
-        guard let recorded,
-              recorded.provider != selected.provider || recorded.modelId != selected.id else { return }
-        let wasVirtual = modelRegistry.find(recorded.provider, recorded.modelId).map(isVirtualModel) ?? false
-        guard isVirtualModel(selected) || wasVirtual else { return }
-        sessionManager.appendModelChange(selected.provider, selected.id)
+        if let recorded = getBranchSelection(branch, getModel: modelRegistry.find),
+           recorded.provider != selected.provider || recorded.modelId != selected.id {
+            let wasVirtual = modelRegistry.find(recorded.provider, recorded.modelId).map(isVirtualModel) ?? false
+            if isVirtualModel(selected) || wasVirtual {
+                sessionManager.appendModelChange(selected.provider, selected.id)
+            }
+        }
+        // v1.5.2 7860ff528: preserve the live selection after tree navigation.
+        guard let recordedLevel = branch.reversed().compactMap({ entry -> ThinkingLevel? in
+            if case .thinkingLevel(let change) = entry { return ThinkingLevel(rawValue: change.thinkingLevel) }
+            return nil
+        }).first else { return }
+        let requested = PiSwiftAI.ModelThinkingLevel(rawValue: recordedLevel.rawValue) ?? .off
+        let effective = ThinkingLevel(rawValue: PiSwiftAI.clampThinkingLevel(model: selected, requested: requested).rawValue) ?? .off
+        if effective != agent.state.thinkingLevel {
+            sessionManager.appendThinkingLevelChange(agent.state.thinkingLevel.rawValue)
+        }
     }
 
     private var compactionAbort: CancellationToken? {
@@ -1026,6 +1053,10 @@ public final class AgentSession: Sendable {
             }
             return AgentRequestUpdate(context: context, model: route.model,
                                       thinkingLevel: ThinkingLevel(rawValue: route.thinkingLevel.rawValue) ?? .off)
+        }
+        // v1.5.2 4cf69332c: normalize queued images when dequeued, with the model then active.
+        self.agent.transformQueuedMessage = { [weak self] message in
+            self?.normalizeQueuedUserMessage(message) ?? message
         }
         let previousTransformContext = self.agent.transformContext
         self.agent.transformContext = { [weak self] messages, signal in
@@ -1625,9 +1656,9 @@ public final class AgentSession: Sendable {
         }
         if case .messageStart(let message) = event, message.role == "user" {
             let text = extractUserMessageText(message)
-            if let idx = steeringMessages.firstIndex(of: text) {
+            if let idx = steeringMessages.firstIndex(where: { text == $0 || text.hasPrefix($0 + "\n\n") }) {
                 steeringMessages.remove(at: idx)
-            } else if let idx = followUpMessages.firstIndex(of: text) {
+            } else if let idx = followUpMessages.firstIndex(where: { text == $0 || text.hasPrefix($0 + "\n\n") }) {
                 followUpMessages.remove(at: idx)
             }
         }
@@ -2389,7 +2420,10 @@ public final class AgentSession: Sendable {
     private func setActiveTools(_ toolNames: [String]) {
         var tools: [AgentTool] = []
         var seen: Set<String> = []
-        for name in toolNames {
+        // v1.5.2 b9e3eef6c: a repeated set keeps the existing declaration order.
+        let requested = Set(toolNames)
+        let kept = getActiveToolNames().filter { requested.contains($0) }
+        for name in kept + toolNames {
             if seen.insert(name).inserted, isAllowedTool(name), isActivatable(name), exposure(of: name) != .hidden,
                let tool = toolRegistry[name] {
                 tools.append(tool)
@@ -2519,6 +2553,13 @@ public final class AgentSession: Sendable {
     /// Reload settings and resources first. Then call `reloadExtensions()` to rebuild tools
     /// and activate names newly added to defaultTools.
     public func reload() async {
+        try? await reloadChecked()
+    }
+
+    /// Reload with upstream's active-operation errors. Hosts should call this entry point.
+    public func reloadChecked() async throws {
+        if isStreaming { throw AgentSessionError.reloadDuringResponse }
+        if isCompacting { throw AgentSessionError.reloadDuringCompaction }
         let (usesDefaults, modifiers) = state.withLock { ($0.usesDefaultTools, $0.defaultToolModifiers) }
         let previousDefaults = Set(usesDefaults ? applyToolModifiers(
             base: settingsManager.getDefaultTools() ?? DEFAULT_TOOL_NAMES, entries: modifiers) : [])
@@ -2573,6 +2614,9 @@ public final class AgentSession: Sendable {
     /// detached from the runner so they no longer receive events.
     @discardableResult
     public func reloadExtensions() async -> ReloadExtensionsResult {
+        guard !isStreaming, !isCompacting else {
+            return ReloadExtensionsResult(droppedPaths: [], loadedPaths: [], errors: [])
+        }
         let activeBeforeReload = getActiveToolNames()
         state.withLock { $0.pendingToolNames.formUnion(activeBeforeReload) }
         guard let hookRunner = _hookRunner, let reloadHook = reloadExtensionsHookInternal else {
@@ -2834,7 +2878,7 @@ public final class AgentSession: Sendable {
             }
         }
         // K20: extension commands run first; all other prompts reject during compaction.
-        if isCompactingInternal { throw AgentSessionError.compactionInProgress }
+        if isCompactingInternal || isBranchSummarizing { throw AgentSessionError.promptDuringCompaction }
 
         var reserved = reserveRun()
         guard let input = await processInput(text, images: options?.images,
@@ -2857,7 +2901,7 @@ public final class AgentSession: Sendable {
             if deferred { return Task {} }
             guard let behavior = options?.streamingBehavior else { throw AgentSessionError.alreadyProcessingQueue }
             let expandedText = expandPromptText(input.text)
-            let message = buildUserMessage(text: expandedText, images: input.images)
+            let message = buildQueuedUserMessage(text: expandedText, images: input.images)
             switch behavior {
             case .steer:
                 steeringMessages.append(expandedText)
@@ -2927,7 +2971,7 @@ public final class AgentSession: Sendable {
     public func steer(_ text: String, images: [ImageContent]? = nil) {
         let expandedText = expandPromptText(text)
         steeringMessages.append(expandedText)
-        agent.steer(buildUserMessage(text: expandedText, images: images))
+        agent.steer(buildQueuedUserMessage(text: expandedText, images: images))
     }
 
     public func followUp(_ text: String) {
@@ -2942,7 +2986,7 @@ public final class AgentSession: Sendable {
         guard let input = await processInput(text, images: images, source: source, behavior: .steer) else { return .handled }
         let expandedText = expandPromptText(input.text)
         steeringMessages.append(expandedText)
-        agent.steer(buildUserMessage(text: expandedText, images: input.images))
+        agent.steer(buildQueuedUserMessage(text: expandedText, images: input.images))
         return .queued
     }
 
@@ -2952,7 +2996,7 @@ public final class AgentSession: Sendable {
         guard let input = await processInput(text, images: images, source: source, behavior: .followUp) else { return .handled }
         let expandedText = expandPromptText(input.text)
         followUpMessages.append(expandedText)
-        agent.followUp(buildUserMessage(text: expandedText, images: input.images))
+        agent.followUp(buildQueuedUserMessage(text: expandedText, images: input.images))
         return .queued
     }
 
@@ -3250,10 +3294,16 @@ public final class AgentSession: Sendable {
         return true
     }
 
-    public func importFromJsonl(_ inputPath: String) async throws -> HookCommandResult {
+    public func importFromJsonl(_ inputPath: String, fallbackCwd: String? = nil) async throws -> HookCommandResult {
         let source = URL(fileURLWithPath: (inputPath as NSString).expandingTildeInPath).standardizedFileURL
         guard FileManager.default.fileExists(atPath: source.path) else {
             throw SessionImportError.fileNotFound(source.path)
+        }
+        // v1.5.2 4ea883792: detect a missing stored cwd before making an import copy.
+        // The host can present Continue / Fork / Cancel from this issue.
+        let sourceManager = try SessionManager.openValidated(source.path)
+        if let issue = getMissingSessionCwdIssue(sourceManager, fallbackCwd: fallbackCwd ?? sessionManager.getCwd()) {
+            throw AgentSessionRuntimeError.missingSessionCwd(issue)
         }
         let directory = URL(fileURLWithPath: sessionManager.getSessionDir().isEmpty ? URL(fileURLWithPath: getSessionsDir()).appendingPathComponent("imports").path : sessionManager.getSessionDir())
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -3271,9 +3321,20 @@ public final class AgentSession: Sendable {
         if let runner = _hookRunner,
            let result = await runner.emit(SessionBeforeSwitchEvent(reason: .resume, targetSessionFile: destination.path)) as? SessionBeforeSwitchResult,
            result.cancel { return HookCommandResult(cancelled: true) }
-        if !stored { try FileManager.default.copyItem(at: source, to: destination) }
-        _ = try SessionManager.openValidated(destination.path, directory.path)
-        return HookCommandResult(cancelled: !(await switchSession(destination.path, emitBeforeSwitch: false)))
+        var copied = false
+        do {
+            if !stored {
+                try FileManager.default.copyItem(at: source, to: destination)
+                copied = true
+            }
+            _ = try SessionManager.openValidated(destination.path, directory.path)
+            let switched = await switchSession(destination.path, emitBeforeSwitch: false)
+            if !switched, copied { try? FileManager.default.removeItem(at: destination) }
+            return HookCommandResult(cancelled: !switched)
+        } catch {
+            if copied { try? FileManager.default.removeItem(at: destination) }
+            throw error
+        }
     }
 
     public func getAvailableModels() async -> [Model] {
@@ -3328,11 +3389,13 @@ public final class AgentSession: Sendable {
     }
 
     private func cycleScopedModel(_ direction: ModelCycleDirection, options: ModelMutationOptions) async throws -> ModelCycleResult? {
-        guard scopedModelsInternal.count > 1 else { return nil }
+        guard !scopedModelsInternal.isEmpty else { return nil }
         let current = agent.state.model
-        let currentIndex = scopedModelsInternal.firstIndex { modelsAreEqual($0.model, current) } ?? 0
+        let currentIndex = scopedModelsInternal.firstIndex { modelsAreEqual($0.model, current) }
         let count = scopedModelsInternal.count
-        let nextIndex = direction == .forward ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count
+        if count == 1 && currentIndex != nil { return nil }
+        let nextIndex = currentIndex.map { direction == .forward ? ($0 + 1) % count : ($0 - 1 + count) % count }
+            ?? (direction == .forward ? 0 : count - 1)
         let next = scopedModelsInternal[nextIndex]
         guard await hasAuthForModel(next.model) else {
             throw AgentSessionError.missingApiKeyForModel(provider: next.model.provider, modelId: next.model.id)
@@ -3348,11 +3411,13 @@ public final class AgentSession: Sendable {
 
     private func cycleAvailableModel(_ direction: ModelCycleDirection, options: ModelMutationOptions) async throws -> ModelCycleResult? {
         let models = await modelRegistry.getAvailable()
-        guard models.count > 1 else { return nil }
+        guard !models.isEmpty else { return nil }
         let current = agent.state.model
-        let currentIndex = models.firstIndex { modelsAreEqual($0, current) } ?? 0
+        let currentIndex = models.firstIndex { modelsAreEqual($0, current) }
         let count = models.count
-        let nextIndex = direction == .forward ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count
+        if count == 1 && currentIndex != nil { return nil }
+        let nextIndex = currentIndex.map { direction == .forward ? ($0 + 1) % count : ($0 - 1 + count) % count }
+            ?? (direction == .forward ? 0 : count - 1)
         let next = models[nextIndex]
         guard await hasAuthForModel(next) else {
             throw AgentSessionError.missingApiKeyForModel(provider: next.provider, modelId: next.id)
@@ -3657,12 +3722,16 @@ public final class AgentSession: Sendable {
             userWantsSummary: summarize
         )
 
-        branchSummaryAbort = CancellationToken()
+        let navigationToken = CancellationToken()
+        branchSummaryAbort = navigationToken
         isBranchSummarizing = true
         idleWaiter.beginRun()
         defer {
-            isBranchSummarizing = false
-            branchSummaryAbort = nil
+            // A session_tree hook may have started another navigation.
+            if branchSummaryAbort === navigationToken {
+                isBranchSummarizing = false
+                branchSummaryAbort = nil
+            }
             Task { [weak self] in await self?.emitAgentSettledIfNeeded() }
         }
         var summaryText: String?
@@ -3671,7 +3740,7 @@ public final class AgentSession: Sendable {
         var fromHook = false
 
         if let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_tree") {
-            if let result = await hookRunner.emit(SessionBeforeTreeEvent(preparation: preparation, signal: branchSummaryAbort)) as? SessionBeforeTreeResult {
+            if let result = await hookRunner.emit(SessionBeforeTreeEvent(preparation: preparation, signal: navigationToken)) as? SessionBeforeTreeResult {
                 if result.cancel {
                     return (nil, true, nil, nil)
                 }
@@ -3693,7 +3762,7 @@ public final class AgentSession: Sendable {
             }
             let summary: (request: ResolvedModelRequest, thinkingLevel: PiSwiftAI.ThinkingLevel?)
             do {
-                summary = try await getSummarizationRequestAuth(model, signal: branchSummaryAbort)
+                summary = try await getSummarizationRequestAuth(model, signal: navigationToken)
             } catch {
                 reportBoundaryError("model_route", error.localizedDescription)
                 return (nil, true, nil, nil)
@@ -3707,7 +3776,7 @@ public final class AgentSession: Sendable {
                     headers: request.auth.headers,
                     env: request.auth.env,
                     thinkingLevel: summary.thinkingLevel,
-                    signal: branchSummaryAbort,
+                    signal: navigationToken,
                     customInstructions: customInstructions,
                     replaceInstructions: replaceInstructions,
                     reserveTokens: settingsManager.getBranchSummarySettings().reserveTokens,
@@ -3781,15 +3850,34 @@ public final class AgentSession: Sendable {
             return (nil, true, nil, nil)
         }
 
-        await syncAgentContext()
+        await syncAgentContext(restoreThinkingLevel: false)
 
         if let hookRunner = _hookRunner {
+            // The selected context is installed. A handler may prompt or navigate now.
+            if branchSummaryAbort === navigationToken {
+                branchSummaryAbort = nil
+                isBranchSummarizing = false
+            }
             _ = await hookRunner.emit(SessionTreeEvent(newLeafId: sessionManager.getLeafId(), oldLeafId: oldLeafId, summaryEntry: summaryEntry, fromHook: summaryEntry != nil ? fromHook : nil))
         }
 
         await emitCustomToolSessionEvent(.tree, previousSessionFile: sessionFile)
 
         return (editorText, false, nil, summaryEntry)
+    }
+
+    /// Navigate with upstream's active-operation errors, for hosts that present them.
+    public func navigateTreeChecked(
+        _ targetId: String,
+        summarize: Bool = false,
+        customInstructions: String? = nil,
+        replaceInstructions: Bool? = nil,
+        label: String? = nil
+    ) async throws -> (editorText: String?, cancelled: Bool, aborted: Bool?, summaryEntry: BranchSummaryEntry?) {
+        if isStreaming { throw AgentSessionError.treeNavigationDuringResponse }
+        if isCompacting { throw AgentSessionError.treeNavigationDuringCompaction }
+        return await navigateTree(targetId, summarize: summarize, customInstructions: customInstructions,
+                                  replaceInstructions: replaceInstructions, label: label)
     }
 
     public func abortCompaction() {
@@ -4015,7 +4103,7 @@ public final class AgentSession: Sendable {
             if isStreaming {
                 let text = expandPromptText(prompt.text, expandSlashCommands: prompt.options?.expandSlashCommands ?? prompt.options?.expandPromptTemplates ?? true, expandPromptTemplates: prompt.options?.expandPromptTemplates ?? true)
                 steeringMessages.append(text)
-                agent.steer(buildUserMessage(text: text, images: prompt.options?.images))
+                agent.steer(buildQueuedUserMessage(text: text, images: prompt.options?.images))
                 await prompt.completion.succeed()
                 continue
             }
@@ -4037,7 +4125,7 @@ public final class AgentSession: Sendable {
         agent.messages = projection.messages
     }
 
-    private func syncAgentContext() async {
+    private func syncAgentContext(restoreThinkingLevel: Bool = true) async {
         let context = sessionManager.buildSessionProjection()
         let previousModel = agent.state.model
         refreshContext(context)
@@ -4048,7 +4136,9 @@ public final class AgentSession: Sendable {
                 await emitModelSelect(nextModel: model, previousModel: previousModel, source: .restore)
             }
         }
-        agent.thinkingLevel = ThinkingLevel(rawValue: context.thinkingLevel) ?? .off
+        if restoreThinkingLevel {
+            agent.thinkingLevel = ThinkingLevel(rawValue: context.thinkingLevel) ?? .off
+        }
     }
 
     private func buildUserMessage(text: String, images: [ImageContent]?) -> AgentMessage {
@@ -4063,6 +4153,56 @@ public final class AgentSession: Sendable {
             }
         }
         return AgentMessage.user(UserMessage(content: .blocks(blocks)))
+    }
+
+    /// Keep queued content unchanged until Agent dequeues it for delivery.
+    private func buildQueuedUserMessage(text: String, images: [ImageContent]?) -> AgentMessage {
+        buildUserMessage(text: text, images: images)
+    }
+
+    private func normalizeQueuedUserMessage(_ message: AgentMessage) -> AgentMessage {
+        guard case .user(var user) = message,
+              case .blocks(let blocks) = user.content,
+              case .text(let first)? = blocks.first else { return message }
+        let images = blocks.compactMap { block -> ImageContent? in
+            if case .image(let image) = block { return image }
+            return nil
+        }
+        guard !images.isEmpty else { return message }
+        let limits = ImageResizeOptions(modelProfile: limitsModel.inputLimits?.images?.resize)
+        let autoResize = settingsManager.getAutoResizeImages()
+        var hints: [String] = []
+        let normalized = images.compactMap { image -> ImageContent? in
+            let baseMime = String(image.mimeType.split(separator: ";", maxSplits: 1).first ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let knownMime: String? = switch baseMime {
+            case "image/png", "image/jpeg", "image/gif", "image/webp": baseMime
+            case "image/jpg": "image/jpeg"
+            default: nil
+            }
+            let normalizedImage: ImageContent
+            if let knownMime {
+                normalizedImage = ImageContent(data: image.data, mimeType: knownMime)
+            } else if let converted = convertToPng(image.data, baseMime) {
+                normalizedImage = converted
+                hints.append("[Image converted from \(baseMime) to image/png.]")
+            } else {
+                hints.append("[Image omitted: could not be converted to a supported inline image format.]")
+                return nil
+            }
+            if !autoResize { return normalizedImage }
+            let resized = resizeImage(normalizedImage, options: limits)
+            guard imageFitsResizeLimits(resized, options: limits) else {
+                hints.append("[Image omitted: could not be resized below the inline image size limit.]")
+                return nil
+            }
+            if let note = formatDimensionNote(resized) { hints.append(note) }
+            return ImageContent(data: resized.data, mimeType: resized.mimeType)
+        }
+        let text = hints.isEmpty ? first.text : first.text + "\n\n" + hints.joined(separator: "\n")
+        let other = blocks.dropFirst().filter { if case .image = $0 { return false }; return true }
+        user.content = .blocks([.text(TextContent(text: text))] + other + normalized.map { .image($0) })
+        return .user(user)
     }
 
     private func extractUserMessageText(_ message: AgentMessage) -> String {

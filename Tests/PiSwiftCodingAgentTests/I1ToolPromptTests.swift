@@ -4,17 +4,16 @@ import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftCodingAgent
 
-// Upstream v1.1.0 core/tools: read:20, bash:45, edit:43, write:16,
+// v1.5.2 C-SESS 705d047cb, core/tools/edit.ts:41-45 updates the edit guidelines.
+// Upstream v1.1.0 core/tools: read:20, bash:45, write:16,
 // grep:35, find:34, ls:16. Use literal text to detect changes to the constants.
 @Test func i1ToolPromptContributionsMatchUpstream() {
     let expected: [(ToolSystemPromptContribution, String, [String])] = [
         (readToolSystemPromptContribution, "Read file contents", ["Use read to examine files instead of cat or sed."]),
         (bashToolSystemPromptContribution, "Execute bash commands (ls, grep, find, etc.)", ["You can inspect PI_* environment variables for current model and session details."]),
         (editToolSystemPromptContribution, "Make precise file edits with exact text replacement, including multiple disjoint edits in one call", [
-            "Use edit for precise changes (edits[].oldText must match exactly)",
-            "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
-            "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
-            "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+            "Use edit for targeted changes. Batch changes to one file in a single call.",
+            "Each edits[].oldText must exactly and uniquely match the original file. Keep matches short and non-overlapping; merge nearby changes without including large unchanged regions.",
         ]),
         (writeToolSystemPromptContribution, "Create or overwrite files", ["Use write only for new files or complete rewrites."]),
         (grepToolSystemPromptContribution, "Search file contents for patterns (respects .gitignore)", []),
@@ -57,6 +56,7 @@ import PiSwiftCodingAgent
     try await session.prompt("hello")
     let request = try #require(requests.withLock { $0.first })
     let sections = try #require(getCurrentSystemMessage(request.messages)?.sections)
+    // v1.5.2 C-SESS 705d047cb, system-prompt.ts:160 and tools/edit.ts:43-45.
     #expect(sections["tools"] == """
     <tools>
     - read: Read file contents
@@ -64,7 +64,7 @@ import PiSwiftCodingAgent
     - edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call
     - write: Create or overwrite files
 
-    In addition to the tools above, you may have access to other custom tools depending on the project.
+    Additional tools may be available.
     </tools>
     """)
     #expect(sections["rules"] == """
@@ -72,10 +72,8 @@ import PiSwiftCodingAgent
     - Use bash for file operations like ls, rg, find
     - Use read to examine files instead of cat or sed.
     - You can inspect PI_* environment variables for current model and session details.
-    - Use edit for precise changes (edits[].oldText must match exactly)
-    - When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls
-    - Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.
-    - Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.
+    - Use edit for targeted changes. Batch changes to one file in a single call.
+    - Each edits[].oldText must exactly and uniquely match the original file. Keep matches short and non-overlapping; merge nearby changes without including large unchanged regions.
     - Use write only for new files or complete rewrites.
     - Be concise in your responses
     - Show file paths clearly when working with files

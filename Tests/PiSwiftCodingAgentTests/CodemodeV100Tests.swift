@@ -357,5 +357,6 @@ private func v100Response(_ model: Model, script: String? = nil) -> AssistantMes
     #expect(session.agent.tools.first { $0.name == "codemode" }?.description.contains("- Use read to examine files instead of cat or sed.") == true)
     #expect(prompt.contains("\n- codemode: "))
     #expect(prompt.contains("codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)"))
-    #expect(prompt.contains("Codemode script reference: \(CODEMODE_DOCS_PATH)"))
+    // v1.5.2 C-SESS 705d047cb, system-prompt.ts:162-168: the earlier extra script-reference line is gone.
+    #expect(!prompt.contains("Codemode script reference:"))
 }

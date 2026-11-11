@@ -249,10 +249,30 @@ import Testing
 }
 
 @Test func parseCommandArgsEscapedQuotesInQuotedStrings() {
-    // This implementation doesn't handle escaped quotes - backslash is literal
-    // Input: "quoted \"text\""
-    // The \" ends the quote, so we get: quoted \text\
-    #expect(parseCommandArgs("\"quoted \\\"text\\\"\"") == ["quoted \\text\\"])
+    // v1.5.2 C-SESS 96667f342, prompt-templates.test.ts:421: matching escaped quotes are unescaped.
+    #expect(parseCommandArgs("\"quoted \\\"text\\\"\"") == ["quoted \"text\""])
+}
+
+// v1.5.2 C-SESS 96667f342, prompt-templates.test.ts:420-448.
+@Test func parseCommandArgsEscapesOnlyTheEnclosingQuote() {
+    #expect(parseCommandArgs("'it\\'s here' next") == ["it's here", "next"])
+    #expect(parseCommandArgs("\"C:\\dir\\file\" '\\\\server\\share'") == ["C:\\dir\\file", "\\\\server\\share"])
+    #expect(parseCommandArgs("\"it's\" 'a\\\"b'") == ["it's", "a\\\"b"])
+    #expect(parseCommandArgs("say \\\"hi") == ["say", "\\\"hi"])
+}
+
+@Test func parseCommandArgsKeepsApostrophesInsideWords() {
+    #expect(parseCommandArgs("why doesn't the user's cache work") ==
+            ["why", "doesn't", "the", "user's", "cache", "work"])
+    #expect(parseCommandArgs("why doesn't this work") == ["why", "doesn't", "this", "work"])
+}
+
+@Test func parseCommandArgsKeepsUnclosedQuotesLiteral() {
+    #expect(parseCommandArgs("'tis the season") == ["'tis", "the", "season"])
+    #expect(parseCommandArgs("say \"hello world") == ["say", "\"hello", "world"])
+    #expect(parseCommandArgs("a '") == ["a", "'"])
+    #expect(parseCommandArgs("\"abc\\\"") == ["\"abc\\\""])
+    #expect(parseCommandArgs("\"it's\" 'x") == ["it's", "'x"])
 }
 
 @Test func parseCommandArgsTrailingSpaces() {

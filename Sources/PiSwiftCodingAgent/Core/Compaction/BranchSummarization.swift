@@ -131,8 +131,14 @@ public func prepareBranchEntries(_ entries: [SessionEntry], _ tokenBudget: Int =
         }
     }
 
+    // v1.5.2 d0fe21308: the latest edit for each entry is the model-visible one.
+    var edits: [String: ContextEditEntry] = [:]
+    for entry in entries {
+        if case .contextEdit(let edit) = entry { edits[edit.targetId] = edit }
+    }
+
     for entry in entries.reversed() {
-        guard let message = messageFromEntryForBranch(entry) else { continue }
+        guard let message = messageFromEntryForBranch(entry, edit: edits[entry.id]) else { continue }
         extractFileOpsFromMessage(message, &fileOps)
         let tokens = estimateTokens(message)
         if tokenBudget > 0 && totalTokens + tokens > tokenBudget {
@@ -199,11 +205,19 @@ Keep each section concise. Preserve exact file paths, function names, and error 
     let prompt = "<conversation>\n\(conversationText)\n</conversation>\n\n\(instructions)"
 
     let message = Message.user(UserMessage(content: .blocks([.text(TextContent(text: prompt))])))
+    let reasoning: PiSwiftAI.ThinkingLevel?
+    if options.model.reasoning, let level = options.thinkingLevel {
+        reasoning = level
+    } else {
+        reasoning = nil
+    }
     do {
         let response = try await completeSummarization(
             model: options.model,
             context: Context(systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: [message]),
-            options: SimpleStreamOptions(env: options.env, signal: options.signal, apiKey: options.apiKey, reasoning: options.thinkingLevel, headers: options.headers),
+            // v1.5.2 269afc66a: do not send an unsupported "off" effort.
+            options: SimpleStreamOptions(env: options.env, signal: options.signal, apiKey: options.apiKey,
+                reasoning: reasoning, headers: options.headers),
             streamFn: options.streamFn, retry: options.retry, callbacks: options.callbacks
         )
         if response.stopReason == .aborted { return BranchSummaryResult(aborted: true) }
@@ -235,12 +249,13 @@ Keep each section concise. Preserve exact file paths, function names, and error 
     }
 }
 
-private func messageFromEntryForBranch(_ entry: SessionEntry) -> AgentMessage? {
+private func messageFromEntryForBranch(_ entry: SessionEntry, edit: ContextEditEntry?) -> AgentMessage? {
     switch entry {
     case .message(let msg):
         if case .toolResult = msg.message { return nil }
-        return msg.message
+        return projectContextEntry(entry, edit).first
     case .customMessage(let custom):
+        if edit != nil { return projectContextEntry(entry, edit).first }
         let hook = HookMessage(customType: custom.customType, content: custom.content, display: custom.display, details: custom.details, timestamp: parseTimestamp(custom.timestamp))
         return makeHookAgentMessage(hook)
     case .branchSummary(let summary):

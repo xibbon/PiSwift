@@ -147,7 +147,8 @@ private func v104PromptResponse(_ model: Model, script: String?) -> AssistantMes
             ["You can inspect PI_* environment variables for current model and session details."])
     #expect(session.getAllTools().first { $0.name == "write" }?.promptGuidelines ==
             ["Use write only for new files or complete rewrites."])
-    #expect(session.getAllTools().first { $0.name == "edit" }?.promptGuidelines?.count == 4)
+    // v1.5.2 C-SESS 705d047cb, core/tools/edit.ts:41-45: edit now has two guidelines.
+    #expect(session.getAllTools().first { $0.name == "edit" }?.promptGuidelines?.count == 2)
 }
 
 // v1.0.4 #10343: ToolLoadout guidelines use the normalized session snapshot.

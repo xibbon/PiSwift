@@ -5,18 +5,16 @@ import PiSwiftCodingAgent
 
 @Test func i1DocsSectionKeepsUpstreamTextAndAcceptedReference() throws {
     let sections = try buildSystemPromptSections(BuildSystemPromptOptions(cwd: "/i1", contextFiles: [], skills: []))
-    // PORT_SYNC_NOTES.md:143 accepts the extra Codemode reference.
+    // v1.5.2 C-SESS 705d047cb, system-prompt.ts:162-168: tagged documentation text.
     #expect(sections["docs"] == """
     <docs>
-    Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+    Pi documentation (read only when the user asks about the harness itself, its SDK, extensions, themes, skills, or TUI):
     - Main documentation: \(getReadmePath())
     - Additional docs: \(getDocsPath())
     - Examples: \(getExamplesPath()) (extensions, custom tools, SDK)
     - When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-    - When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
-    - Codemode script reference: \(CODEMODE_DOCS_PATH)
-    - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
-    - Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)
+    - When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
+    - Before implementing harness changes, read the relevant docs and examples in full, following related cross-references.
     </docs>
     """)
 }
@@ -32,16 +30,18 @@ import PiSwiftCodingAgent
         promptGuidelines: ["First rule", "Second rule"],
         sections: SystemPromptSections([("custom", "Custom instructions")])))
     #expect(sections.entries.map(\.name) == ["preamble", "tools", "rules", "docs", "addendum", "project_context", "skills", "cwd", "custom"])
-    #expect(sections["preamble"] == "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.")
-    #expect(sections["tools"] == "<tools>\n- read: Read file contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>")
+    // v1.5.2 C-SESS 705d047cb, system-prompt.test.ts:51 and system-prompt.ts:156,160.
+    #expect(sections["preamble"] == "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.")
+    #expect(sections["tools"] == "<tools>\n- read: Read file contents\n\nAdditional tools may be available.\n</tools>")
     #expect(sections["rules"] == "<rules>\n- First rule\n- Second rule\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>")
     #expect(sections["addendum"] == "<addendum>\nExtra instructions\n</addendum>")
     #expect(sections["project_context"] == "<project_context>\nProject-specific instructions and guidelines:\n\n<project_instructions path=\"/project/AGENTS.md\">\nProject instructions\n</project_instructions>\n</project_context>")
+    // v1.5.2 C-SESS 705d047cb, system-prompt.test.ts:199-202 and skills.ts:372.
     #expect(sections["skills"] == """
     <skills>
     The following skills provide specialized instructions for specific tasks.
     Use the read tool to load a skill's file when the task matches its description.
-    When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.
+    Resolve relative paths against the skill's directory (parent of SKILL.md). Use absolute paths in tool calls.
 
     <available_skills>
       <skill>

@@ -19,16 +19,23 @@ public func parseCommandArgs(_ argsString: String) -> [String] {
     var current = ""
     var hasToken = false
     var inQuote: Unicode.Scalar? = nil
-
-    for char in argsString.unicodeScalars {
+    let scalars = Array(argsString.unicodeScalars)
+    var quoteStart = 0
+    var index = 0
+    while index < scalars.count {
+        let char = scalars[index]
         if let quote = inQuote {
-            if char == quote {
+            if char == "\\", index + 1 < scalars.count, scalars[index + 1] == quote {
+                current.unicodeScalars.append(quote)
+                index += 1
+            } else if char == quote {
                 inQuote = nil
             } else {
                 current.unicodeScalars.append(char)
             }
-        } else if char == "\"" || char == "'" {
+        } else if (char == "\"" || char == "'") && !hasToken {
             inQuote = char
+            quoteStart = index
             hasToken = true
         } else if isCommandArgumentWhitespace(char) {
             if hasToken {
@@ -40,6 +47,13 @@ public func parseCommandArgs(_ argsString: String) -> [String] {
             current.unicodeScalars.append(char)
             hasToken = true
         }
+        if inQuote != nil, index == scalars.count - 1 {
+            // v1.5.2 96667f342: parse an unclosed quote again as literal text.
+            inQuote = nil
+            current = String(scalars[quoteStart])
+            index = quoteStart
+        }
+        index += 1
     }
 
     if hasToken {

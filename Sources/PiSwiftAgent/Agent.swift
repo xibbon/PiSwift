@@ -128,6 +128,7 @@ public final class Agent: Sendable {
         var abortToken: CancellationToken?
         var convertToLlm: @Sendable ([AgentMessage]) async throws -> [Message]
         var transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])?
+        var transformQueuedMessage: (@Sendable (AgentMessage) async -> AgentMessage)?
         var steeringQueue: [AgentMessage]
         var followUpQueue: [AgentMessage]
         var steeringMode: AgentSteeringMode
@@ -190,6 +191,20 @@ public final class Agent: Sendable {
     public var transformContext: (@Sendable ([AgentMessage], CancellationToken?) async throws -> [AgentMessage])? {
         get { stateBox.withLock { $0.transformContext } }
         set { stateBox.withLock { $0.transformContext = newValue } }
+    }
+
+    /// Apply an optional transform when a queued message is delivered. The queue keeps its original value.
+    public var transformQueuedMessage: (@Sendable (AgentMessage) async -> AgentMessage)? {
+        get { stateBox.withLock { $0.transformQueuedMessage } }
+        set { stateBox.withLock { $0.transformQueuedMessage = newValue } }
+    }
+
+    private func prepareQueuedMessages(_ messages: [AgentMessage]) async -> [AgentMessage] {
+        guard let transform = transformQueuedMessage else { return messages }
+        var prepared: [AgentMessage] = []
+        prepared.reserveCapacity(messages.count)
+        for message in messages { prepared.append(await transform(message)) }
+        return prepared
     }
 
     private var steeringQueue: [AgentMessage] {
@@ -362,6 +377,7 @@ public final class Agent: Sendable {
             abortToken: nil,
             convertToLlm: convert,
             transformContext: options.transformContext,
+            transformQueuedMessage: nil,
             steeringQueue: [],
             followUpQueue: [],
             steeringMode: options.steeringMode ?? .oneAtATime,
@@ -616,13 +632,13 @@ public final class Agent: Sendable {
         if let last = _state.messages.last, last.role == "assistant" {
             let queuedSteering = dequeueSteeringMessages()
             if !queuedSteering.isEmpty {
-                await runLoop(messages: queuedSteering, options: RunLoopOptions(skipInitialSteeringPoll: true))
+                await runLoop(messages: await prepareQueuedMessages(queuedSteering), options: RunLoopOptions(skipInitialSteeringPoll: true))
                 return
             }
 
             let queuedFollowUp = dequeueFollowUpMessages()
             if !queuedFollowUp.isEmpty {
-                await runLoop(messages: queuedFollowUp)
+                await runLoop(messages: await prepareQueuedMessages(queuedFollowUp))
                 return
             }
 
@@ -747,11 +763,11 @@ public final class Agent: Sendable {
                 if shouldSkip {
                     return []
                 }
-                return self.dequeueSteeringMessages()
+                return await self.prepareQueuedMessages(self.dequeueSteeringMessages())
             },
             getFollowUpMessages: { [weak self] in
                 guard let self else { return [] }
-                return self.dequeueFollowUpMessages()
+                return await self.prepareQueuedMessages(self.dequeueFollowUpMessages())
             },
             finishTurn: finishTurn,
             prepareRequest: prepareRequest,
