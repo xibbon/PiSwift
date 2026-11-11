@@ -28,12 +28,18 @@ public struct BashExecutorOptions: Sendable {
     }
 }
 
+struct BashShellExit: Sendable {
+    var exitCode: Int
+    var afterSeconds: Double
+}
+
 public struct BashResult: Sendable {
     public var output: String
     public var exitCode: Int?
     public var cancelled: Bool
     public var truncated: Bool
     public var fullOutputPath: String?
+    var timeoutShellExit: BashShellExit?
 
     public init(output: String, exitCode: Int?, cancelled: Bool, truncated: Bool, fullOutputPath: String? = nil) {
         self.output = output
@@ -92,24 +98,30 @@ public func executeBashWithOperations(
         guard options?.signal?.isCancelled == true else { throw error }
         buffer.flushPending(onChunk: options?.onChunk)
         let data = buffer.snapshot()
-        let truncation = truncateTail(String(decoding: data, as: UTF8.self))
+        let truncation = truncateTail(buffer.retainedOutput)
         var path: String?
-        if truncation.truncated {
+        if truncation.truncated || buffer.discardedOutput {
             path = try? writeOutputFile(prefix: "pi-bash", extension: ".log", data: data)
         }
         return BashResult(
             output: truncation.content, exitCode: nil, cancelled: true,
-            truncated: truncation.truncated, fullOutputPath: path
+            truncated: truncation.truncated || buffer.discardedOutput, fullOutputPath: path
         )
     }
     buffer.flushPending(onChunk: options?.onChunk)
-    if let streamed = buffer.snapshot(matchingRawText: Data(result.output.utf8)) {
+    if buffer.snapshot(matchingRawText: Data(result.output.utf8)) != nil {
         // Keep the chunk boundaries that released long unfinished ANSI sequences.
-        result.output = String(decoding: streamed, as: UTF8.self)
+        let truncation = truncateTail(buffer.retainedOutput)
+        result.output = truncation.content
+        result.truncated = result.truncated || buffer.discardedOutput || truncation.truncated
     } else {
         // Custom operations can return a tail or a separate result without streaming it.
         var outputStream = BashOutputStream()
         result.output = outputStream.appendText(result.output) + outputStream.finish()
+    }
+    result.truncated = result.truncated || buffer.discardedOutput
+    if result.truncated && result.fullOutputPath == nil {
+        result.fullOutputPath = try? writeOutputFile(prefix: "pi-bash", extension: ".log", data: buffer.snapshot())
     }
     // A custom operation can return a spill file with raw bytes. Keep its file intact.
     if let path = result.fullOutputPath,
@@ -244,8 +256,21 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
     let stderrReader = startReader(stderrPipe, append: appendData)
 
     // Foundation reports exit independently of the queues that drain the pipes.
+    let startedAt = ContinuousClock.now
+    let shellExit = LockedState<BashShellExit?>(nil)
+    let timeoutShellExit = LockedState<BashShellExit?>(nil)
     readers.enter()
-    process.terminationHandler = { _ in readers.leave() }
+    process.terminationHandler = { process in
+        let duration = ContinuousClock.now - startedAt
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        shellExit.withLock {
+            $0 = BashShellExit(
+                exitCode: Int(process.terminationStatus) + (process.terminationReason == .uncaughtSignal ? 128 : 0),
+                afterSeconds: (seconds * 10).rounded() / 10
+            )
+        }
+        readers.leave()
+    }
     do {
         try process.run()
     } catch {
@@ -286,6 +311,7 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
         let timer = DispatchSource.makeTimerSource()
         timer.schedule(deadline: .now() + timeoutSeconds)
         timer.setEventHandler {
+            timeoutShellExit.withLock { $0 = shellExit.withLock { $0 } }
             cancelledFlag.store(true)
             if process.isRunning {
                 killProcessTree(process.processIdentifier)
@@ -322,13 +348,15 @@ private func executeSystemBash(_ command: String, options: BashExecutorOptions? 
 
             let cancelled = cancelledFlag.load()
 
-            continuation.resume(returning: BashResult(
+            var result = BashResult(
                 output: output.isEmpty ? "" : output,
                 exitCode: cancelled ? nil : Int(process.terminationStatus) + (process.terminationReason == .uncaughtSignal ? 128 : 0),
                 cancelled: cancelled,
                 truncated: truncated,
                 fullOutputPath: fullOutputPath
-            ))
+            )
+            result.timeoutShellExit = timeoutShellExit.withLock { $0 }
+            continuation.resume(returning: result)
         }
     }
 }
@@ -383,6 +411,19 @@ private final class OutputBuffer: Sendable {
         var stream = BashOutputStream()
         var receivedByteCount = 0
         var rawText: Data?
+        var retainedChunks: [String] = []
+        var retainedBytes = 0
+        var discardedOutput = false
+
+        mutating func retain(_ text: String) {
+            guard !text.isEmpty else { return }
+            retainedChunks.append(text)
+            retainedBytes += text.utf8.count
+            while retainedBytes > DEFAULT_MAX_BYTES * 2 && retainedChunks.count > 1 {
+                retainedBytes -= retainedChunks.removeFirst().utf8.count
+                discardedOutput = true
+            }
+        }
     }
 
     private let state = LockedState(State())
@@ -393,6 +434,7 @@ private final class OutputBuffer: Sendable {
             state.receivedByteCount += chunk.count
             let text = state.stream.append(chunk)
             state.data.append(contentsOf: text.utf8)
+            state.retain(text)
             return text
         }
         if !text.isEmpty { onChunk?(text) }
@@ -406,6 +448,7 @@ private final class OutputBuffer: Sendable {
             state.rawText?.append(contentsOf: chunk.utf8)
             let text = state.stream.appendText(chunk)
             state.data.append(contentsOf: text.utf8)
+            state.retain(text)
             return text
         }
         if !text.isEmpty { onChunk?(text) }
@@ -415,6 +458,7 @@ private final class OutputBuffer: Sendable {
         let text = state.withLock { state in
             let text = state.stream.finish()
             state.data.append(contentsOf: text.utf8)
+            state.retain(text)
             return text
         }
         if !text.isEmpty { onChunk?(text) }
@@ -426,6 +470,14 @@ private final class OutputBuffer: Sendable {
 
     func snapshot(matchingRawText rawText: Data) -> Data? {
         state.withLock { $0.rawText == rawText ? $0.data : nil }
+    }
+
+    var retainedOutput: String {
+        state.withLock { $0.retainedChunks.joined() }
+    }
+
+    var discardedOutput: Bool {
+        state.withLock { $0.discardedOutput }
     }
 
     var receivedByteCount: Int {

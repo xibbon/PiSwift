@@ -36,21 +36,32 @@ enum EditToolError: LocalizedError, Sendable {
 
 public struct EditToolDetails: Sendable {
     public var diff: String
+    public var patch: String?
     public var firstChangedLine: Int?
 }
 
 public func createEditTool(cwd: String) -> AgentTool {
+    createEditTool(cwd: cwd, generateDiff: { path, base, changed, replacements in
+        generateEditDiff(path: path, baseContent: base, newContent: changed, replacements: replacements)
+    })
+}
+
+// A throwing diff function permits a failure check before the file write.
+func createEditTool(
+    cwd: String,
+    generateDiff: @escaping @Sendable (String, String, String, [TextReplacement]) throws -> EditDiff
+) -> AgentTool {
     var tool = AgentTool(
         label: "edit",
         name: "edit",
-        description: "Edit a file with one or more targeted text replacements.",
+        description: "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
         parameters: [
             "type": AnyCodable("object"),
             "properties": AnyCodable([
                 "path": ["type": "string", "description": "Path to the file to edit (relative or absolute)"],
                 "edits": [
                     "type": "array",
-                    "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits.",
+                    "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead.",
                     "items": [
                         "type": "object",
                         "properties": [
@@ -84,16 +95,17 @@ public func createEditTool(cwd: String) -> AgentTool {
 
             return try await FileMutationQueue.shared.withFileLock(absolutePath) {
                 let (bom, content) = try readFilePreservingBom(absolutePath)
-                let originalEnding = detectLineEnding(content)
                 let normalizedContent = normalizeToLF(content)
                 let applied = try applyEditsToNormalizedContent(normalizedContent, edits: edits, path: path)
-                let finalContent = bom + restoreLineEndings(applied.newContent, originalEnding)
+                let finalContent = bom + (content.utf16.contains(13)
+                    ? applyReplacementsToOriginal(content, replacements: applied.replacements) : applied.newContent)
+                let diffResult = try generateDiff(path, applied.baseContent, applied.newContent, applied.replacements)
+                if signal?.isCancelled == true || Task.isCancelled { throw EditToolError.operationAborted }
                 try finalContent.write(toFile: absolutePath, atomically: true, encoding: .utf8)
-
-                let diffResult = generateDiffString(applied.baseContent, applied.newContent)
                 let firstChanged: Any = diffResult.firstChangedLine != nil ? diffResult.firstChangedLine! : NSNull()
                 let details = AnyCodable([
                     "diff": diffResult.diff,
+                    "patch": diffResult.patch,
                     "firstChangedLine": firstChanged,
                 ])
 
@@ -108,7 +120,7 @@ public func createEditTool(cwd: String) -> AgentTool {
         }
     )
     tool.executeWithContext = { id, params, signal, onUpdate, context in
-        try await createEditTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+        try await createEditTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), generateDiff: generateDiff).execute(id, params, signal, onUpdate)
     }
     tool.constrainedSampling = .jsonSchema(strict: .prefer)
     return tool

@@ -28,7 +28,7 @@ public func createLsTool(cwd: String) -> AgentTool {
     var tool = AgentTool(
         label: "ls",
         name: "ls",
-        description: "List directory contents. Includes dotfiles.",
+        description: "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or \(DEFAULT_MAX_BYTES / 1024)KB (whichever is hit first).",
         parameters: [
             "type": AnyCodable("object"),
             "properties": AnyCodable([
@@ -41,7 +41,7 @@ public func createLsTool(cwd: String) -> AgentTool {
             throw LsToolError.operationAborted
         }
         let path = params["path"]?.value as? String ?? "."
-        let limit = intValue(params["limit"]) ?? 500
+        let limit = max(1, intValue(params["limit"]) ?? 500)
 
         let dirPath = resolveToCwd(path, cwd: cwd)
         var isDir: ObjCBool = false

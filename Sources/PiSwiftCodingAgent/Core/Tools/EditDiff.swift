@@ -79,7 +79,7 @@ public func normalizeForFuzzyMatch(_ text: String) -> String {
         // NFKC normalization for consistent Unicode matching
         .precomposedStringWithCompatibilityMapping
         // Strip trailing whitespace per line
-        .split(separator: "\n", omittingEmptySubsequences: false)
+        .components(separatedBy: "\n")
         .map { line in
             var s = String(line)
             while s.last?.isWhitespace == true { s.removeLast() }
@@ -147,11 +147,11 @@ public struct EditFuzzyMatchResult: Sendable {
 public func fuzzyFindText(_ content: String, _ oldText: String) -> EditFuzzyMatchResult {
     // Try exact match first
     if let exactRange = content.range(of: oldText) {
-        let index = content.distance(from: content.startIndex, to: exactRange.lowerBound)
+        let index = exactRange.lowerBound.utf16Offset(in: content)
         return EditFuzzyMatchResult(
             found: true,
             index: index,
-            matchLength: oldText.count,
+            matchLength: oldText.utf16.count,
             usedFuzzyMatch: false,
             contentForReplacement: content
         )
@@ -171,13 +171,13 @@ public func fuzzyFindText(_ content: String, _ oldText: String) -> EditFuzzyMatc
         )
     }
 
-    let index = fuzzyContent.distance(from: fuzzyContent.startIndex, to: fuzzyRange.lowerBound)
+    let index = fuzzyRange.lowerBound.utf16Offset(in: fuzzyContent)
 
     // When fuzzy matching, we work in the normalized space for replacement.
     return EditFuzzyMatchResult(
         found: true,
         index: index,
-        matchLength: fuzzyOldText.count,
+        matchLength: fuzzyOldText.utf16.count,
         usedFuzzyMatch: true,
         contentForReplacement: fuzzyContent
     )
@@ -196,16 +196,17 @@ public struct EditReplacement: Sendable {
     }
 }
 
-/// Outcome of applying a batch of edits against a single normalized base content. The
-/// `baseContent` is either the LF-normalized content (when all matches were exact) or its
-/// fuzzy-normalized form (when at least one edit needed fuzzy matching).
+/// The LF-normalized base, the changed text, and the sorted replacements.
+/// A fuzzy match widens each replacement to the lines that it changes.
 public struct AppliedEditsResult: Sendable {
     public var baseContent: String
     public var newContent: String
+    public var replacements: [TextReplacement]
 
-    public init(baseContent: String, newContent: String) {
+    public init(baseContent: String, newContent: String, replacements: [TextReplacement] = []) {
         self.baseContent = baseContent
         self.newContent = newContent
+        self.replacements = replacements
     }
 }
 
@@ -298,17 +299,116 @@ public func applyEditsToNormalizedContent(
         }
     }
 
-    var newContent = baseContent
-    for edit in matchedEdits.reversed() {
-        let start = newContent.index(newContent.startIndex, offsetBy: edit.matchIndex)
-        let end = newContent.index(start, offsetBy: edit.matchLength)
-        newContent.replaceSubrange(start..<end, with: edit.newText)
+    var replacements = matchedEdits.map {
+        TextReplacement(matchIndex: $0.matchIndex, matchLength: $0.matchLength, newText: $0.newText)
     }
-
-    if baseContent == newContent {
+    if needsFuzzy {
+        replacements = widenReplacementsToLines(normalizedContent, baseContent: baseContent, replacements: replacements)
+    }
+    let newContent = applyTextReplacements(normalizedContent, replacements)
+    if normalizedContent == newContent {
         throw ApplyEditsError.noChange(path: path, totalEdits: normalizedEdits.count)
     }
-    return AppliedEditsResult(baseContent: baseContent, newContent: newContent)
+    return AppliedEditsResult(baseContent: normalizedContent, newContent: newContent, replacements: replacements)
+}
+
+/// Offsets and lengths use UTF-16 code units, as in the TypeScript source.
+public struct TextReplacement: Sendable {
+    public var matchIndex: Int
+    public var matchLength: Int
+    public var newText: String
+
+    public init(matchIndex: Int, matchLength: Int, newText: String) {
+        self.matchIndex = matchIndex
+        self.matchLength = matchLength
+        self.newText = newText
+    }
+}
+
+private func applyTextReplacements(_ content: String, _ replacements: [TextReplacement], offset: Int = 0) -> String {
+    var result = content
+    for replacement in replacements.reversed() {
+        result = (result as NSString).replacingCharacters(
+            in: NSRange(location: replacement.matchIndex - offset, length: replacement.matchLength),
+            with: replacement.newText)
+    }
+    return result
+}
+
+private func editLineSpans(_ content: String) -> [Range<Int>] {
+    var offset = 0
+    return lineTokens(content).map { line in
+        let start = offset
+        offset += line.utf16.count
+        return start..<offset
+    }
+}
+
+private func widenReplacementsToLines(
+    _ originalContent: String, baseContent: String, replacements: [TextReplacement]
+) -> [TextReplacement] {
+    let originalLines = editLineSpans(originalContent)
+    let baseLines = editLineSpans(baseContent)
+    struct Group { var start: Int; var end: Int; var replacements: [TextReplacement] }
+    var groups: [Group] = []
+    for replacement in replacements {
+        guard let start = baseLines.firstIndex(where: { $0.contains(replacement.matchIndex) }),
+              let end = baseLines[start...].firstIndex(where: { $0.upperBound >= replacement.matchIndex + replacement.matchLength })
+        else { continue }
+        if let last = groups.last, start < last.end {
+            groups[groups.count - 1].end = max(last.end, end + 1)
+            groups[groups.count - 1].replacements.append(replacement)
+        } else {
+            groups.append(Group(start: start, end: end + 1, replacements: [replacement]))
+        }
+    }
+    return groups.map { group in
+        let baseStart = baseLines[group.start].lowerBound
+        let baseEnd = baseLines[group.end - 1].upperBound
+        let originalStart = originalLines[group.start].lowerBound
+        return TextReplacement(matchIndex: originalStart,
+            matchLength: originalLines[group.end - 1].upperBound - originalStart,
+            newText: applyTextReplacements((baseContent as NSString).substring(with: NSRange(location: baseStart, length: baseEnd - baseStart)),
+                                          group.replacements, offset: baseStart))
+    }
+}
+
+/// Keep bytes outside each matched range. New lines use the ending at that range.
+public func applyReplacementsToOriginal(_ originalContent: String, replacements: [TextReplacement]) -> String {
+    let units = Array(originalContent.utf16)
+    var crlfCount = 0
+    var scan = 0
+    func originalOffset(_ offset: Int) -> Int {
+        while scan + 1 < units.count && scan - crlfCount < offset {
+            if units[scan] == 13 && units[scan + 1] == 10 { crlfCount += 1; scan += 2 }
+            else { scan += 1 }
+        }
+        return offset + crlfCount
+    }
+    func endingAt(_ offset: Int) -> String {
+        let next = units[offset...].firstIndex(of: 10)
+        let previous = units[..<min(units.count, offset + 1)].lastIndex(of: 10)
+        guard let lf = next ?? previous else { return units.contains(13) ? "\r" : "\n" }
+        return lf > 0 && units[lf - 1] == 13 ? "\r\n" : "\n"
+    }
+    var parts: [String] = []
+    var endsWithCR = false
+    func push(_ part: String) {
+        guard !part.isEmpty else { return }
+        if endsWithCR && part.utf16.first == 10 { parts.append("\n") }
+        parts.append(part)
+        endsWithCR = part.utf16.last == 13
+    }
+    var position = 0
+    for replacement in replacements {
+        let start = originalOffset(replacement.matchIndex)
+        push(String(decoding: units[position..<start], as: UTF16.self))
+        let ending = endingAt(start)
+        push(ending == "\n" ? replacement.newText : replacement.newText.replacingOccurrences(of: "\n", with: ending))
+        position = originalOffset(replacement.matchIndex + replacement.matchLength)
+    }
+    push(String(decoding: units[position...], as: UTF16.self))
+    return parts.joined()
 }
 
 // MARK: - Line Diff Algorithm
@@ -324,97 +424,58 @@ public struct DiffPart: Sendable {
     public var value: String
 }
 
-/// Compute line-by-line diff between two strings using LCS algorithm
+/// Compute line differences. Keep each line terminator in its token.
 public func diffLines(_ oldText: String, _ newText: String) -> [DiffPart] {
-    let oldLines = oldText.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
-    let newLines = newText.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
-
-    // Compute LCS (Longest Common Subsequence) table
-    let m = oldLines.count
-    let n = newLines.count
-    var lcs = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
-
-    for i in 1...m {
-        for j in 1...n {
-            if oldLines[i - 1] == newLines[j - 1] {
-                lcs[i][j] = lcs[i - 1][j - 1] + 1
-            } else {
-                lcs[i][j] = max(lcs[i - 1][j], lcs[i][j - 1])
+    let oldLines = lineTokens(oldText)
+    let newLines = lineTokens(newText)
+    var start = 0
+    while start < oldLines.count && start < newLines.count && oldLines[start] == newLines[start] { start += 1 }
+    var oldEnd = oldLines.count
+    var newEnd = newLines.count
+    while oldEnd > start && newEnd > start && oldLines[oldEnd - 1] == newLines[newEnd - 1] { oldEnd -= 1; newEnd -= 1 }
+    let oldChanged = Array(oldLines[start..<oldEnd])
+    let newChanged = Array(newLines[start..<newEnd])
+    var parts: [DiffPart] = []
+    func append(_ kind: DiffPart.Kind, _ value: String) {
+        guard !value.isEmpty else { return }
+        if parts.last?.kind == kind { parts[parts.count - 1].value += value }
+        else { parts.append(DiffPart(kind: kind, value: value)) }
+    }
+    append(.equal, oldLines[..<start].joined())
+    // A complete replacement has no common line. Avoid the quadratic search for a path
+    // through a large insertion, such as the upstream 150,000-line replacement case.
+    if Set(oldChanged).isDisjoint(with: Set(newChanged)) {
+        append(.removed, oldChanged.joined())
+        append(.added, newChanged.joined())
+    } else {
+        let difference = newChanged.difference(from: oldChanged)
+        var removals = Set<Int>()
+        var additions = Set<Int>()
+        for change in difference {
+            switch change {
+            case .remove(let offset, _, _): removals.insert(offset)
+            case .insert(let offset, _, _): additions.insert(offset)
             }
         }
-    }
-
-    // Backtrack to find the diff
-    var result: [DiffPart] = []
-    var i = m
-    var j = n
-
-    var pendingEqual: [String] = []
-    var pendingRemoved: [String] = []
-    var pendingAdded: [String] = []
-
-    func flushPending() {
-        if !pendingRemoved.isEmpty {
-            result.append(DiffPart(kind: .removed, value: pendingRemoved.joined(separator: "\n")))
-            pendingRemoved = []
-        }
-        if !pendingAdded.isEmpty {
-            result.append(DiffPart(kind: .added, value: pendingAdded.joined(separator: "\n")))
-            pendingAdded = []
-        }
-        if !pendingEqual.isEmpty {
-            result.append(DiffPart(kind: .equal, value: pendingEqual.joined(separator: "\n")))
-            pendingEqual = []
+        var old = 0
+        var new = 0
+        while old < oldChanged.count || new < newChanged.count {
+            if old < oldChanged.count && removals.contains(old) { append(.removed, oldChanged[old]); old += 1 }
+            else if new < newChanged.count && additions.contains(new) { append(.added, newChanged[new]); new += 1 }
+            else if old < oldChanged.count && new < newChanged.count { append(.equal, oldChanged[old]); old += 1; new += 1 }
+            else { break }
         }
     }
+    append(.equal, oldLines[oldEnd...].joined())
+    return parts
+}
 
-    while i > 0 || j > 0 {
-        if i > 0 && j > 0 && oldLines[i - 1] == newLines[j - 1] {
-            // Flush non-equal parts first
-            if !pendingRemoved.isEmpty || !pendingAdded.isEmpty {
-                if !pendingRemoved.isEmpty {
-                    result.append(DiffPart(kind: .removed, value: pendingRemoved.reversed().joined(separator: "\n")))
-                    pendingRemoved = []
-                }
-                if !pendingAdded.isEmpty {
-                    result.append(DiffPart(kind: .added, value: pendingAdded.reversed().joined(separator: "\n")))
-                    pendingAdded = []
-                }
-            }
-            pendingEqual.insert(oldLines[i - 1], at: 0)
-            i -= 1
-            j -= 1
-        } else if j > 0 && (i == 0 || lcs[i][j - 1] >= lcs[i - 1][j]) {
-            // Flush equal parts first
-            if !pendingEqual.isEmpty {
-                result.append(DiffPart(kind: .equal, value: pendingEqual.joined(separator: "\n")))
-                pendingEqual = []
-            }
-            pendingAdded.insert(newLines[j - 1], at: 0)
-            j -= 1
-        } else if i > 0 {
-            // Flush equal parts first
-            if !pendingEqual.isEmpty {
-                result.append(DiffPart(kind: .equal, value: pendingEqual.joined(separator: "\n")))
-                pendingEqual = []
-            }
-            pendingRemoved.insert(oldLines[i - 1], at: 0)
-            i -= 1
-        }
-    }
-
-    // Flush any remaining
-    if !pendingRemoved.isEmpty {
-        result.append(DiffPart(kind: .removed, value: pendingRemoved.joined(separator: "\n")))
-    }
-    if !pendingAdded.isEmpty {
-        result.append(DiffPart(kind: .added, value: pendingAdded.joined(separator: "\n")))
-    }
-    if !pendingEqual.isEmpty {
-        result.append(DiffPart(kind: .equal, value: pendingEqual.joined(separator: "\n")))
-    }
-
-    return result
+private func lineTokens(_ content: String) -> [String] {
+    guard !content.isEmpty else { return [] }
+    var lines = content.components(separatedBy: "\n")
+    for index in lines.indices where index + 1 < lines.count { lines[index] += "\n" }
+    if lines.last == "" { lines.removeLast() }
+    return lines
 }
 
 // MARK: - Edit Diff Result Types
@@ -466,7 +527,7 @@ public func computeEditsDiff(path: String, edits: [EditReplacement], cwd: String
         guard applied.baseContent != applied.newContent else {
             return .error(noChanges())
         }
-        let result = generateDiffString(applied.baseContent, applied.newContent)
+        let result = generateEditDiff(path: path, baseContent: applied.baseContent, newContent: applied.newContent, replacements: applied.replacements)
         return .success(EditDiffResult(diff: result.diff, firstChangedLine: result.firstChangedLine))
     } catch let error as ApplyEditsError {
         return .error(EditDiffError(error: error.localizedDescription))
@@ -493,106 +554,177 @@ public func computeEditDiff(path: String, oldText: String, newText: String, cwd:
 /// Generate a unified diff string with line numbers and context.
 /// Returns both the diff string and the first changed line number (in the new file).
 public func generateDiffString(_ oldContent: String, _ newContent: String, contextLines: Int = 4) -> (diff: String, firstChangedLine: Int?) {
-    let parts = diffLines(oldContent, newContent)
+    let width = String(max(countEditLines(oldContent), countEditLines(newContent))).count
+    let shown = formatDisplayDiff(diffLines(oldContent, newContent), oldStart: 1, newStart: 1, width: width, context: contextLines)
+    return (shown.lines.joined(separator: "\n"), shown.firstChangedLine)
+}
+
+private func countEditLines(_ text: String) -> Int { text.utf8.reduce(1) { $1 == 10 ? $0 + 1 : $0 } }
+
+private func formatDisplayDiff(
+    _ parts: [DiffPart], oldStart: Int, newStart: Int, width: Int, context: Int
+) -> (lines: [String], firstChangedLine: Int?) {
     var output: [String] = []
-
-    let oldLines = oldContent.split(separator: "\n", omittingEmptySubsequences: false)
-    let newLines = newContent.split(separator: "\n", omittingEmptySubsequences: false)
-    let maxLineNum = max(oldLines.count, newLines.count)
-    let lineNumWidth = String(maxLineNum).count
-
-    var oldLineNum = 1
-    var newLineNum = 1
+    var old = oldStart
+    var new = newStart
+    var first: Int?
     var lastWasChange = false
-    var firstChangedLine: Int? = nil
-
-    for i in 0..<parts.count {
-        let part = parts[i]
-        var raw = part.value.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
-        if raw.last == "" && !part.value.isEmpty && !part.value.hasSuffix("\n") {
-            // Don't remove empty string if it's meaningful
-        } else if raw.last == "" && raw.count > 1 {
-            raw.removeLast()
-        }
-
-        switch part.kind {
-        case .added, .removed:
-            // Capture the first changed line (in the new file)
-            if firstChangedLine == nil {
-                firstChangedLine = newLineNum
-            }
-
-            // Show the change
+    let skipMarker = " " + String(repeating: " ", count: width) + " ..."
+    func show(_ prefix: String, _ number: Int, _ text: String) {
+        let n = String(number)
+        output.append(prefix + String(repeating: " ", count: max(0, width - n.count)) + n + " " + text)
+    }
+    for (index, part) in parts.enumerated() {
+        var raw = part.value.components(separatedBy: "\n")
+        if raw.last == "" { raw.removeLast() }
+        if part.kind != .equal {
+            if first == nil { first = new }
             for line in raw {
-                if part.kind == .added {
-                    let lineNum = String(newLineNum).padding(toLength: lineNumWidth, withPad: " ", startingAt: 0)
-                    let padded = String(repeating: " ", count: lineNumWidth - lineNum.trimmingCharacters(in: .whitespaces).count) + lineNum.trimmingCharacters(in: .whitespaces)
-                    output.append("+\(padded) \(line)")
-                    newLineNum += 1
-                } else {
-                    let lineNum = String(oldLineNum).padding(toLength: lineNumWidth, withPad: " ", startingAt: 0)
-                    let padded = String(repeating: " ", count: lineNumWidth - lineNum.trimmingCharacters(in: .whitespaces).count) + lineNum.trimmingCharacters(in: .whitespaces)
-                    output.append("-\(padded) \(line)")
-                    oldLineNum += 1
-                }
+                if part.kind == .added { show("+", new, line); new += 1 }
+                else { show("-", old, line); old += 1 }
             }
             lastWasChange = true
+            continue
+        }
+        let trailing = index + 1 < parts.count && parts[index + 1].kind != .equal
+        var ranges: [Range<Int>] = []
+        if lastWasChange && trailing {
+            if raw.count <= context * 2 { ranges = [0..<raw.count] }
+            else { ranges = [0..<context, (raw.count - context)..<raw.count] }
+        } else if lastWasChange { ranges = [0..<min(context, raw.count)] }
+        else if trailing { ranges = [max(0, raw.count - context)..<raw.count] }
+        var cursor = 0
+        for range in ranges {
+            if range.lowerBound > cursor { output.append(skipMarker); old += range.lowerBound - cursor; new += range.lowerBound - cursor }
+            for position in range { show(" ", old, raw[position]); old += 1; new += 1 }
+            cursor = range.upperBound
+        }
+        if cursor < raw.count {
+            if lastWasChange { output.append(skipMarker) }
+            old += raw.count - cursor
+            new += raw.count - cursor
+        }
+        lastWasChange = false
+    }
+    return (output, first)
+}
 
-        case .equal:
-            // Context lines - only show a few before/after changes
-            let nextPartIsChange = i < parts.count - 1 && (parts[i + 1].kind == .added || parts[i + 1].kind == .removed)
+public struct EditDiff: Sendable {
+    public var diff: String
+    public var patch: String
+    public var firstChangedLine: Int?
+}
 
-            if lastWasChange || nextPartIsChange {
-                var linesToShow = raw
-                var skipStart = 0
-                var skipEnd = 0
+private struct EditDiffWindow {
+    var oldStart: Int; var oldEnd: Int; var oldLine: Int
+    var newStart: Int; var newEnd: Int; var newLine: Int
+}
 
-                if !lastWasChange {
-                    // Show only last N lines as leading context
-                    skipStart = max(0, raw.count - contextLines)
-                    linesToShow = Array(raw.suffix(from: skipStart))
-                }
+private func editDiffWindows(_ baseContent: String, replacements: [TextReplacement]) -> [EditDiffWindow] {
+    let text = baseContent as NSString
+    let length = text.length
+    func startBefore(_ offset: Int) -> Int {
+        guard offset > 0 else { return 0 }
+        let found = text.range(of: "\n", options: .backwards, range: NSRange(location: 0, length: offset))
+        return found.location == NSNotFound ? 0 : found.location + 1
+    }
+    func feeds(_ start: Int, _ end: Int) -> Int {
+        guard end > start else { return 0 }
+        return text.substring(with: NSRange(location: start, length: end - start)).utf8.reduce(0) { $1 == 10 ? $0 + 1 : $0 }
+    }
+    var windows: [EditDiffWindow] = []
+    var offsetDelta = 0
+    var lineDelta = 0
+    var cursorOffset = 0
+    var cursorLine = 0
+    for replacement in replacements {
+        let matchEnd = replacement.matchIndex + replacement.matchLength
+        var start = startBefore(replacement.matchIndex)
+        for _ in 0..<32 where start > 0 { start = startBefore(start - 1) }
+        var end = matchEnd
+        for index in 0...32 where end < length {
+            let search = index == 0 ? max(matchEnd - 1, replacement.matchIndex) : end
+            let found = text.range(of: "\n", range: NSRange(location: search, length: length - search))
+            end = found.location == NSNotFound ? length : found.location + 1
+        }
+        let change = replacement.newText.utf16.count - replacement.matchLength
+        let lineChange = countEditLines(replacement.newText) - 1 - feeds(replacement.matchIndex, matchEnd)
+        if let previous = windows.last, start <= previous.oldEnd {
+            windows[windows.count - 1].oldEnd = max(previous.oldEnd, end)
+            windows[windows.count - 1].newEnd = max(previous.oldEnd, end) + offsetDelta + change
+        } else {
+            cursorLine += feeds(cursorOffset, start)
+            cursorOffset = start
+            windows.append(EditDiffWindow(oldStart: start, oldEnd: end, oldLine: cursorLine,
+                newStart: start + offsetDelta, newEnd: end + offsetDelta + change, newLine: cursorLine + lineDelta))
+        }
+        offsetDelta += change
+        lineDelta += lineChange
+    }
+    return windows
+}
 
-                if !nextPartIsChange && linesToShow.count > contextLines {
-                    // Show only first N lines as trailing context
-                    skipEnd = linesToShow.count - contextLines
-                    linesToShow = Array(linesToShow.prefix(contextLines))
-                }
+/// Diff only the changed ranges and 32 lines on each side. Compute this before a file write.
+public func generateEditDiff(
+    path: String, baseContent: String, newContent: String, replacements: [TextReplacement], contextLines: Int = 4
+) -> EditDiff {
+    let width = String(max(countEditLines(baseContent), countEditLines(newContent))).count
+    let skipMarker = " " + String(repeating: " ", count: width) + " ..."
+    var output: [String] = []
+    var hunks: [String] = []
+    var first: Int?
+    for window in editDiffWindows(baseContent, replacements: replacements) {
+        let old = (baseContent as NSString).substring(with: NSRange(location: window.oldStart, length: window.oldEnd - window.oldStart))
+        let new = (newContent as NSString).substring(with: NSRange(location: window.newStart, length: window.newEnd - window.newStart))
+        let parts = diffLines(old, new)
+        var shown = formatDisplayDiff(parts, oldStart: window.oldLine + 1, newStart: window.newLine + 1, width: width, context: contextLines)
+        if first == nil { first = shown.firstChangedLine }
+        if output.last == skipMarker && shown.lines.first == skipMarker { shown.lines.removeFirst() }
+        output.append(contentsOf: shown.lines)
+        hunks.append(contentsOf: unifiedHunks(parts, oldStart: window.oldLine + 1, newStart: window.newLine + 1, context: contextLines))
+    }
+    return EditDiff(diff: output.joined(separator: "\n"), patch: patchHeader(path) + hunks.joined(), firstChangedLine: first)
+}
 
-                // Add ellipsis if we skipped lines at start
-                if skipStart > 0 {
-                    let padding = String(repeating: " ", count: lineNumWidth)
-                    output.append(" \(padding) ...")
-                    oldLineNum += skipStart
-                    newLineNum += skipStart
-                }
+private func patchHeader(_ path: String) -> String { "--- \(path)\n+++ \(path)\n" }
 
-                for line in linesToShow {
-                    let lineNum = String(oldLineNum)
-                    let padded = String(repeating: " ", count: lineNumWidth - lineNum.count) + lineNum
-                    output.append(" \(padded) \(line)")
-                    oldLineNum += 1
-                    newLineNum += 1
-                }
+public func generateUnifiedPatch(path: String, oldContent: String, newContent: String, contextLines: Int = 4) -> String {
+    patchHeader(path) + unifiedHunks(diffLines(oldContent, newContent), oldStart: 1, newStart: 1, context: contextLines).joined()
+}
 
-                // Add ellipsis if we skipped lines at end
-                if skipEnd > 0 {
-                    let padding = String(repeating: " ", count: lineNumWidth)
-                    output.append(" \(padding) ...")
-                    oldLineNum += skipEnd
-                    newLineNum += skipEnd
-                }
-            } else {
-                // Skip these context lines entirely
-                oldLineNum += raw.count
-                newLineNum += raw.count
-            }
-
-            lastWasChange = false
+private func unifiedHunks(_ parts: [DiffPart], oldStart: Int, newStart: Int, context: Int) -> [String] {
+    struct Row { var kind: DiffPart.Kind; var text: String; var old: Int; var new: Int }
+    var rows: [Row] = []
+    var old = oldStart
+    var new = newStart
+    for part in parts {
+        for token in lineTokens(part.value) {
+            rows.append(Row(kind: part.kind, text: token, old: old, new: new))
+            if part.kind != .added { old += 1 }
+            if part.kind != .removed { new += 1 }
         }
     }
-
-    return (output.joined(separator: "\n"), firstChangedLine)
+    var ranges: [Range<Int>] = []
+    for index in rows.indices where rows[index].kind != .equal {
+        let start = max(0, index - context)
+        let end = min(rows.count, index + context + 1)
+        if let last = ranges.last, start <= last.upperBound { ranges[ranges.count - 1] = last.lowerBound..<max(last.upperBound, end) }
+        else { ranges.append(start..<end) }
+    }
+    return ranges.map { range in
+        let selected = rows[range]
+        let oldCount = selected.filter { $0.kind != .added }.count
+        let newCount = selected.filter { $0.kind != .removed }.count
+        let oldLine = rows[range.lowerBound].old - (oldCount == 0 ? 1 : 0)
+        let newLine = rows[range.lowerBound].new - (newCount == 0 ? 1 : 0)
+        var result = "@@ -\(oldLine),\(oldCount) +\(newLine),\(newCount) @@\n"
+        for row in selected {
+            let prefix = row.kind == .added ? "+" : row.kind == .removed ? "-" : " "
+            result += prefix + row.text
+            if row.text.utf16.last != 10 { result += "\n\\ No newline at end of file\n" }
+        }
+        return result
+    }
 }
 
 private enum EditFileDecodingError: LocalizedError {

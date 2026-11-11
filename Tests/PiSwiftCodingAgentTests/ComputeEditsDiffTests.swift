@@ -150,8 +150,8 @@ import PiSwiftCodingAgent
             let batch = try #require(success(computeEditsDiff(path: path, edits: [
                 EditReplacement(oldText: oldText, newText: newText),
             ], cwd: cwd)))
-            // This result was captured from the previous single-edit function.
-            #expect(single.diff == " 1 tail\n-2 old line\n+2 new line\n 3 header")
+            // v1.5.2 C-TA d448c51e2: edit-diff-window.test.ts:55; generated cta-edit-vectors.json case 0.
+            #expect(single.diff == " 1 header\n-2 old line\n+2 new line\n 3 tail")
             #expect(single.firstChangedLine == 2)
             #expect(batch.diff == single.diff)
             #expect(batch.firstChangedLine == single.firstChangedLine)

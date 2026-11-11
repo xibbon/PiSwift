@@ -20,13 +20,14 @@ public func createWriteTool(cwd: String) -> AgentTool {
     var tool = AgentTool(
         label: "write",
         name: "write",
-        description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
+        description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
         parameters: [
             "type": AnyCodable("object"),
             "properties": AnyCodable([
                 "path": ["type": "string", "description": "Path to the file to write (relative or absolute)"],
                 "content": ["type": "string", "description": "Content to write to the file"],
             ]),
+            "required": AnyCodable(["path", "content"]),
         ]
     ) { _, params, signal, _ in
         if signal?.isCancelled == true {

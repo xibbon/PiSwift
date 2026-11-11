@@ -42,7 +42,7 @@ public func truncateHead(_ content: String, options: TruncationOptions = Truncat
     let maxLines = options.maxLines ?? DEFAULT_MAX_LINES
     let maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
 
-    let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
+    let lines = splitLinesForCounting(content)
     let totalLines = lines.count
     let totalBytes = content.utf8.count
 
@@ -120,7 +120,7 @@ public func truncateTail(_ content: String, options: TruncationOptions = Truncat
     let maxLines = options.maxLines ?? DEFAULT_MAX_LINES
     let maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
 
-    let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
+    let lines = splitLinesForCounting(content)
     let totalLines = lines.count
     let totalBytes = content.utf8.count
 
@@ -187,12 +187,31 @@ public func truncateTail(_ content: String, options: TruncationOptions = Truncat
     )
 }
 
+/// Slice by UTF-16 code units. Keep each surrogate pair complete.
+public func sliceHead(_ text: String, _ maxUnits: Int) -> String {
+    var units = Array(text.utf16.prefix(max(0, maxUnits)))
+    if let last = units.last, (0xD800...0xDBFF).contains(last) { units.removeLast() }
+    return String(decoding: units, as: UTF16.self)
+}
+
+/// Slice by UTF-16 code units. Keep each surrogate pair complete.
+public func sliceTail(_ text: String, _ maxUnits: Int) -> String {
+    guard maxUnits > 0 else { return "" }
+    var units = Array(text.utf16.suffix(maxUnits))
+    if let first = units.first, (0xDC00...0xDFFF).contains(first) { units.removeFirst() }
+    return String(decoding: units, as: UTF16.self)
+}
+
 public func truncateLine(_ line: String, maxChars: Int = GREP_MAX_LINE_LENGTH) -> (text: String, wasTruncated: Bool) {
-    if line.count <= maxChars {
-        return (line, false)
-    }
-    let prefix = String(line.prefix(maxChars))
-    return ("\(prefix)... [truncated]", true)
+    guard line.utf16.count > maxChars else { return (line, false) }
+    return ("\(sliceHead(line, maxChars))... [truncated]", true)
+}
+
+private func splitLinesForCounting(_ content: String) -> [String] {
+    guard !content.isEmpty else { return [] }
+    var lines = content.components(separatedBy: "\n")
+    if content.utf16.last == 10 { lines.removeLast() }
+    return lines
 }
 
 private func truncateStringToBytesFromEnd(_ str: String, maxBytes: Int) -> String {
@@ -221,8 +240,8 @@ public struct MiddleTruncationResult: Sendable {
 /// Keep the start and end within the byte limit. Cut only at UTF-8 boundaries.
 public func truncateMiddle(_ content: String, maxBytes: Int) -> MiddleTruncationResult {
     let bytes = Array(content.utf8)
-    let totalLines = content.isEmpty ? 0 : content.split(separator: "\n", omittingEmptySubsequences: false).count
-        - (content.hasSuffix("\n") ? 1 : 0)
+    let totalLines = content.isEmpty ? 0 : content.components(separatedBy: "\n").count
+        - (content.utf16.last == 10 ? 1 : 0)
     if bytes.count <= maxBytes {
         return MiddleTruncationResult(content: content, truncated: false, removedChars: 0,
                                       totalBytes: bytes.count, totalLines: totalLines)

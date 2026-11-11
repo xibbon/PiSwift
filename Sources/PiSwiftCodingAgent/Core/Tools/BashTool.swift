@@ -5,7 +5,7 @@ import PiSwiftAgent
 enum BashToolError: LocalizedError, Sendable {
     case operationAborted
     case missingCommand
-    case commandTimedOut(seconds: Int, output: String)
+    case commandTimedOut(seconds: Double, output: String, shellExit: BashShellExit?)
     case commandAborted(output: String)
     case noExitCode(output: String)
 
@@ -15,9 +15,13 @@ enum BashToolError: LocalizedError, Sendable {
             return "Operation aborted"
         case .missingCommand:
             return "Missing command"
-        case let .commandTimedOut(seconds, output):
+        case let .commandTimedOut(seconds, output, shellExit):
             let suffix = output.isEmpty ? "" : "\n\n"
-            return "\(output)\(suffix)Command timed out after \(seconds) seconds"
+            var status = "Command timed out after \(bashSecondsText(seconds)) seconds"
+            if let shellExit {
+                status += ". The shell exited with code \(shellExit.exitCode) after \(bashSecondsText(shellExit.afterSeconds)) seconds, but background processes it started kept writing output until the timeout."
+            }
+            return "\(output)\(suffix)\(status)"
         case let .commandAborted(output):
             let suffix = output.isEmpty ? "" : "\n\n"
             return "\(output)\(suffix)Command aborted"
@@ -26,6 +30,10 @@ enum BashToolError: LocalizedError, Sendable {
             return "\(output)\(suffix)Command terminated without an exit code"
         }
     }
+}
+
+private func bashSecondsText(_ value: Double) -> String {
+    value.rounded() == value ? String(format: "%.0f", value) : String(value)
 }
 
 public struct BashToolDetails: Sendable {
@@ -133,8 +141,9 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
         "type": AnyCodable("object"),
         "properties": AnyCodable([
             "command": ["type": "string", "description": "Shell command to execute"],
-            "timeout": ["type": "number", "description": "Timeout in seconds (optional)"],
+            "timeout": ["type": "number", "description": "Timeout in seconds (optional, no default timeout)"],
         ]),
+        "required": AnyCodable(["command"]),
     ]
     let outputSchema: [String: AnyCodable] = [
         "type": AnyCodable("object"),
@@ -283,8 +292,8 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
         }
 
         if result.cancelled {
-            if let timeoutValue {
-                throw BashToolError.commandTimedOut(seconds: Int(timeoutValue), output: outputText)
+            if let timeoutValue, signal?.isCancelled != true {
+                throw BashToolError.commandTimedOut(seconds: timeoutValue, output: outputText, shellExit: result.timeoutShellExit)
             }
             throw BashToolError.commandAborted(output: outputText)
         }
@@ -317,7 +326,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
     return PiSwiftAgent.AgentTool(
         label: "bash",
         name: "bash",
-        description: "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last \(DEFAULT_MAX_LINES) lines or \(DEFAULT_MAX_BYTES / 1024)KB (whichever is hit first). If truncated, full output is saved to a temp file.",
+        description: "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last \(DEFAULT_MAX_LINES) lines or \(DEFAULT_MAX_BYTES / 1024)KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
         parameters: parameters,
         execute: execute,
         executeWithContext: { id, params, signal, onUpdate, context in

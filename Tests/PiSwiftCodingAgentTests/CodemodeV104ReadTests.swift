@@ -117,6 +117,7 @@ func codemodeV104ReadStructuredSuccessBranches(branch: String) async throws {
     #expect(onDescription == read.description + "\n\nCodemode: `tools.read(args)` resolves to `\(output)`.")
     let only = prepareCodemodeLoadout(loadout, options: .init(getMode: { .only }))
     let listing = try #require(only.descriptions?["codemode"])
-    let signature = "declare const tools: { read(args: {\n  // Maximum number of lines to read\n  limit?: number;\n  // Line number to start reading from (1-indexed)\n  offset?: number;\n  // Path to the file to read (relative or absolute)\n  path?: string;\n}): Promise<\(output)>; };"
+    // v1.5.2 C-TA, 6536f8012: tagged read.ts:14-18 and generated builtin-tool-schemas-v152.json:140 require path.
+    let signature = "declare const tools: { read(args: {\n  // Maximum number of lines to read\n  limit?: number;\n  // Line number to start reading from (1-indexed)\n  offset?: number;\n  // Path to the file to read (relative or absolute)\n  path: string;\n}): Promise<\(output)>; };"
     #expect(listing.contains("### `read`\n" + read.description + "\n\n- Use read to examine files instead of cat or sed.\n\ncodemode tool declaration:\n```ts\n" + signature + "\n```"))
 }
