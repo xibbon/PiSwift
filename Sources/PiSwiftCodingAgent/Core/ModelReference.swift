@@ -100,12 +100,16 @@ func splitModelThinkingSuffix(_ text: String) -> (base: String, thinkingLevel: T
 }
 
 private func splitProviderPrefix(_ text: String, models: [Model]) -> (provider: String, modelText: String)? {
-    guard let slash = text.firstIndex(of: "/") else { return nil }
-    let prefix = text[..<slash].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let modelText = text[text.index(after: slash)...].trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prefix.isEmpty, !modelText.isEmpty,
-          let provider = models.first(where: { $0.provider.lowercased() == prefix })?.provider else { return nil }
-    return (provider, modelText)
+    var best: (provider: String, modelText: String)?
+    for model in models {
+        let prefix = model.provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !prefix.isEmpty, (best == nil || model.provider.count > best!.provider.count),
+              let slash = text.range(of: "/", range: text.index(text.startIndex, offsetBy: min(prefix.count, text.count))..<text.endIndex)?.lowerBound,
+              text[..<slash].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == prefix else { continue }
+        let modelText = text[text.index(after: slash)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        if !modelText.isEmpty { best = (model.provider, modelText) }
+    }
+    return best
 }
 
 /// Collect candidates before a provider is selected. A unique match needs no stored credentials.

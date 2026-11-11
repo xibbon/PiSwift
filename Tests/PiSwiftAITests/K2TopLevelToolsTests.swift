@@ -127,57 +127,12 @@ struct K2TopLevelToolsTests {
     }
 
     #if os(macOS) || os(Linux)
-    @Test func generatorOverrideChangesOnlyEightRecordsAndIsIdempotent() throws {
+    @Test func generatorCompatFieldsSelfTest() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let script = #"""
-        const assert = require("node:assert/strict");
-        const fs = require("node:fs");
-        const { applyOpenAITopLevelToolsOverride: apply } = require(process.argv[1]);
-        const fixed = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-        const tag = structuredClone(fixed);
-        const ids = ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5"];
-        for (const provider of ["openai", "opencode"]) {
-          for (const id of ids) {
-            const record = tag[provider][id];
-            record.compat.supportsAdditionalTools = true;
-            if (provider === "openai") record.compat.supportsToolSearch = true;
-          }
-        }
-        let changes = 0;
-        for (const models of Object.values(tag)) {
-          for (const record of Object.values(models)) {
-            const before = structuredClone(record);
-            assert.equal(apply(record), record);
-            if (JSON.stringify(before) !== JSON.stringify(record)) changes++;
-          }
-        }
-        assert.equal(changes, 8);
-        assert.deepEqual(tag, fixed);
-        for (const models of Object.values(tag)) {
-          for (const record of Object.values(models)) apply(record);
-        }
-        assert.deepEqual(tag, fixed);
-        const base = { ...structuredClone(fixed.openai[ids[0]]),
-          compat: { supportsAdditionalTools: true, supportsToolSearch: true } };
-        for (const patch of [
-          ...["opencode-go", "github-copilot", "openai-codex", "openrouter", "vercel-ai-gateway"].map(provider => ({ provider })),
-          { api: "openai-completions" }, { type: "classifier" }, { id: "gpt-5.6-luna" }, { id: "gpt-5.4-nano" },
-        ]) {
-          const record = { ...structuredClone(base), ...patch };
-          const before = structuredClone(record);
-          apply(record);
-          assert.deepEqual(record, before);
-        }
-        const noCompat = structuredClone(fixed.openai[ids[0]]);
-        delete noCompat.compat;
-        assert.deepEqual(apply(structuredClone(noCompat)), noCompat);
-        """#
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["node", "-e", script,
-            root.appendingPathComponent("Scripts/generate-ai-catalogs.js").path,
-            root.appendingPathComponent("Tests/PiSwiftAITests/Resources/upstream-models.generated.json").path]
+        process.arguments = ["node", root.appendingPathComponent("Scripts/generate-ai-catalogs.js").path, "--self-test"]
         let output = Pipe()
         process.standardOutput = output
         process.standardError = output

@@ -1168,7 +1168,7 @@ public final class AuthStorage: Sendable {
             return "BASETEN_API_KEY"
         case "qwen-token-plan", "qwen-token-plan-individual":
             return "QWEN_TOKEN_PLAN_API_KEY"
-        case "qwen-token-plan-cn":
+        case "qwen-token-plan-cn", "qwen-token-plan-individual-cn":
             return "QWEN_TOKEN_PLAN_CN_API_KEY"
         case "xai":
             return "XAI_API_KEY"

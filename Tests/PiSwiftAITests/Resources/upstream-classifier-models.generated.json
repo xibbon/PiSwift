@@ -111,6 +111,32 @@
       "type": "classifier"
     }
   },
+  "github-copilot": {
+    "microsoft-decision-1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://api.individual.githubcopilot.com",
+      "contextWindow": 32768,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "headers": {
+        "Copilot-Integration-Id": "vscode-chat",
+        "Editor-Plugin-Version": "copilot-chat/0.35.0",
+        "Editor-Version": "vscode/1.107.0",
+        "User-Agent": "GitHubCopilotChat/0.35.0"
+      },
+      "id": "microsoft-decision-1",
+      "input": [
+        "text"
+      ],
+      "name": "Microsoft-Decision-1",
+      "provider": "github-copilot",
+      "type": "classifier"
+    }
+  },
   "openai": {
     "gpt-6-luna": {
       "api": "openai-decisions",
@@ -144,7 +170,7 @@
   "opencode": {
     "jev-1.13": {
       "api": "typesafe-system-one",
-      "baseUrl": "https://opencode.ai/inference/v1",
+      "baseUrl": "https://opencode.ai/inference/systemone/v1",
       "contextWindow": 32000,
       "cost": {
         "cacheRead": 0,
@@ -162,7 +188,7 @@
     },
     "jev-1.13-free": {
       "api": "typesafe-system-one",
-      "baseUrl": "https://opencode.ai/inference/v1",
+      "baseUrl": "https://opencode.ai/inference/systemone/v1",
       "contextWindow": 32000,
       "cost": {
         "cacheRead": 0,
@@ -180,6 +206,52 @@
     }
   },
   "openrouter": {
+    "~liquid/d1-latest": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0.02,
+        "cacheWrite": 0,
+        "input": 0.02,
+        "output": 0
+      },
+      "id": "~liquid/d1-latest",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "LiquidAI: d1 Latest",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "~liquid/d1-ultra-latest": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 32768,
+      "cost": {
+        "cacheRead": 0.042,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "~liquid/d1-ultra-latest",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "LiquidAI: d1-ultra Latest",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
     "~perplexity/pplx-decider-flash-latest": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -249,7 +321,7 @@
       "provider": "openrouter",
       "type": "classifier"
     },
-    "baseten/elephant-1:free": {
+    "baseten/elephant-1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
       "compat": {
@@ -260,18 +332,19 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0,
+        "input": 0.035,
         "output": 0
       },
-      "id": "baseten/elephant-1:free",
+      "id": "baseten/elephant-1",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
-      "name": "Baseten: Elephant 1 (free)",
+      "name": "Baseten: Elephant 1",
       "provider": "openrouter",
       "type": "classifier"
     },
-    "baseten/mammoth-1:free": {
+    "baseten/joey-1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
       "compat": {
@@ -282,14 +355,61 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0,
+        "input": 0.01,
         "output": 0
       },
-      "id": "baseten/mammoth-1:free",
+      "id": "baseten/joey-1",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
-      "name": "Baseten: Mammoth 1 (free)",
+      "name": "Baseten: Joey 1",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "baseten/mammoth-1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 16384,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.1,
+        "output": 0
+      },
+      "id": "baseten/mammoth-1",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Baseten: Mammoth 1",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "cloudflare/clairic": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.1,
+        "output": 0
+      },
+      "id": "cloudflare/clairic",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Cloudflare: Clairic",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -300,11 +420,11 @@
         "imageInput": "state-image-urls",
         "sendImageOptInHeader": false
       },
-      "contextWindow": 16384,
+      "contextWindow": 65536,
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.042,
+        "input": 0.24,
         "output": 0
       },
       "id": "cloudflare/clef",
@@ -327,7 +447,7 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0.019,
+        "input": 0.038,
         "output": 0
       },
       "id": "cloudflare/clef-flash",
@@ -359,52 +479,6 @@
         "image"
       ],
       "name": "Cloudflare: Clef Omni",
-      "provider": "openrouter",
-      "type": "classifier"
-    },
-    "inception/mercury-decide": {
-      "api": "typesafe-system-one",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "compat": {
-        "imageInput": "state-image-urls",
-        "sendImageOptInHeader": false
-      },
-      "contextWindow": 65536,
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0.02,
-        "output": 0
-      },
-      "id": "inception/mercury-decide",
-      "input": [
-        "text",
-        "image"
-      ],
-      "name": "Inception: Mercury Decide",
-      "provider": "openrouter",
-      "type": "classifier"
-    },
-    "inception/mercury-decide:free": {
-      "api": "typesafe-system-one",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "compat": {
-        "imageInput": "state-image-urls",
-        "sendImageOptInHeader": false
-      },
-      "contextWindow": 65536,
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "inception/mercury-decide:free",
-      "input": [
-        "text",
-        "image"
-      ],
-      "name": "Inception: Mercury Decide (free)",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -476,6 +550,29 @@
       "provider": "openrouter",
       "type": "classifier"
     },
+    "liquid/d1.1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0.02,
+        "cacheWrite": 0,
+        "input": 0.02,
+        "output": 0
+      },
+      "id": "liquid/d1.1",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "LiquidAI: d1.1",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
     "microsoft/microsoft-decision-1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -498,6 +595,29 @@
       "provider": "openrouter",
       "type": "classifier"
     },
+    "morph/reflex": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 65536,
+      "cost": {
+        "cacheRead": 0.002,
+        "cacheWrite": 0,
+        "input": 0.042,
+        "output": 0
+      },
+      "id": "morph/reflex",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Morph: Reflex",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
     "nace-ai/drex-max": {
       "api": "typesafe-system-one",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -507,16 +627,40 @@
       },
       "contextWindow": 262144,
       "cost": {
-        "cacheRead": 0,
+        "cacheRead": 0.06,
         "cacheWrite": 0,
         "input": 0.06,
         "output": 0
       },
       "id": "nace-ai/drex-max",
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "name": "Nace.AI: Drex Max",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "nace-ai/drex-max-finance": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 262144,
+      "cost": {
+        "cacheRead": 0.06,
+        "cacheWrite": 0,
+        "input": 0.06,
+        "output": 0
+      },
+      "id": "nace-ai/drex-max-finance",
+      "input": [
+        "text",
+        "image"
+      ],
+      "name": "Nace.AI: Drex Max Finance",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -584,6 +728,28 @@
         "image"
       ],
       "name": "OpenAI: GPT-6 Luna Decisions",
+      "provider": "openrouter",
+      "type": "classifier"
+    },
+    "parallel/decisions-fast:free": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "compat": {
+        "imageInput": "state-image-urls",
+        "sendImageOptInHeader": false
+      },
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "parallel/decisions-fast:free",
+      "input": [
+        "text"
+      ],
+      "name": "Parallel: Decisions Fast (free)",
       "provider": "openrouter",
       "type": "classifier"
     },
@@ -891,7 +1057,7 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0,
+        "input": 0.035,
         "output": 0
       },
       "id": "baseten/elephant-1",
@@ -902,6 +1068,24 @@
       "provider": "vercel-ai-gateway",
       "type": "classifier"
     },
+    "baseten/joey-1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 16384,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.01,
+        "output": 0
+      },
+      "id": "baseten/joey-1",
+      "input": [
+        "text"
+      ],
+      "name": "Joey-1",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
     "baseten/mammoth-1": {
       "api": "typesafe-system-one",
       "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
@@ -909,7 +1093,7 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0,
+        "input": 0.1,
         "output": 0
       },
       "id": "baseten/mammoth-1",
@@ -927,7 +1111,7 @@
       "cost": {
         "cacheRead": 0,
         "cacheWrite": 0,
-        "input": 0,
+        "input": 0.0105,
         "output": 0
       },
       "id": "convaiinnovations/laya",
@@ -935,24 +1119,6 @@
         "text"
       ],
       "name": "Laya",
-      "provider": "vercel-ai-gateway",
-      "type": "classifier"
-    },
-    "convaiinnovations/laya-free": {
-      "api": "typesafe-system-one",
-      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
-      "contextWindow": 8192,
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "convaiinnovations/laya-free",
-      "input": [
-        "text"
-      ],
-      "name": "Laya (Free)",
       "provider": "vercel-ai-gateway",
       "type": "classifier"
     },
@@ -1010,6 +1176,60 @@
       "provider": "vercel-ai-gateway",
       "type": "classifier"
     },
+    "nace-ai/drex-max-finance": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 262144,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.03,
+        "output": 0
+      },
+      "id": "nace-ai/drex-max-finance",
+      "input": [
+        "text"
+      ],
+      "name": "Drex Max Finance",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "nace-ai/drex-max-v1.1": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 262144,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.03,
+        "output": 0
+      },
+      "id": "nace-ai/drex-max-v1.1",
+      "input": [
+        "text"
+      ],
+      "name": "Drex Max v1.1",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "nace-ai/drex-v2.0": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 262144,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0.03,
+        "output": 0
+      },
+      "id": "nace-ai/drex-v2.0",
+      "input": [
+        "text"
+      ],
+      "name": "Drex 2.0",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
     "openai/gpt-6-luna-decisions": {
       "api": "typesafe-system-one",
       "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
@@ -1025,6 +1245,24 @@
         "text"
       ],
       "name": "GPT-6 Luna Decisions",
+      "provider": "vercel-ai-gateway",
+      "type": "classifier"
+    },
+    "parallel/parallel-decisions-fast": {
+      "api": "typesafe-system-one",
+      "baseUrl": "https://ai-gateway.vercel.sh/typesafe/v1",
+      "contextWindow": 32000,
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "parallel/parallel-decisions-fast",
+      "input": [
+        "text"
+      ],
+      "name": "Decisions Fast",
       "provider": "vercel-ai-gateway",
       "type": "classifier"
     },

@@ -26,9 +26,9 @@ private func a1Interaction(_ replies: [String], signal: CancellationToken? = nil
 struct A1ProviderAuthTests {
     @Test func descriptorsIncludeAllKnownLoginProvidersAndTypeSafe() {
         let descriptors = getBuiltinProviderAuth()
-        #expect(descriptors.count == 41)
+        #expect(descriptors.count == 42)
         #expect(descriptors.map(\.id) == descriptors.map(\.id).sorted())
-        #expect(Set(descriptors.map(\.id)).count == 41)
+        #expect(Set(descriptors.map(\.id)).count == 42)
         #expect(descriptors.allSatisfy { KnownProvider(rawValue: $0.id) != nil })
         #expect(descriptors.contains { $0.id == "typesafe" })
         #expect(!descriptors.contains { ["radius", "google-gemini-cli", "google-antigravity"].contains($0.id) })

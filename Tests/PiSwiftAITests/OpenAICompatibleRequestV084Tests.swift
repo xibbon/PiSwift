@@ -375,9 +375,20 @@ private func captureAzureResponsesPayload(
     #expect(providers.contains(.qwenTokenPlan))
     #expect(providers.contains(.qwenTokenPlanCn))
     #expect(providers.contains(.qwenTokenPlanIndividual))
+    #expect(providers.contains(.qwenTokenPlanIndividualCn))
 
     #expect(getModel(provider: "baseten", modelId: "zai-org/GLM-5.2") != nil)
     #expect(getModel(provider: "qwen-token-plan", modelId: "qwen3.7-max") != nil)
     #expect(getModel(provider: "qwen-token-plan-cn", modelId: "qwen3.7-max") != nil)
     #expect(getModel(provider: "qwen-token-plan-individual", modelId: "qwen3.8-max") != nil)
+    #expect(getModel(provider: "qwen-token-plan-individual-cn", modelId: "qwen3.8-max") != nil)
+}
+
+@Test(arguments: ["qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual", "qwen-token-plan-individual-cn"])
+func qwenTokenPlanReasoningCompat(_ provider: String) throws {
+    let model = try #require(getModel(provider: provider, modelId: "qwen3.7-max"))
+    #expect(model.compat?.thinkingFormat == .qwen)
+    #expect(model.compat?.requiresReasoningContentOnAssistantMessages == nil)
+    #expect(model.compat?.supportsDeveloperRole == false)
+    #expect(model.compat?.supportsStore == false)
 }

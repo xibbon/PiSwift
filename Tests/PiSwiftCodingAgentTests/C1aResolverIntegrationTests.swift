@@ -98,7 +98,7 @@ private func c1aIntegrationModel(_ provider: String, _ id: String, reasoning: Bo
     }
 
     @Test func fallbackUsesProviderDefaultsAndPreservesReasoningForOff() {
-        for (provider, defaultId) in [("github-copilot", "gpt-6.1-sol"), ("xiaomi", "mimo-v2.6-pro"), ("anthropic", "claude-opus-4-8")] {
+        for (provider, defaultId) in [("github-copilot", "gpt-6.1-sol"), ("xiaomi", "mimo-v2.6-pro"), ("anthropic", "claude-opus-5-5")] {
             let models = [c1aIntegrationModel(provider, "first"), c1aIntegrationModel(provider, defaultId, reasoning: true)]
             let result = resolveCliModel(cliProvider: provider, cliModel: "future:off", cliThinking: nil,
                                          inlineApiKey: false, availableModels: models)

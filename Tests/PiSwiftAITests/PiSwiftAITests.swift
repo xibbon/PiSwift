@@ -1998,7 +1998,9 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
     }
     await withEnv("QWEN_TOKEN_PLAN_CN_API_KEY", value: "qwen-cn-test-key") {
         #expect(findEnvKeys(provider: .qwenTokenPlanCn) == ["QWEN_TOKEN_PLAN_CN_API_KEY"])
+        #expect(findEnvKeys(provider: .qwenTokenPlanIndividualCn) == ["QWEN_TOKEN_PLAN_CN_API_KEY"])
         #expect(getEnvApiKey(provider: .qwenTokenPlanCn) == "qwen-cn-test-key")
+        #expect(getEnvApiKey(provider: .qwenTokenPlanIndividualCn) == "qwen-cn-test-key")
     }
 }
 
@@ -6507,11 +6509,11 @@ struct ApiRegistryTests {
     }
 
     let allModels = getProviders().flatMap { getModels(provider: $0) }
-    #expect(getProviders().count == 40)
+    #expect(getProviders().count == 41)
     #expect(!getProviders().contains(.typesafe))
     #expect(getBuiltinProviders().contains(.typesafe))
-    #expect(allModels.count == 1566) // v1.4.0 catalog
-    #expect(compared == 1566) // v1.4.0 catalog
+    #expect(allModels.count == 1612) // 2026-11-10 hydration
+    #expect(compared == 1612) // 2026-11-10 hydration
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6523,6 +6525,7 @@ struct ApiRegistryTests {
     #expect(getProviders().contains(.qwenTokenPlan))
     #expect(getProviders().contains(.qwenTokenPlanCn))
     #expect(getProviders().contains(.qwenTokenPlanIndividual))
+    #expect(getProviders().contains(.qwenTokenPlanIndividualCn))
     #expect(getProviders().contains(.xiaomi))
     #expect(getProviders().contains(.xiaomiTokenPlanCn))
     #expect(getProviders().contains(.xiaomiTokenPlanAms))
@@ -6567,8 +6570,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 63) // v1.3.0 catalog
-    #expect(compared == 63) // v1.3.0 catalog
+    #expect(models.count == 66) // 2026-11-10 hydration
+    #expect(compared == 66) // 2026-11-10 hydration
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)
@@ -6582,8 +6585,8 @@ struct ApiRegistryTests {
     let upstream = try loadJSONResource("upstream-classifier-models.generated")
     #expect(Set(ClassifierModelsData.keys) == Set(upstream.keys))
     #expect(ClassifierModelsData.mapValues(\.count) == [
-        "cloudflare-workers-ai": 5, "openai": 1, "opencode": 2,
-        "openrouter": 30, "typesafe": 1, "vercel-ai-gateway": 14,
+        "cloudflare-workers-ai": 5, "github-copilot": 1, "openai": 1, "opencode": 2,
+        "openrouter": 36, "typesafe": 1, "vercel-ai-gateway": 18,
     ])
     #expect(Set(ClassifierModelsData["cloudflare-workers-ai"]?.keys.map { $0 } ?? []) == Set([
         "@cf/cloudflare/clef", "@cf/cloudflare/clef-flash", "@cf/cloudflare/clef-omni",
@@ -6622,7 +6625,7 @@ struct ApiRegistryTests {
             compared += 1
         }
     }
-    #expect(compared == 53) // v1.4.0 catalog
+    #expect(compared == 64) // 2026-11-10 hydration
     #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }

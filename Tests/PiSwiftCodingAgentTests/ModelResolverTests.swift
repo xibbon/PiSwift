@@ -221,13 +221,13 @@ private func mockModels() -> [Model] {
 @Test func defaultModelPerProviderVercelAiGateway() {
     // Verify the upstream v0.87.1 AI Gateway default.
     let aiGatewayDefault = defaultModelPerProvider.first { $0.0 == .vercelAiGateway }
-    #expect(aiGatewayDefault?.1 == "zai/glm-5.1")
+    #expect(aiGatewayDefault?.1 == "zai/glm-5.3")
 }
 
 @Test func selectDefaultModelWithAiGateway() async {
     let aiGatewayModel = Model(
-        id: "zai/glm-5.1",
-        name: "GLM 5.1",
+        id: "zai/glm-5.3",
+        name: "GLM 5.3",
         api: .anthropicMessages,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh",
@@ -251,7 +251,7 @@ private func mockModels() -> [Model] {
 
     let result = await selectDefaultModel(available: [aiGatewayModel], registry: registry)
     #expect(result?.provider == "vercel-ai-gateway")
-    #expect(result?.id == "zai/glm-5.1")
+    #expect(result?.id == "zai/glm-5.3")
 }
 
 @Test func resolveCliModelSlashDelimitedRef() {

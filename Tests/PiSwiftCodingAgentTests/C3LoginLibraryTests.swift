@@ -131,7 +131,7 @@ private struct C3LoginFixture {
     do {
         _ = try await registry.loginApiKey("openai-codex", interaction: interaction)
         Issue.record("OAuth-only provider API-key login must fail")
-    } catch { #expect(error.localizedDescription == "OpenAI Codex (legacy) does not support api_key login") }
+    } catch { #expect(error.localizedDescription == "OpenAI Codex does not support api_key login") }
 }
 
 @Test func c3CredentialListReportsTypesWithoutSecrets() {

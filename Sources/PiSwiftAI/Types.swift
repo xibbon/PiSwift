@@ -57,6 +57,7 @@ public enum KnownProvider: String, Sendable {
     case qwenTokenPlan = "qwen-token-plan"
     case qwenTokenPlanCn = "qwen-token-plan-cn"
     case qwenTokenPlanIndividual = "qwen-token-plan-individual"
+    case qwenTokenPlanIndividualCn = "qwen-token-plan-individual-cn"
     case minimax
     case minimaxCn = "minimax-cn"
     case huggingface

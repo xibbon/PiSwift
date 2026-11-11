@@ -43,7 +43,7 @@ private func hasBedrockCredentials() -> Bool {
     guard RUN_ANTHROPIC_TESTS else {
         return
     }
-    let model = getModel(provider: .anthropic, modelId: "claude-3-5-haiku-20241022")
+    let model = getModel(provider: .anthropic, modelId: "claude-haiku-5-5")
     try await basicPrompt(model: model)
     try await toolExecution(model: model)
     try await abortExecution(model: model)
@@ -87,7 +87,7 @@ private func hasBedrockCredentials() -> Bool {
     guard RUN_ANTHROPIC_TESTS else {
         return
     }
-    let model = getModel(provider: .anthropic, modelId: "claude-3-5-haiku-20241022")
+    let model = getModel(provider: .anthropic, modelId: "claude-haiku-5-5")
     let agent = Agent(AgentOptions(initialState: AgentState(
         systemPrompt: "You are a helpful assistant. Follow instructions exactly.",
         model: model,

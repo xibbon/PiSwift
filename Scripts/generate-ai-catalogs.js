@@ -9,19 +9,6 @@ function readUpstreamSource(file) {
   return fs.readFileSync(path.join(upstreamRoot, file), "utf8");
 }
 
-function applyOpenAITopLevelToolsOverride(model) {
-  // Post-tag fix 81d6759fc (#11415): GPT-5.4 and GPT-5.5 need top-level tools.
-  // Remove this override at the next sync when upstream data has the fix.
-  if (model.type !== "chat" || model.api !== "openai-responses" ||
-      !["openai", "opencode"].includes(model.provider) ||
-      !["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro", "gpt-5.5"].includes(model.id)) return model;
-  if (model.compat) {
-    delete model.compat.supportsAdditionalTools;
-    delete model.compat.supportsToolSearch;
-  }
-  return model;
-}
-
 function loadCatalogs() {
   const generatedSource = readUpstreamSource("models.generated.ts");
   const imports = new Map();
@@ -64,7 +51,6 @@ function loadCatalogs() {
         if (entry.provider !== providerId) throw new Error(`Model provider mismatch for ${providerId}/${key}`);
         if (entry.type !== "image" && Object.hasOwn(entry, "output")) throw new Error(`Unexpected output on ${providerId}/${key}`);
         if (entry.type === "image" && !entry.output?.includes("image")) throw new Error(`Image output missing for ${providerId}/${key}`);
-        applyOpenAITopLevelToolsOverride(entry);
         (catalogs[entry.type][providerId] ??= {})[entry.id] = entry;
       }
     }
@@ -217,6 +203,10 @@ function enumValue(type, value) {
     if (!cases[value]) throw new Error(`Unknown sessionAffinityFormat: ${value}`);
     return `.${cases[value]}`;
   }
+  if (type === "promptCacheKeyMode") {
+    if (!["auto", "enabled", "disabled"].includes(value)) throw new Error(`Unknown promptCacheKeyMode: ${value}`);
+    return `.${value}`;
+  }
   throw new Error(`Unknown enum field: ${type}`);
 }
 
@@ -317,6 +307,8 @@ function compatLiteral(compat, api) {
     ["maxTokensField", compat.maxTokensField, "maxTokensField"],
     ["requiresToolResultName", compat.requiresToolResultName, "bool"],
     ["requiresAssistantAfterToolResult", compat.requiresAssistantAfterToolResult, "bool"],
+    ["requiresNonNullAssistantContent", compat.requiresNonNullAssistantContent, "bool"],
+    ["requiresToolsWithToolHistory", compat.requiresToolsWithToolHistory, "bool"],
     ["requiresThinkingAsText", compat.requiresThinkingAsText, "bool"],
     ["requiresMistralToolIds", compat.requiresMistralToolIds, "bool"],
     ["thinkingFormat", compat.thinkingFormat, "thinkingFormat"],
@@ -329,6 +321,7 @@ function compatLiteral(compat, api) {
     ["supportsMidConvoSystemMessages", compat.supportsMidConvoSystemMessages, "bool"],
     ["supportsMidConvoToolAdditions", compat.supportsMidConvoToolAdditions, "bool"],
     ["supportsMidConvoToolChanges", compat.supportsMidConvoToolChanges, "bool"],
+    ["supportsMessageThreads", compat.supportsMessageThreads, "bool"],
     ["supportsStrictMode", compat.supportsStrictMode, "bool"],
     ["reasoningEffortMap", compat.reasoningEffortMap, "reasoningEffortMap"],
     ["supportsLongCacheRetention", compat.supportsLongCacheRetention, "bool"],
@@ -343,6 +336,7 @@ function compatLiteral(compat, api) {
     ["zaiToolStream", compat.zaiToolStream, "bool"],
     ["allowEmptySignature", compat.allowEmptySignature, "bool"],
     ["sessionAffinityFormat", compat.sessionAffinityFormat, "sessionAffinityFormat"],
+    ["promptCacheKeyMode", compat.promptCacheKeyMode, "promptCacheKeyMode"],
     ["supportsToolSearch", compat.supportsToolSearch, "bool"],
     ["supportsExplicitPromptCacheMode", compat.supportsExplicitPromptCacheMode, "bool"],
     ["thinkingTokenBudgetField", compat.thinkingTokenBudgetField, "thinkingTokenBudgetField"],
@@ -595,7 +589,17 @@ function writeClassifierModelsData(models) {
   fs.writeFileSync(path.join(repoRoot, "Sources/PiSwiftAI/ClassifierModelsData.swift"), `${lines.join("\n")}\n`);
 }
 
-if (require.main === module) {
+if (require.main === module && process.argv.includes("--self-test")) {
+  const assert = require("node:assert/strict");
+  const common = { requiresNonNullAssistantContent: true, requiresToolsWithToolHistory: false,
+    supportsMessageThreads: true };
+  for (const mode of ["auto", "enabled", "disabled"]) {
+    assert.equal(compatLiteral({ ...common, promptCacheKeyMode: mode }, "openai-responses"),
+      `OpenAICompat(requiresNonNullAssistantContent: true, requiresToolsWithToolHistory: false, supportsMessageThreads: true, promptCacheKeyMode: .${mode})`);
+  }
+  assert.throws(() => enumValue("promptCacheKeyMode", "invalid"), /Unknown promptCacheKeyMode/);
+  console.log("Catalog compat self-test passed.");
+} else if (require.main === module) {
   const catalogs = loadCatalogs();
   const models = catalogs.chat;
   const builtinModelDataGeneratedAt = loadBuiltinModelDataGeneratedAt();
@@ -612,7 +616,7 @@ if (require.main === module) {
   }
 }
 
-module.exports = { swiftClassifierModel, applyOpenAITopLevelToolsOverride };
+module.exports = { swiftClassifierModel, compatLiteral, enumValue };
 
 function costLiteral(cost) {
   return cost.tiers?.length

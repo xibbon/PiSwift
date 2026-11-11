@@ -79,7 +79,8 @@ private func workOrderModel(
 
 @Test func openRouterAnthropicCacheAdvancesThroughToolResultsAndAliases() throws {
     let alias = getModel(provider: .openrouter, modelId: "~anthropic/claude-sonnet-latest")
-    #expect(alias.compat?.cacheControlFormat == .anthropic)
+    #expect(alias.api == .anthropicMessages)
+    #expect(alias.compat?.forceAdaptiveThinking == true)
 
     let payload: [String: Any] = [
         "messages": [

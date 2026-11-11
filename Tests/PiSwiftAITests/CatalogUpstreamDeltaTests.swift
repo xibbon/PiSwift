@@ -3,14 +3,14 @@ import Testing
 @testable import PiSwiftAI
 
 // Adapted from the v0.84.1...v0.85.0 upstream catalog test changes.
-private let catalog085QwenProviders = ["qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual"]
-private let catalog085IndividualModels = ["deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2", "qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max"]
+private let catalog085QwenProviders = ["qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual", "qwen-token-plan-individual-cn"]
+private let catalog085IndividualModels = ["deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2", "glm-5.3", "qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max"]
 
 @Test(arguments: ["~anthropic/claude-fable-latest", "~anthropic/claude-haiku-latest", "~anthropic/claude-opus-latest", "~anthropic/claude-sonnet-latest"])
-func catalog085OpenRouterLatestAliasesKeepCompletionsCacheControl(_ id: String) throws {
+func catalog085OpenRouterLatestAliasesUseAnthropicMessages(_ id: String) throws {
     let model = try #require(getModel(provider: "openrouter", modelId: id))
-    #expect(model.api == .openAICompletions)
-    #expect(model.compat?.cacheControlFormat == .anthropic)
+    #expect(model.api == .anthropicMessages)
+    #expect(model.compat?.forceAdaptiveThinking == true)
 }
 
 @Test func catalog085IndividualTextModelsMatchDocumentedList() throws {

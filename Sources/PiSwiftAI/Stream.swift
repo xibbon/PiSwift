@@ -136,6 +136,7 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "baseten": "BASETEN_API_KEY",
         "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",
         "qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
+        "qwen-token-plan-individual-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
         "qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
         "xai": "XAI_API_KEY",
         "meta": "META_API_KEY",

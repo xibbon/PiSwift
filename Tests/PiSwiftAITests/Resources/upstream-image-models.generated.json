@@ -1064,6 +1064,68 @@
       "provider": "openrouter",
       "type": "image"
     },
+    "openai/gpt-image-2.6-flare": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 2,
+        "cacheWrite": 10,
+        "input": 8,
+        "output": 8
+      },
+      "id": "openai/gpt-image-2.6-flare",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "OpenAI: GPT Image 2.6 Flare",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "openai/gpt-image-2.6-sunburst": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 2,
+        "cacheWrite": 10,
+        "input": 8,
+        "output": 8
+      },
+      "id": "openai/gpt-image-2.6-sunburst",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "OpenAI: GPT Image 2.6 Sunburst",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
     "openrouter/auto": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -1121,6 +1183,38 @@
         }
       },
       "name": "Auto Router (Beta)",
+      "output": [
+        "text",
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "openrouter/auto-code": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "openrouter/auto-code",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Auto Code",
       "output": [
         "text",
         "image"
@@ -1861,6 +1955,37 @@
       "provider": "openrouter",
       "type": "image"
     },
+    "sourceful/riverflow-v2.6-pro": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "sourceful/riverflow-v2.6-pro",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Sourceful: Riverflow V2.6 Pro",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
     "tencent/hy-image-v3.5-preview": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -1917,37 +2042,6 @@
         }
       },
       "name": "xAI: Grok Imagine Image 2.0",
-      "output": [
-        "image"
-      ],
-      "provider": "openrouter",
-      "type": "image"
-    },
-    "x-ai/grok-imagine-image-quality": {
-      "api": "openrouter-images",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
-        "input": 0,
-        "output": 0
-      },
-      "id": "x-ai/grok-imagine-image-quality",
-      "input": [
-        "text",
-        "image"
-      ],
-      "inputLimits": {
-        "images": {
-          "resize": {
-            "jpegQuality": 80,
-            "maxBytes": 4718592,
-            "maxHeight": 2000,
-            "maxWidth": 2000
-          }
-        }
-      },
-      "name": "SpaceXAI: Grok Imagine Image Quality",
       "output": [
         "image"
       ],

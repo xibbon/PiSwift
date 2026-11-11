@@ -382,6 +382,28 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "openai/gpt-image-2.6-flare": ImageModel(
+        id: "openai/gpt-image-2.6-flare",
+        name: "OpenAI: GPT Image 2.6 Flare",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 10),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openai/gpt-image-2.6-sunburst": ImageModel(
+        id: "openai/gpt-image-2.6-sunburst",
+        name: "OpenAI: GPT Image 2.6 Sunburst",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 8, output: 8, cacheRead: 2, cacheWrite: 10),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "openrouter/auto": ImageModel(
         id: "openrouter/auto",
         name: "Auto Router",
@@ -396,6 +418,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
     "openrouter/auto-beta": ImageModel(
         id: "openrouter/auto-beta",
         name: "Auto Router (Beta)",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "openrouter/auto-code": ImageModel(
+        id: "openrouter/auto-code",
+        name: "Auto Code",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -667,6 +700,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "sourceful/riverflow-v2.6-pro": ImageModel(
+        id: "sourceful/riverflow-v2.6-pro",
+        name: "Sourceful: Riverflow V2.6 Pro",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "tencent/hy-image-v3.5-preview": ImageModel(
         id: "tencent/hy-image-v3.5-preview",
         name: "Tencent: Hy Image 3.5 Preview",
@@ -681,17 +725,6 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
     "x-ai/grok-imagine-image-2.0": ImageModel(
         id: "x-ai/grok-imagine-image-2.0",
         name: "xAI: Grok Imagine Image 2.0",
-        api: .openrouterImages,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        output: [.image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
-    ),
-    "x-ai/grok-imagine-image-quality": ImageModel(
-        id: "x-ai/grok-imagine-image-quality",
-        name: "SpaceXAI: Grok Imagine Image Quality",
         api: .openrouterImages,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",

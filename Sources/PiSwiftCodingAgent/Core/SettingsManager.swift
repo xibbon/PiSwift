@@ -273,6 +273,7 @@ public struct CodemodeSettings: Sendable {
 
 public struct Settings: Sendable {
     public var lastChangelogVersion: String?
+    public var extensionChangelogVersions: [String: String]?
     public var defaultProvider: String?
     public var defaultModel: String?
     public var defaultThinkingLevel: String?
@@ -1726,6 +1727,7 @@ public final class SettingsManager: Sendable {
             settings.steeringMode = queueMode
         }
         settings.lastChangelogVersion = json["lastChangelogVersion"] as? String
+        settings.extensionChangelogVersions = json["extensionChangelogVersions"] as? [String: String]
         settings.defaultProvider = json["defaultProvider"] as? String
         settings.defaultModel = json["defaultModel"] as? String
         settings.defaultThinkingLevel = json["defaultThinkingLevel"] as? String
@@ -2053,6 +2055,7 @@ public final class SettingsManager: Sendable {
     private func encodeSettingsToJson(_ settings: Settings) -> [String: Any] {
         var json: [String: Any] = [:]
         json["lastChangelogVersion"] = settings.lastChangelogVersion
+        json["extensionChangelogVersions"] = settings.extensionChangelogVersions
         json["defaultProvider"] = settings.defaultProvider
         json["defaultModel"] = settings.defaultModel
         json["defaultThinkingLevel"] = settings.defaultThinkingLevel
@@ -2277,6 +2280,9 @@ public final class SettingsManager: Sendable {
     private func mergeSettings(_ base: Settings, _ override: Settings) -> Settings {
         var result = base
         if override.lastChangelogVersion != nil { result.lastChangelogVersion = override.lastChangelogVersion }
+        if let versions = override.extensionChangelogVersions {
+            result.extensionChangelogVersions = (result.extensionChangelogVersions ?? [:]).merging(versions) { _, new in new }
+        }
         if override.defaultProvider != nil { result.defaultProvider = override.defaultProvider }
         if override.defaultModel != nil { result.defaultModel = override.defaultModel }
         if override.defaultThinkingLevel != nil { result.defaultThinkingLevel = override.defaultThinkingLevel }

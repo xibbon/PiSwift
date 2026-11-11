@@ -34,6 +34,9 @@ private let referenceCatalog: [Model] = [
     referenceModel("gw-b", "claude-opus-4-8"),
     referenceModel("gw-b", "gw-b/free"),
     referenceModel("gw-b", "zz:free"),
+    referenceModel("llama=http://host:10800", "unsloth/qwen-gguf:BF16"),
+    referenceModel("gateway", "team/foo"),
+    referenceModel("gateway/team", "foo"),
 ]
 
 private struct ReferenceCase: Sendable, CustomTestStringConvertible {
@@ -75,6 +78,9 @@ private let referenceCases: [ReferenceCase] = [
     .init("thinking suffix", "sonnet:high", model: "anthropic/claude-sonnet-4-5", thinking: "high"),
     .init("colon in a literal id is not a thinking suffix", "qwen/qwen3-coder:exacto", model: "openrouter/qwen/qwen3-coder:exacto"),
     .init("provider prefix, colon id, and thinking suffix", "openrouter/qwen/qwen3-coder:exacto:high", model: "openrouter/qwen/qwen3-coder:exacto", thinking: "high"),
+    .init("provider id containing a slash", "llama=http://host:10800/unsloth/qwen-gguf:BF16", model: "llama=http://host:10800/unsloth/qwen-gguf:BF16"),
+    .init("provider id containing a slash, with thinking suffix", "llama=http://host:10800/unsloth/qwen-gguf:BF16:high", model: "llama=http://host:10800/unsloth/qwen-gguf:BF16", thinking: "high"),
+    .init("longest known provider prefix", "gateway/team/foo", model: "gateway/team/foo"),
     .init("raw id wins when the provider prefix names no matching model", "openai/gpt-4o:extended", model: "openrouter/openai/gpt-4o:extended"),
     .init("fuzzy searches the prefixed provider first", "openrouter/qwen", model: "openrouter/qwen/qwen3-coder:exacto"),
     .init("strict keeps an invalid suffix in the id", "gpt-4o:random"),

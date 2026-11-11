@@ -23,11 +23,11 @@ private func c2aTemporaryDirectory() throws -> URL {
 }
 
 @Suite struct C2aConfigSchemaTests {
-    @Test func bundledArtifactsMatchV140() throws {
-        // Upstream 8efd314fa, v1.4.0: pin the published schema bytes.
+    @Test func bundledArtifactsMatchV152() throws {
+        // Upstream v1.5.2: pin the published schema bytes.
         let expected: [BundledConfigSchema: String] = [
-            .settings: "d4b19b0e492cb887a23c50034f00213c476048956fa92c5cce2f1536ef50b9b0",
-            .models: "86ade9716724902bdfe91347a728980ad7242a76d0773dbc7217ce4584d696ea",
+            .settings: "10c0b73ace40dd0a3461a45f08cb819b39b1089ce7037e27b746fc812f28beb9",
+            .models: "3e4cb1963defc0ea67a25d81a652536ed0a0d480c536db04dabe9d02baad8bdc",
             .keybindings: "46d494b2493cd9fcf957d352aac653fe6f04121254f34033a5664e7c8f9928aa",
             .theme: "f526a690b63c6303296f683c9df6077ddc290ee9acb1bc27eedef169c0caad59",
         ]
@@ -122,6 +122,25 @@ private func c2aTemporaryDirectory() throws -> URL {
         }
         try withRegistry(["$schema": "https://pi.dev/schemas/models.schema.json", "providers": ["demo": ["models": [["id": ""]]]]]) { registry, _ in
             #expect(registry.getError()?.contains("Invalid models.json schema") == true)
+        }
+    }
+
+    @Test func newCompatFieldsValidateAndReachModel() throws {
+        let compat: [String: Any] = [
+            "requiresNonNullAssistantContent": true,
+            "requiresToolsWithToolHistory": false,
+            "promptCacheKeyMode": "enabled",
+            "supportsMessageThreads": true,
+        ]
+        try withRegistry(["$schema": "https://pi.dev/schemas/models.schema.json", "providers": [
+            "local": ["api": "openai-responses", "baseUrl": "https://example.invalid/v1",
+                      "models": [["id": "model", "compat": compat]]]
+        ]]) { registry, _ in
+            #expect(registry.getError() == nil)
+            let model = try #require(registry.find("local", "model"))
+            #expect(model.id == "model")
+            let configured = try #require(registry.getConfiguredCompatibility(provider: "local", modelId: "model"))
+            for (key, value) in compat { #expect(configured[key] == AnyCodable(value)) }
         }
     }
 
@@ -231,13 +250,15 @@ private func c2aTemporaryDirectory() throws -> URL {
         let dir = try c2aTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = dir.appendingPathComponent("settings.json")
-        try JSONSerialization.data(withJSONObject: ["$schema": "https://pi.dev/schemas/settings.schema.json", "theme": "light", "extensionSetting": ["enabled": true], "queueMode": "all", "websockets": true, "skills": ["enableSkillCommands": true, "customDirectories": ["./skills"]], "retry": ["maxDelayMs": 1000]]).write(to: path)
+        try JSONSerialization.data(withJSONObject: ["$schema": "https://pi.dev/schemas/settings.schema.json", "theme": "light", "extensionSetting": ["enabled": true], "extensionChangelogVersions": ["sample-extension": "1.2.3"], "queueMode": "all", "websockets": true, "skills": ["enableSkillCommands": true, "customDirectories": ["./skills"]], "retry": ["maxDelayMs": 1000]]).write(to: path)
         let manager = SettingsManager.create(dir.path, dir.path)
         #expect(manager.getTheme() == "light")
+        #expect(manager.getSettings().extensionChangelogVersions == ["sample-extension": "1.2.3"])
         manager.setTheme("dark")
         let saved = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         #expect(saved["$schema"] as? String == "https://pi.dev/schemas/settings.schema.json")
         #expect((saved["extensionSetting"] as? [String: Bool])?["enabled"] == true)
+        #expect(saved["extensionChangelogVersions"] as? [String: String] == ["sample-extension": "1.2.3"])
         #expect(SettingsManager.create(dir.path, dir.path).getTheme() == "dark")
     }
 

@@ -5,6 +5,7 @@ import Foundation
 
 internal let ClassifierModelsData: [String: [String: ClassifierModel]] = [
     "cloudflare-workers-ai": providerModels_classifier_cloudflare_workers_ai,
+    "github-copilot": providerModels_classifier_github_copilot,
     "openai": providerModels_classifier_openai,
     "opencode": providerModels_classifier_opencode,
     "openrouter": providerModels_classifier_openrouter,
@@ -70,6 +71,20 @@ private let providerModels_classifier_cloudflare_workers_ai: [String: Classifier
     ),
 ]
 
+private let providerModels_classifier_github_copilot: [String: ClassifierModel] = [
+    "microsoft-decision-1": ClassifierModel(
+        id: "microsoft-decision-1",
+        name: "Microsoft-Decision-1",
+        api: .typesafeSystemOne,
+        provider: "github-copilot",
+        baseUrl: "https://api.individual.githubcopilot.com",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768,
+        headers: ["Copilot-Integration-Id": "vscode-chat", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Editor-Version": "vscode/1.107.0", "User-Agent": "GitHubCopilotChat/0.35.0"]
+    ),
+]
+
 private let providerModels_classifier_openai: [String: ClassifierModel] = [
     "gpt-6-luna": ClassifierModel(
         id: "gpt-6-luna",
@@ -89,7 +104,7 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
         name: "Jev 1.13",
         api: .typesafeSystemOne,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/inference/v1",
+        baseUrl: "https://opencode.ai/inference/systemone/v1",
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32000
@@ -99,7 +114,7 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
         name: "Jev 1.13 Free",
         api: .typesafeSystemOne,
         provider: "opencode",
-        baseUrl: "https://opencode.ai/inference/v1",
+        baseUrl: "https://opencode.ai/inference/systemone/v1",
         input: [.text],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32000
@@ -107,26 +122,48 @@ private let providerModels_classifier_opencode: [String: ClassifierModel] = [
 ]
 
 private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
-    "baseten/elephant-1:free": ClassifierModel(
-        id: "baseten/elephant-1:free",
-        name: "Baseten: Elephant 1 (free)",
+    "baseten/elephant-1": ClassifierModel(
+        id: "baseten/elephant-1",
+        name: "Baseten: Elephant 1",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        input: [.text, .image],
+        cost: ModelCost(input: 0.035, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 16384,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
-    "baseten/mammoth-1:free": ClassifierModel(
-        id: "baseten/mammoth-1:free",
-        name: "Baseten: Mammoth 1 (free)",
+    "baseten/joey-1": ClassifierModel(
+        id: "baseten/joey-1",
+        name: "Baseten: Joey 1",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        input: [.text, .image],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 16384,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "baseten/mammoth-1": ClassifierModel(
+        id: "baseten/mammoth-1",
+        name: "Baseten: Mammoth 1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "cloudflare/clairic": ClassifierModel(
+        id: "cloudflare/clairic",
+        name: "Cloudflare: Clairic",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "cloudflare/clef": ClassifierModel(
@@ -136,8 +173,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 16384,
+        cost: ModelCost(input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "cloudflare/clef-flash": ClassifierModel(
@@ -147,7 +184,7 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.019, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.038, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 24576,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
@@ -159,28 +196,6 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.15, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536,
-        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
-    ),
-    "inception/mercury-decide": ClassifierModel(
-        id: "inception/mercury-decide",
-        name: "Inception: Mercury Decide",
-        api: .typesafeSystemOne,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536,
-        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
-    ),
-    "inception/mercury-decide:free": ClassifierModel(
-        id: "inception/mercury-decide:free",
-        name: "Inception: Mercury Decide (free)",
-        api: .typesafeSystemOne,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
@@ -217,6 +232,17 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 32768,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
+    "liquid/d1.1": ClassifierModel(
+        id: "liquid/d1.1",
+        name: "LiquidAI: d1.1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0.02, cacheWrite: 0),
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "microsoft/microsoft-decision-1": ClassifierModel(
         id: "microsoft/microsoft-decision-1",
         name: "Microsoft: Microsoft-Decision-1",
@@ -228,14 +254,36 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 32768,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
+    "morph/reflex": ClassifierModel(
+        id: "morph/reflex",
+        name: "Morph: Reflex",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0.002, cacheWrite: 0),
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "nace-ai/drex-max": ClassifierModel(
         id: "nace-ai/drex-max",
         name: "Nace.AI: Drex Max",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text],
-        cost: ModelCost(input: 0.06, output: 0, cacheRead: 0, cacheWrite: 0),
+        input: [.text, .image],
+        cost: ModelCost(input: 0.06, output: 0, cacheRead: 0.06, cacheWrite: 0),
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "nace-ai/drex-max-finance": ClassifierModel(
+        id: "nace-ai/drex-max-finance",
+        name: "Nace.AI: Drex Max Finance",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.06, output: 0, cacheRead: 0.06, cacheWrite: 0),
         contextWindow: 262144,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
@@ -270,6 +318,17 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         input: [.text, .image],
         cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1050000,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "parallel/decisions-fast:free": ClassifierModel(
+        id: "parallel/decisions-fast:free",
+        name: "Parallel: Decisions Fast (free)",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32000,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "perplexity/pplx-decider-flash-v1.2": ClassifierModel(
@@ -404,6 +463,28 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 524288,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
+    "~liquid/d1-latest": ClassifierModel(
+        id: "~liquid/d1-latest",
+        name: "LiquidAI: d1 Latest",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0.02, cacheWrite: 0),
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "~liquid/d1-ultra-latest": ClassifierModel(
+        id: "~liquid/d1-ultra-latest",
+        name: "LiquidAI: d1-ultra Latest",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0.042, cacheWrite: 0),
+        contextWindow: 32768,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "~perplexity/pplx-decider-flash-latest": ClassifierModel(
         id: "~perplexity/pplx-decider-flash-latest",
         name: "Perplexity: Decider Flash Latest",
@@ -461,7 +542,17 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.035, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 16384
+    ),
+    "baseten/joey-1": ClassifierModel(
+        id: "baseten/joey-1",
+        name: "Joey-1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 16384
     ),
     "baseten/mammoth-1": ClassifierModel(
@@ -471,7 +562,7 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 16384
     ),
     "convaiinnovations/laya": ClassifierModel(
@@ -481,17 +572,7 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
         input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 8192
-    ),
-    "convaiinnovations/laya-free": ClassifierModel(
-        id: "convaiinnovations/laya-free",
-        name: "Laya (Free)",
-        api: .typesafeSystemOne,
-        provider: "vercel-ai-gateway",
-        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
-        input: [.text],
-        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.0105, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 8192
     ),
     "liquid/d1": ClassifierModel(
@@ -524,6 +605,36 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32768
     ),
+    "nace-ai/drex-max-finance": ClassifierModel(
+        id: "nace-ai/drex-max-finance",
+        name: "Drex Max Finance",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.03, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "nace-ai/drex-max-v1.1": ClassifierModel(
+        id: "nace-ai/drex-max-v1.1",
+        name: "Drex Max v1.1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.03, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "nace-ai/drex-v2.0": ClassifierModel(
+        id: "nace-ai/drex-v2.0",
+        name: "Drex 2.0",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.03, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
     "openai/gpt-6-luna-decisions": ClassifierModel(
         id: "openai/gpt-6-luna-decisions",
         name: "GPT-6 Luna Decisions",
@@ -533,6 +644,16 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         input: [.text],
         cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 1050000
+    ),
+    "parallel/parallel-decisions-fast": ClassifierModel(
+        id: "parallel/parallel-decisions-fast",
+        name: "Decisions Fast",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32000
     ),
     "perplexity/pplx-decider-flash-v1.2": ClassifierModel(
         id: "perplexity/pplx-decider-flash-v1.2",
