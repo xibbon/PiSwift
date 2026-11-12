@@ -126,7 +126,9 @@ import PiSwiftDurableTesting
         let committing = Task { try await failureNote(root) }
         await held.waitUntilEntered()
         let queued = Task { try await root.entries(limit: 10, context: .background) }
-        try await harnessEventually { harness.session.line.queuedCount > 0 }
+        // v1.5.2 D3a session.ts:1593–1605: the read has an outcome ticket
+        // while it waits on the unpublished entry key, off the physical line.
+        try await harnessEventually { harness.session.outstandingJobs >= 2 }
         await held.release()
         await expectStorageFailure(failure) { try await committing.value }
         await expectSessionFailure(failure) { try await queued.value }

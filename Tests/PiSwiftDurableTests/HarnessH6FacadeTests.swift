@@ -30,8 +30,11 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         let setup = HarnessChatSetup(), storage = ControlledStorage()
         let opened = try await openChat(storage: storage, setup: setup)
         let done = try await opened.root.submit(.write(entry: EntryDraft(kind: "note")), context: .background)
-        let held = await storage.holdCommits(), root = opened.root
-        let blocking = Task { try await root.commit({ tx in _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker")) }, context: .background) }
+        let root = opened.root
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(opened.harness.session) { tx in
+            _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker"))
+        }
         await held.waitUntilEntered()
         let closing = Task { try await opened.harness.close(context: .background) }
         try await eventually { opened.harness.tasks.closing }
@@ -42,7 +45,7 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         await h6ExpectClosed { try await done.abort(context: .background) }
         await h6ExpectClosed { try await opened.harness.submission(id: done.id, context: .background) }
         await h6ExpectClosed { try await opened.harness.abortSubmission(id: done.id, context: .background) }
-        await held.release(); try await blocking.value; try await closing.value
+        held.release(); try await held.finish(); try await closing.value
     }
 
     // H5 deferred harness-lifecycle.test.ts:450.
@@ -50,14 +53,17 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         let storage = ControlledStorage()
         let opened = try await openChat(storage: storage, setup: HarnessChatSetup())
         let done = try await opened.root.submit(.write(entry: EntryDraft(kind: "note")), context: .background)
-        let held = await storage.holdCommits(), root = opened.root
-        let blocking = Task { try await root.commit({ tx in _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker")) }, context: .background) }
+        let root = opened.root
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(opened.harness.session) { tx in
+            _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker"))
+        }
         await held.waitUntilEntered()
         let wait = Task { try await done.wait(context: .background) }
         try await eventually { opened.harness.session.line.queuedCount >= 1 }
         let closing = Task { try await opened.harness.close(context: .background) }
         try await eventually { opened.harness.tasks.closing }
-        await held.release(); try await blocking.value
+        held.release(); try await held.finish()
         #expect(try await wait.value.status == "done")
         try await closing.value
     }

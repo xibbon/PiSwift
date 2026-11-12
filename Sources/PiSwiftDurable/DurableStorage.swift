@@ -50,7 +50,7 @@ public protocol DurableStorage: Sendable {
 
     /// Runs one Session publication in this storage's scope, now or soon after.
     /// The publication must run exactly once before the next publication runs.
-    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async throws
 
     /// Returns a fresh candidate ID from the one global numeric namespace. The kind is a phantom.
     /// Explicitly stored IDs also claim this namespace. Rejects when safe integer IDs are exhausted.
@@ -128,7 +128,7 @@ public extension DurableStorage {
     }
 
     /// Default publication has no storage-specific scope.
-    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async { publish() }
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async throws { publish() }
 
     /// v1.5.2 D2: compatibility for existing direct single-batch clients and tests.
     /// Session itself uses the batch API. A later API cleanup can remove this bridge.

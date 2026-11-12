@@ -329,6 +329,10 @@ internal final class TaskScheduler: Sendable {
         }
         try await session.commit({ tx in
             guard !closing else { return }
+            // v1.5.2 D3a scheduler.ts:1380–1412 `#region`: reconciliation
+            // walks several task and ownership keys in memory. Drain earlier
+            // publications before taking that graph snapshot on the line.
+            try await session.touch(SessionKeys.allKeys)
             try await loadScopes()
             let queued = cascade ? try await loadQueuedScopes() : []
             var marks: [TaskID: (record: TaskRecord, reason: TaskAbortReason?)] = [:]
@@ -479,6 +483,9 @@ internal final class TaskScheduler: Sendable {
         do {
             try await session.commit({ tx in
                 guard !closing else { return }
+                // v1.5.2 D3a scheduler.ts:1380–1412 `#region`: the
+                // abandoned/ownership decisions below read multiple keys.
+                try await session.touch(SessionKeys.allKeys)
                 abandoned = state.withLock { state in state.candidateEntries += state.abandoned.count; return state.abandoned }
                 // Commit all restart marks before a descendant can reserve a run invocation.
                 if !abandoned.isEmpty {
@@ -490,19 +497,40 @@ internal final class TaskScheduler: Sendable {
                 try await loadScopes()
                 wakeDue()
                 unparkRaised()
-                let candidates = state.withLock { state in state.candidateEntries += state.runnable.count; return Array(state.runnable).sorted() }
+                // v1.5.2 D3a scheduler.ts:2002–2023 `#planCandidates`.
+                // Take candidates before any awaited planning step. A publication
+                // can add a fresh notification while this pass is suspended.
+                let candidates = state.withLock { state in
+                    state.candidateEntries += state.runnable.count
+                    let values = Array(state.runnable).sorted()
+                    state.runnable.removeAll()
+                    return values
+                }
+                var dropped = Set<TaskID>()
+                defer {
+                    state.withLock { state in
+                        for id in candidates where !dropped.contains(id) {
+                            if let live = state.live[id], live.state.status != "completing",
+                               state.invocations[id] == nil { state.runnable.insert(id) }
+                        }
+                    }
+                }
                 var snapshot: RegistrySnapshot?
                 for id in candidates {
+                    // v1.5.2 D3a scheduler.ts:2033–2052 `#planReservation`:
+                    // a runnable record read from memory must wait for its
+                    // unpublished task write, then be read again.
+                    try await session.touch(SessionKeys.taskKey(id))
                     guard let original = current(id), original.state.status != "completing", !state.withLock({ $0.invocations[id] != nil }) else {
-                        _ = state.withLock { $0.runnable.remove(id) }; continue
+                        dropped.insert(id); continue
                     }
-                    if !waitingOn(original, first: true).isEmpty { _ = state.withLock { $0.runnable.remove(id) }; continue }
-                    if notDue(original) { _ = state.withLock { $0.runnable.remove(id) }; continue }
+                    if !waitingOn(original, first: true).isEmpty { dropped.insert(id); continue }
+                    if notDue(original) { dropped.insert(id); continue }
                     if parked(original) {
                         let changed = state.withLock { state in
-                            state.runnable.remove(id)
                             return state.parked.insert(id).inserted
                         }
+                        dropped.insert(id)
                         if changed { refreshBlocked() }
                         continue
                     }
@@ -553,9 +581,10 @@ internal final class TaskScheduler: Sendable {
                     }
                     let invocation = TaskInvocation(record, abort: record.abortRequested, context: context), id = UUID()
                     state.withLock {
-                        $0.runnable.remove(record.id); $0.invocations[record.id] = invocation; $0.joining[id] = invocation
+                        $0.invocations[record.id] = invocation; $0.joining[id] = invocation
                         if $0.closing { $0.stopped.insert(record.id) }
                     }
+                    dropped.insert(record.id)
                     reservations.append(Reservation(invocation: invocation, definition: definition, snapshot: snapshot!, joinID: id))
                 }
             }, context: context)
@@ -604,6 +633,12 @@ internal final class TaskScheduler: Sendable {
         var fault: (any Error)?
         do {
             let continued: TaskRecord? = try await session.commit({ tx in
+                // v1.5.2 D3a scheduler.ts:1380–1412 `#region`: terminate
+                // inspects ownership as well as this invocation's task.
+                try await session.touch(SessionKeys.allKeys)
+                // v1.5.2 D3a scheduler.ts:1380–1412 `#region`:
+                // this decision reads task memory after a prior write settles.
+                try await session.touch(SessionKeys.taskKey(invocation.taskId))
                 guard let current = current(invocation.taskId), current.state.status == "running", !closing else { end(invocation); return nil }
                 switch try decide(tx, current) {
                 case .proceed: return current

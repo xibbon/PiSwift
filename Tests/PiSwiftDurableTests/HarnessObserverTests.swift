@@ -102,15 +102,16 @@ private struct HarnessObserverReferences: Sendable {
         let storage = ControlledStorage(), opened = try await openTasks(storage: storage, tasks: [])
         let harness = opened.harness, root = try await harness.root(context: .background)
         let view = HarnessObserverLog<ConversationView>(), graph = HarnessObserverLog<TaskGraph>()
-        let held = await storage.holdCommits(), controller = AbortController()
-        let committing = Task { try await failureNote(root) }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(harness.session) { tx in _ = try await tx.appendEntry(root.id, value: .init(kind: "note")) }
+        let controller = AbortController()
         await held.waitUntilEntered()
         let context = ChordContext.background.withAbortSignal(controller.signal)
         let attachingView = Task { try await harness.observeConversation(root.id, observer: view.observer, context: context) }
         let attachingGraph = Task { try await harness.observeTaskGraph(graph.observer, context: context) }
         try await eventually { harness.session.line.queuedCount >= 2 }
         controller.abort(TaskDefinitionError("gone"))
-        await held.release(); _ = try await committing.value
+        held.release(); try await held.finish()
         await #expect(throws: TaskDefinitionError("gone")) { _ = try await attachingView.value }
         await #expect(throws: TaskDefinitionError("gone")) { _ = try await attachingGraph.value }
         _ = try await failureNote(root)

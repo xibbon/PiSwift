@@ -67,8 +67,8 @@ struct FailureProbeStorage: DurableStorage {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
-    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
-        await base.publishing(publish, context: context)
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async throws {
+        try await base.publishing(publish, context: context)
     }
     func close(context: ChordContext) async throws {}
 }

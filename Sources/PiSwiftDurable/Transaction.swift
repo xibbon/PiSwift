@@ -135,6 +135,16 @@ public final class Transaction: Sendable {
     }
     internal func discard() { documents.abort() }
     internal func adopt(_ seq: Seq) throws -> [DocumentCommitChange] {
-        try documents.adopt(seq: seq, session: session)
+        #if DEBUG
+        try session.checkAdoptionFault()
+        #endif
+        return try documents.adopt(seq: seq, session: session)
+    }
+    /// v1.5.2 session/transaction.ts:892–900 `writeKeys`.
+    internal func writeKeys(_ writes: [StorageWrite]) -> [String] {
+        var keys: [String] = []
+        SessionKeys.tableKeys(writes, into: &keys)
+        keys.append(contentsOf: documents.writeKeys())
+        return keys
     }
 }

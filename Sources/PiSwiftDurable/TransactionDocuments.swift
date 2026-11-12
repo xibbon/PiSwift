@@ -193,6 +193,7 @@ final class TransactionDocuments: Sendable {
             let entry = DocumentEntry(address: address, definition: definition, retire: true)
             state.entries.append(entry); state.latest[key] = entry
             let task = Task {
+                try await tx.session.waitForDocument(address)
                 let record: DocumentRecord?
                 if let cached = tx.session.cachedDocument(address) { record = cached.record }
                 else { record = try await tx.storage.findDocument(address, at: .current, context: tx.context) }
@@ -273,6 +274,17 @@ final class TransactionDocuments: Sendable {
         }
         state.withLock { $0.plans = plans }
         return writes
+    }
+
+    /// v1.5.2 session/transaction.ts:892–900 `writeKeys` (document part).
+    func writeKeys() -> [String] {
+        var keys: [String] = []
+        for plan in state.withLock({ $0.plans }) where plan.content != nil || plan.retire {
+            keys.append(SessionKeys.documentKey(plan.address))
+            keys.append(SessionKeys.incarnationKey(plan.id))
+            if plan.create != nil || plan.retire { keys.append(SessionKeys.scopeKey(plan.scope)) }
+        }
+        return keys
     }
 
     func adopt(seq: Seq, session: Session) throws -> [DocumentCommitChange] {

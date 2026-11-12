@@ -126,8 +126,8 @@ import PiSwiftDurableTesting
     // harness-lifecycle.test.ts:393. Submission and H9 operations are deferred.
     @Test func closeRejectsNewOperationsWhileQueuedInspectReportsClosing() async throws {
         let storage = ControlledStorage(); let h = try await openHarness(storage: storage); let root = try await h.harness.root(context: .background)
-        let held = await storage.holdCommits()
-        let blocking = Task { _ = try await harnessAppendForLifecycle(root) }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(h.harness.session) { tx in _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker")) }
         await held.waitUntilEntered()
         let inspect = Task { try await h.harness.inspect(context: .background) }
         try await harnessEventually { h.harness.session.line.queuedCount >= 1 }
@@ -141,7 +141,7 @@ import PiSwiftDurableTesting
         await #expect(throws: HarnessClosedError.self) { try await h.harness.waitForIdle(context: .background) }
         await #expect(throws: HarnessClosedError.self) { _ = try await h.harness.inspect(context: .background) }
         await #expect(throws: HarnessClosedError.self) { _ = try await h.harness.commit({ _ in 0 }, context: .background) }
-        await held.release(); try await blocking.value
+        held.release(); try await held.finish()
         #expect(try await inspect.value.scheduling == .closing); try await close.value
     }
     // harness-lifecycle.test.ts:450. Submission and H9 operations are deferred.
@@ -149,7 +149,8 @@ import PiSwiftDurableTesting
         let storage = ControlledStorage(); let h = try await openHarness(storage: storage); let root = try await h.harness.root(context: .background)
         let token = try SessionDocToken<JSONObject>(kind: "h5.seal-read", version: 1, initial: { ["text": "before"] }, checkpointWhen: { _, _, _ in false })
         try await h.harness.commit({ tx in _ = try await tx.doc(token) }, context: .background)
-        let held = await storage.holdCommits(); let blocking = Task { _ = try await harnessAppendForLifecycle(root) }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(h.harness.session) { tx in _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker")) }
         await held.waitUntilEntered()
         let read = Task { try await root.entries(limit: 10, context: .background) }
         try await harnessEventually { h.harness.session.line.queuedCount >= 1 }
@@ -158,7 +159,7 @@ import PiSwiftDurableTesting
         let acquire = Task { try await h.harness.watchDoc(token, context: .background) }
         try await harnessEventually { h.harness.session.line.queuedCount >= 3 }
         let close = Task { try await h.harness.close(context: .background) }
-        try await harnessEventually { h.harness.tasks.closing }; await held.release(); try await blocking.value
+        try await harnessEventually { h.harness.tasks.closing }; held.release(); try await held.finish()
         #expect(try await read.value.items.count == 1)
         await #expect(throws: (any Error).self) { try await idle.value }
         await #expect(throws: (any Error).self) { _ = try await acquire.value }

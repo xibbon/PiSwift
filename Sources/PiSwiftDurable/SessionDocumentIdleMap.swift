@@ -14,6 +14,25 @@ internal struct SessionDocumentIdleMap: Sendable {
         guard let head, let entry = entries[head] else { return nil }
         return (head, entry.since)
     }
+    /// v1.5.2 D3a session.ts:1014–1021,1050–1058: scan past a document
+    /// whose unpublished write holds its key without losing its idle entry.
+    func first(where allowed: (Key) -> Bool) -> (key: Key, since: Double)? {
+        var key = head
+        while let current = key, let entry = entries[current] {
+            if allowed(current) { return (current, entry.since) }
+            key = entry.next
+        }
+        return nil
+    }
+    func expired(before cutoff: Double) -> [Key] {
+        var result: [Key] = []
+        var key = head
+        while let current = key, let entry = entries[current], entry.since <= cutoff {
+            result.append(current)
+            key = entry.next
+        }
+        return result
+    }
     func since(_ key: Key) -> Double? { entries[key]?.since }
     mutating func touch(_ key: Key, at time: Double) {
         remove(key)

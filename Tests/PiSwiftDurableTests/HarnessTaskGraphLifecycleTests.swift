@@ -26,10 +26,10 @@ import PiSwiftDurableTesting
         let root = try await harness.root(context: .background)
         let state = try await harness.taskGraph(context: .background)
         let watch = try await harness.watchTaskGraph(context: .background)
-        let held = await storage.holdCommits()
-        let blocking = Task { try await root.commit({ tx in
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(harness.session) { tx in
             _ = try await tx.appendEntry(root.id, value: .init(kind: "blocker"))
-        }, context: .background) }
+        }
         await held.waitUntilEntered()
         let queuedState = Task { try await harness.taskGraph(context: .background) }
         try await eventually { harness.session.line.queuedCount >= 1 }
@@ -41,8 +41,8 @@ import PiSwiftDurableTesting
         await #expect(throws: HarnessClosedError.self) { _ = try await harness.watchTaskGraph(context: .background) }
         // v1.5.2 CH3: harness-view.test.ts:299 uses the shared ended reason.
         if case .ended = await watch.closed {} else { Issue.record("Close must end the graph watch") }
-        await held.release()
-        try await blocking.value
+        held.release()
+        try await held.finish()
         await #expect(throws: (any Error).self) { _ = try await queuedState.value }
         await #expect(throws: (any Error).self) { _ = try await queuedWatch.value }
         try await close.value

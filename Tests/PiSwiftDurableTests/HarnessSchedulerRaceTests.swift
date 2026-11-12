@@ -112,7 +112,9 @@ import PiSwiftDurableTesting
         let held = await storage.holdCommits()
         try harness.resume(); await held.waitUntilEntered()
         let marking = Task { try await harness.abortTask(id: id, context: .background) }
-        try await harnessEventually { harness.session.line.queuedCount > 0 }
+        // v1.5.2 D3a harness-tasks.test.ts:1225–1244: the abort mark
+        // enters while the reservation is in Storage, off the FIFO.
+        try await harnessEventually { harness.session.outstandingJobs >= 2 }
         await held.release()
         #expect(try await marking.value == .marked)
         #expect(try await harness.waitForTask(id: id, context: .background).outcome.status == "aborted")

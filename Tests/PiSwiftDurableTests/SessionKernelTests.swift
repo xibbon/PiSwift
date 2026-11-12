@@ -117,12 +117,17 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
             }, context: .background)
         }
         await gate.waitUntilEntered()
+        let secondPrepared = SessionTestGate()
         let second = Task {
             try await harness.session.commit({ tx in
-                try await tx.appendEntry(conversation, value: EntryDraft(kind: "second"))
+                let entry = try await tx.appendEntry(conversation, value: EntryDraft(kind: "second"))
+                secondPrepared.release()
+                return entry
             }, context: .background)
         }
-        while harness.session.line.queuedCount < 1 { await Task.yield() }
+        // v1.5.2 D3a writer.ts:72–74: storage writes release the line.
+        // Wait for the second callback, which precedes its writer admission.
+        await secondPrepared.wait()
         let closing = SessionTestGate()
         _ = try harness.session.subscribeClose { closing.release() }
         let close = Task { try await harness.session.close(context: .background) }

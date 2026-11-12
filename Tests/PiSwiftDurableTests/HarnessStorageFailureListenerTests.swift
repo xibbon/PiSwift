@@ -7,6 +7,28 @@ import PiSwiftDurableTesting
 /// The upstream promise, thenable, foreign-realm, and throwing-clock cases have no Swift equivalent.
 /// Watches and task handlers retain their existing throwing contracts.
 @Suite struct HarnessStorageFailureListenerTests {
+    @Test(.timeLimit(.minutes(2)))
+    func throwingViewObserverLeavesHealthyWatchRunningUntilClose() async throws {
+        // v1.5.2 D3a harness-storage-failure.test.ts:491–517.
+        let opened = try await openTasks(tasks: []), harness = opened.harness
+        let root = try await harness.root(context: .background)
+        let failure = HarnessStorageFailure("view observer broke")
+        _ = try await harness.observeConversation(root.id, observer: Observer(advance: { _, _ in throw failure },
+            end: { _ in }), context: .background)
+        let watch = try await root.watch(context: .background)
+        let seen = SessionTestLog<[EntryID]>()
+        try watch.start { call, _ in
+            if case .value(let view, _, _) = call { seen.append(view.entries.map(\.id)) }
+        }
+        let entry = try await failureNote(root)
+        await watch.waitUntilIdle()
+        #expect(seen.values == [[entry.id]])
+        #expect(opened.reports.count == 1)
+        #expect((opened.reports.values.first as? HarnessStorageFailure) === failure)
+        try await harness.close(context: .background)
+        if case .ended = await watch.closed {} else { Issue.record("Healthy watch did not end normally") }
+    }
+
     @Test func watchListenerFailureIsReportedAndOtherViewWatchContinues() async throws {
         let opened = try await openTasks(tasks: []), harness = opened.harness
         let root = try await harness.root(context: .background)

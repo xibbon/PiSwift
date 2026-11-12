@@ -141,14 +141,14 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], storage: storage)
         let root = try await harness.root(context: .background), id = try await harnessStart(root, definition)
         try harness.resume(); await started.wait()
-        let held = await storage.holdCommits()
-        let holding = Task { try await root.commit({ tx in try await tx.appendEntry(root.id, value: .init(kind: "hold")) }, context: .background) }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(harness.session) { tx in _ = try await tx.appendEntry(root.id, value: .init(kind: "hold")) }
         await held.waitUntilEntered()
         let aborting = Task { try await harness.abortTask(id: id, context: .background) }
         try await harnessEventually { harness.session.line.queuedCount > 0 }
         let closing = Task { try await harness.close(context: .background) }
         try await harnessEventually { harness.tasks.closing }
-        await held.release(); _ = try await holding.value
+        held.release(); try await held.finish()
         #expect(try await aborting.value == .marked)
         try await closing.value
         let saved = await storage.commits.flatMap { $0 }.compactMap { write -> TaskRecord? in

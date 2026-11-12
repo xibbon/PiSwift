@@ -50,16 +50,16 @@ import PiSwiftDurableTesting
         let root = try await harness.root(context: .background)
         let id = try await harnessStart(root, definition)
         try harness.resume(); await entered.wait()
-        let held = await storage.holdCommits()
-        let blocker = Task { try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "block")) }, context: .background) }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(harness.session) { tx in _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "block")) }
         await held.waitUntilEntered()
         let runtime = try #require(retained.withLock { $0 })
         let queued = Task { try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: .background) }
         try await harnessEventually { harness.session.line.queuedCount > 0 }
         let closing = Task { try await harness.close(context: .background) }
         try await harnessEventually { harness.tasks.closing }
-        await held.release()
-        _ = try await blocker.value
+        held.release()
+        try await held.finish()
         await #expect(throws: (any Error).self) { try await queued.value }
         runRelease.release()
         try await closing.value
@@ -84,15 +84,15 @@ import PiSwiftDurableTesting
         let root = try await harness.root(context: .background)
         let id = try await harnessStart(root, definition)
         try harness.resume(); await entered.wait()
-        let held = await storage.holdCommits()
-        let blocker = Task { try await root.commit({ tx in try await tx.appendEntry(root.id, value: EntryDraft(kind: "block")) }, context: .background) }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(harness.session) { tx in _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "block")) }
         await held.waitUntilEntered()
         runRelease.release()
         try await harnessEventually { harness.session.line.queuedCount > 0 }
         let closing = Task { try await harness.close(context: .background) }
         try await harnessEventually { harness.tasks.closing }
-        await held.release()
-        _ = try await blocker.value
+        held.release()
+        try await held.finish()
         try await closing.value
         let writes = await storage.commits.flatMap { $0 }
         let statuses = writes.compactMap { write -> String? in

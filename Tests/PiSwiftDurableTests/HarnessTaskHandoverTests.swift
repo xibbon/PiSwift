@@ -85,18 +85,18 @@ private func startHandover(_ root: Conversation, _ definition: HandoverTask) asy
     // upstream harness-tasks-recovery.test.ts:762. The line queue fixes ordering without a timer.
     @Test func oldRuntimeCommitQueuedBehindHandoverRejects() async throws {
         let storage = ControlledStorage(), gate = SessionTestGate(), returning = SessionTestGate()
-        let held = Mutex<ControlledStorage.Gate?>(nil), captured = Mutex<TaskRuntime?>(nil)
-        let harnessRef = Mutex<Harness?>(nil), blocker = Mutex<Task<Void, any Error>?>(nil)
+        let held = Mutex<HeldSessionLine?>(nil), captured = Mutex<TaskRuntime?>(nil)
+        let harnessRef = Mutex<Harness?>(nil)
         let log = SessionTestLog<String>()
         let old = HandoverTask(name: "test.handover", version: 1, initial: { _ in .init(phase: .a) }, phase: { _, runtime, context in
             captured.withLock { $0 = runtime }; await gate.wait()
             try await runtime.commit({ _, _ in .running(checkpoint: try JSONValue(encoding: HandoverCheckpoint(phase: .b))) }, context: context)
-            let hold = await storage.holdCommits(); held.withLock { $0 = hold }
             let harness = try #require(harnessRef.withLock { $0 })
-            let work = Task {
-                try await harness.commit({ tx in _ = try await tx.appendEntry(runtime.conversationId, value: .init(kind: "blocker")) }, context: .background)
+            // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+            let hold = holdSessionLine(harness.session) { tx in
+                _ = try await tx.appendEntry(runtime.conversationId, value: .init(kind: "blocker"))
             }
-            blocker.withLock { $0 = work }
+            held.withLock { $0 = hold }
             await hold.waitUntilEntered(); returning.release()
         }, abort: { _, _, _ in })
         let registry = Registry()
@@ -111,11 +111,11 @@ private func startHandover(_ root: Conversation, _ definition: HandoverTask) asy
         let queued = harness.session.line.queuedCount
         let late = Task { try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(9))) }, context: .background) }
         try await harnessEventually { harness.session.line.queuedCount > queued }
-        let hold = try #require(held.withLock { $0 }); await hold.release()
+        let hold = try #require(held.withLock { $0 }); hold.release()
         do { try await late.value; Issue.record("Old invocation commit returned") }
         catch { #expect(String(describing: error).contains("invocation has ended")) }
         _ = try await harness.waitForTask(id: id, context: .background)
-        if let work = blocker.withLock({ $0 }) { try await work.value }
+        try await hold.finish()
         #expect(log.values == ["new:b start", "new:b end", "new:c"])
         try await harness.close(context: .background)
     }
@@ -134,9 +134,19 @@ private func startHandover(_ root: Conversation, _ definition: HandoverTask) asy
         try registry.install(Extension(name: "tasks", tasks: [AnyTaskDefinition(handoverDefinition("new", log: log))]))
         gate.release(); try await harnessEventually { held.withLock { $0 != nil } }
         let hold = try #require(held.withLock { $0 }); await hold.waitUntilEntered()
-        let queued = harness.session.line.queuedCount
+        // v1.5.2 D3a harness-tasks-recovery.test.ts:811: the writer holds
+        // Storage while the abort mark gets an outcome ticket off the line.
+        let queued = harness.session.writerPendingParts
+        let jobs = harness.session.outstandingJobs
+        let lineQueued = harness.session.line.queuedCount
         let aborting = Task { try await harness.abortTask(id: id, context: .background) }
-        try await harnessEventually { harness.session.line.queuedCount > queued }
+        // The mark can wait at the writer or behind a reservation callback
+        // that waits for the task key. Either position is admitted before
+        // the held storage call is released.
+        try await harnessEventually {
+            harness.session.writerPendingParts > queued || harness.session.outstandingJobs > jobs ||
+                harness.session.line.queuedCount > lineQueued
+        }
         await hold.release()
         #expect(try await aborting.value == .marked)
         #expect(try await harness.waitForTask(id: id, context: .background).outcome == .aborted(reason: "new"))

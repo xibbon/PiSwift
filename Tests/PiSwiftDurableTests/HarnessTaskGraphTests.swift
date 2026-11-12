@@ -219,17 +219,17 @@ private func graphRebuild(_ harness: Harness, _ graph: AttachedReplicatedState<T
         let harness = try await harnessOpen([AnyTaskDefinition(work)], storage: storage)
         let root = try await harness.root(context: .background)
         _ = try await harnessStart(root, work)
-        let held = await storage.holdCommits()
-        let blocking = Task { try await root.commit({ tx in
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: a storage gate releases the line.
+        let held = holdSessionLine(harness.session) { tx in
             _ = try await tx.appendEntry(root.id, value: .init(kind: "blocker"))
-        }, context: .background) }
+        }
         await held.waitUntilEntered()
         let controller = AbortController()
         let cancelled = Task { try await harness.watchTaskGraph(context: .background.withAbortSignal(controller.signal)) }
         try await eventually { harness.session.line.queuedCount >= 1 }
         controller.abort(TaskDefinitionError("cancelled"))
-        await held.release()
-        try await blocking.value
+        held.release()
+        try await held.finish()
         await #expect(throws: TaskDefinitionError("cancelled")) { _ = try await cancelled.value }
         let first = try await harness.taskGraph(context: .background), value = first.value
         first.dispose()

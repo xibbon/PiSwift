@@ -110,6 +110,12 @@ extension TaskScheduler {
         return try await session.commitWith({ tx in
             try invocation.check()
             if closing { throw closedError() }
+            // v1.5.2 D3a scheduler.ts:2967–2995 `#gated/#region`:
+            // current() reads scheduler memory, not GatedStorage. Wait for a
+            // prior task write to publish before deciding from that memory.
+            try await session.touch(SessionKeys.taskKey(invocation.taskId))
+            try invocation.check()
+            if closing { throw closedError() }
             guard let found = current(invocation.taskId) else { throw SessionError.message("Task \(invocation.taskId.rawValue) is terminal") }
             guard found.state.status == "running" else { throw SessionError.message("Task \(invocation.taskId.rawValue) is \(found.state.status)") }
             if !invocation.abort && found.abortRequested { throw SessionError.message("Task \(invocation.taskId.rawValue) has a durable abort mark") }

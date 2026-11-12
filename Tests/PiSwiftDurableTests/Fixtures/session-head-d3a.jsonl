@@ -1,0 +1,7 @@
+{"format":1,"type":"commit","seq":1,"writes":[{"type":"conversation","value":{"id":2}}]}
+{"format":1,"type":"commit","seq":2,"writes":[{"type":"entry","value":{"id":3,"conversationId":2,"kind":"head.0","data":0}}]}
+{"format":1,"type":"commit","seq":3,"writes":[{"type":"entry","value":{"id":4,"conversationId":2,"kind":"head.1","data":1}}]}
+{"format":1,"type":"commit","seq":4,"writes":[{"type":"entry","value":{"id":5,"conversationId":2,"kind":"head.2","data":2}}]}
+{"format":1,"type":"commit","seq":5,"writes":[{"type":"entry","value":{"id":6,"conversationId":2,"kind":"head.3","data":3}}]}
+{"format":1,"type":"commit","seq":6,"writes":[{"type":"entry","value":{"id":7,"conversationId":2,"kind":"head.4","data":4}}]}
+{"format":1,"type":"commit","seq":7,"writes":[{"type":"entry","value":{"id":8,"conversationId":2,"kind":"head.5","data":5}}]}

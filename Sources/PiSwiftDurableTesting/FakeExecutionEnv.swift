@@ -25,6 +25,11 @@ public final class FakeExecutionEnv: ExecutionEnv {
     /// The stable identifier of this record or handle.
     public let id: String
     private let state: Mutex<State>
+    private let renameObserver = Mutex<(@Sendable (String) -> Void)?>(nil)
+    /// Test-only witness for a completed file rename.
+    public func onRename(_ observer: @escaping @Sendable (String) -> Void) {
+        renameObserver.withLock { $0 = observer }
+    }
     /// Creates an in-memory directory, files, and command-response script.
     public init(cwd: String = "/", id: String = "fake", files: [String: String] = [:], exec: [ExecStep] = []) {
         self.id = id
@@ -161,11 +166,13 @@ public final class FakeExecutionEnv: ExecutionEnv {
     public func renameFile(_ sourcePath: String, destinationPath: String, context: ChordContext) async -> Result<Void, FileError> {
         if let result: Result<Void, FileError> = cancelled(context) { return result }
         let source = Self.resolve(sourcePath, cwd: cwd), destination = Self.resolve(destinationPath, cwd: cwd)
-        return state.withLock { value in
+        let result: Result<Void, FileError> = state.withLock { value in
             guard let data = value.files[source] else { return missing(source) }
             guard value.directories.contains(Self.parent(destination)) else { return missing(Self.parent(destination)) }
             value.files.removeValue(forKey: source); value.files[destination] = data; return .success(())
         }
+        if case .success = result { renameObserver.withLock { $0 }?(destination) }
+        return result
     }
     /// Returns metadata for an in-memory file or directory.
     public func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError> {

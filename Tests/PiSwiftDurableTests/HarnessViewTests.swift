@@ -180,19 +180,20 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     }
     @Test func queuedAcquisitionRejectsCancellationAndClose() async throws {
         let storage = ControlledStorage(), chat = try await openChat(storage: storage, setup: HarnessChatSetup())
-        let hold = await storage.holdCommits()
-        let blocking = Task { _ = try await viewNote(chat.root, "block") }; await hold.waitUntilEntered()
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let hold = holdSessionLine(chat.harness.session) { tx in _ = try await tx.appendEntry(chat.root.id, value: .init(kind: "block")) }
+        await hold.waitUntilEntered()
         let caller = ChordContext.background.withCancel()
         let cancelled = Task { try await chat.root.watch(context: caller.context) }
         try await eventually { chat.harness.session.line.queuedCount >= 1 }; caller.cancel(D2TestError("cancelled"))
-        await hold.release(); _ = try await blocking.value
+        hold.release(); try await hold.finish()
         do { _ = try await cancelled.value; Issue.record("Cancelled watch was acquired") } catch { #expect(String(describing: error).contains("cancelled")) }
-        let secondHold = await storage.holdCommits(), second = Task { _ = try await viewNote(chat.root, "block2") }
+        let secondHold = holdSessionLine(chat.harness.session) { tx in _ = try await tx.appendEntry(chat.root.id, value: .init(kind: "block2")) }
         await secondHold.waitUntilEntered()
         let queued = Task { try await chat.root.watch(context: .background) }
         try await eventually { chat.harness.session.line.queuedCount >= 1 }
         let closing = Task { try await chat.harness.close(context: .background) }
-        try await eventually { chat.harness.tasks.closing }; await secondHold.release(); _ = try await second.value
+        try await eventually { chat.harness.tasks.closing }; secondHold.release(); try await secondHold.finish()
         await #expect(throws: (any Error).self) { _ = try await queued.value }; try await closing.value
     }
     @Test func sharedMountIsolatesFailingListener() async throws {
@@ -255,19 +256,21 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
     // H5/H6 harness-lifecycle.test.ts:393, view operations.
     @Test func viewOperationsRejectOnceCloseBegins() async throws {
         let storage = ControlledStorage(), chat = try await openChat(storage: storage, setup: HarnessChatSetup())
-        let held = await storage.holdCommits(), blocking = Task { _ = try await viewNote(chat.root, "block") }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(chat.harness.session) { tx in _ = try await tx.appendEntry(chat.root.id, value: .init(kind: "block")) }
         await held.waitUntilEntered()
         let closing = Task { try await chat.harness.close(context: .background) }
         try await eventually { chat.harness.tasks.closing }
         await #expect(throws: HarnessClosedError.self) { _ = try await chat.root.viewState(context: .background) }
         await #expect(throws: HarnessClosedError.self) { _ = try await chat.root.watch(context: .background) }
-        await held.release(); _ = try await blocking.value; try await closing.value
+        held.release(); try await held.finish(); try await closing.value
     }
     // H5/H6 harness-lifecycle.test.ts:450, queued view acquisitions.
     @Test(arguments: [false, true])
     func acquisitionQueuedAtSealRejects(isState: Bool) async throws {
         let storage = ControlledStorage(), chat = try await openChat(storage: storage, setup: HarnessChatSetup())
-        let held = await storage.holdCommits(), blocking = Task { _ = try await viewNote(chat.root, "block") }
+        // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
+        let held = holdSessionLine(chat.harness.session) { tx in _ = try await tx.appendEntry(chat.root.id, value: .init(kind: "block")) }
         await held.waitUntilEntered()
         let acquisition = Task {
             if isState { let state = try await chat.root.viewState(context: .background); state.dispose() }
@@ -276,7 +279,7 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         try await eventually { chat.harness.session.line.queuedCount >= 1 }
         let closing = Task { try await chat.harness.close(context: .background) }
         try await eventually { chat.harness.tasks.closing }
-        await held.release(); _ = try await blocking.value
+        held.release(); try await held.finish()
         await #expect(throws: (any Error).self) { try await acquisition.value }
         try await closing.value
     }

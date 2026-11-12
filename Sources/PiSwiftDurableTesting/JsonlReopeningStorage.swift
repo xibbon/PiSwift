@@ -107,8 +107,8 @@ public actor JsonlReopeningStorage: DurableStorage {
     }
 
     /// Publishes under the current backend publication scope.
-    public func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
-        await current.publishing(publish, context: context)
+    public func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async throws {
+        try await current.publishing(publish, context: context)
     }
     /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {

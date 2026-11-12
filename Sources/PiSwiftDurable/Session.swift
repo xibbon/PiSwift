@@ -49,6 +49,11 @@ public final class Session: Sendable {
         var timer: Task<Void, Never>?
     }
     internal let line = SessionLine()
+    private let outcomes = SessionOutcomeLine()
+    internal var outstandingJobs: Int { outcomes.outstandingCount }
+    private let writer: SessionWriter
+    internal var writerUnpublished: Int { writer.unpublished }
+    internal var writerPendingParts: Int { writer.pendingParts }
     private struct CommitListener: Sendable {
         let id: Int
         let call: @Sendable (CommitPublication, ChordContext) -> Void
@@ -81,6 +86,18 @@ public final class Session: Sendable {
     private let state = Mutex(State())
     // Capture cached revisions atomically with all adoption, eviction, and installation.
     private let committedRead = Mutex(())
+    #if DEBUG
+    // v1.5.2 session-adoption.test.ts:115–125 fault injection. This seam is
+    // internal to the debug build and consumed once by Transaction.adopt.
+    private let adoptionFailure = Mutex<(any Error)?>(nil)
+    internal func failNextAdoption(_ error: any Error) { adoptionFailure.withLock { $0 = error } }
+    internal func checkAdoptionFault() throws {
+        let error = adoptionFailure.withLock { failure -> (any Error)? in
+            let error = failure; failure = nil; return error
+        }
+        if let error { throw error }
+    }
+    #endif
     deinit { state.withLock { $0.documentSweep?.timer?.cancel() } }
     private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
                  documentRetentionMs: @escaping @Sendable () throws -> Double?, documentTimer: SessionDocumentTimer,
@@ -89,7 +106,15 @@ public final class Session: Sendable {
         self.failureLatch = latch
         self.documentRetentionMs = documentRetentionMs; self.documentTimer = documentTimer
         self.cacheNow = cacheNow ?? now
-        self.storage = GuardedStorage(storage, latch: latch); self.now = now; self.hooks = hooks; self.onReport = report
+        let guarded = GuardedStorage(storage, latch: latch)
+        let writer = SessionWriter(storage: guarded, latch: latch,
+            fail: { [weak guarded] error in
+                if error as? SessionError == .closed, guarded?.closing == true { return }
+                latch.fail(error)
+            }, report: { error in report(error, .listenerError) })
+        guarded.installWriter(writer)
+        self.storage = guarded; self.writer = writer
+        self.now = now; self.hooks = hooks; self.onReport = report
     }
     /// Creates a session over the supplied storage without reading persisted records.
     /// Unobserved documents leave the cache after ten minutes by default.
@@ -143,15 +168,21 @@ public final class Session: Sendable {
         }
         return session
     }
-    private func admit() throws -> SessionLine.Ticket {
+    private func admit() throws -> (SessionLine.Ticket, SessionOutcomeLine.Ticket) {
         try state.withLock {
             try failureLatch.check()
             if $0.closing != nil { throw SessionError.closed }
-            return line.reserve()
+            return (line.reserve(), outcomes.reserve())
         }
     }
     internal func assertHealthy() throws {
         try failureLatch.check()
+    }
+    /// v1.5.2 session.ts `touch`: a memory decision waits for the latest
+    /// unpublished writer of the key, then rechecks Session health.
+    internal func touch(_ key: String) async throws {
+        await writer.gate(key)
+        try assertHealthy()
     }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T,
@@ -161,21 +192,57 @@ public final class Session: Sendable {
     internal func commitWith<T>(_ change: (Transaction) async throws -> T,
                                 context: ChordContext,
                                 scope: TransactionScope = TransactionScope()) async throws -> T {
-        let ticket = try admit()
+        let (ticket, delivery) = try admit()
         await ticket.wait()
-        defer { sweepDocuments(); line.release() }
-        return try await commitOnLine(change, context: context, scope: scope)
+        let prepared: (T, SessionWriterPart?, Bool)
+        do {
+            if !outcomes.tryClaimRoom() { await outcomes.waitForRoom() }
+            prepared = try await commitOnLine(change, context: context, scope: scope, delivered: delivery)
+            line.release()
+        } catch {
+            sweepDocuments()
+            line.release()
+            if !delivery.tryDeliver() { await delivery.deliver() }
+            throw error
+        }
+        if prepared.2, let part = prepared.1 { await writer.runFirst(part) }
+        let outcome: Result<Void, any Error>
+        if let part = prepared.1 {
+            if let settled = part.settledOutcome { outcome = settled }
+            else {
+                do { try await part.wait(); outcome = .success(()) }
+                catch { outcome = .failure(error) }
+            }
+        } else { outcome = .success(()) }
+        if prepared.1?.touchesDocument == true { sweepDocuments() }
+        if !delivery.tryDeliver() { await delivery.deliver() }
+        try outcome.get()
+        if prepared.1 == nil { try assertHealthy() }
+        return prepared.0
     }
     /// Cleanup reserves after admitted operations and can write after admission closes.
     internal func writeAtClose(_ change: (Transaction) async throws -> Void, context: ChordContext) async throws {
         let ticket = line.reserve()
         await ticket.wait()
-        defer { line.release() }
-        do { try await commitOnLine(change, context: context.withoutAbortSignal(), scope: TransactionScope()) }
+        let part: SessionWriterPart?
+        let startsWriter: Bool
+        do {
+            let prepared = try await commitOnLine(change, context: context.withoutAbortSignal(), scope: TransactionScope())
+            part = prepared.1
+            startsWriter = prepared.2
+        } catch {
+            line.release()
+            fail(error)
+            throw error
+        }
+        line.release()
+        if startsWriter, let part { await writer.runFirst(part) }
+        do { try await part?.wait() }
         catch { fail(error); throw error }
     }
     private func commitOnLine<T>(_ change: (Transaction) async throws -> T,
-                                context: ChordContext, scope: TransactionScope) async throws -> T {
+                                context: ChordContext, scope: TransactionScope,
+                                delivered: SessionOutcomeLine.Ticket? = nil) async throws -> (T, SessionWriterPart?, Bool) {
         try assertHealthy()
         try context.abortSignal?.throwIfAborted()
         let tx = Transaction(session: self, context: context, scope: scope)
@@ -183,27 +250,23 @@ public final class Session: Sendable {
         do { result = try await change(tx); try assertHealthy() }
         catch { await tx.settleFailure(); throw error }
         let writes = try await tx.settleSuccess()
-        if writes.isEmpty { tx.discard(); return result }
-        let seq: Seq
-        do {
-            let received = Mutex<Seq?>(nil)
-            let outcome = try await storage.commit([writes], receive: { _, value in
-                received.withLock { $0 = value }
-            }, context: context.withoutAbortSignal())
-            if let refusal = outcome.refused { throw refusal }
-            guard let value = received.withLock({ $0 }) else {
-                throw StorageRequestError("Storage commit did not receive a sequence")
-            }
-            seq = value
-            try assertHealthy()
-        } catch {
-            fail(error)
-            tx.discard()
-            throw error
-        }
+        if writes.isEmpty { tx.discard(); sweepDocuments(); return (result, nil, false) }
+        let part = SessionWriterPart(writes: writes, keys: tx.writeKeys(writes), context: context,
+            delivered: delivered,
+            publish: { [weak self] seq in
+                guard let self else { return .adoption(SessionError.closed) }
+                return self.publishCommit(tx, writes: writes, seq: seq, context: context)
+            }, discard: { tx.discard() })
+        let first = writer.admit(part)
+        return (result, part, first)
+    }
+
+    /// v1.5.2 session/session.ts `#adopt` and `#publish`.
+    private func publishCommit(_ tx: Transaction, writes: [StorageWrite], seq: Seq,
+                               context: ChordContext) -> WriterPublishFailure? {
         let documents: [DocumentCommitChange]
         do { documents = try committedRead.withLock { _ in try tx.adopt(seq) } }
-        catch { fail(error); throw error }
+        catch { return .adoption(error) }
         for document in documents {
             touchDocument(DocumentAddress(kind: document.record.kind, scope: document.record.scope, key: document.record.key))
         }
@@ -219,20 +282,35 @@ public final class Session: Sendable {
         }
         changes.append(contentsOf: documents.map(CommitChange.document))
         let publication = CommitPublication(seq: seq, changes: changes)
+        // v1.5.2 session.ts:1364–1385 queues host dispatch only if a
+        // host was attached when this publication began. The dispatch uses
+        // the listeners still attached after the own observers run.
+        let hadHostListener = state.withLock { !$0.commits.isEmpty }
         let internalListeners = state.withLock { $0.internals }
+        var ownFailure: (any Error)?
         for listener in internalListeners {
-            do { try listener.call(publication, context) } catch { fail(error) }
+            do { try listener.call(publication, context) } catch { if ownFailure == nil { ownFailure = error } }
         }
-        let listeners = state.withLock { $0.commits }
-        for listener in listeners { listener.call(publication, context) }
-        return result
+        if hadHostListener {
+            let listeners = state.withLock { $0.commits }
+            for listener in listeners { listener.call(publication, context) }
+        }
+        sweepDocuments()
+        return ownFailure.map { .listener($0) }
     }
     internal func readOnLine<T>(_ job: () async throws -> T) async throws -> T {
-        let ticket = try admit()
+        let (ticket, delivery) = try admit()
         await ticket.wait()
-        defer { line.release() }
-        try assertHealthy()
-        return try await job()
+        if !outcomes.tryClaimRoom() { await outcomes.waitForRoom() }
+        let result: Result<T, any Error>
+        do { try assertHealthy(); result = .success(try await job()) }
+        catch { result = .failure(error) }
+        line.release()
+        if !delivery.tryDeliver() { await delivery.deliver() }
+        switch result {
+        case .success(let value): try assertHealthy(); return value
+        case .failure(let error): throw error
+        }
     }
     internal func unloadDocuments() async throws {
         // This internal operation also works during harness cleanup.
@@ -346,6 +424,7 @@ public final class Session: Sendable {
                 let ticket = self.line.reserve()
                 await ticket.wait()
                 defer { self.line.release(); self.finishClose() }
+                await self.writer.drained()
                 // v1.5.2 CH3 session/session.ts:797–802: end after the last publication.
                 let observers = self.state.withLock { $0.commits }
                 for observer in observers { observer.end?(self.observerCloseEnd) }
@@ -373,6 +452,7 @@ public final class Session: Sendable {
     }
     internal func loadDocument(_ definition: DocumentDefinition, address: DocumentAddress,
                                context: ChordContext) async throws -> LoadedDocument? {
+        try await waitForDocument(address)
         if let cached = cachedDocument(address) {
             if cached.valueVersion == definition.version { return cached }
             evictDocument(address, recordID: cached.record.id)
@@ -388,8 +468,15 @@ public final class Session: Sendable {
         installDocument(loaded)
         return loaded
     }
+    internal func waitForDocument(_ address: DocumentAddress) async throws {
+        await writer.gate(SessionKeys.documentKey(address))
+        try assertHealthy()
+    }
     internal func currentSnapshot<Value: Decodable & Sendable>(_ definition: DocumentDefinition,
                         address: DocumentAddress, context: ChordContext) async throws -> Value? {
+        // v1.5.2 D3a session.ts:595–612: a cached snapshot may return the
+        // previous published revision while the next change is in storage.
+        // A cache miss enters loadDocument, which waits at the address gate.
         let captured = try committedRead.withLock { _ -> (LoadedDocument, Int, JSONValue)? in
             let cached = try state.withLock { state -> LoadedDocument? in
                 try failureLatch.check()
@@ -504,7 +591,9 @@ public final class Session: Sendable {
     /// Called with the state lock. A timer or a queued line job is the only pending sweep.
     private func scheduleDocumentSweep(_ state: inout State, now: Double, retention: Double, sleepNow: Int64) {
         guard state.closing == nil else { return }
-        guard let oldest = state.idleDocuments.first, retention.isFinite else {
+        guard let oldest = state.idleDocuments.first(where: {
+            !writer.hasGate(SessionKeys.documentKey(String(decoding: $0, as: UTF8.self)))
+        }), retention.isFinite else {
             cancelDocumentTimer(&state)
             return
         }
@@ -571,9 +660,10 @@ public final class Session: Sendable {
         state.withLock { state in
             guard state.closing == nil else { return }
             let expired = now - retention
-            while let oldest = state.idleDocuments.first, oldest.since <= expired {
-                state.documents.removeValue(forKey: oldest.key)
-                state.idleDocuments.remove(oldest.key)
+            for key in state.idleDocuments.expired(before: expired) {
+                if writer.hasGate(SessionKeys.documentKey(String(decoding: key, as: UTF8.self))) { continue }
+                state.documents.removeValue(forKey: key)
+                state.idleDocuments.remove(key)
             }
             scheduleDocumentSweep(&state, now: now, retention: retention, sleepNow: sleepNow)
         }

@@ -46,6 +46,8 @@ internal final class SessionFailureLatch: Sendable {
 internal final class GuardedStorage: DurableStorage {
     private let backend: any DurableStorage
     private let latch: SessionFailureLatch
+    private struct WriterRef { weak var value: SessionWriter? }
+    private let writer = Mutex(WriterRef())
     private struct State {
         var closing = false
         var underway = 0
@@ -55,6 +57,16 @@ internal final class GuardedStorage: DurableStorage {
     internal var closing: Bool { state.withLock { $0.closing } }
     init(_ backend: any DurableStorage, latch: SessionFailureLatch) {
         self.backend = backend; self.latch = latch
+    }
+    /// These built-in backends use DurableStorage's immediate default scope.
+    /// Keep custom storage wrappers on their own async publishing path.
+    var publishesImmediately: Bool {
+        backend is MemoryStorage || backend is SqliteStorage || backend is JsonlStorage
+    }
+    func installWriter(_ value: SessionWriter) { writer.withLock { $0.value = value } }
+    private func touch(_ key: String) async throws {
+        if let gate = writer.withLock({ $0.value })?.pendingGate(key) { await gate.waitGate() }
+        try latch.check()
     }
     private func call<T: Sendable>(read: ChordContext? = nil,
                                    _ run: () async throws -> T) async throws -> T {
@@ -82,8 +94,8 @@ internal final class GuardedStorage: DurableStorage {
         try latch.check()
         return result
     }
-    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
-        await backend.publishing(publish, context: context)
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async throws {
+        try await backend.publishing(publish, context: context)
     }
     func close(context: ChordContext) async throws {
         await withCheckedContinuation { continuation in
@@ -116,45 +128,62 @@ internal final class GuardedStorage: DurableStorage {
         try await self.call({ try await backend.mintId() })
     }
     func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationRecord? {
-        try await self.call(read: context, { try await backend.conversation(id, context: context) })
+        try await touch(SessionKeys.conversationKey(id))
+        return try await self.call(read: context, { try await backend.conversation(id, context: context) })
     }
     func scanConversations(_ query: ConversationQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<ConversationRecord, Cursor> {
-        try await self.call(read: context, { try await backend.scanConversations(query, limit: limit, cursor: cursor, context: context) })
+        try await touch(SessionKeys.allKeys)
+        return try await self.call(read: context, { try await backend.scanConversations(query, limit: limit, cursor: cursor, context: context) })
     }
     func entry(_ id: EntryID, context: ChordContext) async throws -> EntryLookup? {
-        try await self.call(read: context, { try await backend.entry(id, context: context) })
+        try await touch(SessionKeys.entryKey(id))
+        return try await self.call(read: context, { try await backend.entry(id, context: context) })
     }
     func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) async throws -> EntryLookup? {
-        try await self.call(read: context, { try await backend.entry(conversationId, id: id, context: context) })
+        try await touch(SessionKeys.conversationKey(conversationId))
+        try await touch(SessionKeys.entryKey(id))
+        return try await self.call(read: context, { try await backend.entry(conversationId, id: id, context: context) })
     }
     func findLatestHeadMarker(_ conversationId: ConversationID, atOrBeforeEntryId: EntryID?, context: ChordContext) async throws -> EntryRecord? {
-        try await self.call(read: context, { try await backend.findLatestHeadMarker(conversationId, atOrBeforeEntryId: atOrBeforeEntryId, context: context) })
+        try await touch(SessionKeys.conversationKey(conversationId))
+        try await touch(SessionKeys.appendKey(conversationId))
+        return try await self.call(read: context, { try await backend.findLatestHeadMarker(conversationId, atOrBeforeEntryId: atOrBeforeEntryId, context: context) })
     }
     func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
-        try await self.call(read: context, { try await backend.scanEntries(query, limit: limit, cursor: cursor, context: context) })
+        try await touch(SessionKeys.conversationKey(query.conversationId))
+        try await touch(SessionKeys.appendKey(query.conversationId))
+        return try await self.call(read: context, { try await backend.scanEntries(query, limit: limit, cursor: cursor, context: context) })
     }
     func task(_ id: TaskID, context: ChordContext) async throws -> TaskRecord? {
-        try await self.call(read: context, { try await backend.task(id, context: context) })
+        try await touch(SessionKeys.taskKey(id))
+        return try await self.call(read: context, { try await backend.task(id, context: context) })
     }
     func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<TaskRecord, Cursor> {
-        try await self.call(read: context, { try await backend.scanTasks(query, limit: limit, cursor: cursor, context: context) })
+        try await touch(SessionKeys.allKeys)
+        return try await self.call(read: context, { try await backend.scanTasks(query, limit: limit, cursor: cursor, context: context) })
     }
     func submission(_ id: SubmissionID, context: ChordContext) async throws -> SubmissionRecord? {
-        try await self.call(read: context, { try await backend.submission(id, context: context) })
+        try await touch(SessionKeys.submissionKey(id))
+        return try await self.call(read: context, { try await backend.submission(id, context: context) })
     }
     func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<SubmissionRecord, Cursor> {
-        try await self.call(read: context, { try await backend.scanSubmissions(query, limit: limit, cursor: cursor, context: context) })
+        try await touch(SessionKeys.allKeys)
+        return try await self.call(read: context, { try await backend.scanSubmissions(query, limit: limit, cursor: cursor, context: context) })
     }
     func submissionByRequest(_ conversationId: ConversationID, requestId: String, context: ChordContext) async throws -> SubmissionRecord? {
-        try await self.call(read: context, { try await backend.submissionByRequest(conversationId, requestId: requestId, context: context) })
+        try await touch(SessionKeys.requestKey(conversationId, requestId))
+        return try await self.call(read: context, { try await backend.submissionByRequest(conversationId, requestId: requestId, context: context) })
     }
     func findDocument(_ address: DocumentAddress, at: DocumentPoint, context: ChordContext) async throws -> DocumentRecord? {
-        try await self.call(read: context, { try await backend.findDocument(address, at: at, context: context) })
+        try await touch(SessionKeys.documentKey(address))
+        return try await self.call(read: context, { try await backend.findDocument(address, at: at, context: context) })
     }
     func document(_ id: DocumentID, at: DocumentPoint, context: ChordContext) async throws -> StoredDocument? {
-        try await self.call(read: context, { try await backend.document(id, at: at, context: context) })
+        try await touch(SessionKeys.incarnationKey(id))
+        return try await self.call(read: context, { try await backend.document(id, at: at, context: context) })
     }
     func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<DocumentRecord, Cursor> {
-        try await self.call(read: context, { try await backend.scanDocuments(query, limit: limit, cursor: cursor, context: context) })
+        try await touch(SessionKeys.scopeKey(query.scope))
+        return try await self.call(read: context, { try await backend.scanDocuments(query, limit: limit, cursor: cursor, context: context) })
     }
 }

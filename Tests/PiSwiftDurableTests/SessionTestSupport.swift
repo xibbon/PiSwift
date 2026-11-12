@@ -59,6 +59,30 @@ func createConversation(_ session: Session) async throws -> ConversationID {
     }, context: .background)
 }
 
+/// v1.5.2 D3a harness-tasks.test.ts:87–101 `holdLine`: hold a callback
+/// on the Session FIFO. A storage gate no longer holds that FIFO.
+struct HeldSessionLine: Sendable {
+    let entered: SessionTestGate
+    let releaseGate: SessionTestGate
+    let task: Task<Void, any Error>
+    func waitUntilEntered() async { await entered.wait() }
+    func release() { releaseGate.release() }
+    func finish() async throws { try await task.value }
+}
+
+func holdSessionLine(_ session: Session,
+                     afterRelease: @escaping @Sendable (Transaction) async throws -> Void = { _ in }) -> HeldSessionLine {
+    let entered = SessionTestGate(), release = SessionTestGate()
+    let task = Task {
+        try await session.commit({ tx in
+            entered.release()
+            await release.wait()
+            try await afterRelease(tx)
+        }, context: .background)
+    }
+    return HeldSessionLine(entered: entered, releaseGate: release, task: task)
+}
+
 func documentChanges(_ publication: CommitPublication) -> [DocumentCommitChange] {
     publication.changes.compactMap { change in
         guard case .document(let document) = change, document.source == nil else { return nil }
